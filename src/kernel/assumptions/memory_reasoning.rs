@@ -2062,9 +2062,10 @@ impl PureFactContext {
         (member == authorized).then_some((resources, base))
     }
 
-    pub(in crate::kernel) fn numeric_connectivity_covers_store_aliases(&self) -> bool {
-        self.equality_graph
-            .numeric_connectivity_covers_store_aliases()
+    pub(in crate::kernel) fn parameter_store_numeric_connectivity(
+        &self,
+    ) -> Option<&crate::kernel::equality_graph::NumericAddressConnectivity> {
+        self.equality_graph.parameter_store_numeric_connectivity()
     }
 
     /// Cross-block equalities are filed under their exact endpoints, so a

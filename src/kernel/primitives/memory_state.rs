@@ -7746,8 +7746,12 @@ impl SymbolicMemory {
 
     /// Populate the derived cell partition while establishing function inputs,
     /// so the first field store pays only for its own cached cells.
-    pub(crate) fn prepare_parameter_store_partition(&self, resources: &ResourceContext) {
-        self.cells.prepare_parameter_partition(resources);
+    pub(crate) fn prepare_parameter_store_partition(
+        &self,
+        resources: &ResourceContext,
+        assumptions: &PureFactContext,
+    ) {
+        self.cells.warm_parameter_partition(resources, assumptions);
         crate::kernel::reasoning::prepare_memory_variable_index(self);
     }
 

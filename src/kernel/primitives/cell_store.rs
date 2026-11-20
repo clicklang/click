@@ -60,6 +60,7 @@ use super::{
     Address, AddressBase, AddressOffset, AliasCandidates, HashedOrdMap, HashedOrdMapChange,
     HashedOrdSet, ProgramType, ProgramValue, SharedMemory,
 };
+use crate::kernel::equality_graph::{NumericAddressConnectivity, NumericAddressOwners};
 use crate::kernel::primitives::LoadKind;
 use crate::kernel::primitives::MachineTerm;
 use crate::kernel::{ExecutionValue, PureFactContext, StoredMemoryValue, Variable};
@@ -995,30 +996,7 @@ struct ParameterPartitionIndex {
     known: HashedOrdMap<Address, HashedOrdMap<Address, ()>>,
     unknown: HashedOrdMap<Address, ()>,
     bases: HashedOrdMap<Address, Address>,
-}
-
-impl ParameterPartitionIndex {
-    fn store_alias_bases(
-        &self,
-        base: Address,
-        assumptions: &PureFactContext,
-    ) -> Option<BTreeSet<Address>> {
-        // Only owners with cached cells or runs can add candidates. Bound
-        // these probes so a large frame with few aliases does not become a
-        // scan over unrelated cache buckets.
-        const MAX_CACHED_OWNER_PROBES: usize = 8;
-        if self.known.len().saturating_add(self.known_runs.len()) > MAX_CACHED_OWNER_PROBES {
-            return assumptions.parameter_store_alias_bases(&base);
-        }
-        let mut bases = BTreeSet::new();
-        for cached in self.known.keys().chain(self.known_runs.keys()) {
-            crate::instrumentation::record_deterministic_work(1);
-            if *cached == base || assumptions.addresses_numerically_connected(&base, cached) {
-                bases.insert(cached.clone());
-            }
-        }
-        Some(bases)
-    }
+    numeric_owners: NumericAddressOwners,
 }
 
 /// The concrete cells a pointer value can reach, with their values: every
@@ -1232,20 +1210,22 @@ impl CellStore {
         } else {
             assumptions.parameter_store_partition(pointer, bytes)?
         };
-        let alias_bases = if authorized.is_some() {
+        let connectivity = authorized
+            .is_none()
+            .then(|| assumptions.parameter_store_numeric_connectivity())
+            .flatten();
+        let checked_bases = if authorized.is_some() {
             Some(BTreeSet::from([base.clone()]))
-        } else if !assumptions.numeric_connectivity_covers_store_aliases() {
+        } else if connectivity.is_none() {
             Some(assumptions.parameter_store_alias_bases(&base)?)
         } else {
             None
         };
-        self.prepare_parameter_partition(resources);
-        let guard = self.parameter_partition_index.lock().unwrap();
+        let guard = self.prepare_parameter_partition(resources, connectivity);
         let index = guard.as_ref().expect("prepared parameter partition");
-        let alias_bases = match alias_bases {
-            Some(bases) => bases,
-            None => index.store_alias_bases(base, assumptions)?,
-        };
+        let alias_bases = checked_bases
+            .or_else(|| index.numeric_owners.owners(&base))
+            .unwrap_or_else(|| BTreeSet::from([base]));
         let ordinary = candidates.excluding_external_arguments();
         let mut runs = candidates
             .entries(&index.unknown_runs)
@@ -1290,10 +1270,22 @@ impl CellStore {
         Some((selected, runs))
     }
 
-    pub(in crate::kernel) fn prepare_parameter_partition(
+    pub(super) fn warm_parameter_partition(
         &self,
         resources: &crate::kernel::ResourceContext,
+        assumptions: &PureFactContext,
     ) {
+        drop(self.prepare_parameter_partition(
+            resources,
+            assumptions.parameter_store_numeric_connectivity(),
+        ));
+    }
+
+    fn prepare_parameter_partition(
+        &self,
+        resources: &crate::kernel::ResourceContext,
+        connectivity: Option<&NumericAddressConnectivity>,
+    ) -> std::sync::MutexGuard<'_, Option<ParameterPartitionIndex>> {
         let assumptions = PureFactContext::new();
         let mut guard = self.parameter_partition_index.lock().unwrap();
         let previous = guard.take();
@@ -1369,10 +1361,15 @@ impl CellStore {
             known: HashedOrdMap::new(),
             unknown: HashedOrdMap::new(),
             bases: HashedOrdMap::new(),
+            numeric_owners: connectivity
+                .map(NumericAddressOwners::new)
+                .unwrap_or_default(),
         });
+        let mut changed_owners = BTreeSet::new();
         for (key, present) in changes {
             crate::instrumentation::record_deterministic_work(1);
             if let Some(base) = index.bases.get(&key).cloned() {
+                changed_owners.insert(base.clone());
                 let mut cells = index.known.get(&base).expect("indexed cell root").clone();
                 cells.remove(&key);
                 if cells.is_empty() {
@@ -1395,6 +1392,7 @@ impl CellStore {
                 let mut cells = index.known.get(&base).cloned().unwrap_or_default();
                 cells.insert(key.clone(), ());
                 index.known.insert(base.clone(), cells);
+                changed_owners.insert(base.clone());
                 index.bases.insert(key, base);
             } else {
                 index.unknown.insert(key, ());
@@ -1403,6 +1401,7 @@ impl CellStore {
         for key in run_changes {
             crate::instrumentation::record_deterministic_work(1);
             if let Some(base) = index.run_bases.get(&key).cloned() {
+                changed_owners.insert(base.clone());
                 let mut runs = index
                     .known_runs
                     .get(&base)
@@ -1434,15 +1433,28 @@ impl CellStore {
                 let mut runs = index.known_runs.get(&base).cloned().unwrap_or_default();
                 std::sync::Arc::make_mut(&mut runs).push(key.clone());
                 index.known_runs.insert(base.clone(), runs);
+                changed_owners.insert(base.clone());
                 index.run_bases.insert(key, base);
             } else {
                 index.unknown_runs.insert(key, ());
             }
         }
+        // Update membership against the cache's current graph before moving
+        // owner buckets to the snapshot selected by this store.
+        let populated =
+            |base: &Address| index.known.contains_key(base) || index.known_runs.contains_key(base);
+        for base in changed_owners {
+            let present = populated(&base);
+            index.numeric_owners.update_owner(base, present);
+        }
+        if let Some(connectivity) = connectivity {
+            index.numeric_owners.refresh(connectivity, populated);
+        }
         index.cells = self.concrete.clone();
         index.runs = self.runs.clone();
         index.resources = resources.clone();
         *guard = Some(index);
+        guard
     }
 
     /// Concrete cells not wholly held by the caller's retained flat owners.
@@ -1451,8 +1463,7 @@ impl CellStore {
         resources: &crate::kernel::ResourceContext,
         candidates: &AliasCandidates,
     ) -> (Vec<Address>, Vec<RunKey>) {
-        self.prepare_parameter_partition(resources);
-        let guard = self.parameter_partition_index.lock().unwrap();
+        let guard = self.prepare_parameter_partition(resources, None);
         let index = guard.as_ref().expect("prepared partition");
         let ordinary = candidates.excluding_external_arguments();
         let mut cells = candidates

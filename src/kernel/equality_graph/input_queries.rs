@@ -212,13 +212,14 @@ impl EqualityGraph {
             })
     }
 
-    pub(in crate::kernel) fn numeric_connectivity_covers_store_aliases(&self) -> bool {
+    pub(in crate::kernel) fn parameter_store_numeric_connectivity(
+        &self,
+    ) -> Option<&super::NumericAddressConnectivity> {
         // The numeric index does not include exact cross-block pointer edges.
-        self.admitted.address_base_aliases.is_empty()
-            && !self
-                .admitted
-                .numeric_address_connectivity
-                .has_raw_store_alias_endpoints()
+        let connectivity = &self.admitted.numeric_address_connectivity;
+        (self.admitted.address_base_aliases.is_empty()
+            && !connectivity.has_raw_store_alias_endpoints())
+        .then_some(connectivity)
     }
 
     pub(in crate::kernel) fn parameter_store_alias_bases(
