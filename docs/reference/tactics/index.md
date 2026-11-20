@@ -1654,8 +1654,9 @@ block registration and constant byte offset. It does not search alignment facts
 or infer alignment for a symbolic offset.
 
 The same fixed local check accepts intrinsic machine type ranges and
-constant-divisor quotient, remainder, and right-shift bounds. A written
-machine `+`, `-`, or `*` observation equals its exact Integer expression when
+constant-divisor quotient, remainder, and right-shift bounds. This includes
+`x % d < d` and its exact Integer reading for a positive machine literal `d`.
+A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.
 Each check reads the named operands and at most two exact bound keys; it does
