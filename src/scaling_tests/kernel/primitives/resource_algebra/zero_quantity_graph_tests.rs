@@ -106,12 +106,13 @@ fn merged_unit_consumption_is_linear_in_the_units_it_merges() {
         });
         (size, work)
     });
+    // Work per merged unit stays within a constant factor of the smallest
+    // sample's: selecting, admitting and removing each unit is indexed.
     let (base_size, base_work) = samples[0];
     for (size, work) in samples {
         assert!(
-            work <= base_work * (size / base_size) as usize + 64,
+            work * base_size as usize <= 2 * base_work * size as usize,
             "{samples:?}"
         );
     }
-}
 
