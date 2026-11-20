@@ -14,16 +14,8 @@ use crate::surface::proof_diagnostics::render::{
 pub(in crate::surface) fn describe_proof_obligation_context(
     obligation: &ProofObligation,
 ) -> Option<String> {
-    if let Some(overlap) = obligation.live_view_write_overlap() {
-        let operation = obligation.call_requirement_site().map_or_else(
-            || "this write".to_owned(),
-            |source| format!("the write by `{}`", source.callee),
-        );
-        return Some(if overlap {
-            format!("{operation} overlaps a live view")
-        } else {
-            format!("prove {operation} is separate from the live views")
-        });
+    if let Some(context) = describe_live_view_write_context(obligation) {
+        return Some(context);
     }
     if let Some(source) = obligation.call_requirement_site()
         && let Some(ordinal) = source.source_requirement_ordinal
@@ -35,6 +27,19 @@ pub(in crate::surface) fn describe_proof_obligation_context(
         ));
     }
     obligation.context().map(str::to_owned)
+}
+
+fn describe_live_view_write_context(obligation: &ProofObligation) -> Option<String> {
+    let overlap = obligation.live_view_write_overlap()?;
+    let operation = obligation.call_requirement_site().map_or_else(
+        || "this write".to_owned(),
+        |source| format!("the write by `{}`", source.callee),
+    );
+    Some(if overlap {
+        format!("{operation} overlaps a live view")
+    } else {
+        format!("prove {operation} is separate from the live views")
+    })
 }
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::SharedMemory;
@@ -1927,7 +1932,9 @@ pub(super) fn describe_runtime_error(
             let mut labels = MemoryStateLabels::naming(parameter_binding);
             let mut message = "call cannot finish with unresolved proof obligations:".to_string();
             for obligation in pending.iter() {
-                if let Some(context) = describe_proof_obligation_context(obligation) {
+                if let Some(context) = describe_live_view_write_context(obligation)
+                    .or_else(|| obligation.context().map(str::to_owned))
+                {
                     message.push_str(&format!("\n  context: {context}"));
                 }
                 if let Some(source) = obligation.call_requirement_site() {

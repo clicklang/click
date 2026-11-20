@@ -3410,9 +3410,9 @@ fn execute_verified_function_applications_with_suspension(
             call_site,
             interface.contract_requires().len(),
             if suspended.is_some() {
-                "suspended worker write separation"
+                CallLoanEffect::WorkerWrite
             } else {
-                "verified call write separation"
+                CallLoanEffect::CallWrite
             },
         );
         // A checked mutex-use call may execute runtime lock/unlock operations.
@@ -3490,7 +3490,7 @@ fn execute_verified_function_applications_with_suspension(
                 &ranges,
                 call_site,
                 first_mutex_ordinal,
-                "verified call mutex storage write separation",
+                CallLoanEffect::MutexWrite,
             ));
             ranges.len()
         } else {
@@ -4883,7 +4883,7 @@ fn execute_verified_function_applications_with_suspension(
                 &retired_allocations,
                 call_site,
                 first_retirement_ordinal,
-                "suspended worker allocation retirement separation",
+                CallLoanEffect::WorkerRetirement,
             ));
             worker_effects.extend(retired_allocations);
             completions.push((
@@ -5172,7 +5172,7 @@ fn execute_verified_function_applications_with_suspension(
             &retired_allocations,
             call_site,
             first_retirement_ordinal,
-            "verified call allocation retirement separation",
+            CallLoanEffect::CallRetirement,
         ));
         paths.push(FunctionPath {
             outcome,
@@ -5200,12 +5200,21 @@ fn execute_verified_function_applications_with_suspension(
     Ok(paths)
 }
 
+#[derive(Clone, Copy)]
+enum CallLoanEffect {
+    CallWrite,
+    WorkerWrite,
+    MutexWrite,
+    CallRetirement,
+    WorkerRetirement,
+}
+
 fn verified_call_loan_requirements(
     ledger: Option<&LoanLedger>,
     effects: &[MemoryRange],
     call_site: impl FnOnce() -> CallRequirementSite,
     first_ordinal: usize,
-    context: &str,
+    effect: CallLoanEffect,
 ) -> Vec<ProofObligation> {
     let Some(ledger) = ledger else {
         return Vec::new();
@@ -5223,10 +5232,23 @@ fn verified_call_loan_requirements(
         return Vec::new();
     }
     let site = Arc::new(call_site());
+    let context = match effect {
+        CallLoanEffect::CallWrite => "verified call write separation",
+        CallLoanEffect::WorkerWrite => "suspended worker write separation",
+        CallLoanEffect::MutexWrite => "verified call mutex storage write separation",
+        CallLoanEffect::CallRetirement => "verified call allocation retirement separation",
+        CallLoanEffect::WorkerRetirement => "suspended worker allocation retirement separation",
+    };
     requirements
         .map(|(index, requirement)| {
-            ProofObligation::verification_condition(requirement)
-                .with_live_view_write()
+            let obligation = ProofObligation::verification_condition(requirement);
+            let obligation = match effect {
+                CallLoanEffect::CallWrite
+                | CallLoanEffect::WorkerWrite
+                | CallLoanEffect::MutexWrite => obligation.with_live_view_write(),
+                CallLoanEffect::CallRetirement | CallLoanEffect::WorkerRetirement => obligation,
+            };
+            obligation
                 .with_call_requirement_site(Arc::new(CallRequirementSource::new(
                     site.clone(),
                     first_ordinal + index,
