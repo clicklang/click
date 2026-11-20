@@ -3553,3 +3553,50 @@ fn resource_cell_naming_checks_the_entry_point_without_a_store() {
     assert_eq!(before.memory(), other.memory());
     assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
 }
+
+#[test]
+fn resource_run_naming_checks_the_source_without_expanding_slots() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let before = ExecutionState::new().begin_function_entry_memory();
+    let point = before.program_point();
+    let version = point.entry_integer_version(&slot, LoadKind::Int32).unwrap();
+    let check = |count| {
+        let named = before
+            .memory()
+            .clone()
+            .with_named_cell_run(slot.clone(), 4, ProgramType::Int32, 0, count, point.clone())
+            .unwrap();
+        let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+            super::memory_only_adds_named_cells(&before, &named)
+        });
+        checked.unwrap();
+        assert_eq!(
+            named.known_value(&slot),
+            Some(ProgramValue::Int32(MachineTerm::MemoryLoad(
+                version.clone(),
+                Box::new(slot.clone()),
+                LoadKind::Int32,
+            ))),
+        );
+        work
+    };
+
+    let small = check(4);
+    let large = check(1024);
+    assert!(large <= small + 4, "run check work: {small} vs {large}");
+
+    let named = before
+        .memory()
+        .clone()
+        .with_named_cell_run(slot.clone(), 4, ProgramType::Int32, 0, 4, point)
+        .unwrap();
+    let other = ExecutionState::new().begin_function_entry_memory();
+    assert_eq!(before.memory(), other.memory());
+    assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+    let overwritten = named.store(slot, ProgramValue::Int32(MachineTerm::constant(7)));
+    assert!(super::memory_only_adds_named_cells(&before, &overwritten).is_err());
+}

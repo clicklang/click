@@ -5582,7 +5582,7 @@ fn materialize_composite_resource_cells_from_state(
             run_type,
             start,
             end,
-            naming_point.shared_memory().clone(),
+            naming_point.clone(),
         ) {
             Ok(seeded) => return seeded,
             Err(unchanged) => memory = unchanged,
@@ -6211,6 +6211,28 @@ mod guarded_unmatched_materialization_tests {
     #[test]
     fn ordinary_composite_cell_naming_keeps_the_entry_point() {
         let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Address::symbolic(crate::kernel::Variable(88_026));
+        let memory = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
+        let state = ExecutionState::new().with_memory(memory);
+        check_composite_cell_naming(pointer, state, false);
+    }
+
+    #[test]
+    fn a_held_composite_names_an_unwritten_scalar_at_function_entry() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Address {
+            base: crate::kernel::AddressBase::ExternalArgument,
+            offset: crate::kernel::AddressOffset::Constant(0),
+        };
+        let state = ExecutionState::new().begin_function_entry_memory();
+        check_composite_cell_naming(pointer, state, true);
+    }
+
+    fn check_composite_cell_naming(
+        pointer: Address,
+        state: ExecutionState,
+        names_entry_version: bool,
+    ) {
         let file = crate::surface::parser::parse_file_items(
             "resource initialized_cell(p: int32*) { owns *p; }",
         )
@@ -6220,7 +6242,6 @@ mod guarded_unmatched_materialization_tests {
         let predicates = PredicateEnvironment::new(&[]);
         let specs = SpecDefinitions::new(&predicates, &functions);
         let parameters = ParameterBinding::new(&[], &[]);
-        let pointer = Address::symbolic(crate::kernel::Variable(88_026));
         let held = ResourceFact::own_composite(
             "initialized_cell".into(),
             vec![ProgramValue::typed_pointer(
@@ -6228,9 +6249,7 @@ mod guarded_unmatched_materialization_tests {
                 ProgramType::Int32Pointer,
             )],
         );
-        let state = ExecutionState::new()
-            .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4))
-            .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
+        let state = state.with_resource_context(ResourceContext::new().unchecked_with_fact(held));
         let point = state.observation_point_id().unwrap();
         assert!(!matches!(
             state.memory().load(&pointer),
@@ -6256,10 +6275,16 @@ mod guarded_unmatched_materialization_tests {
         )
         .unwrap();
         for named_view in [named, projected] {
-            assert!(matches!(
-                named_view.memory().load(&pointer),
-                ExpressionOutcome::Value(_)
-            ));
+            let ExpressionOutcome::Value(value) = named_view.memory().load(&pointer) else {
+                panic!("the held resource supplies its scalar cell");
+            };
+            if names_entry_version {
+                assert!(matches!(
+                    value,
+                    ProgramValue::Int32(MachineTerm::MemoryLoad(source, _, _))
+                        if source.read_version_id() == Some(point)
+                ));
+            }
             assert_eq!(named_view.observation_point_id(), Some(point));
         }
     }

@@ -1124,7 +1124,7 @@ fn memory_only_adds_named_cells(
     }
     let source = before_state.program_point();
     let base = source.shared_memory();
-    for change in before.cells.diff(&after.cells) {
+    for change in before.cells.diff_after_naming(&after.cells, &source) {
         let crate::kernel::HashedOrdMapChange::Added(pointer) = change else {
             return Err("removed or rewrote an existing cell".into());
         };
