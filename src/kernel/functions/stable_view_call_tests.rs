@@ -2908,6 +2908,9 @@ fn composite_view_body_check_does_not_try_pointer_aliases() {
             let alias = Address::symbolic(Variable(94_200 + i));
             facts = facts.assume_condition(equality(&p, &alias), true);
         }
+        // Preparing the generic stated-fact index is a separate cold cost.
+        // Measure whether looking up the fixed clause walks its aliases.
+        facts.build_stated_proposition_index();
         let (established, cost) = crate::instrumentation::measure_deterministic_work(|| {
             composite_view_body_fact_is_established(&facts, &goal)
         });
