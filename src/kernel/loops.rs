@@ -4669,11 +4669,14 @@ fn execute_program_loop_exit_paths(
                 // exported no exit state at all and made every post-loop
                 // claim vacuous.
                 candidate_exit_entries.push((
-                    head.restored_exit_state(candidate.state(), assumptions),
-                    facts,
-                    obligations,
-                    loan_evidence,
-                    None,
+                    (
+                        head.restored_exit_state(candidate.state(), assumptions),
+                        facts,
+                        obligations,
+                        loan_evidence,
+                        None,
+                    ),
+                    candidate.guard_points_index(),
                 ));
             }
         }
@@ -4722,7 +4725,7 @@ fn execute_program_loop_exit_paths(
             exit.fact_context().cloned(),
         );
         if otherwise.is_some() && exit.guard_false() {
-            otherwise_exits.push(entry);
+            otherwise_exits.push((entry, exit.guard_points_index()));
         } else {
             early_exit_entries.push(entry);
         }
@@ -4730,7 +4733,7 @@ fn execute_program_loop_exit_paths(
     if otherwise.is_some() {
         otherwise_exits.extend(candidate_exit_entries);
     } else {
-        early_exit_entries.extend(candidate_exit_entries);
+        early_exit_entries.extend(candidate_exit_entries.into_iter().map(|(exit, _)| exit));
     }
     let mut guard_exits = Vec::new();
     if initial_may_exit {
@@ -4800,7 +4803,7 @@ fn execute_program_loop_exit_paths(
                     (top_state.clone(), facts, obligations, loan_evidence, None)
                 });
             if otherwise.is_some() {
-                otherwise_exits.extend(exits);
+                otherwise_exits.extend(exits.map(|exit| (exit, None)));
                 continue;
             }
             if exit_fact_scope.is_some() {
@@ -4855,7 +4858,7 @@ fn execute_program_loop_exit_paths(
                 body,
                 &Default::default(),
                 &binders,
-                otherwise_exits,
+                otherwise_exits.into_iter().map(|(exit, _)| exit).collect(),
                 assumptions,
                 None,
                 guard_exit_mode,
@@ -4867,16 +4870,19 @@ fn execute_program_loop_exit_paths(
                     unreachable!("the loop-exit join produces a normal outcome");
                 };
                 (
-                    *state,
-                    path.facts,
-                    path.obligations,
-                    path.loan_evidence,
+                    (
+                        *state,
+                        path.facts,
+                        path.obligations,
+                        path.loan_evidence,
+                        None,
+                    ),
                     None,
                 )
             })
         };
-        if let Some((state, mut facts, mut obligations, evidence, _)) = false_exit {
-            let proven = prove(&head.entry, &state, &facts);
+        if let Some(((state, mut facts, mut obligations, evidence, _), points_index)) = false_exit {
+            let proven = prove(&head.entry, &state, &facts, points_index);
             if guard_exit_mode == LoopExitFactsMode::Otherwise {
                 facts = facts.filtered(ExecutionPureFact::is_public);
             }

@@ -9,6 +9,7 @@ The proof uses `statement(2).call(take, 0).entry` and `.result` to
 establish that the call found `left` empty on the false path. That path
 exports the count relation before leaving the loop. The post-loop proof
 still refers to `loop(0).test().entry` to check the final test's state.
+The `otherwise` proof also names the call entry of the pass that left.
 
 ```c filename=take_loop.c
 int take(int *n) {
@@ -75,6 +76,9 @@ unsigned count(int n) {
                     == to_integer(n) by known();
                 have to_integer(c) == to_integer(n) by solve();
             }
+        }
+        otherwise {
+            have at(statement(2).call(take, 0).entry, left) == 0 by known();
         }
     }
     have at(loop(0).test().entry, left) == 0 by solve();
