@@ -4,6 +4,9 @@ The field belongs to an unfolded modeled node. The call frame must find the
 kept field through the checked parent alias and cover the full pointer width.
 No explicit separation from the helper's tag is supplied.
 
+The final store proves the field equals `q`. The following check asks for
+the earlier value and must refuse.
+
 ```c filename=probe.c
 struct node { unsigned long tag; struct node *other; struct node *next; };
 void helper(struct node *q) { q->tag = 0; }
@@ -38,14 +41,13 @@ void probe(struct node *p, struct node *q) {
             let {kid: kid} = unfold(a);
             have p == id by known();
             step(); mark before; step(); step();
-            have p->other == at(before, p->other) by {
-                solve();
-            }
+            have p->other == q by known();
+            have p->other == at(before, p->other) by known();
         },
     }
 }
 ```
 
 ```expect
-fail: `solve` failed
+fail: `known` requires the current goal as an available semantic fact
 ```
