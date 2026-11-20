@@ -118,7 +118,6 @@ pub enum ProofStep {
     Known,
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
-    OrderChain(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
 
     Intro,
@@ -788,7 +787,6 @@ impl ProofStep {
             ProofTactic::Known => Self::Known,
             ProofTactic::Normalize => Self::Normalize,
             ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
-            ProofTactic::OrderChain(premises) => Self::OrderChain(premises.clone()),
             ProofTactic::ArithmeticUsing(premises) => Self::ArithmeticUsing(premises.clone()),
 
             ProofTactic::Intro => Self::Intro,
@@ -978,7 +976,6 @@ impl ProofStep {
             Self::Known => ProofTactic::Known,
             Self::Normalize => ProofTactic::Normalize,
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
-            Self::OrderChain(premises) => ProofTactic::OrderChain(premises.clone()),
             Self::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(premises.clone()),
 
             Self::Intro => ProofTactic::Intro,
@@ -1228,7 +1225,6 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => {
             TacticClass::Simple(SimpleTactic::Normalize)
         }
-        ProofStep::OrderChain(_) => TacticClass::Simple(SimpleTactic::OrderChain),
         ProofStep::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
         ProofStep::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),

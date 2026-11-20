@@ -3853,7 +3853,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofStep::Known => "known()",
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
-        ProofStep::OrderChain(_) => "order_chain() using",
         ProofStep::ArithmeticUsing(_) => "solve() using",
         ProofStep::Preserve(_) => "preserve",
 

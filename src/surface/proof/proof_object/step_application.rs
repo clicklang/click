@@ -823,19 +823,6 @@ impl<'a> Proof<'a> {
         })
     }
 
-    pub(super) fn apply_order_chain(
-        &self,
-        premises: &[ClickProposition],
-    ) -> Result<KernelProofHandle, ClickError> {
-        let premises = premises
-            .iter()
-            .map(|premise| self.lower_cited_surface_proposition(premise, "`order_chain` premise"))
-            .collect::<Result<Vec<_>, _>>()?;
-        self.state
-            .apply_order_chain(&premises)
-            .map_err(|message| self.step_error(message))
-    }
-
     pub(in crate::surface::proof) fn arithmetic_refusal(
         &self,
         surface_premises: &[ClickProposition],
