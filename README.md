@@ -203,6 +203,8 @@ Click and is maintained by agents. The rendered reference also serves
   claim means and what it assumes.
 - [Frequently asked questions](docs/faq.md): setup, guarantees, coverage,
   proof failures, and contributions.
+- [Project setup skill](.agents/skills/project-setup/SKILL.md) for agents
+  setting up Click and verifying one function in an existing project.
 - [Your first proof](docs/concepts/first-proof.md): a guided first sidecar.
 - [Language reference](docs/reference/language/index.md): complete `.click`
   syntax.
