@@ -2604,10 +2604,9 @@ fn checked_borrowing_fold_hold(
         .ok_or("a loan hold requires a loan ledger")?;
     let binding = after_state
         .resources()
-        .owned_occurrences_for_fact(selected)
-        .into_iter()
-        .filter_map(|occurrence| after_state.resources().loan_dependency(occurrence))
-        .find(|binding| binding.hold.is_some())
+        .unique_owned_occurrence_for_fact(selected)
+        .and_then(|(occurrence, _)| after_state.resources().loan_dependency(occurrence))
+        .filter(|binding| binding.hold.is_some())
         .ok_or("a loan hold is not carried by the folded composite")?;
     let temporary =
         ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(selected.clone());
@@ -2631,11 +2630,10 @@ fn checked_borrowing_fold_hold(
         .filter(|child| *child != selected && child.is_view())
         .any(|child| {
             before_state
-                .resources()
-                .view_occurrences_for_fact(child, assumptions)
-                .into_iter()
-                .filter_map(|occurrence| before_state.resources().loan_dependency(occurrence))
-                .any(same_authority)
+                .fold_view_dependency(child, assumptions)
+                .is_ok_and(|dependency| {
+                    dependency.is_some_and(|(_, dependency)| same_authority(&dependency))
+                })
         });
     if !body_reads_through_loan {
         return Err("a loan hold is not on a loan the folded body views".into());

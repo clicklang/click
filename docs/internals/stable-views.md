@@ -293,8 +293,10 @@ handles any joins a later proof needs.
 
 A composite whose body packages a loan-backed view carries a hold on the
 loan's scope. Folding moves the hold onto the head. Unfolding passes it to
-its viewed children so refolding can reuse it. A refold transfers all the
-viewed children sharing that hold.
+its viewed children. Refolding all remaining pieces reuses their hold.
+Refolding selected pieces while siblings remain gives the new head its own
+hold on the same borrow. The siblings keep their original hold, so consuming
+the new head leaves their backing protected.
 
 `produces cursor(...) from input` names a checked `views` or `consumes`
 requirement. Its normalized requirement index travels with each emitted child
@@ -307,18 +309,13 @@ the last hold for its borrow ends.
 ## Footprints and storage
 
 Footprints are bytes. Coverage, subtraction, overlap, and entailment of
-memory resources are decided bytewise across element widths; a load's width
-is about its value. Overlap with symbolic bounds is refused only when
-proven: the partition invariant makes owners in a valid context disjoint
-from views by contract meaning, so an unproved separation between an owner
-and a symbolic view is not a conflict, while a declared effect against a
-view fails closed. Concrete active loans live in a dyadic interval index;
-queries check every directly stated exact pointer alias before treating an
-empty interval lookup as permission. Symbolic protected ranges live in
-per-block buckets for their recorded representation, and queries inspect the
-buckets for their exact aliases too. A symbolic query beside concrete loans
-is refused as unsupported unless its external block is proven distinct from
-the local loan blocks.
+memory resources are decided bytewise across element widths. Entry checks
+the selected owned and viewed inputs before using their partition as
+separation evidence. A write beside a live view requires separation from the
+retained backing footprint. The statement checker can use the exact fact, its
+symmetric form, or a stated separation indexed by the exact fixed-width byte
+spans. Proofs of symbolic containment and separation use ordinary proof
+tactics. The old alias-enumerating write guard is used only in tests.
 
 A nonempty subrange loan prevents freeing or reallocating its allocation.
 Plain `free` with live memory loans requires separation of the allocation's

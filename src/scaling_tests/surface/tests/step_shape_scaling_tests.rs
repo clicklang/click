@@ -11,6 +11,47 @@
 use super::*;
 
 #[test]
+fn partial_borrow_refold_ignores_unselected_siblings() {
+    let (proof, sources) =
+        super::expansion_tests::mdtest_sources("mdtests/refold_one_piece_of_a_borrow.md");
+    let mut samples = Vec::new();
+    for count in [2, 4, 8, 16] {
+        let siblings = (1..count)
+            .map(|start| format!("views p[{start}..{}];\n", start + 1))
+            .collect::<String>();
+        let proof = proof
+            .replace("views p[1..2];", &siblings)
+            .replace("p[0..2]", &format!("p[0..{count}]"))
+            .replace(
+                "extern void drop_first",
+                &format!(
+                    "resource rest(p: int32*) {{ {siblings} }}\n\
+                     extern void drop_rest(int32* p) {{ consumes rest(p); }}\n\
+                     extern void drop_first"
+                ),
+            )
+            .replace("release_view(p[1..2]);", "fold(rest(p));\n    step();");
+        let c = sources[0]
+            .1
+            .replace("void update", "void drop_rest(int *p);\n\nvoid update")
+            .replace("    p[1] = 9;", "    drop_rest(p);\n    p[1] = 9;");
+        let (result, tactics) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c_sources(&proof, &[(sources[0].0.as_str(), &c)])
+        });
+        result.unwrap_or_else(|error| panic!("at {count} pieces: {}", error.report()));
+        let fold = tactics
+            .iter()
+            .find(|sample| sample.tactic.tactic_name == "fold")
+            .expect("the first fold is measured");
+        samples.push((count, fold.work));
+    }
+    assert!(
+        samples.iter().all(|(_, work)| *work <= samples[0].1 + 32),
+        "refolding one piece should not visit its siblings: {samples:?}"
+    );
+}
+
+#[test]
 fn branch_interface_reuses_saved_states_beside_growing_locals_and_marks() {
     let target = ProgramPointRef {
         region: CodeRegionRef::Region(2),

@@ -4741,16 +4741,29 @@ fn fold_composite_resources_on_outcome_with_facts(
                 Some(&value.native()),
                 pure_facts.assumptions(),
             )?;
-            // An owned composite that packages a loan-backed view is a
-            // borrowing composite (escaping borrows in docs/internals/stable-views.md). Its head keeps the
-            // loan's scope open through a hold, so the owner behind the view
-            // cannot be recovered and written while the composite still
-            // describes it. A piece that already carries a hold (restored by
-            // an earlier unfold) is folded back under the same hold.
+            // Move only the selected principal views. A whole group can reuse
+            // its hold. If siblings remain, give the head a separate hold so
+            // consuming it cannot end the siblings' borrow.
+            if selected_held_view && held_view_children.is_empty() && !abstract_resource.is_view() {
+                return Err(ClickError::new(format!(
+                    "`{claim_label}` path {path_index}: `fold` needs a directly held viewed piece to move into this resource"
+                )));
+            }
+            if !held_view_children.is_empty() && !abstract_resource.is_view() {
+                let mut resources = post_state.resources().clone();
+                for occurrence in held_view_children {
+                    resources = resources
+                        .without_exact_representation_for_occurrence(occurrence)
+                        .expect("the selected folded child is live");
+                }
+                post_state = Box::new(post_state.with_resource_context(resources));
+            }
             let mut body_loan_dependency = body_loan_dependency;
             if let Some(binding) = body_loan_dependency.as_mut()
                 && !abstract_resource.is_view()
-                && binding.hold.is_none()
+                && binding.hold.is_none_or(|hold| {
+                    post_state.loan_view_bindings().hold_occurrence_count(hold) != 0
+                })
             {
                 let (Some(ledger), Some(holder)) = (
                     post_state.loan_ledger().cloned(),
@@ -4774,30 +4787,6 @@ fn fold_composite_resources_on_outcome_with_facts(
                 // exact transition.
                 loan_holds.push(transition);
                 post_state = Box::new(post_state.with_loan_ledger(Some(ledger)));
-            }
-            // A returned view or an opened borrowing head can already carry
-            // the hold. Move the selected viewed pieces into the new head.
-            // Ordinary (non-owning) observations stay where they were.
-            if selected_held_view
-                && !abstract_resource.is_view()
-                && let Some(hold) = body_loan_dependency
-                    .as_ref()
-                    .and_then(|binding| binding.hold)
-                && post_state.loan_view_bindings().hold_occurrence_count(hold)
-                    != held_view_children.len()
-            {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` path {path_index}: `fold` must move every viewed piece sharing this borrow hold"
-                )));
-            }
-            if !held_view_children.is_empty() && !abstract_resource.is_view() {
-                let mut resources = post_state.resources().clone();
-                for occurrence in held_view_children {
-                    resources = resources
-                        .without_exact_representation_for_occurrence(occurrence)
-                        .expect("the selected folded child is live");
-                }
-                post_state = Box::new(post_state.with_resource_context(resources));
             }
             // Authority rewrites authenticate the selected exchange only;
             // normalizing unrelated memory changes the checked frame.
