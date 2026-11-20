@@ -210,6 +210,9 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             left,
             right,
         } => {
+            if let Some(answer) = known_int32_match_comparison_value(condition) {
+                return Some(answer);
+            }
             if left == right {
                 return Some(matches!(
                     relation,
@@ -296,6 +299,38 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
         // compare unequal even when both operands have the same identity.
         _ => None,
     }
+}
+
+pub(super) fn known_int32_match_comparison_value(condition: &ConditionTerm) -> Option<bool> {
+    use crate::kernel::proof::term_rewrite::TermRewrite;
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    let reduced_left = TermRewrite::reduce_known_int32_match(left);
+    let reduced_right = TermRewrite::reduce_known_int32_match(right);
+    if reduced_left.is_none() && reduced_right.is_none() {
+        return None;
+    }
+    let left = reduced_left.as_ref().unwrap_or(left);
+    let right = reduced_right.as_ref().unwrap_or(right);
+    let ordering = if left == right {
+        std::cmp::Ordering::Equal
+    } else {
+        (left.as_const()? as i32).cmp(&(right.as_const()? as i32))
+    };
+    Some(match relation {
+        CompareRelation::Equal => ordering.is_eq(),
+        CompareRelation::LessThan => ordering.is_lt(),
+        CompareRelation::LessEqual => !ordering.is_gt(),
+        CompareRelation::GreaterThan => ordering.is_gt(),
+        CompareRelation::GreaterEqual => !ordering.is_lt(),
+    })
 }
 
 fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<bool> {

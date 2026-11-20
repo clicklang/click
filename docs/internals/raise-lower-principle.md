@@ -631,6 +631,13 @@ them.
 An Integer-valued match with Integer-only fields retains its scrutinee and
 scoped arms even when the scrutinee is a written constructor. Goal-local
 checking may select the constructor's arm and substitute its fields.
+Pure, obligation-free algebraic-valued matches in comparisons also retain
+their scrutinee and arms with a known constructor. Algebraic equality
+rewriting keeps the match available for reduction during normalization.
+An equality or disequality over an `int32` match with literal arms or direct
+`int32` payload selections keeps the machine comparison and scoped match.
+Normalization checks the
+selected constructor arm using the comparison's original machine format.
 A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
 not consult facts or change the Boolean term inside a larger expression.

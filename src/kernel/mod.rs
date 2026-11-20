@@ -139,6 +139,7 @@ pub(crate) use reasoning::variable_collection::count_cells_collected;
 pub(crate) mod resource_tracker;
 mod spec;
 pub use spec::required_constructions::is_required_construction;
+pub(crate) use spec::scalar_match_has_pure_int32_arms;
 pub(crate) use spec::{LOOP_ITERATIONS_VARIABLE, LoweredTermPath};
 pub(crate) use spec::{
     SpecCaptureRefusal, algebraic_argument_evaluation_guards, capture_spec_algebraic_value,

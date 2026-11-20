@@ -171,6 +171,11 @@ impl TermRewrite<'_> {
                 return None;
             }
         };
+        if self.preserves_algebraic_matches()
+            && matches!(&matched.result_type, KernelType::Algebraic(ty) if !ty.rigid)
+        {
+            return Some(matched.into_term());
+        }
         let reduced = self.reduce_retained_match_in(&matched);
         if self.refusal_status().is_some() {
             return None;
