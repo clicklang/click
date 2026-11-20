@@ -706,7 +706,11 @@ impl<'a> ProofScope<'a> {
         let body_certificate = self.body.certificate();
         let deferred = body.is_at_function_exit();
         let state = if !deferred && let OpenResourceRestoration::Named(instance) = restoration {
-            body.restore_open_instance(resource, instance)?.state
+            if body.holds_open_instance(instance)? {
+                body.state.clone()
+            } else {
+                body.restore_open_instance(resource, instance)?.state
+            }
         } else {
             let mut execution = body
                 .branch_execution()
