@@ -2732,13 +2732,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     preserve(memory(augment->propagate), statement(4).statement(3).statement(0));
                                 }
                                 have ErasePropagate(at(before_child_tag, augment->propagate)) by known();
-                                have ErasePropagate(augment->propagate) by {
-                                    transport(ErasePropagate(at(before_child_tag, augment->propagate)), ErasePropagate(augment->propagate)) using {
-                                        ErasePropagate(at(before_child_tag, augment->propagate));
-                                        augment->propagate == at(before_child_tag, augment->propagate);
-                                        separate(statement(4).statement(3).statement(0).footprint, memory(augment->propagate));
-                                    };
-                                }
+                                have ErasePropagate(augment->propagate) by known();
                                 have er_id->__rb_parent_color == pc;
                                 have pc == old(node->__rb_parent_color);
                                 have (pc & 1) == color_bit(Color::Black) by {
