@@ -8395,7 +8395,26 @@ impl AnnotationLowerer<'_> {
                     ClickType::Program(_) | ClickType::CObjectPointer { .. }
                         if parameter_is_click_array_ref(parameter) =>
                     {
-                        let array_ref = self.lower_array_ref_to_spec(argument, environment)?;
+                        let mut array_ref = self.lower_array_ref_to_spec(argument, environment)?;
+                        // A character array of the other signedness is passed
+                        // as the parameter's own element pointer, as a
+                        // predicate's is: a string literal of signed `char`
+                        // passed for `s: uint8[]` is the same application
+                        // wherever it is written, including the recursive
+                        // calls an `unfold` exposes.
+                        if let Some(expected_element_type) =
+                            click_array_element_type(parameter.interface_type())
+                            && array_ref.element_type != expected_element_type
+                            && crate::surface::validation::array_ref_elements_compatible(
+                                array_ref.element_type,
+                                expected_element_type,
+                            )
+                            && let Some(pointer_type) = expected_element_type.pointer_to()
+                        {
+                            array_ref.pointer =
+                                SpecExpression::Cast(Box::new(array_ref.pointer), pointer_type);
+                            array_ref.element_type = expected_element_type;
+                        }
                         Ok(crate::kernel::SpecPureFunctionArgument::ArrayRef {
                             // A function that reads no memory is a function of
                             // its argument values, so its pointer arguments are

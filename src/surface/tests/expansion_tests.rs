@@ -1400,11 +1400,33 @@ fn unsigned_widening_special_certificates_expand_and_recheck() {
         "widened_positive_is_unequal_to_zero.ensures_0",
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+        assert!(!expanded.contains("normalize()"), "{expanded}");
         without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     }
     // x = 0 satisfies the weakened bound and refutes both conclusions.
     let false_claim = source.replace("1 <= to_integer", "0 <= to_integer");
     assert!(verify_click_theorems(&false_claim).is_err());
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: three selected interval exclusions expand and replay in 3.7s"]
+fn selected_interval_exclusion_expands_and_rechecks() {
+    let (source, _) = mdtest_sources("mdtests/integer_bound_exclusion.md");
+    for label in [
+        "negative_bound_excludes_zero.ensures_0",
+        "positive_divisor_guards.ensures_0",
+        "positive_divisor_guards.ensures_1",
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+    let omitted = source.replace("solve() using { x <= -1; }", "solve() using {}");
+    assert!(verify_click_theorems(&omitted).is_err());
 }
 
 #[test]

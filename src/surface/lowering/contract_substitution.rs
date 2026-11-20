@@ -3555,6 +3555,27 @@ pub(in crate::surface) fn pure_function_parameter_argument_of_type(
     if argument_type.is_some_and(|argument_type| argument_type == parameter.click_type()) {
         return argument.clone();
     }
+    // A `uint8` byte parameter reads unsigned bytes through a signed
+    // character pointer, as a predicate's does ([`character_byte_view`]):
+    // a string literal passed for `s: uint8[]` is read as `uint8`.
+    if let Some(crate::surface::ClickType::Program(actual)) = argument_type
+        && let Some(expected) = parameter.click_type().interface_type()
+        && needs_character_byte_view(*actual, expected.to_kernel_type())
+        && let Some(pointer) = contract_expression_as_program_expression(argument)
+    {
+        return ContractExpression::CUnary {
+            operand: Box::new(argument.clone()),
+            lowered: ProgramExpression::Cast {
+                expression: Box::new(pointer),
+                target_type: crate::kernel::ProgramType::UInt8Pointer,
+                integer_mode: crate::kernel::IntegerCastMode::PointerCoercion,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            },
+        };
+    }
     pure_function_parameter_argument(parameter, argument)
 }
 
