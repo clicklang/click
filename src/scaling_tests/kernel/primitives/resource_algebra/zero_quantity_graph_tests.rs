@@ -116,3 +116,4 @@ fn merged_unit_consumption_is_linear_in_the_units_it_merges() {
         );
     }
 
+}
