@@ -160,51 +160,45 @@ impl adler2::Adler32 {
      step_until(assignment(b, 6)); step();
      have b == at(tail_0_b, b) + at(tail_0_b, a);
      have b == (393126u32 + (1u32 + old((bytes[0] as u32))));
-     step_until(assignment(__rust_mir_149, 0));
+     step_until(statement(22));
      mark output_a;
-     step();
      have at(output_a, a) == 1u32 + old((bytes[0] as u32));
-     have statement(22).call(0).result == 65521u32;
-     have __rust_mir_149 == at(output_a, a) % statement(22).call(0).result;
-     have __rust_mir_149 == (1u32 + old((bytes[0] as u32))) % 65521u32 by {
-     rewrite(__rust_mir_149, at(output_a, a) % statement(22).call(0).result);
+     have (at(output_a, a) % 65521u32) == (1u32 + old((bytes[0] as u32))) % 65521u32 by {
      rewrite(at(output_a, a), 1u32 + old((bytes[0] as u32)));
-     rewrite(statement(22).call(0).result, 65521u32); solve();
+     solve();
      }
      have (at(output_a, a)) % 65521u32 < 65521u32;
-     have __rust_mir_149 < 65521u32 by solve() using { __rust_mir_149 == at(output_a, a) % statement(22).call(0).result; statement(22).call(0).result == 65521u32; at(output_a, a) % 65521u32 < 65521u32; };
-     have 0 <= to_integer(__rust_mir_149);
-     have to_integer(__rust_mir_149) <= 4294967295;
-     have to_integer(__rust_mir_149) < to_integer(65521u32);
-     have to_integer(__rust_mir_149) <= 65535 by solve() using { to_integer(__rust_mir_149) < 65521; };
-     mark reduced_a;
-     step_until(assignment(__rust_mir_151, 0));
+     have 0 <= to_integer((at(output_a, a) % 65521u32));
+     have to_integer((at(output_a, a) % 65521u32)) <= 4294967295;
+     have to_integer((at(output_a, a) % 65521u32)) < to_integer(65521u32);
+     have to_integer((at(output_a, a) % 65521u32)) <= 65535 by solve() using { to_integer((at(output_a, a) % 65521u32)) < 65521; };
+     step_until(statement(23));
      mark output_b;
-     step();
      have at(output_b, b) == 393126u32 + (1u32 + old((bytes[0] as u32)));
-     have statement(23).call(0).result == 65521u32;
-     have __rust_mir_151 == at(output_b, b) % statement(23).call(0).result;
-     have __rust_mir_151 == (393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32 by {
-     rewrite(__rust_mir_151, at(output_b, b) % statement(23).call(0).result);
+     have (at(output_b, b) % 65521u32) == (393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32 by {
      rewrite(at(output_b, b), 393126u32 + (1u32 + old((bytes[0] as u32))));
-     rewrite(statement(23).call(0).result, 65521u32); solve();
+     solve();
      }
      have (at(output_b, b)) % 65521u32 < 65521u32;
-     have __rust_mir_151 < 65521u32 by solve() using { __rust_mir_151 == at(output_b, b) % statement(23).call(0).result; statement(23).call(0).result == 65521u32; at(output_b, b) % 65521u32 < 65521u32; };
-     have 0 <= to_integer(__rust_mir_151);
-     have to_integer(__rust_mir_151) <= 4294967295;
-     have to_integer(__rust_mir_151) < to_integer(65521u32);
-     have to_integer(__rust_mir_151) <= 65535 by solve() using { to_integer(__rust_mir_151) < 65521; };
-     mark reduced_b;
+     have 0 <= to_integer((at(output_b, b) % 65521u32));
+     have to_integer((at(output_b, b) % 65521u32)) <= 4294967295;
+     have to_integer((at(output_b, b) % 65521u32)) < to_integer(65521u32);
+     have to_integer((at(output_b, b) % 65521u32)) <= 65535 by solve() using { to_integer((at(output_b, b) % 65521u32)) < 65521; };
      step_until(function.exit);
-     have to_integer(self.a) == to_integer(at(reduced_a, __rust_mir_149)) by { solve() using { 0 <= to_integer(at(reduced_a, __rust_mir_149)); to_integer(at(reduced_a, __rust_mir_149)) <= 65535; }; }
-     have to_integer(self.b) == to_integer(at(reduced_b, __rust_mir_151)) by { solve() using { 0 <= to_integer(at(reduced_b, __rust_mir_151)); to_integer(at(reduced_b, __rust_mir_151)) <= 65535; }; }
+     have statement(22).call(0).result == 65521u32 by known();
+     have self.a == ((at(output_a, a) % statement(22).call(0).result) as u16) by known();
+     have self.a == ((at(output_a, a) % 65521u32) as u16) by { rewrite(self.a, ((at(output_a, a) % statement(22).call(0).result) as u16)); rewrite(statement(22).call(0).result, 65521u32); known(); }
+     have to_integer(self.a) == to_integer((at(output_a, a) % 65521u32)) by { rewrite(self.a, ((at(output_a, a) % 65521u32) as u16)); solve() using { 0 <= to_integer((at(output_a, a) % 65521u32)); to_integer((at(output_a, a) % 65521u32)) <= 65535; }; }
+     have statement(23).call(0).result == 65521u32 by known();
+     have self.b == ((at(output_b, b) % statement(23).call(0).result) as u16) by known();
+     have self.b == ((at(output_b, b) % 65521u32) as u16) by { rewrite(self.b, ((at(output_b, b) % statement(23).call(0).result) as u16)); rewrite(statement(23).call(0).result, 65521u32); known(); }
+     have to_integer(self.b) == to_integer((at(output_b, b) % 65521u32)) by { rewrite(self.b, ((at(output_b, b) % 65521u32) as u16)); solve() using { 0 <= to_integer((at(output_b, b) % 65521u32)); to_integer((at(output_b, b) % 65521u32)) <= 65535; }; }
      have bytes[0] == old(bytes[0]) by solve() using {};
      have old(adler_spec_a(bytes, 1, 1)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by known();
      have old(adler_spec_b(bytes, 1, 1, 0)) == truncating_remainder(1 + to_integer(old((bytes[0] as i32))), 65521) by known();
      have to_integer(self.a) == to_integer((1u32 + old((bytes[0] as u32))) % 65521u32) by {
-     rewrite(to_integer(self.a), to_integer(at(reduced_a, __rust_mir_149)));
-     rewrite(at(reduced_a, __rust_mir_149), (1u32 + old((bytes[0] as u32))) % 65521u32);
+     rewrite(to_integer(self.a), to_integer((at(output_a, a) % 65521u32)));
+     rewrite((at(output_a, a) % 65521u32), (1u32 + old((bytes[0] as u32))) % 65521u32);
      solve();
      }
      apply(integer::uint32_remainder_to_integer(1u32 + old((bytes[0] as u32)), 65521u32));
@@ -219,8 +213,8 @@ impl adler2::Adler32 {
      solve();
      }
      have to_integer(self.b) == to_integer((393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32) by {
-     rewrite(to_integer(self.b), to_integer(at(reduced_b, __rust_mir_151)));
-     rewrite(at(reduced_b, __rust_mir_151), (393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32);
+     rewrite(to_integer(self.b), to_integer((at(output_b, b) % 65521u32)));
+     rewrite((at(output_b, b) % 65521u32), (393126u32 + (1u32 + old((bytes[0] as u32)))) % 65521u32);
      solve();
      }
      apply(integer::uint32_remainder_to_integer(393126u32 + (1u32 + old((bytes[0] as u32))), 65521u32));
