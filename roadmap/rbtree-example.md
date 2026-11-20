@@ -1533,7 +1533,7 @@ and rebuilt-layer negatives. Concurrent-reader termination and broader well-foun
 remain outside this sequential MVR obligation.
 
 Audit validation: all four `loop_decreases` fixtures pass under ordinary and
-candidate stable-loan semantics. Ordinary `click audit` checks all five smart
+candidate stable-borrow semantics. Ordinary `click audit` checks all five smart
 sites in `loop_decreases_strict_descendant.md` and all four in the
 `continue` structural-measure fixture. The rebuilt-layer negative reaches
 the descent refusal; its control without the measure verifies. The full unpiped

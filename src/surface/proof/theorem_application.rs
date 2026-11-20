@@ -992,6 +992,7 @@ fn theorem_application_argument_type(
         ContractEnvironment::new(context.values, context.array_refs)
             .with_parameters(context.parameters),
         algebraic_bindings,
+        context.integer_values,
         FixedStateFrame::new(
             context.pre_state,
             context.post_state,
@@ -1165,6 +1166,7 @@ pub(super) fn theorem_application_bindings(
                 ContractEnvironment::new(context.values, context.array_refs)
                     .with_parameters(context.parameters),
                 algebraic_bindings,
+                context.integer_values,
                 FixedStateFrame::new(
                     context.pre_state,
                     context.post_state,

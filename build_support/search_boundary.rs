@@ -256,7 +256,7 @@ impl Boundary<'_> {
             )
         {
             self.errors.push(format!(
-                "{}: {}: memory-loan presence must read the maintained count ({name})",
+                "{}: {}: memory-borrow presence must read the maintained count ({name})",
                 self.path, self.function
             ));
         }
@@ -274,7 +274,7 @@ impl Boundary<'_> {
             )
         {
             self.errors.push(format!(
-                "{}: {}: write checks must select a conflict witness, not collect loans ({name})",
+                "{}: {}: write checks must select a conflict witness, not collect borrows ({name})",
                 self.path, self.function
             ));
         }
@@ -296,7 +296,7 @@ impl Boundary<'_> {
             )
         {
             self.errors.push(format!(
-                "{}: {}: indexed conflict selection must not enumerate loan buckets ({name})",
+                "{}: {}: indexed conflict selection must not enumerate borrow buckets ({name})",
                 self.path, self.function
             ));
         }
@@ -313,7 +313,7 @@ impl Boundary<'_> {
             )
         {
             self.errors.push(format!(
-                "{}: {}: cache retention must not search loan protection ({name})",
+                "{}: {}: cache retention must not search borrow protection ({name})",
                 self.path, self.function
             ));
         }
@@ -397,7 +397,7 @@ impl Boundary<'_> {
                     | "descends_from"
             )
         {
-            self.errors.push(format!("{}: {}: loan sources must retain split origins, not reconstruct them by search or history ({name})", self.path, self.function));
+            self.errors.push(format!("{}: {}: borrow sources must retain split origins, not reconstruct them by search or history ({name})", self.path, self.function));
         }
         if self.path == "src/kernel/loans.rs"
             && (name == "view_occurrences_for_fact"
@@ -410,7 +410,7 @@ impl Boundary<'_> {
                     "find" | "find_map" | "filter" | "filter_map" | "collect"
                 )))
         {
-            self.errors.push(format!("{}: {}: loan binding selection must nominate an indexed identity, not scan observations ({name})", self.path, self.function));
+            self.errors.push(format!("{}: {}: borrow binding selection must nominate an indexed identity, not scan observations ({name})", self.path, self.function));
         }
         if ((self.path == "src/kernel/loops.rs" && self.function == "loop_body_resource_context")
             || (self.path == "src/kernel/loans.rs" && self.function == "attach_to_inserted_views"))

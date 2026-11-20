@@ -2,7 +2,7 @@
 
 The caller initializes a local struct and lends its fields through the existing
 `views` clauses. A nested call reborrows the same fields. Both calls close their
-loans before the caller writes the job again and leaves its scope.
+borrows before the caller writes the job again and leaves its scope.
 
 ```c filename=local_job.c
 struct local_job {

@@ -1417,10 +1417,10 @@ fn loan_preserving_havoc_uses_the_full_cell_footprint() {
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
         .lend(owner, reader, support, fact)
-        .expect("memory loan");
+        .expect("memory borrow");
     let ledger = ledger
         .apply(&opening.transition)
-        .expect("memory loan transition");
+        .expect("memory borrow transition");
 
     let retained = base.with_loop_memory_havoc_preserving_loans(
         Variable(10),

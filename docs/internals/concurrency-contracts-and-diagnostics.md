@@ -51,7 +51,7 @@ required `separate(...)` fact. Destruction removes this dependency; unlocking
 does not. Abstract preserving contracts now derive reservation dependencies
 from their owned inputs and require separation before allocation retirement.
 This retirement check adds no surface syntax. Initialization storage checks
-and write reservations are described below; synchronous use loans are implemented.
+and write reservations are described below; synchronous use borrows are implemented.
 Automatic-storage expiry is now checked as described below.
 
 The first lifecycle ownership layer now implements `owns mutex_live(mu)` in
@@ -109,7 +109,7 @@ ordinary memory ownership and allocator alignment. An address alone is not
 permission to initialize. Failures name the missing owned range or
 `Requires aligned(..., 8)`.
 
-Initialization checks known read-only and ended storage and active stable loans
+Initialization checks known read-only and ended storage and active stable borrows
 before moving an invariant or creating `mutex_live`. It forgets old byte values
 in the initialized footprint; adjacent cells remain available. Constant owned
 spans are indexed in byte units, so unrelated fields of the same object do not
@@ -129,7 +129,7 @@ attempted write and reserved byte ranges. No new surface predicate is added.
 The reservation index selects overlapping concrete byte intervals, including
 multiple mutexes inside one object. Ambiguous symbolic footprints require
 separation evidence. Checked runtime mutex calls bypass the ordinary-write gate
-but still respect stable storage loans and forget old representation values.
+but still respect stable storage borrows and forget old representation values.
 
 Independent preserving contracts now derive the same storage dependencies from
 owned `mutex_live` and `mutex_guard` inputs, including folded resources, named
@@ -240,26 +240,26 @@ assertion. It establishes `mutex_live(mu)` and places the assertion behind the
 lock. The initialized mutex owns/reserves its storage for runtime use; this does
 not authorize ordinary C writes to its representation.
 
-A call requiring `mutex_use(mu)` may receive a checked loan from an available
+A call requiring `mutex_use(mu)` may receive a checked borrow from an available
 `mutex_live(mu)` owner, or a checked reborrow from an existing use permission.
-Each loan has its own authority identity. Several workers can have distinct
-loans; no worker receives a duplicate owner or a copy of the protected assertion.
-An ordinary synchronous call returns the loan at its boundary when no returned
+Each borrow has its own authority identity. Several workers can have distinct
+borrows; no worker receives a duplicate owner or a copy of the protected assertion.
+An ordinary synchronous call returns the borrow at its boundary when no returned
 resource still depends on it. A returned guard retains the lifetime dependency
 until release: merely returning from `acquire_counter` cannot make the mutex
 destroyable again. The caller must retain the supplying owner or use permission;
-a guard cannot escape that lifetime. A worker's loan lasts until its matching
+a guard cannot escape that lifetime. A worker's borrow lasts until its matching
 join, including while it waits to acquire the mutex. Create failure recovers
-only the loan that was not transferred to a child.
+only the borrow that was not transferred to a child.
 
-Destruction requires lifecycle ownership with every use loan recovered and no
+Destruction requires lifecycle ownership with every use borrow recovered and no
 outstanding acquisition. It returns the protected assertion and ends this mutex
 initialization. Freeing the storage is a separate operation.
 
 This is a proposed extension of checked borrowing, not a reinterpretation of
 `views` over changing memory. A use permission preserves identity and lifetime;
 it does not freeze mutex state or protected payload. The owner cannot bypass a
-loan by destroying, reinitializing, or freeing through another pointer alias.
+borrow by destroying, reinitializing, or freeing through another pointer alias.
 
 Both new capabilities should be usable inside declared resources. Initially,
 use permissions should be returned or reborrowed, not independently retained
@@ -555,7 +555,7 @@ evidence supports that distinction.
 ## Technical obligations behind the human interface
 
 The kernel needs generative initialization identities tied to storage lifetimes,
-fresh acquisition identities, checked use loans, and a protected assertion held
+fresh acquisition identities, checked use borrows, and a protected assertion held
 exactly once. An abstract contract universally reasons about its input
 identities. A call instantiates those identities with the caller's resources;
 produced identities must be justified by checked transitions. Loop assertions
@@ -578,7 +578,7 @@ The reference ownership-transfer rule is the
 [Iris lock specification, slides 4–5](https://iris-project.org/tutorial-pdfs/lecture11-cas-spin-lock.pdf).
 It separates the shareable lock description, exclusive lock token, and protected
 assertion. Its basic interface does not include explicit destruction. The
-lifetime loans and initialization generations above are additional C-specific
+lifetime borrows and initialization generations above are additional C-specific
 obligations, not claims that the tutorial already proves Click's design.
 
 ## Review decisions and handoff criteria
@@ -591,13 +591,13 @@ The current design direction is:
    keyword or a general protocol-effect annotation.
 3. Permit automatic checked lending and reborrowing, provided a failure prints
    the exact Click resource or fact required and identifies a relevant blocked
-   loan when one exists.
+   borrow when one exists.
 4. Use preserved guard occurrences for continuity and consumed/produced guards
    for replacement. Do not add a separate surface continuity witness initially.
 5. Lead semantic proof failures with `Requires <Click proposition or resource
    clause>`. English supplies context; it does not replace the obligation.
 
-The remaining design work is the checked lifetime-loan and abstract-identity
+The remaining design work is the checked lifetime-borrow and abstract-identity
 rules, including returned guards and conditional loops. Their implementation
 must support these contracts without strengthening ordinary wrapper semantics
 or granting current-memory facts from obsolete acquisitions.
@@ -605,17 +605,17 @@ or granting current-memory facts from obsolete acquisitions.
 Implementation of each remaining rule should come with the accepted contract
 sketch, operation rules, and paired positive/negative examples for preserving,
 acquiring, releasing, releasing/reacquiring, conditional loop ownership, worker
-lifetime, returned guards that retain a use loan, and stale observations. Each
+lifetime, returned guards that retain a use borrow, and stale observations. Each
 negative example must pin the program-level obligation and its source location,
 not just an internal error string. Verification, expansion/reverification,
 profile, and audit must agree. The frozen C stays unchanged.
 
 ## Implemented use, guard, and lifecycle transport
 
-### Lifetime holds and use loans
+### Lifetime holds and use borrows
 
-The loan ledger separates possession of a live share from permission to read a
-resource description. A lifetime binding names the exact loan, scope, share,
+The borrow ledger separates possession of a live share from permission to read a
+resource description. A lifetime binding names the exact borrow, scope, share,
 and backing occurrence; every use checks those identities against the current
 ledger and participant. Holding a lifetime prevents scope closure and ownership
 recovery. It grants no memory view, ownership, new share, or recovery right.
@@ -625,7 +625,7 @@ rechecking share one possession check.
 
 The mutex adapter lends one concrete initialization's `mutex_live` owner into
 this ledger. It selects the exact owned occurrence and exchanges it for an owned
-`mutex_use(mu)` resource. That resource's identity includes the exact loan,
+`mutex_use(mu)` resource. That resource's identity includes the exact borrow,
 share, and initialization identity; two shares or initializations at the same
 printed address are not interchangeable. It is unit and exclusive, with no view,
 persistent core, memory permission, or `Count` observation. Ordinary exact
@@ -634,12 +634,12 @@ still rejects mutex owners, a stable view cannot be converted to mutex use, and
 a mutex reborrow cannot produce a stable view.
 
 Reborrowing exchanges a parent use occurrence for a child that pins exactly the
-supplying share and refers directly to the root loan's escrowed owner, so a
+supplying share and refers directly to the root borrow's escrowed owner, so a
 nested helper's acquisition does not search the chain of parent scopes. The
 child can acquire only that initialization; its holds keep every supplying scope
 open. Ending a reborrow requires the lender's close right and the complete child
 share, and restores only the pinned parent occurrence. Recovery requires the
-matching loan receipt, the whole root share, the lender's close/recovery rights,
+matching borrow receipt, the whole root share, the lender's close/recovery rights,
 and no outstanding hold or child scope; it returns the escrowed owner once. An
 ended, pinned, or stale share cannot be revived by a leftover resource or by a
 later child at the same address.
@@ -660,7 +660,7 @@ Independent proof entry binds each `mutex_use` input to a caller-supplied root
 with an abstract initialization description, no close or recovery right, no
 view, and no memory access. Ordinary call sites never use this assumption rule
 to satisfy a missing requirement. A preserving return requires the exact input
-resource, its complete share, the checked loan transitions connecting that
+resource, its complete share, the checked borrow transitions connecting that
 call's entry to its returned ledger, and no outstanding guard or child scope.
 Missing authority is reported as `Requires owns mutex_use(mu)`. The
 unary opaque-use path does not grant worker payload transfer. Typed
@@ -689,7 +689,7 @@ The modeled `pthread_mutex_lock` selects an owned `mutex_use` occurrence when
 present, validates its participant, live share, and initialization, and attaches
 a lifetime hold to the new guard; otherwise the lifecycle-owner path applies.
 Unlock consumes the guard, restores the invariant, and releases the hold. These
-hold/release transitions are retained in the checked loan-call evidence chain,
+hold/release transitions are retained in the checked borrow-call evidence chain,
 which must connect the exact predecessor and successor states.
 
 ### Protected-interface bindings
@@ -723,7 +723,7 @@ includes guards hidden in wrappers and undecided match arms; runtime-created
 receipts have their own indexed footprints. Unknown aliases are refused. Both
 direct lock/unlock and modular use-call summaries invalidate the mutex's
 representation bytes through an explicit runtime-authorized storage effect and
-reject conflicting stable storage loans.
+reject conflicting stable storage borrows.
 
 ### Named runtime binders
 
@@ -733,7 +733,7 @@ produces `lifetime`; destruction accepts that lifecycle name. Old `invariant`
 input maps are rejected as unknown binders. Preserving named `mutex_live`,
 `mutex_guard`, and `mutex_use` helpers use ordinary call maps; names are checked
 references to raw owned authority, not field-bearing composite instances, and
-primitive unfold is refused. A named lifetime can supply a use loan and a named
+primitive unfold is refused. A named lifetime can supply a use borrow and a named
 use can supply a reborrow; the call restores the caller's original name after
 recovery. See [the complete contract design](mutex-resource-contracts.md) for
 the supported subset.

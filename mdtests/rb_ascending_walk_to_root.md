@@ -252,6 +252,42 @@ function plug(ctx: Context, sub: RbTree) -> RbTree
     }
 }
 
+function ctx_parent_identity(model: Context) -> struct rb_node* {
+    match model {
+        Context::Top => 0,
+        Context::Left(identity, grandparent, color, sibling_model, up_model) =>
+            identity,
+        Context::Right(identity, grandparent, color, sibling_model, up_model) =>
+            identity,
+    }
+}
+
+theorem reroot_at_null(model: Context, parent: struct rb_node*) {
+    requires model == ctx_reroot(model, parent);
+    requires parent == 0;
+    ensures ctx_parent_identity(model) == 0 by {
+        match model {
+            Context::Top => { unfold(ctx_parent_identity(Context::Top)); solve(); },
+            Context::Left(identity, grandparent, color, sibling_model, up_model) => {
+                unfold(ctx_reroot(Context::Left(identity, grandparent, color, sibling_model, up_model), parent));
+                have identity == parent by known();
+                have identity == 0 by solve();
+                rewrite(model, Context::Left(identity, grandparent, color, sibling_model, up_model));
+                unfold(ctx_parent_identity(Context::Left(identity, grandparent, color, sibling_model, up_model)));
+                solve();
+            },
+            Context::Right(identity, grandparent, color, sibling_model, up_model) => {
+                unfold(ctx_reroot(Context::Right(identity, grandparent, color, sibling_model, up_model), parent));
+                have identity == parent by known();
+                have identity == 0 by solve();
+                rewrite(model, Context::Right(identity, grandparent, color, sibling_model, up_model));
+                unfold(ctx_parent_identity(Context::Right(identity, grandparent, color, sibling_model, up_model)));
+                solve();
+            },
+        }
+    }
+}
+
 struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                            struct rb_root* root) {
     consumes c: ctx_at(node, root);
@@ -369,6 +405,15 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                 },
             }
         }
+        otherwise {
+            have ctx_parent_identity(c.model) == 0 by {
+                apply(reroot_at_null(c.model, parent)) using {
+                    c.model == ctx_reroot(c.model, parent);
+                    parent == 0;
+                };
+            }
+            have plug(c.model, t.model) == plug(old(c.model), old(t.model)) by known();
+        }
     }
     match c.model ensuring {
         owns c: ctx_at(node, root);
@@ -376,18 +421,22 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
     } {
         Context::Top => {},
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {
-            unfold(ctx_reroot(Context::Left(identity, grandparent, color, sibling_model, up_model), parent));
-            have identity == parent by known();
+            have identity == 0 by {
+                unfold(ctx_parent_identity(Context::Left(identity, grandparent, color, sibling_model, up_model)));
+                solve();
+            }
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
-            have parent != 0 by solve();
-            contradiction(parent == 0);
+            have identity != 0 by known();
+            contradiction(identity == 0);
         },
         Context::Right(identity, grandparent, color, sibling_model, up_model) => {
-            unfold(ctx_reroot(Context::Right(identity, grandparent, color, sibling_model, up_model), parent));
-            have identity == parent by known();
+            have identity == 0 by {
+                unfold(ctx_parent_identity(Context::Right(identity, grandparent, color, sibling_model, up_model)));
+                solve();
+            }
             let { sibling: exit_sibling, up: exit_up } = unfold(c);
-            have parent != 0 by solve();
-            contradiction(parent == 0);
+            have identity != 0 by known();
+            contradiction(identity == 0);
         },
     }
     have plug(c.model, t.model) == t.model by {

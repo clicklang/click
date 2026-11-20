@@ -2,7 +2,7 @@
 
 `valid(p, n)` views `p[0..n]` and states that every cell of that range is
 defined. Its quantified `defined(p[k])` read lies inside the viewed range
-under the guard `0 <= k and k < n`, so it depends on the same loan as the
+under the guard `0 <= k and k < n`, so it depends on the same borrow as the
 view. `first` borrows the composite and opens it; `mark` holds only a borrowed
 view and folds the composite to produce it.
 

@@ -1548,7 +1548,7 @@ fn borrowed_observation_work_tracks_the_selected_body_instead_of_the_frame_or_lo
             viewed: head.clone(),
             hold: None,
         };
-        // Simulate previous projections from this loan and unrelated owners
+        // Simulate previous projections from this borrow and unrelated owners
         // in the same execution state.
         let old_views = (0..count)
             .map(|index| ResourceFact::view_token(format!("old_{index}"), Vec::new()))

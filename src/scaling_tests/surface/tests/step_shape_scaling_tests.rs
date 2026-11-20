@@ -2058,13 +2058,13 @@ fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
             curves.push((viewed, size, work));
         }
     }
-    eprintln!("write beside one loan (active, aliases, work): {curves:?}");
+    eprintln!("write beside one borrow (active, aliases, work): {curves:?}");
     for samples in curves.chunks(3) {
         assert!(
             samples
                 .iter()
                 .all(|(_, _, work)| *work <= samples[0].2 + 16),
-            "write scans aliases with fixed owner and loan: {samples:?}"
+            "write scans aliases with fixed owner and borrow: {samples:?}"
         );
     }
 }

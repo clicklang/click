@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn integer_equality_match_shape_scales_with_explicit_fields() {
+fn integer_comparison_match_shape_scales_with_explicit_fields() {
     for size in [8, 32, 128] {
         let _session = VerificationSession::enter();
         let mut scrutinee = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer; size]);
@@ -30,7 +30,7 @@ fn integer_equality_match_shape_scales_with_explicit_fields() {
         let matched =
             KernelMatch::import_integer(&mut KernelTermImport::default(), &native).unwrap();
         let (retained, work) = crate::instrumentation::measure_deterministic_work(|| {
-            matched.retains_known_integer_equality()
+            matched.retains_known_integer_comparison()
         });
         assert!(retained);
         assert!(work <= 4 * size + 16, "size={size}, work={work}");

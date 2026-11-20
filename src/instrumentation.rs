@@ -7,6 +7,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 /// The tactic name under which the implicit closer proving a simple tactic's
@@ -744,6 +745,54 @@ pub(crate) fn without_debug_checks<R>(operation: impl FnOnce() -> R) -> R {
     }
     #[cfg(not(debug_assertions))]
     operation()
+}
+
+thread_local! {
+    static REPLAY_DISCOVERY: RefCell<Option<ReplayDiscovery>> = const { RefCell::new(None) };
+}
+
+pub(crate) type ReplayDiscovery = Rc<RefCell<Option<String>>>;
+
+pub(crate) struct ReplayDiscoveryScope(Option<ReplayDiscovery>);
+
+impl ReplayDiscoveryScope {
+    pub(crate) fn enter(discovery: &ReplayDiscovery) -> Self {
+        Self(REPLAY_DISCOVERY.with(|active| active.borrow_mut().replace(Rc::clone(discovery))))
+    }
+}
+
+impl Drop for ReplayDiscoveryScope {
+    fn drop(&mut self) {
+        REPLAY_DISCOVERY.with(|active| *active.borrow_mut() = self.0.take());
+    }
+}
+
+/// Records the first attempt to use discovery during a selected claim's
+/// explicit replay. Search entry points that can refuse use the return value.
+pub(crate) fn replay_forbids_discovery(operation: &'static str) -> bool {
+    if in_uncharged_debug_check() {
+        return false;
+    }
+    REPLAY_DISCOVERY.with(|active| {
+        let active = active.borrow();
+        let Some(discovery) = active.as_ref() else {
+            return false;
+        };
+        let mut first = discovery.borrow_mut();
+        if first.is_none() {
+            let site = ACTIVE_TACTICS.with(|tactics| {
+                tactics.borrow().last().map_or_else(String::new, |active| {
+                    let tactic = &active.event;
+                    format!(
+                        " in `{}` at tactic {} (`{}`)",
+                        tactic.claim, tactic.source_index, tactic.tactic_name,
+                    )
+                })
+            });
+            *first = Some(format!("entered discovery `{operation}`{site}"));
+        }
+        true
+    })
 }
 
 /// A checked operation's own allowance, independent of any enclosing search.

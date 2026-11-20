@@ -3462,21 +3462,21 @@ impl BlockMembership for LocalEnvironment {
     }
 }
 
-/// Whether a havoc that preserves loans keeps the cell at this address: the
+/// Whether a havoc that preserves borrows keeps the cell at this address: the
 /// one rule, asked by the loop head and by the interface join.
 ///
 /// Unlike a call havoc this is not a separation question at all. A loop body,
 /// or the arm of a branch the join is merging, may write through any pointer
 /// it can reach, so the only cells that survive are the ones something else
 /// guarantees: storage the function declared and did not expose
-/// (`preserved_blocks`), and bytes an active loan protects from being written
+/// (`preserved_blocks`), and bytes an active borrow protects from being written
 /// at all. Only indexed protection at the exact coordinate origin retains a value;
 /// unknown relative bounds forget it without searching the ledger. That is why it consults
 /// the ledger rather than the assumptions, and
 /// why the resource tracker's havoc arms cannot answer it.
 ///
 /// A cell whose width is unknown fails closed, because keeping its value on a
-/// loan the ledger would have permitted a write through is a promise nothing
+/// borrow the ledger would have permitted a write through is a promise nothing
 /// proved (`docs/internals/stable-views.md`).
 fn loan_preserving_havoc_keeps_cell(
     pointer: &Address,
@@ -3498,7 +3498,7 @@ fn loan_preserving_havoc_keeps_cell(
 
 /// [`loan_preserving_havoc_keeps_cell`] for every slot of a run at once. A run
 /// in a preserved block keeps every slot; outside one, a slot survives only
-/// where a loan protects its bytes, so no loan over any of the run's bytes
+/// where a borrow protects its bytes, so no borrow over any of the run's bytes
 /// keeps none. Anything else is asked slot by slot. The run's slots hold no
 /// typed union views (a run is never seeded beside them), so each slot's
 /// width is its value's.
@@ -3587,7 +3587,7 @@ where
     union
 }
 
-/// The widest typed overlay recorded at each address, so that the loan
+/// The widest typed overlay recorded at each address, so that the borrow
 /// question above covers every byte the cell can be read as.
 fn union_overlay_widths(memory: &SymbolicMemory) -> BTreeMap<Address, u32> {
     let mut widths = BTreeMap::<Address, u32>::new();
@@ -5042,7 +5042,7 @@ impl SymbolicMemory {
     /// every arm caches with the same value is a reading each arm's memory
     /// already gives, so it is a reading of their join and stays; so does a
     /// run every arm holds unchanged. Only plain cells stay this way: a typed
-    /// union view, and a cell a union overlays, go by the loan rule alone.
+    /// union view, and a cell a union overlays, go by the borrow rule alone.
     /// The work is unchanged: one lookup per arm for each value visited.
     fn forget_loan_unprotected_values(
         &mut self,
@@ -5060,7 +5060,7 @@ impl SymbolicMemory {
             scope,
             |pointer, value| {
                 // A view is asked by its own width; a cell by the widest
-                // overlay at its address as well, so the loan question
+                // overlay at its address as well, so the borrow question
                 // covers every byte it can be read as.
                 let width = match value {
                     CachedValue::Cell(_) => union_widths.get(pointer).copied().unwrap_or(0),
@@ -8704,13 +8704,13 @@ impl ExecutionState {
                 "the aggregate destination",
                 self.aggregate_destination != other.aggregate_destination,
             ),
-            ("the loan ledger", self.loan_ledger != other.loan_ledger),
+            ("the borrow ledger", self.loan_ledger != other.loan_ledger),
             (
-                "the loan participant",
+                "the borrow participant",
                 self.loan_participant != other.loan_participant,
             ),
             (
-                "the loan view bindings",
+                "the borrow view bindings",
                 self.loan_view_bindings != other.loan_view_bindings,
             ),
             (
@@ -10109,7 +10109,7 @@ impl ExecutionState {
                 .loan_ledger()
                 .is_some_and(|ledger| !ledger.rewrite_separates_from_loans(range, assumptions))
             {
-                return Err("member private memory requires separation from active loans".into());
+                return Err("member private memory requires separation from active borrows".into());
             }
         }
         if produce && !definition.facts().is_empty() {
@@ -10726,7 +10726,7 @@ impl ExecutionState {
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {
         // ResourceContext owns the canonical persistent dependency root. The
         // ExecutionState field is only a shared mirror, so replacing a context does
-        // not scan unrelated resources or active loans.
+        // not scan unrelated resources or active borrows.
         self.loan_view_bindings =
             crate::kernel::loans::LoanViewBindings::from_state(resources.loan_dependency_state());
         self.resources = resources;

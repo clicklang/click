@@ -33,7 +33,7 @@ pub(in crate::surface) use execution_planning::test_with_scoped_loop_exit_facts;
 pub(in crate::surface) mod fact_reasoning;
 pub(in crate::surface) mod fixed_state_proofs;
 mod implicit_solve_scope;
-pub use implicit_solve_scope::without_implicit_solve_for_claim;
+pub use implicit_solve_scope::{check_audit_claim, without_implicit_solve_for_claim};
 pub(in crate::surface) mod driver;
 mod language_context;
 mod proof_object;

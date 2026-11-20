@@ -6,7 +6,7 @@ use super::*;
 
 /// One fixed view requirement, with independently varied irrelevant observations.
 /// Measure both the planner's current selection expression and the real call.
-/// Index preparation, resource insertion and loan construction are outside both.
+/// Index preparation, resource insertion and borrow construction are outside both.
 #[test]
 fn parent_loan_binding_selection_ignores_unbound_observations() {
     check_parent_binding_observation_scaling(&["early", "late", "two_bindings", "subrange"]);
@@ -605,7 +605,7 @@ fn lifetime_holds_scale_with_selected_shares() {
     for pair in samples.windows(2) {
         assert!(
             pair[1].1 <= pair[0].1 * 3 && pair[1].2 <= pair[0].2 * 3,
-            "lifetime holds scan unrelated loans: {samples:?}"
+            "lifetime holds scan unrelated borrows: {samples:?}"
         );
     }
 }
@@ -771,7 +771,7 @@ fn disjoint_memory_view_clustering_has_linear_overlap_work() {
                 callee,
             )
         });
-        let plan = plan.expect("disjoint concrete views should form independent loans");
+        let plan = plan.expect("disjoint concrete views should form independent borrows");
         assert_eq!(plan.stable_views().len(), size);
         samples.push((size, work));
     }
@@ -831,7 +831,7 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
                 callee,
             )
         });
-        let chain = chain.expect("overlapping chains should share backing loans");
+        let chain = chain.expect("overlapping chains should share backing borrows");
         assert_eq!(chain.stable_views().len(), size * 3);
         chain_samples.push((size, chain_work));
 
@@ -846,7 +846,7 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
                     callee,
                 )
             });
-        let equal_start = equal_start.expect("equal-start views should share backing loans");
+        let equal_start = equal_start.expect("equal-start views should share backing borrows");
         assert_eq!(equal_start.stable_views().len(), size * 3);
         equal_start_samples.push((size, equal_start_work));
     }
@@ -1127,7 +1127,7 @@ fn active_memory_witness_ignores_unrelated_live_loans() {
     for pair in samples.windows(2) {
         assert!(
             pair[1].1 <= pair[0].1.saturating_mul(2).saturating_add(8),
-            "active interval candidates scanned unrelated live loans: {samples:?}"
+            "active interval candidates scanned unrelated live borrows: {samples:?}"
         );
     }
 }
@@ -1329,7 +1329,7 @@ fn cache_protection_does_not_enumerate_overlapping_loans() {
     }
     assert!(
         samples.iter().all(|(_, work)| *work == samples[0].1),
-        "cache protection enumerated a loan bucket: {samples:?}"
+        "cache protection enumerated a borrow bucket: {samples:?}"
     );
 }
 
@@ -1402,7 +1402,7 @@ fn write_barrier_does_not_enumerate_overlapping_loans() {
         assert!(samples[0].2 > 0, "{name}: no work measured");
         assert!(
             samples.iter().all(|(_, _, work)| *work <= samples[0].2 + 4),
-            "{name}: one write must not enumerate all matching loans: {samples:?}"
+            "{name}: one write must not enumerate all matching borrows: {samples:?}"
         );
     }
 }
@@ -1470,7 +1470,7 @@ fn writes_without_active_memory_loans_do_not_walk_pointer_aliases() {
                 samples
                     .iter()
                     .all(|(_, _, work, diagnostic_work)| *work == 0 && *diagnostic_work == 0),
-                "{mode}, symbolic bounds {symbolic_bound}: no memory loans must mean no alias candidates: {samples:?}"
+                "{mode}, symbolic bounds {symbolic_bound}: no memory borrows must mean no alias candidates: {samples:?}"
             );
         }
     }
@@ -1508,7 +1508,7 @@ fn loan_access_requirement_is_retained_and_branch_local() {
         assert_eq!(empty.memory_access_requirement(query), None);
         samples.push((count, work, close_work));
     }
-    eprintln!("retained loan requirements (loans, construction, close): {samples:?}");
+    eprintln!("retained borrow requirements (borrows, construction, close): {samples:?}");
     for sample in &samples {
         assert_eq!(sample.1, samples[0].1);
         assert!(sample.2 <= samples[0].2 + 32);

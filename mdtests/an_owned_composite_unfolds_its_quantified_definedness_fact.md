@@ -3,7 +3,7 @@
 `bytes_set(p, n)` owns `p[0..n]` and states that each of those bytes is
 defined. `last` consumes the composite, unfolds it, and reads `p[3]`: the
 unfolded fact supplies the definedness the read needs. The folded instance
-held the bytes exclusively, so the fact needs no loan; the unfold accepts it
+held the bytes exclusively, so the fact needs no borrow; the unfold accepts it
 because the body's owned range covers every byte it reads, as an ambient
 owned range would. A non-quantified fact over the same range already
 unfolded; the quantified one was refused as reading "memory outside every

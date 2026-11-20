@@ -327,7 +327,7 @@ fn heap_free_loan_obligation_ignores_unrelated_aliases_and_loans() {
                 panic!("expected one conditional free path: {paths:?}");
             };
             let [obligation] = obligations.as_slice() else {
-                panic!("expected one loan obligation");
+                panic!("expected one borrow obligation");
             };
             assert!(matches!(
                 obligation.proposition(),

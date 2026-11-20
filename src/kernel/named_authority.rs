@@ -178,7 +178,7 @@ impl NamedMutexAuthorities {
         })
     }
 
-    /// Follow only the exact occurrence exchanged by the checked loan adapter.
+    /// Follow only the exact occurrence exchanged by the checked borrow adapter.
     /// A stale same-address alias is not selected by this indexed lookup.
     pub(in crate::kernel) fn apply_checked_mutex_updates(
         &self,
@@ -202,7 +202,7 @@ impl NamedMutexAuthorities {
 
     /// A checked synchronous call may lend a live authority or reborrow a use
     /// share, giving its callee a different use atom under the same proof name.
-    /// The caller supplies the checked loan transition; this map only verifies
+    /// The caller supplies the checked borrow transition; this map only verifies
     /// the selected source and new uniquely owned occurrence.
     pub(in crate::kernel) fn transport_checked_use(
         &self,

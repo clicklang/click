@@ -10,6 +10,7 @@ impl SearchPermission {
     pub(super) fn new() -> Self {
         #[cfg(test)]
         super::record_discovery("SearchPermission::new");
+        crate::instrumentation::replay_forbids_discovery("ambient fact search");
         Self { _private: () }
     }
 }

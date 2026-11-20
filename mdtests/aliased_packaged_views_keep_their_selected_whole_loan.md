@@ -1,4 +1,4 @@
-# Separate aliased views retain their selected whole-range loan
+# Separate aliased views retain their selected whole-range borrow
 
 Bounded return normalization keeps the two written views separate. The selected
 whole-range permission backs both pieces, and consuming the packaged owner

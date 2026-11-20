@@ -53,7 +53,7 @@ fn folded_view_preparation_uses_the_indexed_owner() {
         });
 
         assert!(!caller.resources().facts_are_materialized());
-        let plan = transfer.stable_view_plan.expect("one checked loan");
+        let plan = transfer.stable_view_plan.expect("one checked borrow");
         assert_eq!(plan.stable_views().len(), 1);
         let tail = MemoryRange::new(pointer, 1u32.into(), 2u32.into());
         assert_eq!(

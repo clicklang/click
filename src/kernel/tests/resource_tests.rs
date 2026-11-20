@@ -3095,11 +3095,11 @@ fn an_unbound_view_beside_its_owner_normalizes_into_the_owner() {
 }
 
 /// The other half of the same rule: a view whose occurrence carries a live
-/// loan dependency is never absorbed. The merged fact is a new authority with
+/// borrow dependency is never absorbed. The merged fact is a new authority with
 /// no occurrence, so absorbing a bound view would drop the binding that
-/// authorizes reading it and retire the loan by normalization — exactly what
+/// authorizes reading it and retire the borrow by normalization — exactly what
 /// the owner-observation rule in docs/internals/stable-views.md forbids ("Combining an owner and a live borrowed description
-/// cannot absorb the loan"). `ResourceContext::normalized`'s `loan_bound`
+/// cannot absorb the borrow"). `ResourceContext::normalized`'s `loan_bound`
 /// guard, not the family algebra, is what draws the line: `normalize_pair`
 /// sees two bare facts and cannot tell the two cases apart.
 #[test]
@@ -5173,7 +5173,7 @@ fn resource_context_hash(context: &ResourceContext) -> u64 {
     hasher.finish()
 }
 
-/// F7. A binding names its loan, scope, share, and support with fresh arena
+/// F7. A binding names its borrow, scope, share, and support with fresh arena
 /// counters, so two contexts built identically in different ledgers carry
 /// different raw identities. Comparing those counters reported such contexts
 /// unequal, which costs loop fixpoints and interning; the comparison and the

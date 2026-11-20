@@ -1999,50 +1999,23 @@ sidecar or mdtest, so resuming in a later file does not initialize earlier
 files. The resulting certified function environment stays alive while the
 audit handles that file.
 
-A claim whose sites are all selected is audited in one pass: the whole claim
-is expanded once (`click expand --claim`), the expanded claim must hold no
-smart tactic, and it gets the **verify** and **cold** checks below. Failure
-of whole-claim expansion fails the audit. Its cold check disables implicit
-automation only inside the selected claim, including nested proofs. Untouched
-neighboring claims and required modeled workers are still verified normally.
-The selected runtime label must be visited; a missing label is a failure rather
-than a check with automation left enabled. The unconditional
-`without_implicit_solve` API remains strict for every proof it visits. Expanding
-one site runs its whole claim, so this costs a fixed number of runs of the
-claim where the per-site path costs one per site. The per-site path that
-follows is used only when `--start-at`, `--max-sites` or `--changed-since` selects a
-claim in part. On that path each site gets the **expand**, **cold**, and
-**reexpand** checks, and each claim gets one **verify** check covering all of
-its sites:
+Each selected claim is audited as a batch:
 
-1. **expand** — run expansion directly for that location,
-   require the emitted proof container to differ from the on-disk original,
-   and require it to round-trip through the ordinary Surface Click parser
-   (there is no separate generated or Kernel Click grammar);
-2. **verify** — once the claim's last selected site has been expanded, apply
-   every site's rewrite to one copy of the proof and verify that in the
-   retained session. The rewrites of one claim are disjoint edits of one
-   proof, so the claim is verified once rather than once per site. Only when
-   that combined proof fails, or two edits overlap, is each site's rewrite
-   verified alone, which names the site whose rewrite fails. The session
-   entry point additionally requires the location to resolve to the same proof
-   unit as the baseline and the Click source to be identical outside that unit;
-   it then reverifies just that proof unit while reusing certified dependencies.
-   The retained session runs on a thread of its own: its certified environment
-   names states in that thread's kernel tables, which every other
-   verification on a thread replaces, and a session refuses to reuse an
-   environment whose tables were replaced;
-3. **cold original/rewritten** — on the first site of each claim, directly
-   verify the original and expanded versions of the same targeted proof unit
-   without the retained session. Later sites explicitly report
-   `cold comparison not run`;
-4. **reexpand** — check that the rewrite is an expansion fixed point. The check
-   is claim-based, because the rewrite moves and replaces tactics so the site
-   cannot be re-found by its original position: the audited smart tactic must be
-   gone from its claim's smart inventory and the emitted expansion must not
-   have introduced a new smart tactic, so the claim's smart-site multiset
-   strictly shrinks. A path-aligned certificate may remove multiple symmetric
-   occurrences at once.
+1. **Expansion** captures the whole claim when all sites are selected, or
+   captures the selected sites together when a cursor or site cap limits the
+   selection. The rewrite must round-trip through the ordinary Click parser.
+2. **Fixed point** checks that a whole-claim rewrite contains only explicit
+   tactics. With a partial selection, the check covers the replacement
+   regions and leaves unselected automation available.
+3. **Retained replay** checks that the rewritten source matches the baseline
+   outside the selected proof unit and reverifies that unit using the
+   certified dependency environment. The session runs on its own thread
+   because the environment refers to that thread's kernel tables.
+4. **Cold replay** verifies the rewritten unit without the retained session.
+   Whole-claim replay disables the implicit closer and monitors discovery in
+   the selected claim and its nested proofs. Neighboring claims and modeled
+   workers use their ordinary verification policy. A missing runtime claim
+   label fails. The original's cold work is measured for the report.
 
 A passing audit prints one bounded row per claim by default:
 
@@ -2053,13 +2026,8 @@ CLAIM [2/25] examples/owned-vector/vector.click  vector_copy.contract (1 sites) 
 Repeat `--claim LABEL` to select exact named proof units. Unknown labels are an
 error; labels present in multiple sidecars are rejected as ambiguous unless the
 audit target is narrowed to one sidecar or the claim is selected by location,
-`--claim FILE:LINE[:COLUMN]`. `--verbose` prints all per-site phase
-timings:
-
-```text
-[1/1] mdtests/scalar.md:16:47  scalar.arithmetic_result (solve) ... expanded (expand 1107 units, 25ms, cold original 1053 units, 13ms, cold rewritten 1240 units, 12ms, reexpand 163 units, 4ms)
-CLAIM scalar.arithmetic_result verify 1 rewrite(s) ... ok (1210 units, 17ms)
-```
+`--claim FILE:LINE[:COLUMN]`. `--verbose` adds the batch's phase costs, proof
+size, and throughput to its progress row.
 
 ### Small-stack canary
 
@@ -2075,21 +2043,20 @@ keep rule-local enum and proposition payloads out of their dispatchers'
 frames; they are stable stack budget boundaries. Changes to those boundaries
 must keep the small-stack canary green.
 
-### Deterministic performance comparison
+### Deterministic checking work
 
-Audit's verdicts count deterministic work units, the units the tactic budgets
-are charged (`click::instrumentation::measure_deterministic_work`), so the
-same source reaches the same verdict on any machine under any load. Comparing
-wall-clock time once let machine load fail a site. Raw site totals are
-informational because all verification phases naturally grow with proof-unit
-size. Audit compares the work of expanded cold verification with the
-original's in the same run: the expanded proof fails when it spends both more
-than twice the original's work and more than `--performance-slack` units
-beyond it (default 10,000). One comparison decides, since a repeat spends the
-same units. The failure reports both counts, the wall-clock times as
-information, and commands that materialize and profile the exact expanded
-artifact. `an_expansion_that_does_more_work_fails_the_comparison_deterministically`
-and `an_audit_under_cpu_load_spends_the_same_work` pin both directions.
+Cold replay checks the expanded proof against the verification phase budget,
+the per-tactic budgets, and each instrumented checked operation's own
+allowance. A full claim audit also rejects monitored discovery during replay.
+These checks use deterministic work units. Add multi-size regressions for
+operations whose cost might grow with unrelated context.
+
+Audit records the original cold work for diagnosis. An increase above both
+twice the original work and the original plus the configured
+`--performance-slack` (default 10,000 units) is highlighted on a passing claim.
+Verbose output includes the expanded proof's size and checking throughput.
+For a claim failure, the reproduction command selects the affected claim or
+its original partial selection.
 
 Each phase has a deterministic work budget: `--session-work-limit` (default
 100 million units, spent separately by each source's smart-site inventory
@@ -2098,8 +2065,8 @@ and session initialization), `--expansion-work-limit` and `--verification-work-l
 `examples/arena`'s at 6.5 million units, and the largest expansion or
 proof-unit verification under half a million. A process's first verification
 also charges the one-time load of the built-in standard library, about 24,000
-units; audit initializes its session before any comparison, so both compared
-runs are warm.
+units. Audit initializes its session before measuring either cold proof, so
+both replay measurements use an initialized standard library.
 
 A phase's wall-clock limit is crash containment only (default 10 minutes
 each), for a hung or CPU-starved run. The whole run is also bounded by
@@ -2118,7 +2085,7 @@ prints a restart of the same selection, preserving any supplied cursor.
 | `--session-work-limit` | 100000000 | work of one source's smart-site inventory, and of its original-sidecar session initialization |
 | `--expansion-work-limit` | 50000000 | work of one expansion, and of the re-expansion check |
 | `--verification-work-limit` | 50000000 | work of one retained or cold proof-unit verification |
-| `--performance-slack` | 10000 | minimum expanded-over-original work increase, beside the 2x ratio |
+| `--performance-slack` | 10000 | minimum work increase to highlight, beside the 2x ratio |
 | `--session-time-limit` | 10m | crash containment for session initialization |
 | `--expansion-time-limit` | 10m | crash containment for one expansion or re-expansion |
 | `--verification-time-limit` | 10m | crash containment for one proof-unit verification |
@@ -2169,8 +2136,8 @@ Every site starts from the unchanged baseline source, so an earlier rewrite
 cannot hide or cause a later failure. With `--keep-going`, a failed session is
 rebuilt from a fresh complete verification before the audit continues. The command exits
 unsuccessfully if session initialization, expansion, parsing, source isolation,
-proof-unit verification, the fixed-point check, a phase work budget, the relative
-performance contract, or the run limit fails.
+proof-unit verification, the fixed-point check, discovery during complete
+replay, a deterministic work allowance, or the run limit fails.
 
 Proof scripts have no runtime semantics. Re-verifying the same isolated claim
 is the semantic audit condition; requiring the automation and generated

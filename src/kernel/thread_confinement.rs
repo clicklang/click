@@ -1,7 +1,7 @@
 //! Definition-level restrictions on direct worker transfer.
 //!
 //! An authority control owns a population authority, and moving the control
-//! alone does not transfer the authority's loans or mutex custody. Until a
+//! alone does not transfer the authority's borrows or mutex custody. Until a
 //! synchronization protocol owns it, the control stays in its creating
 //! thread, as a mutex authority does. A resource containing such a control
 //! inherits the restriction. This property is computed once when definitions are
@@ -144,7 +144,7 @@ pub(super) fn confined_resource_name<'a>(
         | ResourceFact::View(
             Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_),
         ) => return None,
-        // Moving the atom alone does not transfer its loan share/hold custody.
+        // Moving the atom alone does not transfer its borrow share/hold custody.
         ResourceFact::Own(Resource::PopulationAuthority(description), _)
         | ResourceFact::View(Resource::PopulationAuthority(description)) => {
             return Some(description.family());

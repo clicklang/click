@@ -1959,7 +1959,7 @@ A literal is also a C string by construction. A call whose contract views
 string-literal bytes, for a pointer `p` into a literal takes that view from
 the literal: its bytes decide the resource's body facts and fix the
 instance's `len`, and since no path can write them the view is intrinsic read
-authority, as a `views` of read-only memory is, never a loan. `strlen("abc")`,
+authority, as a `views` of read-only memory is, never a borrow. `strlen("abc")`,
 `strlen("abc" + 1)`, and `%s` of a literal a conditional or a table chooses
 take it, in the program entry too
 (`mdtests/a_string_literal_provides_its_c_string_view.md`,

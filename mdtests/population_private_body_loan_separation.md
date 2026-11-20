@@ -1,4 +1,4 @@
-# A private body can open with separated stack and external loans
+# A private body can open with separated stack and external borrows
 
 ```c filename=population_private_body_loan_separation.c
 #include <pthread.h>

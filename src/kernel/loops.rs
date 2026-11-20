@@ -1914,7 +1914,7 @@ fn loop_state_components_match_at_back_edge_inner(
         changed.push("counted resource populations");
     }
     if top_state.loan_ledger != next_state.loan_ledger {
-        changed.push("stable-view loan authority");
+        changed.push("stable-view borrow authority");
     }
     // The head keeps a pointer local's subobject only if every back edge
     // returns the local to that same subobject.
@@ -1954,7 +1954,7 @@ fn loop_state_components_match_at_back_edge_inner(
         changed.push("pointer object classes");
     }
     if top_state.loan_participant != next_state.loan_participant {
-        changed.push("stable-view loan participant");
+        changed.push("stable-view borrow participant");
     }
     if top_state.loan_view_bindings != next_state.loan_view_bindings {
         changed.push("stable-view occurrence bindings");
@@ -4233,7 +4233,7 @@ fn loop_exit_residual_difference(
 /// Whether two exits hold the same resources: structurally, or after each
 /// context drops only its exact owner-supported observations and identity
 /// expansion caches, then is normalized once. An independent view, a live
-/// loan-bound view, a nontrivial expansion, or different quantities stay distinct.
+/// borrow-bound view, a nontrivial expansion, or different quantities stay distinct.
 fn loop_exit_resources_agree(
     left: &ResourceContext,
     right: &ResourceContext,
@@ -4264,11 +4264,11 @@ fn loop_exit_resources_agree(
 ///   kernel compares an unfolded body with its expected one. It merges only
 ///   what the resource algebra says is one authority (an unbound view held
 ///   twice, an owner and its own unbound view), including an exact
-///   owner-supported observation and identity cache, but never a loan-bound
+///   owner-supported observation and identity cache, but never a borrow-bound
 ///   view or a nontrivial supported description.
 ///
 /// Both are exact: a byte, a value, an owned or viewed fact, a quantity, a
-/// read-only block, a heap lifetime or a loan dependency that differs still
+/// read-only block, a heap lifetime or a borrow dependency that differs still
 /// differs afterwards. The equivalent component is then taken from the left
 /// state so the remaining components are compared by `==` as before.
 fn loop_exit_state_difference(
@@ -4387,8 +4387,8 @@ fn loop_exit_state_difference(
                 .map_or(0, |bindings| bindings.len())
         ));
     }
-    component!(loan_ledger, "stable-view loan authority");
-    component!(loan_participant, "stable-view loan participant");
+    component!(loan_ledger, "stable-view borrow authority");
+    component!(loan_participant, "stable-view borrow participant");
     component!(loan_view_bindings, "stable-view occurrence bindings");
     component!(thread_ledger, "thread completion authority");
     component!(mutex_ledger, "mutex authority");
@@ -6294,7 +6294,7 @@ pub(super) fn prepare_loop_top_state(
         }
         ranges
     });
-    // The stable-loan barrier is checked below, after the loop's declared
+    // The stable-borrow barrier is checked below, after the loop's declared
     // ownership. A loop that declares a resource the function does not hold
     // also derives its havoc footprint from that bad declaration, so running
     // the barrier first would report the overlap it caused instead of the
@@ -9029,8 +9029,8 @@ pub(super) fn havoc_loop_modified_locals(
         // overwritten by the loop body through a pointer. Address-escaped
         // locals were havoced above, so their preserved cells now hold fresh
         // symbolic values rather than stale ones.
-        // Cells under an active stable-view loan are stable across the loop
-        // by the loan itself; erasing them would only lose loan-supported
+        // Cells under an active stable-view borrow are stable across the loop
+        // by the borrow itself; erasing them would only lose borrow-supported
         // framing, never authority.
         state
             .memory
@@ -9075,7 +9075,7 @@ fn loop_head_loan_requirements(
         ranges.filter(|ranges| ranges.iter().all(|range| !range.is_unnamed_footprint()))
     else {
         return Err(
-            "loop memory havoc has no checked write set while a stable-view loan is active",
+            "loop memory havoc has no checked write set while a stable-view borrow is active",
         );
     };
     Ok(ranges

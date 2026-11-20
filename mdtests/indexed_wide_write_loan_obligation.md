@@ -1,4 +1,4 @@
-# A wide-index store supplies its loan separation explicitly
+# A wide-index store supplies its borrow separation explicitly
 
 ```c filename=wide_index_write.c
 struct E { unsigned long n; };

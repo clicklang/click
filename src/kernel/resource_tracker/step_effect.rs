@@ -984,7 +984,7 @@ fn seeded_cell_effect_store_by_store(
 ///   the declared ranges, drops the zeroed reading of every allocation those
 ///   ranges may reach, and inserts its two marker blocks. A loop havoc forgets
 ///   every cell outside the preserved scalar-local blocks and the
-///   loan-protected ones, and inserts its marker block; it changes no size,
+///   borrow-protected ones, and inserts its marker block; it changes no size,
 ///   no ended-local entry and no heap status at all. When every declared range
 ///   lies in an object proven distinct from this block:
 ///     * its cells keep their values across a call havoc, because block
@@ -1035,69 +1035,13 @@ fn block_effect(step: &MemoryDerivation, block: &AddressBase) -> StepEffect {
             unknown()
         }
     };
-    // A kind whose answer is still "stop", whatever it names. Naming this
-    // block is still `Affected`, so a refusal keeps saying "changed" rather
-    // than "may have changed" about the block's own declaration or release.
-    let stops = |named: Option<&AddressBase>| {
-        if named == Some(block) {
-            StepEffect::Affected
-        } else {
-            unknown()
-        }
-    };
-    match step {
-        MemoryDerivation::Store { pointer, .. }
-        | MemoryDerivation::RepresentationWrite { pointer, .. } => {
-            one_object(&pointer.base, BlockSeparation::StoreInDistinctBlock)
-        }
-        // Every store of a run writes the run's own block.
-        MemoryDerivation::CellsSeeded { run, .. } => {
-            one_object(&run.base().base, BlockSeparation::StoreInDistinctBlock)
-        }
-        MemoryDerivation::BlockDeclared {
-            block: declared, ..
-        } => one_object(declared, BlockSeparation::DeclarationOfDistinctBlock),
-        MemoryDerivation::HeapAllocated {
-            block: allocated, ..
-        } => one_object(allocated, BlockSeparation::AllocationOfDistinctBlock),
-        MemoryDerivation::HeapAllocationPending { .. }
-        | MemoryDerivation::HeapAllocationFailed { .. } => StepEffect::Separate(Separation::Block(
+    match block_version_effect(step) {
+        BlockVersionEffect::Object(changed, separation) => one_object(changed, separation),
+        BlockVersionEffect::Unchanged => StepEffect::Separate(Separation::Block(
             BlockSeparation::PendingAllocationMetadata,
         )),
-        MemoryDerivation::HeapFreed {
-            allocation_base, ..
-        }
-        | MemoryDerivation::ContractAllocationRetired {
-            allocation_base, ..
-        } => one_object(
-            &allocation_base.base,
-            BlockSeparation::ReleaseOfDistinctBlock,
-        ),
-        MemoryDerivation::LocalLifetimeEnded { block: retired, .. } => {
-            one_object(retired, BlockSeparation::ReleaseOfDistinctBlock)
-        }
-        // It writes no bytes, but the claims it moves are what authorize a
-        // read, and the edge names no allocation they could belong to.
-        MemoryDerivation::ContractAllocationClaimsChanged { .. } => stops(None),
-        MemoryDerivation::ObjectInitializationRecorded { pointer, .. } => {
-            // Initialization status changes only in this object's block.
-            one_object(
-                &pointer.base,
-                BlockSeparation::InitializationOfDistinctBlock,
-            )
-        }
-        // The state is the same but the cell map is not, and the edge names no
-        // cell, so nothing states agreement of its cached representation.
-        MemoryDerivation::CellObserved { .. } | MemoryDerivation::CellsForgotten { .. } => {
-            stops(None)
-        }
-        MemoryDerivation::BranchJoin { .. } => unknown(),
-        MemoryDerivation::CallHavoc { mutable_ranges, .. }
-        | MemoryDerivation::LoopHavoc {
-            mutable_ranges: Some(mutable_ranges),
-            ..
-        } => {
-            if mutable_ranges
+        BlockVersionEffect::WriteSet(ranges) => {
+            if ranges
                 .iter()
                 .all(|range| range.base().base.proven_distinct(block))
             {
@@ -1108,13 +1052,67 @@ fn block_effect(step: &MemoryDerivation, block: &AddressBase) -> StepEffect {
                 unknown()
             }
         }
-        // Without a checked write set the edge is an unconditional barrier:
-        // nothing can be shown separate from a body that may write anything it
-        // can reach.
-        MemoryDerivation::LoopHavoc {
+        BlockVersionEffect::Barrier => unknown(),
+    }
+}
+
+pub(in crate::kernel) enum BlockVersionEffect<'a> {
+    Object(&'a AddressBase, BlockSeparation),
+    WriteSet(&'a [MemoryRange]),
+    Unchanged,
+    Barrier,
+}
+
+/// The assumption-free inputs shared by the block walk and its static-storage
+/// index. The index classifies the named objects for all its supported blocks
+/// at once, while the walk can ask about one arbitrary block.
+pub(in crate::kernel) fn block_version_effect(step: &MemoryDerivation) -> BlockVersionEffect<'_> {
+    use BlockVersionEffect::*;
+    match step {
+        MemoryDerivation::Store { pointer, .. }
+        | MemoryDerivation::RepresentationWrite { pointer, .. } => {
+            Object(&pointer.base, BlockSeparation::StoreInDistinctBlock)
+        }
+        MemoryDerivation::CellsSeeded { run, .. } => {
+            Object(&run.base().base, BlockSeparation::StoreInDistinctBlock)
+        }
+        MemoryDerivation::BlockDeclared { block, .. } => {
+            Object(block, BlockSeparation::DeclarationOfDistinctBlock)
+        }
+        MemoryDerivation::HeapAllocated { block, .. } => {
+            Object(block, BlockSeparation::AllocationOfDistinctBlock)
+        }
+        MemoryDerivation::HeapAllocationPending { .. }
+        | MemoryDerivation::HeapAllocationFailed { .. } => Unchanged,
+        MemoryDerivation::HeapFreed {
+            allocation_base, ..
+        }
+        | MemoryDerivation::ContractAllocationRetired {
+            allocation_base, ..
+        } => Object(
+            &allocation_base.base,
+            BlockSeparation::ReleaseOfDistinctBlock,
+        ),
+        MemoryDerivation::LocalLifetimeEnded { block, .. } => {
+            Object(block, BlockSeparation::ReleaseOfDistinctBlock)
+        }
+        MemoryDerivation::ObjectInitializationRecorded { pointer, .. } => Object(
+            &pointer.base,
+            BlockSeparation::InitializationOfDistinctBlock,
+        ),
+        MemoryDerivation::CallHavoc { mutable_ranges, .. }
+        | MemoryDerivation::LoopHavoc {
+            mutable_ranges: Some(mutable_ranges),
+            ..
+        } => WriteSet(mutable_ranges),
+        MemoryDerivation::ContractAllocationClaimsChanged { .. }
+        | MemoryDerivation::CellObserved { .. }
+        | MemoryDerivation::CellsForgotten { .. }
+        | MemoryDerivation::BranchJoin { .. }
+        | MemoryDerivation::LoopHavoc {
             mutable_ranges: None,
             ..
-        } => stops(None),
+        } => Barrier,
     }
 }
 

@@ -430,7 +430,7 @@ pub(in crate::surface) struct FunctionSourceRegistry {
 /// One entry/root session per function proof, shared by its clause scripts.
 /// A new parent proof starts with fresh slots through `for_contract_proof`.
 /// Its immutable entry context is shared by all of that function's claim
-/// proofs. A context built twice would carry distinct fresh ledger and loan
+/// proofs. A context built twice would carry distinct fresh ledger and borrow
 /// identities, so separately proved claims could not be certified against one
 /// entry state. Building it once gives every claim the same entry.
 #[derive(Clone, Default)]

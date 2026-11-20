@@ -1,6 +1,6 @@
-//! Retained resource descriptor for active loan backing. An exact repeated
+//! Retained resource descriptor for active borrow backing. An exact repeated
 //! reborrow stays covered by its pinned parent. Updates follow one fixed-width
-//! loan-id path, and access requirements clone only the retained descriptor.
+//! borrow-id path, and access requirements clone only the retained descriptor.
 use super::{LoanId, MemoryRange, Resource};
 use std::sync::Arc;
 

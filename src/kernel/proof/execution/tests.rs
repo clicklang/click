@@ -64,7 +64,7 @@ use crate::kernel::{
     SpecExpression, SymbolicMemory, int32, program_function,
 };
 
-/// One arm state holding a checked view rooted in a fresh loan.
+/// One arm state holding a checked view rooted in a fresh borrow.
 fn arm_holding_a_view(name: &str) -> (ExecutionState, crate::kernel::loans::LoanViewBinding) {
     let support_fact = ResourceFact::own_token(format!("{name}_support"), Vec::new());
     let viewed = ResourceFact::view_token(format!("{name}_view"), Vec::new());
@@ -77,7 +77,7 @@ fn arm_holding_a_view(name: &str) -> (ExecutionState, crate::kernel::loans::Loan
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
         .lend(owner, reader, support, support_fact)
-        .expect("the arm's view is backed by a fresh loan");
+        .expect("the arm's view is backed by a fresh borrow");
     let binding = crate::kernel::loans::LoanViewBinding {
         loan: opening.loan,
         scope: opening.scope,

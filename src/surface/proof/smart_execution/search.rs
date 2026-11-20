@@ -271,6 +271,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_planned_execution_proposition_fact_transport");
+        if crate::instrumentation::replay_forbids_discovery("fact transport search") {
+            return Err(search_input.step_error("fact transport discovery needs explicit premises"));
+        }
         let ProofContext::Execution(context) = search_input.context.as_ref() else {
             return Ok(None);
         };
@@ -355,6 +358,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_execution_fact_transport_or_refusal");
+        if crate::instrumentation::replay_forbids_discovery("fact transport search") {
+            return Err(search_input.step_error("fact transport discovery needs explicit premises"));
+        }
         let ProofContext::Execution(_) = search_input.context.as_ref() else {
             return Err(search_input
                 .step_error("execution fact-transport search requires an execution proof"));
@@ -435,6 +441,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("fact_transport_candidate_search");
+        if crate::instrumentation::replay_forbids_discovery("fact transport search") {
+            return Err(search_input.step_error("fact transport discovery needs explicit premises"));
+        }
         // A known source and target need only an ordinary lookup. Construct
         // that proof directly, before any history or legacy premise planning.
         let source_fact =
@@ -1309,6 +1318,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     argument,
                     ContractEnvironment::new(context.values, context.array_refs),
                     bindings,
+                    context.integer_values,
                     FixedStateFrame::new(
                         context.pre_state,
                         context.post_state,

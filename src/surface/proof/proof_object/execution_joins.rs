@@ -16,7 +16,7 @@ fn join_arm_loan_evidence(
         .suffix_since(parent_evidence)
         .ok_or_else(|| {
             ClickError::new(format!(
-                "{label} then arm loan evidence does not descend from the branch root"
+                "{label} then arm borrow evidence does not descend from the branch root"
             ))
         })?;
     let else_suffix = arms[1]
@@ -25,7 +25,7 @@ fn join_arm_loan_evidence(
         .suffix_since(parent_evidence)
         .ok_or_else(|| {
             ClickError::new(format!(
-                "{label} else arm loan evidence does not descend from the branch root"
+                "{label} else arm borrow evidence does not descend from the branch root"
             ))
         })?;
     let joined = crate::kernel::concat_checked_loan_evidence(parent_evidence, &then_suffix);

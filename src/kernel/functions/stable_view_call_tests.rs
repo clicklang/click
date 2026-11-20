@@ -293,7 +293,7 @@ fn candidate_reader_escrows_owner_until_return() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("candidate transfer records a loan plan");
+        .expect("candidate transfer records a borrow plan");
     assert_eq!(plan.stable_views().len(), 1);
     assert!(
         !transfer.caller_resources_after_requirements.satisfies_fact(
@@ -377,7 +377,7 @@ fn candidate_composite_call_lends_primitive_body_and_recovers_head() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("composite transfer records a loan plan");
+        .expect("composite transfer records a borrow plan");
     assert_eq!(plan.stable_views().len(), 1);
     assert!(plan.ledger.has_active_memory_loans());
     let body_range = MemoryRange::new(
@@ -489,11 +489,11 @@ fn candidate_composite_with_body_facts_is_lendable() {
         "candidate_fact_bearing_reader",
         fact_bearing_cell_definition(),
     );
-    plan_composite_lend(&function).expect("a fact over the body's own cells is loan-stable");
+    plan_composite_lend(&function).expect("a fact over the body's own cells is borrow-stable");
 }
 
 /// A fact that claims liveness of storage outside the body, or one that
-/// reads a population count, is not stabilized by the loan.
+/// reads a population count, is not stabilized by the borrow.
 #[test]
 fn candidate_composite_with_unstable_facts_is_refused() {
     let liveness = composite_reader_with_definition(
@@ -637,7 +637,7 @@ fn plan_adapter_lend(
 
 /// The caller owns `wide(p)` over `p[0..2]`; the callee views `cell(p)`
 /// over `p[0..1]`. The lend escrows the owner the caller actually holds,
-/// `views cell(p)` joins that loan's permitted descriptions, and recovery
+/// `views cell(p)` joins that borrow's permitted descriptions, and recovery
 /// restores `wide(p)` exactly.
 #[test]
 fn candidate_composite_view_is_backed_by_a_covering_owned_composite() {
@@ -652,7 +652,7 @@ fn candidate_composite_view_is_backed_by_a_covering_owned_composite() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("the adapter lend records a loan plan");
+        .expect("the adapter lend records a borrow plan");
     assert_eq!(plan.stable_views().len(), 1);
     assert!(transfer.callee_resources.satisfies_fact(
         &ResourceFact::view_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]),
@@ -743,7 +743,7 @@ fn candidate_composite_view_with_an_unestablished_fact_is_refused() {
     let (_, transfer) = plan_adapter_lend(&function);
     let error = transfer.expect_err("an unestablished body fact is refused");
     // Assembling the view is a fold, so the refusal names the instance and
-    // the body fact it could not establish rather than a missing loan.
+    // the body fact it could not establish rather than a missing borrow.
     let RuntimeError::UnestablishedAssemblyFact { assembled, .. } = &error else {
         panic!("{error}");
     };
@@ -795,7 +795,7 @@ fn candidate_composite_view_is_materialized_from_the_caller_frontier() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("the materialized lend records a loan plan");
+        .expect("the materialized lend records a borrow plan");
     let lent = MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
@@ -1101,7 +1101,7 @@ fn candidate_evidence_rejects_definitionally_equal_resources_with_new_identity()
     );
 }
 
-/// Implicit local authority backs a checked loan without an owned escrow.
+/// Implicit local authority backs a checked borrow without an owned escrow.
 /// A synchronous call closes it before returning to its caller.
 #[test]
 fn candidate_local_array_view_uses_a_checked_loan_and_recovers() {
@@ -1447,7 +1447,7 @@ fn candidate_rejects_wrong_callee_participant_on_recovery() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("candidate transfer records a loan plan");
+        .expect("candidate transfer records a borrow plan");
     let wrong_participant = plan.caller_participant();
     let callee = callee_state_with_resource_transfer(callee, &transfer)
         .with_loan_participant(Some(wrong_participant));
@@ -1513,7 +1513,7 @@ fn candidate_joint_planner_reuses_one_escrow_for_two_aliases() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("candidate transfer records a loan plan");
+        .expect("candidate transfer records a borrow plan");
     assert_eq!(plan.stable_views().len(), 2);
     assert_eq!(
         plan.stable_views()[0].loan,
@@ -1565,15 +1565,15 @@ fn candidate_nested_reader_reborrows_and_restores_outer_view_binding() {
     let inner_plan = inner_transfer
         .stable_view_plan
         .as_ref()
-        .expect("nested transfer should use the loan plan");
+        .expect("nested transfer should use the borrow plan");
     let outer_plan = outer_transfer
         .stable_view_plan
         .as_ref()
-        .expect("outer transfer should use the loan plan");
+        .expect("outer transfer should use the borrow plan");
     assert_ne!(
         inner_plan.stable_views()[0].loan,
         outer_plan.stable_views()[0].loan,
-        "nested reader gets a child loan"
+        "nested reader gets a child borrow"
     );
     let inner_callee = callee_state_with_resource_transfer(inner_template, &inner_transfer);
     let (resources, ledger, participant, bindings, _) = recover_candidate_stable_view_resources(
@@ -2489,7 +2489,7 @@ fn composite_mutable_effect_paths(
 
 /// F6. The head of a composite view has no memory range, so comparing the
 /// declared effects against requirement ranges alone saw nothing here.
-/// The checked one-level frontier is what the loan protects, and an
+/// The checked one-level frontier is what the borrow protects, and an
 /// effect over one of its pieces is a proven overlap.
 #[test]
 fn candidate_rejects_mutable_effect_overlapping_a_composite_view_piece() {
@@ -2644,8 +2644,8 @@ fn candidate_wrong_scope_close_is_refused() {
         .0;
     let opening = ledger
         .lend(owner, reader, support, escrow)
-        .expect("loan opening");
-    let ledger = ledger.apply(&opening.transition).expect("loan apply");
+        .expect("borrow opening");
+    let ledger = ledger.apply(&opening.transition).expect("borrow apply");
     let refusal = ledger
         .end(opening.scope, reader)
         .expect_err("a non-owner cannot close the scope");
@@ -2747,7 +2747,7 @@ fn token_population_unit(population: &str, pointer: &Address) -> ResourceFact {
 
 /// The planner's exclusive reservation has no "N units out of a
 /// population whose count is at least N" step, and a token population
-/// protects no memory, so nothing about the loan ledger could supply one.
+/// protects no memory, so nothing about the borrow ledger could supply one.
 /// Such a requirement is planned beside a view the same call lends.
 #[test]
 fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
@@ -2779,7 +2779,7 @@ fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("the view clause still records a loan plan");
+        .expect("the view clause still records a borrow plan");
     assert_eq!(plan.stable_views().len(), 1);
     let viewed = MemoryRange::new(
         pointer.clone(),
@@ -2798,7 +2798,7 @@ fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
 }
 
 /// Both execution judgments step a sequence with one driver. A sequence
-/// whose first statement leaves abnormally carries that statement's loan
+/// whose first statement leaves abnormally carries that statement's borrow
 /// evidence out with it under either judgment; the concrete driver once
 /// rebuilt the path without it. Here a lending call runs first, so the
 /// evidence is what leaves.

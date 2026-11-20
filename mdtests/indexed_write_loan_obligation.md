@@ -1,4 +1,4 @@
-# An indexed write proves its loan obligation by restriction
+# An indexed write proves its borrow obligation by restriction
 
 The implicit proof must expand to ordinary containment and separation steps.
 

@@ -2,7 +2,7 @@ use super::*;
 
 impl ResourceContext {
     /// Derived storage carries no cached decisions. Each returned composition
-    /// consults its caller's current loan bindings and checked assumptions.
+    /// consults its caller's current borrow bindings and checked assumptions.
     fn composition_from_storage(&self, storage: std::sync::Arc<ResourceContextStorage>) -> Self {
         let pairings = if std::sync::Arc::ptr_eq(&storage, &self.storage) {
             self.memory_equalities

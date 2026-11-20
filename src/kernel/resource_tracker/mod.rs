@@ -1091,6 +1091,22 @@ thread_local! {
 /// along `base`. It always reports a version, because a subject it can separate
 /// from nothing crosses nothing and so answers `memory` itself.
 fn block_last_same_version_point(memory: &SharedMemory, block: &AddressBase) -> SharedMemory {
+    let indexed;
+    let memory = if block.is_static_storage_block() {
+        let (start, exact) = crate::instrumentation::measure_operation(
+            "kernel",
+            "canonical form",
+            "array-ref static block version",
+            || memory.indexed_static_block_version(block),
+        );
+        if exact {
+            return start;
+        }
+        indexed = start;
+        &indexed
+    } else {
+        memory
+    };
     let recorded = |key: &(crate::kernel::SharedMemory, AddressBase)| {
         BLOCK_VERSION_MEMO.with(|memo| memo.borrow().get(key).cloned())
     };
@@ -1098,13 +1114,8 @@ fn block_last_same_version_point(memory: &SharedMemory, block: &AddressBase) -> 
     if let Some(hit) = recorded(&key) {
         return hit;
     }
-    // Every state on the way to the version has the same version, so each one
-    // is recorded when the walk ends. Without that, a proof that uses one
-    // array fact after each of N steps walks the whole chain N times and
-    // costs N^2 hops; with it, a walk from a new state meets a recorded
-    // answer after one hop, so the whole proof costs one hop per state.
-    // The checked-call case in `an_array_fact_carried_across_declarations_and_calls_scales_linearly`
-    // covers this memoization.
+    // Each state crossed has the same version for this block. Memoizing the
+    // suffix lets later queries for this block reuse the walk.
     let mut path = Vec::new();
     let version = crate::instrumentation::measure_operation(
         "kernel",

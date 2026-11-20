@@ -482,8 +482,8 @@ pub(in crate::kernel) fn memory_write_storage_outcome(
     memory_write_ownership_outcome(state, range, assumptions)
 }
 
-/// Scalar writes report loan separation as an obligation. The driver chooses
-/// its explicit proof or ordinary solve; this operation never searches loans.
+/// Scalar writes report borrow separation as an obligation. The driver chooses
+/// its explicit proof or ordinary solve; this operation never searches borrows.
 fn memory_write_obligation_outcome(
     state: &ExecutionState,
     range: &MemoryRange,
@@ -587,7 +587,7 @@ fn write_program_lvalue_paths_for_initialization(
     // A same-type value copy to a local whose address is never taken
     // cannot use separation evidence from other owned resources. Its backing
     // cell, if any, is private. Copying a pointer does not access its pointee;
-    // all qualifier, ownership, and loan checks below still run.
+    // all qualifier, ownership, and borrow checks below still run.
     let direct_local_copy = value.program_type() == lvalue.value_type
         && matches!(&lvalue.storage, LValueStorage::Local { name }
             if state.locals.slot(name).is_none_or(|pointer|
@@ -847,7 +847,7 @@ fn write_program_lvalue_paths_for_initialization(
                 ))
             .then(|| value.clone());
             let value = value.into_native();
-            // The loan obligation names the evaluated source lvalue. Keep its
+            // The borrow obligation names the evaluated source lvalue. Keep its
             // address before storage chooses an equivalent owner's coordinates.
             let source_pointer = pointer.clone();
             if let Some(refusal) = subobject_access_refusal(
@@ -982,7 +982,7 @@ fn write_program_lvalue_paths_for_initialization(
                     obligations,
                 )]);
             }
-            // Ownership was established above. Loan separation is a proof
+            // Ownership was established above. Borrow separation is a proof
             // obligation for the driver, not an alias search during the store.
             let mut write_range = MemoryRange::new_with_element_width(
                 source_pointer,
@@ -2939,7 +2939,7 @@ fn execute_program_realloc_result_paths(
                     break Address::symbolic(identity);
                 }
             };
-            // Save the call-entry loan footprint. Only success retires the
+            // Save the call-entry borrow footprint. Only success retires the
             // old allocation, and intervening proof steps can change the ledger.
             let retirement_separation = state.loan_ledger().and_then(|ledger| {
                 let byte_pointer = super::expression::cast_pointer_value(
@@ -4000,7 +4000,7 @@ pub(in crate::kernel) fn execute_statement_paths(
                     )?);
                 }
                 // Control leaves the sequence with everything the first
-                // statement's path established, its loan evidence included.
+                // statement's path established, its borrow evidence included.
                 outcome @ (StatementOutcome::LoopTestFalse(_)
                 | StatementOutcome::Break(_)
                 | StatementOutcome::Continue(_)
@@ -4059,7 +4059,7 @@ pub(in crate::kernel) fn execute_statement_paths(
 }
 
 /// `statement` under `judgment`, after a prefix whose facts, obligations and
-/// loan evidence its paths carry first.
+/// borrow evidence its paths carry first.
 pub(in crate::kernel) fn execute_statement_paths_with_prefix(
     state: &ExecutionState,
     statement: &ProgramStatement,
@@ -4581,7 +4581,7 @@ fn execute_execution_statement_leaf_paths(
                         && let Some(ledger) = state.loan_ledger()
                     {
                         // A new hidden automatic object cannot be part of a
-                        // loan admitted before its lifetime began. Retain the
+                        // borrow admitted before its lifetime began. Retain the
                         // exact pre-declaration footprint: a later borrow of
                         // the object still changes the write prerequisite.
                         let pointer = declared.locals.slot(name).expect("new construction slot");
@@ -6016,7 +6016,7 @@ fn local_declaration_pointer(
 /// Construction authority belongs to the automatic object being retired.
 /// Consume its complete byte owner through the indexed supplier frontier;
 /// ordinary locals with implicit authority have no such fact to consume.
-/// Live loans and protocol reservations must be checked before calling this.
+/// Live borrows and protocol reservations must be checked before calling this.
 pub(in crate::kernel) fn retire_automatic_storage_owner(
     state: &mut ExecutionState,
     range: &MemoryRange,

@@ -165,10 +165,10 @@ pointer value, an external assumption is never a verified body).
 Each application prepares one resource transition: borrowed and consumed
 inputs, the caller residual, the callee's context, the memory-effect
 projection, and the post outputs. It has two purposes. A call site lends, so
-the views it passes become loans and recovery returns them. A function
+the views it passes become borrows and recovery returns them. A function
 boundary, the verified-body executors, the contract entry-state builder, and
 the outcome-through-contract applier, consumes the declared requirements
-definitionally; its input-view loan roots come from the proof's entry
+definitionally; its input-view borrow roots come from the proof's entry
 construction, so nothing is lent twice. The two agree on what the callee
 receives. The callee's pure preconditions and its returned borrows are read
 against the transferred clause set opened through its definitions, the way the
@@ -183,7 +183,7 @@ havoc opens an owned composite one level, the boundary a composite lend and
 
 Instance binders reach one kernel map whether a proof writes a call map or a
 named contract's proof arguments; an execution theorem's `as` map only renames
-written names before binding through one of those. The loan ledger, its laws,
+written names before binding through one of those. The borrow ledger, its laws,
 and the call boundary's lending and recovery are in
 [stable views](stable-views.md).
 
@@ -203,7 +203,7 @@ its cleanup and the point where the exception continues, so a proof steps
 through them as statements; the proof cursor and evidence checking enter it as
 an `ExceptionalEntry::Unwind` frame, distinct from a source `try`'s
 `ExceptionalEntry::Catch(binding)`. The language frontends decide which edges are
-legal; the kernel does not infer cleanup or loan recovery from lexical scope
+legal; the kernel does not infer cleanup or borrow recovery from lexical scope
 alone.
 
 The `scalar_int32` C++ exception profile is deliberately closed: C++20 on the pinned
@@ -223,7 +223,7 @@ factory; the runtime owns storage and destruction, and allocation failure is
 assumed to terminate. Direct exceptional interfaces can borrow raw memory:
 normal and throwing call successors share footprint-bounded havoc, but receive
 only their own postcondition family. Both successors use the existing joint
-resource-return and loan-recovery operations. Outcome claim cells keep borrowed
+resource-return and borrow-recovery operations. Outcome claim cells keep borrowed
 resource ensures open on throws instead of marking every normal-family cell
 vacuous. Named callback refinement remains pure `int32`.
 

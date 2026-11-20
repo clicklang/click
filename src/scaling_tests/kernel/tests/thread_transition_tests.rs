@@ -84,7 +84,7 @@ fn thread_recovery_work_depends_on_one_child_not_the_outstanding_registry() {
         });
         assert!(work > 0);
         samples.push((size, work));
-        // The last child's loan must survive even the oldest child's join.
+        // The last child's borrow must survive even the oldest child's join.
         assert!(
             next.parent()
                 .loan_ledger()

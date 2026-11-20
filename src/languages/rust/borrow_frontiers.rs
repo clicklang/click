@@ -1,6 +1,6 @@
 //! Checked absence of future uses for a selected scalar-reference binding.
 //! This is source evidence for subsequent local authority integration; it
-//! neither grants memory authority nor ends a production loan.
+//! neither grants memory authority nor ends a production borrow.
 
 use super::schema::{Expression as E, Function, MirStatement as S, MirTerminator as T, Type};
 use std::collections::{BTreeMap, BTreeSet};
@@ -44,7 +44,7 @@ pub struct CheckedExecutedScalarReferenceAccess<'a, 'e> {
 }
 
 /// A completed borrow assignment and its checked store ending on one selected
-/// execution path. This is an execution record, not a loan-recovery right.
+/// execution path. This is an execution record, not a borrow-recovery right.
 #[derive(Debug)]
 pub struct CheckedExecutedScalarReferenceEnd<'e> {
     pointer: &'e crate::kernel::Address,
@@ -602,7 +602,7 @@ fn transfer<'a>(
             Ok(())
         }
         S::BeginStorage { .. } | S::EndStorage { .. } => {
-            // Storage events alone prove no loan ending. Retain aliases until
+            // Storage events alone prove no borrow ending. Retain aliases until
             // an actual definition replaces them, even across StorageDead.
             Ok(())
         }
