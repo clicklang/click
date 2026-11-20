@@ -12,7 +12,7 @@ checked contract to show a result of 7 or 9 and a post-call cell still at 41.
 
 [`click.project.json`](click.project.json) declares one C++ unit, `basic`:
 the Clang arguments of the build and, for each source, the functions its
-sidecar verifies. The committed `click.project.lock.json` and `.click/basic/`
+sidecar verifies. The committed `.click/captures/manifest.json` and `.click/captures/basic/`
 artifacts verify offline, on any machine and after the checkout moves:
 
 From this directory, or from a copy of it anywhere, with an installed
@@ -29,7 +29,7 @@ for your Click version (Linux x86-64 or macOS arm64) and lock the project:
 
 ```sh
 click add cpp
-click import lock
+click capture
 ```
 
 Every pinned exporter writes the same lock and artifacts for the same inputs.

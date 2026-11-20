@@ -74,7 +74,7 @@ void bump_n(struct cell* node, int32 n) {
         invariant list_nonempty_or_null(l.model, node) == 1;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match l.model {
                 CellList::Nil => { contradiction(l.model == CellList::Nil); },
                 CellList::Cons(identity, value, tail_model) => {

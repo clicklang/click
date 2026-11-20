@@ -80,7 +80,7 @@ int32 inspect(struct node* p) {
         owns x: cell_at(p);
         invariant x.model == old(x.model);
 
-        preserve by {
+        maintain by {
             match x.model {
                 Cell::Missing => {
                     have Cell::Missing == old(x.model) by {

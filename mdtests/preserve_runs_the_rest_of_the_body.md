@@ -1,8 +1,8 @@
-# A `preserve` that stops early runs the rest of the body
+# A `maintain` that stops early runs the rest of the body
 
 A preservation script need not step every statement to the back edge. When a
 path's tactics run out inside the body, the rest of the body runs as an
-omitted `preserve` runs a whole one: straight-line statements are stepped, a
+omitted `maintain` runs a whole one: straight-line statements are stepped, a
 C `if` with more of the body after it whose arms both fall through is run and
 joined, and any other `if` splits into separate paths. Each path that reaches
 the body's end, a `continue` or a `break` closes its back edge as a written
@@ -48,7 +48,7 @@ int32 scan(int32 n) {
         invariant i >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             if i == 3 {
                 step();
                 step();

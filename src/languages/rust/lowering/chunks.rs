@@ -283,7 +283,9 @@ mod tests {
     #[test]
     fn chunk_iterator_fields_are_distinct_from_source_locals() {
         let mut export = crate::languages::rust::charon::decode(
-            include_bytes!("../../../../design/charon-trial/chunks/.click/chunks/chunks.rs.ullbc"),
+            include_bytes!(
+                "../../../../design/charon-trial/chunks/.click/captures/chunks/chunks.rs.ullbc"
+            ),
             "chunks.rs",
             include_bytes!("../../../../design/charon-trial/chunks/chunks.rs"),
         )
@@ -319,7 +321,9 @@ mod tests {
         };
 
         let mut export = crate::languages::rust::charon::decode(
-            include_bytes!("../../../../design/charon-trial/chunks/.click/chunks/chunks.rs.ullbc"),
+            include_bytes!(
+                "../../../../design/charon-trial/chunks/.click/captures/chunks/chunks.rs.ullbc"
+            ),
             "chunks.rs",
             include_bytes!("../../../../design/charon-trial/chunks/chunks.rs"),
         )

@@ -194,7 +194,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant old(state.phase) == SizedInsertContextDoubleFarPhase::Before(g, p, above, pv, gv, far);
                 invariant state.model == sized_context_double_far_before(g, p, node, above, pv, gv, far);
                 initialize by solve();
-                preserve by {
+                maintain by {
                     let { tree: loop_tree, link: link } = unfold(state);
                     unfold(sized_context_double_far_before(g, p, node, above, pv, gv, far));
                     have loop_tree.model == SizedTree::Node(g, above, Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty)), SizedTree::Empty) by {

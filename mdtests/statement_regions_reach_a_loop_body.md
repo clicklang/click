@@ -28,7 +28,7 @@ int32 walk(int32 n) {
         decreases n - i;
         invariant 0 <= i and i <= n;
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             step();
             have i == at(loop(0).statement(0).entry, i) + 1 by solve();
             have i == at(statement(2).statement(0).entry, i) + 1 by solve();

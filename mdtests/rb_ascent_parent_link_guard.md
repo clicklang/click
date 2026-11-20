@@ -198,7 +198,7 @@ struct rb_node* rb_up_while_right_child(struct rb_node* node, struct rb_node* pa
         invariant plug(c.model, t.model) == plug(old(c.model), old(t.model));
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Context::Top => { contradiction(c.model == Context::Top); },
                 Context::Left(identity, grandparent, color, sibling_model, up_model) => {

@@ -39,7 +39,7 @@ int32 walk(const uint8* p, int32 n) {
   invariant p == old(p) + (old(n) - n);
   invariant viewable(p[0..n]);
   invariant 0 <= total and total <= 255 * (old(n) - n);
-  preserve by {
+  maintain by {
    have 1 <= n by solve() using { n > 0; };
    have 0 <= to_integer(old(n) - n) by solve() using { n <= old(n); 0 <= n; old(n) <= 15; };
    have to_integer(old(n) - n + 1) <= to_integer(old(n)) by solve() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };

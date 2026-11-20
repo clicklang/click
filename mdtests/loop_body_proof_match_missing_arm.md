@@ -2,7 +2,7 @@
 
 Running at a loop-body frontier changes where a proof `match` may appear, not
 what it must prove. The case split is exhaustive only if every constructor has
-an arm, so a `preserve` body that handles one of two constructors is refused
+an arm, so a `maintain` body that handles one of two constructors is refused
 the same way a function-entry `match` is.
 
 ```c filename=loop_body_proof_match_missing_arm.c
@@ -53,7 +53,7 @@ void spin(struct cell* node, int32 n) {
         invariant c.model == old(c.model);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Sign::Pos(value) => {
                     have Sign::Pos(value) == old(c.model) by {

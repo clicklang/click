@@ -273,6 +273,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "let",
     "load",
     "loop",
+    "maintain",
     "mark",
     "match",
     "memory",
@@ -6641,7 +6642,7 @@ pub(crate) enum TacticChild<'a> {
     /// A block that continues the tactic's own proof: an `if`, `branch`,
     /// `match`, `cases`, induction or `outcomes` arm, an `open` body, a side
     /// of `both`, a `close_invariants by` body, or a loop's `initialize` or
-    /// `preserve` proof.
+    /// `maintain` proof.
     Continuing(ChildProof<'a>),
     /// A proof of a separate proposition, as a `have` body is: a `have`, the
     /// close proof of an `open`, or a step's obligation proofs.

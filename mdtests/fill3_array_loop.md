@@ -35,7 +35,7 @@ int32 fill3_array_loop(int32 p[3]) {
         };
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
             step();
             have to_integer(i) == to_integer(at(region(3).entry, i) + 1);

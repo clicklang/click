@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "guarded2.cpp": {
+              "compilation_database_sha256": "51a73b15f387a3749b9d6e88da091d4a77bd2c65ffb40c06dcbd743afcf728f8",
+              "dependencies": {},
+              "logical_source_sha256": "cb23b02f420a764a0cac94ab069bf87f283e1f37ba0a0fc352ba6cbb2042ac57",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fexceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "guarded2.cpp",
+                  "-o",
+                  "guarded2.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "guarded2.cpp",
+                "exceptions": true,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "cb23b02f420a764a0cac94ab069bf87f283e1f37ba0a0fc352ba6cbb2042ac57"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
+          "name": "clang"
+        },
+        "sources": {
+          "guarded2.cpp": {
+            "artifact": {
+              "bytes": 35142,
+              "path": ".click/captures/fixture/guarded2.cpp.click-cpp.json",
+              "sha256": "e88fdba77082e4e45577de51dffb729f2ab5f2b3fcf3b297dfd98a36022d4ef9"
+            },
+            "identity": "9443eb14dc0a3180b23d7ed6313fbb40d44e9d20cd9274f0f045bb7e5fe64a04",
+            "inputs": {
+              "$unit/guarded2.cpp": "cb23b02f420a764a0cac94ab069bf87f283e1f37ba0a0fc352ba6cbb2042ac57"
+            }
+          }
+        },
+        "unit": "b3c77f3949df1ba4b902e3f2149c15e90b07d259013494e007863f04d1c6c239"
+      }
+    }
+  }
+}

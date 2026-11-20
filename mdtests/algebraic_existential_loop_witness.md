@@ -32,7 +32,7 @@ int32 count_to(int32 n) diverges {
     loop diverges {
         invariant exists (fuel: Nat) { fuel == fuel };
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             step();
             let previous = obtain(exists (previous: Nat) { previous == previous });
             apply(nat_reflexive(previous));

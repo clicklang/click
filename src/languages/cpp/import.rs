@@ -252,10 +252,10 @@ fn entry_lock(entry: &Entry, logical: &str) -> Result<Lock, String> {
     let mut section = Section::deserialize(entry.section(LANGUAGE_NAME).expect("parsed for C++"))
         .map_err(|error| format!("parse the C++ lock section: {error}"))?;
     let part = section.sources.remove(logical).ok_or_else(|| {
-        format!("the project lock has no source `{logical}`; run `click import lock`")
+        format!("the project lock has no source `{logical}`; run `click capture`")
     })?;
     let recorded = entry.sources.get(logical).ok_or_else(|| {
-        format!("the project lock has no source `{logical}`; run `click import lock`")
+        format!("the project lock has no source `{logical}`; run `click capture`")
     })?;
     Ok(Lock {
         schema: part.schema,
@@ -637,7 +637,7 @@ fn check_rooted_preprocessor_files(
                 .map_err(|error| format!("resolve C++ input `{}`: {error}", accessed.display()))?;
             if resolved != fs::canonicalize(&path).unwrap_or_else(|_| path.clone()) {
                 return Err(format!(
-                    "C++ input `{}` changed its resolved target since the import lock; run `click import lock`",
+                    "C++ input `{}` changed its resolved target since the import lock; run `click capture`",
                     accessed.display()
                 ));
             }
@@ -653,7 +653,7 @@ fn check_rooted_preprocessor_files(
         )?;
         if hex_digest(&bytes) != entry.sha256 {
             return Err(format!(
-                "C++ input `{}` differs from its import lock; run `click import lock`",
+                "C++ input `{}` differs from its import lock; run `click capture`",
                 path.display()
             ));
         }
@@ -1442,7 +1442,7 @@ const FIXED_ARGUMENT_PREFIXES: &[&str] = &[
 
 /// Spellings that are a preprocessor input, a semantic setting the exporter
 /// observes from Clang, or affect only code generation and diagnostics
-/// (`docs/reference/cli/import.md#c-unit-arguments`).
+/// (`docs/reference/cli/capture.md#c-unit-arguments`).
 const ACCEPTED_ARGUMENTS: &[&str] = &[
     "-nostdinc",
     "-nostdinc++",
@@ -1522,7 +1522,7 @@ fn validate_unit_args(args: &[String], optimization: COptimization) -> Result<()
                 "unsupported C++ argument {position} `{argument}`; a unit accepts preprocessor \
                  inputs, `-funsigned-char`, `-fsigned-char`, `-ffreestanding`, and options \
                  affecting only code generation or diagnostics \
-                 (`docs/reference/cli/import.md#c-unit-arguments`)"
+                 (`docs/reference/cli/capture.md#c-unit-arguments`)"
             ));
         };
         let value = if argument.len() == option.len() {
@@ -1641,7 +1641,7 @@ pub(crate) fn load_unit(
     let lock = entry_lock(&entry, &source.logical_source)?;
     if lock.config_sha256 != unit.unit_digest {
         return Err(format!(
-            "the project lock for unit `{}` does not match its description in `click.project.json`; run `click import lock` to prepare it again",
+            "the project lock for unit `{}` does not match its description in `click.project.json`; run `click capture` to prepare it again",
             unit.unit_name
         ));
     }

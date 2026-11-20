@@ -38,7 +38,7 @@ uint32 sum(const uint8* bytes, uint64 length, uint64 start) {
         decreases 16u64 - done;
         views chunk[0..16];
         invariant done <= 16u64;
-        preserve by {
+        maintain by {
             have done <= 12u64;
             have to_integer(done + 4u64) <= to_integer(16u64) by { solve() using { done <= 12u64; }; }
             mark head;

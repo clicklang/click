@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "single_guard_step.cpp": {
+              "compilation_database_sha256": "28e9720e85f068d67b2d3d3c4ab19aa42d650f44ebc419cb2197b0acbe7a1f82",
+              "dependencies": {},
+              "logical_source_sha256": "2757971b4a589bcbed041a8d1dfa661512efa25e0e6f9d65ee36d303f3561c85",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fexceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "single_guard_step.cpp",
+                  "-o",
+                  "single_guard_step.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "single_guard_step.cpp",
+                "exceptions": true,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "2757971b4a589bcbed041a8d1dfa661512efa25e0e6f9d65ee36d303f3561c85"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
+          "name": "clang"
+        },
+        "sources": {
+          "single_guard_step.cpp": {
+            "artifact": {
+              "bytes": 30872,
+              "path": ".click/captures/fixture/single_guard_step.cpp.click-cpp.json",
+              "sha256": "436bf35fbb1fe7230755b6ee53e198c614e4c40444ec6333f103c8cff6c49ea8"
+            },
+            "identity": "a5a6c9536fed616d098e2a615c39f36630771c6b56d1ca6d34b939581728736e",
+            "inputs": {
+              "$unit/single_guard_step.cpp": "2757971b4a589bcbed041a8d1dfa661512efa25e0e6f9d65ee36d303f3561c85"
+            }
+          }
+        },
+        "unit": "a2754b7c4064c45a0666edbae138dca3ff29573c39eb5705d1033653f966470d"
+      }
+    }
+  }
+}

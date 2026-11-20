@@ -108,7 +108,7 @@ void probe(struct node* g, struct node* n) {
                 invariant n == old(n);
                 decreases 0;
                 initialize by { known(); }
-                preserve by {
+                maintain by {
                     let { word: w } = unfold(state);
                     let kept = fold(saved_right(n), { value: SavedPointer::At(saved) });
                     step(); step(); step(); step(); step(); step();

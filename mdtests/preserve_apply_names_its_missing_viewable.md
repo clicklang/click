@@ -145,7 +145,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
         views next[0..n];
         owns visited[0..n];
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             observe(visited[0..n]);
             mark iter;
             let previous = obtain(exists (previous: Nat) { walk(next, from, previous) == cur });

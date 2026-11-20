@@ -20,7 +20,7 @@ int32 c(int32 n) {
 } by {
     step();
     step();
-    loop as L {
+    loop L {
         invariant x >= 0 and x <= n;
         invariant x - 1 <= at(L.entry, x);
     }

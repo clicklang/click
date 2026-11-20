@@ -2,6 +2,61 @@
 use super::*;
 
 #[test]
+fn constructor_match_computation_visits_shared_terms_once() {
+    for depth in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+            name: "Wrap".into(),
+            fields: vec![AlgebraicValueType::Integer],
+        }]
+        .into();
+        let ty = AlgebraicType {
+            rigid: false,
+            name: "Boxed".into(),
+            arguments: vec![],
+            variants: variants.clone(),
+            schemas: std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from(
+                [(
+                    AlgebraicValueType::Algebraic {
+                        name: "Boxed".into(),
+                        arguments: vec![],
+                    },
+                    variants,
+                )],
+            ))),
+        };
+        let field = IntegerTerm::var(Variable(970101));
+        let binder = IntegerTerm::var(Variable(970102));
+        let mut left: SharedIntegerTerm = IntegerTerm::AlgebraicMatch {
+            scrutinee: Box::new(AlgebraicTerm {
+                algebraic_type: ty,
+                node: AlgebraicTermNode::Constructor {
+                    variant: "Wrap".into(),
+                    fields: vec![AlgebraicValue::Integer(field.clone())],
+                },
+            }),
+            arms: vec![AlgebraicIntegerMatchArm {
+                binding_names: Default::default(),
+                variant: "Wrap".into(),
+                bindings: vec![AlgebraicValue::Integer(binder.clone())],
+                body: binder.into(),
+            }],
+        }
+        .into();
+        let mut right: SharedIntegerTerm = field.into();
+        for _ in 0..depth {
+            left = IntegerTerm::Add(left.clone(), left).into();
+            right = IntegerTerm::Add(right.clone(), right).into();
+        }
+        let goal = Proposition::condition_is(ConditionTerm::IntegerEqual(left, right), true);
+        let (proved, work) =
+            crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal));
+        assert!(proved);
+        assert!(work <= 64 * depth + 1024, "{depth}: {work}");
+    }
+}
+
+#[test]
 fn cached_read_definedness_checks_only_the_selected_typed_cell() {
     let _session = VerificationSession::enter();
     let selected = Address {

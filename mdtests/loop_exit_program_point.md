@@ -26,7 +26,7 @@ int32 count_from_to(int32 i, int32 n) {
     ensures execute_until_crosses_loop: result == n;
     ensures advance_to_loop_exit: result == n;
 } by {
-    loop as count {
+    loop count {
         decreases n - i;
         invariant 0 <= i and i <= n;
     }

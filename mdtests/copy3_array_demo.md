@@ -58,7 +58,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                 enumerate();
             }
         }
-        preserve by {
+        maintain by {
             mark iteration;
             have contains(memory(dst[0..3]), memory(dst[i])) by {
                 apply(click::separation::contains_element(dst, 0, 3, i)) using { 0 <= i; i < 3; };

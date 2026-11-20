@@ -72,7 +72,7 @@ void countdown_two(int32 n) {
         invariant n >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Chain::Nil => { contradiction(c.model == Chain::Nil); },
                 Chain::Link(rest_model) => {

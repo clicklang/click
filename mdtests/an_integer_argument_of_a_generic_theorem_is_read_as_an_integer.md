@@ -50,7 +50,7 @@ unsigned long count(unsigned long n) {
         decreases n - i;
         invariant i <= n;
         invariant to_integer(i) == iterations;
-        preserve by {
+        maintain by {
             have shifted(Box<uint64>::Box(i), iterations) == iterations + 1 by {
                 apply(shifted_is_next(Box<uint64>::Box(i), iterations));
             }

@@ -105,7 +105,7 @@ pub(crate) fn body_safety_label(owner: &str) -> String {
 }
 
 /// The label of a loop phase proof: `f.loop(0).initialize` or
-/// `f.loop(0).preserve`.
+/// `f.loop(0).maintain`.
 pub(crate) fn loop_phase_claim_label(owner: &str, loop_index: usize, phase: &str) -> String {
     format!("{owner}.loop({loop_index}).{phase}")
 }
@@ -118,7 +118,7 @@ pub(crate) fn parse_loop_phase_claim_label<'a>(
 ) -> Option<(usize, &'a str)> {
     let rest = label.strip_prefix(owner)?.strip_prefix(".loop(")?;
     let (loop_index, phase) = rest.split_once(").")?;
-    matches!(phase, "initialize" | "preserve")
+    matches!(phase, "initialize" | "maintain")
         .then_some(())
         .and(loop_index.parse().ok())
         .map(|loop_index| (loop_index, phase))
@@ -192,16 +192,20 @@ mod tests {
         );
         assert_eq!(contract_claim_label("f"), "f.contract");
         assert_eq!(
-            loop_phase_claim_label("f", 2, "preserve"),
-            "f.loop(2).preserve"
+            loop_phase_claim_label("f", 2, "maintain"),
+            "f.loop(2).maintain"
+        );
+        assert_eq!(
+            parse_loop_phase_claim_label("f", "f.loop(2).maintain"),
+            Some((2, "maintain"))
         );
         assert_eq!(
             parse_loop_phase_claim_label("f", "f.loop(2).preserve"),
-            Some((2, "preserve"))
+            None
         );
         assert_eq!(parse_loop_phase_claim_label("f", "f.loop(2).other"), None);
         assert_eq!(
-            parse_loop_phase_claim_label("g", "f.loop(2).preserve"),
+            parse_loop_phase_claim_label("g", "f.loop(2).maintain"),
             None
         );
     }

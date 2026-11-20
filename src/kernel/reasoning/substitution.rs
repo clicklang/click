@@ -2631,7 +2631,16 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
             collect_bitvector_bound_variables(bits.native_compat(), variables)
         }
         Term::Integer(integer) => {
-            collect_integer_bound_variables(integer.native_compat(), variables)
+            if integer
+                .root()
+                .is_some_and(|root| matches!(root.node(), KernelTermNode::Match(_)))
+            {
+                // Integer match freshness uses the same carrier-aware walk
+                // as the native match, including its scrutinee and arm scopes.
+                super::variable_collection::collect_term_bitvector_variables(term, variables);
+            } else {
+                collect_integer_bound_variables(integer.native_compat(), variables);
+            }
         }
         Term::PointerOffset(offset) => {
             if let Some(root) = offset.root() {

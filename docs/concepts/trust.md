@@ -104,7 +104,7 @@ data layout. Click does not discover your compiler flags.
 
 For compiler import, the real compiler's preprocessor selects the source; it is
 a trusted dependency, not a formally checked step
-([`click import`](../reference/cli/import.md)).
+([`click import`](../reference/cli/capture.md)).
 
 ## C++ and Rust front ends
 

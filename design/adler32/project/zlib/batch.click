@@ -43,7 +43,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    };
    solve();
   }
-  preserve by {
+  maintain by {
    have 5552u64 <= len by known();
    have len == 5552u64 by solve() using { 5552u64 <= len; len <= 5552u64; };
    have zlib_prefix_count(old(len), len) == 0 by { unfold(zlib_prefix_count(old(len), len)); solve(); }
@@ -100,7 +100,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      have to_integer(sum2) <= 1415761 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n), 0); solve() using { to_integer(sum2) == 0; }; }
      solve();
     }
-    preserve by {
+    maintain by {
      apply(zlib_batch_prefix_limit(n));
      apply(zlib_batch_nonempty_prefix(n));
      apply(zlib_batch_remaining_limit(n));

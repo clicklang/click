@@ -1,6 +1,6 @@
-# An empty proof `match` arm inside `preserve` reports its frontier
+# An empty proof `match` arm inside `maintain` reports its frontier
 
-A `preserve` body may open a proof `match` on the loop binder's model and
+A `maintain` body may open a proof `match` on the loop binder's model and
 finish each arm's path separately. An arm with no tactics reaches the
 region's end at once, with the body's statements still ahead, so the rest of
 the body runs from there. Here it does not run, because the division may be by zero or the final addition may
@@ -64,7 +64,7 @@ int spin(struct node* p, int n) {
                 invariant t.model == Tree::Node(id, value, left_model);
 
                 initialize by solve();
-                preserve by {
+                maintain by {
                     match t.model {
                         Tree::Empty => { },
                         Tree::Node(id2, value2, left2) => { },

@@ -31,7 +31,7 @@ void follow(struct node* p, int32 more) {
         invariant p == old(p);
         invariant 0 <= more;
         initialize by solve();
-        preserve by {
+        maintain by {
             let { word: saved_word } = unfold(held);
             have p->parent_word == address(p) by { known(); }
             step(); step();

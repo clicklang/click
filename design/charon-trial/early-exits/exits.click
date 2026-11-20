@@ -40,7 +40,7 @@ fn find_pair(n: u32, m: u32) -> u32 {
     loop {
         decreases n - i;
         invariant i <= n;
-        preserve by {
+        maintain by {
             step_until(loop(1));
             loop {
                 decreases m - j;
@@ -59,7 +59,7 @@ fn first_hit(n: u32, m: u32) -> u32 {
         decreases n - i;
         invariant i <= n;
         invariant found <= n;
-        preserve by {
+        maintain by {
             step_until(loop(1));
             loop {
                 decreases m - j;
@@ -80,7 +80,7 @@ fn first_row(n: u32, m: u32) -> u32 {
         invariant iter.end == n;
         invariant iter.start <= n;
         invariant row <= n;
-        preserve by {
+        maintain by {
             step_until(loop(1));
             loop {
                 decreases iter.end - iter.start;
@@ -101,7 +101,7 @@ fn skip_rows(n: u32, m: u32) -> u32 {
         decreases n - i;
         invariant i <= n;
         invariant count <= m;
-        preserve by {
+        maintain by {
             step_until(loop(1));
             loop {
                 decreases m - j;

@@ -45,7 +45,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
                 normalize();
             }
         }
-        preserve by {
+        maintain by {
             mark iteration;
             step();
             have i >= 0 and i <= 3 by {

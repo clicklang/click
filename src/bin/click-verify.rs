@@ -1836,7 +1836,7 @@ mod tests {
     #[test]
     fn loop_entry_refusal_bounds_unexecuted_preservation_source() {
         let source = format!(
-            "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nstep_until(loop(0));\nloop {{ invariant i == 1; preserve by {{\n{}step();\n}} }}\nstep_until(function.exit);\n}}",
+            "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nstep_until(loop(0));\nloop {{ invariant i == 1; maintain by {{\n{}step();\n}} }}\nstep_until(function.exit);\n}}",
             "have 0 == 0 by { normalize(); }\n".repeat(300)
         );
         let (root, path) = temporary_project(
@@ -2113,7 +2113,7 @@ void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
         decreases n - i;
         invariant 0 <= i and i <= n;
         initialize by solve();
-        preserve by {
+        maintain by {
             have i >= 0 by { known(); }
             apply(positive(0));
             step();
@@ -2171,7 +2171,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         }
         source.push_str(
             r#"        initialize by solve();
-        preserve by { step(); }
+        maintain by { step(); }
     }
     have 0 == 1 by { normalize(); }
     step_until(function.exit); solve();

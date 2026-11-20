@@ -39,7 +39,7 @@ int32 shifted_copy_effect_uses_covering_separate(int32 dst[], int32 src[], int32
         invariant i >= 1;
         invariant i <= n;
         owns (dst + 1)[0..n - 1];
-        preserve by {
+        maintain by {
             have 0 <= i by { solve() using { i >= 1; }; }
             have contains(memory(dst[0..n]), memory(dst[i])) by {
                 apply(click::separation::contains_element(dst, 0, n, i)) using { 0 <= i; i < n; };

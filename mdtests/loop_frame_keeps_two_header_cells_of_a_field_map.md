@@ -49,7 +49,7 @@ void mark_tail(struct arena* arena, int32 end) {
         invariant arena->occupied[1] == old(arena->occupied[1]);
         decreases end - i;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
             step();
         }

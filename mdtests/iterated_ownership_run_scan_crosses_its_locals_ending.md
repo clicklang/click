@@ -70,7 +70,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
     let run = fold(arena_scan(data, occupied, capacity), {
         lo: 0, hi: 0
     });
-    loop as find_first_free_run {
+    loop find_first_free_run {
         decreases capacity - i;
         owns run: arena_scan(data, occupied, capacity);
         invariant run.hi == i;
@@ -78,7 +78,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
         invariant 0 <= run_length and run_length <= i;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             mark iteration;
             let { lo: lo, hi: hi } = unfold(run);
             have hi == i by {

@@ -32,7 +32,7 @@ int32 walk(int32 s, int32 n) {
         decreases n - i;
         invariant 0 <= i;
         invariant to_integer(i + 1) == to_integer(i + 1);
-        preserve by {
+        maintain by {
             step();
             have i <= n;
             have i < 2147483647 by { solve() using { i <= n; n < 2147483647; }; }

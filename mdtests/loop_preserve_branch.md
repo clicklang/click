@@ -36,7 +36,7 @@ int32 loop_preserve_branch(int32 n) {
         invariant i >= 0;
         invariant i <= n;
         decreases n - i;
-        preserve by {
+        maintain by {
             if i < 0 {
                 step();
                 step();

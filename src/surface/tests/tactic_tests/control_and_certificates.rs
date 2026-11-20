@@ -1152,7 +1152,7 @@ fn tactic_certificate_rejects_a_bare_invariant_closure() {
 /// Serialized evidence is admitted by the same rule as source text: a
 /// structural `loop` step whose phase was never planned is a smart proof, and
 /// `from_steps` refuses it exactly as `from_proof_tactics` refuses an omitted
-/// `preserve by`.
+/// `maintain by`.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_10")]
 fn step_certificate_rejects_a_loop_step_with_an_unplanned_phase() {
@@ -1180,7 +1180,7 @@ fn step_certificate_rejects_a_loop_step_with_an_unplanned_phase() {
     let error = ProofCertificate::from_steps(vec![ProofStep::Loop(unplanned)])
         .expect_err("an unplanned preservation phase is not a certificate");
     let message = error.message().to_string();
-    assert!(message.contains("loop `preserve`"), "{message}");
+    assert!(message.contains("loop `maintain`"), "{message}");
     assert!(message.contains("the implicit closer"), "{message}");
 }
 

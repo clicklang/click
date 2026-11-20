@@ -61,7 +61,7 @@ click verify examples/rbtree/rbtree-insert
 
 The sidecar imports the model from the sibling project, so its project root is
 `examples`, the nearest directory holding both. `--trace-to` reaches the
-tactics inside the fixup's proof `match` arms and its `preserve` body:
+tactics inside the fixup's proof `match` arms and its `maintain` body:
 
 ```sh
 click verify --trace-proof __rb_insert --trace-to LINE examples/rbtree/rbtree-insert/rbtree_insert.click

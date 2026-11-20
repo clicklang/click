@@ -425,7 +425,7 @@ fn implicit_loop_closure_is_smart() {
     let source = r#"
         verifying "f.c";
         int32 f(int32 n) { requires n == 2; ensures result == 0; } by {
-            loop { invariant n == 2; preserve by { step(); } }
+            loop { invariant n == 2; maintain by { step(); } }
             step_until(function.exit); solve();
         }
     "#;
@@ -2500,7 +2500,7 @@ void run(int32 n, int32 x) { requires n >= 0; requires x == 7; ensures x == 7; }
         decreases n;
         invariant n >= 0;
         invariant x == 7;
-        preserve by {
+        maintain by {
             step();
             have n >= 0 by { solve(); }
             have x == 7 by { known(); }
@@ -2541,7 +2541,7 @@ void run(int32 total) {{ requires 0 <= total; requires total <= 1000; ensures 0 
   invariant 0 <= remaining;
   invariant remaining <= total;
   {invariants}
-  preserve by {{ step();  }}
+  maintain by {{ step();  }}
  }}
  step_until(function.exit); solve();
 }}
@@ -3139,7 +3139,7 @@ fn loop_have_budget_refusal_retains_checked_store_trace() {
             loop {
                 invariant i >= 0;
                 initialize by { normalize(); }
-                preserve by {
+                maintain by {
                     step();
                     have cell[0] == value + 1 by { solve(); }
                 }
@@ -3229,7 +3229,7 @@ uint64 drain(uint64 len) {
   invariant len == 0u64 or len == 16u64;
   invariant len == 16u64;
   initialize by { solve(); }
-  preserve by {
+  maintain by {
    step();
    have len == 0u64 by solve();
    have to_integer(len) == 0 by solve() using { len == 0u64; };
@@ -3353,7 +3353,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
             loop {
                 invariant len == 16u64;
                 initialize by known();
-                preserve by {
+                maintain by {
                     if flag == 0 {
                         step();
                         step();
@@ -3917,7 +3917,7 @@ fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
             loop {
                 invariant true;
                 initialize by { normalize(); }
-                preserve by {
+                maintain by {
                     mark before_write; step();
                     transport(at(before_write, p[0] == 7), p[0] == 7) using {
                         separate(memory(p[0]), memory(q[0]));
@@ -4071,7 +4071,7 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
                 invariant p[0] == 7;
                 decreases 0;
                 initialize by { known(); }
-                preserve by {
+                maintain by {
                     mark before;
                     step();
                     transport(at(before, p[0] == 7), p[0] == 7);
@@ -4352,7 +4352,7 @@ fn failed_invariant_after_branch_join_reports_the_join() {
                 loop {
                     invariant len == 16u64;
                     initialize by known();
-                    preserve by { branch { true => { step(); } false => { step(); } } }
+                    maintain by { branch { true => { step(); } false => { step(); } } }
                 }
                 step_until(function.exit); solve();
             }

@@ -63,7 +63,7 @@ void mark_and_swap(struct arena* arena, int32 start, int32 end) {
         initialize by {
             solve();
         }
-        preserve by {
+        maintain by {
             step();
             step();
         }

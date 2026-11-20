@@ -80,7 +80,7 @@ fn last(xs: &[i64]) -> i64 {
         invariant xs.len() <= 1000u64;
         invariant iter.len() <= xs.len();
         invariant iter.as_slice() == xs + (xs.len() - iter.len());
-        preserve by {
+        maintain by {
             if 0u64 < iter.len() {
                 mark iteration;
                 have to_integer(xs.len() - iter.len()) < 18446744073709551615;

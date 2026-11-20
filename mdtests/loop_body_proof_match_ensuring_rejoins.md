@@ -53,7 +53,7 @@ void spin(struct cell* node, int32 n) {
         invariant i <= n;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model ensuring {
                 owns c: cell(node);
             } {

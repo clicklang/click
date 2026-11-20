@@ -28,7 +28,7 @@ int32 count_to(int32 n) {
         invariant 0 <= i;
         invariant i <= n;
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             have to_integer(i + 1) <= 99;
             step();
         }

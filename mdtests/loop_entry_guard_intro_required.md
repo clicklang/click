@@ -45,7 +45,7 @@ int32 loop_entry_guard_intro_required(int32 p[3]) {
                 normalize();
             }
         }
-        preserve by solve();
+        maintain by solve();
     }
     step();
     solve();

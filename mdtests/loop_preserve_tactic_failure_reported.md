@@ -1,6 +1,6 @@
-# A tactic that fails inside `preserve` reports its own failure
+# A tactic that fails inside `maintain` reports its own failure
 
-The frontier report an unfinished `preserve` gets
+The frontier report an unfinished `maintain` gets
 ([`loop_preserve_frontier_report.md`](loop_preserve_frontier_report.md)) is for
 a body that ran out of *written* tactics, not for one whose tactics failed. A
 tactic that cannot be checked stops the body where it stands and its own
@@ -9,7 +9,7 @@ script, so the frontier report must not displace it.
 
 `count_down`'s body is one statement and its preservation proof is complete,
 except that it opens with a `have` stating something false. The report names
-the tactic, by its place in the `loop` tactic's `preserve` script, and the
+the tactic, by its place in the `loop` tactic's `maintain` script, and the
 missing fact, not the loop's unfinished frontier.
 
 ```c filename=count_down.c
@@ -36,7 +36,7 @@ int32 count_down(int32 n) {
         invariant i >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             have i < 0 by solve();
             step();
         }
@@ -47,5 +47,5 @@ int32 count_down(int32 n) {
 ```
 
 ```expect
-fail: `count_down.contract` tactic 2 (`loop`), `preserve` tactic 0: `have` failed
+fail: `count_down.contract` tactic 2 (`loop`), `maintain` tactic 0: `have` failed
 ```

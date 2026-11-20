@@ -36,7 +36,7 @@ uint64 lp(const uint8* b, uint64 n) {
             have n % 4u64 <= n;
             solve();
         }
-        preserve by {
+        maintain by {
             if 4u64 <= vl {
                 have n % 4u64 <= n;
                 have to_integer((n - n % 4u64 - vl) + 4u64) <= to_integer(n);

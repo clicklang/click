@@ -44,7 +44,7 @@ void bump_other(struct cell* p, struct cell* q, int32 n) {
         invariant i <= n;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
             step();
         }

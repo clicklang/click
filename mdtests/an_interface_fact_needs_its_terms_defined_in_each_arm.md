@@ -48,7 +48,7 @@ int32 bubble_pass3(int32 p[3]) {
             unfold(all_le_range(p, 0, j, p[j]));
             solve();
         }
-        preserve by {
+        maintain by {
             unfold(all_le_range(p, 0, j, p[j]));
             have p[0] <= p[j] by {
                 if j == 0 {

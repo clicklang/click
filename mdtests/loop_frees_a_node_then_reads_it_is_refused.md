@@ -70,7 +70,7 @@ void release(struct node* p) {
         decreases links_len(x.model);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match x.model {
                 Links::Nil => { contradiction(x.model == Links::Nil); },
                 Links::Cons(rest_model) => {

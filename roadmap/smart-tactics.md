@@ -96,6 +96,11 @@ equation that raises and lowers at the same version point. Read selection
 through unrelated symbolic addresses needs a checked way to identify the
 affected storage.
 
+Array arguments can skip a recorded suffix of disjoint local stores and
+declarations. The block selector still handles other effects, and native
+array arguments still use the memory key. The scalar naming walk is a
+separate caller of the same block routine.
+
 ## Reading the inventory
 
 - **Scoped evidence:** named tests cover particular routes and growth axes;
@@ -237,10 +242,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 1 | 1 |
-| `examples/` | 11 | 70 |
+| `mdtests/` | 0 | 0 |
+| `examples/` | 10 | 61 |
 | `library/` | 0 | 0 |
-| Total | 12 | 71 |
+| Total | 10 | 61 |
 
 Positive fixtures also supply exact input text to expansion and mutation tests.
 Migrate those inputs together with their tests and keep the smart proof inputs.
@@ -540,8 +545,8 @@ and branch boundaries, mutex writes, and direct and modular construction now
 check retained loan evidence or emit separation obligations. Automatic storage
 retirement and initialization use the object-identity index. Verified calls
 check each bounded write separately and refuse unnamed write effects with a
-live memory loan. The [rbtree insertion wrappers](rbtree-example.md#focused-verification-on-current-master)
-exercise that refusal with a recursive tree and a live callback-table view.
+live memory loan. The [recorded rbtree insertion run](rbtree-example.md#verification-evidence)
+exercised that refusal with a recursive tree and a live callback-table view.
 
 The legacy write guard has only test callers. Its bridge and search helper can
 be restricted to tests. Contract-entry own/view overlap checking still has a
@@ -623,14 +628,15 @@ exclude unavoidable explicit path enumeration from the ambient test.
 Loop exit reconciliation uses persistent differences to select local
 initialization, local value, and cell changes. The gate's
 `a_loop_exit_join_visits_only_changed_bindings_and_cells` grows both
-shared maps at 4/16/64/256. It checks a two-exit local join and selection of a
-cell present only on a later exit. Restating scalar exit facts keeps memory
-effect summaries at their original states and ranges, including inside
+shared maps at 4/16/64/256. It checks a full two-exit join with differing
+locals and one-sided cells, and selection of a cell present only on a later
+exit. Residual memory comparison and interning of the reconstructed memories
+use exact differences from shared storage. Restating scalar exit facts keeps
+memory effect summaries at their original states and ranges, including inside
 earlier disjunctions. The gate's
 `loop_exit_scalar_restatement_keeps_recorded_memory_effects` measures one
 renamed scalar at 4/16/64/256 untouched blocks. Other state-bearing facts can
-still require memory substitution, and reconstructing a residual memory
-witness can still compare equal cell maps during interning.
+still require memory substitution.
 
 ### E1 and Q1: logical steps and evidence lifecycle — deferred evidence/gaps
 

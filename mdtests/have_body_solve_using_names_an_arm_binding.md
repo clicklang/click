@@ -6,7 +6,7 @@ in `instantiate`, in `have`
 ([`theorem_argument_arm_binding.md`](theorem_argument_arm_binding.md)), in a
 `loop` written inside the arm
 ([`loop_clause_reads_arm_bindings.md`](loop_clause_reads_arm_bindings.md)),
-and in the `initialize` and `preserve` bodies of that loop
+and in the `initialize` and `maintain` bodies of that loop
 ([`loop_phase_body_reads_arm_bindings.md`](loop_phase_body_reads_arm_bindings.md)).
 
 One site was missed: the premises of a `solve() using { ... }` or a
@@ -22,7 +22,7 @@ certificate records and expansion prints, and `click audit` agrees with
 
 `peek` proves two `have`s in the arm, each citing the unfolded body fact that
 names the arm's colour: one closed by `solve() using`, one by `normalize()
-using`. `spin` puts the same `have` inside the `preserve` body of a loop
+using`. `spin` puts the same `have` inside the `maintain` body of a loop
 written in the arm, where the phase planner lowers it from a fresh root
 carrying the arm's scope.
 
@@ -123,7 +123,7 @@ unsigned long spin(struct node* p, int n) {
                 invariant i <= n;
                 invariant t.model == Tree::Node(id, color, left_model);
                 initialize by solve();
-                preserve by {
+                maintain by {
                     have color_bit(color) == color_bit(color) by {
                         solve() using { t.model == Tree::Node(id, color, left_model); };
                     }

@@ -75,6 +75,7 @@ mod tests {
 
     #[test]
     fn retained_match_readers_preserve_each_native_collection_mode() {
+        let _session = crate::kernel::VerificationSession::enter();
         let native = IntegerTerm::AlgebraicMatch {
             scrutinee: Box::new(KernelMatch::test_scrutinee(vec![
                 AlgebraicValueType::Integer,
@@ -143,6 +144,21 @@ mod tests {
             collect_match_variables(&common, mode, &mut actual);
             assert_eq!(actual, expected, "mode={mode:?}");
         }
+        let root = KernelTermImport::default().integer(&native.clone().into());
+        let stored =
+            Term::Integer(crate::kernel::StoredIntegerTerm::from_root(root.clone()).unwrap());
+        let mut expected = BTreeSet::new();
+        collect_integer_variables(&native, &mut expected);
+        let mut actual = BTreeSet::new();
+        collect_term_bitvector_variables(&stored, &mut actual);
+        assert_eq!(actual, expected);
+        let mut fresh = BTreeSet::new();
+        crate::kernel::reasoning::substitution::collect_proposition_bound_variables(
+            &Proposition::Equal(stored, Term::Integer(IntegerTerm::constant_i64(0).into())),
+            &mut fresh,
+        );
+        assert_eq!(fresh, expected);
+        assert!(!root.has_cached_native_argument());
     }
 
     #[test]

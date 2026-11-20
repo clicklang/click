@@ -8888,13 +8888,32 @@ impl SymbolicMemory {
     /// [`HashedOrdMap::eq_relative_to`]). Exact whatever the states share;
     /// the cost is the changed paths when both were derived from `base`.
     pub(super) fn eq_relative_to(&self, other: &Self, base: &Self) -> bool {
-        if memory_content_hash(self) != memory_content_hash(other) {
-            return false;
-        }
-        (std::sync::Arc::ptr_eq(&self.blocks, &other.blocks)
-            || self.blocks.eq_relative_to(&other.blocks, &base.blocks))
+        memory_content_hash(self) == memory_content_hash(other)
+            && self.non_cell_contents_eq_relative_to(other, base)
             && (std::sync::Arc::ptr_eq(&self.cells, &other.cells)
                 || self.cells.eq_relative_to(&other.cells, &base.cells))
+    }
+
+    /// Like `same_contents_as`, with an exact changed-path comparison when
+    /// the states share a base. Logical cells can still agree across layouts.
+    pub(super) fn same_contents_relative_to(&self, other: &Self, base: &Self) -> bool {
+        if self.same_storage_roots(other)
+            || matches!(
+                (interned_storage_of(self), interned_storage_of(other)),
+                (Some(left), Some(right)) if left.arena_id() == right.arena_id()
+            )
+        {
+            return true;
+        }
+        self.non_cell_contents_eq_relative_to(other, base)
+            && (std::sync::Arc::ptr_eq(&self.cells, &other.cells)
+                || self.cells.eq_relative_to(&other.cells, &base.cells)
+                || self.cells.same_logical_cells_by_difference(&other.cells))
+    }
+
+    fn non_cell_contents_eq_relative_to(&self, other: &Self, base: &Self) -> bool {
+        (std::sync::Arc::ptr_eq(&self.blocks, &other.blocks)
+            || self.blocks.eq_relative_to(&other.blocks, &base.blocks))
             && (std::sync::Arc::ptr_eq(&self.union_cells, &other.union_cells)
                 || self
                     .union_cells
@@ -10085,7 +10104,9 @@ static NEXT_MEMORY_ARENA_TOKEN: std::sync::atomic::AtomicU32 = std::sync::atomic
 
 #[derive(Clone, Default)]
 struct MemoryArena {
-    identities: std::collections::HashMap<std::sync::Arc<SymbolicMemory>, (u32, u64)>,
+    /// Arena ID and content hash. The table looks up candidates by hash and
+    /// checks their exact contents, using a common base when the caller has one.
+    identities: hashbrown::HashTable<(u32, u64)>,
     shallow_identities: std::collections::HashMap<MemoryShallowIdentity, (u32, u64)>,
     /// SymbolicMemory states whose storage roots were registered in `shallow_identities`
     /// on a structural hit. Holding them keeps those roots allocated, so a
@@ -10304,7 +10325,7 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
     };
     // A state this call interns is one no query has seen yet, so filling
     // its derivation cannot change an earlier answer.
-    let next_id = C_MEMORY_ARENA.with(|arena| arena.borrow().1.identities.len());
+    let next_id = C_MEMORY_ARENA.with(|arena| arena.borrow().1.memories.len());
     let derived = intern_memory_ref_with_read_identity(result, read_identity);
     let interned_here = derived.id as usize >= next_id;
     if !result.same_storage_roots(derived.memory()) {
@@ -10464,58 +10485,7 @@ fn record_memory_structural_lookup_work() {
 /// states that cross threads still compare correctly through the content
 /// hash and structural fallback.
 pub fn intern_memory(memory: SymbolicMemory) -> SharedMemory {
-    C_MEMORY_ARENA.with(|arena| {
-        let mut arena = arena.borrow_mut();
-        let (token, arena) = &mut *arena;
-        let shallow_identity = MemoryShallowIdentity::of(&memory);
-        if let Some((id, content_hash)) = arena.shallow_identities.get(&shallow_identity).copied() {
-            return SharedMemory {
-                arena: *token,
-                id,
-                content_hash,
-                memory: arena.memories[id as usize].clone(),
-            };
-        }
-        record_memory_structural_lookup_work();
-        if let Some((stored, (id, content_hash))) = arena.identities.get_key_value(&memory) {
-            let (id, content_hash, stored) = (*id, *content_hash, stored.clone());
-            // Remember the caller's storage roots, so the next lookup of this
-            // same state is an O(1) shallow hit instead of another
-            // comparison. The pin keeps those roots alive: a registered
-            // address must never be freed and reused by different content.
-            arena
-                .shallow_identities
-                .insert(shallow_identity, (id, content_hash));
-            arena.shallow_pins.push(memory);
-            return SharedMemory {
-                arena: *token,
-                id,
-                content_hash,
-                memory: stored,
-            };
-        }
-        let id = u32::try_from(arena.identities.len()).expect("memory arena exhausted");
-        let content_hash = memory_content_hash(&memory);
-        let mut memory = memory;
-        memory.pending_steps = None;
-        let stored = std::sync::Arc::new(memory);
-        arena.identities.insert(stored.clone(), (id, content_hash));
-        arena
-            .shallow_identities
-            .insert(shallow_identity, (id, content_hash));
-        arena.memories.push(stored.clone());
-        arena.derivations.push(None);
-        arena.read_identities.push(id);
-        arena
-            .local_definedness_versions
-            .push(LocalDefinednessVersions::fresh(id));
-        SharedMemory {
-            arena: *token,
-            id,
-            content_hash,
-            memory: stored,
-        }
-    })
+    intern_memory_with(std::borrow::Cow::Owned(memory), None, None)
 }
 
 /// The interned state `memory` is the canonical storage of, found by its
@@ -10554,10 +10524,18 @@ fn intern_memory_ref_with_read_identity(
     memory: &SymbolicMemory,
     read_identity: Option<(u32, u32)>,
 ) -> SharedMemory {
+    intern_memory_with(std::borrow::Cow::Borrowed(memory), None, read_identity)
+}
+
+fn intern_memory_with(
+    memory: std::borrow::Cow<'_, SymbolicMemory>,
+    base: Option<&SymbolicMemory>,
+    read_identity: Option<(u32, u32)>,
+) -> SharedMemory {
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
         let (token, arena) = &mut *arena;
-        let shallow_identity = MemoryShallowIdentity::of(memory);
+        let shallow_identity = MemoryShallowIdentity::of(&memory);
         if let Some((id, content_hash)) = arena.shallow_identities.get(&shallow_identity).copied() {
             return SharedMemory {
                 arena: *token,
@@ -10567,8 +10545,20 @@ fn intern_memory_ref_with_read_identity(
             };
         }
         record_memory_structural_lookup_work();
-        if let Some((stored, (id, content_hash))) = arena.identities.get_key_value(memory) {
-            let (id, content_hash, stored) = (*id, *content_hash, stored.clone());
+        let content_hash = memory_content_hash(&memory);
+        if let Some(&(id, _)) = arena
+            .identities
+            .find(content_hash, |&(id, candidate_hash)| {
+                if candidate_hash != content_hash {
+                    return false;
+                }
+                let stored = &arena.memories[id as usize];
+                match base {
+                    Some(base) => memory.eq_relative_to(stored, base),
+                    None => *memory == **stored,
+                }
+            })
+        {
             // Remember the caller's storage roots, so the next lookup of this
             // same state is an O(1) shallow hit instead of another
             // comparison. The pin keeps those roots alive: a registered
@@ -10576,20 +10566,21 @@ fn intern_memory_ref_with_read_identity(
             arena
                 .shallow_identities
                 .insert(shallow_identity, (id, content_hash));
-            arena.shallow_pins.push(memory.clone());
+            arena.shallow_pins.push(memory.into_owned());
             return SharedMemory {
                 arena: *token,
                 id,
                 content_hash,
-                memory: stored,
+                memory: arena.memories[id as usize].clone(),
             };
         }
-        let id = u32::try_from(arena.identities.len()).expect("memory arena exhausted");
-        let content_hash = memory_content_hash(memory);
-        let mut stored = memory.clone();
+        let id = u32::try_from(arena.memories.len()).expect("memory arena exhausted");
+        let mut stored = memory.into_owned();
         stored.pending_steps = None;
         let stored = std::sync::Arc::new(stored);
-        arena.identities.insert(stored.clone(), (id, content_hash));
+        arena
+            .identities
+            .insert_unique(content_hash, (id, content_hash), |&(_, hash)| hash);
         arena
             .shallow_identities
             .insert(shallow_identity, (id, content_hash));

@@ -456,7 +456,7 @@ struct rb_node* rb_first(const struct rb_root* root) {
                 invariant plug(ctx.model, t.model) == old(t.model);
 
                 initialize by solve();
-                preserve by {
+                maintain by {
                     match t.model {
                         RbTree::Empty => { contradiction(t.model == RbTree::Empty); },
                         RbTree::Node(identity, parent, color, left_model, right_model) => {

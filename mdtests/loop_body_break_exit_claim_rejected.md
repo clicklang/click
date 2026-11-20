@@ -36,7 +36,7 @@ int32 break_once_claim(int32 n) {
         invariant i >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

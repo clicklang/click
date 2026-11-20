@@ -217,7 +217,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 invariant i == 3 implies to_integer(blk_size) * 1000000000 <= 18446744073709551615;
                 invariant i == 4 implies to_integer(blk_size) * 1000000000000 <= 18446744073709551615;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     mark head;
                     step();
                     step();
@@ -294,7 +294,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 invariant i == at(loop(1).entry, i) + 3 implies to_integer(size) * 1000000000 <= 18446744073709551615;
                 invariant i == at(loop(1).entry, i) + 4 implies to_integer(size) * 1000000000000 <= 18446744073709551615;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     have i <= 8;
                     mark head;
                     step();
@@ -390,7 +390,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 invariant i == at(loop(2).entry, i) + 5 implies to_integer(size) * 1000000000000000 <= 18446744073709551615;
                 invariant i == at(loop(2).entry, i) + 6 implies to_integer(size) * 1000000000000000000 <= 18446744073709551615;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     have i <= 14;
                     mark head;
                     if (units & 1u32) == 1u32 {
@@ -573,7 +573,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 invariant j == 1 implies 10u32 <= sf_cap;
                 invariant j == 2 implies 100u32 <= sf_cap;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     mark head;
                     step_until(back_edge());
                     have to_integer(at(head, sf_cap)) * 10 <= 4294967295;

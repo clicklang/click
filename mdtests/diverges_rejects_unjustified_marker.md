@@ -26,7 +26,7 @@ int32 drain(int32 n) diverges {
         decreases n;
         invariant n >= 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             have 0 <= to_integer(n - 1);
             step();
         }

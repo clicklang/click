@@ -36,7 +36,7 @@ void clear(int32* values, uint32 n) {
         invariant x <= n;
         owns values[0..4];
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             step();
             step();
             have at(region(3).entry, x) < 4u32;

@@ -46,7 +46,7 @@ int32 bad(int32 x) {
             }
             known();
         }
-        preserve by {
+        maintain by {
             have forall (u: int32) {
                 u == 5 implies forall (z: int32) { z == 5 }
             } by {

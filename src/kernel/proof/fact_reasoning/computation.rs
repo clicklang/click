@@ -750,6 +750,7 @@ fn integer_affine_difference(
     let mut order = Vec::new();
     let mut seen = std::collections::HashSet::new();
     let mut stack = vec![(left.clone(), false), (right.clone(), false)];
+    let mut reduced_matches = std::collections::HashMap::new();
     while let Some((term, expanded)) = stack.pop() {
         crate::instrumentation::record_deterministic_work(1);
         if expanded {
@@ -766,6 +767,16 @@ fn integer_affine_difference(
                 stack.push((left.clone(), false));
             }
             IntegerTerm::Negate(value) => stack.push((value.clone(), false)),
+            IntegerTerm::AlgebraicMatch { .. } => {
+                if let Some(value) =
+                    crate::kernel::proof::term_rewrite::TermRewrite::reduce_known_integer_match(
+                        &term,
+                    )
+                {
+                    stack.push((value.clone(), false));
+                    reduced_matches.insert(term.id(), value);
+                }
+            }
             other => {
                 if let Some(value) = integer_product_identity(other) {
                     stack.push((value.clone(), false));
@@ -785,6 +796,10 @@ fn integer_affine_difference(
             continue;
         };
         if coefficient.is_zero() {
+            continue;
+        }
+        if let Some(value) = reduced_matches.get(&term.id()) {
+            *coefficients.entry(value.id()).or_default() += coefficient;
             continue;
         }
         match term.as_ref() {

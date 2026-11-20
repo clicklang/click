@@ -238,7 +238,7 @@ template<class T> Stack<T>::~Stack() {
         decreases length(list.items);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match list.items {
                 List::Nil => { contradiction(list.items == List<T>::Nil); },
                 List::Cons(value, rest) => {

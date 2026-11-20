@@ -3,7 +3,7 @@
 After `i = i + 1` under the guard `i < n`, the invariant `i <= n` holds at
 the back edge. The guard proves that the increment fits in `uint64`. The
 expanded proof applies `integer::uint64_increment_upper_bound` to the guard
-at the recorded program point. The `preserve` script needs only the `step()`
+at the recorded program point. The `maintain` script needs only the `step()`
 that executes the increment.
 
 ```c filename=count.c
@@ -27,7 +27,7 @@ uint64 count(uint64 n) {
     loop {
         decreases n - i;
         invariant i <= n;
-        preserve by {
+        maintain by {
             step();
         }
     }

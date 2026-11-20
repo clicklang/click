@@ -345,7 +345,7 @@ fold; the passing walk is the example itself.
 
 One iteration is five steps, and each is an ordinary tactic:
 
-1. `match t.model` inside `preserve` supplies the constructor. The binder's
+1. `match t.model` inside `maintain` supplies the constructor. The binder's
    model at an arbitrary loop head is a fresh symbolic value, so nothing can
    `unfold` it until a proof `match` names the arm; the `HeapTree::Empty` arm
    closes by `contradiction` on the first invariant.

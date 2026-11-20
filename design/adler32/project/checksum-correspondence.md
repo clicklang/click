@@ -86,7 +86,7 @@ click verify design/adler32/project/adler2/correspondence.click
 ```
 
 Verification uses the committed locks offline; it needs neither GCC, Charon,
-rustc, Python nor the original checkout. Do not run `click import lock` over the C
+rustc, Python nor the original checkout. Do not run `click capture` over the C
 fixtures without their recorded compiler setup. Rust refresh is a separate
 operation through the installed bundle. Importing a theorem or function contract
 does not verify its body: the assembled producer sidecars include those bodies,

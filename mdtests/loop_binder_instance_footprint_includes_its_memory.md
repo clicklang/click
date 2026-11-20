@@ -63,7 +63,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         invariant w.next == i;
         decreases end - i;
         initialize by solve();
-        preserve by {
+        maintain by {
             let { next: m } = unfold(w);
             have m == i by solve();
             have i < end by solve();

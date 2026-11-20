@@ -8,7 +8,7 @@ click verify   Verify a sidecar, proof unit, project, or examples directory.
 click profile  Measure verification and identify slow tactics.
 click expand   Replace smart proof source with a checked explicit proof.
 click audit    Check expansion across a project or repository.
-click import   Create or refresh a compiler-produced source artifact.
+click capture  Record compiler output for verification.
 click docs     Print the documentation for a tactic or topic.
 click upgrade  Install the latest Click and make it the default.
 click version  Add, pin, select, list, or remove installed Click versions.
@@ -29,7 +29,7 @@ failures print a diagnostic to standard error and exit with status 1.
   explicit proof and verifies the complete rewritten source.
 - [`click docs`](docs.md) prints the documentation compiled into the binary.
 - [`click audit`](audit.md) checks the expansion boundary across many sites.
-- [`click import`](import.md) prepares explicitly configured compiler inputs.
+- [`click import`](capture.md) prepares explicitly configured compiler inputs.
 - [Version manager commands](versions.md): `click upgrade` and
   `click version add|use|default|list|remove` install released versions and
   select the version the `click` launcher runs.

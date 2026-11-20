@@ -1984,7 +1984,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
     let lock = || {
         let output = Command::new(env!("CARGO_BIN_EXE_click"))
             .env("CLICK_CPP_EXPORTER", &project.exporter)
-            .args(["import", "lock", project.directory.to_str().unwrap()])
+            .args(["capture", project.directory.to_str().unwrap()])
             .output()
             .expect("run the ordinary import command");
         assert!(
@@ -1996,7 +1996,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
             fs::read(
                 project
                     .directory
-                    .join(".click/demo/increment.cpp.click-cpp.json"),
+                    .join(".click/captures/demo/increment.cpp.click-cpp.json"),
             )
             .unwrap(),
             fs::read(project.directory.join(click::project::LOCK_NAME)).unwrap(),
@@ -7246,7 +7246,8 @@ fn cpp_project_locks_are_portable() {
         let lock = fs::read_to_string(copy.join(click::project::LOCK_NAME)).unwrap();
         assert!(!lock.contains(copy.to_str().unwrap()), "{lock}");
         let artifact =
-            fs::read_to_string(copy.join(".click/basic/increment.cpp.click-cpp.json")).unwrap();
+            fs::read_to_string(copy.join(".click/captures/basic/increment.cpp.click-cpp.json"))
+                .unwrap();
         assert!(!artifact.contains(copy.to_str().unwrap()), "{artifact}");
         let _ = fs::remove_dir_all(&copy);
         (lock, artifact)
@@ -20244,7 +20245,7 @@ fn unlocked_copy(example: &str, name: &str) -> PathBuf {
 }
 
 #[cfg(not(feature = "fast-gate"))]
-/// Without an installed front end, `click import lock` says how to install
+/// Without an installed front end, `click capture` says how to install
 /// one; an installed exporter that is not the pinned one is refused before
 /// it exports anything. Neither writes a lock.
 #[test]
@@ -20252,7 +20253,7 @@ fn an_installed_cpp_front_end_is_required_and_checked() {
     let version = env!("CARGO_PKG_VERSION");
     let project = unlocked_copy("examples/basic-cpp", "installed-refusals");
     let empty = scratch_copy("installed-empty-home");
-    let missing = installed_click(&empty, &project, &["import", "lock"]);
+    let missing = installed_click(&empty, &project, &["capture"]);
     let stderr = String::from_utf8_lossy(&missing.stderr);
     assert!(!missing.status.success());
     assert!(
@@ -20274,7 +20275,7 @@ fn an_installed_cpp_front_end_is_required_and_checked() {
         fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
     }
     let home = installed_cpp_home("installed-wrong-version", &script);
-    let refused = installed_click(&home, &project, &["import", "lock"]);
+    let refused = installed_click(&home, &project, &["capture"]);
     let stderr = String::from_utf8_lossy(&refused.stderr);
     assert!(!refused.status.success());
     assert!(
@@ -20327,7 +20328,7 @@ fn the_installed_cpp_front_end_reproduces_the_committed_imports() {
                 .unwrap();
             assert!(unpacked.success(), "extract {}", closure.display());
         }
-        let locked = installed_click(&home, &project, &["import", "lock"]);
+        let locked = installed_click(&home, &project, &["capture"]);
         assert!(
             locked.status.success(),
             "{example}: {}",
@@ -20398,7 +20399,12 @@ fn a_call_into_another_translation_unit_is_checked_against_a_contract() {
         .and_then(|unit| unit.lock_with_cpp_exporter(Some(&project.exporter)))
         .unwrap();
     let artifact: serde_json::Value = serde_json::from_slice(
-        &fs::read(project.directory.join(".click/demo/a.cpp.click-cpp.json")).unwrap(),
+        &fs::read(
+            project
+                .directory
+                .join(".click/captures/demo/a.cpp.click-cpp.json"),
+        )
+        .unwrap(),
     )
     .unwrap();
     let callee = &artifact["reachable_functions"][0];

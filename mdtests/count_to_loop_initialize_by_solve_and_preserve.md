@@ -1,7 +1,7 @@
 # a counter loop names its initialize and preserve obligations
 
 This checks the full induction syntax for a counter loop: `initialize by solve()`
-proves the invariants at loop entry, and `preserve` executes one iteration and
+proves the invariants at loop entry, and `maintain` executes one iteration and
 reestablishes them before the implicit invariant closer.
 
 ```c filename=count_to_loop_initialize_by_solve_and_preserve.c
@@ -29,7 +29,7 @@ int32 count_to(int32 n) {
         invariant i <= n;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
             solve();
         }

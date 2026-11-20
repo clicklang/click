@@ -69,7 +69,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 3826 * (to_integer(old(len)) - to_integer(len)) by solve() using { to_integer(sum2) == 0; to_integer(old(len)) == to_integer(len); };
    solve();
   }
-  preserve by {
+  maintain by {
    if len == 0u64 {
     have old(len) - len == old(len) by solve();
     have zlib_prefix_count(old(len), len) == old(len as uint32 as int32) by {

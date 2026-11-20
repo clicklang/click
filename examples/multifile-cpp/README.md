@@ -34,5 +34,5 @@ installed (`click add cpp`; in a checkout, or on another host,
 `CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"` instead):
 
 ```sh
-click import lock
+click capture
 ```

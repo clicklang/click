@@ -39,7 +39,7 @@ Bitcoin header verified through `feerate.cpp`: `consensus/amount.h`
 (the `FeeFrac` operations, with `check.h`'s assertion admitted as a checked
 library boundary).
 
-The committed `click.project.lock.json` and `.click/bitcoin/` artifacts verify
+The committed `.click/captures/manifest.json` and `.click/captures/bitcoin/` artifacts verify
 offline. The lock rechecks the Bitcoin and sysroot files in this directory, so
 extract the hermetic closure here first:
 
@@ -60,7 +60,7 @@ checkout, or on another host,
 project; any pinned exporter writes the committed lock and artifacts:
 
 ```sh
-click import lock
+click capture
 ```
 
 The lock binds the unit's arguments, exact source and header bytes, all
@@ -97,7 +97,7 @@ Clang resource directory needed by the compiler driver.
 The sysroot is parse-only input: Clang needs it to type-check Bitcoin Core,
 but a function declared in its headers is never exported or verified. Calls
 into it are checked against Click's standard-library contracts; see
-[the C++ standard library](../../docs/reference/cli/import.md#c-standard-library).
+[the C++ standard library](../../docs/reference/cli/capture.md#c-standard-library).
 Some CMake link probes warn because this header-only setup does not install a
 Linux runtime; successful configuration and the selected compile command, not
 a binary build, are the setup requirements.
@@ -135,7 +135,7 @@ python3 integrations/bitcoin-core-money-range/make-fixture.py \
   --bitcoin-src integrations/bitcoin-core-money-range/bitcoin-src \
   --sysroot integrations/bitcoin-core-money-range/sysroot \
   --packages integrations/bitcoin-core-money-range/inputs/packages \
-  --lock integrations/bitcoin-core-money-range/click.project.lock.json \
+  --lock integrations/bitcoin-core-money-range/.click/captures/manifest.json \
   --compilation-database integrations/bitcoin-core-money-range/inputs/bitcoin-build/compile_commands.json
 ```
 

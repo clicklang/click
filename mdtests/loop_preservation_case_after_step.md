@@ -1,6 +1,6 @@
 # A loop-proof case after a body step keeps its execution position in expansion
 
-`preserve by` increments `i` and only then splits on `flag == i`. The split
+`maintain by` increments `i` and only then splits on `flag == i`. The split
 is evaluated at the frontier where it appears: the expanded certificate must
 keep `step()` before the `if`, since hoisting the case before the increment
 would make its condition denote the earlier `i`. Ordinary verification and
@@ -27,7 +27,7 @@ int32 count_once(int32 flag) {
         invariant i >= 0;
         invariant i <= 1;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
             if flag == i {
                 have flag == i by known();

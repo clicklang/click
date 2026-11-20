@@ -45,7 +45,7 @@ void spin(struct cell* node, int32 n) {
         invariant c.model == Maybe::Some(7);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

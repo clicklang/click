@@ -1,6 +1,6 @@
 # A theorem argument naming a parameter the loop reassigns is read where the tactic stands
 
-`skip` reassigns its pointer parameter `p` in a loop. Inside `preserve`, before
+`skip` reassigns its pointer parameter `p` in a loop. Inside `maintain`, before
 any statement of the body has run, the proof states a fact about `p` with a
 `have` and then applies a theorem to `p`, citing that fact as the theorem's
 premise.
@@ -63,7 +63,7 @@ struct node* skip(struct node* p, struct node* q, int32 n) {
         invariant n >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             have holds(Box::Box(p), p) == 1 by {
                 unfold(holds(Box::Box(p), p));
                 normalize();

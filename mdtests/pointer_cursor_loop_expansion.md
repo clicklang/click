@@ -25,7 +25,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
  invariant cursor == bytes + (4 * outer);
  invariant bytes == old(bytes);
  invariant viewable(bytes[0..8]);
- preserve by {
+ maintain by {
   have outer < 2;
   mark outer_head;
   mark after_inner;

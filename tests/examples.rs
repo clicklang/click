@@ -142,7 +142,7 @@ fn canonical_charon_examples_verify_locked_inputs() {
                 "canonical Rust examples use the native default"
             );
         }
-        assert!(directory.join("click.project.lock.json").is_file());
+        assert!(directory.join(".click/captures/manifest.json").is_file());
         run_example_in_thread(directory).unwrap_or_else(|error| panic!("{error}"));
         checked += 1;
     }
@@ -2637,7 +2637,7 @@ fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
 /// Reruns a documented Click session: each fenced block with a `filename=`
 /// (C, Click, JSON, a Makefile, ...) is written to a scratch directory in page
 /// order, creating its parent directories, and each `console` block starting
-/// with `$ click verify ARGS` or `$ click import lock ARGS` must show exactly
+/// with `$ click verify ARGS` or `$ click capture ARGS` must show exactly
 /// what that command prints there, stdout then stderr. Returns the last
 /// version of each file.
 fn run_documented_session(page: &str) -> BTreeMap<String, String> {

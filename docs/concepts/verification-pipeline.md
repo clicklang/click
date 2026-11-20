@@ -3,7 +3,7 @@
 Click verifies existing programs against declarations in a `.click` sidecar.
 The pipeline keeps convenient user syntax separate from the small operations
 that ultimately justify acceptance. The sequence below describes the C path.
-The [C++](../reference/cli/import.md#preliminary-c-semantic-artifact) and [Rust](../reference/rust.md) frontends
+The [C++](../reference/cli/capture.md#preliminary-c-semantic-artifact) and [Rust](../reference/rust.md) frontends
 extract typed compiler input before joining the shared proof and kernel layers.
 
 1. The project loader finds the C source named by `verifying` and resolves the

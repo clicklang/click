@@ -931,7 +931,7 @@ missing guards, explicit promotions, checked function artifact rechecking, and
 2/8/32/128-operation work scaling. Equality-as-false and inequality-as-true
 guards use exact indexed lookup, including the signed overflow disjunction.
 C++ source division/remainder is admitted in schema 39; wide source memory
-remains separate work. See the [C++ import profile](../reference/cli/import.md).
+remains separate work. See the [C++ import profile](../reference/cli/capture.md).
 
 
 ## Explicit truncation in proofs

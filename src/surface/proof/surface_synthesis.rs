@@ -4033,6 +4033,10 @@ fn raise_constructor_field(
     if let Some(ProgramValue::Pointer(pointer)) = term.pointer_native() {
         return raise_constructor_pointer(pointer, parameter_binding, state, bound_variables);
     }
+    if term.ty() == &KernelType::Integer {
+        return raise_kernel_term(term, parameter_binding, state, bound_variables)
+            .map(integer_typed_expression);
+    }
     if term.ty() == &KernelType::Program(ProgramType::Int32) {
         return raise_kernel_term(term, parameter_binding, state, bound_variables);
     }
@@ -4467,9 +4471,11 @@ fn raise_kernel_term_dispatch(
         Node::ProgramParameter { .. } => unreachable!("parameter envelope was peeled"),
         Node::PointerCall { call, .. } => recurse(call)?,
         Node::ArrayReference { point, pointer, .. } => {
-            synthesize_at_memory(point.shared_memory(), state, |selected| {
+            let raise = |selected: &ExecutionState| {
                 raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
-            })?
+            };
+            synthesize_at_program_point(point, state, raise)
+                .or_else(|| synthesize_at_memory(point.shared_memory(), state, raise))?
         }
 
         Node::PointerRead { value, .. }
@@ -6355,6 +6361,39 @@ fn synthesize_surface_call(
     })
 }
 
+/// Name the originating view when the argument retained a recorded point.
+fn synthesize_at_program_point(
+    point: &crate::kernel::ProgramPoint,
+    state: &ExecutionState,
+    raise: impl Fn(&ExecutionState) -> Option<SurfaceTerm>,
+) -> Option<SurfaceTerm> {
+    let id = point.id()?;
+    let matches = |state: &ExecutionState| {
+        let actual = state.program_point();
+        actual.id() == Some(id)
+            && actual.shared_memory().arena_id() == point.shared_memory().arena_id()
+    };
+    if matches(state) {
+        return raise(state);
+    }
+    if let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
+        && matches(&entry)
+    {
+        return Some(SurfaceTerm::Old(Box::new(raise(&entry)?)));
+    }
+    let (selector, recorded) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let points = slot.as_ref()?;
+        let selector = points.point_name(id)?;
+        Some((selector.clone(), points.get_exact(selector)?.clone()))
+    })?;
+    matches(&recorded).then_some(())?;
+    Some(SurfaceTerm::At {
+        selector,
+        expression: Box::new(raise(&recorded)?),
+    })
+}
+
 /// A state-bearing argument selects its memory by identity. An intermediate
 /// recorded state is as explicit as `old`; no timeline or frame search is
 /// needed to recover that state's source selector.
@@ -8225,6 +8264,13 @@ fn synthesize_surface_algebraic(
                         state,
                         bound_variables,
                     ),
+                    crate::kernel::AlgebraicValue::Integer(term) => synthesize_surface_integer(
+                        &term.clone().into(),
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )
+                    .map(integer_typed_expression),
                     crate::kernel::AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                         raise_constructor_pointer(
                             pointer,

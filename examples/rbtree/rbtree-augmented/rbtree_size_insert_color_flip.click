@@ -123,7 +123,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant node == sized_flip_focus(state.phase, old(node));
                 invariant parent == sized_flip_parent(state.phase);
                 initialize by solve();
-                preserve by {
+                maintain by {
                     mark iteration;
                     match state.phase {
                         SizedFlipPhase::Done(x, y, z) => {
