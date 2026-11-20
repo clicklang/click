@@ -2391,9 +2391,16 @@ pub enum ClickProposition {
     Loadable {
         segment: ContractSegment,
     },
+    /// `defined(e)`: the definedness special form. Unlike the point
+    /// selectors `old`, `at` and `exact`, which are `SurfaceTerm`s, it is a
+    /// proposition, and it lowers `e` keeping native address checks
+    /// (`checking_definedness`). See `docs/reference/glossary.md#special-forms`.
     Defined {
         expression: ContractExpression,
     },
+    /// `at(point, P)`: the `at` special form in proposition position, the
+    /// whole proposition `P` stated at `point`. `SurfaceTerm::At` is the term
+    /// position.
     At {
         selector: ProgramPointSelector,
         proposition: Box<ClickProposition>,
@@ -3412,15 +3419,23 @@ pub enum SurfaceTerm {
         region: CodeRegionRef,
         name: String,
     },
+    /// `old(e)`: a point-selecting special form, sugar for
+    /// `at(function.entry, e)`. The special forms are `old`, `at`, `exact`
+    /// and `defined` (`ClickProposition::Defined`); see
+    /// `docs/reference/glossary.md#special-forms`.
     Old(Box<ContractExpression>),
+    /// `at(point, e)`: a point-selecting special form, `e` read when the
+    /// proof path was at `point`. `ClickProposition::At` is the same form in
+    /// proposition position.
     At {
         selector: ProgramPointSelector,
         expression: Box<ContractExpression>,
     },
-    /// `exact(place)`: the read of `place` named by the state in scope
-    /// itself, with no version walk (`design/exact-reads.md`). It applies to
-    /// the outermost read only; reads computing the place's address stay
-    /// ordinary. It grants no access and adds no facts.
+    /// `exact(place)`, a point-selecting special form: the read of `place`
+    /// named by the state in scope itself, with no version walk
+    /// (`design/exact-reads.md`). It applies to the outermost read only;
+    /// reads computing the place's address stay ordinary. It grants no
+    /// access and adds no facts.
     Exact(Box<ContractExpression>),
     Negate(Box<ContractExpression>),
     Add(Box<ContractExpression>, Box<ContractExpression>),
@@ -5725,7 +5740,7 @@ struct SpecElaborationContext {
     contract_result_in_scope: bool,
     /// A fixed return value, separate from all lexical bindings.
     contract_result: Option<std::sync::Arc<SpecExpression>>,
-    /// Preserve native address checks inside an explicit `defined(...)`.
+    /// Preserve native address checks inside the `defined(...)` special form.
     checking_definedness: bool,
 }
 

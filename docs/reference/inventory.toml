@@ -3222,6 +3222,14 @@ id = "glossary.at"
 path = "reference/glossary.md#at"
 
 [[item]]
+id = "glossary.defined"
+path = "reference/glossary.md#defined"
+
+[[item]]
+id = "glossary.exact"
+path = "reference/glossary.md#exact"
+
+[[item]]
 id = "glossary.abstract-resource"
 path = "reference/glossary.md#abstract-resource"
 

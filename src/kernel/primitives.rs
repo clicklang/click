@@ -5623,6 +5623,7 @@ pub enum SpecProposition {
         end: SpecExpression,
         element_width: u32,
     },
+    /// Lowered from the `defined(...)` special form.
     Defined(SpecExpression),
 }
 
