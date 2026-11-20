@@ -1668,6 +1668,7 @@ or infer alignment for a symbolic offset.
 The same fixed local check accepts intrinsic machine type ranges and
 constant-divisor quotient, remainder, and right-shift bounds. This includes
 `x % d < d` and its exact Integer reading for a positive machine literal `d`.
+An unsigned `x % d` is at most `x` when the exact divisor is known nonzero.
 A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.
