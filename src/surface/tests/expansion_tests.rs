@@ -110,6 +110,40 @@ fn automatic_object_separation_expands_without_normalize() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 6s for widened-sum and loop expansion with cold replay"]
+fn intrinsic_sum_bounds_expand_without_normalize() {
+    for (fixture, label) in [
+        (
+            "solve_reads_a_widening_cast_as_its_operand",
+            "widened_sum_guard.ensures_0",
+        ),
+        (
+            "a_uint8_loop_counter_ranks_as_a_promoted_int32",
+            "clear.contract",
+        ),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(
+            expanded.contains("apply(click::integer::add_le("),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+    let too_tight = "theorem too_tight(x: uint8) {
+        ensures to_integer(x) + 1 <= 255 by solve();
+    }";
+    assert!(verify_click_theorems(too_tight).is_err());
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies a uint64 loop back edge"]
 fn uint64_loop_successor_bound_expands_without_normalize() {
     let (source, c_sources) =
