@@ -978,6 +978,12 @@ fn evaluate_retained_memory_load_case(
             || purpose == LoadPurpose::Logical
             || written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
             || assumptions.has_memory_read_defined_evidence(memory, &pointer, value_type));
+    // An ordinary external scalar fallback names the written state even
+    // when the alias-resolution case is examining a projection of it.
+    let reads_written_state = allow_symbolic_external_load
+        && pointer.has_symbolic_block()
+        && purpose == LoadPurpose::Program
+        && value_type.pointee_type().is_none();
     // A typed union overlay is the authoritative view for an exact typed
     // load, including in history-sensitive symbolic-load mode. Selecting
     // the raw load first would reinterpret a copied pointer member as an
@@ -1159,8 +1165,21 @@ fn evaluate_retained_memory_load_case(
             // they are visited in the whole map's order.
             let candidates = AliasCandidates::of_block(&pointer.base);
             let normalized = std::cell::OnceCell::new();
+            let point = (reads_written_state
+                && !crate::kernel::assumptions::implicit_consulted_premises_capturing()
+                && !crate::kernel::assumptions::reasoning_interrupted())
+            .then(|| {
+                let normalized = normalized.get_or_init(|| {
+                    crate::kernel::reasoning::memory_resolution::pointer_with_exact_index_constants(
+                        &pointer,
+                        assumptions,
+                    )
+                });
+                (&pointer, normalized, assumptions)
+            });
             let (found, visited) = memory.cells.find_retained_candidate_by(
                 &candidates,
+                point,
                 |stored_pointer, _| {
                     let equal = alias_cache.resolution_equal(&pointer, stored_pointer, assumptions);
                     // A bounded equality query can retain an alias guard before its
@@ -1244,7 +1263,13 @@ fn evaluate_retained_memory_load_case(
         }];
     }
 
-    if allow_symbolic_external_load && assumptions.should_prefer_symbolic_external_loads() {
+    let prefers_symbolic = assumptions.should_prefer_symbolic_external_loads();
+    if allow_symbolic_external_load && (prefers_symbolic || reads_written_state) {
+        if !prefers_symbolic {
+            // Preserve the width at the actual access spelling, as the
+            // reduction path did before naming the value at the written state.
+            record_load_access_width(memory, &pointer, value_type.byte_width());
+        }
         let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
             if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
                 written
@@ -1362,11 +1387,7 @@ fn evaluate_retained_memory_load_case(
 
     if pointer.has_symbolic_block() && allow_symbolic_external_load {
         let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
-            if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
-                written
-            } else {
-                &memory
-            },
+            &memory,
             &pointer,
             value_type,
             &mut facts,
@@ -7412,6 +7433,61 @@ mod tests {
             path.outcome.clone()
         };
         assert_eq!(read(&facts), read(&empty));
+    }
+
+    #[test]
+    fn indexed_scalar_read_keeps_cover_hits_and_other_alias_lines() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Variable(Variable(95_010)),
+        };
+        let memory = SymbolicMemory::new()
+            .with_constant_run(owner.clone(), ProgramType::Int32, 8, int32(7))
+            .expect("compact constant cells");
+        let indexed = Address {
+            base: owner.base.clone(),
+            offset: AddressOffset::add(
+                owner.offset.clone(),
+                AddressOffset::scale_int32(MachineTerm::Variable(Variable(95_011)), 4),
+            ),
+        };
+        let alias = Address {
+            base: owner.base.clone(),
+            offset: AddressOffset::Variable(Variable(95_012)),
+        };
+        let context = PureFactContext::new()
+            .allow_symbolic_contract_loads()
+            .assume_condition(
+                ConditionTerm::equal(
+                    MachineTerm::Variable(Variable(95_011)),
+                    MachineTerm::constant(3),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::address_equal(alias.clone(), owner.offset_by_bytes(12)),
+                true,
+            );
+        for pointer in [indexed, alias] {
+            assert!(memory.known_retained_value(&pointer).is_none());
+            let paths = evaluate_memory_load_paths(
+                &memory,
+                pointer,
+                ProgramType::Int32,
+                ExecutionFacts::new(),
+                Vec::new(),
+                &context,
+                true,
+                false,
+                None,
+                None,
+            );
+            let [path] = paths.as_slice() else {
+                panic!("expected one scalar program read: {paths:?}");
+            };
+            assert_eq!(path.outcome, ExpressionOutcome::Value(int32(7)));
+        }
     }
 
     #[test]

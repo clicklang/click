@@ -9748,6 +9748,80 @@ fn branch_view_entry_loadability_ignores_prior_effects() {
 }
 
 #[test]
+fn scalar_read_after_branch_ignores_other_slots_on_its_line() {
+    use crate::instrumentation::{VerificationEvent, collect};
+
+    let c = "int32 bump(int32* p, int32 x) {
+        int32 scratch;
+        if (x >= 0) { p[0] = x; } else { p[0] = 0; }
+        p[0] = p[0] + 1;
+        return p[0];
+    }";
+    let samples = [4, 16, 64].map(|size| {
+        let owners = (1..=size)
+            .map(|i| format!("owns p[{}..{}];\n", 2 * i, 2 * i + 1))
+            .collect::<String>();
+        let proof = format!(
+            r#"verifying "bump.c";
+            int32 bump(int32* p, int32 x) {{
+                requires x < 2147483647;
+                owns p[0..1];
+                {owners}
+                ensures result > 0 by {{
+                    step();
+                    branch ensuring {{
+                        fact p[0] >= 0;
+                        fact p[0] < 2147483647;
+                        owns p[0..1];
+                    }} {{
+                        true => {{ step(); }}
+                        false => {{ step(); }}
+                    }}
+                    step();
+                    step();
+                    solve();
+                }}
+            }}"#
+        );
+        let (verified, events) = collect(|| verify_c_sources(&proof, &[("bump.c", c)]));
+        verified.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+        let increment = |tactic: &crate::instrumentation::TacticEvent| {
+            tactic.tactic_name == "step" && tactic.statement_index == 4
+        };
+        let mut in_increment = false;
+        let mut scans = Vec::new();
+        for event in events {
+            match event {
+                VerificationEvent::TacticStarted(tactic) if increment(&tactic) => {
+                    in_increment = true;
+                }
+                VerificationEvent::TacticFinished { tactic, .. } if increment(&tactic) => {
+                    break;
+                }
+                VerificationEvent::OperationFinished { name, work, .. } if in_increment => {
+                    assert_ne!(name, "memory load: distinct-cell reduction");
+                    if name == "memory load: equal-cell scan" {
+                        scans.push(work);
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(in_increment, "the explicit increment step must run");
+        scans
+    });
+    assert_eq!(
+        samples[0].len(),
+        1,
+        "the increment must read the joined cell"
+    );
+    assert!(
+        samples[0][0] <= 16 && samples.iter().all(|sample| *sample == samples[0]),
+        "the read must seek past disjoint same-line slots: {samples:?}"
+    );
+}
+
+#[test]
 fn branch_interface_fact_publication_extends_one_indexed_context() {
     let c_source = "struct cell { int32 value; }; int32 bump(struct cell* p, int32 x, int32 flag) { p->value = flag; return 0; }";
     let mut samples = Vec::new();
