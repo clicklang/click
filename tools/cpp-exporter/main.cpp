@@ -149,6 +149,7 @@ struct Options {
   std::string compilation_database;
   std::string exception_behavior = "normal_only";
   std::map<std::string, llvm::json::Value> library_assertions;
+  std::set<std::string> layout_free_library_records;
   std::string compilation_directory;
   std::string compilation_file;
   std::vector<std::string> compilation_command;
@@ -202,6 +203,12 @@ std::optional<Options> parse_options(int argc, const char **argv) {
       result.dependency_root = value;
     } else if (option == "--compilation-database") {
       result.compilation_database = value;
+    } else if (option == "--layout-free-library-record") {
+      if (value.empty() || result.layout_free_library_records.size() >= 64 ||
+          !result.layout_free_library_records.insert(value).second) {
+        llvm::errs() << "error: invalid or duplicate layout-free C++ library record\n";
+        return std::nullopt;
+      }
     } else if (option == "--library-assertions") {
       auto parsed = llvm::json::parse(value);
       if (!parsed || !parsed->getAsArray() || parsed->getAsArray()->size() > 64) {
@@ -271,6 +278,7 @@ public:
                    std::vector<std::string> compilation_command,
                    std::string exception_behavior,
                    const std::map<std::string, llvm::json::Value> &library_assertions,
+                   const std::set<std::string> &layout_free_library_records,
                    std::vector<GenericTemplate> generic_templates,
                    ExportState &state)
       : compiler_(compiler), context_(compiler.getASTContext()),
@@ -284,6 +292,7 @@ public:
         compilation_command_(std::move(compilation_command)),
         exception_behavior_(std::move(exception_behavior)),
         library_assertions_(library_assertions),
+        layout_free_library_records_(layout_free_library_records),
         generic_templates_(std::move(generic_templates)), state_(state) {}
 
   bool VisitClassTemplateDecl(clang::ClassTemplateDecl *declaration) {
@@ -1028,6 +1037,44 @@ private:
     return record;
   }
 
+  bool is_layout_free_library_record(const clang::CXXRecordDecl *record) {
+    if (layout_free_library_records_.empty() ||
+        !source_manager_.isInSystemHeader(
+            source_manager_.getExpansionLoc(record->getLocation())))
+      return false;
+    std::string path;
+    for (const auto &part : record_path(record)) {
+      if (!path.empty()) path += "::";
+      path += part.getAsString()->str();
+    }
+    return layout_free_library_records_.count(path) != 0;
+  }
+
+  const clang::CXXRecordDecl *layout_free_referent(clang::QualType type) {
+    const auto *record = type->getAsCXXRecordDecl();
+    if (record == nullptr || record->isUnion() || record->getName().empty() ||
+        type.isVolatileQualified() || type.isRestrictQualified())
+      return nullptr;
+    if (is_layout_free_library_record(record) ||
+        (record->getDefinition() == nullptr &&
+         !llvm::isa<clang::ClassTemplateSpecializationDecl>(record)))
+      return record->getCanonicalDecl();
+    return nullptr;
+  }
+
+  bool remember_layout_free_record(const clang::CXXRecordDecl *record) {
+    if (known_records_.insert(record).second) {
+      if (known_records_.size() > kMaxRecordDeclarations) {
+        fail(record->getLocation(), "C++ artifact budget exhausted: record declarations (limit " +
+                 std::to_string(kMaxRecordDeclarations) + ")");
+        return false;
+      }
+      layout_free_records_.insert(record);
+      record_definitions_.push_back(record);
+    }
+    return true;
+  }
+
   std::optional<Json> lower_parameter(
       const clang::ParmVarDecl *parameter,
       const clang::FunctionDecl *opaque = nullptr) {
@@ -1075,8 +1122,10 @@ private:
         !reference->getPointeeType().isVolatileQualified() &&
         !reference->getPointeeType().isRestrictQualified()) {
       if (reference->getPointeeType()->getAs<clang::RecordType>() != nullptr) {
-        record_reference = complete_record_type(reference->getPointeeType(),
-                                                parameter->getLocation());
+        record_reference = layout_free_referent(reference->getPointeeType());
+        if (record_reference == nullptr)
+          record_reference = complete_record_type(reference->getPointeeType(),
+                                                  parameter->getLocation());
         if (record_reference == nullptr) {
           return std::nullopt;
         }
@@ -1117,9 +1166,6 @@ private:
       return std::nullopt;
     }
     if (pointed_record != nullptr && !remember_record(pointed_record)) {
-      return std::nullopt;
-    }
-    if (record_reference != nullptr && !remember_record(record_reference)) {
       return std::nullopt;
     }
     if (trivial_record_value && !remember_record(by_value_record)) {
@@ -1347,8 +1393,20 @@ private:
       return Json(std::move(result));
     }
     if (const auto *reference = type->getAs<clang::LValueReferenceType>()) {
-      auto pointee =
-          lower_type(reference->getPointeeType(), location, source_alias);
+      clang::QualType referent = reference->getPointeeType();
+      std::optional<Json> pointee;
+      if (const auto *record = layout_free_referent(referent)) {
+        if (!remember_layout_free_record(record))
+          return std::nullopt;
+        llvm::json::Object nominal;
+        nominal["kind"] = "record";
+        nominal["declaration_id"] = declaration_id(record);
+        nominal["name"] = record_name(record);
+        nominal["is_const"] = referent.isConstQualified();
+        pointee.emplace(std::move(nominal));
+      } else {
+        pointee = lower_type(referent, location, source_alias);
+      }
       if (!pointee) {
         return std::nullopt;
       }
@@ -5019,6 +5077,11 @@ private:
         llvm::dyn_cast<clang::UnaryExprOrTypeTraitExpr>(candidate);
     const auto *constant_call = llvm::dyn_cast<clang::CallExpr>(candidate);
     const bool limits_max = is_numeric_limits_max_call(constant_call);
+    if (trait != nullptr && trait->getKind() == clang::UETT_SizeOf &&
+        layout_free_referent(trait->getTypeOfArgument()) != nullptr) {
+      fail(trait->getExprLoc(), "sizeof requires a modeled C++ record layout");
+      return std::nullopt;
+    }
     if ((trait != nullptr && trait->getKind() == clang::UETT_SizeOf) ||
         limits_max) {
       if (expression->getType()->isIntegerType() &&
@@ -5420,6 +5483,10 @@ private:
         record == nullptr ? nullptr : record->getDefinition();
     if (definition == nullptr) {
       fail({}, "the supported C++ record type must be complete");
+      return false;
+    }
+    if (is_layout_free_library_record(definition)) {
+      fail(definition->getLocation(), "layout-free C++ records are only supported through references");
       return false;
     }
     if (context_.getLangOpts().CXXExceptions &&
@@ -5960,6 +6027,21 @@ private:
   }
 
   std::optional<Json> lower_record(const clang::CXXRecordDecl *record) {
+    if (layout_free_records_.count(record->getCanonicalDecl())) {
+      llvm::json::Object nominal;
+      nominal["declaration_id"] = declaration_id(record);
+      nominal["name"] = record_name(record);
+      nominal["path"] = record_path(record);
+      nominal["fields"] = llvm::json::Array();
+      nominal["destructor"] = nullptr;
+      if (is_layout_free_library_record(record)) {
+        llvm::SaveAndRestore<bool> system_span(system_spans_, true);
+        nominal["span"] = span(record->getSourceRange());
+      } else {
+        nominal["span"] = declaration_span(record->getSourceRange());
+      }
+      return Json(std::move(nominal));
+    }
     const clang::ASTRecordLayout &layout = context_.getASTRecordLayout(record);
     const std::uint64_t size = layout.getSize().getQuantity();
     const std::uint64_t alignment = layout.getAlignment().getQuantity();
@@ -6604,6 +6686,15 @@ private:
   }
 
   std::string record_name(const clang::CXXRecordDecl *record) {
+    if (is_layout_free_library_record(record)) {
+      std::string name = "layout_free_";
+      constexpr char hex[] = "0123456789abcdef";
+      for (unsigned char byte : declaration_id(record)) {
+        name += hex[byte >> 4];
+        name += hex[byte & 15];
+      }
+      return name;
+    }
     std::string name = record->getNameAsString();
     if (const auto *instance =
             llvm::dyn_cast<clang::ClassTemplateSpecializationDecl>(record)) {
@@ -6785,8 +6876,16 @@ private:
     llvm::json::Object function_kind;
     const clang::CXXRecordDecl *record =
         method == nullptr ? nullptr : method->getParent()->getDefinition();
-    if (method != nullptr && (record == nullptr || !remember_record(record)))
-      return std::nullopt;
+    if (method != nullptr) {
+      if (record == nullptr)
+        return std::nullopt;
+      if (ordinary_method && !method->isStatic() && is_layout_free_library_record(record)) {
+        if (!remember_layout_free_record(record->getCanonicalDecl()))
+          return std::nullopt;
+      } else if (!remember_record(record)) {
+        return std::nullopt;
+      }
+    }
     if (constructor != nullptr || destructor != nullptr) {
       llvm::json::Object void_type;
       void_type["kind"] = "void";
@@ -7023,6 +7122,7 @@ private:
   std::vector<std::string> compilation_command_;
   std::string exception_behavior_;
   const std::map<std::string, llvm::json::Value> &library_assertions_;
+  const std::set<std::string> &layout_free_library_records_;
   std::vector<GenericTemplate> generic_templates_;
   // Every class template of the translation unit, by qualified name.
   std::map<std::string, const clang::ClassTemplateDecl *> class_templates_;
@@ -7045,6 +7145,7 @@ private:
   std::vector<const clang::FunctionDecl *> reachable_definitions_;
   std::unordered_set<const clang::CXXRecordDecl *> known_records_;
   std::vector<const clang::CXXRecordDecl *> record_definitions_;
+  std::unordered_set<const clang::CXXRecordDecl *> layout_free_records_;
   std::set<std::string> dependency_sources_;
   std::unordered_set<const clang::VarDecl *> known_constants_;
   std::vector<const clang::VarDecl *> constant_definitions_;
@@ -7070,7 +7171,8 @@ public:
                   options.functions, options.dependency_root,
                   options.compilation_directory, options.compilation_file,
                   options.compilation_command, options.exception_behavior,
-                  options.library_assertions, options.generic_templates, state) {}
+                  options.library_assertions, options.layout_free_library_records,
+                  options.generic_templates, state) {}
 
   void HandleTranslationUnit(clang::ASTContext &context) override {
     exporter_.TraverseDecl(context.getTranslationUnitDecl());

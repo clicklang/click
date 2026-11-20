@@ -8952,10 +8952,6 @@ fn class_template_instances_retain_argument_and_layout_boundaries() {
             "namespace A_B { struct Tag {}; } namespace A { struct B_Tag {}; } template<class T> struct Box { int value; }; int call(const Box<A_B::Tag>& a, const Box<A::B_Tag>& b) noexcept { return a.value; }",
             "same-named record layouts",
         ),
-        (
-            "struct Box; int call(const Box& box) noexcept { return 7; }",
-            "incomplete type",
-        ),
     ] {
         let project = Project::with_fixture("unsupported.cpp", "call", source);
         let error = refresh_import(&project.config()).unwrap_err();
@@ -18957,6 +18953,111 @@ fn axiomatic_system_header_calls_export_interfaces_only() {
         error.contains("ministd::identity")
             && error.contains("must be noexcept or have a nonthrowing catalog contract"),
         "{error}"
+    );
+}
+
+#[test]
+fn layout_free_cpp_references_forward_to_contracts() {
+    let project = Project::with_fixture(
+        "driver.cpp",
+        "read",
+        "struct Buffer;\nunsigned long length(const Buffer& buffer) noexcept;\nunsigned long read(const Buffer& buffer) noexcept { return length(buffer); }\n",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [record] = import.export().records.as_slice() else {
+        panic!("one nominal record declaration")
+    };
+    assert_eq!(record.path, ["Buffer"]);
+    assert_eq!((record.size_bytes, record.alignment_bytes), (0, 0));
+    assert!(record.fields.is_empty());
+    let path = project.directory.join("read.click");
+    fs::write(project.directory.join("buffer.interface.click"),
+        "abstract resource buffer_state(buffer: const void*) { field count: uint64; }\nunsigned long length(const Buffer& buffer) { owns state: buffer_state(&buffer); ensures state.count == old(state.count); ensures result == state.count; }\n"
+    ).unwrap();
+    let source = "import \"buffer.interface.click\";\nverifying \"driver.cpp\";\nunsigned long read(const Buffer& buffer) { owns state: buffer_state(&buffer); ensures state.count == old(state.count); ensures result == state.count; }\n";
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let missing_state = "import \"buffer.interface.click\";\nverifying \"driver.cpp\";\nunsigned long read(const Buffer& buffer) { ensures result == result; }\n";
+    let parsed = read_click_project(&path, missing_state).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(
+        error.report().contains("unbound instance binder `state`"),
+        "{}",
+        error.report()
+    );
+
+    // Rehash a forged artifact so the nominal record validator sees it.
+    use sha2::{Digest, Sha256};
+    let mut artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.artifact()).unwrap()).unwrap();
+    artifact["records"][0]["fields"] = serde_json::json!([{
+        "declaration_id": "forged_field",
+        "name": "field",
+        "value_type": { "kind": "integer", "bits": 32, "signed": true, "is_const": false, "source_aliases": [] },
+        "offset_bytes": 0,
+        "size_bytes": 4,
+        "span": artifact["records"][0]["span"],
+    }]);
+    let mut lock: serde_json::Value =
+        serde_json::from_slice(&fs::read(project.lock()).unwrap()).unwrap();
+    let bytes = serde_json::to_vec(&artifact).unwrap();
+    lock_source_mut(&mut lock)["artifact"]["sha256"] =
+        format!("{:x}", Sha256::digest(&bytes)).into();
+    lock_source_mut(&mut lock)["artifact"]["bytes"] = bytes.len().into();
+    fs::write(project.artifact(), bytes).unwrap();
+    fs::write(project.lock(), serde_json::to_vec(&lock).unwrap()).unwrap();
+    let error = load_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("supplies storage or lifetime metadata"),
+        "{error}"
+    );
+}
+
+#[test]
+fn byte_vector_size_uses_a_layout_free_catalog_contract() {
+    let project = Project::with_fixture(
+        "driver.cpp",
+        "read",
+        "#include \"vector_fixture.h\"\nunsigned long read(const std::vector<unsigned char>& bytes) noexcept { return bytes.size(); }\n",
+    );
+    fs::write(
+        project.directory.join("vector_fixture.h"),
+        "#pragma clang system_header\nnamespace std { template<class T> struct allocator; template<class T, class A = allocator<T>> class vector { A* allocator; T* storage; public: ~vector() noexcept; unsigned long size() const noexcept; }; }\n",
+    ).unwrap();
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let [record] = import.export().records.as_slice() else {
+        panic!("one nominal record declaration")
+    };
+    assert_eq!(record.path, ["std", "vector<unsigned char>"]);
+    assert_eq!((record.size_bytes, record.alignment_bytes), (0, 0));
+    assert!(record.fields.is_empty());
+    assert!(import.export().dependencies.is_empty());
+    assert!(import.export().reachable_functions[0].body.is_empty());
+    let path = project.directory.join("read.click");
+    let source = "import click::cpp::vector_state::{vector_state};\nverifying \"driver.cpp\";\nunsigned long read(const std::vector<unsigned char>& bytes) { owns state: vector_state(&bytes); ensures state.length == old(state.length); ensures result == state.length; }\n";
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    let (summary, verification) =
+        click::surface::verify_project_with_summary(&parsed, &ProgramInputs::program(&import))
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    verification.unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        click::surface::display_source_names(&format!("{:?}", summary.assumptions))
+            .contains("std::vector<unsigned char>::size"),
+        "{:?}",
+        summary.assumptions
+    );
+    let missing_state = "verifying \"driver.cpp\";\nunsigned long read(const std::vector<unsigned char>& bytes) { ensures result == result; }\n";
+    let parsed = read_click_project(&path, missing_state).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(
+        error.report().contains("unbound instance binder `state`"),
+        "{}",
+        error.report()
     );
 }
 

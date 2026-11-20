@@ -7034,6 +7034,28 @@ names, `std::span<int>::size`. Its name table,
 types it maps to them. The model accessors `std_span_data`,
 `std_span_size` and `std_array_data` name a span's or array's state.
 
+### `std::vector<unsigned char>`
+
+An existing byte vector's logical length is held in the resource
+`click::cpp::vector_state::vector_state`. The `size()` contract preserves
+the resource and returns that length. The caller must supply the resource.
+It grants access to the length alone.
+
+**Verified use:** [C++ importer tests](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs),
+`byte_vector_size_uses_a_layout_free_catalog_contract`.
+
+```click
+abstract resource vector_state(vector: const void*) {
+    field length: uint64;
+}
+
+unsigned long std::vector<unsigned char>::size() const {
+    owns state: vector_state(this);
+    ensures state.length == old(state.length);
+    ensures result == state.length;
+}
+```
+
 ### `std::span<T>`
 
 The catalog also supplies copy construction and `empty()` for dynamic

@@ -1452,12 +1452,26 @@ keeps each record, field and method nominally distinct even when layouts match;
 aliases share the canonical instance. Method, constructor and destructor names
 use the concrete record name. Record-name collisions are import errors. At most
 32 class arguments are supported. Clang completes reachable specializations
-before layout export, including unused reference parameter types; incomplete
-record declarations fail import without an artifact. Instances must satisfy
+before layout export, including unused reference parameter types.
+Instances with a layout must satisfy
 the ordinary record and executable-body profile, including the bounded single-base layout profile below, supported fields and
 destruction, and no virtual dispatch. Empty tags serve only as type arguments;
 this does not add empty runtime objects. Click verifies the
 resolved layout and bodies without performing template substitution itself.
+
+### Layout-free class references
+
+References to named forward-declared classes can be passed to contracted calls.
+The C++ artifact retains the class's nominal declaration and the reference's
+constness. Its address carries no access to object bytes. Field projections,
+by-value operations, and automatic storage require a modeled layout.
+
+The catalog can select this boundary for a complete system class as well. An
+existing `const std::vector<unsigned char>&` can call `size()` under its Click
+contract, which reads a `vector_state` resource keyed by the receiver.
+The importer retains the class and method identities from Clang. The artifact
+contains no allocator layout, object fields, or library body
+(`tests/cpp_import.rs::byte_vector_size_uses_a_layout_free_catalog_contract`).
 
 ### Class templates verified once
 
