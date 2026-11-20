@@ -1753,13 +1753,15 @@ fn collect_integer_node_reads(
 fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<ResourceRead>) {
     match argument {
         PureFunctionArgument::ArrayRef {
-            memory, pointer, ..
+            point: memory,
+            pointer,
+            ..
         } => {
             if let ProgramValue::Pointer(pointer) = pointer {
                 push_read(
                     reads,
                     OwnedResource::Block(pointer.address().base.clone()),
-                    ProgramPoint::of_memory(memory),
+                    memory.clone(),
                 );
             }
         }

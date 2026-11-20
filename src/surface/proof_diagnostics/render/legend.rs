@@ -737,7 +737,7 @@ mod tests {
             labels.pointer_value_name(&pure_pointer(
                 "select",
                 vec![PureFunctionArgument::ArrayRef {
-                    memory,
+                    point: crate::kernel::ProgramPoint::of_memory(&memory),
                     pointer: ProgramValue::Pointer(crate::kernel::Pointer::new(
                         base.clone(),
                         crate::kernel::ProgramType::Int32Pointer,

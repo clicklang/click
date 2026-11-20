@@ -777,3 +777,68 @@ fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
         }
     }
 }
+
+#[test]
+fn cold_native_array_argument_retains_the_entry_point_across_local_stores() {
+    let _session = VerificationSession::enter();
+    let local = Address {
+        base: "local:unrelated".into(),
+        offset: AddressOffset::Constant(0),
+    };
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let argument = SpecPureFunctionArgument::ArrayRef {
+        point: SpecPoint::Current,
+        pointer: SpecExpression::Value(ProgramValue::typed_pointer(
+            pointer,
+            ProgramType::Int32Pointer,
+        )),
+        element_type: ProgramType::Int32,
+    };
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let read = |state: &ExecutionState| {
+        let mut execution = ExecutionBudget::new();
+        let mut budget = SpecEvaluation::logical(&mut execution);
+        budget.machine_result_production_disabled = true;
+        let paths = evaluate_spec_pure_function_argument_paths_in(
+            SpecScope::unbound(state, None),
+            &argument,
+            &PureFactContext::new(),
+            &mut budget,
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one argument path");
+        };
+        let SpecCallArgument::Native(PureFunctionArgument::ArrayRef { point, .. }) = &path.value
+        else {
+            panic!("native array argument");
+        };
+        assert_eq!(point.read_version_id(), entry.observation_point_id());
+        let SpecCallArgument::Native(argument) = &path.value else {
+            unreachable!()
+        };
+        let root = KernelTermImport::default().argument(argument);
+        assert_eq!(
+            KernelTermExport::default().argument(&root).unwrap(),
+            *argument
+        );
+        argument.clone()
+    };
+    let work = [4, 16, 64].map(|count| {
+        let mut state = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_block(local.base.clone(), 4));
+        for value in 0..count {
+            state = state
+                .clone()
+                .with_memory(state.memory().clone().store(local.clone(), int32(value)));
+        }
+        let (argument, work) = crate::instrumentation::measure_deterministic_work(|| read(&state));
+        assert_eq!(argument, read(&entry));
+        work
+    });
+    assert!(work.iter().all(|cost| *cost <= work[0] + 5), "{work:?}");
+}

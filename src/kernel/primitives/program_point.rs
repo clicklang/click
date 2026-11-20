@@ -736,7 +736,8 @@ fn record_point_read_effect(
                 && (call_word
                     || integer_store_bits(step).is_some()
                     || matches!(step.as_ref(), MemoryDerivation::Store { value, .. }
-                        if matches!(value.native(), ProgramValue::Bool(_) | ProgramValue::Pointer(_))))
+                        if matches!(value.native(), ProgramValue::Bool(_) | ProgramValue::Pointer(_))
+                            || (indexed_local(&pointer.base) && matches!(value.native(), ProgramValue::Parameter(_)))))
             {
                 block.cells.insert(
                     start,
@@ -1169,6 +1170,18 @@ impl ProgramPoint {
         self.clone()
     }
 
+    /// A function-entry array version reached through the recorded suffix
+    /// of operations that leave external storage alone.
+    pub(in crate::kernel) fn entry_array_version(&self, block: &AddressBase) -> Option<Self> {
+        if !external_storage(block) {
+            return None;
+        }
+        let start = self.parameter_read_start(block);
+        let node = start.path.0.as_ref()?;
+        (node.function_entry && start.path.matches_indexed_view(&start.memory))
+            .then(|| start.for_exact_read())
+    }
+
     /// A scalar supplied by the caller can have a version even when no
     /// store supplies a value. Use the recorded disjoint suffix only when
     /// it reaches a verified function-entry view.
@@ -1265,6 +1278,20 @@ impl ProgramPoint {
             });
         }
         self.indexed_integer_version(pointer, LoadKind::of_type(value_type)?)
+    }
+
+    pub(super) fn abstract_local_version(
+        &self,
+        pointer: &Address,
+        parameter: super::TypeParameterName,
+    ) -> Option<Self> {
+        if !indexed_local(&pointer.base) || pointer.offset != AddressOffset::Constant(0) {
+            return None;
+        }
+        self.indexed_version(pointer, super::ABSTRACT_VALUE_WIDTH, |store| {
+            matches!(store, MemoryDerivation::Store { value, .. }
+                if value.program_type() == ProgramType::Parameter(parameter))
+        })
     }
 
     fn indexed_version(

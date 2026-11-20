@@ -711,9 +711,7 @@ fn collect_argument_carriers(
         PureFunctionArgument::Algebraic(value) => {
             collect_algebraic_carriers_seen(value, variables, seen)
         }
-        PureFunctionArgument::ArrayRef {
-            memory: _, pointer, ..
-        } => {
+        PureFunctionArgument::ArrayRef { pointer, .. } => {
             collect_program_value_carriers(pointer, variables);
         }
     }
@@ -1657,11 +1655,11 @@ fn exhausted_argument(argument: &PureFunctionArgument) -> PureFunctionArgument {
             PureFunctionArgument::Algebraic(exhausted_algebraic(value))
         }
         PureFunctionArgument::ArrayRef {
-            memory,
+            point,
             pointer,
             element_type,
         } => PureFunctionArgument::ArrayRef {
-            memory: memory.clone(),
+            point: point.clone(),
             pointer: exhausted_program_value(pointer),
             element_type: *element_type,
         },
@@ -4001,7 +3999,7 @@ impl<'a> TermRewrite<'a> {
                 PureFunctionArgument::Algebraic(self.algebraic(v))
             }
             PureFunctionArgument::ArrayRef {
-                memory,
+                point,
                 pointer,
                 element_type,
             } => PureFunctionArgument::ArrayRef {
@@ -4009,7 +4007,7 @@ impl<'a> TermRewrite<'a> {
                 // Rewrite only the explicit pointer argument; scanning or
                 // rebuilding the state would make substitution depend on
                 // unrelated heap size.
-                memory: memory.clone(),
+                point: point.clone(),
                 pointer: self.value(pointer),
                 element_type: *element_type,
             },
@@ -7494,7 +7492,7 @@ mod tests {
                 IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "observe_array".into(),
                     vec![PureFunctionArgument::ArrayRef {
-                        memory,
+                        point: crate::kernel::ProgramPoint::of_memory(&memory),
                         pointer: ProgramValue::Pointer(Pointer::new(
                             pointer,
                             ProgramType::VoidPointer,
@@ -7529,7 +7527,7 @@ mod tests {
             };
             let [
                 PureFunctionArgument::ArrayRef {
-                    memory,
+                    point,
                     pointer: ProgramValue::Pointer(pointer),
                     element_type,
                 },
@@ -7539,6 +7537,7 @@ mod tests {
             };
             assert_eq!(pointer.address(), &expected_pointer);
             assert_eq!(*element_type, ProgramType::UInt8);
+            let memory = point.memory();
             assert!(std::sync::Arc::ptr_eq(
                 &memory.blocks,
                 &original_memory.blocks

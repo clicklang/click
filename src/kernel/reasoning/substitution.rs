@@ -1588,11 +1588,12 @@ fn walk_pure_function_argument<S: VariableSubstitution + ?Sized>(
             PureFunctionArgument::Algebraic(s.algebraic_term(value))
         }
         PureFunctionArgument::ArrayRef {
-            memory,
+            point,
             pointer,
             element_type,
         } => PureFunctionArgument::ArrayRef {
-            memory: s.memory(memory),
+            point: point
+                .with_renamed_memory(crate::kernel::intern_memory(s.memory(point.memory()))),
             pointer: s.program_value(pointer),
             element_type: *element_type,
         },
@@ -3557,10 +3558,8 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
                         collect_algebraic_bound_variables(term, variables)
                     }
                     PureFunctionArgument::Integer(_) => {}
-                    PureFunctionArgument::ArrayRef {
-                        memory, pointer, ..
-                    } => {
-                        collect_memory_bound_variables(memory, variables);
+                    PureFunctionArgument::ArrayRef { point, pointer, .. } => {
+                        collect_memory_bound_variables(point.memory(), variables);
                         collect_program_value_bound_variables(pointer, variables);
                     }
                 }
@@ -3657,10 +3656,8 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
                         collect_algebraic_bound_variables(term, variables)
                     }
                     PureFunctionArgument::Integer(_) => {}
-                    PureFunctionArgument::ArrayRef {
-                        memory, pointer, ..
-                    } => {
-                        collect_memory_bound_variables(memory, variables);
+                    PureFunctionArgument::ArrayRef { point, pointer, .. } => {
+                        collect_memory_bound_variables(point.memory(), variables);
                         collect_program_value_bound_variables(pointer, variables);
                     }
                 }
@@ -3737,10 +3734,8 @@ fn collect_condition_bound_variables(
                         collect_algebraic_bound_variables(term, variables)
                     }
                     PureFunctionArgument::Integer(_) => {}
-                    PureFunctionArgument::ArrayRef {
-                        memory, pointer, ..
-                    } => {
-                        collect_memory_bound_variables(memory, variables);
+                    PureFunctionArgument::ArrayRef { point, pointer, .. } => {
+                        collect_memory_bound_variables(point.memory(), variables);
                         collect_program_value_bound_variables(pointer, variables);
                     }
                 }
