@@ -34,7 +34,7 @@ int32 read_first(int32 m) {
     step(); step();
     if q == 0 {
     } else {
-        step_until(statement(3));
+        step_until(statement(3).entry);
         have q[0] == 7 by solve();
         mark before_store;
         step();

@@ -80,7 +80,7 @@ int32 release_then_read(struct child* obj) {
     consumes child_control(obj);
     consumes child_ref(obj);
 } by {
-    step(child_release, {});
+    step(child_release);
     step();
     solve();
 }

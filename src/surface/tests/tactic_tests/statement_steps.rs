@@ -824,7 +824,7 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
             int32 zero() {
                 ensures result == 0;
             } by {
-                step_until(region(2));
+                step_until(region(2).entry);
                 step_until(function.exit);
                 normalize();
             }

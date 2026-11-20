@@ -52,7 +52,7 @@ int32 read_back(int32 u) {
     step(); step(); step();
     if buf == 0 {
     } else {
-        step_until(statement(5));
+        step_until(statement(5).entry);
         have buf[0] == 3 by solve();
         mark before_store;
         step();
@@ -108,7 +108,7 @@ int32 read_back_stepped(int32 u) {
     step(); step(); step();
     if buf == 0 {
     } else {
-        step_until(statement(5));
+        step_until(statement(5).entry);
         have buf[0] == 3 by solve();
         mark before_store;
         step();

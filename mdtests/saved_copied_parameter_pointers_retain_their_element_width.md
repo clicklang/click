@@ -18,7 +18,7 @@ uint64 size(struct bytes v) {
 uint64 forwarded(struct bytes v) {
     ensures result == v.size;
 } by {
-    step_until(call(0));
+    step_until(call(0).entry);
     step();
     have contains(memory(at(call(0).entry, call(0).parameter(v).data)[0..4]), memory(at(call(0).entry, call(0).parameter(v).data)[0..4])) by {
         apply(click::separation::contains_refl(memory(at(call(0).entry, call(0).parameter(v).data)[0..4])));

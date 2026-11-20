@@ -25,7 +25,7 @@ int32 f(int32 a) {
     requires a >= 0 and a <= 100;
     ensures result == 4 * a + 3;
 } by {
-    step_until(statement(0).call(twice, 0));
+    step_until(statement(0).call(twice, 0).entry);
     let { result: first } = step();
     step();
     have call(twice, 0).result == a + a;
@@ -70,7 +70,7 @@ int32 f(int32 a) {
     have to_integer(b) + to_integer(b) <= 2147483647 by {
         apply(integer::le_transitive(to_integer(b) + to_integer(b), 402, 2147483647));
     }
-    step_until(statement(1).call(twice, 0));
+    step_until(statement(1).call(twice, 0).entry);
     step() by { known(); }
 
     step();

@@ -31,7 +31,7 @@ verifying "wide_reads.c";
 int64 read_signed(int64 value) {
     ensures result == value;
 } by {
-    step_until(statement(5));
+    step_until(statement(5).entry);
     mark written;
     step();
     have *p == value by solve();
@@ -49,7 +49,7 @@ int64 read_signed(int64 value) {
 uint64 read_unsigned(uint64 value) {
     ensures result == value;
 } by {
-    step_until(statement(5));
+    step_until(statement(5).entry);
     mark written;
     step();
     have *p == value by solve();

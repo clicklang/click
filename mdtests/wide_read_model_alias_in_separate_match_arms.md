@@ -60,7 +60,7 @@ void inspect(struct node* parent, int32 side) {
     requires side == direction(tree_context.model);
     ensures 1 == 1;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
@@ -84,7 +84,7 @@ void inspect(struct node* parent, int32 side) {
                     have sibling == model;
                     have parent->tag == at(tag_inputs, parent->tag);
                     mark rotation;
-                    step(copy_tag, {});
+                    step(copy_tag);
                     have sibling->tag == at(rotation, parent->tag);
                     have model->tag == sibling->tag by { normalize() using { sibling == model; }; }
                     have model->tag == at(rotation, parent->tag) by { rewrite(model->tag, sibling->tag); known(); }
@@ -111,7 +111,7 @@ void inspect(struct node* parent, int32 side) {
                     have parent->tag == at(tag_inputs, parent->tag);
                     step(); // Finish the selected if continuation.
                     mark rotation;
-                    step(copy_tag, {});
+                    step(copy_tag);
                     have sibling->tag == at(rotation, parent->tag);
                     have model->tag == sibling->tag by { normalize() using { sibling == model; }; }
                     have model->tag == at(rotation, parent->tag) by { rewrite(model->tag, sibling->tag); known(); }

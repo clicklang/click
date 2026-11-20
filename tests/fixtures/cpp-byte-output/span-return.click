@@ -3,7 +3,7 @@ std::span<std::byte> probe(std::span<int> span) {
     ensures std_span_data(result) == old(std_span_data(span) as (uint8 *));
     ensures std_span_size(result) == old(std_span_size(span)) * 4u64;
 } by {
-    step_until(call(0));
+    step_until(call(0).entry);
     step();
     mark before_return;
     have std_span_data(call(0).parameter(__sp)) == old(std_span_data(span)) by { solve(); }

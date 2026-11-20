@@ -266,7 +266,7 @@ fn recursive_drop::pushed(x: u32) -> u32 {
 fn recursive_drop::round_trip(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
 } by {
-    step_until(statement(2).call(0));
+    step_until(statement(2).call(0).entry);
     step_until(function.exit);
     unfold(first(List::Cons(x, List<u32>::Nil)));
 }

@@ -27,7 +27,7 @@ int64 count(int64 length) {
     requires length <= 2147483647i64;
     ensures result >= length;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases length - i;
         invariant 0i64 <= i;

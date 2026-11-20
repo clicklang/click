@@ -20,7 +20,7 @@ void attach(struct child* kid) {
     ensures held.model == Model::At(kid as (void *));
 } by { step_until(function.exit); let held = fold(box(), {model: Model::At(kid as (void *))}); solve(); }
 void caller(struct child* kid) { ensures true; } by {
-    let {held: held} = step(attach, {});
+    let {held: held} = step(attach);
     have held.model != Model::Empty by solve();
     step(); solve();
 }

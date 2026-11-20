@@ -20,7 +20,7 @@ verifying "aggregate_declarations.c";
 int32 read_item(int32 x) {
     ensures result == old(x);
 } by {
-    step_until(statement(3));
+    step_until(statement(3).entry);
     have read_item.local(0).value == read_item.parameter(0) by known();
     have *read_item.local(0).pointer == read_item.parameter(0) by known();
     step_until(function.exit);

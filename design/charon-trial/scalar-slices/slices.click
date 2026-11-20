@@ -16,7 +16,7 @@ fn sum(xs: &[u32]) -> u32 {
     views *xs;
     ensures true;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases xs.len() - i;
         invariant i <= xs.len();
@@ -27,7 +27,7 @@ fn zero(xs: &mut [u64]) {
     owns *xs;
     ensures xs.len() == old(xs.len());
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases xs.len() - i;
         invariant i <= xs.len();
@@ -73,7 +73,7 @@ fn last(xs: &[i64]) -> i64 {
     requires xs.len() <= 1000u64;
     ensures true;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.len();
         views xs[0..xs.len()];
@@ -89,7 +89,7 @@ fn last(xs: &[i64]) -> i64 {
                 have to_integer((xs.len() - iter.len()) + 1u64) <= to_integer(xs.len());
                 have to_integer(xs.len() - iter.len()) + 1 <= 18446744073709551615;
                 have (xs + (xs.len() - iter.len())) + 1u64 == xs + ((xs.len() - iter.len()) + 1u64);
-                step_until(back_edge());
+                step_until(loop.back_edge);
                 have to_integer(iter.len()) == to_integer(at(iteration, iter.len())) - 1;
                 have to_integer(xs.len() - iter.len()) == to_integer(xs.len()) - to_integer(iter.len());
                 have to_integer(xs.len() - at(iteration, iter.len())) == to_integer(xs.len()) - to_integer(at(iteration, iter.len()));

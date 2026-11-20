@@ -9,35 +9,45 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// retain facts introduced inside their owned representation.
     pub(in crate::surface::proof) fn try_execute_until_descendant(
         search_input: &Proof<'a>,
-        region: &CodeRegionRef,
+        point: &ExecutionPoint,
     ) -> Result<Option<(Proof<'a>, Vec<Proposition>)>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_execute_until_descendant");
-        if let CodeRegionRef::BackEdge(loop_index) = region {
-            return crate::kernel::search::ProofSearch::try_execute_to_back_edge_descendant(
-                search_input,
-                *loop_index,
-            );
-        }
-        let target = if *region == CodeRegionRef::FunctionExit {
-            if search_input.is_at_function_exit() {
-                return Ok(Some((search_input.clone(), Vec::new())));
+        let target = match point {
+            ExecutionPoint::BackEdge(loop_index) => {
+                return crate::kernel::search::ProofSearch::try_execute_to_back_edge_descendant(
+                    search_input,
+                    *loop_index,
+                );
             }
-            StepUntilTarget::FunctionExit
-        } else {
-            StepUntilTarget::Region(search_input.resolve_statement_target(region)?)
+            ExecutionPoint::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Exit,
+            }) => {
+                if search_input.is_at_function_exit() {
+                    return Ok(Some((search_input.clone(), Vec::new())));
+                }
+                StepUntilTarget::FunctionExit
+            }
+            ExecutionPoint::ProgramPoint(ProgramPointRef {
+                region,
+                kind: ProgramPointKind::Entry,
+            }) => StepUntilTarget::Region(search_input.resolve_statement_target(region)?),
+            ExecutionPoint::ProgramPoint(_) => {
+                return Err(search_input.step_error("`step_until` cannot reach this program point"));
+            }
         };
         if let StepUntilTarget::Region(target) = target {
             let Some(current) = search_input.current_statement_index()? else {
                 return Err(search_input.step_error(format!(
                     "`step_until({})` cannot run after execution already reached function exit",
-                    describe_code_region_ref(region)
+                    crate::surface::diagnostics::describe_execution_point(point)
                 )));
             };
             if target < current {
                 return Err(search_input.step_error(format!(
                     "`step_until({})` cannot move backward from region({current})",
-                    describe_code_region_ref(region)
+                    crate::surface::diagnostics::describe_execution_point(point)
                 )));
             }
             if target == current {
@@ -74,14 +84,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let frontier = &search_input
             .execution()
             .ok_or_else(|| {
-                search_input.step_error("`back_edge()` requires a loop preservation frontier")
+                search_input.step_error("`loop.back_edge` requires a loop preservation frontier")
             })?
             .core
             .frontier;
         if !frontier.in_loop_body
             || frontier.region != crate::kernel::proof::ExecutionRegionKind::LoopBody
         {
-            return Err(search_input.step_error("`back_edge()` requires the current loop preservation region; it cannot select a branch arm boundary"));
+            return Err(search_input.step_error("`loop.back_edge` requires the current loop preservation region; it cannot select a branch arm boundary"));
         }
         if let Some(loop_index) = loop_index {
             let preserved = match search_input.context.as_ref() {
@@ -97,7 +107,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .map(|index| format!("; this preservation region is `loop({index})`'s"))
                     .unwrap_or_default();
                 return Err(search_input.step_error(format!(
-                    "`loop({loop_index}).back_edge()` names the back edge of the `loop({loop_index})` preservation region{current}"
+                    "`loop({loop_index}).back_edge` names the back edge of the `loop({loop_index})` preservation region{current}"
                 )));
             }
         }
@@ -115,18 +125,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .core
                 .frontier;
             if frontier.region != crate::kernel::proof::ExecutionRegionKind::LoopBody {
-                return Err(proof.step_error("`back_edge()` cannot finish a nested branch or loop region; prove that region separately"));
+                return Err(proof.step_error("`loop.back_edge` cannot finish a nested branch or loop region; prove that region separately"));
             }
             if frontier.is_at_region_boundary() {
                 if frontier.loop_control.is_exit() {
-                    return Err(proof
-                        .step_error("`back_edge()` reached a loop exit instead of the back edge"));
+                    return Err(proof.step_error(
+                        "`loop.back_edge` reached a loop exit instead of the back edge",
+                    ));
                 }
                 return Ok(Some((proof, facts)));
             }
             if frontier.is_at_function_exit() {
-                return Err(proof
-                    .step_error("`back_edge()` reached function exit instead of the back edge"));
+                return Err(proof.step_error(
+                    "`loop.back_edge` reached function exit instead of the back edge",
+                ));
             }
             proof.charge_execute_step(&mut steps, 0)?;
             if let Some(next) = crate::kernel::search::ProofSearch::try_smart_statement_step(
@@ -140,8 +152,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             } else {
                 return match proof.driver().apply_step(ProofStep::Step) {
                     Err(error) => Err(error),
-                    Ok(_) => Err(proof
-                        .step_error("`back_edge()` found no checked advance from this frontier")),
+                    Ok(_) => Err(proof.step_error(
+                        "`loop.back_edge` found no checked advance from this frontier",
+                    )),
                 };
             }
         }
@@ -151,12 +164,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// already-accepted descendant.
     pub(in crate::surface::proof) fn try_execute_until(
         search_input: &Proof<'a>,
-        region: &CodeRegionRef,
+        point: &ExecutionPoint,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_execute_until");
         Ok(
-            crate::kernel::search::ProofSearch::try_execute_until_descendant(search_input, region)?
+            crate::kernel::search::ProofSearch::try_execute_until_descendant(search_input, point)?
                 .map(|(proof, _)| proof),
         )
     }

@@ -24,7 +24,7 @@ verifying "walk.c";
 unsigned long walk(unsigned char *p, unsigned long n) {
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
         invariant i <= n;

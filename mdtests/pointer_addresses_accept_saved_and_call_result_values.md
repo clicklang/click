@@ -17,7 +17,7 @@ int32* identity(int32* p) {
 int32* forwarded(int32* p) {
     ensures result == p;
 } by {
-    step_until(call(0));
+    step_until(call(0).entry);
     step();
     have address(call(0).result) == address(old(p)) by { known(); }
     have address(at(function.entry, p)) == old(address(p)) by { known(); }

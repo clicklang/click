@@ -318,13 +318,13 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// selected source statement.
     pub(in crate::surface::proof) fn try_execute_until(
         &self,
-        region: &CodeRegionRef,
+        point: &ExecutionPoint,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let driver_proof = self.proof;
         let Some((body, added_facts)) =
             crate::kernel::search::ProofSearch::try_execute_until_descendant(
                 &(driver_proof.body),
-                region,
+                point,
             )?
         else {
             return Ok(None);

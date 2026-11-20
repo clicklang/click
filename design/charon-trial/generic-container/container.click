@@ -492,7 +492,7 @@ impl<T> generic_container::Stack<T> {
 fn generic_container::round_trip(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
 } by {
-    step_until(region(57));
+    step_until(region(57).entry);
     have separate(region(50).footprint, memory(stack.head)) by { normalize() using {}; }
     have at(region(50).exit, stack.head) == at(region(50).entry, stack.head) by {
         preserve(memory(stack.head), region(50));

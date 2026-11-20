@@ -1,6 +1,6 @@
 # Finish a loop preservation region
 
-`back_edge()` checks the remaining steps of the current preservation region.
+`loop.back_edge` checks the remaining steps of the current preservation region.
 It rejects early exits and leaves invariant and decreasing-measure checks to
 the back edge, which closes each member with `solve()`. It does not split branches.
 
@@ -19,11 +19,11 @@ int32 count(int32 n) {
  requires 0 <= n and n <= 1000;
  ensures result == n;
 } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  loop {
   decreases n-i;
   invariant 0 <= i and i <= n;
-  maintain by { step_until(back_edge()); }
+  maintain by { step_until(loop.back_edge); }
  }
 }
 ```

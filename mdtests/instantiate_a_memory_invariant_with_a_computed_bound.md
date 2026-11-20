@@ -20,7 +20,7 @@ void f(int32* p, int32 end, int32 count, int32 k) {
     requires 0 <= count;
     requires count <= end;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases to_integer(start) - to_integer(k);
         invariant forall (j: int32) { 0 <= j and j < start implies p[j] == old(p[j]) };

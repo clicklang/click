@@ -32,7 +32,7 @@ fn parses_grouped_function_proof() {
         function.grouped_proof().and_then(SourceProof::tactics),
         Some(
             [
-                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
+                ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
                 ProofTactic::Solve
             ]
             .as_slice()
@@ -236,7 +236,7 @@ fn parses_proof_tactic_script() {
         ensure.proof().tactics(),
         Some(
             [
-                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
+                ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
                 ProofTactic::Solve
             ]
             .as_slice()
@@ -352,7 +352,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
                     arguments: vec![current_var("flag")],
                     parameter_types: vec![InterfaceType::Int32Pointer],
                 }),
-                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
+                ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
                 ProofTactic::FoldResource(ResourceClause::Declared {
                     type_schema: None,
                     resource_type_arguments: Vec::new(),
@@ -390,7 +390,7 @@ fn produced_call_output_is_a_resource_unfold_target() {
             void caller(int32* q) {
                 ensures q == q;
             } by {
-                let { out: out } = step(make, {});
+                let { out: out } = step(make);
                 unfold(out);
             }
         "#;

@@ -40,7 +40,7 @@ int32 call_set_pointer(struct holder* owner, int32* data) {
     owns *owner;
     ensures result == 1;
 } by {
-    step_until(region(2));
+    step_until(region(2).entry);
     have owner->data == data;
 }
 ```

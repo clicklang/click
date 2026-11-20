@@ -19,7 +19,7 @@ void f(int32* p, uint64 end, uint64 count, uint64 k) {
     ensures end == old(end);
     requires count <= end;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases to_integer(start) - to_integer(k);
         invariant forall (j: uint64) { j < start implies p[j] == old(p[j]) };
