@@ -1364,3 +1364,49 @@ theorem mixed(x: int32) {
         .unwrap_or_else(|error| panic!("recommendation failed: {command}\n{error}"));
     }
 }
+
+#[test]
+fn profile_resolves_a_project_once_for_reporting_as_tactic_rows_grow() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("identity.click");
+    fs::write(
+        directory.path().join("identity.c"),
+        "int identity(int x) { return x; }",
+    )
+    .unwrap();
+    for count in [2, 64] {
+        let source = format!(
+            "verifying \"identity.c\";\n\
+             int32 identity(int32 x) {{ ensures result == x; }} by {{\n\
+             step();\n{}known();\n}}\n",
+            "have result == x by { normalize(); }\n".repeat(count)
+        );
+        fs::write(&path, source).unwrap();
+        let targets = profile_targets(&path).unwrap();
+        let thresholds = Thresholds {
+            smart: Duration::ZERO,
+            simple: Duration::ZERO,
+            control: Duration::ZERO,
+        };
+        let (profile, events) =
+            instrumentation::collect(|| profile_target(&targets[0], thresholds, test_limits()));
+        let profile = profile.unwrap();
+        assert_eq!(profile.verification_failure, None);
+        let haves = profile
+            .slow_steps
+            .iter()
+            .filter(|step| step.key.tactic_name == "have")
+            .filter_map(|step| step.key.position.as_ref())
+            .map(|position| position.line)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(haves, (4..4 + count).collect());
+        // The inner collector takes the verification events. The outer
+        // collector sees the report's single shared source resolution.
+        let resolutions = events
+            .iter()
+            .filter(|event| matches!(event, VerificationEvent::PhaseStarted("source resolution")))
+            .count();
+        assert_eq!(resolutions, 1, "for {count} written haves");
+        assert!(profile.report_preparation.is_some());
+    }
+}
