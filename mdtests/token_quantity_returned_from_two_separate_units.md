@@ -68,7 +68,7 @@ void checkout(struct pool* pool, struct payload* p) {
     ensures pool->checked_out == old(pool->checked_out) + 1;
     ensures pool->capacity == old(pool->capacity);
 } by {
-    open(control(pool)) {
+    with(control(pool)) {
         have 1 <= to_integer(count(slot(pool))) by {
             known();
         }
@@ -170,7 +170,7 @@ void give_back(struct pool* pool, struct payload* p) {
     ensures pool->capacity == pool->checked_out + count(slot(pool));
     ensures p->value == old(p->value);
 } by {
-    open(control(pool)) {
+    with(control(pool)) {
         have 1 <= to_integer(count(item(pool, _))) by {
             known();
         }
