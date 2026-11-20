@@ -3904,7 +3904,8 @@ impl<'a> TermRewrite<'a> {
                 }
                 // A checked constructor determines the arm without proof search.
                 // Validate the whole match before discarding its other arms.
-                if matches!(scrutinee.node, AlgebraicTermNode::Constructor { .. })
+                if self.algebraic.is_none()
+                    && matches!(scrutinee.node, AlgebraicTermNode::Constructor { .. })
                     && term.is_well_formed()
                     && let Some(value) =
                         self.rewrite_algebraic_match_iota(&scrutinee, &rewritten_arms)

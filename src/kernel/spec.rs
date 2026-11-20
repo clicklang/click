@@ -167,6 +167,8 @@ struct SpecEvaluation<'a> {
     conditional_guard: bool,
     machine_preparation_disabled: bool,
     machine_result_production_disabled: bool,
+    /// The enclosing match already checked the purity of this arm's syntax.
+    in_pure_algebraic_match: bool,
     integer_bindings: BTreeMap<Variable, IntegerResult>,
 }
 
@@ -227,6 +229,7 @@ impl<'a> SpecEvaluation<'a> {
             conditional_guard: false,
             machine_preparation_disabled: false,
             machine_result_production_disabled: false,
+            in_pure_algebraic_match: false,
             integer_bindings: initial_integer_bindings(),
         }
     }
@@ -240,6 +243,7 @@ impl<'a> SpecEvaluation<'a> {
             conditional_guard: false,
             machine_preparation_disabled: false,
             machine_result_production_disabled: false,
+            in_pure_algebraic_match: false,
             integer_bindings: initial_integer_bindings(),
         }
     }
@@ -3823,13 +3827,25 @@ fn evaluate_spec_algebraic_non_call_in(
                 return Err(ExecutionLimit::Paths);
             }
             let mut result = Vec::new();
+            let mut pure_match = None;
             for scrutinee_path in evaluate_spec_algebraic_at_state_with_bindings_in(
                 scope,
                 scrutinee,
                 assumptions,
                 budget,
             )? {
-                if !scrutinee_path.value.is_constructor() {
+                let known_constructor = scrutinee_path.value.is_constructor();
+                let retain_known = known_constructor
+                    && !budget.checked_reads
+                    && (budget.in_pure_algebraic_match
+                        || *pure_match.get_or_insert_with(|| {
+                            super::functions::spec_algebraic_expression_is_obligation_free(
+                                expression,
+                            ) && super::functions::spec_algebraic_expression_is_state_independent(
+                                expression,
+                            )
+                        }));
+                if retain_known || !known_constructor {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
                     let facts = scrutinee_path.facts.clone();
                     let obligations = scrutinee_path.obligations.clone();
@@ -3858,12 +3874,16 @@ fn evaluate_spec_algebraic_non_call_in(
                             &arm.binding_variables,
                             &bindings,
                             |budget| {
-                                evaluate_spec_algebraic_at_state_with_bindings_in(
+                                let outer = budget.in_pure_algebraic_match;
+                                budget.in_pure_algebraic_match |= retain_known;
+                                let paths = evaluate_spec_algebraic_at_state_with_bindings_in(
                                     body_scope.as_scope(),
                                     &arm.body,
                                     &body_assumptions,
                                     budget,
-                                )
+                                );
+                                budget.in_pure_algebraic_match = outer;
+                                paths
                             },
                         )?;
                         let Some(body_path) = body_paths.pop() else {

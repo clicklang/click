@@ -334,6 +334,33 @@ mod tests {
     }
 
     #[test]
+    fn known_constructor_algebraic_match_raises_after_lowering_and_rewrite() {
+        let fixture = include_str!("../../../mdtests/algebraic_match_on_known_constructor.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        let raised = |prefix: &str| {
+            lines
+                .iter()
+                .find_map(|line| line.strip_prefix(prefix))
+                .unwrap_or_else(|| panic!("missing {prefix:?}: {lines:#?}"))
+        };
+        let written =
+            raised("raised\tgoal\tequal:algebraic\twritten.ensures_0\tintro()\twritten\t");
+        let rewritten =
+            raised("raised\tgoal\tequal:algebraic\trewritten.ensures_0\trewrite\twritten\t");
+        assert!(written.contains("match Packet::Full(7)"), "{written}");
+        assert_eq!(written, rewritten);
+    }
+
+    #[test]
     fn algebraic_match_arm_values_name_unfold_facts() {
         let source = r#"
 verifying "keep.c";
