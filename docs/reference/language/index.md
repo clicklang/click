@@ -4302,9 +4302,10 @@ function countdown(n: int32) -> int32
 ```
 
 Every direct or mutual integer-recursive edge must pass a nonnegative measure
-strictly smaller than the caller's. This form restricts the measure to one
-named `int32` parameter and recursive components to `int32` parameters and
-`int32` or `bool` results.
+strictly smaller than the caller's. The measure is one named `int32`
+parameter; the function's other parameters and its result may have any type,
+so a function can build a list while it counts down
+(`mdtests/an_integer_measure_recursion_builds_a_list.md`).
 
 A recursive algebraic datatype parameter can also be the named measure. After
 matching it, recursive calls may pass algebraic fields bound by that match;
@@ -4396,7 +4397,13 @@ point carried by that argument. This is why `count(p, ...)` can be called
 with either current `p` or `old(p)`.
 
 Click array refs carry their element type. Passing an `int32[]` ref to a pure
-Click function or predicate parameter declared as `uint8[]` is rejected.
+Click function or predicate parameter declared as `uint8[]` is rejected. A
+`char`, `signed char` or `unsigned char` array passed for a `uint8[]`
+parameter is read through its byte view `p as (uint8 *)`, so a string literal
+of signed `char` reads as unsigned bytes, and a call is the same term wherever
+it is written, including the recursive calls an `unfold` exposes
+(`mdtests/a_byte_function_reads_a_string_literal_as_unsigned_bytes.md`,
+`mdtests/a_recursive_byte_function_evaluates_a_string_literal.md`).
 The same typed array-ref model is used by loop-invariant spec lowering, so a
 pure helper over `uint8[]` can appear in an invariant or inside `old(...)`.
 

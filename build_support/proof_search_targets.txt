@@ -267,3 +267,5 @@ try_rewrite_conditional_arms_using
 try_native_integer_bound
 selected_call_supplier_unfold
 try_intrinsic_sum_bound
+
+try_interval_exclusion_using

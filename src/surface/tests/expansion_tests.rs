@@ -1400,11 +1400,33 @@ fn unsigned_widening_special_certificates_expand_and_recheck() {
         "widened_positive_is_unequal_to_zero.ensures_0",
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+        assert!(!expanded.contains("normalize()"), "{expanded}");
         without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     }
     // x = 0 satisfies the weakened bound and refutes both conclusions.
     let false_claim = source.replace("1 <= to_integer", "0 <= to_integer");
     assert!(verify_click_theorems(&false_claim).is_err());
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: three selected interval exclusions expand and replay in 3.7s"]
+fn selected_interval_exclusion_expands_and_rechecks() {
+    let (source, _) = mdtest_sources("mdtests/integer_bound_exclusion.md");
+    for label in [
+        "negative_bound_excludes_zero.ensures_0",
+        "positive_divisor_guards.ensures_0",
+        "positive_divisor_guards.ensures_1",
+    ] {
+        let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+    let omitted = source.replace("solve() using { x <= -1; }", "solve() using {}");
+    assert!(verify_click_theorems(&omitted).is_err());
 }
 
 #[test]
@@ -18562,6 +18584,48 @@ fn an_unfold_bound_scalar_field_expands_and_reverifies() {
     );
     verify_c_sources(&expanded, &sources)
         .unwrap_or_else(|error| panic!("the expansion should reverify: {error:?}\n{expanded}"));
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: two named loop contracts expand and cold-replay in 18.5s"]
+fn named_loop_comparisons_expand_and_cold_replay() {
+    for (fixture, label, law, dropped_fact) in [
+        (
+            "mdtests/the_back_edge_ranks_a_reassigned_parameter.md",
+            "drain_to_zero.contract",
+            "int32_nonnegative_predecessor_upper_bound",
+            "n <= at(drain.entry, n); };",
+        ),
+        (
+            "mdtests/loop_exit_program_point.md",
+            "count_from_to.contract",
+            "int32_less_equal_and_not_less_than_implies_equal",
+            "not (at(count.exit, i) < n);",
+        ),
+    ] {
+        let (source, program) = mdtest_sources(fixture);
+        let program = crate::cli::source_refs(&program);
+        let expanded = expand_c_claim_source_by_label(&source, &program, label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        assert!(expanded.contains(law), "{label} should use {law}");
+        assert!(
+            !expanded.contains("normalize()"),
+            "{label} emitted normalize()"
+        );
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap();
+        let replacement = if dropped_fact.ends_with("};") {
+            "};"
+        } else {
+            ""
+        };
+        let omitted = source.replace(dropped_fact, replacement);
+        assert_ne!(source, omitted);
+        assert!(verify_c_sources(&omitted, &program).is_err());
+    }
 }
 
 #[test]

@@ -865,6 +865,97 @@ pub(super) fn note_refusal(message: impl Into<String>) {
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Refute an equality with one listed constant bound. Keeping the
+    /// substitution explicit also preserves machine observations in the bound.
+    pub(super) fn try_interval_exclusion_using(
+        input: &Proof<'a>,
+        premises: &[(Proposition, ClickProposition)],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_interval_exclusion_using");
+        let Some(ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::NotEqual,
+            right,
+        }) = input.surface_goal().and_then(canonical_surface)
+        else {
+            return Ok(None);
+        };
+        let equality = compare(left.clone(), true, right.clone());
+        let kernel = input.lower_integer_surface_proposition(&equality, "excluded equality")?;
+        let Some(Reading {
+            left: a,
+            right: b,
+            equal: true,
+            ..
+        }) = reading(&kernel)
+        else {
+            return Ok(None);
+        };
+        let (term, excluded) = match (a.as_const(), b.as_const()) {
+            (None, Some(value)) => (&a, value),
+            (Some(value), None) => (&b, value),
+            _ => return Ok(None),
+        };
+        for (premise, surface) in premises {
+            check_verification_deadline()?;
+            let Some(Reading {
+                left: lo,
+                right: hi,
+                equal: false,
+                strict: false,
+            }) = reading(premise)
+            else {
+                continue;
+            };
+            let Some((endpoint, lower)) = (if &hi == term {
+                lo.as_const().map(|value| (value, true))
+            } else if &lo == term {
+                hi.as_const().map(|value| (value, false))
+            } else {
+                None
+            }) else {
+                continue;
+            };
+            if crate::instrumentation::deadline_exceeded_with_work(
+                usize::try_from(endpoint.bits().saturating_add(excluded.bits()))
+                    .unwrap_or(usize::MAX),
+            ) {
+                return Ok(None);
+            }
+            if (lower && excluded >= endpoint) || (!lower && excluded <= endpoint) {
+                continue;
+            }
+            let Some(term) =
+                input.spell_written_integer_observation(term, &[left.clone(), right.clone()])
+            else {
+                continue;
+            };
+            let endpoint = literal(endpoint);
+            let excluded = literal(excluded);
+            let (a, b, c, d) = if lower {
+                (endpoint.clone(), term, endpoint, excluded)
+            } else {
+                (term, endpoint.clone(), excluded, endpoint)
+            };
+            let impossible = compare(c.clone(), false, d.clone());
+            let substitution = application(
+                "le_substitute",
+                vec![a.clone(), b.clone(), c.clone(), d.clone()],
+                vec![surface.clone(), compare(c, true, a), compare(d, true, b)],
+            );
+            let introduced = input.driver().apply_step(ProofStep::Intro)?;
+            let scope = introduced.driver().open_have(impossible.clone())?;
+            let closed = scope.driver().apply_step(substitution)?;
+            return closed
+                .join()?
+                .driver()
+                .apply_step(ProofStep::Contradiction(impossible))
+                .map(Some);
+        }
+        Ok(None)
+    }
+
     pub(in crate::surface::proof) fn apply_integer_composition(
         proof: &Proof<'a>,
         plan: &IntegerArithmeticPlan,

@@ -596,7 +596,6 @@ pub fn program_loadability_obligation_impossible_with_assumptions(
         Proposition::MemoryLoadable { memory, base, .. } => {
             memory.is_ended_local_address(base)
                 || memory.is_deallocated_heap_address(base, &PureFactContext::new())
-                || memory.freed_heap_allocation_may_contain(base, &PureFactContext::new())
         }
         _ => false,
     }

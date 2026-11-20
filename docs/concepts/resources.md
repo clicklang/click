@@ -1153,8 +1153,9 @@ viewed piece in the cursor must be covered by `input`. The source must have
 backing that the caller can recover directly when the borrow ends.
 
 Each produced cursor keeps its own hold on the input. Unfolding moves the hold
-to its viewed pieces, and refolding those pieces together moves it back to
-the new head. Consuming one cursor leaves the other cursors' holds live.
+to its viewed pieces. Refolding all the pieces moves that hold to the new
+head. Refolding a subset gives the new head a separate hold and leaves the
+remaining pieces available. Consuming one cursor leaves the other holds live.
 Once the last hold is gone, the caller can recover its original ownership.
 A call that repackages an existing borrow can name a consumed composite with
 `consumes cursor(...) as input` and write `produces other_cursor(...) from input`.

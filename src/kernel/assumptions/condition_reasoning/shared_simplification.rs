@@ -31,6 +31,13 @@ impl PureFactContext {
                 return value.clone();
             }
             crate::instrumentation::record_deterministic_work(1);
+            if let KernelTermNode::Fold(fold) = root.node()
+                && let Some(initial) = fold.empty_int32_initial()
+            {
+                let value = walk(facts, V::Shared(initial), format, memo);
+                memo.insert(key, value.clone());
+                return value;
+            }
             let retain = |root: KernelTerm| V::Shared(&root).retain(format);
             let node =
                 |value: &S| KernelTerm::retained_machine_operand(value.ty(), value.operand_view());

@@ -1,11 +1,13 @@
-# A refold must move all the pieces that share a borrow hold
+# Refolding and consuming one piece leaves the other piece protected
 
 ```c filename=partial_borrowing_cursor.c
 void package(int *p);
+void drop_left(int *p);
 
 void use(int *p) {
     package(p);
-    p[0] = 7;
+    drop_left(p);
+    p[1] = 7;
 }
 ```
 
@@ -26,16 +28,22 @@ extern void package(int32* p) {
     produces pair(p) from input;
 }
 
+extern void drop_left(int32* p) {
+    consumes left(p);
+}
+
 void use(int32* p) {
     owns p[0..2];
-    ensures p[0] == 7;
+    ensures p[1] == 7;
 } by {
     step();
     unfold(pair(p));
     fold(left(p));
+    step();
+    step();
 }
 ```
 
 ```expect
-fail: `fold` must move every viewed piece sharing this borrow hold
+fail: missing resource fact `owns
 ```

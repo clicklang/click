@@ -107,3 +107,69 @@ fn nested_machine_fold_producers_retain_children_without_native_exports() {
         assert!(work < 250 * size, "size={size}, work={work}");
     }
 }
+
+#[test]
+fn empty_machine_fold_check_skips_growing_callback() {
+    use crate::kernel::{MachineOperandView, PureFactContext};
+
+    for unrelated in [0, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let ty = KernelType::Program(ProgramType::Int32);
+        let literal = |bits| {
+            KernelTerm::retained_machine_operand(
+                format,
+                MachineOperandView::Legacy(&MachineTerm::constant(bits)),
+            )
+        };
+        let start = literal(1);
+        let end = literal((-3i32) as u32);
+        let initial = literal(5);
+        let mut facts = PureFactContext::new();
+        for index in 0..unrelated {
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    MachineTerm::Variable(Variable(990_000 + index)),
+                    MachineTerm::constant(13),
+                ),
+                true,
+            );
+        }
+        for size in [16, 64, 256] {
+            let accumulator = Variable(981_100);
+            let item = Variable(981_101);
+            let mut body = KernelTerm::variable(ty.clone(), accumulator);
+            for _ in 0..size {
+                body = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [body, initial.clone()],
+                );
+            }
+            let fold = KernelFold::new(
+                KernelFoldIndex::Int32,
+                accumulator,
+                item,
+                [start.clone(), end.clone(), initial.clone(), body],
+            )
+            .unwrap()
+            .into_term();
+            let before = KernelTermExport::machine_export_count();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.simplify_machine_operand_under_assumptions(
+                    MachineOperandView::Shared(&fold),
+                    format,
+                )
+            });
+            assert_eq!(
+                result.operand_view().literal(),
+                Some(MachineTerm::constant(5))
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), before);
+            assert!(
+                work <= 16,
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+        }
+    }
+}

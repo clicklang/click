@@ -1,7 +1,7 @@
 //! Goal-local computation for a simple proof leaf.
 //!
 //! The `computes_leaf` entry point receives no fact context. Reads, calls,
-//! folds, and symbolic matches remain opaque operands in that entry point;
+//! folds with possible iterations, and symbolic matches remain opaque;
 //! it has no memory resolution, unfolding, or atomic-prover fallback. Legacy
 //! normalization shares arithmetic below but supplies its own atom key.
 
@@ -892,6 +892,24 @@ enum AffineLeaf {
     Fold(u64),
 }
 
+/// Read the seed through consecutive empty machine folds. Their callbacks
+/// are outside the affine walk and are never read.
+fn observe_empty_int32_fold(value: &SharedMachineIntegerTerm) -> Option<SharedIntegerTerm> {
+    if value.ty() != MachineIntegerType::Int32 {
+        return None;
+    }
+    let root = value.shared_operand()?;
+    let KernelTermNode::Fold(fold) = root.node() else {
+        return None;
+    };
+    let initial = fold.empty_int32_initial()?;
+    Some(
+        MachineOperandView::Shared(initial)
+            .observe(value.ty())?
+            .into(),
+    )
+}
+
 fn integer_affine_difference(
     left: &SharedIntegerTerm,
     right: &SharedIntegerTerm,
@@ -905,7 +923,7 @@ fn integer_affine_difference(
     let mut order = Vec::new();
     let mut seen = std::collections::HashSet::new();
     let mut stack = vec![(left.clone(), false), (right.clone(), false)];
-    let mut reduced_matches = std::collections::HashMap::new();
+    let mut reduced_operands = std::collections::HashMap::new();
     while let Some((term, expanded)) = stack.pop() {
         crate::instrumentation::record_deterministic_work(1);
         if expanded {
@@ -922,6 +940,12 @@ fn integer_affine_difference(
                 stack.push((left.clone(), false));
             }
             IntegerTerm::Negate(value) => stack.push((value.clone(), false)),
+            IntegerTerm::Machine(value) => {
+                if let Some(value) = observe_empty_int32_fold(value) {
+                    stack.push((value.clone(), false));
+                    reduced_operands.insert(term.id(), value);
+                }
+            }
             IntegerTerm::AlgebraicMatch { .. } => {
                 if let Some(value) =
                     crate::kernel::proof::term_rewrite::TermRewrite::reduce_known_integer_match(
@@ -929,7 +953,7 @@ fn integer_affine_difference(
                     )
                 {
                     stack.push((value.clone(), false));
-                    reduced_matches.insert(term.id(), value);
+                    reduced_operands.insert(term.id(), value);
                 }
             }
             other => {
@@ -953,7 +977,7 @@ fn integer_affine_difference(
         if coefficient.is_zero() {
             continue;
         }
-        if let Some(value) = reduced_matches.get(&term.id()) {
+        if let Some(value) = reduced_operands.get(&term.id()) {
             *coefficients.entry(value.id()).or_default() += coefficient;
             continue;
         }
