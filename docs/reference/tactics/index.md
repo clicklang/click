@@ -1643,6 +1643,10 @@ and symbolic matches are opaque operands; their identical occurrences may
 cancel, but this check never unfolds a call or resolves a read. It does not
 invoke the general atomic prover.
 
+Two values of the same constructor are unequal if a corresponding field
+holds a different machine-integer literal of the same type. The check
+visits only the immediate fields and uses their literal values.
+
 Direct computation also recognizes the neutral bitwise identities `0 & x == 0`
 and `0 | x == x` at a native word's own format, in either operand order. Intrinsic
 alignment of a null, heap, global or static address reads only that address's
@@ -4027,7 +4031,8 @@ the tactic itself, for recursion), when:
   resource that the proof holds. The map is left out only when the tactic
   declares no such binder; an instance of the binder's own name is not
   picked up without it.
-- Every `produces` binder is named by the `let { binder: name }` pattern.
+- Every `produces` binder is named by the `let { binder: name }` pattern,
+  including when the tactic produces just one resource.
 - Each `requires`, at the arguments, is an available fact or a condition the
   kernel's condition decision settles (`n == 3` and `n >= 3` both discharge
   `requires t > 0;` at `t = n`). A recursive application also owes its

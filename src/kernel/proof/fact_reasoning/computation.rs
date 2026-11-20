@@ -295,6 +295,24 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
             AlgebraicTermNode::Constructor { variant: left, .. },
             AlgebraicTermNode::Constructor { variant: right, .. },
         ) if left != right => Some(false),
+        (
+            AlgebraicTermNode::Constructor { fields: left, .. },
+            AlgebraicTermNode::Constructor { fields: right, .. },
+        ) if left.len() == right.len() => left
+            .iter()
+            .zip(right)
+            .any(|(left, right)| {
+                crate::instrumentation::record_deterministic_work(1);
+                match (left, right) {
+                    (AlgebraicValue::Program(left), AlgebraicValue::Program(right)) => {
+                        crate::kernel::reasoning::path_facts::program_values_definitely_distinct(
+                            left, right,
+                        )
+                    }
+                    _ => false,
+                }
+            })
+            .then_some(false),
         _ => None,
     }
 }

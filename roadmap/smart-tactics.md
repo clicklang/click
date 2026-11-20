@@ -660,6 +660,39 @@ current complete-operation results. Preserve capture avoidance and expansion.
 Both linked items retain their existing deferrals; the general constant-ish
 checking claim must disclose them until resolved.
 
+### Checking outside `step()`
+
+Keep work measured at written tactics separate from execution inside
+`step()`, and measure mandatory work outside tactics at its own phase boundary.
+For each written tactic, fix its selected input and output while growing
+the surrounding context. Then grow what the tactic actually names to check
+the cost per emitted fact, resource or proof node.
+
+- **Named `unfold`.** At `c787479ae`, a written unfold of a fixed matched
+  arm took 1,352 / 1,355 / 1,357 work units with 4 / 16 / 64 disjoint
+  sibling ownership ranges. With 4 / 16 / 64 owned ranges in the selected
+  arm itself and a fixed frame, it took 6,505 / 28,755 / 206,745 units.
+  Reusing the kernel exchange at the same predecessor cuts these to
+  3,832 / 17,466 / 160,024 units. The ownership-footprint preparation
+  events drop from 44 / 176 / 704 to 28 / 112 / 448.
+  `named_unfold_constructs_the_selected_arm_once` exercises both axes and
+  checks how many times the named arm's premises are evaluated. Trace the
+  remaining arm-size cost through body resource evaluation, memory naming,
+  and publication with the same probe. Use
+  `mdtests/loop_ascending_walk_to_root.md` as the real-proof control.
+- **Logical introduction.** The written nested `Integer` introductions at
+  depths 4 / 8 / 16 / 24 / 30 total 226 / 500 / 1,192 / 2,076 / 2,865
+  units on the same baseline. A same-spelled ambient quantifier gives the
+  same curve. Isolate retained-body work and measure a confirmed binder
+  collision separately in [the quantifier tracker](deep-quantifier-scaling.md).
+- **Mandatory work outside tactics.** A fresh dev profile of
+  `examples/ring-buffer` at the same baseline attributed about 1.2 seconds
+  to verifier core and reported zero certification paths. The trace names
+  proof-context and execution-path finishing; their nested timings can
+  overlap. Compare prepared-call, loop-exit and resource-completion
+  invocations at their producer and publication boundaries before assigning
+  that time to repeated work.
+
 ## Prevention coverage
 
 `kernel::search::SearchPermission` gates ambient fact discovery, and

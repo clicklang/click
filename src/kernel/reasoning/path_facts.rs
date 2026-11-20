@@ -470,7 +470,10 @@ fn sequence_terms_definitely_distinct(left: &SequenceTerm, right: &SequenceTerm)
     }
 }
 
-fn program_values_definitely_distinct(left: &ProgramValue, right: &ProgramValue) -> bool {
+pub(in crate::kernel) fn program_values_definitely_distinct(
+    left: &ProgramValue,
+    right: &ProgramValue,
+) -> bool {
     fn constant(bits: &MachineTerm) -> Option<u64> {
         match bits {
             bits32_constant!(value) => Some(u64::from(constant_u32(*value))),

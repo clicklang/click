@@ -1264,6 +1264,55 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
     );
 }
 
+/// Later loop clauses reuse the function's parameter index and annotation
+/// metadata even when the signature contains many unrelated pointers.
+#[test]
+fn later_loop_clauses_ignore_unreferenced_parameters() {
+    let work = [4, 16, 48].map(|count| {
+        let result = run(
+            |count| {
+                let mut parameters = "int32* p, int32 n, int32 m".to_owned();
+                for i in 0..count {
+                    parameters += &format!(", int32* unused{i}");
+                }
+                let c = format!(
+                    "void caller({parameters}) {{
+    while (n > 0) {{
+        n = 0;
+    }}
+    while (m > 0) {{
+        m = 0;
+    }}
+    *p = 7;
+    return;
+}}"
+                );
+                let click = format!(
+                    "verifying \"hunt.c\";
+void caller({parameters}) {{
+    owns *p;
+    requires n >= 0;
+    requires m >= 0;
+}} by {{
+    loop {{ decreases n; invariant n >= 0; initialize by known(); maintain by {{ step(); }} }}
+    loop {{ decreases m; invariant m >= 0; initialize by known(); maintain by {{ step(); }} }}
+    step();
+    step();
+}}"
+                );
+                (c, click)
+            },
+            count,
+        );
+        assert_eq!(result.loops.len(), 2);
+        result.loops[1]
+    });
+    assert!(
+        work.iter().max().unwrap() - work.iter().min().unwrap() <= 32,
+        "second loop work with 4/16/48 unrelated parameters: {work:?}"
+    );
+}
+
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checks three complete writing loops at four sizes"]
