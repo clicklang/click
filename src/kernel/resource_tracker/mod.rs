@@ -1249,12 +1249,25 @@ fn cell_last_same_version(
                     {
                         break hit;
                     }
-                    crate::instrumentation::record_deterministic_work(1);
                     visited.push(current_key);
                     let Some(_lookup) = cell_source::CellLookupGuard::enter(&current, pointer)
                     else {
                         break None;
                     };
+                    match current.indexed_static_cell_store_version(pointer, bytes) {
+                        Some(StaticCellStoreVersion::Written(memory)) => {
+                            break Some(NamedCellVersion {
+                                memory,
+                                reason: StopReason::Affected,
+                            });
+                        }
+                        Some(StaticCellStoreVersion::Boundary(memory)) => {
+                            current = memory;
+                            continue;
+                        }
+                        None => {}
+                    }
+                    crate::instrumentation::record_deterministic_work(1);
                     let Some(derivation) = current.derivation() else {
                         break Some(NamedCellVersion {
                             memory: current,

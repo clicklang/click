@@ -9717,6 +9717,36 @@ impl SharedMemory {
         })
     }
 
+    /// Resolve a fixed-width static cell within a suffix of recorded scalar
+    /// stores. A miss returns the first edge outside that suffix.
+    pub(in crate::kernel) fn indexed_static_cell_store_version(
+        &self,
+        pointer: &Address,
+        bytes: u32,
+    ) -> Option<StaticCellStoreVersion> {
+        let span = static_cell_byte_span(pointer, bytes)?;
+        C_MEMORY_ARENA.with(|arena| {
+            let arena = arena.borrow();
+            if arena.0 != self.arena {
+                return None;
+            }
+            let index = arena.1.static_cell_store_versions[self.id as usize].as_ref()?;
+            crate::instrumentation::record_deterministic_work(1);
+            // All these IDs are on this chain, where each derivation
+            // points back to a strictly older arena state.
+            let latest = index
+                .changed
+                .get(&pointer.base)
+                .and_then(|block| span.filter_map(|byte| block.get(&byte).copied()).max());
+            Some(match latest {
+                Some(id) => StaticCellStoreVersion::Written(arena.1.memory_handle(self.arena, id)),
+                None => StaticCellStoreVersion::Boundary(
+                    arena.1.memory_handle(self.arena, index.boundary),
+                ),
+            })
+        })
+    }
+
     /// SymbolicMemory state identity for definedness of a direct automatic object.
     /// A producer updates only the local it stores; every other transition
     /// starts a fresh identity unless it merely forgets cached values.
@@ -9755,14 +9785,7 @@ impl SharedMemory {
             if source == self.id {
                 return self.clone();
             }
-            let memory = arena.1.memories[source as usize].clone();
-            let (_, content_hash) = arena.1.shallow_identities[&MemoryShallowIdentity::of(&memory)];
-            Self {
-                arena: self.arena,
-                id: source,
-                content_hash,
-                memory,
-            }
+            arena.1.memory_handle(self.arena, source)
         })
     }
 
@@ -10245,6 +10268,76 @@ struct MemoryArena {
     local_definedness_versions: Vec<LocalDefinednessVersions>,
     /// Block versions follow the same first-recorded edges as derivations.
     static_block_versions: Vec<Option<StaticBlockVersions>>,
+    /// Fixed-offset scalar stores, indexed along the cell walk's byte sources.
+    static_cell_store_versions: Vec<Option<StaticCellStoreVersions>>,
+}
+
+impl MemoryArena {
+    fn memory_handle(&self, arena: u32, id: u32) -> SharedMemory {
+        let memory = self.memories[id as usize].clone();
+        let (_, content_hash) = self.shallow_identities[&MemoryShallowIdentity::of(&memory)];
+        SharedMemory {
+            arena,
+            id,
+            content_hash,
+            memory,
+        }
+    }
+
+    fn record_static_cell_stores(&mut self, step: &MemoryDerivation, id: u32) {
+        let Some((pointer, bytes)) = step.single_write() else {
+            return;
+        };
+        let Some(span) = static_cell_byte_span(pointer, bytes) else {
+            return;
+        };
+        // The cell walk normalizes the base to the retained bytes source
+        // after each hop. Index exactly that chain.
+        let before = self.read_identities[step.base().id as usize];
+        let mut index = self.static_cell_store_versions[before as usize]
+            .clone()
+            .unwrap_or_else(|| StaticCellStoreVersions {
+                boundary: before,
+                changed: Default::default(),
+            });
+        let mut block = index
+            .changed
+            .get(&pointer.base)
+            .cloned()
+            .unwrap_or_default();
+        for byte in span {
+            block.insert(byte, id);
+        }
+        index.changed.insert(pointer.base.clone(), block);
+        self.static_cell_store_versions[id as usize] = Some(index);
+    }
+}
+
+#[derive(Clone)]
+struct StaticCellStoreVersions {
+    boundary: u32,
+    // A scalar touches at most MAX_SCALAR_ACCESS_BYTES keys. Each key keeps
+    // the most recent store to that byte, even after a partial overwrite.
+    changed: PersistentMap<AddressBase, PersistentMap<i64, u32>>,
+}
+
+pub(in crate::kernel) enum StaticCellStoreVersion {
+    Written(SharedMemory),
+    Boundary(SharedMemory),
+}
+
+fn static_cell_byte_span(pointer: &Address, bytes: u32) -> Option<std::ops::Range<i64>> {
+    let AddressOffset::Constant(start) = pointer.offset else {
+        return None;
+    };
+    let bytes = i64::from(bytes);
+    if !pointer.base.is_static_storage_block()
+        || start < 0
+        || !(1..=MAX_SCALAR_ACCESS_BYTES).contains(&bytes)
+    {
+        return None;
+    }
+    Some(start..start.checked_add(bytes)?)
 }
 
 #[derive(Clone)]
@@ -10560,10 +10653,7 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
                 arena.local_definedness_versions[derived.id as usize] = versions;
             }
         }
-        let Some(slot) = arena.derivations.get_mut(derived.id as usize) else {
-            return;
-        };
-        if slot.is_some() {
+        if arena.derivations[derived.id as usize].is_some() {
             return;
         }
         if derivation.base().id >= derived.id {
@@ -10587,7 +10677,8 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
             &derivation,
             &derived,
         ));
-        *slot = Some(derivation);
+        arena.record_static_cell_stores(&derivation, derived.id);
+        arena.derivations[derived.id as usize] = Some(derivation);
         arena
             .derived_children
             .entry((base_id, derived.content_hash))
@@ -10784,6 +10875,7 @@ fn intern_memory_with(
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
         arena.static_block_versions.push(None);
+        arena.static_cell_store_versions.push(None);
         arena
             .local_definedness_versions
             .push(LocalDefinednessVersions::fresh(id));

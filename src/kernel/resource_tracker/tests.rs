@@ -1899,3 +1899,47 @@ fn static_array_version_uses_derivations_attached_after_a_suffix_was_recorded() 
     assert!(root.derivation().is_some());
     assert_eq!(query(), Some(point(&entry)));
 }
+
+#[test]
+fn indexed_static_cell_names_the_latest_overlapping_write() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let array = block("global:g");
+    let address = at(array.clone(), 0);
+    let entry = SymbolicMemory::new().with_block(array.clone(), 32);
+    let wide = entry.clone().store(address.clone(), one());
+    let narrow = wide.clone().store(address.clone(), crate::kernel::uint8(2));
+    let after = narrow.clone().store(at(array.clone(), 16), one());
+    let source = point(&after);
+    for (address, bytes, expected) in [
+        (address.clone(), 1, &narrow),
+        (address.offset_by_bytes(1), 1, &wide),
+        (address.clone(), 4, &narrow),
+    ] {
+        let named = last_same_named_cell(&address, bytes, &source).expect("cell version");
+        assert_eq!(named.point, point(expected));
+        assert_eq!(named.stopped_by.reason, StopReason::Affected);
+    }
+    let untouched = last_same_named_cell(&at(array, 8), 4, &source).expect("entry cell version");
+    assert_eq!(
+        untouched.point.shared_memory(),
+        &point(&entry).shared_memory().unchanged_bytes_source()
+    );
+    assert_eq!(untouched.stopped_by.reason, StopReason::HistoryEnds);
+}
+
+#[test]
+fn indexed_static_cell_still_stops_at_a_symbolic_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let array = block("global:g");
+    let earlier = entry_memory().store(at(array.clone(), 0), one());
+    let symbolic =
+        at(array.clone(), 0).offset_by_int32_elements(MachineTerm::Variable(Variable(935_104)));
+    let barrier = earlier.store(symbolic, one());
+    let after = barrier.clone().store(at(array.clone(), 12), one());
+    let named = last_same_named_cell(&at(array, 0), 4, &point(&after)).expect("cell version");
+    assert_eq!(named.point, point(&barrier));
+    assert!(matches!(
+        named.stopped_by.reason,
+        StopReason::NotShownSeparate(_)
+    ));
+}
