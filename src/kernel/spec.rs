@@ -7876,7 +7876,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     _ => selected_state.expect("selected read state").program_point(),
                 };
                 let version = if !*exact && ProgramPoint::supports_indexed_version(&pointer) {
-                    read_point().indexed_typed_version(&pointer, *value_type)
+                    read_point().ordinary_typed_version(&pointer, *value_type)
                 } else {
                     None
                 };
@@ -8524,7 +8524,7 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
         return source.clone();
     };
     let block = &pointer.address().base;
-    let start = source.array_read_start(block);
+    let start = source.parameter_read_start(block);
     let version = crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Block(block),
         &start,

@@ -5300,7 +5300,7 @@ fn synthesize_point_read(
         if version.is_exact_read() {
             point.names_exact_read(version)
         } else {
-            point.indexed_typed_version(pointer, value_type).as_ref() == Some(version)
+            point.ordinary_typed_version(pointer, value_type).as_ref() == Some(version)
         }
     };
     if selects_version(state) {

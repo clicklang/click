@@ -10371,7 +10371,7 @@ impl ExecutionState {
     pub(crate) fn begin_function_entry_memory(mut self) -> Self {
         self.memory.pending_steps = None;
         let memory = super::intern_memory_ref(&self.memory);
-        self.point = super::program_point::PathLink::default().after(memory, None);
+        self.point = super::program_point::PathLink::function_entry(memory);
         self
     }
 
