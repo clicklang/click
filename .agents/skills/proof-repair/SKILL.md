@@ -165,7 +165,7 @@ Stop at exactly one, and say which:
   the rule schema, references checked, and reduced example for design
   discussion. A search miss alone does not establish this outcome.
 - `inexpressible-fact`: the argument needs an intermediate fact that Click
-  cannot write. Report a bug (below).
+  cannot write. Follow the user-facing reporting instructions below.
 - `failing-tactic`: a link that is a single simple tactic, within what that
   tactic is documented to do (the **Accepts** list in `click docs NAME`), is
   refused, still in its smallest form after step 6. Report a bug (below). A smart tactic such as `solve` that does not prove a
@@ -176,6 +176,21 @@ Stop at exactly one, and say which:
 
 `false-goal` and `unclear-goal` usually mean the claim, the contract, or the
 argument needs another look, not that Click is wrong.
+
+## Reporting an inexpressible fact to the user
+
+In the update that reports the outcome, explicitly call it an
+`inexpressible-fact` failure. State the exact intermediate proposition in
+the verifier's notation or in precise mathematical terms. Identify the part
+that has no Click source form, such as a consumed resource model, a program
+point, or a range with a specific bounds identity. State which larger goal
+the intermediate fact would help prove.
+
+Quote the relevant verifier output verbatim, including the `goal:` line or
+the `no Surface form` diagnostic when present. If the output only names the
+larger failed goal, quote it and explain how the trace identifies the
+inexpressible intermediate fact. Give this summary when reporting the
+failure to the user, before asking for approval to file a bug.
 
 ## Reporting a bug
 
