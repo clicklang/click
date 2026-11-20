@@ -1295,26 +1295,144 @@ fn pure_proof_claim_accounting_keeps_tactic_and_core_time_disjoint() {
 }
 
 #[test]
-fn profile_recommendations_expand_loop_closers_and_mixed_have_bodies() {
+fn profile_recommendation_expands_loop_closers_in_their_maintain_arms() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("reset.md");
+    let source = r#"```c filename=reset.c
+int32 reset(int32 i, int32 n, int32 flag) {
+    while (i != 0) {
+        if (flag != 0) {
+            i = 0;
+        } else {
+            i = 0;
+        }
+    }
+    return i;
+}
+```
+
+```click
+verifying "reset.c";
+int32 reset(int32 i, int32 n, int32 flag) {
+    requires n > 0;
+    requires i <= n;
+    ensures result == 0;
+} by {
+    loop {
+        decreases i;
+        invariant i <= n;
+        initialize by { known(); }
+        maintain by {
+            if flag != 0 {
+                step(); step();
+            } else {
+                step(); step();
+            }
+        }
+    }
+    step();
+    known();
+}
+```
+
+```expect
+pass
+```
+"#;
+    fs::write(&path, source).unwrap();
+    let thresholds = Thresholds {
+        smart: Duration::ZERO,
+        ..Thresholds::default()
+    };
+    let run_profile = |path: &Path| {
+        let target = profile_targets(path).unwrap().remove(0);
+        let profile = profile_target(&target, thresholds, test_limits()).unwrap();
+        assert_eq!(profile.verification_failure, None);
+        profile
+    };
+    let is_closer = |step: &&SlowStep| {
+        step.key.tactic_name == click::instrumentation::IMPLICIT_LOOP_CLOSER_TACTIC
+    };
+    let searched = |profile: &ProjectProfile| {
+        profile
+            .operations
+            .iter()
+            .any(|operation| operation.name == "close invariants: member planning")
+    };
+    let profile = run_profile(&path);
+    assert!(
+        searched(&profile),
+        "the source must exercise member planning"
+    );
+    let closers = profile
+        .slow_steps
+        .iter()
+        .filter(is_closer)
+        .collect::<Vec<_>>();
+    let [first, second] = closers.as_slice() else {
+        panic!("each arm should have an implicit closer: {closers:?}");
+    };
+    assert!(first.loop_closer_has_proof && second.loop_closer_has_proof);
+    assert_eq!(first.key.position, second.key.position);
+    let position = first.key.position.as_ref().unwrap();
+    assert_eq!(
+        source.lines().nth(position.line - 1).unwrap().trim(),
+        "if flag != 0 {"
+    );
+    let selector = format!("{}:{}:{}", path.display(), position.line, position.column);
+    let report = render_profiles(&[profile], thresholds, DEFAULT_TIME_LIMIT);
+    assert!(
+        report.contains(&format!("--claim {}", shell_quote(&selector))),
+        "{report}"
+    );
+
+    let output = directory.path().join("reset-expanded.md");
+    crate::expand::entry_with([
+        "--claim".into(),
+        selector,
+        "--output".into(),
+        output.display().to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    let expanded = fs::read_to_string(&output).unwrap();
+    let (prefix, _) = source.split_once("        maintain by {").unwrap();
+    let phase = expanded.strip_prefix(prefix).unwrap();
+    let (left, right) = phase.split_once("} else {").unwrap();
+    assert_eq!(left.matches("have i <= n by {").count(), 1);
+    assert_eq!(right.matches("have i <= n by {").count(), 1);
+    let replay = run_profile(&output);
+    assert!(
+        !searched(&replay),
+        "the written arms must close without member planning"
+    );
+    assert_eq!(
+        replay
+            .slow_steps
+            .iter()
+            .filter(is_closer)
+            .filter(|step| !step.loop_closer_has_proof)
+            .count(),
+        2
+    );
+    let report = render_profiles(&[replay], thresholds, DEFAULT_TIME_LIMIT);
+    assert!(!report.contains("expand: click expand"), "{report}");
+}
+
+#[test]
+fn profile_recommendation_expands_a_mixed_have_body() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("profile.md");
-    let source = fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("mdtests/count_to_loop_initialize_by_solve_and_preserve.md"),
-    )
-    .unwrap()
-    .replace("            solve();\n", "")
-    .replace(
-        "verifying \"count_to_loop_initialize_by_solve_and_preserve.c\";",
-        r#"verifying "count_to_loop_initialize_by_solve_and_preserve.c";
+    let source = r#"```click
 theorem mixed(x: int32) {
     ensures x == 1 implies x == 1 by {
         have x == 1 implies x == 1 by { intro(); solve(); }
         known();
     }
-}"#,
-    );
-    fs::write(&path, &source).unwrap();
+}
+```
+"#;
+    fs::write(&path, source).unwrap();
     let targets = profile_targets(&path).unwrap();
     let thresholds = Thresholds {
         smart: Duration::ZERO,
@@ -1322,47 +1440,27 @@ theorem mixed(x: int32) {
     };
     let profile = profile_target(&targets[0], thresholds, test_limits()).unwrap();
     assert_eq!(profile.verification_failure, None);
-    let closer = profile
-        .slow_steps
-        .iter()
-        .find(|step| {
-            step.key.claim == "count_to.contract"
-                && step.key.tactic_name == click::instrumentation::IMPLICIT_SOLVE_TACTIC
-        })
-        .expect("the implicit loop closer must be identified as such");
-    let position = closer.key.position.as_ref().unwrap();
-    assert_eq!(
-        source.lines().nth(position.line - 1).unwrap().trim(),
-        "loop {"
-    );
     let mixed = profile
         .slow_steps
         .iter()
         .find(|step| step.key.claim == "mixed.ensures_0" && step.key.tactic_name == "have")
         .expect("the mixed have body still reports its smart work");
-    for (number, step) in [closer, mixed].iter().enumerate() {
-        let position = step.key.position.clone().unwrap();
-        let mut command = String::new();
-        render_expansion_command(&mut command, &step.key, position.clone(), thresholds);
-        assert!(command.contains("--claim"), "{command}");
-        let selector = if step.key.tactic_name == click::instrumentation::IMPLICIT_SOLVE_TACTIC {
-            step.key.claim.clone()
-        } else {
-            format!("{}:{}:{}", path.display(), position.line, position.column)
-        };
-        crate::expand::entry_with([
-            "--claim".into(),
-            selector,
-            "--output".into(),
-            directory
-                .path()
-                .join(format!("expanded-{number}.md"))
-                .display()
-                .to_string(),
-            path.display().to_string(),
-        ])
-        .unwrap_or_else(|error| panic!("recommendation failed: {command}\n{error}"));
-    }
+    let position = mixed.key.position.clone().unwrap();
+    let mut command = String::new();
+    render_expansion_command(&mut command, &mixed.key, position.clone(), thresholds);
+    let selector = format!("{}:{}:{}", path.display(), position.line, position.column);
+    assert!(
+        command.contains(&format!("--claim {}", shell_quote(&selector))),
+        "{command}"
+    );
+    crate::expand::entry_with([
+        "--claim".into(),
+        selector,
+        "--output".into(),
+        directory.path().join("expanded.md").display().to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap_or_else(|error| panic!("recommendation failed: {command}\n{error}"));
 }
 
 #[test]

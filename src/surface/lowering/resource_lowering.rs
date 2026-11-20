@@ -747,7 +747,7 @@ pub(in crate::surface) fn initial_call_state(
     });
     state
         .memory()
-        .prepare_parameter_store_partition(state.resources());
+        .prepare_parameter_store_partition(state.resources(), &entry_assumptions);
     Ok((state, arguments, entry_assumptions))
 }
 

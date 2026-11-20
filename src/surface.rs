@@ -8709,6 +8709,8 @@ struct ReportDetail {
     /// `goal:` line when no unresolved requirement carries it. Diagnostics
     /// only: no planner reads it.
     goal: Option<Proposition>,
+    /// Whether a write and a live view concretely overlap, when reporting a write prerequisite.
+    live_view_write_overlap: Option<bool>,
     /// The labels a refusal that prints its own legend numbered it with, so
     /// a trace of the same failure names the same states and values the
     /// same way instead of numbering them afresh.
@@ -10753,10 +10755,9 @@ impl ClickError {
         }
         if let Some(requirement) = &self.unresolved_requirement {
             report.push_str("\n  goal: ");
-            report.push_str(&proof_diagnostics::render::render_proposition_labeled(
-                &requirement.proposition,
-                &mut memory_state_labels,
-            ));
+            report.push_str(
+                &self.render_requirement_goal(&requirement.proposition, &mut memory_state_labels),
+            );
             if let Some(context) = &requirement.context {
                 report.push_str("\n  check: ");
                 report.push_str(context);
@@ -10964,7 +10965,7 @@ impl ClickError {
             if let Some(goal) = self.unresolved_requirement_goal() {
                 context.push(format!(
                     "goal: {}",
-                    proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
+                    self.render_requirement_goal(goal, &mut labels)
                 ));
                 let legend = labels.trace_legend();
                 if !legend.is_empty() {
@@ -10978,7 +10979,13 @@ impl ClickError {
                         "help: establish bounds for this pointer value, for example by preserving the complete pointer across writes; C address equality alone does not establish bounds"
                             .to_owned(),
                     );
-                } else if report.contains("\n  C statement at ") {
+                } else if report.contains("\n  C statement at ")
+                    && self
+                        .report_detail
+                        .as_ref()
+                        .and_then(|detail| detail.live_view_write_overlap)
+                        != Some(true)
+                {
                     context.push(
                         "help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`"
                             .to_owned(),
@@ -11350,10 +11357,29 @@ impl ClickError {
         self.unresolved_requirement.as_deref()
     }
 
+    fn render_requirement_goal(
+        &self,
+        goal: &Proposition,
+        labels: &mut proof_diagnostics::render::MemoryStateLabels,
+    ) -> String {
+        if self
+            .report_detail
+            .as_ref()
+            .is_some_and(|detail| detail.live_view_write_overlap.is_some())
+        {
+            return proof_diagnostics::render::render_view_separation_goal(goal, labels);
+        }
+        proof_diagnostics::render::render_proposition_labeled(goal, labels)
+    }
+
     pub(in crate::surface) fn with_unresolved_requirement(
         mut self,
         obligation: &ProofObligation,
     ) -> Self {
+        if let Some(overlap) = obligation.live_view_write_overlap() {
+            std::sync::Arc::make_mut(self.report_detail.get_or_insert_default())
+                .live_view_write_overlap = Some(overlap);
+        }
         self.unresolved_requirement = Some(std::sync::Arc::new(UnresolvedRequirement {
             proposition: obligation.proposition().clone(),
             context: diagnostics::describe_proof_obligation_context(obligation),

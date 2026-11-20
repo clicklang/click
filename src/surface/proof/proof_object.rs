@@ -91,14 +91,18 @@ pub(super) struct Proof<'a> {
 /// The rebound state and guard decisions produced by the loop-state join.
 /// Closure may add facts; it does not repeat this source-state construction.
 pub(super) struct LoopBoundary {
-    state: ExecutionState,
+    edge: crate::kernel::proof::PreparedLoopInvariantEdge,
     guard: crate::kernel::LoopConditionFeasibility,
     head_compatible: bool,
 }
 
 impl LoopBoundary {
     pub(super) fn state(&self) -> &ExecutionState {
-        &self.state
+        self.edge.state()
+    }
+
+    pub(super) fn prepared_edge(&self) -> &crate::kernel::proof::PreparedLoopInvariantEdge {
+        &self.edge
     }
 
     pub(super) fn may_exit(&self) -> bool {

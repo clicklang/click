@@ -20,7 +20,9 @@ one observable behavior on a useful input path and say what the claim covers.
    and `click verify --help` for capture refresh and `--locked` support.
 3. Recover the selected source's real compile command. Read its entry in
    `compile_commands.json`, if present, including the working directory and
-   compiler. With CMake, use the project's normal configure options and add
+   compiler. If the file has several entries, match the one for the build
+   target under verification using its output path or target name. With
+   CMake, use the project's normal configure options and add
    `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` with a Makefiles or Ninja generator.
    For other builds, use the project's verbose build or command listing.
    Build the target or run its header-generation steps if the command relies
@@ -63,6 +65,16 @@ separate from the source checkout, point the unit at the source tree with
   crate, record the edition, enabled features, files, and the qualified
   function under `crate.roots`. Install the release's pinned front end with
   `click add rust` when needed.
+
+When Click refuses a flag from a C build, check what the flag changes. The
+userspace profile already enables `-pthread`, so GCC supplies
+`_REENTRANT=1`. Omit an explicit definition with that same value. For a
+flag such as `-fPIC`, compare the original compiler's `-E -P` output
+with and without the flag, keeping the other inputs and working directory
+fixed. Remove a flag that leaves the preprocessed source and the selected
+function's modeled semantics unchanged. Compare the selected function and
+its relevant declarations against the capture when Click's profile or
+modeled headers differ from the original build.
 
 For C, if an unrelated function in the same file blocks import, use
 [dependency-closure projection][projection] on the source entry. For

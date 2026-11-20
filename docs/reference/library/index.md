@@ -6357,23 +6357,45 @@ types it maps to them. The model accessors `std_span_data`,
 
 ### `std::vector<unsigned char>`
 
-An existing byte vector's logical length is held in the resource
-`click::cpp::vector_state::vector_state`. The `size()` contract preserves
-the resource and returns that length. The caller must supply the resource.
-It grants access to the length alone.
+The `click::cpp::vector_state::vector_state` resource records an existing
+byte vector's length and backing address. `size()`, `empty()`, and
+`data()` preserve it. A caller that reads the elements needs authority
+over the initialized byte range. The pinned libstdc++ fixture declares a
+byte-range resource in the sidecar, holds it alongside `vector_state(&bytes)`,
+and relates their `data` and `length` fields in the caller's contract. It
+unfolds the byte resource before passing the span to a reader and folds it
+again afterward.
 
-**Verified use:** [C++ importer tests](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs),
-`byte_vector_size_uses_a_layout_free_catalog_contract`.
+**Verified use:** [C++ importer tests](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs)
+check the catalog calls. The [pinned libstdc++ tests](https://github.com/clicklang/click/blob/master/tests/bitcoin_core_money_range.rs)
+pass a byte vector's backing storage to a span reader.
 
 ```click
 abstract resource vector_state(vector: const void*) {
     field length: uint64;
+    field data: uint8*;
 }
 
 unsigned long std::vector<unsigned char>::size() const {
     owns state: vector_state(this);
     ensures state.length == old(state.length);
+    ensures state.data == old(state.data);
     ensures result == state.length;
+}
+
+bool std::vector<unsigned char>::empty() const {
+    owns state: vector_state(this);
+    ensures state.length == old(state.length);
+    ensures state.data == old(state.data);
+    ensures state.length == 0u64 implies result;
+    ensures state.length != 0u64 implies not result;
+}
+
+const unsigned char* std::vector<unsigned char>::data() const {
+    owns state: vector_state(this);
+    ensures state.length == old(state.length);
+    ensures state.data == old(state.data);
+    ensures result == state.data;
 }
 ```
 

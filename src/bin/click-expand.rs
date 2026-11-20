@@ -849,15 +849,22 @@ int32 identity(int32 x) {
         .expect("the contract should expand and recheck");
         let _ = fs::remove_dir_all(&directory);
 
-        // The two Integer length claims need the `+ 1` identity and are
-        // restated; the rest close in goal order with one closer each.
-        assert!(
-            expanded.ends_with(
-                "    }\n    known();\n    known();\n    known();\n    normalize();\n    normalize();\n    normalize();\n}\n"
-            ),
-            "{expanded}"
+        // These top-level facts establish the postconditions in declaration
+        // order. The tactics used to close the resulting goals may vary.
+        let proved_claims = expanded
+            .lines()
+            .filter_map(|line| line.strip_prefix("    have ")?.strip_suffix(" by {"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            proved_claims,
+            [
+                "to_integer(result) == (to_integer(old(owner->len)) + 1)",
+                "to_integer(owner->len) == (to_integer(old(owner->len)) + 1)",
+                "owner->data[old(owner->len)] == value",
+                "owner->cap == old(owner->cap)",
+                "owner->data == old(owner->data)",
+            ]
         );
-        assert!(!expanded.contains("have owner->cap =="), "{expanded}");
     }
 
     #[test]

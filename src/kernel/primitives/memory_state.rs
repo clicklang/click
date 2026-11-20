@@ -7746,8 +7746,12 @@ impl SymbolicMemory {
 
     /// Populate the derived cell partition while establishing function inputs,
     /// so the first field store pays only for its own cached cells.
-    pub(crate) fn prepare_parameter_store_partition(&self, resources: &ResourceContext) {
-        self.cells.prepare_parameter_partition(resources);
+    pub(crate) fn prepare_parameter_store_partition(
+        &self,
+        resources: &ResourceContext,
+        assumptions: &PureFactContext,
+    ) {
+        self.cells.warm_parameter_partition(resources, assumptions);
         crate::kernel::reasoning::prepare_memory_variable_index(self);
     }
 
@@ -8749,12 +8753,6 @@ impl ExecutionState {
     /// identity. Independently built empty environments are equivalent, but
     /// nonempty environments must share persistent storage.
     pub(crate) fn shares_non_memory_storage_with(&self, other: &Self) -> bool {
-        fn same_or_empty_map<K, V>(
-            left: &std::sync::Arc<std::collections::BTreeMap<K, V>>,
-            right: &std::sync::Arc<std::collections::BTreeMap<K, V>>,
-        ) -> bool {
-            std::sync::Arc::ptr_eq(left, right) || (left.is_empty() && right.is_empty())
-        }
         fn same_or_empty_persistent_map<K: Ord, V>(
             left: &crate::persistent::PersistentMap<K, V>,
             right: &crate::persistent::PersistentMap<K, V>,
@@ -8768,7 +8766,9 @@ impl ExecutionState {
         };
         let same_bindings = match (&self.resource_bindings, &other.resource_bindings) {
             (None, None) => true,
-            (Some(left), Some(right)) => same_or_empty_map(left, right),
+            (Some(left), Some(right)) => {
+                std::sync::Arc::ptr_eq(left, right) || (left.is_empty() && right.is_empty())
+            }
             _ => false,
         };
         self.population_effects
@@ -8823,7 +8823,7 @@ impl ExecutionState {
     /// The caller instance a call-local instance binder names.
     fn bound_instance(&self, identity: InstanceId) -> Option<InstanceId> {
         match &self.resource_bindings {
-            Some(bindings) => bound_instance(bindings, identity),
+            Some(bindings) => bindings.instance(identity),
             None => Some(identity),
         }
     }

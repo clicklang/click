@@ -1176,6 +1176,9 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::ProducedCompositeOverlapsHeldResource { .. } => {
             "a produced composite's body overlaps a resource the caller already holds".to_string()
         }
+        RuntimeError::UnboundedWriteWithLiveView { callee, .. } => {
+            format!("call to `{callee}` has a write effect without a checked byte bound while a view is live")
+        }
         RuntimeError::LoanRefusal(diagnostic) => format_loan_refusal_diagnostic(diagnostic),
     }
 }

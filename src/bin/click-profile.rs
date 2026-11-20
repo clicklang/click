@@ -148,6 +148,13 @@ struct SlowStep {
     /// class budget is enforced in.
     work: usize,
     failed: bool,
+    loop_closer_has_proof: bool,
+}
+
+struct OpenTactic {
+    key: StepKey,
+    nested: Duration,
+    loop_closer_has_proof: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -660,7 +667,7 @@ const TIMING_PREFIX: &str = "click timing: ";
 /// buckets: `contract claims` already owns their time, so adding it again
 /// would double-count certification.
 #[cfg(test)]
-const IGNORED_TIMING_KINDS: &[&str] = &["contract entry resources"];
+const IGNORED_TIMING_KINDS: &[&str] = &["contract entry resources", "loop closer proof"];
 
 /// The two legacy `click timing:` kinds attributed to contract completion.
 #[cfg(test)]
@@ -785,6 +792,7 @@ enum TimingEvent {
     Finished(StepKey, Duration, usize),
     /// Verification ultimately returned an error created inside this tactic.
     Failed(StepKey),
+    LoopCloserProof,
     /// One verified function's whole wall-clock time.
     FunctionTotal(String, Duration),
     /// One function's contract-completion work.
@@ -935,6 +943,7 @@ fn profile_from_events(
             VerificationEvent::TacticFailed(tactic) => {
                 TimingEvent::Failed(structured_step(tactic, &source_path)?)
             }
+            VerificationEvent::LoopCloserProof => TimingEvent::LoopCloserProof,
             VerificationEvent::FunctionFinished { name, elapsed } => {
                 TimingEvent::FunctionTotal(name.clone(), *elapsed)
             }
@@ -1012,7 +1021,7 @@ fn build_profile(
     timed_out: bool,
 ) -> Result<ProjectProfile, String> {
     let mut slow_steps = Vec::new();
-    let mut open: Vec<(StepKey, Duration)> = Vec::new();
+    let mut open: Vec<OpenTactic> = Vec::new();
     let mut accounting = TimeAccounting::default();
     let mut work = WorkMetrics::default();
     let mut attribution: BTreeMap<String, FunctionAttribution> = BTreeMap::new();
@@ -1026,22 +1035,34 @@ fn build_profile(
             TimingEvent::Source(path) => {
                 source_files.insert(path);
             }
-            TimingEvent::Started(key) => open.push((key, Duration::ZERO)),
+            TimingEvent::Started(key) => open.push(OpenTactic {
+                key,
+                nested: Duration::ZERO,
+                loop_closer_has_proof: false,
+            }),
+            TimingEvent::LoopCloserProof => {
+                if let Some(site) = open.last_mut()
+                    && site.key.tactic_name == click::instrumentation::IMPLICIT_LOOP_CLOSER_TACTIC
+                {
+                    site.loop_closer_has_proof = true;
+                }
+            }
             TimingEvent::Finished(key, elapsed, tactic_work) => {
-                let nested = match open.iter().rposition(|(candidate, _)| candidate == &key) {
-                    Some(index) => {
-                        let (_, nested) = open.remove(index);
-                        open.truncate(index);
-                        nested
-                    }
-                    None => Duration::ZERO,
-                };
+                let (nested, loop_closer_has_proof) =
+                    match open.iter().rposition(|site| site.key == key) {
+                        Some(index) => {
+                            let site = open.remove(index);
+                            open.truncate(index);
+                            (site.nested, site.loop_closer_has_proof)
+                        }
+                        None => (Duration::ZERO, false),
+                    };
                 let exclusive = elapsed.saturating_sub(nested);
                 accounting.add_tactic(key.category, exclusive);
                 work.add_tactic(&key, exclusive);
                 add_attributed_tactic(&mut attribution, &key, exclusive);
-                if let Some((_, parent_nested)) = open.last_mut() {
-                    *parent_nested += elapsed;
+                if let Some(parent) = open.last_mut() {
+                    parent.nested += elapsed;
                 }
                 if exclusive >= thresholds.for_category(key.category) {
                     slow_steps.push(SlowStep {
@@ -1049,6 +1070,7 @@ fn build_profile(
                         elapsed: exclusive,
                         work: tactic_work,
                         failed: false,
+                        loop_closer_has_proof,
                     });
                 }
             }
@@ -1114,7 +1136,7 @@ fn build_profile(
     }
     finish_attribution(&mut attribution, &function_totals, &function_certification);
     work.source_files = source_files.len();
-    let active = open.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
+    let active = open.into_iter().map(|site| site.key).collect::<Vec<_>>();
     if timed_out && interrupted.is_none() {
         interrupted = active
             .last()
@@ -1197,6 +1219,7 @@ fn parse_profile(
                         elapsed: exclusive,
                         work: tactic_work,
                         failed: false,
+                        loop_closer_has_proof: false,
                     });
                 }
             }
@@ -1255,7 +1278,7 @@ fn parse_profile(
             }
             TimingEvent::Operation(operation) => operations.push(operation),
             TimingEvent::Interrupted(work) => interrupted = Some(work),
-            TimingEvent::Ignored => {}
+            TimingEvent::Ignored | TimingEvent::LoopCloserProof => {}
             TimingEvent::Unknown => {
                 let kind = unknown_timing_kind(line);
                 unknown_timing

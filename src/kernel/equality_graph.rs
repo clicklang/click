@@ -86,6 +86,7 @@ mod wide_sources;
 pub(in crate::kernel) use evidence::scalar_evidence_pair;
 pub(in crate::kernel) use inputs::InputKey;
 pub(crate) use inputs::{ReadEqualityCheckpoint, ReadEqualityDelta};
+pub(in crate::kernel) use wide_sources::{NumericAddressConnectivity, NumericAddressOwners};
 #[cfg(test)]
 mod machine_relations_tests;
 #[cfg(test)]

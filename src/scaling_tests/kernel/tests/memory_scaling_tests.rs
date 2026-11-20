@@ -1564,10 +1564,10 @@ fn a_call_rechecks_cached_members_after_ownership_withdrawal_or_width_change() {
     let owned = ResourceFact::own_memory(external_range(KEPT_MEMBER, 0, 1));
     let full = ResourceContext::new().unchecked_with_fact(owned.clone());
     let memory = SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(5.into()));
-    memory.prepare_parameter_store_partition(&full);
-    // Re-admission must classify a formerly unowned cached cell too.
-    memory.prepare_parameter_store_partition(&ResourceContext::new());
     let assumptions = PureFactContext::new();
+    memory.prepare_parameter_store_partition(&full, &assumptions);
+    // Re-admission must classify a formerly unowned cached cell too.
+    memory.prepare_parameter_store_partition(&ResourceContext::new(), &assumptions);
     let writes = [external_range(3_000_000, 0, 16)];
     let changed = memory.clone().store(
         pointer.clone(),

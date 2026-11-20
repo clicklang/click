@@ -57,20 +57,22 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
             },
         );
         let frontier = root(facts.clone(), core);
-        let ((body, scope), opening_work) =
+        let ((body, scope, edge), opening_work) =
             crate::instrumentation::measure_deterministic_work(|| {
-                frontier
-                    .open_invariant_body(
+                let edge = frontier
+                    .prepare_loop_invariant_edge(
                         &entry,
                         &entry,
                         &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
                         &checks,
                         &[],
-                        &[],
-                        &[],
-                        |_, _| (),
+                        Some(&[]),
                     )
-                    .unwrap()
+                    .unwrap();
+                let (body, scope) = frontier
+                    .open_prepared_invariant_body(&edge, &[], |_, _| ())
+                    .unwrap();
+                (body, scope, edge)
             });
         assert!(
             frontier
@@ -129,6 +131,11 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
                 assert!(
                     stale
                         .retain_invariant_body(scope.clone(), &complete)
+                        .is_err()
+                );
+                assert!(
+                    stale
+                        .open_prepared_invariant_body(&edge, &[], |_, _| ())
                         .is_err()
                 );
             }

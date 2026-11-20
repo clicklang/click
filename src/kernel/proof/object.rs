@@ -83,6 +83,31 @@ pub(crate) struct InvariantBodyScope<L, O, E> {
     binding: super::execution::CheckedLoopInvariantLowerings,
 }
 
+/// The inputs prepared once from one loop path for both the boundary
+/// decision and the invariant proof. The latter can only open on that path.
+pub(crate) struct PreparedLoopInvariantEdge {
+    state: crate::kernel::ExecutionState,
+    iteration_entry: crate::kernel::ExecutionState,
+    head_iterations: crate::kernel::IntegerTerm,
+    facts: PureFactStore,
+    obligations: Vec<crate::kernel::ProofObligation>,
+    binding: super::execution::CheckedLoopInvariantLowerings,
+}
+
+impl PreparedLoopInvariantEdge {
+    pub(crate) fn state(&self) -> &crate::kernel::ExecutionState {
+        &self.state
+    }
+
+    pub(crate) fn assumptions(&self) -> &crate::kernel::PureFactContext {
+        self.facts.assumptions()
+    }
+
+    pub(crate) fn obligations(&self) -> &[crate::kernel::ProofObligation] {
+        &self.obligations
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct CheckedInvariantBody {
     goal: Proposition,
@@ -2014,6 +2039,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
 {
     /// The kernel constructs the exact root and its complete premises. The
     /// language supplies presentation only, never obligations or assumptions.
+    #[cfg(test)]
     pub(crate) fn open_invariant_body(
         &self,
         loop_entry: &crate::kernel::ExecutionState,
@@ -2038,12 +2064,31 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         ),
         String,
     > {
+        let edge = self.prepare_loop_invariant_edge(
+            loop_entry,
+            iteration_entry,
+            head_iterations,
+            checks,
+            binders,
+            Some(definitions),
+        )?;
+        self.open_prepared_invariant_body(&edge, ranking_measures, presentation)
+    }
+
+    pub(crate) fn prepare_loop_invariant_edge(
+        &self,
+        loop_entry: &crate::kernel::ExecutionState,
+        iteration_entry: &crate::kernel::ExecutionState,
+        head_iterations: &crate::kernel::IntegerTerm,
+        checks: &[crate::kernel::LoopInvariantCheck],
+        binders: &[crate::kernel::LoopBinder],
+        definitions: Option<&[crate::kernel::CompositeResourceDefinition]>,
+    ) -> Result<PreparedLoopInvariantEdge, String> {
         let (branch, execution) = self
             .focused_frontier_execution()
             .map_err(|_| "invariant body requires an execution frontier")?;
         if execution.core.frontier.region != super::ExecutionRegionKind::LoopBody
             || !execution.core.frontier.is_at_region_boundary()
-            || execution.core.region_invariants_close_requested
         {
             return Err("invariant body requires an unclosed loop back edge".into());
         }
@@ -2073,55 +2118,107 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
             &execution.core.state,
             binders,
             facts.assumptions(),
-        )?;
+        )
+        .map_err(|error| format!("loop state join: {error}"))?;
+        drop(rebound_timing);
         // D7 applied to refutation: a premise that refutes a field-free arm's
         // own fact says the folded instance's model is not that constructor.
         // A descending loop's back edge learns `left.model != Empty` from the
         // guard `root->left != 0` exactly here, which is what lets the next
         // iteration's invariant select the arm its measure and its `unfold`
         // need.
-        for fact in crate::kernel::publish_instance_arms(
-            back_edge_state.resources(),
-            definitions,
-            &back_edge_state,
-            facts.assumptions(),
-        )
-        .model_facts
-        {
-            facts = facts.with_fact(fact);
+        if let Some(definitions) = definitions {
+            for fact in crate::kernel::publish_instance_arms(
+                back_edge_state.resources(),
+                definitions,
+                &back_edge_state,
+                facts.assumptions(),
+            )
+            .model_facts
+            {
+                facts = facts.with_fact(fact);
+            }
         }
-        drop(rebound_timing);
         let lowering_timing = crate::instrumentation::OperationTiming::new(
             "kernel",
             "loop invariant bundle",
             "invariant bundle: lower obligations",
         );
-        let mut obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
+        let obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
             &back_edge_state,
             loop_entry,
             checks,
             head_iterations,
             facts.assumptions(),
         )
-        .map_err(|_| "could not lower explicit invariant obligations")?;
-        // The ranking members follow the invariants in declaration order, so
-        // the bundle a retained certificate closed is the same list at every
-        // site that rechecks it.
-        obligations.extend(
-            crate::kernel::loop_ranking_obligations_at_back_edge(
-                &back_edge_state,
-                iteration_entry,
-                head_iterations,
-                ranking_measures,
-                facts.assumptions(),
-            )
-            .map_err(|reason| {
-                format!("could not read the loop's declared ranking measure: {reason}")
-            })?,
-        );
+        .map_err(|error| format!("loop invariant classification: {error}"))?;
         drop(lowering_timing);
-        let mut members: Vec<_> = obligations
-            .iter()
+        Ok(PreparedLoopInvariantEdge {
+            state: back_edge_state,
+            iteration_entry: iteration_entry.clone(),
+            head_iterations: head_iterations.clone(),
+            facts,
+            obligations,
+            binding: super::execution::CheckedLoopInvariantLowerings {
+                retained_state: execution.core.state.clone(),
+                checks: checks.to_vec(),
+                ranking_measures: Vec::new(),
+                facts: branch.state.facts.clone(),
+                effects: execution.core.effect_facts.clone(),
+                body: None,
+            },
+        })
+    }
+
+    /// The kernel constructs the exact root and its complete premises. The
+    /// language supplies presentation only, never obligations or assumptions.
+    pub(crate) fn open_prepared_invariant_body(
+        &self,
+        edge: &PreparedLoopInvariantEdge,
+        ranking_measures: &[crate::kernel::RankingComponent],
+        presentation: impl FnOnce(
+            &Proposition,
+            &[Option<Arc<crate::kernel::LoweringIntroductions>>],
+        ) -> P,
+    ) -> Result<
+        (
+            Self,
+            InvariantBodyScope<
+                L,
+                ProofObligation<P, Arc<OutcomeProofState<T>>>,
+                ProofExecutionState<S>,
+            >,
+        ),
+        String,
+    > {
+        let (branch, execution) = self
+            .focused_frontier_execution()
+            .map_err(|_| "invariant body requires an execution frontier")?;
+        if execution.core.frontier.region != super::ExecutionRegionKind::LoopBody
+            || !execution.core.frontier.is_at_region_boundary()
+            || execution.core.region_invariants_close_requested
+        {
+            return Err("invariant body requires an unclosed loop back edge".into());
+        }
+        if !edge
+            .binding
+            .matches_context(&execution.core, &branch.state.facts)
+        {
+            return Err("prepared invariant edge belongs to another execution context".into());
+        }
+        // The ranking members follow the invariants in declaration order.
+        let ranking = crate::kernel::loop_ranking_obligations_at_back_edge(
+            &edge.state,
+            &edge.iteration_entry,
+            &edge.head_iterations,
+            ranking_measures,
+            edge.assumptions(),
+        )
+        .map_err(|reason| {
+            format!("could not read the loop's declared ranking measure: {reason}")
+        })?;
+        let obligations = || edge.obligations.iter().chain(&ranking);
+        let mut members: Vec<_> = obligations()
             .map(|obligation| obligation.proposition().clone())
             .collect();
         // Preserve the established shape of short bundles. Wide generated
@@ -2151,8 +2248,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
             crate::kernel::ConditionTerm::Constant(true),
             true,
         ));
-        let introductions = obligations
-            .iter()
+        let introductions = obligations()
             .map(|obligation| obligation.shared_introductions().cloned())
             .collect::<Vec<_>>();
         let display = presentation(&goal, &introductions);
@@ -2161,21 +2257,16 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
             ProofBranch::new(
                 ProofObligation::Proposition(super::PropositionObligation::new(goal, display)),
                 ProofBranchState {
-                    facts,
+                    facts: edge.facts.clone(),
                     execution: branch.state.execution.clone(),
                 },
             ),
         );
+        let mut binding = edge.binding.clone();
+        binding.ranking_measures = ranking_measures.to_vec();
         let scope = InvariantBodyScope {
             root: root.clone(),
-            binding: super::execution::CheckedLoopInvariantLowerings {
-                retained_state: execution.core.state.clone(),
-                checks: checks.to_vec(),
-                ranking_measures: ranking_measures.to_vec(),
-                facts: branch.state.facts.clone(),
-                effects: execution.core.effect_facts.clone(),
-                body: None,
-            },
+            binding,
         };
         Ok((root, scope))
     }
@@ -2217,16 +2308,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         }
         if !scope
             .binding
-            .retained_state
-            .shares_storage_with(&execution.core.state)
-            || !scope
-                .binding
-                .facts
-                .shares_premises_with(&branch.state.facts)
-            || !scope
-                .binding
-                .effects
-                .shares_storage_with(&execution.core.effect_facts)
+            .matches_context(&execution.core, &branch.state.facts)
         {
             return Err("invariant body belongs to another execution context".into());
         }

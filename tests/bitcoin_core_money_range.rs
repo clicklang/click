@@ -3732,6 +3732,101 @@ const SPAN_DEPENDENCIES: &[&str] = &[
     "sysroot/usr/include/c++/12/span",
     "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
 ];
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: pinned libstdc++ vector and span handoff"]
+fn byte_vector_passes_its_backing_storage_to_a_span_reader() {
+    let (root, import) = axiomatic_span_fixture(
+        "byte-vector-span-reader",
+        r#"#include <span>
+#include <vector>
+
+unsigned char read_first(const std::span<const unsigned char>& bytes) noexcept {
+    return bytes[0];
+}
+
+unsigned char probe(const std::vector<unsigned char>& bytes) noexcept {
+    unsigned long length = bytes.size();
+    const unsigned char* data = bytes.data();
+    std::span<const unsigned char> view(data, length);
+    return read_first(view);
+}
+"#,
+        SPAN_DEPENDENCIES,
+    );
+    let source = r#"import click::cpp::vector_state::{vector_state};
+verifying "span-probe.cpp";
+
+resource vector_bytes() {
+    field data: uint8*;
+    field length: uint64;
+    owns data[0..length];
+}
+
+uint8 read_first(const std::span<const unsigned char>& bytes) {
+    views std_span_data(bytes);
+    views std_span_size(bytes);
+    views std_span_data(bytes)[0];
+    requires 1u64 <= std_span_size(bytes);
+    ensures result == std_span_data(bytes)[0];
+}
+
+uint8 probe(const std::vector<unsigned char>& bytes) {
+    owns state: vector_state(&bytes);
+    owns backing: vector_bytes();
+    requires state.data == backing.data;
+    requires state.length == backing.length;
+    requires 1u64 <= backing.length;
+    ensures state.length == backing.length;
+    ensures state.data == backing.data;
+} by {
+    unfold(backing);
+    step_until(function.exit);
+    fold(backing);
+}
+"#;
+    let sidecar = root.join("span.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    let (summary, verification) =
+        click::surface::verify_project_with_summary(&parsed, &ProgramInputs::program(&import))
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    verification.unwrap_or_else(|error| panic!("{}", error.report()));
+    let assumptions = &summary.assumptions["probe"];
+    for method in ["size", "data"] {
+        let name = format!("std::vector<unsigned char>::{method}");
+        assert!(
+            assumptions.iter().any(|assumption| {
+                assumption.family == click::surface::ModelFamily::CppStd
+                    && display_source_names(&assumption.name) == name
+            }),
+            "{assumptions:?}"
+        );
+    }
+
+    let (reader, _) = source.split_once("uint8 probe(").unwrap();
+    let without_backing = format!(
+        r#"{reader}uint8 probe(const std::vector<unsigned char>& bytes) {{
+    owns state: vector_state(&bytes);
+    requires 1u64 <= state.length;
+    ensures state.data == old(state.data);
+}}
+"#
+    );
+    let without_bound = source.replace("    requires 1u64 <= backing.length;\n", "");
+    for rejected in [without_backing, without_bound] {
+        let parsed = read_click_project(&sidecar, &rejected).unwrap();
+        let report = verify_program_prepared_project(&parsed, &import)
+            .unwrap_err()
+            .report();
+        assert!(
+            report.contains("read_first") && report.contains("required loan backing"),
+            "{report}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
 const BYTE_SPAN_DEPENDENCIES: &[&str] = &[
     "sysroot/usr/include/c++/12/cstddef",
     "sysroot/usr/include/c++/12/span",
