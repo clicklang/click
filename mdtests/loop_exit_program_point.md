@@ -30,6 +30,12 @@ int32 count_from_to(int32 i, int32 n) {
         decreases n - i;
         invariant 0 <= i and i <= n;
     }
+    have at(count.exit, i) == n by {
+        solve() using {
+            at(count.exit, i) <= n;
+            not (at(count.exit, i) < n);
+        };
+    }
     step();
     solve();
 }

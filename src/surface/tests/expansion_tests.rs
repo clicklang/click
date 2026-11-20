@@ -18588,6 +18588,48 @@ fn an_unfold_bound_scalar_field_expands_and_reverifies() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: two named loop contracts expand and cold-replay in 18.5s"]
+fn named_loop_comparisons_expand_and_cold_replay() {
+    for (fixture, label, law, dropped_fact) in [
+        (
+            "mdtests/the_back_edge_ranks_a_reassigned_parameter.md",
+            "drain_to_zero.contract",
+            "int32_nonnegative_predecessor_upper_bound",
+            "n <= at(drain.entry, n); };",
+        ),
+        (
+            "mdtests/loop_exit_program_point.md",
+            "count_from_to.contract",
+            "int32_less_equal_and_not_less_than_implies_equal",
+            "not (at(count.exit, i) < n);",
+        ),
+    ] {
+        let (source, program) = mdtest_sources(fixture);
+        let program = crate::cli::source_refs(&program);
+        let expanded = expand_c_claim_source_by_label(&source, &program, label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        assert!(expanded.contains(law), "{label} should use {law}");
+        assert!(
+            !expanded.contains("normalize()"),
+            "{label} emitted normalize()"
+        );
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap();
+        let replacement = if dropped_fact.ends_with("};") {
+            "};"
+        } else {
+            ""
+        };
+        let omitted = source.replace(dropped_fact, replacement);
+        assert_ne!(source, omitted);
+        assert!(verify_c_sources(&omitted, &program).is_err());
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
     // The certificate records the decided C branch as a logical `if` with an

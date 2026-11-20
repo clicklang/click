@@ -10841,6 +10841,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                 .is_some();
         let typed_first = signed_order || arithmetic_domain;
+        if let Some(tactics) = plan_explicit_predecessor_upper_bound(goal, &premise_pairs)
+            .or_else(|| plan_explicit_le_and_not_lt_implies_eq(goal, &premise_pairs))
+            && matches!(tactics.first(), Some(ProofTactic::ApplyTheoremUsing { .. }))
+            && let Ok(Some(closed)) = proof.driver().try_generated_linear_script(&tactics)
+            && closed.focused_discharged()
+        {
+            return Some(closed);
+        }
         // Give memory-independent word observations the ordinary interval
         // emitter before compatibility normalization. Keep retained reads and
         // history on their existing paths, and do not broaden the speculative
@@ -11287,7 +11295,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     premise_pairs,
                     false,
                 )?;
-                plan_explicit_predecessor_upper_bound(goal, &recorded, false)
+                plan_explicit_predecessor_upper_bound(goal, &recorded)
             })
             .or_else(|| {
                 let recorded =

@@ -1824,19 +1824,16 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
         "{expanded}"
     );
     assert!(
-        expanded.contains("at(loop(0).exit, to_integer((n as int32))) <="),
+        expanded.contains("not at(loop(0).exit, i) < at(loop(0).exit, n)"),
         "{expanded}"
     );
     assert!(
-        expanded.contains("click::integer::le_antisymmetric"),
+        expanded.contains("click::integer::int32_less_equal_and_not_less_than_implies_equal"),
         "{expanded}"
     );
-    verify_c_sources(&expanded, &[("count_to_n.c", c_source)]).unwrap_or_else(|error| {
-        panic!(
-            "the expanded loop-exit proof should freshly check: {}\n{expanded}",
-            error.message()
-        )
-    });
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    verify_c_sources(&expanded, &[("count_to_n.c", c_source)])
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
 }
 
 #[test]
