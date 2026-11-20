@@ -9621,6 +9621,7 @@ impl Parser {
             static_aggregate_arrays: std::mem::take(&mut self.static_aggregate_arrays),
             local_struct_pointers,
             local_struct_values,
+            step_pointee_layouts: BTreeMap::new(),
             local_references: BTreeSet::new(),
             local_pointers,
             string_literals,

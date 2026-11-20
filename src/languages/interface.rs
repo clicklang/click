@@ -92,6 +92,10 @@ pub struct ImportedFunction {
     /// Struct type of each unambiguous automatic struct value, indexed by
     /// the spelling a Click sidecar uses.
     pub(super) local_struct_values: BTreeMap<crate::kernel::BindingName, String>,
+    /// The layout of the record each result step's pointer value points at,
+    /// by step: a Rust `&mut self` operand staged for a call. A proof reads
+    /// a field through that region's `.result` with it.
+    pub(super) step_pointee_layouts: BTreeMap<u32, crate::kernel::AggregateLayout>,
     /// The automatic locals of reference type, by the name the source gives
     /// each. Its carrying pointer has a typed reference-carrier binding.
     pub(super) local_references: BTreeSet<crate::kernel::BindingName>,
@@ -642,6 +646,7 @@ impl ImportedFunction {
             static_aggregate_arrays: BTreeMap::new(),
             local_struct_pointers: BTreeMap::new(),
             local_struct_values: BTreeMap::new(),
+            step_pointee_layouts: BTreeMap::new(),
             local_references: BTreeSet::new(),
             local_pointers: BTreeSet::new(),
             string_literals: Vec::new(),
@@ -868,6 +873,19 @@ impl ImportedFunction {
 
     pub fn local_struct_values(&self) -> &BTreeMap<crate::kernel::BindingName, String> {
         &self.local_struct_values
+    }
+
+    pub(crate) fn with_step_pointee_layouts(
+        mut self,
+        layouts: BTreeMap<u32, crate::kernel::AggregateLayout>,
+    ) -> Self {
+        self.step_pointee_layouts = layouts;
+        self
+    }
+
+    /// The layout of the record result step `step`'s pointer points at.
+    pub fn step_pointee_layouts(&self) -> &BTreeMap<u32, crate::kernel::AggregateLayout> {
+        &self.step_pointee_layouts
     }
 
     pub(crate) fn with_source_sites(mut self, sites: SourceSites) -> Self {

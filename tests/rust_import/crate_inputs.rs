@@ -515,3 +515,47 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
     .unwrap();
     assert!(p.prepared().is_err());
 }
+
+/// A method passes `self` on to another method as the reborrow `&mut *self`,
+/// beside a slice, values the call stages in their own regions (Adler's
+/// `write_slice` calling `compute`). Expanding the caller states
+/// the callee's requirements on `self`'s fields as reads through that
+/// region's `.result`, and the expansion verifies: a field read through a
+/// pointer result lowers to the load it was raised from.
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+#[ignore = "nightly: live compiler extraction"]
+fn charon_reborrowed_self_field_requirements_expand_and_verify() {
+    let p = Project::isolated("");
+    fs::create_dir(p.root.join("src")).unwrap();
+    fs::write(
+        p.root.join("src/lib.rs"),
+        "pub struct Pair { a: u16, b: u16 }\nimpl Pair {\n    pub fn need(&mut self, bytes: &[u8]) {}\n    pub fn caller(&mut self, bytes: &[u8]) { self.need(bytes); }\n}\n",
+    )
+    .unwrap();
+    fs::write(p.config(), serde_json::to_vec(&serde_json::json!({
+        "schema":4,"language":"rust","target":"x86_64-unknown-linux-gnu",
+        "source":"src/lib.rs","exporter":std::env::var("CLICK_CHARON").unwrap(),"artifact":"crate.ullbc",
+        "crate":{"name":"pair","edition":"2021","features":[],
+            "roots":["pair::Pair::caller","pair::Pair::need"],
+            "files":["src/lib.rs"]}
+    })).unwrap()).unwrap();
+    p.adopt_config();
+    fs::write(
+        p.root.join("borrow.click"),
+        "verifying \"src/lib.rs\";\nimpl pair::Pair {\n    fn need(&mut self, bytes: &[u8]) { requires bytes.len() == 0u64; requires self.a == 1; requires self.b == 2; views self.a; views self.b; }\n    fn caller(&mut self, bytes: &[u8]) { requires bytes.len() == 0u64; requires self.a == 1; requires self.b == 2; views self.a; views self.b; }\n}\n",
+    )
+    .unwrap();
+    p.refresh().unwrap();
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "pair::Pair::caller.contract",
+            "--in-place",
+        ],
+    );
+    let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    assert!(expanded.contains("region(2).result.a == 1"), "{expanded}");
+}

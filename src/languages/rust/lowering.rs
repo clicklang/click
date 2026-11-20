@@ -1157,6 +1157,7 @@ fn lower_function(
         ),
         next_slice_local: 0,
         next_result_step: std::cell::Cell::new(next_result_step),
+        step_pointee_layouts: std::cell::RefCell::new(BTreeMap::new()),
         loop_iterators: Vec::new(),
         locals,
         return_type,
@@ -1173,6 +1174,7 @@ fn lower_function(
         None => (cx.body(&f.body)?, None),
     };
     let loop_iterators = std::mem::take(&mut cx.loop_iterators);
+    let step_pointee_layouts = cx.step_pointee_layouts.take();
     let mut kernel = program_function(
         return_type.to_kernel_type(),
         &f.name,
@@ -1197,6 +1199,7 @@ fn lower_function(
         .unwrap_or_default();
     let mut lowered = ImportedFunction::external(return_type, f.name.clone(), parameters)
         .with_local_struct_values(local_records)
+        .with_step_pointee_layouts(step_pointee_layouts)
         .with_prelowered_kernel_function(kernel)
         .with_closure_captures(f.captures)
         .with_trait_interface(f.implements.clone())
@@ -1253,6 +1256,8 @@ struct Context<'a> {
     slice_local_owner: LocalFunctionId,
     next_slice_local: u32,
     next_result_step: std::cell::Cell<u32>,
+    /// The record each staged reference operand points at, by its step.
+    step_pointee_layouts: std::cell::RefCell<BTreeMap<u32, crate::kernel::AggregateLayout>>,
     /// The iterator each loop advances, by loop index in preorder.
     loop_iterators: Vec<Option<crate::languages::interface::RustLoopIterator>>,
     locals: BTreeSet<String>,
@@ -2117,6 +2122,14 @@ impl Context<'_> {
         let step = self.result_step();
         let interface_type = scalar_type(value_type)?.to_kernel_type();
         let constant = matches!(value_type, Type::Reference { mutable: false, .. });
+        if let Type::Reference { pointee, .. } = value_type
+            && let Type::Record { name } = pointee.as_ref()
+            && let Some(layout) = self.layouts.get(name)
+        {
+            self.step_pointee_layouts
+                .borrow_mut()
+                .insert(step, layout.to_kernel_aggregate_layout());
+        }
         let expression = if matches!(value_type, Type::Reference { .. }) {
             reference_view(value, interface_type, false, constant)
         } else {
