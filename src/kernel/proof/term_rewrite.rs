@@ -5925,31 +5925,29 @@ impl<'a> TermRewrite<'a> {
                 Box::new(self.offset(a)),
                 Box::new(self.offset(b)),
             ),
-            ConditionTerm::IntegerLessThan(a, b) => {
-                ConditionTerm::IntegerLessThan(self.integer(a).into(), self.integer(b).into())
-            }
-            ConditionTerm::IntegerLessEqual(a, b) => {
-                ConditionTerm::IntegerLessEqual(self.integer(a).into(), self.integer(b).into())
-            }
-            ConditionTerm::IntegerGreaterThan(a, b) => {
-                ConditionTerm::IntegerGreaterThan(self.integer(a).into(), self.integer(b).into())
-            }
-            ConditionTerm::IntegerGreaterEqual(a, b) => {
-                ConditionTerm::IntegerGreaterEqual(self.integer(a).into(), self.integer(b).into())
-            }
-            ConditionTerm::IntegerEqual(a, b) => {
+            crate::kernel::integer_comparison_condition!(a, b) => {
                 let retain_match = self.preserves_algebraic_matches();
-                ConditionTerm::IntegerEqual(
-                    self.integer_with_match_retention(a, retain_match).into(),
-                    self.integer_with_match_retention(b, retain_match).into(),
-                )
-            }
-            ConditionTerm::IntegerNotEqual(a, b) => {
-                let retain_match = self.preserves_algebraic_matches();
-                ConditionTerm::IntegerNotEqual(
-                    self.integer_with_match_retention(a, retain_match).into(),
-                    self.integer_with_match_retention(b, retain_match).into(),
-                )
+                let left = self.integer_with_match_retention(a, retain_match).into();
+                let right = self.integer_with_match_retention(b, retain_match).into();
+                match v {
+                    ConditionTerm::IntegerLessThan(..) => {
+                        ConditionTerm::IntegerLessThan(left, right)
+                    }
+                    ConditionTerm::IntegerLessEqual(..) => {
+                        ConditionTerm::IntegerLessEqual(left, right)
+                    }
+                    ConditionTerm::IntegerGreaterThan(..) => {
+                        ConditionTerm::IntegerGreaterThan(left, right)
+                    }
+                    ConditionTerm::IntegerGreaterEqual(..) => {
+                        ConditionTerm::IntegerGreaterEqual(left, right)
+                    }
+                    ConditionTerm::IntegerEqual(..) => ConditionTerm::IntegerEqual(left, right),
+                    ConditionTerm::IntegerNotEqual(..) => {
+                        ConditionTerm::IntegerNotEqual(left, right)
+                    }
+                    _ => unreachable!("Integer comparison"),
+                }
             }
             // A `Bool` value rewrites its children, an application's
             // arguments and a read's pointer, as a word-valued application

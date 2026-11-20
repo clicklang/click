@@ -96,9 +96,9 @@ impl KernelMatchArm {
 }
 
 impl KernelMatch {
-    /// The Integer equality slice accepts shallow, total arithmetic over
+    /// Retained Integer comparisons accept shallow, total arithmetic over
     /// scalar payloads. Inspect prepared roots without exporting arm bodies.
-    pub(crate) fn retains_known_integer_equality(&self) -> bool {
+    pub(crate) fn retains_known_integer_comparison(&self) -> bool {
         if self.result_type != KernelType::Integer {
             return false;
         }

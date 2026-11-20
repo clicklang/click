@@ -1450,10 +1450,11 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             operator,
             right,
         } => {
-            let retain_match = matches!(
-                operator,
-                IntegerComparisonOperator::Equal | IntegerComparisonOperator::NotEqual
-            );
+            let retain_match = !budget.conditional_guard
+                || matches!(
+                    operator,
+                    IntegerComparisonOperator::Equal | IntegerComparisonOperator::NotEqual
+                );
             let left_paths = evaluate_spec_integer_comparison_operand_in(
                 scope,
                 left,
@@ -3274,7 +3275,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
         )
         .map_err(|_| ExecutionLimit::Paths)?;
         let constructor =
-            if integer_fields || (retain_match && matched.retains_known_integer_equality()) {
+            if integer_fields || (retain_match && matched.retains_known_integer_comparison()) {
                 None
             } else {
                 scrutinee_path.value.native_constructor()
