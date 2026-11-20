@@ -2663,7 +2663,7 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
         Term::Sequence(sequence) => collect_sequence_bound_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_bound_variables(term.native_compat(), variables),
         Term::ExecutionState(state) => collect_execution_state_bound_variables(state, variables),
-        Term::Memory(memory) => collect_memory_bound_variables(memory, variables),
+        Term::ArrayReadPoint(point) => collect_memory_bound_variables(point.memory(), variables),
     }
 }
 
@@ -3896,8 +3896,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
             }
             .into(),
         ),
-        Term::Memory(memory) => {
-            Term::Memory(substitute_bitvector_variable_in_memory(memory, from, to))
+        Term::ArrayReadPoint(point) => {
+            Term::ArrayReadPoint(point.with_renamed_memory(crate::kernel::intern_memory(
+                substitute_bitvector_variable_in_memory(point.memory(), from, to),
+            )))
         }
         Term::ExecutionState(state) => Term::ExecutionState(Box::new(
             substitute_bitvector_variable_in_execution_state(state, from, to),
@@ -6918,8 +6920,10 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address
             }
             .into(),
         ),
-        Term::Memory(memory) => {
-            Term::Memory(substitute_pointer_variable_in_memory(memory, from, to))
+        Term::ArrayReadPoint(point) => {
+            Term::ArrayReadPoint(point.with_renamed_memory(crate::kernel::intern_memory(
+                substitute_pointer_variable_in_memory(point.memory(), from, to),
+            )))
         }
         Term::ExecutionState(state) => Term::ExecutionState(Box::new(
             substitute_pointer_variable_in_execution_state(state, from, to),
@@ -10135,7 +10139,9 @@ mod checked_singleton_substitution_tests {
     fn checked_singleton_substitution_refuses_unsupported_carriers() {
         let source = Proposition::Predicate {
             name: "opaque".into(),
-            arguments: vec![Term::Memory(SymbolicMemory::new())],
+            arguments: vec![Term::ArrayReadPoint(ProgramPoint::of_memory(
+                &SymbolicMemory::new(),
+            ))],
         };
         assert_eq!(
             substitute_machine_constant_in_pure_proposition(&source, Variable(70_103), 7),

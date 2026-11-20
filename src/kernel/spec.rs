@@ -2859,7 +2859,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             // rather than silently dropping the accumulator scope; memory
             // states themselves remain opaque below.
             Term::ExecutionState(_) => true,
-            Term::Memory(_) => false,
+            Term::ArrayReadPoint(_) => false,
         }
     }
 
@@ -5912,18 +5912,28 @@ fn lower_spec_predicate_proposition_at_state_in(
                 else {
                     unreachable!("predicate lowering should carry predicate propositions")
                 };
-                if let Some(memory) = memory {
-                    let memory = match memory {
-                        SpecPoint::Current => state.memory(),
+                if let Some(source) = memory {
+                    let source = match source {
+                        SpecPoint::Current => state.program_point(),
                         SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
                             let Some(entry_state) = loop_entry_state else {
                                 continue;
                             };
-                            entry_state.memory()
+                            entry_state.program_point()
                         }
-                        SpecPoint::At(point) => point.memory(),
+                        SpecPoint::At(point) => point.clone(),
                     };
-                    arguments.push(Term::Memory(memory.clone()));
+                    let point = match argument_path.value.native().as_ref() {
+                        ProgramValue::Pointer(pointer)
+                            if pointer.program_type() == ProgramType::Int32Pointer =>
+                        {
+                            indexed_array_entry_version(&source, &pointer.address().base)
+                        }
+                        _ => None,
+                    };
+                    arguments.push(Term::ArrayReadPoint(
+                        point.unwrap_or_else(|| ProgramPoint::at(source.shared_memory())),
+                    ));
                 }
                 arguments.push(Term::ProgramValue(argument_path.value.clone().into()));
                 next_paths.push(SpecPropositionPath {
@@ -8503,17 +8513,7 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
         return source.clone();
     };
     let block = &pointer.address().base;
-    let entry = crate::instrumentation::measure_operation(
-        "kernel",
-        "canonical form",
-        "array-ref entry version",
-        || {
-            let entry = source.entry_array_version(block)?;
-            crate::instrumentation::record_deterministic_work(1);
-            Some(entry)
-        },
-    );
-    if let Some(entry) = entry {
+    if let Some(entry) = indexed_array_entry_version(source, block) {
         return entry;
     }
     let start = source.parameter_read_start(block);
@@ -8529,6 +8529,19 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
         }
         _ => start,
     }
+}
+
+fn indexed_array_entry_version(source: &ProgramPoint, block: &AddressBase) -> Option<ProgramPoint> {
+    crate::instrumentation::measure_operation(
+        "kernel",
+        "canonical form",
+        "array-ref entry version",
+        || {
+            let entry = source.entry_array_version(block)?;
+            crate::instrumentation::record_deterministic_work(1);
+            Some(entry)
+        },
+    )
 }
 
 pub(in crate::kernel) fn program_value_bitvector_term(value: &ProgramValue) -> Option<MachineTerm> {

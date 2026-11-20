@@ -3253,7 +3253,7 @@ impl<'a> TermRewrite<'a> {
                     &mut variables,
                     &mut seen,
                 ),
-                Term::Memory(_) | Term::ExecutionState(_) => {}
+                Term::ArrayReadPoint(_) | Term::ExecutionState(_) => {}
             }
             if variables.exhausted() {
                 break;

@@ -916,3 +916,76 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
         );
     }
 }
+
+#[test]
+fn declared_predicate_array_names_its_entry_point_after_local_calls() {
+    let _session = VerificationSession::enter();
+    let array = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let local = Address {
+        base: "local:callee-write".into(),
+        offset: AddressOffset::Constant(0),
+    };
+    let arguments = [SpecPredicateArgument::ArrayRef {
+        point: SpecPoint::Current,
+        pointer: SpecExpression::Value(ProgramValue::typed_pointer(
+            array.clone(),
+            ProgramType::Int32Pointer,
+        )),
+    }];
+    let assumptions = PureFactContext::new();
+    let lower = |state: &ExecutionState| {
+        let mut execution = ExecutionBudget::new();
+        let paths = lower_spec_predicate_proposition_at_state_in(
+            SpecScope::unbound(state, None),
+            "array_predicate",
+            &arguments,
+            false,
+            &assumptions,
+            &mut SpecEvaluation::logical(&mut execution),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one predicate path");
+        };
+        path.proposition.clone()
+    };
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let expected = lower(&entry);
+    let Proposition::Predicate { arguments, .. } = &expected else {
+        panic!("declared predicate");
+    };
+    let [_, Term::ArrayReadPoint(point), Term::ProgramValue(_)] = arguments.as_slice() else {
+        panic!("array argument retains a point");
+    };
+    assert_eq!(point.read_version_id(), entry.observation_point_id());
+    let independent = ExecutionState::new().begin_function_entry_memory();
+    assert_eq!(entry.memory(), independent.memory());
+    assert_ne!(expected, lower(&independent));
+
+    let call = |state: &ExecutionState, changed: &Address, index| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().with_call_memory_havoc(
+                Variable(index),
+                &[MemoryRange::new(changed.clone(), 0.into(), 1.into())],
+                &assumptions,
+                None,
+            ))
+    };
+    let work = [1, 8, 64].map(|count| {
+        let mut state = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_block(local.base.clone(), 4));
+        for index in 0..count {
+            state = call(&state, &local, 1011700 + index);
+        }
+        let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| lower(&state));
+        assert_eq!(lowered, expected);
+        work
+    });
+    assert!(work.iter().all(|units| *units == work[0]), "{work:?}");
+    assert_ne!(lower(&call(&entry, &array, 1011800)), expected);
+}
