@@ -4180,6 +4180,7 @@ fn execute_verified_function_applications_with_suspension(
             &effective_assumptions,
             &mut facts,
             budget,
+            application.evidence.is_none() && application.representation_copy.is_none(),
         )? {
             Ok(()) => {}
             Err(error) => {
@@ -13014,6 +13015,7 @@ fn initialize_produced_memory(
     assumptions: &PureFactContext,
     facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
+    opaque_output: bool,
 ) -> ExecutionResult<Result<(), RuntimeError>> {
     let mut memory = post_state.memory().clone();
     let mut word_outputs = Vec::new();
@@ -13093,6 +13095,13 @@ fn initialize_produced_memory(
                             memory.with_initialized_object(&start.offset_by_bytes(offset), length);
                     }
                 }
+            }
+            None if opaque_output
+                && byte_span == ProgramType::Int32.byte_width()
+                && range.element_width() == byte_span
+                && ProgramPoint::supports_local_call_word(&start) =>
+            {
+                memory = memory.with_initialized_call_word(&start);
             }
             None => memory = memory.with_initialized_object(&start, byte_span),
         }
