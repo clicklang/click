@@ -1450,8 +1450,17 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             operator,
             right,
         } => {
-            let left_paths =
-                evaluate_spec_integer_expression_paths_in(scope, left, assumptions, budget)?;
+            let retain_match = matches!(
+                operator,
+                IntegerComparisonOperator::Equal | IntegerComparisonOperator::NotEqual
+            );
+            let left_paths = evaluate_spec_integer_comparison_operand_in(
+                scope,
+                left,
+                assumptions,
+                budget,
+                retain_match,
+            )?;
             let mut result = Vec::new();
             for left_path in left_paths {
                 let path_assumptions = assumptions_with_path_context(
@@ -1459,11 +1468,12 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     &left_path.facts,
                     &left_path.obligations,
                 );
-                for right_path in evaluate_spec_integer_expression_paths_in(
+                for right_path in evaluate_spec_integer_comparison_operand_in(
                     scope,
                     right,
                     &path_assumptions,
                     budget,
+                    retain_match,
                 )? {
                     let Some((facts, obligations)) =
                         merge_execution_pure_facts_and_obligations_under(
@@ -2222,6 +2232,7 @@ fn evaluate_spec_integer_expression_paths_in(
                 arms,
                 assumptions,
                 budget,
+                false,
             )
         }
         SpecIntegerExpression::If {
@@ -3089,13 +3100,64 @@ fn evaluate_spec_integer_range_fold_indices_in(
     }
 }
 
+fn evaluate_spec_integer_comparison_operand_in(
+    scope: SpecScope<'_>,
+    expression: &SpecIntegerExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+    retain_match: bool,
+) -> ExecutionResult<Vec<SpecIntegerPath>> {
+    if retain_match && let SpecIntegerExpression::AlgebraicMatch { scrutinee, arms } = expression {
+        return evaluate_spec_integer_algebraic_match_paths_in(
+            scope,
+            scrutinee,
+            arms,
+            assumptions,
+            budget,
+            true,
+        );
+    }
+    evaluate_spec_integer_expression_paths_in(scope, expression, assumptions, budget)
+}
+
+// The retained-root test is shared with rewriting. Also check the written arm
+// here: a condition simplified during evaluation could otherwise qualify as
+// a literal depending on the facts in scope.
+fn spec_integer_match_arm_is_simple(arm: &SpecIntegerMatchArm) -> bool {
+    let atom = |expression: &SpecIntegerExpression| match expression {
+        SpecIntegerExpression::Term(_) => true,
+        SpecIntegerExpression::FromMachine(machine) => matches!(
+            machine.as_ref(),
+            SpecExpression::Value(_)
+                | SpecExpression::ProgramExpression(ProgramExpression::Variable(_))
+        ),
+        _ => false,
+    };
+    match arm.body.as_ref() {
+        SpecIntegerExpression::Add(left, right) | SpecIntegerExpression::Subtract(left, right) => {
+            atom(left) && atom(right)
+        }
+        body => atom(body),
+    }
+}
+
 fn evaluate_spec_integer_algebraic_match_paths_in(
     scope: SpecScope<'_>,
     scrutinee: &SpecAlgebraicExpression,
     arms: &[SpecIntegerMatchArm],
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
+    retain_match: bool,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
+    let retain_match = retain_match
+        && !budget.checked_reads
+        && matches!(
+            scrutinee.node,
+            SpecAlgebraicExpressionNode::Constructor { .. }
+        )
+        && super::functions::spec_algebraic_expression_is_state_independent(scrutinee)
+        && super::functions::spec_algebraic_expression_is_obligation_free(scrutinee)
+        && arms.iter().all(spec_integer_match_arm_is_simple);
     let scrutinee_paths =
         evaluate_spec_algebraic_at_state_with_bindings_in(scope, scrutinee, assumptions, budget)?;
     let mut result = Vec::new();
@@ -3201,14 +3263,23 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 .iter()
                 .all(|ty| *ty == AlgebraicValueType::Integer)
         });
-        let constructor = if integer_fields {
-            None
-        } else {
-            scrutinee_path.value.native_constructor()
-        };
+        let matched = KernelMatch::new(
+            KernelType::Integer,
+            scrutinee_path.value.clone().into_kernel(),
+            lowered_arms,
+        )
+        .map_err(|_| ExecutionLimit::Paths)?;
+        let constructor =
+            if integer_fields || (retain_match && matched.retains_known_integer_equality()) {
+                None
+            } else {
+                scrutinee_path.value.native_constructor()
+            };
         let value = match constructor.map(|value| &value.node) {
-            Some(AlgebraicTermNode::Constructor { variant, fields }) => lowered_arms
+            Some(AlgebraicTermNode::Constructor { variant, fields }) => matched
+                .arms
                 .iter()
+                .zip(&matched.arguments[1..])
                 .find(|(arm, _)| arm.variant == *variant)
                 .and_then(|(arm, body)| {
                     if arm.bindings.len() != fields.len() {
@@ -3222,15 +3293,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                         .map(IntegerResult::from)
                 })
                 .ok_or(ExecutionLimit::Paths)?,
-            _ => IntegerResult::from_kernel(
-                KernelMatch::new(
-                    KernelType::Integer,
-                    scrutinee_path.value.into_kernel(),
-                    lowered_arms,
-                )
-                .map_err(|_| ExecutionLimit::Paths)?
-                .into_term(),
-            ),
+            _ => IntegerResult::from_kernel(matched.into_term()),
         };
         result.push(SpecIntegerPath {
             value,

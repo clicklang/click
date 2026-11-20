@@ -222,7 +222,7 @@ impl TermRewrite<'_> {
             }
             let value = match term.node() {
                 KernelTermNode::Match(matched) => self
-                    .rewrite_retained_match_value_in(matched)?
+                    .rewrite_retained_match_value_in(matched, false)?
                     .with_machine_observation_type(format),
                 KernelTermNode::Fold(fold) => self
                     .retained_fold_in(fold)
