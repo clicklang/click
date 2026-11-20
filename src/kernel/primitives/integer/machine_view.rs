@@ -673,6 +673,38 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
+    /// Read an in-range literal conversion for checking, without exporting
+    /// a shared operand or evaluating a compound Integer expression.
+    pub(crate) fn checked_literal_integer_conversion(
+        self,
+    ) -> Option<(MachineIntegerType, MachineIntegerConstant)> {
+        let (destination, literal) = match self {
+            Self::Shared(root) => match root.node() {
+                KernelTermNode::IntegerToMachine {
+                    destination,
+                    operand,
+                } => {
+                    let KernelTermNode::IntegerLiteral(literal) = operand.node() else {
+                        return None;
+                    };
+                    (*destination, literal)
+                }
+                _ => {
+                    return Self::Legacy(self.retained_native_input()?)
+                        .checked_literal_integer_conversion();
+                }
+            },
+            Self::Legacy(MachineTerm::IntegerToMachine { value, destination }) => {
+                (*destination, value.as_const()?)
+            }
+            Self::Legacy(_) => return None,
+        };
+        Some((
+            destination,
+            MachineIntegerConstant::from_integer(destination.format(), literal)?,
+        ))
+    }
+
     /// Read kind alone does not require a native address compatibility view.
     pub(crate) fn read_kind(self) -> Option<LoadKind> {
         match self {
