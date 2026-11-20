@@ -3,22 +3,20 @@
 The `loop` tactic certifies one body iteration. A path that ends in `break`
 does not reach the back edge and is not asked to: it is an *exit*. The
 invariants are not closed on it, no measure is required to decrease on it, and
-the facts it established are exported as one disjunct of the loop's single
-successor, beside the guard-false exit and beside every other `break`. This is
-the join package A17 built for the exits of a short-circuit guard, now fed by
-the body as well as by the guard.
+its proof contributes to the loop's successor beside the guard-false exit
+and every other `break`. A fact established at each exit can be used after
+the loop.
 
 `break_once` is the smallest case: the loop leaves either because `i > 0`
 failed or because the body broke while `i > 0` held. Both exits stand at the
-loop's own exit state, so the rule exports one successor whose facts are the
-invariants plus `i <= 0 or i > 0` — and nothing stronger, which is what keeps
-a claim such as `result == 0` from being provable here
+loop's own exit state, so the invariant `i >= 0` suffices for the result. A stronger claim such as
+`result == 0` fails
 ([`loop_body_break_exit_claim_rejected.md`](loop_body_break_exit_claim_rejected.md)).
 
 `stop_at` is the shape of Linux's `__rb_insert`: `while (true)`, which has no
 guard-false exit at all, with every way out a `break` inside an `if`. The
-successor is the join of the two `break` exits alone, and the post-loop claim
-reads their disjunction.
+successor is the join of the two `break` exits. Each exit proves
+`i == 3 or i == 0` and the post-loop claim uses it.
 
 Every loop here is ranked by `decreases i;`. A `break` path owes no decrease,
 so `break_once` proves nothing about its measure; `stop_at` has one path that
@@ -75,12 +73,9 @@ int32 break_once_automatically(int32 n) {
 }
 ```
 
-`stop_at_automatically` is `stop_at` with both phases omitted, so the
-automation walks two `break` paths through nested C `if`s. Each path is one
-proof case, and the merged certificate has to place each case where its own
-path took it. The expansion `click audit` checks is that certificate printed,
-so a case placed after a sibling arm's steps verifies here and fails to
-reverify there.
+`stop_at_automatically` uses the same C control flow. The preservation
+proof follows the two nested C branches and states the same exit fact
+before each `break`. The post-loop claim uses that fact after the join.
 
 ```c filename=stop_at_automatically.c
 int32 stop_at_automatically(int32 n) {
@@ -138,12 +133,14 @@ int32 stop_at(int32 n) {
         maintain by {
             if i == 3 {
                 step();
+                have i == 3 or i == 0 by known();
                 step();
             } else {
                 step();
                 step();
                 if i == 0 {
                     step();
+                    have i == 3 or i == 0 by known();
                     step();
                 } else {
                     step();
@@ -180,6 +177,27 @@ int32 stop_at_automatically(int32 n) {
     loop {
         decreases i;
         invariant i >= 0;
+
+        initialize by solve();
+        maintain by {
+            if i == 3 {
+                step();
+                have i == 3 or i == 0 by known();
+                step();
+            } else {
+                step();
+                step();
+                if i == 0 {
+                    step();
+                    have i == 3 or i == 0 by known();
+                    step();
+                } else {
+                    step();
+                    step();
+                    step();
+                }
+            }
+        }
     }
     step();
     solve();
