@@ -2986,18 +2986,31 @@ impl CellStore {
     pub(crate) fn find_retained_candidate_by(
         &self,
         candidates: &AliasCandidates,
+        point: Option<(&Address, &Address, &PureFactContext)>,
         mut found: impl FnMut(&Address, &ProgramValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) -> (Option<ExecutionValue>, usize) {
+        let (concrete_gaps, run_gaps, restored) = if let Some((pointer, normalized, facts)) = point
+        {
+            let concrete_gaps = if pointer == normalized {
+                crate::kernel::reasoning::store_gap::store_gap_kept_ranges(pointer, 1, facts)
+            } else {
+                Vec::new()
+            };
+            let (run_gaps, restored) = self.point_run_ranges(normalized);
+            (concrete_gaps, run_gaps, restored)
+        } else {
+            (Vec::new(), Vec::new(), Vec::new())
+        };
         let mut visited = 0usize;
         let mut best: Option<(Address, ExecutionValue)> = candidates
-            .entries(&self.concrete)
+            .entries_excluding(&self.concrete, &concrete_gaps, &[])
             .find(|(pointer, value)| {
                 visited += 1;
                 found(pointer, value.native())
             })
             .map(|(pointer, value)| (pointer.clone(), value.value().clone()));
-        for run in self.candidate_runs(candidates) {
+        for (_, run) in candidates.entries_excluding(&self.runs, &run_gaps, &restored) {
             visited += 1;
             let (decision, answer) = run_rule(run);
             #[cfg(debug_assertions)]
@@ -3019,6 +3032,67 @@ impl CellStore {
             }
         }
         (best.map(|(_, value)| value), visited)
+    }
+
+    /// On a normalized constant or parameter line the equality rule sees
+    /// each run as a constant shift. Skip its anchor ranges and restore only
+    /// the runs whose indexed slot span reaches the read. Other lines may
+    /// still alias through facts and stay in the ordinary candidate search.
+    fn point_run_ranges(&self, pointer: &Address) -> (Vec<(RunKey, RunKey)>, Vec<RunKey>) {
+        use crate::kernel::reasoning::store_gap::CONSTANT_LIMIT;
+
+        let (stem, offset) = match &pointer.offset {
+            AddressOffset::Constant(offset) => (None, Some(*offset)),
+            AddressOffset::Add(stem, shift) => (Some(stem.as_ref()), shift.as_const()),
+            stem => (Some(stem), Some(0)),
+        };
+        let Some(offset) =
+            offset.filter(|offset| (-CONSTANT_LIMIT..=CONSTANT_LIMIT).contains(offset))
+        else {
+            return (Vec::new(), Vec::new());
+        };
+        let range = |first, last| {
+            (
+                RunKey::bound(&pointer.base, first, RunShape::Least),
+                RunKey::bound(&pointer.base, last, RunShape::Greatest),
+            )
+        };
+        let mut excluded = match stem {
+            None => vec![range(
+                RunAnchor::Constant(-CONSTANT_LIMIT),
+                RunAnchor::Constant(CONSTANT_LIMIT),
+            )],
+            Some(stem @ (AddressOffset::Variable(_) | AddressOffset::Int32Scaled { .. })) => {
+                let shift = |offset| {
+                    RunAnchor::of(&AddressOffset::Add(
+                        Box::new(stem.clone()),
+                        Box::new(AddressOffset::Constant(offset)),
+                    ))
+                };
+                vec![
+                    range(RunAnchor::of(stem), RunAnchor::of(stem)),
+                    range(shift(-CONSTANT_LIMIT), shift(CONSTANT_LIMIT)),
+                ]
+            }
+            _ => return (Vec::new(), Vec::new()),
+        };
+        excluded.sort_unstable();
+        let line = CoverLine {
+            block: pointer.base.clone(),
+            stem: stem.cloned(),
+        };
+        let restored = self
+            .cover_segment(&line, offset)
+            .into_iter()
+            .flat_map(|segment| &segment.runs)
+            .filter(|key| {
+                excluded
+                    .iter()
+                    .any(|(first, last)| first <= *key && *key <= last)
+            })
+            .cloned()
+            .collect();
+        (excluded, restored)
     }
 
     /// Asks `keep` of every live slot of the visited runs (the candidate
