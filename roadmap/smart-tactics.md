@@ -98,8 +98,8 @@ a predicate fact. Scalar fold instantiation keeps a selected entry point
 when the substituted index still uses the indexed entry selector. Checked
 resource quantities and materialized resource cells share that entry point for
 an `int32` field at a fixed displacement from its external parameter. Computed
-scalar fold endpoints, ordinary checked reads and reads at loop boundaries
-also carry the selected entry point. A join retains it when all incoming paths
+scalar fold endpoints, ordinary checked reads, loop boundaries and iterated
+ownership guards also carry the selected entry point. A join retains it when all incoming paths
 establish the same unchanged entry version. Scalar canonicalization,
 congruence and Integer arithmetic retain the point through comparison.
 
