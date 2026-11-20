@@ -53,7 +53,7 @@ impl TermClasses {
                 .cloned()
                 .unwrap_or_default();
             if !terms.contains(&key) {
-                self.weights.insert(root, self.weight(root) + 1);
+                self.class_links.set_weight(root, self.weight(root) + 1);
                 self.scalar_witnesses
                     .conditionals
                     .insert(root, terms.with_value(key.clone()));
@@ -70,7 +70,7 @@ impl TermClasses {
             .cloned()
             .unwrap_or_default();
         if !bytes.contains(&byte) {
-            self.weights.insert(root, self.weight(root) + 1);
+            self.class_links.set_weight(root, self.weight(root) + 1);
             self.scalar_witnesses
                 .inverse_bytes
                 .insert(root, bytes.with_value(byte));
