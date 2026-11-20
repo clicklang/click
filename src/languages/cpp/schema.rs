@@ -4468,8 +4468,17 @@ fn validate_call_in_context(
             "C++ record temporaries require one nonthrowing statement call full expression".into(),
         );
     }
-    let observer_values = arguments.iter().any(|argument|
-        matches!(argument, CppCallArgument::Value { value } if value.contains_observer()));
+    let observer_values = arguments.iter().any(|argument| match argument {
+        CppCallArgument::Value { value } if returned_construction => value.contains_observer(),
+        CppCallArgument::Value { value } => matches!(
+            value,
+            CppExpression::ObserverCall {
+                returned_member: None,
+                ..
+            }
+        ),
+        _ => false,
+    });
     if observer_values
         && arguments
             .iter()
