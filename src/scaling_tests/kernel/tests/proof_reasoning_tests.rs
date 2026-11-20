@@ -312,6 +312,7 @@ fn known_scalar_queries_have_bounded_work_beside_growing_classes() {
 /// one that pins the term. It used to scan every condition fact, uncharged,
 /// on each range-membership and offset-equality query that asked it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn exact_signed_constant_is_a_keyed_lookup_among_unrelated_facts() {
     use crate::kernel::assumptions::exact_signed_constant;
@@ -1017,6 +1018,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn direct_constant_lookup_ignores_unrelated_condition_facts() {
     let var = |id| MachineTerm::Variable(Variable(id));

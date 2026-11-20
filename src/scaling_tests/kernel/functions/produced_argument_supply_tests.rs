@@ -78,6 +78,7 @@ fn adjacent_returned_clauses_ignore_pointer_aliases() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: eight returned clauses and cold consumption at four alias sizes"]
 fn eight_returned_clauses_ignore_pointer_aliases() {
     check_returned_resource_construction(8);

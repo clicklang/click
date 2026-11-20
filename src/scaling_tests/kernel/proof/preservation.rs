@@ -114,9 +114,8 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
             let _session = crate::kernel::VerificationSession::enter();
             let _reads = typed_reads::ReadScope::enter();
             let (mut preservation, _) = tests::fixture(history, false);
-            let (before, after) = preservation.memories();
-            let before = intern_memory(before.clone());
-            let after = intern_memory(after.clone());
+            let (before, after) = preservation.points();
+            let (before, after) = (before.clone(), after.clone());
             let proposition = &mut preservation.separation;
             let Proposition::ResourceSeparate { right, .. } = proposition else {
                 unreachable!()
@@ -133,9 +132,8 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
             ));
             // A byte read is compared through its `int32` widening, as C
             // promotes it.
-            let read = |memory: &SharedMemory| {
-                let bits =
-                    integer_bits(tests::observe(memory.memory(), &address, value_type)).unwrap();
+            let read = |point: &ProgramPoint| {
+                let bits = integer_bits(tests::observe_point(point, &address, value_type)).unwrap();
                 Box::new(if value_type == ProgramType::UInt8 {
                     MachineTerm::machine_integer_cast(
                         MachineIntegerType::UInt8,
@@ -164,14 +162,10 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
                 // even when both read types are present at the same address.
                 let wider = Proposition::condition_is(
                     ConditionTerm::equal(
-                        integer_bits(tests::observe(after.memory(), &address, ProgramType::Int32))
+                        integer_bits(tests::observe_point(&after, &address, ProgramType::Int32))
                             .unwrap(),
-                        integer_bits(tests::observe(
-                            before.memory(),
-                            &address,
-                            ProgramType::Int32,
-                        ))
-                        .unwrap(),
+                        integer_bits(tests::observe_point(&before, &address, ProgramType::Int32))
+                            .unwrap(),
                     ),
                     true,
                 );
@@ -214,9 +208,9 @@ fn region_footprint_preservation_does_not_walk_prior_memory_history() {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
         let (original, goal) = tests::fixture(history, false);
-        let (before, after) = original.memories();
-        let entry = ExecutionState::new().with_memory(before.clone());
-        let exit = entry.clone().with_memory(after.clone());
+        let (before, after) = original.points();
+        let entry = ExecutionState::at_point(before);
+        let exit = ExecutionState::at_point(after);
         let effects = Vec::<ExecutionPureFact>::new();
         let (footprint, recording_cost) =
             crate::instrumentation::measure_deterministic_work(|| {

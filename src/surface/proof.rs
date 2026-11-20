@@ -82,6 +82,7 @@ pub(super) use claim_proofs::{
 };
 pub(in crate::surface) use cursor_execution::surface_program_point_selector;
 #[cfg(test)]
+#[cfg(not(feature = "fast-gate"))]
 pub(in crate::surface) use cursor_execution::take_step_diagnostic_resource_reads;
 use cursor_execution::*;
 

@@ -2332,6 +2332,8 @@ pub struct PointerLoadId(pub(crate) u64);
 pub(crate) struct LoadedPointerView {
     pub(crate) identity: PointerLoadId,
     pub(crate) defining_memory: SharedMemory,
+    pub(crate) point: ProgramPoint,
+    pub(crate) value_type: Option<ProgramType>,
     pub(crate) defining_address: Address,
     pub(crate) displacement: AddressOffset,
 }
@@ -2608,6 +2610,36 @@ impl Pointer {
         crate::instrumentation::record_deterministic_work(1);
         let source = memory.unchanged_bytes_source();
         let origin = Arc::new(Address::loaded_value(&source, cell));
+        value
+            .with_bounds_owner(Some(origin.clone()))
+            .with_provenance(origin)
+    }
+
+    /// A point-named complete read uses the same identity for its address,
+    /// provenance, and bounds owner. Function pointers have no object domain.
+    pub(in crate::kernel) fn from_point_read(
+        point: ProgramPoint,
+        program_type: ProgramType,
+        cell: &Address,
+    ) -> Self {
+        if point.read_version_id().is_none() {
+            let memory = point.shared_memory();
+            let address = Address::loaded_value(&memory.unchanged_bytes_source(), cell);
+            return Self::from_read(address, program_type, memory, cell);
+        }
+        let address = Address {
+            base: AddressBase::LoadedPointer(crate::kernel::eval::pointer_load_at_point(
+                point,
+                cell,
+                Some(program_type),
+            )),
+            offset: AddressOffset::Constant(0),
+        };
+        let value = Self::new(address.clone(), program_type);
+        if matches!(program_type, ProgramType::FunctionPointer(_)) {
+            return value;
+        }
+        let origin = Arc::new(address);
         value
             .with_bounds_owner(Some(origin.clone()))
             .with_provenance(origin)
@@ -7243,7 +7275,7 @@ impl VerifiedLoopRules {
 pub struct ExecutionEnvironment {
     // A proof-local rule choice. This is not installed in the project environment.
     pub(crate) selected_call_contract: Option<std::sync::Arc<str>>,
-    pub(crate) selected_call_resource_arguments: Option<std::sync::Arc<[Variable]>>,
+    pub(crate) selected_call_resource_arguments: Option<std::sync::Arc<[InstanceId]>>,
     /// A proof-local binder map for one ordinary C call: the callee named by
     /// the step, and one caller instance per instance binder the callee
     /// declares. Binding is a lookup per entry; nothing is searched for.

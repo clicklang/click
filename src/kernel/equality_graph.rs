@@ -522,11 +522,7 @@ pub(in crate::kernel) fn clear_logical_pointer_reads() {
 pub(crate) fn logical_pointer_read_term(value: &Address) -> Option<MachineTerm> {
     if let Some(read) = value.as_loaded_value() {
         return (read.displacement == AddressOffset::Constant(0)).then(|| {
-            MachineTerm::MemoryLoad(
-                ProgramPoint::at(&read.defining_memory),
-                Box::new(read.defining_address),
-                LoadKind::Int32,
-            )
+            MachineTerm::MemoryLoad(read.point, Box::new(read.defining_address), LoadKind::Int32)
         });
     }
     let application = LOGICAL_POINTER_READS.with(|reads| {
@@ -2830,8 +2826,8 @@ impl EqualityGraphState {
             }
             let definition = match &block {
                 AddressBase::LoadedPointer(identity) => {
-                    crate::kernel::eval::registered_pointer_load(*identity)
-                        .map(|(memory, address)| (memory, address, crate::kernel::LoadKind::Int32))
+                    crate::kernel::eval::registered_pointer_load_point(*identity)
+                        .map(|(point, address, _)| (point, address, crate::kernel::LoadKind::Int32))
                 }
                 // A function pointer read is a typed read of its address,
                 // like a loaded data pointer.
@@ -2841,7 +2837,7 @@ impl EqualityGraphState {
                     crate::kernel::registered_load_for_variable(variable).and_then(
                         |(memory, address)| {
                             crate::kernel::registered_load_kind_for_variable(variable)
-                                .map(|kind| (memory, address, kind))
+                                .map(|kind| (ProgramPoint::at(&memory), address, kind))
                         },
                     )
                 }
@@ -2853,13 +2849,13 @@ impl EqualityGraphState {
                     crate::kernel::registered_load_for_variable(variable).and_then(
                         |(memory, address)| {
                             crate::kernel::registered_load_kind_for_variable(variable)
-                                .map(|kind| (memory, address, kind))
+                                .map(|kind| (ProgramPoint::at(&memory), address, kind))
                         },
                     )
                 }
                 _ => None,
             };
-            let Some((memory, address, kind)) = definition else {
+            let Some((point, address, kind)) = definition else {
                 continue;
             };
             if matches!(
@@ -2873,7 +2869,7 @@ impl EqualityGraphState {
                     offset: AddressOffset::Constant(0),
                 });
                 self.terms.pointer_read(
-                    memory.read_identity(),
+                    point.congruence_read_key(),
                     address_term,
                     kind,
                     value_term,
@@ -2884,6 +2880,7 @@ impl EqualityGraphState {
                 }
                 continue;
             }
+            let memory = point.into_shared_memory();
             let Some(address_offset) = AffineOffset::of(&address.offset) else {
                 continue;
             };
@@ -3370,8 +3367,11 @@ impl EqualityGraph {
 /// register as applications, and explicit equations supply their values.
 fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
     if let MachineTerm::MemoryLoad(memory, pointer, kind) = term {
+        if memory.is_exact_read() {
+            return crate::kernel::eval::comparison_identity_of_exact_read(memory, pointer, *kind);
+        }
         if memory.read_version_id().is_some()
-            || crate::kernel::eval::is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
+            || crate::kernel::eval::is_selected_scalar_read(memory, pointer, *kind)
         {
             return term.clone();
         }
@@ -4445,6 +4445,63 @@ mod tests {
             &changed.address().offset_by_bytes(24),
             &model.offset_by_bytes(24)
         ));
+    }
+
+    #[test]
+    fn scalar_read_congruence_keeps_distinct_store_points() {
+        use crate::kernel::{ExecutionState, LoadKind, ProgramValue};
+
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Address {
+            base: AddressBase::Concrete("local:scalar-versions".into()),
+            offset: AddressOffset::Constant(0),
+        };
+        let entry = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block("local:scalar-versions", 8));
+        let store = |value: ProgramValue, kind| {
+            let memory = entry.memory().clone().store(slot.clone(), value);
+            entry
+                .clone()
+                .with_memory(memory)
+                .program_point()
+                .indexed_integer_version(&slot, kind)
+                .unwrap()
+        };
+        let cases = [
+            (
+                LoadKind::Int32,
+                ProgramValue::Int32(MachineTerm::constant(3)),
+            ),
+            (
+                LoadKind::Bits64,
+                ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
+            ),
+        ];
+        for (kind, value) in cases {
+            let first = store(value.clone(), kind);
+            let second = store(value, kind);
+            assert_eq!(first.shared_memory(), second.shared_memory());
+            assert_ne!(first.id(), second.id());
+            let first = crate::kernel::eval::scalar_read_for_exact_cell_at(
+                &first,
+                &slot,
+                kind,
+                kind.byte_width(),
+            );
+            let second = crate::kernel::eval::scalar_read_for_exact_cell_at(
+                &second,
+                &slot,
+                kind,
+                kind.byte_width(),
+            );
+            let graph = EqualityGraph::default();
+            let equal = match kind {
+                LoadKind::Int32 => graph.are_int32_equal(&first, &second),
+                LoadKind::Bits64 => graph.are_uint64_equal(&first, &second),
+                _ => unreachable!("tested scalar widths"),
+            };
+            assert!(!equal, "{kind:?} congruence must retain the source point");
+        }
     }
 
     #[test]

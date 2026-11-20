@@ -971,7 +971,7 @@ impl OriginLoadEndpoint {
             crate::kernel::MachineOperandView::Legacy(term),
         )?;
         Some(Self {
-            memory: read.memory,
+            memory: read.point.into_shared_memory(),
             pointer: read.pointer,
             kind: read.kind,
         })
@@ -3242,6 +3242,9 @@ pub(in crate::kernel) fn complete_pointer_carrier_read_retained_value(
     assumptions: &PureFactContext,
 ) -> Option<ExecutionValue> {
     let read = origin.as_loaded_value()?;
+    if let Some(stored) = read.point.indexed_stored_value() {
+        return Some(stored.value().clone());
+    }
     // A copied value uses the same whole-byte frame premises as a read
     // retained in place. In particular, an explicit separation of the
     // enclosing header can protect this complete pointer field.
@@ -5255,7 +5258,11 @@ pub(crate) fn wide_read_has_recorded_value(
         )
         .map(|read| {
             MachineTerm::MemoryLoad(
-                ProgramPoint::at(&(read.origin.unwrap_or(read.memory))),
+                ProgramPoint::at(
+                    &(read
+                        .origin
+                        .unwrap_or_else(|| read.point.into_shared_memory())),
+                ),
                 Box::new(read.pointer),
                 read.kind,
             )
@@ -7795,9 +7802,11 @@ mod opaque_pointer_frame_tests {
         if !facts.proves_resource_separate(&changed, &kept) {
             return None;
         }
-        let observe = |memory: &SymbolicMemory| {
+        let entry = ExecutionState::new().with_memory(before.clone());
+        let exit = entry.clone().with_memory(after.clone());
+        let observe = |state: &ExecutionState| {
             let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
-                memory,
+                state.memory(),
                 field.clone(),
                 ProgramType::Int32Pointer,
                 Default::default(),
@@ -7810,16 +7819,19 @@ mod opaque_pointer_frame_tests {
             let ExpressionOutcome::Value(ProgramValue::Pointer(value)) = &path.outcome else {
                 panic!("pointer observation")
             };
+            crate::kernel::eval::typed_reads::record_at(
+                &state.program_point(),
+                field,
+                &ProgramValue::Pointer(value.clone()),
+            );
             value.clone()
         };
-        let before_value = observe(before);
-        let after_value = observe(after);
+        let before_value = observe(&entry);
+        let after_value = observe(&exit);
         let result = Proposition::condition_is(
             ConditionTerm::pointer_equal(after_value.clone(), before_value),
             true,
         );
-        let entry = ExecutionState::new().with_memory(before.clone());
-        let exit = entry.clone().with_memory(after.clone());
         let footprint = crate::kernel::RegionFootprint::transition(
             "selected".into(),
             &entry,

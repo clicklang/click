@@ -101,6 +101,7 @@ fn loop_clauses_in(tactics: &[ProofTactic], clauses: &mut Vec<StructuralClause>)
 /// retained; a trailing `solve()` would be rejected here exactly as
 /// `ProofCertificate::from_proof_tactics` rejects it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn expanded_loop_phase_proofs_are_certificates() {
     for (filename, function) in [
@@ -122,6 +123,7 @@ fn expanded_loop_phase_proofs_are_certificates() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies and replays two complete loop fixtures"]
 fn numeric_descent_exit_expansion_replays() {
     for fixture in [
@@ -229,6 +231,7 @@ fn borrowed_sources(sources: &[(String, String)]) -> Vec<(&str, &str)> {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn natural_goto_exits_retain_checked_paths_and_expand() {
     for (filename, function) in [
@@ -261,6 +264,7 @@ fn natural_goto_exits_retain_checked_paths_and_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn natural_goto_mixed_return_retains_paths_and_expands() {
     let (click, sources) = loop_fixture("natural_goto_forward_exit_and_return");
@@ -327,6 +331,7 @@ fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
 /// ordinary proof per arithmetic member. The printed source
 /// must reverify through the ordinary entry point without replanning.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Integer ranking expansion exceeds 0.5s in the parallel gate"]
 fn smart_ranking_closure_expands_to_explicit_bundle_members() {
     let (click, sources) = loop_fixture("c_decreases_count_up");
@@ -345,7 +350,6 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
         closer.contains("have i >= 0 implies i <= n by {"),
         "the expanded closer must prove each bundle member in a `have`: {expanded}"
     );
-    assert!(closer.contains("normalize"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
@@ -361,18 +365,20 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
 /// The generated Integer ranking keeps the increment's range proof and
 /// operation identity, including when its goal is anchored at loop entry.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Integer ranking expansion exceeds 0.5s in the parallel gate"]
 fn unsigned_integer_ranking_expands_without_search() {
     let (click, sources) = loop_fixture("back_edge_closes_an_unsigned_bound_from_the_guard");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "count").unwrap();
-    assert!(expanded.contains("normalize"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 /// A stored byte counter also needs its narrowing's range; the generated
 /// proof spells the promoted operation, `(x as int32)`, at iteration entry.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Integer ranking expansion exceeds 0.5s in the parallel gate"]
 fn promoted_integer_ranking_expands_without_search() {
     let (click, sources) = loop_fixture("a_uint8_loop_counter_ranks_as_a_promoted_int32");
@@ -470,6 +476,7 @@ fn migrated_negative_loop_fixtures_reach_the_decrease_check() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn remaining_loop_migration_fixtures_expand_and_recheck() {
     for (filename, function) in [
@@ -526,6 +533,7 @@ fn loop_preservation_have_resolves_entry_label_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn pointer_loop_increment_emits_checked_equality_proof() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -597,6 +605,7 @@ fn symbolic_alignment_expands_to_ordinary_proof_and_rechecks_without_planning() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
     for (filename, function) in [
@@ -791,6 +800,7 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn explicit_swap_loop_preserves_both_entry_bounds_and_expands() {
     let (c, click) = explicit_swap_loop_fixture(true);
@@ -808,6 +818,7 @@ fn explicit_swap_loop_preserves_both_entry_bounds_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn explicit_swap_loop_rejects_missing_entry_bounds() {
     let (c, missing_entry_bounds) = explicit_swap_loop_fixture(false);
@@ -823,6 +834,7 @@ fn explicit_swap_loop_rejects_missing_entry_bounds() {
 /// Exact observations leave the completed bundle available as a fact. The
 /// back edge should retain that direct proof and recheck explicitly.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn observed_member_closure_expands_to_direct_assumptions() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -845,6 +857,7 @@ fn observed_member_closure_expands_to_direct_assumptions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn explicit_invariant_body_quantified_bubble_census() {
     let path =
@@ -865,6 +878,7 @@ fn explicit_invariant_body_quantified_bubble_census() {
 
 /// The old/current state body verifies and expands on the ordinary stack.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn explicit_invariant_body_copy3_checks_and_expands() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/copy3_array_demo.md");
@@ -1404,6 +1418,7 @@ fn frontier_loop_binding_replaces_scope_without_merging_declarations() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
     let c_source = r#"
@@ -2227,6 +2242,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn loop_exit_duplicate_invariants_verify_and_reject_false_claims() {
     let c = r#"int32 count(int32 n) {
@@ -2381,6 +2397,7 @@ fn conditional_loop_resources_reject_unsupported_binding_and_body_items() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn loop_return_closers_expand_in_their_preservation_arms() {
     for (fixture, function) in [
@@ -2427,6 +2444,7 @@ fn loop_return_closers_expand_in_their_preservation_arms() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn nested_loop_return_keeps_the_inner_arms_closer() {
     let c = "int32 f(int32 n) { while (1) { while (1) { return 7; } } }";
@@ -2501,6 +2519,7 @@ fn loop_return_closers_do_not_require_distinct_result_values() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn loop_return_inside_branch_retains_its_fact_ancestry() {
     let c = "int32 f(int32 n) { if (n > 0) { int32 i = 0; while (i < n) { if (i == 2) return 7; i++; } return i; } else { return 7; } }";
@@ -2539,6 +2558,7 @@ fn loop_local_pointer_invariants_retain_declared_element_types() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: local pointer bounds mutation and expansion"]
 fn loop_local_pointer_invariants_refuse_short_wide_views_and_expand() {
     let (click, sources) = loop_fixture("loop_local_pointer_element_types");
@@ -2606,6 +2626,7 @@ fn native_read_aliases_do_not_supply_missing_authority_or_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: native read alias expansion"]
 fn native_read_aliases_expand_and_reverify() {
     let (click, sources) = loop_fixture("native_read_retains_wide_index_beside_narrow_alias");
@@ -2635,6 +2656,7 @@ fn theorem_application_expands_with_a_recorded_historical_byte_premise() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: readable pointer alias mutations and expansion"]
 fn byte_pointer_view_alias_rewrites_refuse_missing_authority_and_expand() {
     let (click, sources) = loop_fixture("byte_pointer_view_alias_rewrite");
@@ -2653,6 +2675,7 @@ fn byte_pointer_view_alias_rewrites_refuse_missing_authority_and_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pointer cursor invariant expansion and cold replay"]
 fn pointer_cursor_invariant_expands_and_replays() {
     let (click, sources) = loop_fixture("pointer_cursor_loop_expansion");
@@ -2679,6 +2702,7 @@ fn pointer_cursor_invariant_expands_and_replays() {
 // Loop resource selection must use the same checked pointer-alias graph as
 // calls; an abstract outer cursor is not the input's syntactic block.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn nested_loop_cursor_alias_retains_enclosing_input_view() {
     let (click, sources) = loop_fixture("nested_loop_cursor_view_authority");
@@ -2686,6 +2710,7 @@ fn nested_loop_cursor_alias_retains_enclosing_input_view() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: nested cursor authority mutations and expansion"]
 fn nested_loop_cursor_views_refuse_forged_ranges_and_expand() {
     let (click, sources) = loop_fixture("nested_loop_cursor_view_authority");
@@ -2963,6 +2988,7 @@ test_batches! {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s focused, expansion and false-result control"]
 fn shared_post_test_after_switch_continue_expands_and_rejects_a_false_result() {
     let (click, sources) = loop_fixture("do_while_switch_continue");
@@ -2982,6 +3008,7 @@ fn shared_post_test_after_switch_continue_expands_and_rejects_a_false_result() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.3s focused, expands and rechecks two ranked shared-phase proofs"]
 fn shared_test_and_update_ranking_expands_and_rechecks() {
     let (click, sources) = loop_fixture("shared_loop_test_and_update");
@@ -2995,6 +3022,7 @@ fn shared_test_and_update_ranking_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s focused, live and expired inline-reader storage controls"]
 fn shared_post_test_scope_retires_storage_after_a_switch_continue() {
     let (click, sources) = loop_fixture("shared_loop_post_test_ends_body_scope");

@@ -5,6 +5,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_facts() {
     let i = MachineTerm::Variable(Variable(980001));
@@ -65,6 +66,7 @@ fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_f
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn uint64_truncation_certificates_require_full_width_bounds() {
     let i = MachineTerm::Variable(Variable(981011));

@@ -8124,9 +8124,7 @@ impl Parser {
             self.variable_structs.remove(&binding.kernel_name);
             self.variable_struct_values.remove(&binding.kernel_name);
             self.variable_array_shapes.remove(&binding.kernel_name);
-            if let Some(row) = self.local_row_pointers.remove(&binding.kernel_name) {
-                self.variable_types.remove(&row.storage);
-            }
+            self.local_row_pointers.remove(&binding.kernel_name);
             self.variable_types.remove(&binding.kernel_name);
             self.variable_function_pointers.remove(&binding.kernel_name);
             self.variable_constants.remove(&binding.kernel_name);
@@ -13561,8 +13559,8 @@ impl Parser {
             )));
         }
         self.expect(Token::Equal)?;
-        if let Some(row) = self.local_row_pointers.get(&name).cloned() {
-            return self.parse_row_pointer_update(&row, Token::Equal);
+        if let Some(row) = self.local_row_pointers.get(&name).copied() {
+            return self.parse_row_pointer_update(name, row, Token::Equal);
         }
         let expression = self.parse_expression()?;
         self.validate_function_pointer_assignment(&name, &expression)?;
@@ -13622,8 +13620,8 @@ impl Parser {
                 ))
             })?,
         };
-        if let Some(row) = self.local_row_pointers.get(&name).cloned() {
-            return self.parse_row_pointer_update(&row, operator);
+        if let Some(row) = self.local_row_pointers.get(&name).copied() {
+            return self.parse_row_pointer_update(name, row, operator);
         }
         if self.variable_struct_values.contains_key(&name) {
             if operator != Token::Equal {
@@ -18258,9 +18256,9 @@ impl Parser {
         allow_updates: bool,
     ) -> Result<CExpression, CSyntaxError> {
         if let CExpression::Variable(name) = &expression
-            && let Some(row) = self.local_row_pointers.get(name).cloned()
+            && let Some(row) = self.local_row_pointers.get(name).copied()
         {
-            expression = self.parse_row_pointer_access(&row)?;
+            expression = self.parse_row_pointer_access(name.clone(), row)?;
         }
         loop {
             match self.peek() {

@@ -428,11 +428,11 @@ impl TermClasses {
                         );
                         self.intern_typed_machine(&selected, width)
                     } else if width != W::Bits128 && {
-                        let (memory, pointer, kind) =
+                        let (point, pointer, kind) =
                             crate::kernel::MachineOperandView::Shared(term)
-                                .read()
+                                .read_point()
                                 .expect("read descriptor");
-                        crate::kernel::eval::is_selected_scalar_read(memory, pointer, kind)
+                        crate::kernel::eval::is_selected_scalar_read(point, pointer, kind)
                     } {
                         let atom = MachineAtom::from_numeric_operand(
                             format,

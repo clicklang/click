@@ -2533,6 +2533,7 @@ fn checked_call_evidence_rejects_stale_or_swapped_recovery() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn checked_evidence_sequence_scales_with_shared_immutable_history() {
     let assumptions = PureFactContext::new();

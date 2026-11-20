@@ -7569,6 +7569,7 @@ mod modeled_pthread_binding_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 3s in the parallel gate"]
     fn frozen_worker_proof_retains_the_runtime_assumption() {
         let fixture = include_str!("../../mdtests/fork_join_worker_direct_contract.md");
@@ -8379,6 +8380,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
     /// Consuming the composite releases its hold: the loan ends, the owner
     /// is recovered, and the same write is accepted afterwards.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn consuming_the_composite_recovers_the_owner() {
         let click = format!(
@@ -8401,6 +8403,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
     /// folding it back reuses that hold: the write stays refused while the
     /// piece is out, and one consumption still releases everything.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.3s in the parallel gate"]
     fn unfold_keeps_the_escaped_borrow_held() {
         let refused = format!(
@@ -8622,9 +8625,11 @@ int read_view(const int *(*f)(const int *), const int *p) {{
 
 #[cfg(test)]
 mod retained_caller_tests {
+    #[cfg(not(feature = "fast-gate"))]
     use super::*;
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 3s in the parallel gate"]
     fn retained_session_reverifies_unchanged_static_array_caller() {
         let path =
@@ -8655,6 +8660,7 @@ mod retained_caller_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 3s in the parallel gate"]
     fn resumed_kernel_reverifies_static_array_caller_without_a_cached_environment() {
         let path =

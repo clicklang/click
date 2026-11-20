@@ -53,6 +53,35 @@ indexed write comes from an execution store. The point after the loop keeps
 the indexed versions common to every checked exit.
 Signed and unsigned 64-bit reads share a version of the same 64 bits.
 Signed and unsigned 128-bit reads retain their distinct load kinds.
+The same index serves ordinary Boolean and complete typed pointer reads of
+automatic objects. A Boolean read denotes the logical value of its cell.
+An object-pointer read names its address, provenance and bounds owner by
+the same read, and the recorded store can supply its complete typed value.
+A function-pointer read has its declared callback signature and the store
+can supply the call target. Floating-point lowering still uses its existing
+rule, which preserves stored bits, including signed zeros and NaNs.
+
+`exact(place)` keys the read by the selected program point when one is
+available. Raising uses `exact` at that point, even if another point has
+equal memory. Ordinary reads continue to select the version of the place.
+For indexed parameter and heap addresses, byte displacements from one
+symbolic origin can be compared directly. A write with a different origin
+retires that storage bucket. Parameter bases share one bucket because
+different parameters can alias. A freshly allocated heap object has its
+own bucket. Unclassified writes retire all buckets. Ordinary pointer reads
+through parameters still use the projected source view of the complete
+pointer equation recorded by the store.
+
+A declared little-endian `uint32` can be read as four complete indexed byte
+reads. Each byte uses its own version. Click spells it with the bitwise OR
+of four zero-extended and shifted unsigned bytes, using the same
+expression as `integer::uint32_from_le_bytes`. Reading the representation
+leaves access and definedness to the usual checks.
+
+An indexed or exact read of a recorded view takes its identity from the
+point. Rewritten and uncertified views keep their separate identity. During
+`preserve`, each typed observation is filed at the endpoint where the goal
+read it. Two endpoints with equal memory do not share observations.
 
 Naming existing cells during a resource proof can change the view at a
 point. The producer records which suffix only names cells and where it

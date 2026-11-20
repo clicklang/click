@@ -1652,6 +1652,7 @@ mod tests {
         );
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: complete signed interval expansion and fresh replay"]
     fn signed_interval_operations_expand_and_replay_without_certificates() {
         let mut failures = Vec::new();
@@ -1732,6 +1733,7 @@ mod tests {
         }
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: C field-read definedness expansion and replay"]
     fn signed_definedness_over_a_produced_read_expands_ordinary() {
         let c = "struct pool { int32 used; int32 capacity; }; void init(struct pool* pool, int32 capacity) { pool->capacity = capacity; } void f(struct pool* pool) { init(pool, 1); }";
@@ -1777,6 +1779,7 @@ by {step(); have defined(pool->capacity - 1) by solve();}
         );
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: grouped struct-field expansion and strict replay"]
     fn signed_unfolded_struct_field_expands_and_replays_with_scalar_reads() {
         let c = "struct pair { int32 low; int32 high; }; void bump(struct pair* pair) { pair->low = pair->low + 1; }";
@@ -1804,11 +1807,13 @@ by {step(); have defined(pool->capacity - 1) by solve();}
 
 #[cfg(test)]
 mod bounded_cast_tests {
+    #[cfg(not(feature = "fast-gate"))]
     use crate::surface::{
         expand_c_claim_source_by_label, verify_c_sources, without_implicit_solve,
     };
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: bounded cast expansion and strict replay matrix"]
     fn bounded_cast_identities_expand_as_explicit_range_proofs() {
         for (ty, lower, upper, identity) in [

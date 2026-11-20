@@ -1786,7 +1786,11 @@ fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
                         pointer: read.pointer,
                         bytes: read.bytes,
                     },
-                    ProgramPoint::at(&read.origin.unwrap_or(read.memory)),
+                    ProgramPoint::at(
+                        &read
+                            .origin
+                            .unwrap_or_else(|| read.point.into_shared_memory()),
+                    ),
                 );
             }
         }

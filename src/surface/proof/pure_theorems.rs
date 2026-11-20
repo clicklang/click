@@ -3420,6 +3420,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.0s in the parallel gate"]
     fn ordinary_pure_numeric_induction_expands_and_reverifies() {
         let library = TheoremEnvironment::with_standard_library(&[]).unwrap();
@@ -3455,6 +3456,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: induction prefix scope and cold expansion replay"]
     fn scalar_induction_prefixes_preserve_scope_and_cold_replay() {
         let fixture = include_str!("../../../mdtests/scalar_induction_after_helper_facts.md");
@@ -3593,6 +3595,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: structural induction scope, expansion, and cold replay matrix"]
     fn structural_induction_surrounding_helpers_expand_and_cold_replay() {
         let source = include_str!("../../../mdtests/structural_induction_surrounding_helpers.md")

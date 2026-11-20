@@ -12,6 +12,7 @@ fn closure_project() -> Project {
 // `caller::{closure#0}`, and a caller passing it for a `fn` pointer must
 // show it meets the contract the callee requires of the pointer.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn charon_closures_passed_for_a_function_pointer_meet_its_named_contract() {
     let p = closure_project();

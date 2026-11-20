@@ -16,9 +16,11 @@ use click::cli::{
     read_verification_inputs_for_project, read_verifying_sources, select_sidecars, source_refs,
 };
 use click::instrumentation::{self, HiddenPrerequisiteRoute};
+#[cfg(not(feature = "fast-gate"))]
+use click::surface::verify_c_sources_at;
 use click::surface::{
     c_tactic_source_position, project_tactic_source_position, verify_c_prepared_project,
-    verify_c_project, verify_c_sources, verify_c_sources_at, verify_program_prepared_project,
+    verify_c_project, verify_c_sources, verify_program_prepared_project,
 };
 
 #[path = "support/limits.rs"]
@@ -47,6 +49,7 @@ const QUARANTINED: &[(&str, &str)] = &[];
 const HIDDEN_PREREQUISITE_BASELINE: &[((HiddenPrerequisiteRoute, &str), usize)] = &[];
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn frozen_shared_heap_lifecycles_verify() {
     let project = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -56,6 +59,7 @@ fn frozen_shared_heap_lifecycles_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn frozen_mutex_parity_verifies() {
     let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/concurrency-probes");
@@ -63,6 +67,7 @@ fn frozen_mutex_parity_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 12s debug verify"]
 fn frozen_mutex_composition_verifies() {
     let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/concurrency-composition");
@@ -82,6 +87,7 @@ fn concurrency_mutex_composition_source_is_frozen() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn frozen_publication_verifies() {
     let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/concurrency-publication");
@@ -113,6 +119,7 @@ fn concurrency_mutex_parity_source_is_frozen() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 23s in the parallel gate"]
 fn canonical_charon_examples_verify_locked_inputs() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -575,6 +582,7 @@ fn registry_trace_labels_record_every_state_origin() {
 
 /// Auto must choose a spellable certificate for the original recoloring equality.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: rechecks rbtree recoloring expansion"]
 fn rbtree_solve_recolor_expansion_rechecks() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -650,6 +658,7 @@ fn rbtree_solve_recolor_expansion_rechecks() {
 
 /// Check the unchanged C helper that writes the root's tagged null parent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checks the original rbtree C bundle's null-parent helper"]
 fn rbtree_null_parent_helper_verifies() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -691,6 +700,7 @@ void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
 
 /// Nested execution matches must retain their own branch's shared tactics.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: whole rbtree insert expansion and cold verification exceed the gate budget"]
 fn rbtree_insert_whole_claim_expansion_verifies() {
     let claim = "__rb_insert.contract";
@@ -725,12 +735,14 @@ fn rbtree_insert_whole_claim_expansion_verifies() {
 
 /// A recorded call frame must remain usable in a new proof-input lineage.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies and expands the sized context rotation in a retained session"]
 fn rbtree_sized_context_rotation_retained_session_expansion_rechecks() {
     check_sized_context_rotation_retained_expansion("rbtree_size_insert_context_rotation.click");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies and expands the mirrored sized context rotation in a retained session"]
 fn rbtree_sized_mirrored_context_rotation_retained_session_expansion_rechecks() {
     check_sized_context_rotation_retained_expansion(
@@ -739,6 +751,7 @@ fn rbtree_sized_mirrored_context_rotation_retained_session_expansion_rechecks() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies and expands the sized double context rotation in a retained session"]
 fn rbtree_sized_context_double_rotation_retained_session_expansion_rechecks() {
     check_sized_context_rotation_retained_expansion(
@@ -747,6 +760,7 @@ fn rbtree_sized_context_double_rotation_retained_session_expansion_rechecks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies and expands the mirrored sized double context rotation in a retained session"]
 fn rbtree_sized_mirrored_context_double_rotation_retained_session_expansion_rechecks() {
     check_sized_context_rotation_retained_expansion(
@@ -757,6 +771,7 @@ fn rbtree_sized_mirrored_context_double_rotation_retained_session_expansion_rech
 /// A metadata alias's state hash must not change which read history a
 /// cold check visits after earlier verification and project summarization.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checks sized uncle rotation cold, after summary, expanded, and retained"]
 fn rbtree_sized_uncle_rotation_origin_order_and_expansion_recheck() {
     const SIDECAR: &str = "rbtree_size_insert_context_uncle_rotation.click";
@@ -811,6 +826,7 @@ fn rbtree_sized_uncle_rotation_origin_order_and_expansion_recheck() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies and replays the mirrored sized root double rotation"]
 fn rbtree_sized_mirrored_double_rotation_retained_session_expansion_rechecks() {
     check_sized_context_rotation_retained_expansion(
@@ -873,6 +889,7 @@ fn check_sized_context_rotation_retained_expansion(sidecar: &str) {
 /// root's packed word is one at that `break`, which the C no longer makes
 /// true, and the exact stored-value premise is refused; the files on disk are not changed.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn rbtree_insert_refuses_a_skipped_recolour() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -922,6 +939,7 @@ fn rbtree_erase_uses_the_unchanged_pinned_unlink() {
 /// Expanding the last exit's closing `solve` writes explicit closers that
 /// still return the outcome resource; the expansion cold verifies.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 41 s to expand and recheck the general unlink in a release build (2026-10-14)"]
 fn rbtree_erase_general_explicit_closers_preserve_ownership() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -976,6 +994,7 @@ fn general_erase_refuses_mutation(before: &str, after: &str, refusal: &str) {
 /// same graph's read generation. It must now answer promptly. The original
 /// proof stays in the example; only this test proves the fact by `solve`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: about 16 s in a debug build, most of it loading the whole arena sidecar"]
 fn solve_on_an_arena_cell_read_answers_instead_of_deadlocking() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -1104,6 +1123,7 @@ fn erase_source_refuses_replacement(
 
 /// The right-only child must take the erased node's parent and color.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_refuses_a_skipped_right_child_parent_color() {
     general_erase_refuses_mutation(
@@ -1115,6 +1135,7 @@ fn rbtree_erase_refuses_a_skipped_right_child_parent_color() {
 
 /// The left-only child must take the erased node's parent and color.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_refuses_a_skipped_left_child_parent_color() {
     general_erase_refuses_mutation(
@@ -1126,6 +1147,7 @@ fn rbtree_erase_refuses_a_skipped_left_child_parent_color() {
 
 /// A one-child exit must relink the erased node's parent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_refuses_a_skipped_root_replacement() {
     general_erase_refuses_mutation(
@@ -1137,6 +1159,7 @@ fn rbtree_erase_refuses_a_skipped_root_replacement() {
 
 /// The successor must become its new left subtree's parent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_successor_refuses_a_skipped_left_parent_write() {
     general_erase_refuses_mutation(
@@ -1148,6 +1171,7 @@ fn rbtree_erase_successor_refuses_a_skipped_left_parent_write() {
 
 /// The successor must take the erased node's parent and color.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_successor_refuses_a_skipped_parent_color_write() {
     general_erase_refuses_mutation(
@@ -1159,6 +1183,7 @@ fn rbtree_erase_successor_refuses_a_skipped_parent_color_write() {
 
 /// A black-leaf successor leaves a deficit at its old parent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_black_successor_requires_the_fixup_parent() {
     general_erase_refuses_mutation(
@@ -1170,6 +1195,7 @@ fn rbtree_erase_black_successor_requires_the_fixup_parent() {
 
 /// A successor's child that replaces it must be blackened.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_child_successor_requires_blackening() {
     general_erase_refuses_mutation(
@@ -1181,6 +1207,7 @@ fn rbtree_erase_child_successor_requires_blackening() {
 
 /// A successor's child that replaces it must take the successor's old parent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_child_successor_requires_parent_color_write() {
     general_erase_refuses_mutation(
@@ -1192,6 +1219,7 @@ fn rbtree_erase_child_successor_requires_parent_color_write() {
 
 /// A black leaf leaves a deficit at its parent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_black_leaf_requires_the_fixup_parent() {
     general_erase_refuses_mutation(
@@ -1203,6 +1231,7 @@ fn rbtree_erase_black_leaf_requires_the_fixup_parent() {
 
 /// A red leaf leaves no deficit.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_red_leaf_requires_no_fixup() {
     general_erase_refuses_mutation(
@@ -1214,6 +1243,7 @@ fn rbtree_erase_red_leaf_requires_no_fixup() {
 
 /// The right-only child keeps the erased node's black color.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_right_child_requires_blackening() {
     general_erase_refuses_mutation(
@@ -1225,6 +1255,7 @@ fn rbtree_erase_right_child_requires_blackening() {
 
 /// The left-only child keeps the erased node's black color.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_left_child_requires_blackening() {
     general_erase_refuses_mutation(
@@ -1236,6 +1267,7 @@ fn rbtree_erase_left_child_requires_blackening() {
 
 /// A one-child exit leaves no deficit.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_right_child_requires_no_fixup() {
     general_erase_refuses_mutation(
@@ -1247,6 +1279,7 @@ fn rbtree_erase_right_child_requires_no_fixup() {
 
 /// A one-child exit leaves no deficit.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_left_child_requires_no_fixup() {
     general_erase_refuses_mutation(
@@ -1258,6 +1291,7 @@ fn rbtree_erase_left_child_requires_no_fixup() {
 
 /// The successor must adopt the erased node's left subtree.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_successor_requires_left_subtree_link() {
     general_erase_refuses_mutation(
@@ -1269,6 +1303,7 @@ fn rbtree_erase_successor_requires_left_subtree_link() {
 
 /// A red-leaf successor leaves no deficit.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_red_successor_requires_no_fixup() {
     general_erase_refuses_mutation(
@@ -1280,6 +1315,7 @@ fn rbtree_erase_red_successor_requires_no_fixup() {
 
 /// A successor with a child leaves no deficit.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_child_successor_requires_no_fixup() {
     general_erase_refuses_mutation(
@@ -1291,6 +1327,7 @@ fn rbtree_erase_child_successor_requires_no_fixup() {
 
 /// The deficit is at the successor's old parent, not its new one.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_black_successor_requires_its_old_parent_as_fixup_parent() {
     general_erase_refuses_mutation(
@@ -1302,6 +1339,7 @@ fn rbtree_erase_black_successor_requires_its_old_parent_as_fixup_parent() {
 
 /// A two-child exit must relink the erased node's parent to the successor.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_successor_requires_root_replacement() {
     general_erase_refuses_mutation(
@@ -1313,6 +1351,7 @@ fn rbtree_erase_successor_requires_root_replacement() {
 
 /// A deeper successor must be spliced out of its parent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_successor_refuses_a_skipped_splice() {
     general_erase_refuses_mutation(
@@ -1324,6 +1363,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_splice() {
 
 /// A deeper successor's child must take the successor's old parent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_successor_refuses_the_wrong_replacement_parent() {
     general_erase_refuses_mutation(
@@ -1335,6 +1375,7 @@ fn rbtree_erase_deep_successor_refuses_the_wrong_replacement_parent() {
 
 /// A deeper successor must adopt the erased node's right subtree.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_successor_refuses_a_skipped_right_attachment() {
     general_erase_refuses_mutation(
@@ -1346,6 +1387,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_attachment() {
 
 /// The adopted right subtree must take the successor as parent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
     general_erase_refuses_mutation(
@@ -1357,6 +1399,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_parent_update() {
 
 /// A deeper black-leaf successor leaves the deficit at its old parent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_black_leaf_requires_the_splice_parent() {
     general_erase_refuses_mutation(
@@ -1368,6 +1411,7 @@ fn rbtree_erase_deep_black_leaf_requires_the_splice_parent() {
 
 /// The adopted right subtree's parent must be updated at all.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the whole general unlink, 4 to 18 s in a release build"]
 fn rbtree_erase_deep_black_leaf_requires_right_parent_update() {
     general_erase_refuses_mutation(
@@ -1388,6 +1432,7 @@ fn change_child_refuses_link_mutation(before: &str, after: &str, link: &str) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.3s in the parallel gate"]
 fn rbtree_change_child_requires_left_link() {
     change_child_refuses_link_mutation(
@@ -1398,6 +1443,7 @@ fn rbtree_change_child_requires_left_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.5s in the parallel gate"]
 fn rbtree_change_child_requires_right_link() {
     change_child_refuses_link_mutation(
@@ -1408,6 +1454,7 @@ fn rbtree_change_child_requires_right_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn rbtree_change_child_requires_root_link() {
     change_child_refuses_link_mutation(
@@ -1915,6 +1962,7 @@ fn rbtree_erase_color_uses_the_unchanged_pinned_function() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: rotation-helper verification checks both helper contracts"]
 fn rbtree_rotate_set_parents_requires_the_copied_word() {
     erase_source_refuses_replacement(
@@ -1927,6 +1975,7 @@ fn rbtree_rotate_set_parents_requires_the_copied_word() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: rotation-helper verification checks both helper contracts"]
 fn rbtree_rotate_set_parents_requires_the_new_parent() {
     erase_source_refuses_replacement(
@@ -1939,6 +1988,7 @@ fn rbtree_rotate_set_parents_requires_the_new_parent() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: rotation-helper verification checks both helper contracts"]
 fn rbtree_rotate_set_parents_requires_root_replacement() {
     erase_source_refuses_replacement(
@@ -1951,6 +2001,7 @@ fn rbtree_rotate_set_parents_requires_root_replacement() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: parent-update mutation verifies a whole sidecar"]
 fn rbtree_set_parent_preserves_color() {
     erase_source_refuses_replacement(
@@ -1963,6 +2014,7 @@ fn rbtree_set_parent_preserves_color() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: parent-update mutation verifies a whole sidecar"]
 fn rbtree_set_parent_requires_new_parent() {
     erase_source_refuses_replacement(
@@ -1999,6 +2051,7 @@ fn erase_color_general_refuses_mutation(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_left_requires_parent_blackening() {
     erase_color_general_refuses_mutation(
@@ -2010,6 +2063,7 @@ fn rbtree_erase_color_general_red_left_requires_parent_blackening() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_left_requires_sibling_recoloring() {
     erase_color_general_refuses_mutation(
@@ -2021,6 +2075,7 @@ fn rbtree_erase_color_general_red_left_requires_sibling_recoloring() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_left_requires_the_sibling_parent() {
     erase_color_general_refuses_mutation(
@@ -2032,6 +2087,7 @@ fn rbtree_erase_color_general_red_left_requires_the_sibling_parent() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_root_left_requires_the_null_parent_cursor() {
     erase_color_general_refuses_mutation(
@@ -2043,6 +2099,7 @@ fn rbtree_erase_color_general_root_left_requires_the_null_parent_cursor() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_requires_focus_ascent() {
     erase_color_general_refuses_mutation(
@@ -2054,6 +2111,7 @@ fn rbtree_erase_color_general_flips_requires_focus_ascent() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_outer_left_requires_parent_child_link() {
     erase_color_general_refuses_mutation(
@@ -2065,6 +2123,7 @@ fn rbtree_erase_color_general_flips_outer_left_requires_parent_child_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_outer_right_requires_parent_child_link() {
     erase_color_general_refuses_mutation(
@@ -2076,6 +2135,7 @@ fn rbtree_erase_color_general_flips_outer_right_requires_parent_child_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_outer_requires_far_child_blackening() {
     erase_color_general_refuses_mutation(
@@ -2087,6 +2147,7 @@ fn rbtree_erase_color_general_flips_outer_requires_far_child_blackening() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_outer_requires_near_parent() {
     erase_color_general_refuses_mutation(
@@ -2098,6 +2159,7 @@ fn rbtree_erase_color_general_flips_outer_requires_near_parent() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_right_requires_sibling_child_link() {
     erase_color_general_refuses_mutation(
@@ -2109,6 +2171,7 @@ fn rbtree_erase_color_general_flips_rotations_right_requires_sibling_child_link(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_right_requires_inner_child_link() {
     erase_color_general_refuses_mutation(
@@ -2120,6 +2183,7 @@ fn rbtree_erase_color_general_flips_rotations_right_requires_inner_child_link() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_requires_first_grandchild_parent() {
     erase_color_general_refuses_mutation(
@@ -2131,6 +2195,7 @@ fn rbtree_erase_color_general_flips_rotations_requires_first_grandchild_parent()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_requires_first_grandchild_blackening() {
     erase_color_general_refuses_mutation(
@@ -2142,6 +2207,7 @@ fn rbtree_erase_color_general_flips_rotations_requires_first_grandchild_blackeni
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_requires_old_sibling_as_far_child() {
     erase_color_general_refuses_mutation(
@@ -2153,6 +2219,7 @@ fn rbtree_erase_color_general_flips_rotations_requires_old_sibling_as_far_child(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_rotations_requires_inner_node_as_sibling() {
     erase_color_general_refuses_mutation(
@@ -2164,6 +2231,7 @@ fn rbtree_erase_color_general_flips_rotations_requires_inner_node_as_sibling() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_left_requires_parent_link() {
     erase_color_general_refuses_mutation(
@@ -2175,6 +2243,7 @@ fn rbtree_erase_color_general_flips_red_exit_left_requires_parent_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_left_requires_sibling_link() {
     erase_color_general_refuses_mutation(
@@ -2186,6 +2255,7 @@ fn rbtree_erase_color_general_flips_red_exit_left_requires_sibling_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_right_requires_parent_link() {
     erase_color_general_refuses_mutation(
@@ -2197,6 +2267,7 @@ fn rbtree_erase_color_general_flips_red_exit_right_requires_parent_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_right_requires_sibling_link() {
     erase_color_general_refuses_mutation(
@@ -2208,6 +2279,7 @@ fn rbtree_erase_color_general_flips_red_exit_right_requires_sibling_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_requires_near_parent() {
     erase_color_general_refuses_mutation(
@@ -2219,6 +2291,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_near_parent() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_requires_near_blackening() {
     erase_color_general_refuses_mutation(
@@ -2230,6 +2303,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_near_blackening() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_requires_red_parent() {
     erase_color_general_refuses_mutation(
@@ -2241,6 +2315,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_red_parent() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_flips_red_exit_requires_near_sibling_cursor() {
     erase_color_general_refuses_mutation(
@@ -2252,6 +2327,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_near_sibling_cursor() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_outer_left_requires_sibling_child_link() {
     erase_color_general_refuses_mutation(
@@ -2263,6 +2339,7 @@ fn rbtree_erase_color_general_outer_left_requires_sibling_child_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_outer_left_requires_parent_blackening() {
     erase_color_general_refuses_mutation(
@@ -2274,6 +2351,7 @@ fn rbtree_erase_color_general_outer_left_requires_parent_blackening() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_outer_right_requires_sibling_child_link() {
     erase_color_general_refuses_mutation(
@@ -2285,6 +2363,7 @@ fn rbtree_erase_color_general_outer_right_requires_sibling_child_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_outer_nonempty_left_requires_near_link() {
     erase_color_general_refuses_mutation(
@@ -2296,6 +2375,7 @@ fn rbtree_erase_color_general_outer_nonempty_left_requires_near_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_outer_nonempty_right_requires_near_link() {
     erase_color_general_refuses_mutation(
@@ -2307,6 +2387,7 @@ fn rbtree_erase_color_general_outer_nonempty_right_requires_near_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_inner_left_requires_detached_inner_child() {
     erase_color_general_refuses_mutation(
@@ -2318,6 +2399,7 @@ fn rbtree_erase_color_general_inner_left_requires_detached_inner_child() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_inner_left_requires_attached_old_sibling() {
     erase_color_general_refuses_mutation(
@@ -2329,6 +2411,7 @@ fn rbtree_erase_color_general_inner_left_requires_attached_old_sibling() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_inner_left_requires_old_sibling_parent() {
     erase_color_general_refuses_mutation(
@@ -2340,6 +2423,7 @@ fn rbtree_erase_color_general_inner_left_requires_old_sibling_parent() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_inner_right_requires_detached_inner_child() {
     erase_color_general_refuses_mutation(
@@ -2351,6 +2435,7 @@ fn rbtree_erase_color_general_inner_right_requires_detached_inner_child() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_inner_right_requires_attached_old_sibling() {
     erase_color_general_refuses_mutation(
@@ -2362,6 +2447,7 @@ fn rbtree_erase_color_general_inner_right_requires_attached_old_sibling() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_sibling_left_requires_sibling_link() {
     erase_color_general_refuses_mutation(
@@ -2373,6 +2459,7 @@ fn rbtree_erase_color_general_red_sibling_left_requires_sibling_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_sibling_right_requires_sibling_link() {
     erase_color_general_refuses_mutation(
@@ -2384,6 +2471,7 @@ fn rbtree_erase_color_general_red_sibling_right_requires_sibling_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_sibling_outer_left_requires_second_parent_link() {
     erase_color_general_refuses_mutation(
@@ -2395,6 +2483,7 @@ fn rbtree_erase_color_general_red_sibling_outer_left_requires_second_parent_link
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete general erase-color proof with a mutated C input"]
 fn rbtree_erase_color_general_red_sibling_outer_right_requires_second_parent_link() {
     erase_color_general_refuses_mutation(
@@ -2406,6 +2495,7 @@ fn rbtree_erase_color_general_red_sibling_outer_right_requires_second_parent_lin
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: propagated red-sibling inner repair verifies a whole sidecar"]
 fn rbtree_erase_color_flips_red_all_requires_left_detached_child_link() {
     let error = erase_source_replacement_error(
@@ -2422,6 +2512,7 @@ fn rbtree_erase_color_flips_red_all_requires_left_detached_child_link() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: propagated red-sibling inner repair verifies a whole sidecar"]
 fn rbtree_erase_color_flips_red_all_requires_left_inner_parent_link() {
     let error = erase_source_replacement_error(
@@ -2449,6 +2540,7 @@ fn rbtree_erase_wrapper_uses_the_unchanged_pinned_callbacks_and_body() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: erase wrapper mutation verifies the combined repair sidecar"]
 fn rbtree_erase_wrapper_requires_nonnull_color_repair() {
     let error = erase_source_replacement_error(
@@ -2482,6 +2574,7 @@ fn rbtree_augmented_wrappers_keep_the_pinned_c() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 13.9s in the parallel gate"]
 fn rbtree_augmented_wrappers_reject_missing_or_wrong_calls() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -2713,6 +2806,7 @@ fn uint64_successor_solve_answers_on_the_normal_cli_stack() {
 
 /// Modular pointer-field outputs must keep the same proof meaning after expansion.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: fresh, expanded and retained buffer output checks"]
 fn c_buffer_resource_modular_output_expands_and_rechecks() {
     limits::spawn(
@@ -2919,6 +3013,7 @@ fn expanded_library_names_resolve_and_audit() {
 /// The grow call's old-prefix fact cannot be framed across push's writable
 /// buffer. Use push's exact call-exit guarantee and frame each side separately.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original grow-then-push proof across all proof modes"]
 fn owned_vector_grow_then_push_prefix_rechecks_in_all_proof_modes() {
     limits::spawn(
@@ -2957,6 +3052,7 @@ fn owned_vector_grow_then_push_prefix_rechecks_in_all_proof_modes() {
 
 /// The branch summary must retain the setter's result and actual write authority.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pointer-field call branch rejection controls"]
 fn pointer_field_call_branch_rejects_wrong_result_and_missing_backing_authority() {
     limits::spawn(
@@ -2986,6 +3082,7 @@ fn pointer_field_call_branch_rejects_wrong_result_and_missing_backing_authority(
 
 /// A borrowed quantified fact must survive an unrelated write in every proof mode.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: borrowed-composite expansion, retained checks, and rejection mutations"]
 fn borrowed_composite_fact_after_write_expands_and_rechecks() {
     limits::spawn(
@@ -3100,6 +3197,7 @@ fn produced_population_predicate_expands_and_retains_its_return_state() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: selected linked-list frame expansion and recheck"]
 fn written_store_alias_frame_expands_and_rechecks() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -3151,12 +3249,14 @@ fn replay_cell_source_example(example: &str, sidecar: &str, claim: &str) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-replays the complete arena pipeline"]
 fn cell_source_repair_arena_replays() {
     replay_cell_source_example("arena", "arena_cells.click", "arena_pipeline.contract");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-replays the complete pool pipeline"]
 fn cell_source_repair_pool_replays() {
     replay_cell_source_example(
@@ -3167,6 +3267,7 @@ fn cell_source_repair_pool_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-replays the fork/join contract"]
 fn cell_source_repair_fork_join_replays() {
     replay_cell_source_example(
@@ -3177,12 +3278,14 @@ fn cell_source_repair_fork_join_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-replays the vector-copy contract"]
 fn cell_source_repair_vector_copy_replays() {
     replay_cell_source_example("owned-vector", "vector.click", "vector_copy.contract");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pointer-history arena proof expansion and replay"]
 fn pointer_history_repair_arena_replays() {
     for name in ["arena_alloc", "arena_free"] {
@@ -3193,6 +3296,7 @@ fn pointer_history_repair_arena_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: selected history-removal example expansion and cold replay"]
 fn separation_history_repairs_expand_and_replay() {
     for (example, sidecar, function) in [
@@ -3221,6 +3325,7 @@ fn separation_history_repairs_expand_and_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "focused audit: expands and replays call-completion proof repairs"]
 fn call_completion_repairs_expand_and_replay() {
     for (example, sidecar, claim) in [

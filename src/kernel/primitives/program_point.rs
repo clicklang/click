@@ -15,7 +15,8 @@ use crate::persistent::PersistentMap;
 
 use super::{
     Address, AddressBase, AddressOffset, LoadKind, MachineTerm, MemoryDerivation, MemoryRange,
-    ProgramValue, SharedMemory, SymbolicMemory, intern_memory, intern_memory_ref,
+    ProgramType, ProgramValue, SharedMemory, StoredMemoryValue, SymbolicMemory, intern_memory,
+    intern_memory_ref,
 };
 
 /// The identity of one point an execution path reached.
@@ -157,47 +158,50 @@ impl Drop for StepLog {
     }
 }
 
-type LocalIntegerVersions = PersistentMap<AddressBase, LocalIntegerBlock>;
-type LocalIntegerCells = PersistentMap<i64, LocalIntegerWrite>;
+type PointReadObjects = PersistentMap<AddressBase, PointReadObject>;
+type PointReadCells = PersistentMap<i64, PointReadWrite>;
 
 #[derive(Clone, Debug)]
-struct LocalIntegerIndex {
+struct PointReadIndex {
     /// A wholesale barrier ends the shared index lineage.
     generation: ProgramPointId,
-    blocks: LocalIntegerVersions,
+    blocks: PointReadObjects,
 }
 
-impl LocalIntegerIndex {
+impl PointReadIndex {
     fn empty(generation: ProgramPointId) -> Self {
         Self {
             generation,
-            blocks: LocalIntegerVersions::default(),
+            blocks: PointReadObjects::default(),
         }
     }
 }
 
 #[derive(Clone, Debug)]
-struct LocalIntegerBlock {
+struct PointReadObject {
     /// A whole-object removal can discard an arbitrarily large map. A later
     /// write creates a new lineage so the join need not diff those maps.
     generation: ProgramPointId,
-    cells: LocalIntegerCells,
+    origin: Option<(AddressBase, AddressOffset)>,
+    cells: PointReadCells,
 }
 
-impl PartialEq for LocalIntegerBlock {
+impl PartialEq for PointReadObject {
     fn eq(&self, other: &Self) -> bool {
-        self.generation == other.generation && self.cells.shares_root_with(&other.cells)
+        self.generation == other.generation
+            && self.origin == other.origin
+            && self.cells.shares_root_with(&other.cells)
     }
 }
 
 #[derive(Clone, Debug)]
-struct LocalIntegerWrite {
+struct PointReadWrite {
     end: i64,
     version: Weak<PointNode>,
     store: Arc<MemoryDerivation>,
 }
 
-impl PartialEq for LocalIntegerWrite {
+impl PartialEq for PointReadWrite {
     fn eq(&self, other: &Self) -> bool {
         self.end == other.end
             && Weak::ptr_eq(&self.version, &other.version)
@@ -218,9 +222,9 @@ struct PointNode {
     predecessors: Box<[PathLink]>,
     /// For a branch join, the point where its arms split.
     split: Option<PathLink>,
-    /// Disjoint integer cells, keyed by object and byte start. The
+    /// Disjoint typed cells, keyed by storage and byte start. The
     /// predecessor chain owns the version points.
-    local_integer_index: LocalIntegerIndex,
+    point_read_index: PointReadIndex,
 }
 
 impl Drop for PointNode {
@@ -364,8 +368,8 @@ impl PathLink {
             .map(|point| point.path.clone())
             .collect::<Box<[_]>>();
         let id = ProgramPointId::fresh();
-        let local_integer_index =
-            join_local_integer_indexes(points).unwrap_or_else(|| LocalIntegerIndex::empty(id));
+        let point_read_index =
+            join_point_read_indexes(points).unwrap_or_else(|| PointReadIndex::empty(id));
         Self(
             Some(Arc::new(PointNode {
                 id,
@@ -373,7 +377,7 @@ impl PathLink {
                 steps: None,
                 predecessors,
                 split: split.filter(|point| point.0.is_some()).cloned(),
-                local_integer_index,
+                point_read_index,
             })),
             IndexedView::Recorded,
         )
@@ -394,7 +398,7 @@ impl PathLink {
         Self(
             Some(Arc::new_cyclic(|version| {
                 let id = ProgramPointId::fresh();
-                let local_integer_index = local_integer_index(
+                let point_read_index = point_read_index(
                     &predecessors,
                     steps.as_deref(),
                     &memory,
@@ -408,7 +412,7 @@ impl PathLink {
                     steps,
                     predecessors,
                     split: split.filter(|point| point.0.is_some()),
-                    local_integer_index,
+                    point_read_index,
                 }
             })),
             IndexedView::Recorded,
@@ -461,16 +465,71 @@ fn indexed_local(block: &AddressBase) -> bool {
         || matches!(block, AddressBase::Concrete(_) if block.is_local_block())
 }
 
+/// Parameter addresses can alias across differently written bases. Keep one
+/// parameter base and one symbolic offset origin in the shared parameter bucket.
+fn external_storage(block: &AddressBase) -> bool {
+    matches!(
+        block,
+        AddressBase::ExternalArgument | AddressBase::ExternalObject(_)
+    )
+}
+
+fn read_bucket(block: &AddressBase) -> Option<&AddressBase> {
+    if external_storage(block) {
+        Some(&AddressBase::ExternalArgument)
+    } else if indexed_local(block) || matches!(block, AddressBase::Heap(_)) {
+        Some(block)
+    } else {
+        None
+    }
+}
+
+/// The bounded address shape only. No arithmetic or alias fact is consulted.
+/// Symbolic offsets share a bucket only while they use the same origin.
+fn read_displacement(offset: &AddressOffset) -> Option<(Option<&AddressOffset>, i64)> {
+    match offset {
+        AddressOffset::Constant(start) => Some((None, *start)),
+        AddressOffset::Add(origin, delta)
+            if origin.is_shallow()
+                && let AddressOffset::Constant(delta) = delta.as_ref() =>
+        {
+            Some((Some(origin), *delta))
+        }
+        AddressOffset::Add(delta, origin)
+            if origin.is_shallow()
+                && let AddressOffset::Constant(delta) = delta.as_ref() =>
+        {
+            Some((Some(origin), *delta))
+        }
+        _ if offset.is_shallow() => Some((Some(offset), 0)),
+        _ => None,
+    }
+}
+
+fn read_origin(
+    pointer: &Address,
+    anchor: Option<&AddressOffset>,
+) -> Option<(AddressBase, AddressOffset)> {
+    if anchor.is_some() || external_storage(&pointer.base) {
+        Some((
+            pointer.base.clone(),
+            anchor.cloned().unwrap_or(AddressOffset::Constant(0)),
+        ))
+    } else {
+        None
+    }
+}
+
 /// Intersect the versions carried by each checked incoming point. Diff each
 /// arm against the first arm, so an earlier removal is not revisited for
 /// every later arm.
-fn join_local_integer_indexes(points: &[ProgramPoint]) -> Option<LocalIntegerIndex> {
-    fn index(point: &ProgramPoint) -> Option<&LocalIntegerIndex> {
+fn join_point_read_indexes(points: &[ProgramPoint]) -> Option<PointReadIndex> {
+    fn index(point: &ProgramPoint) -> Option<&PointReadIndex> {
         let node = point.path.0.as_ref()?;
         point
             .path
             .matches_indexed_view(&point.memory)
-            .then_some(&node.local_integer_index)
+            .then_some(&node.point_read_index)
     }
 
     let (first, rest) = points.split_first()?;
@@ -488,7 +547,7 @@ fn join_local_integer_indexes(points: &[ProgramPoint]) -> Option<LocalIntegerInd
                 result.blocks.remove(key);
                 continue;
             };
-            if left.generation != right.generation {
+            if left.generation != right.generation || left.origin != right.origin {
                 result.blocks.remove(key);
                 continue;
             }
@@ -507,22 +566,22 @@ fn join_local_integer_indexes(points: &[ProgramPoint]) -> Option<LocalIntegerInd
 
 /// Apply the explicit effects once, when execution seals the point. A read
 /// of a provisional point may index a single effect but never replays a batch.
-fn local_integer_index(
+fn point_read_index(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
     memory: &SharedMemory,
     version: &Weak<PointNode>,
     id: ProgramPointId,
     transition: PointTransition,
-) -> LocalIntegerIndex {
+) -> PointReadIndex {
     let [from @ PathLink(Some(before), _)] = predecessors else {
-        return LocalIntegerIndex::empty(id);
+        return PointReadIndex::empty(id);
     };
     let Some(step) = steps else {
         return if from.matches_indexed_view(memory) {
-            before.local_integer_index.clone()
+            before.point_read_index.clone()
         } else {
-            LocalIntegerIndex::empty(id)
+            PointReadIndex::empty(id)
         };
     };
     if (transition == PointTransition::Provisional && step.previous.is_some())
@@ -530,24 +589,24 @@ fn local_integer_index(
         || !from.matches_indexed_view(&step.first_base)
         || step.produced.arena_id() != memory.arena_id()
     {
-        return LocalIntegerIndex::empty(id);
+        return PointReadIndex::empty(id);
     }
-    let mut index = before.local_integer_index.clone();
+    let mut index = before.point_read_index.clone();
     let record_writes = transition != PointTransition::LoopHead;
     if step.previous.is_none() {
-        record_local_integer_effect(&mut index, &step.step, version, id, record_writes);
+        record_point_read_effect(&mut index, &step.step, version, id, record_writes);
     } else {
         let effects =
             std::iter::successors(Some(step), |step| step.previous.as_deref()).collect::<Vec<_>>();
         for effect in effects.into_iter().rev() {
-            record_local_integer_effect(&mut index, &effect.step, version, id, record_writes);
+            record_point_read_effect(&mut index, &effect.step, version, id, record_writes);
         }
     }
     index
 }
 
-fn record_local_integer_effect(
-    index: &mut LocalIntegerIndex,
+fn record_point_read_effect(
+    index: &mut PointReadIndex,
     step: &Arc<MemoryDerivation>,
     version: &Weak<PointNode>,
     id: ProgramPointId,
@@ -555,33 +614,44 @@ fn record_local_integer_effect(
 ) {
     crate::instrumentation::record_deterministic_work(1);
     match step.as_ref() {
-        MemoryDerivation::Store { pointer, value, .. } if indexed_local(&pointer.base) => {
-            let width = i64::from(value.byte_width());
-            let AddressOffset::Constant(start) = pointer.offset else {
-                index.blocks.remove(&pointer.base);
+        MemoryDerivation::Store { pointer, .. }
+        | MemoryDerivation::RepresentationWrite { pointer, .. }
+            if read_bucket(&pointer.base).is_some() =>
+        {
+            let bucket = read_bucket(&pointer.base).expect("indexed write bucket");
+            let (_, width) = step.single_write().expect("single checked write");
+            let width = i64::from(width);
+            let Some((anchor, start)) = read_displacement(&pointer.offset) else {
+                index.blocks.remove(bucket);
                 return;
             };
             let Some(end) = start
                 .checked_add(width)
-                .filter(|_| start >= 0 && (1..=super::MAX_SCALAR_ACCESS_BYTES).contains(&width))
+                .filter(|_| (1..=super::MAX_SCALAR_ACCESS_BYTES).contains(&width))
             else {
-                index.blocks.remove(&pointer.base);
+                index.blocks.remove(bucket);
                 return;
             };
-            let mut block =
-                index
-                    .blocks
-                    .get(&pointer.base)
-                    .cloned()
-                    .unwrap_or_else(|| LocalIntegerBlock {
-                        generation: id,
-                        cells: LocalIntegerCells::default(),
-                    });
+            let origin = read_origin(pointer, anchor);
+            let mut block = index
+                .blocks
+                .get(bucket)
+                .filter(|block| block.origin == origin)
+                .cloned()
+                .unwrap_or_else(|| PointReadObject {
+                    generation: id,
+                    origin,
+                    cells: PointReadCells::default(),
+                });
             clear_overlapping_cells(&mut block.cells, start, end);
-            if record_writes && integer_store_bits(step).is_some() {
+            if record_writes
+                && (integer_store_bits(step).is_some()
+                    || matches!(step.as_ref(), MemoryDerivation::Store { value, .. }
+                        if matches!(value.native(), ProgramValue::Bool(_) | ProgramValue::Pointer(_))))
+            {
                 block.cells.insert(
                     start,
-                    LocalIntegerWrite {
+                    PointReadWrite {
                         end,
                         version: version.clone(),
                         store: step.clone(),
@@ -589,12 +659,19 @@ fn record_local_integer_effect(
                 );
             }
             if block.cells.is_empty() {
-                index.blocks.remove(&pointer.base);
+                index.blocks.remove(bucket);
             } else {
-                index.blocks.insert(pointer.base.clone(), block);
+                index.blocks.insert(bucket.clone(), block);
             }
         }
-        MemoryDerivation::CellsForgotten { .. } | MemoryDerivation::CellObserved { .. } => {}
+        MemoryDerivation::CellsForgotten { .. }
+        | MemoryDerivation::CellObserved { .. }
+        | MemoryDerivation::BlockDeclared { .. }
+        | MemoryDerivation::HeapAllocated { .. }
+        | MemoryDerivation::HeapAllocationPending { .. }
+        | MemoryDerivation::HeapAllocationFailed { .. }
+        | MemoryDerivation::ContractAllocationClaimsChanged { .. }
+        | MemoryDerivation::ObjectInitializationRecorded { .. } => {}
         MemoryDerivation::CallHavoc { mutable_ranges, .. }
         | MemoryDerivation::LoopHavoc {
             mutable_ranges: Some(mutable_ranges),
@@ -605,7 +682,17 @@ fn record_local_integer_effect(
         MemoryDerivation::LocalLifetimeEnded { block, .. } if indexed_local(block) => {
             index.blocks.remove(block);
         }
-        _ => *index = LocalIntegerIndex::empty(id),
+        MemoryDerivation::HeapFreed {
+            allocation_base, ..
+        }
+        | MemoryDerivation::ContractAllocationRetired {
+            allocation_base, ..
+        } if read_bucket(&allocation_base.base).is_some() => {
+            index
+                .blocks
+                .remove(read_bucket(&allocation_base.base).expect("indexed lifetime bucket"));
+        }
+        _ => *index = PointReadIndex::empty(id),
     }
 }
 
@@ -613,23 +700,24 @@ fn record_local_integer_effect(
 /// automatic object except that exact object. A checked range in such an
 /// object can conservatively retire its whole bucket without visiting cells.
 fn retain_outside_named_write_objects(
-    index: &mut LocalIntegerIndex,
+    index: &mut PointReadIndex,
     ranges: &[MemoryRange],
     id: ProgramPointId,
 ) {
     for range in ranges {
         crate::instrumentation::record_deterministic_work(1);
         let block = &range.base().base;
+        if let Some(bucket) = read_bucket(block) {
+            index.blocks.remove(bucket);
+            continue;
+        }
         match block {
-            AddressBase::AutomaticLocal { .. }
-            | AddressBase::Concrete(_)
-            | AddressBase::StaticObject { .. }
-            | AddressBase::Temporary(_)
-            | AddressBase::Heap(_) => {
-                index.blocks.remove(block);
+            AddressBase::Temporary(_) => {}
+            AddressBase::Concrete(_) | AddressBase::StaticObject { .. } => {
+                index.blocks.remove(&AddressBase::ExternalArgument);
             }
             _ => {
-                *index = LocalIntegerIndex::empty(id);
+                *index = PointReadIndex::empty(id);
                 return;
             }
         }
@@ -639,7 +727,7 @@ fn retain_outside_named_write_objects(
 /// Disjoint intervals have at most one earlier start overlapping the write.
 /// Every other hit starts inside the write, so a scalar write removes at most
 /// its byte width plus one entry, regardless of the object's size.
-fn clear_overlapping_cells(cells: &mut LocalIntegerCells, start: i64, end: i64) {
+fn clear_overlapping_cells(cells: &mut PointReadCells, start: i64, end: i64) {
     if let Some((&earlier, write)) = cells.get_less_than(&start)
         && write.end > start
     {
@@ -702,8 +790,8 @@ impl Ord for PathLink {
 /// back to which the recorded steps show the cell unchanged, and holds that
 /// point.
 ///
-/// Indexed local integer reads include their version point in the term key.
-/// Other callers still use the interned memory as their key.
+/// Exact reads and indexed reads include the point they name in the term key.
+/// Legacy reads still use the interned memory as their key.
 #[derive(Clone)]
 pub struct ProgramPoint {
     memory: SharedMemory,
@@ -711,6 +799,7 @@ pub struct ProgramPoint {
     // A read that has selected its actual version keys on that identity too.
     // Other users are still migrating off the legacy memory key.
     indexed_write: Option<Arc<MemoryDerivation>>,
+    exact_read: bool,
 }
 
 impl std::fmt::Debug for ProgramPoint {
@@ -769,9 +858,22 @@ fn pending_point(path: &PathLink, steps: &Arc<StepLog>, memory: &SharedMemory) -
     })
 }
 
+/// Identity of a read, separate from the memory view retained for checking.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(in crate::kernel) enum ReadKey {
+    Memory((u32, u32)),
+    Point(ProgramPointId),
+    /// A rewritten or unverified view has no evidence it still names the
+    /// recorded bytes. Keep its explicit view in the key.
+    View(ProgramPointId, (u32, u32)),
+}
+
 impl PartialEq for ProgramPoint {
     fn eq(&self, other: &Self) -> bool {
-        self.read_version_id() == other.read_version_id() && self.memory == other.memory
+        match (self.read_version_id(), other.read_version_id()) {
+            (None, None) => self.memory == other.memory,
+            _ => self.read_key() == other.read_key(),
+        }
     }
 }
 
@@ -779,9 +881,10 @@ impl Eq for ProgramPoint {}
 
 impl std::hash::Hash for ProgramPoint {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.memory.hash(state);
-        if let Some(version) = self.read_version_id() {
-            version.hash(state);
+        if self.read_version_id().is_some() {
+            self.read_key().hash(state);
+        } else {
+            self.memory.hash(state);
         }
     }
 }
@@ -794,7 +897,10 @@ impl PartialOrd for ProgramPoint {
 
 impl Ord for ProgramPoint {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.read_version_id(), &self.memory).cmp(&(other.read_version_id(), &other.memory))
+        match (self.read_version_id(), other.read_version_id()) {
+            (None, None) => self.memory.cmp(&other.memory),
+            _ => self.read_key().cmp(&other.read_key()),
+        }
     }
 }
 
@@ -805,6 +911,7 @@ impl ProgramPoint {
             memory: memory.clone(),
             path: PathLink::default(),
             indexed_write: None,
+            exact_read: false,
         }
     }
 
@@ -825,6 +932,7 @@ impl ProgramPoint {
             memory: shared,
             path,
             indexed_write: None,
+            exact_read: false,
         }
     }
 
@@ -845,6 +953,7 @@ impl ProgramPoint {
             memory: shared,
             path,
             indexed_write: None,
+            exact_read: false,
         }
     }
 
@@ -859,6 +968,7 @@ impl ProgramPoint {
             memory,
             path: self.path.clone(),
             indexed_write: self.indexed_write.clone(),
+            exact_read: self.exact_read,
         }
     }
 
@@ -883,42 +993,116 @@ impl ProgramPoint {
         self.path.id()
     }
 
+    /// The point in a read's key, whether selected exactly or as a version.
     pub(crate) fn read_version_id(&self) -> Option<ProgramPointId> {
-        self.indexed_write.as_ref()?;
-        self.id()
+        if self.exact_read || self.indexed_write.is_some() {
+            self.id()
+        } else {
+            None
+        }
     }
 
-    pub(crate) fn supports_indexed_local_integer_version(pointer: &Address) -> bool {
-        matches!(pointer.offset, AddressOffset::Constant(offset) if offset >= 0)
-            && indexed_local(&pointer.base)
+    pub(in crate::kernel) fn read_key(&self) -> ReadKey {
+        match self.read_version_id() {
+            Some(id) => self.read_key_at(id),
+            None => ReadKey::Memory(self.memory.arena_id()),
+        }
+    }
+
+    /// Read applications use the execution version when known. Legacy views
+    /// retain their existing read identity across pure memory materialization.
+    pub(in crate::kernel) fn congruence_read_key(&self) -> ReadKey {
+        match self.read_version_id() {
+            Some(id) => self.read_key_at(id),
+            None => ReadKey::Memory(self.memory.read_identity()),
+        }
+    }
+
+    pub(in crate::kernel) fn observation_key(&self) -> ReadKey {
+        match self.id() {
+            Some(id) => self.read_key_at(id),
+            None => ReadKey::Memory(self.memory.arena_id()),
+        }
+    }
+
+    fn read_key_at(&self, id: ProgramPointId) -> ReadKey {
+        if self.path.matches_indexed_view(&self.memory) {
+            ReadKey::Point(id)
+        } else {
+            ReadKey::View(id, self.memory.arena_id())
+        }
+    }
+
+    pub(crate) fn names_exact_read(&self, read: &Self) -> bool {
+        self.id()
+            .is_some_and(|id| self.read_key_at(id) == read.read_key())
+    }
+
+    /// An exact read keeps the selected point even if another point has equal
+    /// memory or supplies the cell's ordinary version.
+    pub(in crate::kernel) fn for_exact_read(mut self) -> Self {
+        self.exact_read = true;
+        self
+    }
+
+    pub(crate) fn is_exact_read(&self) -> bool {
+        self.exact_read && self.id().is_some()
+    }
+
+    pub(crate) fn supports_indexed_version(pointer: &Address) -> bool {
+        read_bucket(&pointer.base).is_some()
     }
 
     /// A direct integer cell's version, if this path has a recorded direct write
     /// and the transitions after it preserve the object by construction.
-    pub(crate) fn indexed_local_integer_version(
+    pub(crate) fn indexed_integer_version(
         &self,
         pointer: &Address,
         kind: LoadKind,
     ) -> Option<Self> {
-        if !Self::supports_indexed_local_integer_version(pointer) {
+        self.indexed_version(pointer, kind.byte_width(), |store| {
+            integer_store_bits(store).is_some_and(|(stored_kind, _)| stored_kind == kind)
+        })
+    }
+
+    pub(crate) fn indexed_typed_version(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> Option<Self> {
+        // An ordinary pointer read through a parameter still has to round
+        // trip with the complete pointer equation recorded by the store.
+        // That producer uses a projected memory view for the pointer domain.
+        if external_storage(&pointer.base) && value_type.is_pointer() {
             return None;
         }
+        if value_type == ProgramType::Bool || value_type.is_pointer() {
+            return self.indexed_version(pointer, value_type.byte_width(), |store| {
+                matches!(store, MemoryDerivation::Store { value, .. } if value.program_type() == value_type)
+            });
+        }
+        self.indexed_integer_version(pointer, LoadKind::of_type(value_type)?)
+    }
+
+    fn indexed_version(
+        &self,
+        pointer: &Address,
+        bytes: u32,
+        matches_store: impl FnOnce(&MemoryDerivation) -> bool,
+    ) -> Option<Self> {
+        let bucket = read_bucket(&pointer.base)?;
         let node = self.path.0.as_ref()?;
         if !self.path.matches_indexed_view(&self.memory) {
-            // The view needs the recorded memory or certified cell naming.
             return None;
         }
-        let AddressOffset::Constant(start) = pointer.offset else {
+        let (anchor, start) = read_displacement(&pointer.offset)?;
+        let end = start.checked_add(i64::from(bytes))?;
+        let block = node.point_read_index.blocks.get(bucket)?;
+        if block.origin != read_origin(pointer, anchor) {
             return None;
-        };
-        let end = start.checked_add(i64::from(kind.byte_width()))?;
-        let write = node
-            .local_integer_index
-            .blocks
-            .get(&pointer.base)?
-            .cells
-            .get(&start)?;
-        if write.end != end || integer_store_bits(&write.store)?.0 != kind {
+        }
+        let write = block.cells.get(&start)?;
+        if write.end != end || !matches_store(&write.store) {
             return None;
         }
         let version = write.version.upgrade()?;
@@ -926,12 +1110,28 @@ impl ProgramPoint {
             memory: version.memory.clone(),
             path: PathLink(Some(version), IndexedView::Recorded),
             indexed_write: Some(write.store.clone()),
+            exact_read: false,
         })
     }
 
     /// The recorded value of this indexed read's defining store.
     pub(crate) fn indexed_integer_store_bits(&self) -> Option<&MachineTerm> {
-        integer_store_bits(self.indexed_write.as_deref()?).map(|(_, bits)| bits)
+        integer_store_bits(self.indexed_write()?).map(|(_, bits)| bits)
+    }
+
+    pub(in crate::kernel) fn indexed_stored_value(&self) -> Option<&StoredMemoryValue> {
+        let MemoryDerivation::Store { value, .. } = self.indexed_write()? else {
+            return None;
+        };
+        Some(value)
+    }
+
+    fn indexed_write(&self) -> Option<&MemoryDerivation> {
+        if self.path.matches_indexed_view(&self.memory) {
+            self.indexed_write.as_deref()
+        } else {
+            None
+        }
     }
 
     /// The identities of the points this one was reached from.
@@ -1073,7 +1273,7 @@ mod tests {
         let version = |state: &ExecutionState| {
             state
                 .program_point()
-                .indexed_local_integer_version(&right, LoadKind::Int32)
+                .indexed_integer_version(&right, LoadKind::Int32)
                 .and_then(|point| point.read_version_id())
         };
         let walked =
@@ -1129,7 +1329,7 @@ mod tests {
         let version = |state: &ExecutionState, pointer: &Address| {
             state
                 .program_point()
-                .indexed_local_integer_version(pointer, LoadKind::Int32)
+                .indexed_integer_version(pointer, LoadKind::Int32)
                 .and_then(|point| point.read_version_id())
         };
         assert_eq!(version(&joined, &slot), split.program_point_id());
@@ -1170,7 +1370,7 @@ mod tests {
         let version = |state: &ExecutionState, pointer: &Address| {
             state
                 .program_point()
-                .indexed_local_integer_version(pointer, LoadKind::Int32)
+                .indexed_integer_version(pointer, LoadKind::Int32)
                 .and_then(|point| point.read_version_id())
         };
         let expected = version(&written, &slot);
@@ -1237,9 +1437,7 @@ mod tests {
         let batch = initial.clone().store(address, value);
         let kind = LoadKind::Int32;
         let version = |state: &ExecutionState, place: &Address| {
-            state
-                .program_point()
-                .indexed_local_integer_version(place, kind)
+            state.program_point().indexed_integer_version(place, kind)
         };
         let overlap = start.clone().with_memory(batch.store(
             first.offset_by_bytes(2),
@@ -1268,7 +1466,7 @@ mod tests {
         let version = |state: &ExecutionState| {
             state
                 .program_point()
-                .indexed_local_integer_version(&slot(), LoadKind::Int32)
+                .indexed_integer_version(&slot(), LoadKind::Int32)
                 .and_then(|point| point.read_version_id())
         };
         let mut work = Vec::new();
@@ -1362,7 +1560,7 @@ mod tests {
         assert_eq!(
             executed
                 .program_point()
-                .indexed_local_integer_version(&slot, LoadKind::Int32)
+                .indexed_integer_version(&slot, LoadKind::Int32)
                 .and_then(|point| point.read_version_id()),
             executed.program_point_id(),
         );

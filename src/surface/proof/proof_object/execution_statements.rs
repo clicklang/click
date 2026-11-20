@@ -725,10 +725,7 @@ impl<'a> Proof<'a> {
                 .clone()
                 .with_selected_call_contract(name)
                 .with_selected_call_resource_arguments(
-                    arguments
-                        .iter()
-                        .map(|argument| argument.identity.variable())
-                        .collect(),
+                    arguments.iter().map(|argument| argument.identity).collect(),
                 );
             selected_context = context.with_loop_binding(
                 context.function_block,

@@ -6666,6 +6666,7 @@ fn wide_scaled_offset_congruence_checks_full_width_and_scale() {
 /// bit the unsigned order is encoded through, and `UINT_MAX`, where an
 /// increment or a decrement wraps.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
     const BOUNDARIES: [u32; 9] = [

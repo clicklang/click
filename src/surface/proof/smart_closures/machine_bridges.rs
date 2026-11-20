@@ -983,6 +983,7 @@ mod widened_sum_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: widened unsigned sums with strict expansion replay"]
     fn widened_unsigned_sums_expand_without_normalize() {
         for (parameters, bounds, goal) in [
@@ -1048,6 +1049,7 @@ mod widened_sum_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: widened unsigned sum refusal controls"]
     fn widened_unsigned_sums_require_the_selected_bounds() {
         for (bounds, goal, selected) in [
@@ -1073,11 +1075,13 @@ mod widened_sum_tests {
 
 #[cfg(test)]
 mod nested_conditional_tests {
+    #[cfg(not(feature = "fast-gate"))]
     use crate::surface::{
         expand_c_claim_source_by_label, verify_c_sources, without_implicit_solve,
     };
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: nested conditional expansion and strict replay"]
     fn nested_conditionals_expand_without_normalize() {
         let mut failures = Vec::new();
@@ -1170,6 +1174,7 @@ mod nested_conditional_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: nested conditional guard and type refusal controls"]
     fn nested_conditionals_preserve_selected_guards_and_arm_domains() {
         for source in [
@@ -1194,6 +1199,7 @@ mod nested_conditional_tests {
 
 #[cfg(test)]
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Boolean and constructor conditional expansion and strict replay"]
 fn non_numeric_conditional_arms_expand_without_normalize() {
     use crate::surface::{

@@ -88,6 +88,14 @@ fn preserve_viewability(separation: &Proposition) -> Result<(Proposition, Propos
 // never used to manufacture the primitive's conclusion.
 fn read_type(result: &Proposition) -> Option<ReadType> {
     match result {
+        Proposition::ConditionIs(_, true)
+            if matches!(
+                result.condition_native(),
+                Some((ConditionTerm::BoolEqual(..), true))
+            ) =>
+        {
+            Some(ReadType::Boolean)
+        }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
                 condition_source_0.condition_native()
@@ -320,8 +328,8 @@ fn observation_equality(
     kind: ReadType,
     comparison: ReadType,
 ) -> Option<Proposition> {
-    let after = typed_reads::get_at(&footprint.after_point, &footprint.after, &address, kind)?;
-    let before = typed_reads::get_at(&footprint.before_point, &footprint.before, &address, kind)?;
+    let after = typed_reads::get_at(&footprint.after_point, &address, kind)?;
+    let before = typed_reads::get_at(&footprint.before_point, &address, kind)?;
     // A promoted comparison compares the narrow reads' widenings.
     if let (ReadType::Integer(narrow), ReadType::Integer(MachineIntegerType::Int32)) =
         (kind, comparison)
@@ -335,6 +343,12 @@ fn observation_equality(
         ));
     }
     let condition = match (kind, after, before) {
+        (ReadType::Boolean, ProgramValue::Bool(a), ProgramValue::Bool(b)) => {
+            ConditionTerm::bool_equal(
+                ConditionTerm::truth_of_bool_word(&a),
+                ConditionTerm::truth_of_bool_word(&b),
+            )
+        }
         (ReadType::Pointer(_), ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
             ConditionTerm::logical_pointer_equal(a, b)
         }
@@ -421,14 +435,14 @@ mod tests {
             super::apply(&self.separation, self.field, &self.result, available)?;
             Ok(self.result.clone())
         }
-        pub fn memories(&self) -> (&SymbolicMemory, &SymbolicMemory) {
+        pub fn points(&self) -> (&ProgramPoint, &ProgramPoint) {
             let Proposition::ResourceSeparate { left, .. } = &self.separation else {
                 unreachable!()
             };
             let Resource::Footprint(fp) = left.as_ref() else {
                 unreachable!()
             };
-            (&fp.before, &fp.after)
+            (&fp.before_point, &fp.after_point)
         }
     }
 
@@ -791,6 +805,16 @@ mod tests {
         value.clone()
     }
 
+    pub(super) fn observe_point(
+        point: &ProgramPoint,
+        address: &Address,
+        ty: ProgramType,
+    ) -> ProgramValue {
+        let value = observe(point.memory(), address, ty);
+        typed_reads::record_at(point, address, &value);
+        value
+    }
+
     pub(super) fn fixture(history: u64, cached: bool) -> (Preservation, Proposition) {
         let address = Address::symbolic(Variable(8_310_000));
         let changed = Address::symbolic(Variable(8_310_001));
@@ -839,12 +863,12 @@ mod tests {
             right: resource(address.clone(), C_POINTER_BYTE_WIDTH),
         };
         let ProgramValue::Pointer(before_value) =
-            observe(&before, &address, ProgramType::Int32Pointer)
+            observe_point(&entry.program_point(), &address, ProgramType::Int32Pointer)
         else {
             unreachable!()
         };
         let ProgramValue::Pointer(after_value) =
-            observe(&after, &address, ProgramType::Int32Pointer)
+            observe_point(&exit.program_point(), &address, ProgramType::Int32Pointer)
         else {
             unreachable!()
         };
@@ -864,13 +888,13 @@ mod tests {
 
     pub(super) fn abstract_fixture(history: u64) -> (Preservation, Proposition) {
         let (mut preservation, _) = fixture(history, false);
-        let (before, after) = preservation.memories();
+        let (before, after) = preservation.points();
         let address = Address::symbolic(Variable(8_310_000));
         let ty = ProgramType::Parameter(TypeParameterName::intern("TransportValue"));
-        let ProgramValue::Parameter(a) = observe(after, &address, ty) else {
+        let ProgramValue::Parameter(a) = observe_point(after, &address, ty) else {
             unreachable!()
         };
-        let ProgramValue::Parameter(b) = observe(before, &address, ty) else {
+        let ProgramValue::Parameter(b) = observe_point(before, &address, ty) else {
             unreachable!()
         };
         let goal = Proposition::condition_is(ConditionTerm::AlgebraicEqual(a, b), true);
@@ -947,6 +971,27 @@ mod tests {
                 .apply(|_| true)
                 .unwrap_err()
                 .contains("constructed result")
+        );
+    }
+
+    #[test]
+    fn an_observation_does_not_transfer_to_an_equal_memory_at_another_point() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = SymbolicMemory::new();
+        let first = ExecutionState::new().with_memory(memory.clone());
+        let second = ExecutionState::new().with_memory(memory);
+        assert_eq!(first.memory(), second.memory());
+        assert_ne!(first.program_point_id(), second.program_point_id());
+        let address = Address::symbolic(Variable(8_399_011));
+        let read = ProgramValue::bool_constant(true);
+        let _scope = typed_reads::ReadScope::enter();
+        typed_reads::record_at(&first.program_point(), &address, &read);
+        assert_eq!(
+            typed_reads::get_at(&first.program_point(), &address, ReadType::Boolean),
+            Some(read)
+        );
+        assert!(
+            typed_reads::get_at(&second.program_point(), &address, ReadType::Boolean).is_none()
         );
     }
 
@@ -1093,11 +1138,11 @@ mod tests {
         let read = |state: &ExecutionState| {
             let version = state
                 .program_point()
-                .indexed_local_integer_version(&slot, load_kind)
+                .indexed_integer_version(&slot, load_kind)
                 .unwrap();
-            let path = crate::kernel::eval::evaluate_indexed_integer_read(
-                state.memory(),
+            let path = crate::kernel::eval::evaluate_indexed_read(
                 version,
+                &state.program_point(),
                 slot.clone(),
                 format.program_type(),
                 Default::default(),
@@ -1106,6 +1151,7 @@ mod tests {
             let ExpressionOutcome::Value(value) = path.outcome else {
                 panic!("expected a typed integer read");
             };
+            typed_reads::record_at(&state.program_point(), &slot, &value);
             integer_bits(value).unwrap()
         };
         let before_read = read(&before);

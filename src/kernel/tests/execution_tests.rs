@@ -3205,6 +3205,7 @@ fn execute_declaration(state: &ExecutionState, statement: &ProgramStatement) -> 
 /// an array declared without an initializer holds no cell, so reading one
 /// of its elements stays an uninitialized read.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.3s in the parallel gate"]
 fn a_zero_filled_automatic_array_holds_exactly_the_per_element_stores() {
     for length in [1u32, 2, 5, 64, 65] {

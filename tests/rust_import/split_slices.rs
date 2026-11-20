@@ -11,6 +11,7 @@ fn project(name: &str) -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn charon_split_at_empty_endpoints_and_full_width_lengths() {
     let p = project("split");

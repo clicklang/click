@@ -49,6 +49,7 @@ fn an_already_relative_gate_artifact_keeps_its_source_metadata() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: re-extract every frozen Rust gate fixture with the pinned compiler"]
 fn frozen_gate_fixtures_match_live_charon_extraction() {
     let mut fixtures: Vec<_> = fs::read_dir(root())

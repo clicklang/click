@@ -335,6 +335,7 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.0s in the parallel gate"]
     fn compiler_process_timeout_leaves_no_running_worker() {
         use std::sync::atomic::{AtomicUsize, Ordering};

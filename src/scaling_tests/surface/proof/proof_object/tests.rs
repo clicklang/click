@@ -395,6 +395,7 @@ fn both_and_scopes_are_isolated_check_lineage_and_scale() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5.7s in the parallel gate"]
 fn loop_entry_solve_keeps_checked_unraisable_assumptions_and_scales() {
     let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
@@ -489,6 +490,7 @@ fn loop_entry_solve_keeps_checked_unraisable_assumptions_and_scales() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn choose_body_indexing_scales_with_selected_body_size() {
     let click_file = crate::surface::parse(
@@ -888,6 +890,7 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
     let click_file = crate::surface::parse(

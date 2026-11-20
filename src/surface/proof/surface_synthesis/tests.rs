@@ -4248,6 +4248,60 @@ fn local_read_test_claim(value_type: ProgramType) -> ClickProposition {
 }
 
 #[test]
+fn exact_read_raises_at_its_own_point_when_another_point_has_equal_memory() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = local_read_test_address("slot");
+    let state = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().with_block("local:slot", 4))
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(slot.clone(), ProgramType::Int32Pointer),
+        );
+    let first = local_read_test_store(&state, &slot, ProgramType::Int32, 7);
+    let second = local_read_test_store(&first, &slot, ProgramType::Int32, 7);
+    assert_eq!(first.memory(), second.memory());
+
+    let mut claim = local_read_test_claim(ProgramType::Int32);
+    let ClickProposition::Comparison { left, .. } = &mut claim else {
+        unreachable!("test comparison");
+    };
+    *left = ContractExpression::Exact(Box::new(left.clone()));
+    let exact = relower_written_proposition(&claim, &first).unwrap();
+    let read = local_test_read_operand(&exact, ProgramType::Int32);
+    let MachineTerm::MemoryLoad(point, ..) = read else {
+        panic!("expected exact read: {read:?}");
+    };
+    assert!(point.is_exact_read());
+    assert_eq!(point.read_version_id(), first.program_point_id());
+    assert_ne!(exact, relower_written_proposition(&claim, &second).unwrap());
+
+    let selector = ProgramPointSelector::Mark("first".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), first);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let root = crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, read);
+    let raised = raise_kernel_term(
+        &root,
+        ParameterBinding::default(),
+        &second,
+        &BTreeMap::new(),
+    )
+    .expect("the exact read has a recorded point");
+    assert!(
+        matches!(&raised, ContractExpression::At { selector: at, expression }
+        if at == &selector && matches!(expression.as_ref(), ContractExpression::Exact(_)))
+    );
+    let ClickProposition::Comparison { left, .. } = &mut claim else {
+        unreachable!("test comparison");
+    };
+    *left = raised;
+    assert_eq!(
+        relower_written_proposition_with_states(&claim, &second, &second, &points),
+        Ok(exact)
+    );
+}
+
+#[test]
 fn ordinary_indexed_integer_reads_select_the_write_on_their_own_path() {
     check_local_read_versions(ProgramType::Int8, ProgramType::UInt8);
     check_local_read_versions(ProgramType::UInt8, ProgramType::Int8);
@@ -4354,7 +4408,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     assert_eq!(
         repeated
             .program_point()
-            .indexed_local_integer_version(&slot, load_kind)
+            .indexed_integer_version(&slot, load_kind)
             .unwrap()
             .id(),
         repeated.program_point_id()
@@ -4363,7 +4417,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     assert!(
         mismatched
             .program_point()
-            .indexed_local_integer_version(&slot, load_kind)
+            .indexed_integer_version(&slot, load_kind)
             .is_none(),
         "a write with a different load kind ends the prior version"
     );
@@ -4373,7 +4427,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     assert!(
         possibly_aliasing
             .program_point()
-            .indexed_local_integer_version(&slot, load_kind)
+            .indexed_integer_version(&slot, load_kind)
             .is_none(),
         "an unclassified store cannot keep an indexed version"
     );
@@ -4797,6 +4851,7 @@ fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete ten-format call reconstruction sweep"]
 fn common_machine_calls_round_trip_source_with_all_native_formats() {
     check_common_machine_call_formats(&[
@@ -5192,6 +5247,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: literal raising round trips through a verified C function"]
 fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
     let identity = crate::kernel::StringLiteralId::new("text", 1).with_source("literal_raising.c");
@@ -7413,6 +7469,7 @@ fn narrow_symbolic_comparisons_keep_their_existing_normal_forms() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: retained pthread value parse/lower round trip"]
 fn pthread_handle_words_use_c_names_and_retained_states() {
     use crate::kernel::{KernelTermImport, ThreadHandleId};
@@ -9019,5 +9076,75 @@ fn reflexive_boolean_comparisons_round_trip_after_exact_rewrite() {
             "{text}"
         );
         assert_eq!(fixture.lower(&text), *expected, "{text}");
+    }
+}
+
+#[test]
+fn literal_float_comparisons_preserve_ieee_truth_and_round_trip() {
+    use crate::kernel::{ComparisonOperator as C, KernelFloatType as F};
+    let fixture = ConditionalRoundTrip::new(MachineIntegerType::Int32, "int32");
+    for (format, width, negative_zero, nan, negative_one, one) in [
+        (
+            F::Float32,
+            32,
+            0x80000000,
+            0x7fc00123,
+            0xbf800000,
+            0x3f800000,
+        ),
+        (
+            F::Float64,
+            64,
+            0x8000000000000000,
+            0x7ff8000000000123,
+            0xbff0000000000000,
+            0x3ff0000000000000,
+        ),
+    ] {
+        let literal = |bits: u64| format!("float{width}_from_bits(0x{bits:x}u{width})");
+        for (left, operator, right, token, truth) in [
+            (negative_zero, C::Equal, 0, "==", true),
+            (nan, C::Equal, nan, "==", false),
+            (nan, C::NotEqual, nan, "!=", true),
+            (nan, C::LessEqual, one, "<=", false),
+            (negative_one, C::LessThan, one, "<", true),
+            (one, C::GreaterThan, 0, ">", true),
+            (negative_zero, C::GreaterEqual, 0, ">=", true),
+        ] {
+            let written = format!("{} {token} {}", literal(left), literal(right));
+            let Proposition::ConditionIs(condition, true) = fixture.lower(&written) else {
+                panic!("expected a comparison: {written}");
+            };
+            let (actual_format, actual_operator, operands) =
+                condition.operand_view().float_comparison().expect(&written);
+            assert_eq!(actual_format, format, "{written}");
+            assert_eq!(actual_operator, operator, "{written}");
+            assert_eq!(
+                operands.map(|operand| operand.literal_bits()),
+                [Some(left), Some(right)],
+                "{written}"
+            );
+            assert_eq!(
+                PureFactContext::new().decide(condition.native_compat()),
+                Some(truth),
+                "{written}"
+            );
+            for polarity in [true, false] {
+                let expected = Proposition::condition_is(condition.clone(), polarity);
+                let raised = synthesize_surface_proposition(
+                    &expected,
+                    ParameterBinding::default(),
+                    &fixture.state,
+                )
+                .unwrap();
+                let text = crate::surface::printing::source_click_proposition(&raised);
+                assert_eq!(
+                    relower_written_proposition(&raised, &fixture.state).unwrap(),
+                    expected,
+                    "{text}"
+                );
+                assert_eq!(fixture.lower(&text), expected, "{text}");
+            }
+        }
     }
 }

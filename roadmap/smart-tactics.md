@@ -85,6 +85,16 @@ For each read slice, test which point it selects, its raise/lower round trip,
 and bounded work as unrelated history grows. Use `cell_version_on_path` for
 diagnostic comparisons in tests. Keep production selection indexed.
 
+The scalar observation registry and read congruence use the retained version
+when a read has one. Reads produced from a bare memory view still use legacy
+identity. The remaining producers include resource cell reads through
+`canonical_cell_load`, array and algebraic arguments, and the representation
+equation for bytes initialized by a modular call. Ordinary pointer reads
+through parameters also need checked stores to publish a complete pointer
+equation that raises and lowers at the same version point. Read selection
+through unrelated symbolic addresses needs a checked way to identify the
+affected storage.
+
 ## Reading the inventory
 
 - **Scoped evidence:** named tests cover particular routes and growth axes;
@@ -227,9 +237,9 @@ excluding prose and Rust test strings, leaves:
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
 | `mdtests/` | 1 | 1 |
-| `examples/` | 12 | 93 |
+| `examples/` | 11 | 78 |
 | `library/` | 0 | 0 |
-| Total | 13 | 94 |
+| Total | 12 | 79 |
 
 Positive fixtures also supply exact input text to expansion and mutation tests.
 Migrate those inputs together with their tests and keep the smart proof inputs.
@@ -237,6 +247,25 @@ Verify the full file as well, because selected-tactic expansion checks only a
 prefix. Remaining groups include historical initializedness, computed range
 bounds, loop frames, and call preservation.
 The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
+
+### Migration order
+
+1. **Pure logic.** One pass for equality, conjunction, implication, and
+   same-state alias substitution. Use fact lookup, rewriting, or theorem
+   application. Keep the premise-refusal tests.
+2. **Ownership and viewability.** One PR for facts recovered from owners.
+   Split observation and folded-resource lookup if the proof changes warrant it.
+3. **Reads across writes and calls.** Start with one PR for direct stores and
+   byte-range writes, then one for calls with recorded footprints. Use explicit
+   separation and preservation.
+4. **Loops and trees.** Start with one loop-invariant batch and one tree
+   operation. Pair mirrored cases when they share a proof. Repeat for the
+   remaining invariants and tree operations.
+
+Verify whole affected claims, check that the migrated steps expand without
+legacy transport, and replay with implicit solving disabled where the whole
+claim has been migrated. Track surviving generated uses by producer and fix
+them before removing syntax and dispatcher support.
 
 ### Remaining PR-sized chunks
 

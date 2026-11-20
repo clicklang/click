@@ -22,6 +22,7 @@
 
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_term;
+use crate::kernel::integer_exclusions::ExcludedIntegers;
 use crate::kernel::{Address, AddressOffset, ConditionTerm, MachineTerm};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
@@ -119,10 +120,9 @@ pub(crate) struct DifferenceGraph {
     in_edges: PersistentMap<NodeId, PersistentMap<NodeId, i128>>,
     /// `base -> node -> link`: links waiting on `base`'s interval.
     pending: PersistentMap<NodeId, PersistentMap<NodeId, PendingLink>>,
-    /// `node -> {c}`: `node != c`. An interval end landing on an excluded
-    /// value steps past it, so `x != INT_MIN` beside `INT_MIN <= x` is
-    /// `INT_MIN + 1 <= x`.
-    excluded: PersistentMap<NodeId, crate::persistent::PersistentSet<i128>>,
+    /// Excluded values by node. Tightening an interval jumps past a run
+    /// touching an endpoint.
+    excluded: PersistentMap<NodeId, ExcludedIntegers>,
     /// `node -> (x, t)` for each `t = x ^ MIN` whose sign case is still
     /// open, under both `x` and `t`: `t` is `x + MIN` when `x >= 0` and
     /// `x - MIN` when `x < 0`, so the sign of either decides the link.
@@ -388,11 +388,7 @@ impl DifferenceGraph {
             let (Some(node), offset) = self.affine_view(domain, term) else {
                 continue;
             };
-            charge();
-            let excluded = self.excluded.get(&node).cloned().unwrap_or_default();
-            self.excluded
-                .insert(node, excluded.with_value(value - offset));
-            self.tighten(node, None, None);
+            self.exclude_value(node, value - offset);
         }
     }
 
@@ -467,12 +463,16 @@ impl DifferenceGraph {
             let (Some(node), offset) = self.affine(*domain, term) else {
                 continue;
             };
-            charge();
-            let excluded = self.excluded.get(&node).cloned().unwrap_or_default();
-            self.excluded
-                .insert(node, excluded.with_value(value - offset));
-            self.tighten(node, None, None);
+            self.exclude_value(node, value - offset);
         }
+    }
+
+    fn exclude_value(&mut self, node: NodeId, value: i128) {
+        charge();
+        let mut excluded = self.excluded.get(&node).cloned().unwrap_or_default();
+        excluded.insert(value);
+        self.excluded.insert(node, excluded);
+        self.tighten(node, None, None);
     }
 
     /// Whether the facts exclude a zero `divisor`: its interval lies above
@@ -490,7 +490,7 @@ impl DifferenceGraph {
     fn excludes(&self, node: NodeId, value: i128) -> bool {
         self.excluded
             .get(&node)
-            .is_some_and(|excluded| excluded.contains(&value))
+            .is_some_and(|excluded| excluded.containing(value).is_some())
     }
 
     /// Records a true equality between a term the graph has no node for and
@@ -611,15 +611,22 @@ impl DifferenceGraph {
             let (old_low, old_high) = self.interval(node);
             let mut new_low = low.map_or(old_low, |low| low.max(old_low));
             let mut new_high = high.map_or(old_high, |high| high.min(old_high));
-            if let Some(excluded) = self.excluded.get(&node) {
-                // Each step passes one recorded disequality.
-                while new_low <= new_high && excluded.contains(&new_low) {
+            if new_low <= new_high
+                && let Some(excluded) = self.excluded.get(&node)
+            {
+                if let Some((_, end)) = excluded.containing(new_low) {
                     charge();
-                    new_low += 1;
+                    if end >= new_high {
+                        self.contradictory = true;
+                        return;
+                    }
+                    new_low = end + 1;
                 }
-                while new_low <= new_high && excluded.contains(&new_high) {
+                if let Some((start, _)) = excluded.containing(new_high) {
                     charge();
-                    new_high -= 1;
+                    // The new lower bound is allowed, so this run starts
+                    // strictly above it.
+                    new_high = start - 1;
                 }
             }
             if (new_low, new_high) == (old_low, old_high) {

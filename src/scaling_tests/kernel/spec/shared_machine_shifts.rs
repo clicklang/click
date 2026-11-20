@@ -21,6 +21,7 @@ fn representative_c_shift_prefixes_scale_without_exports() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full C shift matrix took 5.60s in isolation"]
 fn c_shifts_retain_growing_values_and_count_prefixes_without_exports() {
     for a in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {

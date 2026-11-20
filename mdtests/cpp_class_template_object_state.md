@@ -47,15 +47,7 @@ unsigned int through_peek(const Wrap<unsigned int>& wrap) noexcept {
 ```click
 verifying "holders.cpp";
 
-template<class T> class Holder<T> {
-    function held(this) -> T;
-}
-template<class T> extern void Holder<T>::put(T x) {
-    ensures held(this) == x;
-}
-template<class T> extern T Holder<T>::get() const {
-    ensures result == held(this);
-}
+import "interfaces/cpp_class_template_object_state.interface.click";
 template<class T> class Wrap<T> : Holder<T> {
     function held(this) -> T { this->value }
 }

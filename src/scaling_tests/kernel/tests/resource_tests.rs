@@ -189,6 +189,7 @@ fn paired_memory_consumption_indexes_disjoint_spans_at_one_base() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn indexed_memory_lookup_ignores_unrelated_pointer_parameters() {
     let mut samples = Vec::new();
@@ -307,6 +308,7 @@ fn write_candidates_do_not_scan_unrelated_memory_ranges() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn owned_fragment_reservation_scales_with_fragments_not_ambient_memory() {
     for base in [
@@ -1850,6 +1852,7 @@ fn unrelated_origin_does_not_disable_owned_interval_neighbors() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
     let base = Address {
@@ -2596,6 +2599,7 @@ fn dependent_resource_clause_work_scales_with_dependency_nodes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn memory_invalidation_scales_with_affected_intervals_and_barrier_output() {
     let mut samples = Vec::new();
@@ -2740,6 +2744,7 @@ fn memory_invalidation_scales_with_affected_intervals_and_barrier_output() {
 /// slot. The returned scalar and preserved bytewise padding must rejoin even
 /// when the object address is symbolic.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.8s in the parallel gate"]
 fn returned_scalar_and_bytewise_padding_rejoin_over_symbolic_objects() {
     let mut samples = Vec::new();
@@ -4124,6 +4129,7 @@ fn native_ownership_query_stops_at_a_fixed_gap() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: multi-size constant narrow ownership scaling control"]
 fn narrow_ownership_query_stops_at_a_fixed_gap() {
     constant_ownership_query_stops_at_a_fixed_gap(false);
@@ -4204,6 +4210,7 @@ fn native_ownership_query_scales_with_selected_pieces() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: multi-size constant narrow ownership scaling control"]
 fn narrow_ownership_query_scales_with_selected_pieces() {
     constant_ownership_query_scales_with_selected_pieces(false);

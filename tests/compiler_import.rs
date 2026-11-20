@@ -177,6 +177,7 @@ impl Drop for Project {
 /// project prepared at two paths writes the same lock, so each copy's import
 /// has the same identity.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5.4s in the parallel gate"]
 fn compiler_import_project_locks_are_portable() {
     let first = Project::new();
@@ -197,6 +198,7 @@ fn compiler_import_project_locks_are_portable() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
     let project = Project::new();
@@ -262,6 +264,7 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn compiler_import_define_changes_require_refresh_and_change_the_proof() {
     let project = Project::new();
@@ -278,6 +281,7 @@ fn compiler_import_define_changes_require_refresh_and_change_the_proof() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_identity_binds_invocation_even_when_c_bytes_match() {
     let project = Project::new();
@@ -296,6 +300,7 @@ fn compiler_import_identity_binds_invocation_even_when_c_bytes_match() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_header_and_artifact_changes_cannot_reuse_a_lock() {
     let project = Project::new();
@@ -318,6 +323,7 @@ fn compiler_import_header_and_artifact_changes_cannot_reuse_a_lock() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_lowering_error_points_to_original_header() {
     let project = Project::new();
@@ -337,6 +343,7 @@ fn compiler_import_lowering_error_points_to_original_header() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn compiler_import_reproduces_header_existence_and_preserves_unsupported_bodies() {
     let project = Project::new();
@@ -371,6 +378,7 @@ fn compiler_import_reproduces_header_existence_and_preserves_unsupported_bodies(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_rejects_semantic_directives_and_target_options() {
     let project = Project::new();
@@ -392,6 +400,7 @@ fn compiler_import_rejects_semantic_directives_and_target_options() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_results_bind_helpers_in_other_translation_units() {
     let project = Project::new();
@@ -465,6 +474,7 @@ fn compiler_import_results_bind_helpers_in_other_translation_units() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_preserves_explicit_external_assumption_reporting() {
     let project = Project::new();
@@ -497,6 +507,7 @@ fn configure_userspace(project: &Project) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn userspace_compiler_import_verifies_profile_and_expansion() {
     let project = Project::new();
@@ -547,6 +558,7 @@ int answer(void) { return ANSWER; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn userspace_and_kernel_imports_have_distinct_identity_for_identical_c() {
     let project = Project::new();
@@ -592,6 +604,7 @@ size_t answer(void) { return strlen("hello"); }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn userspace_compiler_import_refuses_profile_overrides_and_ambient_headers() {
     let project = Project::new();
@@ -623,6 +636,7 @@ fn userspace_compiler_import_refuses_profile_overrides_and_ambient_headers() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_dependency_closure_projection_is_an_explicit_checked_option() {
     let project = Project::new();
@@ -671,6 +685,7 @@ fn compiler_import_dependency_closure_projection_is_an_explicit_checked_option()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1s focused; locks and checks both dependency cases"]
 fn compiler_import_projects_only_selected_functions_and_their_dependencies() {
     let project = Project::new();
@@ -828,6 +843,7 @@ fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s shared specification, expansion, and negative contracts"]
 fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -879,6 +895,7 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original short loop, expansion, and authority mutations"]
 fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -1031,6 +1048,7 @@ fn adler_c_rust_correspondence_requires_matched_inputs() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: correspondence expansion and every shared-specification body"]
 fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
     let source = include_str!("../design/adler32/project/adler2/correspondence.click").replace(
@@ -1057,6 +1075,7 @@ fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
 /// the old spec's probe that the first 2^32 bytes sum to zero no longer goes
 /// through, because a `uint64` length does not wrap to 0.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 20s full-width specification, its int32 bridge, and a wrap probe"]
 fn adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow() {
     let source = adler_specifications();
@@ -1084,6 +1103,7 @@ fn adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: unchanged DO16 checksum proof, checked helpers, and mutations"]
 fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -1157,6 +1177,7 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: repeated DO16 checksum, checked helpers, expansion, and mutations"]
 fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -1232,6 +1253,7 @@ fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: NMAX batch checksum, checked helpers, expansion, and mutations"]
 fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -1311,6 +1333,7 @@ fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: symbolic DO16 count, lane, and read-bound theorem bodies"]
 fn pinned_zlib_window_lemmas_have_checked_bodies() {
     let source = include_str!("../design/adler32/project/zlib/window.click")
@@ -1339,6 +1362,7 @@ fn pinned_zlib_window_lemmas_have_checked_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: shared checksum library and native block recurrence bodies"]
 fn pinned_zlib_block_lemmas_have_checked_bodies() {
     let source = include_str!("../design/adler32/project/zlib/block.click")
@@ -1363,6 +1387,7 @@ fn pinned_zlib_block_lemmas_have_checked_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: seeded NMAX arithmetic, reduction, prefix composition, and expansion"]
 fn pinned_zlib_seeded_batch_lemmas_have_checked_bodies() {
     let source = include_str!("../design/adler32/project/zlib/seeded-batch.click")
@@ -1511,6 +1536,7 @@ int32 label_fits(const char* label) {
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s serial; the examples gate locks a modeled-header import"]
 fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
     let project = userspace_import(
@@ -1573,6 +1599,7 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 9s serial; the examples gate locks a modeled-header import"]
 fn compiler_import_refuses_unmodeled_system_headers_by_name() {
     let project = userspace_import(&[("main.c", "#include <ctype.h>\nint x;\n")], &[]);
@@ -1643,6 +1670,7 @@ fn compiler_import_refuses_unmodeled_system_headers_by_name() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 10s serial; the examples gate locks a modeled-header import"]
 fn compiler_import_project_headers_precede_clicks_in_gcc_search_order() {
     let source = "#include <limits.h>\n#ifdef PROJECT_LIMITS\nint which(void) { return PROJECT_LIMITS; }\n#else\nint which(void) { return CHAR_MAX; }\n#endif\n";
@@ -1689,6 +1717,7 @@ fn compiler_import_project_headers_precede_clicks_in_gcc_search_order() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s serial; the examples gate locks a modeled-header import"]
 fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
     let project = userspace_import(
@@ -1743,6 +1772,7 @@ fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: unchanged zlib multiple NMAX batches, DO16 and scalar tails, and expansion"]
 fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -1832,6 +1862,7 @@ fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full-range original zlib checksum, all paths, dependency bodies and complete expansion"]
 fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -1929,6 +1960,7 @@ fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full-range native count, cursor, capacity, concatenation guards and expansion"]
 fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
     let source = include_str!("../design/adler32/project/zlib/full-stream-helpers.click")
@@ -2018,6 +2050,7 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full-range original zlib checksum, all seeds and paths, dependency bodies and complete expansion"]
 fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -2119,6 +2152,7 @@ fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: canonical seed, reduction, unpacking and composition and expansion"]
 fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
     let source = include_str!("../design/adler32/project/zlib/canonical-helpers.click")
@@ -2206,6 +2240,7 @@ fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: two actual zlib C updates, all callee and helper bodies, complete expansion"]
 fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -2311,6 +2346,7 @@ fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
 /// tree gains no files, the committed lock still loads after the whole
 /// checkout moves, and changed inputs are refused.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn project_unit_verifies_an_external_tree_in_place() {
     assert!(

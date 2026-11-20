@@ -562,6 +562,7 @@ fn representative_surface_depths_survive_consumption() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full supported-depth validation, verification, printing and destruction audit"]
 fn supported_surface_depth_boundaries_survive_consumption() {
     surface_depths_survive_consumption(
@@ -1510,6 +1511,7 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
     let depth = 40;

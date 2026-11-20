@@ -5,6 +5,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn int32_addition_late_merge_and_fork_work_is_indexed() {
     for size in [16u64, 64, 256, 1024] {

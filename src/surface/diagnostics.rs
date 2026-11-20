@@ -3410,7 +3410,11 @@ pub(super) fn unresolved_load(value: &ProgramValue) -> Option<(SharedMemory, Add
     let read = crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
         widened_word(term),
     ))?;
-    Some((read.origin.unwrap_or(read.memory), read.pointer))
+    Some((
+        read.origin
+            .unwrap_or_else(|| read.point.into_shared_memory()),
+        read.pointer,
+    ))
 }
 
 /// The model field a comparison side stands for, if that side is exactly one

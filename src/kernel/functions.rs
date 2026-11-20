@@ -5512,7 +5512,9 @@ fn source_load_state_for_proposition(
                     crate::kernel::MachineOperandView::Legacy(term),
                 )
                 .expect("structural read observation");
-                let origin = read.origin.unwrap_or(read.memory);
+                let origin = read
+                    .origin
+                    .unwrap_or_else(|| read.point.into_shared_memory());
                 let identity = MemoryStateIdentity::of(origin.memory());
                 if memory_identity.is_some_and(|known| known != identity) {
                     return Ok(None);
@@ -7215,12 +7217,17 @@ fn execute_named_contract_applications_paths(
             }
             let mut bindings = BTreeMap::new();
             for (parameter, argument) in contract.proof_parameters().iter().zip(arguments) {
-                let Some(identity) = parameter.instance_identity().map(InstanceId::variable) else {
+                let Some(identity) = parameter.instance_identity() else {
                     return Ok(vec![resource_call_failure(
                         "resource proof parameter must be an exclusive instance",
                     )]);
                 };
-                if bindings.insert(identity, *argument).is_some() {
+                // The binding map also carries named mutex-authority binders,
+                // so it is still keyed and valued by `Variable`.
+                if bindings
+                    .insert(identity.variable(), argument.variable())
+                    .is_some()
+                {
                     return Ok(vec![resource_call_failure(
                         "duplicate exclusive resource proof argument",
                     )]);
@@ -8979,14 +8986,13 @@ impl<'a> OwnedFootprintDerivation<'a> {
         let mut budget = ExecutionBudget::beside_live_state();
         // An undecided guard counts the body as active: the footprint is an
         // upper bound, and a body that is not active owns nothing extra.
-        match evaluate_composite_resource_body_condition(
+        if let Some(false) = evaluate_composite_resource_body_condition(
             definition,
             &evaluation,
             &self.evaluation_assumptions,
             &mut budget,
         ) {
-            Some(false) => return,
-            Some(true) | None => {}
+            return;
         }
         for spec in contains {
             // Abstract tokens own no memory, regardless of their quantity.

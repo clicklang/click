@@ -16,6 +16,7 @@ fn extern_function_project() -> Project {
 // precondition, may use only the postcondition, and the head must restate
 // the declaration.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn charon_extern_block_calls_meet_their_extern_contract() {
     let p = extern_function_project();

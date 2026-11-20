@@ -12,6 +12,7 @@ fn parameterized_contract_project() -> Project {
 // `let amount: i32;`. `add3` meets `Adds` with `amount` fixed to 3 from its
 // own contract; a weaker contract of `add3` does not.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_parameterized_contract_fixes_its_value_where_attached() {
     let p = parameterized_contract_project();

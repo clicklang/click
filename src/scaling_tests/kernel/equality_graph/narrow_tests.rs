@@ -130,6 +130,7 @@ fn narrow_store_equation_queries_do_not_walk_alias_classes_or_unrelated_cells() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 9s parallel, large narrow-store query histories across all formats and alias patterns"]
 fn narrow_store_equation_queries_with_large_histories() {
     narrow_store_equation_query_scaling([16, 64, 256, 1024]);

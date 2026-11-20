@@ -2,9 +2,11 @@
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
+#[cfg(not(feature = "fast-gate"))]
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3.1s in the parallel gate"]
 fn borrow_partition_query_does_not_scan_unrelated_resources_or_history() {
     let mut samples = Vec::new();

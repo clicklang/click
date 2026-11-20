@@ -440,6 +440,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn constant_base_interior_lookup_scales_with_selected_range() {
     let mut samples = Vec::new();
@@ -513,6 +514,7 @@ fn constant_base_interior_lookup_scales_with_selected_range() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.4s in the parallel gate"]
 fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
     let mut previous = None;
@@ -573,6 +575,7 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn mixed_span_read_hits_and_misses_do_not_scan_unrelated_ranges() {
     let mut samples = Vec::new();

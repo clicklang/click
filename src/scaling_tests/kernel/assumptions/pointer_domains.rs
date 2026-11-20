@@ -7,6 +7,7 @@ fn opaque(id: u64) -> Pointer {
 /// The witness arrives after the entire related class has been built. Each
 /// sample measures the first query after admission, not a warmed query cache.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: cold domain queries across growing alias classes take 2.5s"]
 fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
     for unrelated in [0u64, 32, 128] {

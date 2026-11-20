@@ -68,6 +68,7 @@ fn charon_array_reference_assignments_preserve_bounded_storage_and_proof_work() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn charon_external_array_operations_keep_lowering_and_proof_work_bounded() {
     let export = super::super::charon::decode(

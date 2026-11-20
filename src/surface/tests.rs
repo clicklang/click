@@ -215,6 +215,7 @@ fn recursive_child_resources_round_trip_and_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn recursive_child_resources_independent_layers_own_memory_and_recheck() {
     let source = r#"verifying "middle.c";
@@ -289,6 +290,7 @@ fn recursive_child_resources_do_not_capture_earlier_function_names() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn recursive_child_resources_reject_bad_lifetimes_and_folds() {
     let c = [(
@@ -421,6 +423,7 @@ fn integer_resource_match_binding_verifies_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn tree_node_init_and_stored_child_links_expand() {
     let (source, c) = tree_node_init_fixture();
@@ -435,6 +438,7 @@ fn tree_node_init_and_stored_child_links_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.0s in the parallel gate"]
 fn tree_node_init_rejects_invalid_models_and_ownership() {
     let (source, c) = tree_node_init_fixture();
@@ -499,6 +503,7 @@ const INDEPENDENT_CHILDREN_C: &[(&str, &str)] = &[(
 )];
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn independent_children_construct_and_expand() {
     let source = independent_children_source();
@@ -532,6 +537,7 @@ fn independent_children_may_change_roles_in_a_new_model() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn independent_children_reject_bad_selection_and_consumed_names() {
     let source = independent_children_source();
@@ -588,6 +594,7 @@ fn independent_children_reject_bad_selection_and_consumed_names() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn conditional_explicit_folds_update_models_and_expand() {
     let source = r#"verifying "cell.c";
@@ -836,6 +843,7 @@ fn resource_match_binds_pointer_and_nested_algebraic_payloads() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn instance_return_folds_follow_distinct_program_results_after_explicit_splits() {
     let source = r#"verifying "read.c";
@@ -955,6 +963,7 @@ fn named_instance_memory_body_round_trip_preserves_fields() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn single_cell_adt_initializers_verify_and_expand() {
     let source = r#"verifying "cell.c";
@@ -1057,6 +1066,7 @@ fn single_cell_adt_initializers_reject_invalid_models() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn single_cell_adt_initializers_preserve_arbitrary_entry_models() {
     let source = r#"verifying "cell.c";
@@ -2752,6 +2762,7 @@ fn automatic_scope_exit_preserves_expanded_execution() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn bounded_population_increment_expands_and_checks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2813,6 +2824,7 @@ fn aggregate_parameter_symbolic_index_expands_and_checks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn resource_contract_regressions_expand_and_check() {
     for (fixture_name, function_name) in [

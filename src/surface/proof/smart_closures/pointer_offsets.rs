@@ -496,6 +496,7 @@ mod tests {
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: scalar pointer offset laws and strict expansion replay"]
     fn pointer_offsets_expand_without_normalize() {
         let mut failures = Vec::new();
@@ -569,6 +570,7 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: pointer translation missing-premise and overflow controls"]
     fn pointer_offsets_do_not_borrow_relations_or_allow_wrapping() {
         for source in [
@@ -611,6 +613,7 @@ mod tests {
         }
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: parsed pointer translation axioms against exact coordinate models"]
     fn pointer_translation_axioms_match_independent_coordinate_models() {
         let library = crate::surface::standard_library_theorem_definitions().unwrap();

@@ -275,8 +275,8 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
     let reversed = match equality {
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
             return Some(Proposition::Equal(
-                Term::Algebraic(b.clone().into()),
-                Term::Algebraic(a.clone().into()),
+                Term::Algebraic(b.clone()),
+                Term::Algebraic(a.clone()),
             ));
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
@@ -1056,7 +1056,7 @@ fn rewrite_read_address(term: &MachineTerm, address: Address) -> MachineTerm {
         crate::kernel::MachineOperandView::Legacy(term),
     )
     .expect("selected read");
-    crate::kernel::eval::scalar_read_for_exact_cell(&read.memory, &address, read.kind, read.bytes)
+    crate::kernel::eval::scalar_read_for_exact_cell_at(&read.point, &address, read.kind, read.bytes)
 }
 
 fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> MachineTerm {

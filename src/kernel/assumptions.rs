@@ -887,7 +887,10 @@ pub(in crate::kernel) fn load_state_and_pointer(
     // Checking follows the recorded observation, even when structural version
     // selection retained an earlier representative state in the term.
     Some((
-        (*read.origin.unwrap_or(read.memory)).clone(),
+        (*read
+            .origin
+            .unwrap_or_else(|| read.point.into_shared_memory()))
+        .clone(),
         read.pointer,
         read.kind,
     ))
@@ -2468,6 +2471,14 @@ fn collect_scoped_leaf_memory_load_keys(
     }
 }
 
+fn collect_float_read_load_keys(pointer: &Address, keys: &mut BTreeSet<(AddressBase, u64)>) {
+    keys.insert((
+        pointer.base.clone(),
+        memory_blind_pointer_fingerprint(pointer),
+    ));
+    collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
+}
+
 fn collect_bitvector_memory_load_keys(term: &MachineTerm, keys: &mut BTreeSet<(AddressBase, u64)>) {
     match term {
         MachineTerm::ThreadHandle(_) => {}
@@ -2486,11 +2497,7 @@ fn collect_bitvector_memory_load_keys(term: &MachineTerm, keys: &mut BTreeSet<(A
             if !matches!(kind, LoadKind::Float32 | LoadKind::Float64) {
                 return;
             }
-            keys.insert((
-                pointer.base.clone(),
-                memory_blind_pointer_fingerprint(pointer),
-            ));
-            collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
+            collect_float_read_load_keys(pointer, keys);
         }
         MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
@@ -2649,12 +2656,23 @@ fn collect_term_memory_loads(
         Term::Integer(term) => {
             collect_integer_memory_loads(term.native_compat(), current_memory, loads, seen_integers)
         }
-        Term::PointerOffset(offset) => collect_pointer_offset_memory_loads(
-            offset.native_compat(),
-            current_memory,
-            loads,
-            seen_integers,
-        ),
+        Term::PointerOffset(offset) => {
+            if let Some(root) = offset.root() {
+                retained_folds::collect_offset_memory_loads(
+                    root,
+                    current_memory,
+                    loads,
+                    seen_integers,
+                )
+            } else {
+                collect_pointer_offset_memory_loads(
+                    offset.native_compat(),
+                    current_memory,
+                    loads,
+                    seen_integers,
+                )
+            }
+        }
         Term::ProgramValue(value) => {
             if let Some(root) = value.root()
                 && root.is_shared_machine_operand()
@@ -2834,19 +2852,28 @@ fn collect_memory_read_descriptor(
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
-    let (memory, pointer, kind) = operand.read().expect("read descriptor");
+    let (point, pointer, kind) = operand.read_point().expect("read descriptor");
     // Produced reads own an access width and observation point. Their numeric
     // interpretation can be wider (byte promotion) without widening the read.
     // Explicit unmaterialized descriptors retain their caller-supplied width.
-    let observation = crate::kernel::eval::is_selected_scalar_read(memory, pointer, kind)
+    let observation = crate::kernel::eval::is_selected_scalar_read(point, pointer, kind)
         .then(|| crate::kernel::eval::scalar_read_observation(operand).expect("selected read"));
     let memory = observation
         .as_ref()
-        .map(|read| read.origin.as_ref().unwrap_or(&read.memory))
-        .unwrap_or(memory);
-    let width = observation.as_ref().map(|read| read.bytes).or(width);
+        .map(|read| read.origin.as_ref().unwrap_or(read.point.shared_memory()))
+        .unwrap_or(point.shared_memory());
     if MemoryStateIdentity::of(memory.memory()) == MemoryStateIdentity::of(current_memory) {
-        let width = width
+        // A point-named read can have a typed access width even when it did
+        // not go through legacy comparison selection. In particular, a
+        // byte read can occur inside a four-byte comparison carrier.
+        let width = observation
+            .as_ref()
+            .map(|read| read.bytes)
+            .or_else(|| {
+                point.read_version_id()?;
+                crate::kernel::eval::observed_scalar_read_width(point, pointer, kind)
+            })
+            .or(width)
             .ok_or_else(|| "current memory load has no statically known byte width".to_string())?;
         loads.push((pointer.clone(), width));
     }
@@ -3284,9 +3311,20 @@ fn collect_shared_machine_memory_loads(
             seen_integers,
         );
     };
+    collect_shared_machine_root_memory_loads(root, current_memory, loads, width, seen_integers)
+}
+
+fn collect_shared_machine_root_memory_loads(
+    root: &KernelTerm,
+    current_memory: &SymbolicMemory,
+    loads: &mut Vec<(Address, u32)>,
+    width: Option<u32>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
+    let operand = MachineOperandView::Shared(root);
     // A selected root leaf has no shared arithmetic to summarize. Resolve it
     // directly using the existing width/state/registry rules.
-    if let Some(leaf) = value.operand_view().read_source() {
+    if let Some(leaf) = operand.read_source() {
         return collect_bitvector_memory_loads_with_width(
             &leaf,
             current_memory,
@@ -3295,7 +3333,7 @@ fn collect_shared_machine_memory_loads(
             seen_integers,
         );
     }
-    if value.operand_view().literal().is_some() {
+    if operand.literal().is_some() {
         return Ok(());
     }
     collect_shared_read_memory_loads(root, current_memory, loads, width, seen_integers)?;
@@ -3575,7 +3613,7 @@ fn decided_algebraic_if(proposition: &Proposition) -> Option<(ConditionTerm, boo
         value,
         Proposition::Equal(
             Term::Algebraic(selected.as_ref().clone().into()),
-            Term::Algebraic(constructor.clone().into()),
+            Term::Algebraic(constructor.clone()),
         ),
     ))
 }

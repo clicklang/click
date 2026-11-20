@@ -1,7 +1,5 @@
 src/kernel/loans.rs	legacy-bridge	::memory_range_aliases	loan_aliases	1
-src/kernel/loans.rs	legacy-bridge	LoanLedger::permits_memory_access_with_assumptions	loan_access	1
 src/kernel/loans.rs	legacy-caller	::protected_range_proven_overlapping_with_separation	memory_range_aliases	2
-src/kernel/loans/legacy_search.rs	search	ProofSearch::loan_access	memory_range_aliases	1
 src/kernel/primitives/resource_algebra.rs	legacy-bridge	ResourceContext::owned_validity_candidates	ownership_validity_candidates	1
 src/kernel/primitives/resource_algebra.rs	legacy-caller	ResourceContext::validity_error_with_separation	owned_validity_candidates	1
 src/kernel/search/proposition_search.rs	search	ProofSearch::derive_and_rule	derive_proposition_using	2
