@@ -24,5 +24,5 @@ int32 compare4(const uint8* a, const uint8* b) {
 ```
 
 ```expect
-fail: the required loan backing or binding is missing refused during planning; selected resource `views a[0..4]`
+fail: cannot supply `views a[0..4]` at this call
 ```

@@ -33,5 +33,5 @@ uint64 measure(const char* src, uint64 n) {
 ```
 
 ```expect
-fail: selected resource `views cstr_at(src, n + 1u64)`
+fail: `views cstr_at(src, n + 1u64)`
 ```

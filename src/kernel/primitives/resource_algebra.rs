@@ -4627,6 +4627,17 @@ impl ResourceContext {
             })
     }
 
+    /// Resolve an already selected diagnostic view to a unique exact occurrence.
+    pub(crate) fn exact_diagnostic_view(
+        &self,
+        view: &ResourceFact,
+    ) -> Option<ResourceOccurrenceId> {
+        crate::instrumentation::record_deterministic_work(1);
+        let entries = self.storage.index.exact.get(view)?;
+        (view.is_view() && entries.len() == 1)
+            .then(|| self.occurrence(*entries.iter().next().expect("singleton view bucket")))
+    }
+
     /// The live owned support a projected view occurrence was published
     /// from, when `occurrence` is such a projection. A projection carries no
     /// loan of its own: its authority is the exact owned occurrence it is

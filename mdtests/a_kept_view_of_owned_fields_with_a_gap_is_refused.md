@@ -29,5 +29,5 @@ void keep(struct S* p) {
 ```
 
 ```expect
-fail: stable-view the required loan backing or binding is missing refused during planning
+fail: The caller needs an owner or a live view that covers it.
 ```

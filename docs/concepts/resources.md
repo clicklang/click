@@ -1154,11 +1154,15 @@ backing that the caller can recover directly when the borrow ends.
 
 Each produced cursor keeps its own hold on the input. Unfolding moves the hold
 to its viewed pieces, and refolding those pieces together moves it back to
-the new head. Consuming
-one cursor leaves the other cursors' holds live. Once the last hold is gone,
-the caller can recover its original ownership. For contracts with unannotated
+the new head. Consuming one cursor leaves the other cursors' holds live.
+Once the last hold is gone, the caller can recover its original ownership. For contracts with unannotated
 borrowing composites, Click still infers backing when it can identify a
 unique source.
+
+On a failed return, the borrow diagnostic can name the output, the selected
+input view, and the viewed piece it does not cover. A blocked write can name
+the resource keeping the view live. When the caller directly holds a produced
+memory view, `release_view` gives it up after its last use.
 
 Members of an `authorized` family are the exception: they carry no body, so
 folding one places no hold, and lending one member of a quantity leaves the

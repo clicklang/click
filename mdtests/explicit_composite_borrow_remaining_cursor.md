@@ -42,5 +42,5 @@ void use(int32* p) {
 ```
 
 ```expect
-fail: write ownership required
+fail: borrow: `cursor(2, p)` keeps this view live
 ```

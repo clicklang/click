@@ -27,5 +27,5 @@ void caller(int* p) {
 } by { step_until(function.exit); solve(); }
 ```
 ```expect
-fail:stable-view a required resource overlaps a live borrowed footprint refused during planning
+fail:A required resource overlaps a live borrow.
 ```

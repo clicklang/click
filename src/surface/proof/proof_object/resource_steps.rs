@@ -353,7 +353,12 @@ impl<'a> Proof<'a> {
         let successor = execution
             .core
             .record_view_release(&selected, facts.assumptions())
-            .map_err(|error| self.step_error(error))?;
+            .map_err(|error| {
+                self.step_error(format!(
+                    "cannot release `{}`. {error}",
+                    crate::surface::validation::describe_resource_clause(resource),
+                ))
+            })?;
         execution.core.state = successor.into();
         let branch = self
             .focused_branch()

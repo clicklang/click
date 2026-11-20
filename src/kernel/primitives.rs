@@ -8030,6 +8030,27 @@ pub struct WideRangeNoWrap {
     pub factor: u64,
 }
 
+/// Source-level evidence for a refused returned borrow. These are the
+/// resources the checker already selected, retained only on refusal.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ReturnedBorrowRefusal {
+    pub output: ResourceFact,
+    pub reason: ReturnedBorrowReason,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum ReturnedBorrowReason {
+    UnevaluableSource,
+    InactiveSource,
+    UnrecoverableSource(ResourceFact),
+    UncoveredView {
+        source: ResourceFact,
+        viewed: ResourceFact,
+    },
+    MissingOutput,
+    MissingHold(ResourceFact),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum RuntimeError {
     UnboundVariable(String),
@@ -8097,6 +8118,7 @@ pub enum RuntimeError {
     UnbackedReturnedView {
         view: Box<ResourceFact>,
     },
+    ReturnedBorrow(Box<ReturnedBorrowRefusal>),
     MissingVerifiedFunctionRule(String),
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
