@@ -27,7 +27,7 @@ struct node* list_prepend(int32 value, struct node* tail) {
     ensures result != tail implies result->value == value;
     ensures result != tail implies result->next == tail;
 } by {
-    step_until(statement(1));
+    step_until(statement(1).entry);
     if node == 0 {
         step_until(function.exit);
     } else {

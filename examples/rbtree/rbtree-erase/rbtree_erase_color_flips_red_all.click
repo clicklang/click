@@ -1373,7 +1373,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
         apply(ctx_reroot_fixed(c.model, parent)) using { ctx_node_is(c.model, parent) == 1; };
         known();
     }
-    step_until(loop(0));
+    step_until(loop(0).entry);
     have node == 0;
     let t = fold(rb_at(node), { model: RbTree::Empty });
     have is_rb(t.model) == 1 by { rewrite(t.model, RbTree::Empty); unfold(is_rb(RbTree::Empty)); normalize(); }
@@ -2064,7 +2064,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             let near_call_left = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(iid->rb_left) });
                                                             let near_call_right = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(parent) });
                                                             let unchanged_parent_tag = fold(rb_context_tag(parent, above), { color: pc });
-                                                            step(rb_set_parent, {});
+                                                            step(rb_set_parent);
                                                             unfold(unchanged_parent_tag);
                                                             unfold(near_call_left);
                                                             unfold(near_call_right);
@@ -2263,7 +2263,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                         mark near_tag;
                                                         step(); // Select the nonempty near-child parent update.
-                                                        step(rb_set_parent, {});
+                                                        step(rb_set_parent);
                                                         have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
                                                             solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                         }
@@ -3036,7 +3036,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     let near_call_left = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(iid->rb_left) });
                                                                     let near_call_right = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(parent) });
                                                                     let unchanged_parent_tag = fold(rb_context_tag(parent, sid), { color: Color::Red });
-                                                                    step(rb_set_parent, {});
+                                                                    step(rb_set_parent);
                                                                     unfold(unchanged_parent_tag);
                                                                     unfold(near_call_left);
                                                                     unfold(near_call_right);
@@ -3224,7 +3224,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                                 mark near_tag;
                                                                 step(); // Select the nonempty near-child parent update.
-                                                                step(rb_set_parent, {});
+                                                                step(rb_set_parent);
                                                                 have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
                                                                     solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                                 }
@@ -3970,7 +3970,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             let near_call_left = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(parent) });
                                                             let near_call_right = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(iid->rb_right) });
                                                             let unchanged_parent_tag = fold(rb_context_tag(parent, above), { color: pc });
-                                                            step(rb_set_parent, {});
+                                                            step(rb_set_parent);
                                                             unfold(unchanged_parent_tag);
                                                             unfold(near_call_left);
                                                             unfold(near_call_right);
@@ -4169,7 +4169,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                         mark near_tag;
                                                         step(); // Select the nonempty near-child parent update.
-                                                        step(rb_set_parent, {});
+                                                        step(rb_set_parent);
                                                         have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
                                                             solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                         }
@@ -4940,7 +4940,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     let near_call_left = fold(rb_saved_link(&iid->rb_left), { model: RbSavedLink::Link(parent) });
                                                                     let near_call_right = fold(rb_saved_link(&iid->rb_right), { model: RbSavedLink::Link(iid->rb_right) });
                                                                     let unchanged_parent_tag = fold(rb_context_tag(parent, sid), { color: Color::Red });
-                                                                    step(rb_set_parent, {});
+                                                                    step(rb_set_parent);
                                                                     unfold(unchanged_parent_tag);
                                                                     unfold(near_call_left);
                                                                     unfold(near_call_right);
@@ -5128,7 +5128,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 have (tmp2->__rb_parent_color & 1) == color_bit(nc);
                                                                 mark near_tag;
                                                                 step(); // Select the nonempty near-child parent update.
-                                                                step(rb_set_parent, {});
+                                                                step(rb_set_parent);
                                                                 have ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent by {
                                                                     solve() using { aligned(parent, 8); aligned(parent, 8) implies ((tmp2->__rb_parent_color & ~3) as (struct rb_node *)) == parent; };
                                                                 }

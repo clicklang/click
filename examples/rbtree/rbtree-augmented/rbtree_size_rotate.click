@@ -35,7 +35,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     unfold(source);
     unfold(target);
     // Both container_of expansions, then the metadata copy.
-    step_until(statement(2));
+    step_until(statement(2).entry);
     have old->size == old(source.value);
     have separate(memory(old->size), memory(new->size));
     have old->rb.rb_left != rb_old;

@@ -20,7 +20,7 @@ theorem immediate_successor_child(successor: struct rb_node*, child: struct rb_n
             unfold(is_rb(RbTree::Empty));
             unfold(black_height(RbTree::Empty));
             unfold(rb_root_black(RbTree::Empty));
-            normalize();
+            known();
         }
         have ctx_rb(Context::Top, black_height(RbTree::Node(successor, above, Color::Black, RbTree::Empty,
             RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty))),
@@ -32,17 +32,17 @@ theorem immediate_successor_child(successor: struct rb_node*, child: struct rb_n
                 successor, Color::Red, RbTree::Empty, RbTree::Empty)))));
             unfold(rb_color(RbTree::Node(successor, above, Color::Black, RbTree::Empty, RbTree::Node(child,
                 successor, Color::Red, RbTree::Empty, RbTree::Empty))));
-            unfold(color_black(Color::Black)); normalize();
+            unfold(color_black(Color::Black)); known();
         }
         have rb_minimum(RbTree::Node(successor, above, Color::Black, RbTree::Empty, RbTree::Node(child,
             successor, Color::Red, RbTree::Empty, RbTree::Empty))) ==
         RbMinimum::Found(successor, Color::Black, RbTree::Node(child, successor, Color::Red, RbTree::Empty,
             RbTree::Empty)) by {
             unfold(rb_minimum(RbTree::Node(successor, above, Color::Black, RbTree::Empty,
-                RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty)))); normalize();
+                RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty)))); known();
         }
         have not(RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty) == RbTree::Empty)
-            by { normalize(); }
+            by { known(); }
         apply(rb_minimum_child_blackens_without_deficit(RbTree::Node(successor, above, Color::Black,
             RbTree::Empty, RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty)),
             Context::Top, successor, Color::Black, RbTree::Node(child, successor, Color::Red, RbTree::Empty,
@@ -85,7 +85,7 @@ theorem deep_successor_child(successor: struct rb_node*, child: struct rb_node*,
             unfold(is_rb(RbTree::Empty));
             unfold(black_height(RbTree::Empty));
             unfold(rb_root_black(RbTree::Empty));
-            normalize();
+            known();
         }
         have ctx_rb(Context::Top, black_height(RbTree::Node(r, above, Color::Black, RbTree::Node(successor,
             r, Color::Black, RbTree::Empty, RbTree::Node(child, successor, Color::Red, RbTree::Empty,
@@ -103,7 +103,7 @@ theorem deep_successor_child(successor: struct rb_node*, child: struct rb_node*,
             unfold(rb_color(RbTree::Node(r, above, Color::Black, RbTree::Node(successor, r, Color::Black,
                 RbTree::Empty, RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty)),
                 RbTree::Node(far, r, Color::Black, RbTree::Empty, RbTree::Empty))));
-            unfold(color_black(Color::Black)); normalize();
+            unfold(color_black(Color::Black)); known();
         }
         have rb_minimum(RbTree::Node(r, above, Color::Black, RbTree::Node(successor, r, Color::Black,
             RbTree::Empty, RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty)),
@@ -114,10 +114,10 @@ theorem deep_successor_child(successor: struct rb_node*, child: struct rb_node*,
                 RbTree::Empty, RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty)),
                 RbTree::Node(far, r, Color::Black, RbTree::Empty, RbTree::Empty))));
             unfold(rb_minimum(RbTree::Node(successor, r, Color::Black, RbTree::Empty, RbTree::Node(child,
-                successor, Color::Red, RbTree::Empty, RbTree::Empty)))); normalize();
+                successor, Color::Red, RbTree::Empty, RbTree::Empty)))); known();
         }
         have not(RbTree::Node(child, successor, Color::Red, RbTree::Empty, RbTree::Empty) == RbTree::Empty)
-            by { normalize(); }
+            by { known(); }
         apply(rb_minimum_child_blackens_without_deficit(RbTree::Node(r, above, Color::Black,
             RbTree::Node(successor, r, Color::Black, RbTree::Empty, RbTree::Node(child, successor,
             Color::Red, RbTree::Empty, RbTree::Empty)), RbTree::Node(far, r, Color::Black, RbTree::Empty,

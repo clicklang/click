@@ -34,7 +34,7 @@ int32 shared_for(int32 n) {
     requires n >= 0;
     ensures result == 0;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n;
         invariant n >= 0;
@@ -96,7 +96,7 @@ int32 shared_do(int32 n) {
     requires n > 0;
     ensures result == 0;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n;
         invariant n > 0;

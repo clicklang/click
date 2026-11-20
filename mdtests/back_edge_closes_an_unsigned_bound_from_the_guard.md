@@ -23,7 +23,7 @@ verifying "count.c";
 uint64 count(uint64 n) {
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
         invariant i <= n;

@@ -90,7 +90,7 @@ int32 tree_leaf_pipeline(struct node* node, int32 value) {
     ensures node->left == 0;
     ensures node->right == 0;
 } by {
-    step_until(statement(8));
+    step_until(statement(8).entry);
     unfold(tree(node));
     step();
     have at(statement(8).call(0).exit, defined(node->left)) by { known(); }

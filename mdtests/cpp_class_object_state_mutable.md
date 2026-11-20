@@ -67,7 +67,7 @@ int caller(Square& square, int delta, int half) {
     requires 0 <= square.side and square.side <= 1000;
     ensures result == half + half;
 } by {
-    let { __object_object: packed } = step(Square__click_pack__Shape, {});
+    let { __object_object: packed } = step(Square__click_pack__Shape);
 }
 ```
 

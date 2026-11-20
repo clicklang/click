@@ -26,7 +26,7 @@ uint64 f(uint64 b) {
     requires b <= 18446744073709u64;
     ensures true;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases b;
         invariant 1u64 <= b;
@@ -48,7 +48,7 @@ uint64 f(uint64 b) {
             cases {
                 i == 0 and b <= 18446744073709u64 => {
                     mark head;
-                    step_until(back_edge());
+                    step_until(loop.back_edge);
                     have 4294967296u64 <= at(head, b);
                     have at(head, b) <= 18446744073709u64 by { solve(); }
                     have 1u64 <= at(head, b) / 1000u64;
@@ -58,7 +58,7 @@ uint64 f(uint64 b) {
                 }
                 i == 1 and b <= 18446744073u64 => {
                     mark head;
-                    step_until(back_edge());
+                    step_until(loop.back_edge);
                     have 4294967296u64 <= at(head, b);
                     have at(head, b) <= 18446744073u64 by { solve(); }
                     have 1u64 <= at(head, b) / 1000u64;

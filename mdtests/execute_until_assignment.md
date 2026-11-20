@@ -21,10 +21,10 @@ verifying "assignment.c";
 int32 stored() {
     ensures result == 4;
 } by {
-    step_until(assignment(x, 0));
+    step_until(assignment(x, 0).entry);
     step();
     have x == 3;
-    step_until(assignment(x, 1));
+    step_until(assignment(x, 1).entry);
     have x == 3;
     step();
     have x == 4;

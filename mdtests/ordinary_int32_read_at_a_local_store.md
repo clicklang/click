@@ -21,7 +21,7 @@ verifying "local_reads.c";
 int32 read(int32 value) {
     ensures result == value;
 } by {
-    step_until(statement(5));
+    step_until(statement(5).entry);
     mark written;
     step();
     have *p == value by solve();

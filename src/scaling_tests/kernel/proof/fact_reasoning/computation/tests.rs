@@ -218,7 +218,7 @@ fn computation_refusal_is_independent_of_memory_history() {
         assert!(!computes_leaf(&Proposition::MemoryLoadable {
             memory: before.memory().clone(),
             base: pointer,
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (MachineTerm::constant(5)).into(),
             wide: false,
         }));
     }

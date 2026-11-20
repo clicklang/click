@@ -5140,7 +5140,7 @@ mod tests {
             // body's first byte read is one read later.
             let sidecar = include_str!("../../../design/charon-trial/chunks/chunks.click");
             let sidecar = if duplicate {
-                sidecar.replace("step_until(read(1))", "step_until(read(2))")
+                sidecar.replace("step_until(read(1).entry)", "step_until(read(2).entry)")
             } else {
                 sidecar.to_string()
             };

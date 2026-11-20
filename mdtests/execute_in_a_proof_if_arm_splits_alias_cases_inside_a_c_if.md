@@ -38,7 +38,7 @@ int32 f(int32 u, int32 w) {
     step();
     if buf == 0 {
     } else {
-        step_until(statement(5));
+        step_until(statement(5).entry);
         have buf[0] == 3 by normalize();
         mark before_store;
         step();

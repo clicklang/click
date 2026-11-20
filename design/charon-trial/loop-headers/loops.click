@@ -4,7 +4,7 @@ fn count(n: i32) -> i32 {
     requires n >= 0;
     ensures result == n;
 } by {
-    step_until(region(4));
+    step_until(region(4).entry);
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;
@@ -17,7 +17,7 @@ fn accumulate(n: i32, value: i32) -> i32 {
     requires value == 1;
     ensures result == n;
 } by {
-    step_until(region(7));
+    step_until(region(7).entry);
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;
@@ -31,7 +31,7 @@ fn walk(bytes: &[u8]) -> usize {
     views bytes[0..(bytes.len() as int32)];
     ensures result == bytes.len();
 } by {
-    step_until(region(4));
+    step_until(region(4).entry);
     loop {
         decreases bytes.len() - i;
         invariant i <= bytes.len();

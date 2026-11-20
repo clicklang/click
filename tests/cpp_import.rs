@@ -17183,7 +17183,7 @@ int32 run(int32& value) { owns value; ensures result == 1; ensures value == 1; }
             "`r` is a reference and names the value it refers to, so it takes no index",
         ),
         (
-            "step_until(assignment(r, 0)); step_until(function.exit); solve();",
+            "step_until(assignment(r, 0).entry); step_until(function.exit); solve();",
             "`r` is a reference, and binding a reference is not an assignment",
         ),
     ] {
@@ -20836,7 +20836,7 @@ int32 probe(struct Sink& sink, int32 input) {
     assert!(!expanded.contains(".temporary("), "{expanded}");
     let explicit_materialization = source.replace(
         "    ensures sink.total == input;\n}\nint32 probe(",
-        "    ensures sink.total == input;\n} by {\n    step_until(call(0));\n    have byte_offset(region(0).result, 0) == region(0).result;\n    step(); step();\n    have region(0).result == region(2).result;\n    have region(2).result.value == input;\n}\nint32 probe(",
+        "    ensures sink.total == input;\n} by {\n    step_until(call(0).entry);\n    have byte_offset(region(0).result, 0) == region(0).result;\n    step(); step();\n    have region(0).result == region(2).result;\n    have region(2).result.value == input;\n}\nint32 probe(",
     );
     assert_ne!(explicit_materialization, source);
     let explicit_project = parsed.with_entry_source(explicit_materialization);

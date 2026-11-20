@@ -3679,7 +3679,7 @@ fn stores_beside_many_owned_ranges(size: usize) -> (String, String) {
     // per-store composition query, and `size` claims about `size` stores
     // would be quadratic before the query is ever reached.
     click_source.push_str(
-        "    produces MaybeCell(result);\n    ensures result != 0 implies value[0] == result[0];\n} by {\n    apply(lift(acquire));\n    step();\n    step(Boxed);\n    step_until(assignment(cell, 0));\n    step();\n    if c(cell) != 0 {\n        unfold(MaybeCell(c(cell)));\n        unfold(Cell(c(cell)));\n        step_until(function.exit);\n        fold(Cell(result));\n        fold(MaybeCell(result));\n        solve();\n    } else {\n        unfold(MaybeCell(c(cell)));\n        step_until(function.exit);\n        fold(MaybeCell(result));\n        solve();\n    }\n}\n",
+        "    produces MaybeCell(result);\n    ensures result != 0 implies value[0] == result[0];\n} by {\n    apply(lift(acquire));\n    step();\n    step(Boxed);\n    step_until(assignment(cell, 0).entry);\n    step();\n    if c(cell) != 0 {\n        unfold(MaybeCell(c(cell)));\n        unfold(Cell(c(cell)));\n        step_until(function.exit);\n        fold(Cell(result));\n        fold(MaybeCell(result));\n        solve();\n    } else {\n        unfold(MaybeCell(c(cell)));\n        step_until(function.exit);\n        fold(MaybeCell(result));\n        solve();\n    }\n}\n",
     );
     (c_source, click_source)
 }
@@ -8447,7 +8447,7 @@ void narrow(const uint8* bytes, int32 index) {
  views bytes[0..22208];
  ensures 0 == 0;
 } by {
- step_until(assignment(unrelated, 0)); step();
+ step_until(assignment(unrelated, 0).entry); step();
  have 0 <= index by { known(); }
  have to_integer(index + 4) <= 22208 by { solve() using { 0 <= index; index <= 22204; } }
  have to_integer(index) <= to_integer(index + 4) by { solve() using { 0 <= index; index <= 22204; to_integer(index + 4) <= 22208; } }
@@ -8670,7 +8670,7 @@ fn repeated_retain_project(count: usize) -> (String, String) {
         "{declarations}verifying \"retain.c\";\n\n{retain}void retain_many(struct child* obj) {{\n    requires count(child_ref(obj)) < {};\n    owns child_control(obj);\n    owns child_ref(obj);\n{}}} by {{\n{}    step();\n    solve();\n}}\n",
         2147483647 - count,
         "    produces child_ref(obj);\n".repeat(count),
-        "    step(child_retain, {});\n".repeat(count),
+        "    step(child_retain);\n".repeat(count),
     );
     (c_source, click_source)
 }
@@ -9745,6 +9745,80 @@ fn branch_view_entry_loadability_ignores_prior_effects() {
             "changing the length of the store history at slot {slot} changed entry-loadability work: {samples:?}",
         );
     }
+}
+
+#[test]
+fn scalar_read_after_branch_ignores_other_slots_on_its_line() {
+    use crate::instrumentation::{VerificationEvent, collect};
+
+    let c = "int32 bump(int32* p, int32 x) {
+        int32 scratch;
+        if (x >= 0) { p[0] = x; } else { p[0] = 0; }
+        p[0] = p[0] + 1;
+        return p[0];
+    }";
+    let samples = [4, 16, 64].map(|size| {
+        let owners = (1..=size)
+            .map(|i| format!("owns p[{}..{}];\n", 2 * i, 2 * i + 1))
+            .collect::<String>();
+        let proof = format!(
+            r#"verifying "bump.c";
+            int32 bump(int32* p, int32 x) {{
+                requires x < 2147483647;
+                owns p[0..1];
+                {owners}
+                ensures result > 0 by {{
+                    step();
+                    branch ensuring {{
+                        fact p[0] >= 0;
+                        fact p[0] < 2147483647;
+                        owns p[0..1];
+                    }} {{
+                        true => {{ step(); }}
+                        false => {{ step(); }}
+                    }}
+                    step();
+                    step();
+                    solve();
+                }}
+            }}"#
+        );
+        let (verified, events) = collect(|| verify_c_sources(&proof, &[("bump.c", c)]));
+        verified.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
+        let increment = |tactic: &crate::instrumentation::TacticEvent| {
+            tactic.tactic_name == "step" && tactic.statement_index == 4
+        };
+        let mut in_increment = false;
+        let mut scans = Vec::new();
+        for event in events {
+            match event {
+                VerificationEvent::TacticStarted(tactic) if increment(&tactic) => {
+                    in_increment = true;
+                }
+                VerificationEvent::TacticFinished { tactic, .. } if increment(&tactic) => {
+                    break;
+                }
+                VerificationEvent::OperationFinished { name, work, .. } if in_increment => {
+                    assert_ne!(name, "memory load: distinct-cell reduction");
+                    if name == "memory load: equal-cell scan" {
+                        scans.push(work);
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert!(in_increment, "the explicit increment step must run");
+        scans
+    });
+    assert_eq!(
+        samples[0].len(),
+        1,
+        "the increment must read the joined cell"
+    );
+    assert!(
+        samples[0][0] <= 16 && samples.iter().all(|sample| *sample == samples[0]),
+        "the read must seek past disjoint same-line slots: {samples:?}"
+    );
 }
 
 #[test]

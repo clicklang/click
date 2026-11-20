@@ -1191,7 +1191,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                 rewrite((mid->__rb_parent_color & 1), color_bit(mc));
                                                                 rewrite(color_bit(mc), 1); normalize();
                                                             }
-                                                            step_until(statement(4).statement(5).statement(15));
+                                                            step_until(statement(4).statement(5).statement(15).entry);
                                                             mark before_copying_tag;
                                                             have ((pc & ~3) as (struct rb_node *)) == parent_model by known();
                                                             step();
@@ -1200,7 +1200,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             let transplanted_tag = fold(erase_saved_parent(successor, parent_model), {
                                                                 word: at(before_copying_tag, pc), color: color
                                                             });
-                                                            step_until(statement(5));
+                                                            step_until(statement(5).entry);
                                                             have tmp == mid;
                                                             let hole = fold(rb_at(0), { model: RbTree::Empty });
                                                             have parent->rb_left == 0;
@@ -2104,7 +2104,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                         normalize();
                                                                     }
                                                                     have child2 == 0;
-                                                                    step_until(statement(4).statement(5).statement(15));
+                                                                    step_until(statement(4).statement(5).statement(15).entry);
                                                                     mark before_copying_tag;
                                                                     have ((pc & ~3) as (struct rb_node *)) == parent_model by known();
                                                                     step();
@@ -2113,7 +2113,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                     let transplanted_tag = fold(erase_saved_parent(successor, parent_model), {
                                                                         word: at(before_copying_tag, pc), color: color
                                                                     });
-                                                                    step_until(statement(5));
+                                                                    step_until(statement(5).entry);
                                                                     let moved_child = fold(rb_at(0), { model: RbTree::Empty });
                                                                     have moved_child.model == rb_reparent(rb_recolor(mr, Color::Black), mp) by {
                                                                         rewrite(mr, RbTree::Empty);
@@ -2152,7 +2152,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                     }
 
                                                                     let moved_child = fold(rb_at(child2), { model: RbTree::Node(cid, mp, Color::Black, cl, cr), left: child_left, right: child_right });
-                                                                    step_until(statement(4).statement(5).statement(15));
+                                                                    step_until(statement(4).statement(5).statement(15).entry);
                                                                     mark before_copying_tag;
                                                                     have ((pc & ~3) as (struct rb_node *)) == parent_model by known();
                                                                     step();
@@ -2161,7 +2161,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                                     let transplanted_tag = fold(erase_saved_parent(successor, parent_model), {
                                                                         word: at(before_copying_tag, pc), color: color
                                                                     });
-                                                                    step_until(statement(5));
+                                                                    step_until(statement(5).entry);
                                                                     unfold(retained_detached);
                                                                     have parent->rb_left == cid by known();
                                                                     have moved_child.model == rb_reparent(rb_recolor(mr, Color::Black), mp) by {
@@ -2369,7 +2369,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                         rewrite((node->__rb_parent_color & 1), color_bit(erased_color));
                                         rewrite(erased_color, Color::Black); unfold(color_bit(Color::Black)); normalize();
                                     }
-                                    step_until(region(10));
+                                    step_until(region(10).entry);
                                     have parent == erased_parent;
                                     have ctx_node_is(up.model, parent) == 1;
                                     let { links: incoming, frame: outer_frame } = detach_erase_links(node, parent, root, { before: up });
@@ -2563,7 +2563,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                         rewrite((node->__rb_parent_color & 1), color_bit(erased_color));
                                         rewrite(erased_color, Color::Red); unfold(color_bit(Color::Red)); normalize();
                                     }
-                                    step_until(region(10));
+                                    step_until(region(10).entry);
                                     have ctx_node_is(up.model, parent) == 1;
                                     let { links: incoming, frame: outer_frame } = detach_erase_links(node, parent, root, { before: up });
                                     observe(erase_callbacks(augment));
@@ -2679,7 +2679,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                             }
                             have (old(node->__rb_parent_color) & 1) == 1 by { rewrite(old(node->__rb_parent_color), node->__rb_parent_color); known(); }
                             open(erase_callbacks(augment)) {
-                                step_until(statement(4).statement(2));
+                                step_until(statement(4).statement(2).entry);
                                 have ctx_node_is(up.model, parent) == 1;
                                 let { links: incoming, frame: outer_frame } = detach_erase_links(node, parent, root, { before: up });
                                 observe(erase_callbacks(augment));
@@ -2742,7 +2742,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                     rewrite(rb_reparent(rb_recolor(erased_right, Color::Black), erased_parent), RbTree::Node(er_id, erased_parent, Color::Black, er_left, er_right));
                                     normalize();
                                 }
-                                step_until(statement(5));
+                                step_until(statement(5).entry);
                                 have ErasePropagate(augment->propagate) by known();
                                 step(ErasePropagate);
                                 step();
@@ -2834,10 +2834,10 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                 rewrite(erased_color, Color::Black); unfold(color_bit(Color::Black)); normalize();
                             }
                             have (old(node->__rb_parent_color) & 1) == 1 by { rewrite(old(node->__rb_parent_color), node->__rb_parent_color); known(); }
-                            step_until(statement(4).statement(5).statement(0));
+                            step_until(statement(4).statement(5).statement(0).entry);
                             have *((&node->__rb_parent_color) as (int32**)) == at(erased_left_tag, *((&node->__rb_parent_color) as (int32**))) by known();
                             have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == erased_parent by known();
-                            step_until(call(__rb_change_child, 1));
+                            step_until(call(__rb_change_child, 1).entry);
                             have tmp == el_id by known();
                             have tmp->__rb_parent_color == pc by known();
                             have ((tmp->__rb_parent_color & ~3) as (struct rb_node *)) == erased_parent by known();
@@ -2998,7 +2998,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     let left_color = fold(erase_saved_color(el_id), { color: el_color });
                                                     mark before_left_splice;
                                                     let left_children = fold(erase_saved_children(el_id), { left: el_id->rb_left, right: el_id->rb_right });
-                                                    open(erase_callbacks(augment)) { step_until(assignment(tmp, 5)); }
+                                                    open(erase_callbacks(augment)) { step_until(assignment(tmp, 5).entry); }
                                                     unfold(old_left);
                                                     have node->rb_left == el_id by known();
                                                     step(); step();
@@ -3057,7 +3057,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     have rb_parent_is(RbTree::Empty, er_id) == 1 by { unfold(rb_parent_is(RbTree::Empty, er_id)); normalize(); }
                                                     unfold(erased_tag);
                                                     have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == erased_parent by known();
-                                                    step_until(call(__rb_change_child, 2));
+                                                    step_until(call(__rb_change_child, 2).entry);
                                                     have tmp == erased_parent;
                                                     mark transplant;
                                                     have ctx_node_is(up.model, tmp) == 1;
@@ -3086,14 +3086,14 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                         rewrite(er_color, Color::Red);
                                                         unfold(color_bit(Color::Red)); normalize();
                                                     }
-                                                    step_until(statement(4).statement(5).statement(15));
+                                                    step_until(statement(4).statement(5).statement(15).entry);
                                                     mark before_copying_tag;
                                                     have ((pc & ~3) as (struct rb_node *)) == erased_parent by known();
                                                     step();
                                                     have successor->__rb_parent_color == at(before_copying_tag, pc) by known();
                                                     have ((successor->__rb_parent_color & ~3) as (struct rb_node *)) == erased_parent by known();
                                                     let replacement_tag = fold(erase_saved_parent(successor, erased_parent), { word: at(before_copying_tag, pc), color: erased_color });
-                                                    step_until(statement(5));
+                                                    step_until(statement(5).entry);
                                                     unfold(successor_links);
                                                     unfold(replacement_tag);
                                                     have tmp == er_id by known();
@@ -3255,7 +3255,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     let left_color = fold(erase_saved_color(el_id), { color: el_color });
                                                     mark before_left_splice;
                                                     let left_children = fold(erase_saved_children(el_id), { left: el_id->rb_left, right: el_id->rb_right });
-                                                    open(erase_callbacks(augment)) { step_until(assignment(tmp, 5)); }
+                                                    open(erase_callbacks(augment)) { step_until(assignment(tmp, 5).entry); }
                                                     unfold(old_left);
                                                     have node->rb_left == el_id by known();
                                                     step(); step();
@@ -3314,7 +3314,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                     have rb_parent_is(RbTree::Empty, er_id) == 1 by { unfold(rb_parent_is(RbTree::Empty, er_id)); normalize(); }
                                                     unfold(erased_tag);
                                                     have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == erased_parent by known();
-                                                    step_until(call(__rb_change_child, 2));
+                                                    step_until(call(__rb_change_child, 2).entry);
                                                     have tmp == erased_parent;
                                                     mark transplant;
                                                     have ctx_node_is(up.model, tmp) == 1;
@@ -3343,14 +3343,14 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                         rewrite(er_color, Color::Black);
                                                         unfold(color_bit(Color::Black)); normalize();
                                                     }
-                                                    step_until(statement(4).statement(5).statement(15));
+                                                    step_until(statement(4).statement(5).statement(15).entry);
                                                     mark before_copying_tag;
                                                     have ((pc & ~3) as (struct rb_node *)) == erased_parent by known();
                                                     step();
                                                     have successor->__rb_parent_color == at(before_copying_tag, pc) by known();
                                                     have ((successor->__rb_parent_color & ~3) as (struct rb_node *)) == erased_parent by known();
                                                     let replacement_tag = fold(erase_saved_parent(successor, erased_parent), { word: at(before_copying_tag, pc), color: erased_color });
-                                                    step_until(statement(5));
+                                                    step_until(statement(5).entry);
                                                     unfold(successor_links);
                                                     unfold(replacement_tag);
                                                     have tmp == er_id by known();
@@ -3539,7 +3539,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             let left_color = fold(erase_saved_color(el_id), { color: el_color });
                                             mark before_left_splice;
                                             let left_children = fold(erase_saved_children(el_id), { left: el_id->rb_left, right: el_id->rb_right });
-                                            open(erase_callbacks(augment)) { step_until(assignment(tmp, 5)); }
+                                            open(erase_callbacks(augment)) { step_until(assignment(tmp, 5).entry); }
                                             unfold(old_left);
                                             have node->rb_left == el_id by known();
                                             step(); step();
@@ -3595,7 +3595,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                             }
                                             unfold(erased_tag);
                                             have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == erased_parent by known();
-                                            step_until(call(__rb_change_child, 2));
+                                            step_until(call(__rb_change_child, 2).entry);
                                             have tmp == erased_parent;
                                             mark transplant;
                                             have ctx_node_is(up.model, tmp) == 1;
@@ -3638,14 +3638,14 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                 known();
                                             }
                                             let moved_right = fold(rb_at(child2), { model: RbTree::Node(ec_id, er_id, Color::Black, ec_left, ec_right), left: cleft, right: cright });
-                                            step_until(statement(4).statement(5).statement(15));
+                                            step_until(statement(4).statement(5).statement(15).entry);
                                             mark before_copying_tag;
                                             have ((pc & ~3) as (struct rb_node *)) == erased_parent by known();
                                             step();
                                             have successor->__rb_parent_color == at(before_copying_tag, pc) by known();
                                             have ((successor->__rb_parent_color & ~3) as (struct rb_node *)) == erased_parent by known();
                                             let replacement_tag = fold(erase_saved_parent(successor, erased_parent), { word: at(before_copying_tag, pc), color: erased_color });
-                                            step_until(statement(5));
+                                            step_until(statement(5).entry);
                                             unfold(successor_links);
                                             unfold(replacement_tag);
                                             have tmp == er_id by known();

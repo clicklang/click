@@ -11115,13 +11115,11 @@ fn composite_definition_facts_hold(
         for load in &path.facts {
             established = established.assume_proposition(load.proposition().clone());
         }
-        // The same exact routes a fold and a reassembled composite use
-        // (`assembled_composite_body_facts_hold`): a quantified fact the
-        // caller states is the body's up to its binder and the registered
-        // loads that binder names.
+        // The written clause must already hold at the call, including up
+        // to a quantified binder and its registered loads. Proofs can
+        // establish a different spelling explicitly before the call.
         if !(contract_refinement_proves(&established, &path.proposition)
-            || established.settles_exactly(&path.proposition)
-            || resource_body_fact_is_established(&established, &path.proposition)
+            || composite_view_body_fact_is_established(&established, &path.proposition)
             || string_literal_fact_holds(&path.proposition, &mut Vec::new()))
         {
             let source = definition.fact_source_spelling(index).map(|spelling| {
@@ -14792,6 +14790,18 @@ fn lower_selected_resource_body_clauses(
     Ok((records, retained_conditions))
 }
 
+/// The call checks an already established fact for the selected view body.
+/// A proof that needs alias substitution supplies the rewritten fact first.
+fn composite_view_body_fact_is_established(
+    established: &PureFactContext,
+    proposition: &Proposition,
+) -> bool {
+    #[cfg(test)]
+    let _fast = crate::kernel::search::FastOperationScope::enter("composite view body fact");
+    established.settles_exactly(proposition)
+        || required_obligation_is_exactly_discharged(established, proposition)
+}
+
 /// A fold body fact may name a memory load from before a disjoint call while
 /// the selected body is lowered against the post-call frame. Exact discharge
 /// remains the normal route; the checked pointer-load transport is the
@@ -17236,8 +17246,12 @@ pub(super) fn assembled_composite_body_facts_hold(
         let established = path.facts.iter().fold(assumptions.clone(), |facts, load| {
             facts.assume_proposition(load.proposition().clone())
         });
-        established.settles_exactly(&path.proposition)
-            || resource_body_fact_is_established(&established, &path.proposition)
+        if composite.is_view() {
+            composite_view_body_fact_is_established(&established, &path.proposition)
+        } else {
+            established.settles_exactly(&path.proposition)
+                || resource_body_fact_is_established(&established, &path.proposition)
+        }
     })
 }
 

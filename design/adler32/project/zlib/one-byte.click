@@ -16,17 +16,17 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
  ensures buf[0] == old(buf[0]);
  ensures to_integer(result) == adler_spec_checksum_u64(old(buf), 1u64, 1, 0);
 } by {
- step_until(assignment(adler, 0)); step();
+ step_until(assignment(adler, 0).entry); step();
  have adler == 1u64 by { solve(); }
  have sum2 == 0u64 by { solve(); }
  apply(zlib_byte_u64(buf[0]));
  have adler + buf[0] as uint64 < 65521u64 by { rewrite(adler, 1u64); solve() using { buf[0] as uint64 <= 255u64; }; }
- step_until(assignment(adler, 1)); step();
+ step_until(assignment(adler, 1).entry); step();
  have adler == 1u64 + buf[0] as uint32 as uint64 by { solve(); }
  have adler <= 256u64 by { solve() using { buf[0] as uint32 as uint64 <= 255u64; adler == 1u64 + buf[0] as uint32 as uint64; }; }
  have adler < 65521u64 by { solve() using { adler <= 256u64; }; }
  apply(integer::uint64_less_than_implies_not_greater_equal(adler, 65521u64));
- step_until(assignment(sum2, 1)); step();
+ step_until(assignment(sum2, 1).entry); step();
  have sum2 == adler by { solve(); }
  have sum2 <= 256u64 by { rewrite(sum2, adler); known(); }
  have sum2 < 65521u64 by { solve() using { sum2 <= 256u64; }; }

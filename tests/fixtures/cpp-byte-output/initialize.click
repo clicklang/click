@@ -12,7 +12,7 @@ void fill(uint8* p) {
 uint32 probe() {
     ensures result == 305419896u32;
 } by {
-    step_until(call(fill, 0));
+    step_until(call(fill, 0).entry);
     step();
     have ((&obj) as (uint8*))[0] == 120u8 by { known(); }
     have ((&obj) as (uint8*))[1] == 86u8 by { known(); }

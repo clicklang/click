@@ -34,7 +34,7 @@ void cleanup(int32* value) {
     owns *value;
     ensures *value == 42;
 } by {
-    step_until(statement(7));
+    step_until(statement(7).entry);
     have *second.slot == at(statement(6).entry, second.saved) by known();
     have at(statement(6).entry, second.saved) == 42 by known();
     have address(second.slot) == address(&first.saved) by known();

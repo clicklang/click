@@ -11,9 +11,9 @@ int32 identity(int32 x) { return x; }
 verifying "identity.c";
 int32 identity(int32 x) { ensures result == x; } by {
     if x == 0 {
-        step_until(region(0));
+        step_until(region(0).entry);
     } else {
-        step_until(region(0));
+        step_until(region(0).entry);
     }
 }
 ```

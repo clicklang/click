@@ -36,7 +36,7 @@ int32 call_field(struct pair input) {
 int32 constant_conditional(struct pair input) {
     ensures result == input.right;
 } by {
-    step_until(statement(1));
+    step_until(statement(1).entry);
     have statement(0).ternary(0).result.right == input.right;
 }
 int32 conditional_field(struct pair input, int32 choose) {
