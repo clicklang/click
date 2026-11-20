@@ -8617,6 +8617,15 @@ impl ResourceContext {
             crate::instrumentation::record_deterministic_work(1);
             let unit = self.fact(entry);
             if dbg {
+                let occurrence = self.occurrence(entry);
+                eprintln!(
+                    "DBG   reasons supported_by={:?} projections={} expansions={} loan={:?} witness={}",
+                    self.storage.supported_by.get(&entry),
+                    self.storage.projections_by_support_occurrence.contains_key(&occurrence),
+                    self.storage.expansions_by_support_occurrence.contains_key(&occurrence),
+                    self.loan_dependency(occurrence),
+                    self.structural_witnesses.as_ref().is_some_and(|w| w.contains(occurrence)),
+                );
                 eprintln!(
                     "DBG   cand eligible={} own={} same={} merged={:?}",
                     self.delta_normalization_eligible(entry),
