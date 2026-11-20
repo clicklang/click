@@ -2585,7 +2585,17 @@ impl<'a> Proof<'a> {
             "resource fold: apply selected fold",
         );
         let step = ProofStep::FoldResource(resource.clone());
-        let mut transition = {
+        let at_outcome = self.focused_outcome_data().is_some();
+        let transition = if at_outcome
+            && let ResourceClause::Declared { name, .. } = resource
+            && let ProofContext::Execution(context) = self.context.as_ref()
+            && context
+                .function
+                .contract_interface()
+                .is_ordinary_abstract_family(name)
+        {
+            self.apply_outcome_resource_construction(resource)?
+        } else {
             // Resolve proof bindings before either the execution or
             // outcome path interprets ordinary resource arguments.
             let source_resource = resource;
@@ -2604,18 +2614,20 @@ impl<'a> Proof<'a> {
                     _ => None,
                 })
                 .collect();
-            crate::surface::proof::surface_synthesis::with_proof_local_value_names(
-                named_values,
-                || {
-                    if self.focused_outcome_data().is_some() {
-                        self.apply_outcome_resource_fold(resource)
-                    } else {
-                        self.apply_execution_resource_fold(resource, source_resource)
-                    }
-                },
-            )
-        }?;
-        transition.clear_existential_projection();
+            let mut transition =
+                crate::surface::proof::surface_synthesis::with_proof_local_value_names(
+                    named_values,
+                    || {
+                        if at_outcome {
+                            self.apply_outcome_resource_fold(resource)
+                        } else {
+                            self.apply_execution_resource_fold(resource, source_resource)
+                        }
+                    },
+                )?;
+            transition.clear_existential_projection();
+            transition
+        };
         let state = self.publish_checked_transition(transition)?;
         Ok(Self {
             site: self.site.clone(),
@@ -2809,7 +2821,7 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// Applies one source-ordered composite fold to the focused branch typed outcome.
+    /// Applies one source-ordered composite fold to the focused branch's typed outcome.
     /// The result/state state and persistent fact root advance together in
     /// the returned Proof successor; no caller-owned outcome is mutated.
     pub(super) fn apply_outcome_resource_fold(
@@ -2998,28 +3010,21 @@ impl<'a> Proof<'a> {
     /// Applies one kernel-checked, zero-source construction to the focused
     /// function outcome. The retained `ProofStep` is the certificate event;
     /// the kernel checks its authorization and exact one-token delta.
-    pub(super) fn apply_outcome_resource_construction(
+    fn apply_outcome_resource_construction(
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        // Constructing an ordinary family's token creates no population
-        // member; an authorized family's member needs its authority.
-        if self.execution().is_some() && !self.names_unauthorized_family(resource) {
-            return Err(self.step_error("resource construction may create untracked members"));
-        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("outcome resource `construct` requires an execution proof"));
+            return Err(self.step_error("abstract token `fold` requires an execution proof"));
         };
         let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
-            return Err(
-                self.step_error("outcome resource `construct` requires a focused outcome goal")
-            );
+            return Err(self.step_error("abstract token `fold` requires a focused outcome goal"));
         };
         let branch_state = &self.focused_branch().expect("focused branch exists").state;
         let execution = branch_state
             .execution
             .as_deref()
-            .ok_or_else(|| self.step_error("resource `construct` lost its execution state"))?;
+            .ok_or_else(|| self.step_error("abstract token `fold` lost its execution state"))?;
         let value = goal.data.core.result.native();
         let state = (*goal.data.core.state).clone();
         let fact = lower_resource_clause_at_state_with_result(
@@ -3039,7 +3044,7 @@ impl<'a> Proof<'a> {
         )
         .map_err(|message| {
             self.step_error(format!(
-                "kernel rejected checked resource `construct`: {message}"
+                "kernel rejected checked resource `fold`: {message}"
             ))
         })?;
         let mut data = (*goal.data).clone();

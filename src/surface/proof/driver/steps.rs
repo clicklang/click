@@ -544,14 +544,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::FoldResource(_) => {
                 unreachable!("fold was routed through obligation generation")
             }
-            ProofStep::ConstructResource(resource) => {
-                if driver_proof.focused_outcome_data().is_some() {
-                    driver_proof.apply_outcome_resource_construction(resource)
-                } else {
-                    Err(driver_proof
-                        .step_error("resource `construct` requires a function-outcome proof"))
-                }
-            }
             ProofStep::ObserveResource(resource) => {
                 driver_proof.apply_execution_resource_observation(resource)
             }

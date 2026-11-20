@@ -2197,9 +2197,9 @@ fn prepare_produced_tokens<'a>(
             continue;
         }
 
-        // The usual construct step checks that this exact token is authorized.
+        // The token fold checks that this exact token is authorized.
         let before = current.checkpoint();
-        let step = ProofStep::ConstructResource(resource.clone());
+        let step = ProofStep::FoldResource(resource.clone());
         let Ok(constructed) = current.driver().apply_step(step) else {
             check_verification_deadline()?;
             continue;
@@ -2236,6 +2236,16 @@ fn fold_produced_resources<'a>(
             continue;
         };
         let current = required_outcome(outcome_proof)?;
+        // Direct abstract outputs use the separate guarded preparation above.
+        if let ResourceClause::Declared { name, .. } = resource
+            && let ProofContext::Execution(context) = current.context.as_ref()
+            && context
+                .function
+                .contract_interface()
+                .is_ordinary_abstract_family(name)
+        {
+            continue;
+        }
         // An already-held exact resource needs no new fold or certificate
         // node. This lookup only selects whether to attempt a new operation.
         if let (ProofContext::Execution(context), FunctionOutcome::Return { state, value }) =
@@ -3900,9 +3910,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | PostExecutionTactic::ImplicitSolve
                                 | PostExecutionTactic::SolveUsing(_)
                                 | PostExecutionTactic::Leaf(
-                                    ProofTactic::FoldResource(_)
-                                        | ProofTactic::UnfoldResource(_)
-                                        | ProofTactic::ConstructResource(_)
+                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
                                 )
                                 | PostExecutionTactic::FoldProved(_)
                                 | PostExecutionTactic::CloseOpen { .. }
@@ -4096,9 +4104,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::FoldProved(_)
                                 | PostExecutionTactic::CloseOpen { .. }
                                 | PostExecutionTactic::Leaf(
-                                    ProofTactic::FoldResource(_)
-                                        | ProofTactic::UnfoldResource(_)
-                                        | ProofTactic::ConstructResource(_)
+                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
                                 )
                         ) {
                             closing_input = None;
@@ -5202,9 +5208,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let applied = evolving.driver().apply_step(step)?;
                                 if matches!(
                                     tactic,
-                                    ProofTactic::FoldResource(_)
-                                        | ProofTactic::UnfoldResource(_)
-                                        | ProofTactic::ConstructResource(_)
+                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
                                 ) {
                                     has_return_resource_rewrite |=
                                         applied.execution().is_some_and(|execution| {
@@ -5217,9 +5221,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // resources; the other leaves only add facts.
                                 if matches!(
                                     tactic,
-                                    ProofTactic::FoldResource(_)
-                                        | ProofTactic::UnfoldResource(_)
-                                        | ProofTactic::ConstructResource(_)
+                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
                                 ) {
                                     outcome = applied.focused_outcome_state()?;
                                 }

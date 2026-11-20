@@ -11824,12 +11824,6 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 return self.parse_step_proof(ProofTactic::FoldResource(resource));
             }
-            "construct" => {
-                self.expect(Token::LParen)?;
-                let resource = self.parse_owned_resource_target()?;
-                self.expect(Token::RParen)?;
-                ProofTactic::ConstructResource(resource)
-            }
             "induct" => return Err(self.error("induction uses `let ih = induct(value);`; follow structural induction with `match value { ... }`")),
             _ if let Some(refusal) = removed_tactic_refusal(&name) => {
                 return Err(self.error(refusal));
@@ -18725,7 +18719,6 @@ mod tactic_classification_tests {
         ("fold-slot", "fold(reference(p)[0]);"),
         ("fold-iterated-clause", "fold(reference(p)[..]);"),
         ("unfold-iterated-clause", "unfold(reference(p)[..]);"),
-        ("construct-resource", "construct(reference(p));"),
         ("induct", "let ih = induct(n);"),
         (
             "proof-match",

@@ -1652,7 +1652,6 @@ fn expand_declared_resource_tactic(
         | ProofTactic::ObserveResource(_)
         | ProofTactic::ObserveSavedMemory { .. }
         | ProofTactic::FoldResource(_)
-        | ProofTactic::ConstructResource(_)
         | ProofTactic::Iterated(_)) => {
             expand_declared_resource_tactic_with_resources(tactic, resource_definitions)
         }
@@ -2094,9 +2093,6 @@ fn expand_declared_resource_tactic_with_resources(
             expand_declared_resource_clause(resource, resource_definitions)?,
         )),
         ProofTactic::FoldResource(resource) => Ok(ProofTactic::FoldResource(
-            expand_declared_resource_clause(resource, resource_definitions)?,
-        )),
-        ProofTactic::ConstructResource(resource) => Ok(ProofTactic::ConstructResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
         )),
         ProofTactic::Iterated(IteratedTactic::Unfold(target)) => Ok(ProofTactic::Iterated(
