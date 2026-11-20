@@ -1371,7 +1371,13 @@ impl Context<'_> {
         statement
     }
     fn declare_slice_length(&mut self, place: &str) -> Result<BindingName, String> {
-        if let Some(declaration) = self.bindings.get(place).and_then(BindingName::local_id) {
+        // Proofs already use a slice parameter's length throughout its body.
+        // Keep that spelling reserved when a local shadows the parameter.
+        if let Some(declaration) = self.bindings.get(place).and_then(BindingName::local_id)
+            && let Some(spelling) = declaration.spelling()
+            && !self.slices.contains_key(spelling)
+            && !self.shared_scalar_slices.contains_key(spelling)
+        {
             return Ok(BindingName::lexical_local_slice_length(declaration));
         }
         let ordinal = self.next_slice_local;

@@ -1372,7 +1372,7 @@ impl LocalEnvironment {
             crate::instrumentation::record_deterministic_work(1);
             return match self.resolve_binding(&BindingName::from(place)) {
                 BindingName::Local(id) => BindingName::lexical_local_slice_length(&id),
-                _ => BindingName::slice_length(place),
+                _ => name.clone(),
             };
         }
         if matches!(name, BindingName::ReferenceCarrier(_)) {
