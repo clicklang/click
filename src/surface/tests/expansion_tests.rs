@@ -10105,6 +10105,90 @@ fn strict_literal_remainder_bound_expands_to_known() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: selected signed remainder expansion and cold replay took 1.3s"]
+fn signed_remainder_sign_expands_with_selected_domain() {
+    let source = "
+theorem remainder_sign(n: int32, d: int32) {
+    requires 0 <= n;
+    requires d != 0;
+    ensures 0 <= n % d by { solve() using { 0 <= n; d != 0; }; }
+}";
+    let label = "remainder_sign.ensures_0";
+    let expanded = expand_c_claim_source_by_label(source, &[], label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let omitted = source.replace("using { 0 <= n; d != 0; }", "using { 0 <= n; }");
+    assert!(verify_click_theorems(&omitted).is_err());
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: signed quotient expansion and domain refusals took 1.4s"]
+fn signed_quotient_sign_requires_defined_native_operands() {
+    let source = "
+theorem quotient_sign(n: int32, d: int32) {
+    requires n <= 0;
+    requires d < 0;
+    requires n != -2147483648 or d != -1;
+    ensures 0 <= n / d by known();
+}
+theorem exact_integer_sign(n: Integer, d: Integer) {
+    requires n <= 0;
+    requires d <= 0;
+    requires d != 0;
+    ensures truncating_quotient(n, d) >= 0 by {
+        solve() using { n <= 0; d <= 0; d != 0; };
+    }
+    ensures truncating_remainder(n, d) <= 0 by known();
+}";
+    without_implicit_solve(|| verify_click_theorems(source)).unwrap();
+    let label = "exact_integer_sign.ensures_0";
+    let expanded = expand_c_claim_source_by_label(source, &[], label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("solve() using"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let omitted = source.replace(
+        "using { n <= 0; d <= 0; d != 0; }",
+        "using { n <= 0; d <= 0; }",
+    );
+    let error = verify_click_theorems(&omitted).unwrap_err().report();
+    assert!(error.contains("from only its listed premises"), "{error}");
+    let maybe_overflow = source.replace("requires n != -2147483648 or d != -1;", "");
+    let error = without_implicit_solve(|| verify_click_theorems(&maybe_overflow))
+        .unwrap_err()
+        .report();
+    assert!(error.contains("n != -2147483648 or d != -1"), "{error}");
+    let wrong_sign = source.replace("ensures 0 <= n / d", "ensures n / d <= 0");
+    let error = without_implicit_solve(|| verify_click_theorems(&wrong_sign))
+        .unwrap_err()
+        .report();
+    assert!(error.contains("`known` requires"), "{error}");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: all four signed division bounds expand and cold-replay in 11.3s"]
+fn signed_machine_division_fixture_expands_without_normalize() {
+    let (source, _) = mdtest_sources("mdtests/machine_quotient_remainder_bounds.md");
+    let (signed, _) = source.split_once("theorem unsigned_bounds").unwrap();
+    for index in 0..4 {
+        let label = format!("signed_bounds.ensures_{index}");
+        let expanded = expand_c_claim_source_by_label(signed, &[], &label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains("known();"), "{expanded}");
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(&label, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn selected_mirrored_disequality_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/int32_disequality_symmetry.md");
     let expanded = expand_c_claim_source_by_label(&source, &[], "swap_disequality.ensures_0")

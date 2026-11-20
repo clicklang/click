@@ -13,6 +13,22 @@ fn holds(p: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
     available(p) || super::computes_leaf(p)
 }
 
+fn comparison_holds(
+    condition: ConditionTerm,
+    truth: bool,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let premise = condition.truth_claim(truth);
+    holds(&premise, available)
+        || crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(
+            &condition, truth,
+        )
+        .is_some_and(|(condition, truth)| holds(&condition.truth_claim(truth), available))
+        || super::order_claim_forms(&premise)
+            .iter()
+            .any(|form| form != &premise && available(form))
+}
+
 fn in_range(
     value: &IntegerTerm,
     format: crate::kernel::primitives::MachineIntegerFormat,
@@ -251,16 +267,117 @@ fn unsigned_remainder_bound(
     let one = IntegerTerm::constant_i64(1).into();
     let divisor: SharedIntegerTerm = divisor.into();
     [
-        (ConditionTerm::IntegerEqual(divisor.clone(), zero.clone()), false),
+        (
+            ConditionTerm::IntegerEqual(divisor.clone(), zero.clone()),
+            false,
+        ),
         (ConditionTerm::IntegerLessThan(zero, divisor.clone()), true),
         (ConditionTerm::IntegerLessEqual(one, divisor), true),
     ]
     .into_iter()
-    .any(|(guard, truth)| {
-        holds(&guard.truth_claim(truth), available)
-            || crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(&guard, truth)
-                .is_some_and(|(native, truth)| holds(&native.truth_claim(truth), available))
-    })
+    .any(|(guard, truth)| comparison_holds(guard, truth, available))
+}
+
+fn signed_division_sign(
+    left: &IntegerTerm,
+    right: &IntegerTerm,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let (result, nonnegative) = if left.as_const().is_some_and(Zero::is_zero) {
+        (right, true)
+    } else if right.as_const().is_some_and(Zero::is_zero) {
+        (left, false)
+    } else {
+        return false;
+    };
+    let (dividend, divisor, quotient, overflow_exclusion) = match result {
+        IntegerTerm::TruncatingQuotient(n, d) | IntegerTerm::TruncatingRemainder(n, d) => {
+            let quotient = matches!(result, IntegerTerm::TruncatingQuotient(..));
+            (n.clone(), d.clone(), quotient, None)
+        }
+        IntegerTerm::Machine(result) => {
+            let Some((
+                ty @ (MachineIntegerType::Int32 | MachineIntegerType::Int64),
+                op @ (MachineBinaryOp::Divide | MachineBinaryOp::Remainder),
+                [n, d],
+            )) = result.operand_view().binary()
+            else {
+                return false;
+            };
+            if ty != result.ty() {
+                return false;
+            }
+            let (Some(dividend), Some(divisor)) = (n.observe(ty), d.observe(ty)) else {
+                return false;
+            };
+            (
+                dividend.into(),
+                divisor.into(),
+                op == MachineBinaryOp::Divide,
+                Some((ty, n, d)),
+            )
+        }
+        _ => return false,
+    };
+    let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
+    let ordered = |a: &SharedIntegerTerm, b: &SharedIntegerTerm| {
+        comparison_holds(
+            ConditionTerm::IntegerLessEqual(a.clone(), b.clone()),
+            true,
+            available,
+        )
+    };
+    let strict = |a: &SharedIntegerTerm, b: &SharedIntegerTerm| {
+        comparison_holds(
+            ConditionTerm::IntegerLessThan(a.clone(), b.clone()),
+            true,
+            available,
+        )
+    };
+    let nonzero = || {
+        comparison_holds(
+            ConditionTerm::IntegerEqual(divisor.clone(), zero.clone()),
+            false,
+            available,
+        )
+    };
+    let positive = strict(&zero, &divisor)
+        || ordered(&IntegerTerm::constant_i64(1).into(), &divisor)
+        || (ordered(&zero, &divisor) && nonzero());
+    let negative = || {
+        strict(&divisor, &zero)
+            || ordered(&divisor, &IntegerTerm::constant_i64(-1).into())
+            || (ordered(&divisor, &zero) && nonzero())
+    };
+    let dividend_nonnegative = || ordered(&zero, &dividend) || strict(&zero, &dividend);
+    let dividend_nonpositive = || ordered(&dividend, &zero) || strict(&dividend, &zero);
+    let has_sign = |nonnegative| {
+        if nonnegative {
+            dividend_nonnegative()
+        } else {
+            dividend_nonpositive()
+        }
+    };
+    let checked_domain = || {
+        let Some((ty, n, d)) = overflow_exclusion else {
+            return true;
+        };
+        let exclusion = Proposition::signed_division_exclusion_views(ty, n, d);
+        holds(&exclusion, available)
+            || matches!(&exclusion, Proposition::Or(a, b)
+                if holds(a, available) || holds(b, available))
+    };
+    if quotient {
+        // Equal signs give a nonnegative quotient. The signed minimum divided
+        // by -1 must be excluded separately if neither sign rules it out.
+        (positive && has_sign(nonnegative))
+            || (has_sign(!nonnegative) && negative() && (!nonnegative || checked_domain()))
+    } else {
+        // The sign of the remainder depends only on its dividend.
+        has_sign(nonnegative)
+            && (positive || negative() || nonzero())
+            && (nonnegative || positive || checked_domain())
+    }
 }
 
 fn bool_arm(
@@ -305,6 +422,40 @@ fn algebraic_arm(
             })
 }
 
+pub(crate) fn is_quotient_remainder_order(goal: &Proposition) -> bool {
+    let Some((condition, true)) = goal.condition_native() else {
+        return false;
+    };
+    let machine_division = |operand: MachineOperandView<'_>| {
+        matches!(
+            operand.binary(),
+            Some((_, MachineBinaryOp::Divide | MachineBinaryOp::Remainder, _))
+        )
+    };
+    match condition {
+        ConditionTerm::IntegerLessEqual(a, b) | ConditionTerm::IntegerGreaterEqual(a, b) => {
+            [a.as_ref(), b.as_ref()]
+                .into_iter()
+                .any(|operand| match operand {
+                    IntegerTerm::TruncatingQuotient(..) | IntegerTerm::TruncatingRemainder(..) => {
+                        true
+                    }
+                    IntegerTerm::Machine(term) => machine_division(term.operand_view()),
+                    _ => false,
+                })
+        }
+        ConditionTerm::Compare {
+            relation: CompareRelation::LessEqual | CompareRelation::GreaterEqual,
+            left,
+            right,
+            ..
+        } => [left.as_ref(), right.as_ref()]
+            .into_iter()
+            .any(|operand| machine_division(MachineOperandView::Legacy(operand))),
+        _ => false,
+    }
+}
+
 pub(crate) fn known_bridge_leaf(
     goal: &Proposition,
     available: &impl Fn(&Proposition) -> bool,
@@ -326,10 +477,25 @@ pub(crate) fn known_bridge_leaf(
             identity(a, b, available) || identity(b, a, available)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((
+                ConditionTerm::IntegerLessEqual(a, b) | ConditionTerm::IntegerGreaterEqual(b, a),
+                _,
+            )) = condition_source_0.condition_native() =>
         {
-            mask_bound(a, b, available) || unsigned_remainder_bound(a, b, available)
+            mask_bound(a, b, available)
+                || unsigned_remainder_bound(a, b, available)
+                || signed_division_sign(a, b, available)
+                || condition_source_0
+                    .condition_native()
+                    .is_some_and(|(condition, _)| {
+                        condition
+                            .nonnegative_division_bound_guards()
+                            .is_some_and(|guards| {
+                                guards
+                                    .into_iter()
+                                    .all(|guard| holds(&guard.truth_claim(true), available))
+                            })
+                    })
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((ConditionTerm::BoolEqual(a, b), _)) =

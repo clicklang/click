@@ -2,7 +2,7 @@ mod computation;
 mod intervals;
 mod known_bridges;
 pub(crate) use computation::{computes_leaf, trivial_condition_value};
-pub(crate) use known_bridges::known_bridge_leaf;
+pub(crate) use known_bridges::{is_quotient_remainder_order, known_bridge_leaf};
 
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
