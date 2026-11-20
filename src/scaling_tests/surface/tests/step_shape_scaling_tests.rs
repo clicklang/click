@@ -744,7 +744,7 @@ fn band(work: usize) -> usize {
 
 #[test]
 fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
-    let measure = |size, alias_base| {
+    let measure = |size, alias_base, frame_owner| {
         let run = run(
             |size| {
                 let mut parameters = "int32* p, int32* other".to_string();
@@ -758,8 +758,13 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
                 let c = format!(
                     "void caller({parameters}) {{\n    *p = 17;\n    *p = 18;\n    *p = 19;\n    return;\n}}"
                 );
+                let frame = if frame_owner {
+                    "    owns *other;\n"
+                } else {
+                    ""
+                };
                 let click = format!(
-                    "verifying \"hunt.c\";\nvoid caller({parameters}) {{\n    owns *p;\n{requirements}}} by {{ step(); step(); step(); step(); }}"
+                    "verifying \"hunt.c\";\nvoid caller({parameters}) {{\n    owns *p;\n{frame}{requirements}}} by {{ step(); step(); step(); step(); }}"
                 );
                 (c, click)
             },
@@ -770,13 +775,20 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
     };
     // A 16-alias star already distinguishes the old scan from the indexed
     // check. Keep the larger source probes out of the budgeted gate.
-    let samples = [2, 8, 16].map(|size| (measure(size, "p"), measure(size, "other")));
-    eprintln!("repeated store work with connected and disconnected aliases: {samples:?}");
-    let baseline = samples[0].0.into_iter().min().unwrap();
-    for (connected, disconnected) in samples {
-        for (connected, disconnected) in connected.into_iter().zip(disconnected) {
-            assert!(connected <= baseline + 16, "{samples:?}");
-            assert!(connected <= disconnected + 16, "{samples:?}");
+    for frame_owner in [false, true] {
+        let samples = [2, 8, 16].map(|size| {
+            (
+                measure(size, "p", frame_owner),
+                measure(size, "other", frame_owner),
+            )
+        });
+        eprintln!("repeated store work with connected and disconnected aliases: {samples:?}");
+        let baseline = samples[0].0.into_iter().min().unwrap();
+        for (connected, disconnected) in samples {
+            for (connected, disconnected) in connected.into_iter().zip(disconnected) {
+                assert!(connected <= baseline + 16, "{samples:?}");
+                assert!(connected <= disconnected + 16, "{samples:?}");
+            }
         }
     }
 }
