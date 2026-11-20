@@ -24670,6 +24670,30 @@ fn bit_field_record_storage_expands_and_replays() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: compound literal expansion and replay takes about one second"]
+fn compound_literal_source_reference_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/c_struct_compound_literal_argument.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = format!("{source}\nby {{ step_until(function.exit); solve(); }}");
+    let claim = "answer.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("answer.compound_literal(0)"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("answer.local(0)"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: row-pointer expansion and replay"]
 fn row_pointer_source_binding_expands_and_replays() {
     let (source, sources) = mdtest_sources("mdtests/c_local_row_pointer_offset.md");

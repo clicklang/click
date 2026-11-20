@@ -1485,6 +1485,16 @@ value is evaluated, so returning a literal's address from one does not extend
 its lifetime. The frontend uses existing automatic aggregate allocation and
 lifetime-end operations; it adds no kernel primitive or axiom.
 
+A proof can name the object of a struct or array compound literal with
+`f.compound_literal(i)`. The zero-based index counts compound literal
+initializers in source order within the function, independently of local
+declaration ordinals. The fully qualified spelling is
+`"file.c"::f.compound_literal(i)`. Use `&f.compound_literal(i)` for the
+address of the active object. An exact storage address can use
+`f.compound_literal(i).storage(implicit)`, `.storage(lifetime, n)`, or
+`.storage(frame, n)` as in [automatic declaration references](#automatic-declaration-references).
+An unevaluated occurrence does not give access to an initialized object.
+
 File-scope and scalar compound literals, const-qualified
 or volatile struct object types, and aligned typedef object types remain outside
 this increment. Functions combining `goto` and compound literals are refused

@@ -7384,7 +7384,8 @@ struct Parser {
     scopes: Vec<Vec<ScopeBinding>>,
     /// Storage introduced by literal occurrences in each open scope. The
     /// initializer stays in its expression; only allocation is at block entry.
-    compound_literal_declarations: Vec<Vec<CStatement>>,
+    compound_literal_declarations: Vec<compound_literals::CompoundLiteralStorage>,
+    compound_literal_bindings: imbl::OrdMap<usize, LocalBindingId>,
     repeatable_compound_literal_scope: Option<usize>,
     function_has_compound_literals: bool,
     function_has_goto: bool,
@@ -8030,6 +8031,7 @@ impl Parser {
             unions: DeclarationMap::new(),
             scopes: Vec::new(),
             compound_literal_declarations: Vec::new(),
+            compound_literal_bindings: imbl::OrdMap::new(),
             repeatable_compound_literal_scope: None,
             function_has_compound_literals: false,
             function_has_goto: false,
@@ -8092,7 +8094,7 @@ impl Parser {
 
     fn push_scope(&mut self) {
         self.scopes.push(Vec::new());
-        self.compound_literal_declarations.push(Vec::new());
+        self.compound_literal_declarations.push(Default::default());
     }
 
     /// Closes the innermost scope; its names, and any struct layouts they
@@ -9722,6 +9724,7 @@ impl Parser {
         self.parsing_binding_parameters = true;
         self.next_parameter_binding = 0;
         self.next_local_binding = 0;
+        self.compound_literal_bindings.clear();
         let unnamed_before = self.unnamed_parameters;
         let parameters = self.parse_parameters()?;
         self.parsing_binding_parameters = false;
@@ -11555,7 +11558,7 @@ impl Parser {
             });
         }
         self.expect(Token::RBrace)?;
-        let declarations = std::mem::take(
+        let storage = std::mem::take(
             self.compound_literal_declarations
                 .last_mut()
                 .expect("switch body scope"),
@@ -11564,7 +11567,7 @@ impl Parser {
         self.compound_literal_declarations
             .last_mut()
             .expect("switch statement scope")
-            .extend(declarations);
+            .append(storage);
         if cases.is_empty() {
             return Err(self.error_here("a `switch` body must contain a `case` or `default` label"));
         }
@@ -12034,6 +12037,7 @@ impl Parser {
             self.parsing_binding_parameters,
             self.next_parameter_binding,
             self.next_local_binding,
+            std::mem::take(&mut self.compound_literal_bindings),
         );
         let mut header = self.parse_function_header(false)?;
         self.pop_scope();
@@ -12042,6 +12046,7 @@ impl Parser {
             self.parsing_binding_parameters,
             self.next_parameter_binding,
             self.next_local_binding,
+            self.compound_literal_bindings,
         ) = binding_context;
         let (suffix_inline, suffix_weak, suffix_returns_twice, suffix_opaque) =
             self.consume_function_attributes()?;
@@ -12352,7 +12357,7 @@ impl Parser {
                             .last_mut()
                             .expect("for scope"),
                     );
-                    let init = prepend_statements(declarations, init);
+                    let init = prepend_statements(declarations.into_declarations(), init);
                     self.pop_for_scope();
                     Ok(CStatement::For {
                         test: None,

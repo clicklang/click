@@ -46,6 +46,44 @@ fn source_declaration_selectors_resolve_the_same_typed_reference() {
 }
 
 #[test]
+fn compound_literal_occurrences_are_distinct_from_local_declarations() {
+    let source = r#"
+        struct pair { int padding; int value; };
+        int f(void) {
+            int *array = (int[]){42};
+            struct pair *pair = &(struct pair){0, 42};
+            int after = array[0] + pair->value;
+            return after;
+        }
+    "#;
+    let array = parse_binding_expression("f.compound_literal(0)", source).unwrap();
+    let field = parse_binding_expression("f.compound_literal(1).value", source).unwrap();
+    assert!(matches!(
+        field,
+        ContractExpression::Field {
+            offset_bytes: 4,
+            ..
+        }
+    ));
+    assert_eq!(
+        array,
+        parse_binding_expression("\"bindings.c\"::f.compound_literal(0)", source).unwrap()
+    );
+    assert_eq!(
+        parse_binding_expression("f.local(4)", source).unwrap(),
+        parse_binding_expression("f.statement(2).local(after)", source).unwrap()
+    );
+    assert!(parse_binding_expression("f.local(1)", source).is_err());
+    assert!(parse_binding_expression("f.compound_literal(2)", source).is_err());
+
+    assert_automatic_storage_reference_round_trips(
+        "f.compound_literal(1).storage(lifetime, 7)",
+        source,
+        crate::kernel::LocalStorageInstance::Lifetime(7),
+    );
+}
+
+#[test]
 fn declaration_references_retain_nominal_fields_and_array_shapes() {
     let source = "struct pair { int padding; int value; }; int f(void) { int a[2][3]; struct pair p; return 0; }";
     let field = parse_binding_expression("f.local(1).value", source).unwrap();
@@ -77,33 +115,44 @@ fn exact_automatic_storage_instances_have_a_surface_spelling() {
         ),
         ("frame, 3", crate::kernel::LocalStorageInstance::Frame(3)),
     ] {
-        let text = format!("f.parameter(0).storage({spelling})");
-        let expression = parse_binding_expression(&text, source).unwrap();
-        let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
-            pointer,
-        ))) = &expression
-        else {
-            panic!("storage pointer")
-        };
-        assert!(
-            matches!(&pointer.address().base, crate::kernel::AddressBase::AutomaticLocal { instance: actual, .. } if actual == &instance)
-        );
-        let rendered = crate::surface::diagnostics::describe_contract_expression(&expression);
-        let reparsed = parse_binding_expression(&rendered, source).unwrap();
-        let lowered = contract_expression_as_program_expression(&reparsed).unwrap();
-        let (restored, _) = crate::kernel::program_evaluate_speprogram_expression_at_state(
-            &ExecutionState::new(),
-            &SpecExpression::ProgramExpression(lowered),
-            None,
-            &PureFactContext::new(),
-        )
-        .unwrap();
-        assert_eq!(
-            restored,
-            ProgramValue::Pointer(pointer.clone()),
-            "{rendered}"
+        assert_automatic_storage_reference_round_trips(
+            &format!("f.parameter(0).storage({spelling})"),
+            source,
+            instance,
         );
     }
+}
+
+fn assert_automatic_storage_reference_round_trips(
+    text: &str,
+    source: &str,
+    instance: crate::kernel::LocalStorageInstance,
+) {
+    let expression = parse_binding_expression(text, source).unwrap();
+    let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+        pointer,
+    ))) = &expression
+    else {
+        panic!("storage pointer")
+    };
+    assert!(
+        matches!(&pointer.address().base, crate::kernel::AddressBase::AutomaticLocal { instance: actual, .. } if actual == &instance)
+    );
+    let rendered = crate::surface::diagnostics::describe_contract_expression(&expression);
+    let reparsed = parse_binding_expression(&rendered, source).unwrap();
+    let lowered = contract_expression_as_program_expression(&reparsed).unwrap();
+    let (restored, _) = crate::kernel::program_evaluate_speprogram_expression_at_state(
+        &ExecutionState::new(),
+        &SpecExpression::ProgramExpression(lowered),
+        None,
+        &PureFactContext::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        restored,
+        ProgramValue::Pointer(pointer.clone()),
+        "{rendered}"
+    );
 }
 
 #[test]
