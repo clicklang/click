@@ -19016,6 +19016,21 @@ fn layout_free_cpp_references_forward_to_contracts() {
     );
 }
 
+const BYTE_VECTOR_FIXTURE_HEADER: &str = r#"#pragma clang system_header
+namespace std {
+template<class T> struct allocator;
+template<class T, class A = allocator<T>> class vector {
+    A* allocator;
+    T* storage;
+public:
+    ~vector() noexcept;
+    unsigned long size() const noexcept;
+    bool empty() const noexcept;
+    const T* data() const noexcept;
+};
+}
+"#;
+
 #[test]
 fn byte_vector_size_uses_a_layout_free_catalog_contract() {
     let project = Project::with_fixture(
@@ -19025,8 +19040,9 @@ fn byte_vector_size_uses_a_layout_free_catalog_contract() {
     );
     fs::write(
         project.directory.join("vector_fixture.h"),
-        "#pragma clang system_header\nnamespace std { template<class T> struct allocator; template<class T, class A = allocator<T>> class vector { A* allocator; T* storage; public: ~vector() noexcept; unsigned long size() const noexcept; }; }\n",
-    ).unwrap();
+        BYTE_VECTOR_FIXTURE_HEADER,
+    )
+    .unwrap();
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let [record] = import.export().records.as_slice() else {
@@ -19052,6 +19068,61 @@ fn byte_vector_size_uses_a_layout_free_catalog_contract() {
         summary.assumptions
     );
     let missing_state = "verifying \"driver.cpp\";\nunsigned long read(const std::vector<unsigned char>& bytes) { ensures result == result; }\n";
+    let parsed = read_click_project(&path, missing_state).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(
+        error.report().contains("unbound instance binder `state`"),
+        "{}",
+        error.report()
+    );
+}
+
+#[test]
+fn byte_vector_empty_and_data_require_the_catalog_state() {
+    let project = Project::with_fixture(
+        "driver.cpp",
+        "read",
+        "#include \"vector_fixture.h\"\nbool read(const std::vector<unsigned char>& bytes) noexcept { const unsigned char* ptr = bytes.data(); return bytes.empty(); }\n",
+    );
+    fs::write(
+        project.directory.join("vector_fixture.h"),
+        BYTE_VECTOR_FIXTURE_HEADER,
+    )
+    .unwrap();
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"import click::cpp::vector_state::{vector_state};
+verifying "driver.cpp";
+bool read(const std::vector<unsigned char>& bytes) {
+    owns state: vector_state(&bytes);
+    ensures state.length == old(state.length);
+    ensures state.data == old(state.data);
+    ensures state.length == 0u64 implies result;
+    ensures state.length != 0u64 implies not result;
+}
+"#;
+    let path = project.directory.join("read.click");
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    let (summary, verification) =
+        click::surface::verify_project_with_summary(&parsed, &ProgramInputs::program(&import))
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    verification.unwrap_or_else(|error| panic!("{}", error.report()));
+    let assumptions = &summary.assumptions["read"];
+    for method in ["empty", "data"] {
+        let name = format!("std::vector<unsigned char>::{method}");
+        assert!(
+            assumptions.iter().any(|assumption| {
+                assumption.family == click::surface::ModelFamily::CppStd
+                    && click::surface::display_source_names(&assumption.name) == name
+            }),
+            "{assumptions:?}"
+        );
+    }
+
+    let missing_state = r#"verifying "driver.cpp";
+bool read(const std::vector<unsigned char>& bytes) { ensures result or not result; }
+"#;
     let parsed = read_click_project(&path, missing_state).unwrap();
     let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
     assert!(

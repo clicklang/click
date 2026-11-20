@@ -6260,6 +6260,15 @@ pub(in crate::surface) fn composite_resource_definitions(
                     parameter.struct_name().map(str::to_string),
                 )
             })
+            .chain(definition.fields().iter().filter_map(|field| {
+                field.click_type().interface_type().map(|interface_type| {
+                    crate::languages::interface::ImportedParameter::new(
+                        interface_type,
+                        field.name().to_string(),
+                        None,
+                    )
+                })
+            }))
             .collect::<Vec<_>>();
         let contains = body
             .contains()
