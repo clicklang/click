@@ -997,6 +997,30 @@ struct ParameterPartitionIndex {
     bases: HashedOrdMap<Address, Address>,
 }
 
+impl ParameterPartitionIndex {
+    fn store_alias_bases(
+        &self,
+        base: Address,
+        assumptions: &PureFactContext,
+    ) -> Option<BTreeSet<Address>> {
+        // Only owners with cached cells or runs can add candidates. Bound
+        // these probes so a large frame with few aliases does not become a
+        // scan over unrelated cache buckets.
+        const MAX_CACHED_OWNER_PROBES: usize = 8;
+        if self.known.len().saturating_add(self.known_runs.len()) > MAX_CACHED_OWNER_PROBES {
+            return assumptions.parameter_store_alias_bases(&base);
+        }
+        let mut bases = BTreeSet::new();
+        for cached in self.known.keys().chain(self.known_runs.keys()) {
+            crate::instrumentation::record_deterministic_work(1);
+            if *cached == base || assumptions.addresses_numerically_connected(&base, cached) {
+                bases.insert(cached.clone());
+            }
+        }
+        Some(bases)
+    }
+}
+
 /// The concrete cells a pointer value can reach, with their values: every
 /// cell outside the slot of a local whose address is never taken
 /// ([`super::block_is_never_address_taken_local`]). Kept beside the store and
@@ -1203,17 +1227,25 @@ impl CellStore {
         {
             return None;
         }
-        let (resources, alias_bases) = if let Some(range) = authorized {
-            let (resources, base) =
-                assumptions.checked_parameter_store_partition(pointer, bytes, range)?;
-            (resources, BTreeSet::from([base]))
+        let (resources, base) = if let Some(range) = authorized {
+            assumptions.checked_parameter_store_partition(pointer, bytes, range)?
         } else {
-            let (resources, base) = assumptions.parameter_store_partition(pointer, bytes)?;
-            (resources, assumptions.parameter_store_alias_bases(&base)?)
+            assumptions.parameter_store_partition(pointer, bytes)?
+        };
+        let alias_bases = if authorized.is_some() {
+            Some(BTreeSet::from([base.clone()]))
+        } else if !assumptions.numeric_connectivity_covers_store_aliases() {
+            Some(assumptions.parameter_store_alias_bases(&base)?)
+        } else {
+            None
         };
         self.prepare_parameter_partition(resources);
         let guard = self.parameter_partition_index.lock().unwrap();
         let index = guard.as_ref().expect("prepared parameter partition");
+        let alias_bases = match alias_bases {
+            Some(bases) => bases,
+            None => index.store_alias_bases(base, assumptions)?,
+        };
         let ordinary = candidates.excluding_external_arguments();
         let mut runs = candidates
             .entries(&index.unknown_runs)

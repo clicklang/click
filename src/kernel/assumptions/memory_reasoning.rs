@@ -2062,6 +2062,11 @@ impl PureFactContext {
         (member == authorized).then_some((resources, base))
     }
 
+    pub(in crate::kernel) fn numeric_connectivity_covers_store_aliases(&self) -> bool {
+        self.equality_graph
+            .numeric_connectivity_covers_store_aliases()
+    }
+
     /// Cross-block equalities are filed under their exact endpoints, so a
     /// parameter follows only its own aliases rather than the shared external
     /// block's entire class. Same-block and scalar alias premises fall back.
