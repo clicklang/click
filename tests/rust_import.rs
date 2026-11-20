@@ -5672,6 +5672,42 @@ fn rust_readable_local_names_preserve_shadowed_binding_identities() {
     );
 }
 
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_shadowed_slice_lengths_use_the_binding_at_the_selected_point() {
+    let p = Project::new(
+        r#"
+pub fn shadow(bytes: &[u8]) -> usize {
+    let (slice, tail) = bytes.split_at(1);
+    let first = slice.len();
+    let (slice, _) = tail.split_at(2);
+    let second = slice.len();
+    first + second
+}
+"#,
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn shadow(bytes: &[u8]) -> usize {
+    requires bytes.len() == 4u64;
+    ensures result == 3u64;
+} by {
+    step_until(assignment(first, 0).entry);
+    have slice.len() == 1u64;
+    mark first_slice;
+    step_until(assignment(second, 0).entry);
+    have slice.len() == 2u64;
+    have at(first_slice, slice.len()) == 1u64;
+    step_until(function.exit);
+    solve();
+}
+"#;
+    ProgramVerificationSession::new_program_prepared(sidecar, &prepared)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+}
+
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 14 s, over the gate's per-test budget (2026-10-06)"]

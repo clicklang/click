@@ -1439,7 +1439,9 @@ impl ProgramLayouts {
             if let Some(local) = binding.slice_length_local() {
                 slice_locals.insert(
                     local.spelling().expect("Rust slice place").to_owned(),
-                    binding.clone(),
+                    binding
+                        .source_slice_length()
+                        .unwrap_or_else(|| binding.clone()),
                 );
                 return;
             }

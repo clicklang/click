@@ -1368,6 +1368,13 @@ pub(crate) fn resource_context_has_symbolic_range_read(
 
 impl LocalEnvironment {
     pub(crate) fn resolve_binding(&self, name: &BindingName) -> BindingName {
+        if let Some(place) = name.unresolved_slice_length() {
+            crate::instrumentation::record_deterministic_work(1);
+            return match self.resolve_binding(&BindingName::from(place)) {
+                BindingName::Local(id) => BindingName::lexical_local_slice_length(&id),
+                _ => name.clone(),
+            };
+        }
         if matches!(name, BindingName::ReferenceCarrier(_)) {
             crate::instrumentation::record_deterministic_work(1);
         }
