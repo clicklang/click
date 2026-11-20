@@ -1752,7 +1752,10 @@ fn contract_application_binds_each_handle_by_name() {
             "Touch",
             "declares resource handles; write `step(Touch, { cell: ... })`",
         ),
-        ("Touch, {}", "call map omits `Touch` binder `cell`"),
+        (
+            "Touch, {}",
+            "declares resource handles; write `step(Touch, { cell: ... })`",
+        ),
         (
             "Touch, { slot: first }",
             "`Touch` declares no resource instance binder `slot`",

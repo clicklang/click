@@ -8042,14 +8042,19 @@ pub(super) fn describe_program_point_ref_as_recorded(point: &ProgramPointRef) ->
     format!("{}.{}", describe_code_region_ref(&point.region), kind)
 }
 
+pub(super) fn describe_execution_point(point: &ExecutionPoint) -> String {
+    match point {
+        ExecutionPoint::ProgramPoint(point) => describe_program_point_ref_as_recorded(point),
+        ExecutionPoint::BackEdge(None) => "loop.back_edge".into(),
+        ExecutionPoint::BackEdge(Some(index)) => format!("loop({index}).back_edge"),
+    }
+}
+
 pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
     match region {
         CodeRegionRef::Function => "function".to_string(),
-        CodeRegionRef::FunctionExit => "function.exit".to_string(),
         CodeRegionRef::Loop(index) => format!("loop({index})"),
         CodeRegionRef::Read(index) => format!("read({index})"),
-        CodeRegionRef::BackEdge(None) => "back_edge()".into(),
-        CodeRegionRef::BackEdge(Some(index)) => format!("loop({index}).back_edge()"),
         CodeRegionRef::Region(index) => format!("region({index})"),
         CodeRegionRef::Label(name) => name.clone(),
         CodeRegionRef::Assignment { local, occurrence } => {

@@ -1373,7 +1373,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
         apply(ctx_reroot_fixed(c.model, parent)) using { ctx_node_is(c.model, parent) == 1; };
         known();
     }
-    step_until(loop(0));
+    step_until(loop(0).entry);
     have node == 0;
     let t = fold(rb_at(node), { model: RbTree::Empty });
     have is_rb(t.model) == 1 by { rewrite(t.model, RbTree::Empty); unfold(is_rb(RbTree::Empty)); normalize(); }

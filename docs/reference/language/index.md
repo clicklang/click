@@ -4011,7 +4011,7 @@ included. `S.statement(j)` counts the statements of every block inside `S` in
 source order, so an `if`'s arms share one count, and so do a `match`'s arms; an
 arm whose body is no block is one statement. A closure is a function of its
 own. Each region is in the innermost statement whose source holds the MIR it
-was lowered from, so `step_until(statement(1).call(0))` stops at the second
+was lowered from, so `step_until(statement(1).call(0).entry)` stops at the second
 statement's call (`charon_rust_statements_as_written_name_their_calls`).
 
 `.region(j)`, `.call(f, j)`, `.test()`, `.assignment(x, j)`, `.read(j)`,
@@ -4162,7 +4162,7 @@ and the unique post-loop state `at(loop_label.exit, expression)`. Branches still
 require explicit arm proofs and a checked join before the path reaches a
 unique exit point.
 
-`step_until(region(N))` starts at the current execution frontier, so it can
+`step_until(region(N).entry)` starts at the current execution frontier, so it can
 follow earlier `step` or joined `branch` steps. The
 target must be forward and reachable on that selected path; it cannot be used
 to rewind execution or enter an unselected branch.

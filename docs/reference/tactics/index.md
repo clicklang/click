@@ -47,7 +47,7 @@ remains supported.
   every path. See [Automation and search](#automation-and-search).
 - `step()`: run one C statement, to put proof steps between statements. See
   [Execution](#execution).
-- `step_until(target)`: run to one statement, loop, or `function.exit`
+- `step_until(point)`: run to one statement, loop, or `function.exit`
   without splitting. See [Execution](#execution).
 - `branch { true => { ... } false => { ... } }`: prove each arm of the C `if` at the
   frontier. See [Execution](#execution).
@@ -346,7 +346,7 @@ the one execution transition that fails.
 | `mark name;` | simple | Specialized | Name the current execution state. | [Reference](#proof-marks) |
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
 | `let { result: name } = step()` | simple | Specialized | Bind a checked assignment, call, or scalar step result. | [Reference](#binding-a-statement-result) |
-| `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
+| `step_until(statement(i).entry)` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
 | `branch [ensuring { ... }] { true => { ... } false => { ... } }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
 | `loop [name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
@@ -364,7 +364,7 @@ after its arm states have joined.
 
 Marks are local to one proof and their names cannot be rebound. They remember
 an already-reached state; they are not source labels, execution targets, or
-saved states that can be restored. In particular, `step_until(name)` does
+saved states that can be restored. In particular, `step_until(name.entry)` does
 not target a proof mark.
 
 Expansion of execution automation emits one `step();` line per executed
@@ -405,8 +405,8 @@ state under that name and changes nothing else:
 - Inside a `have ... by { ... }` body or a pure theorem, `mark` is refused.
   Write the mark in the execution script.
 - A mark names a point the path has already reached, not a point in the C
-  region tree that execution can be sent to. `step_until(name)` does not target
-  a mark; use `step_until(statement(i))`.
+  region tree that execution can be sent to. `step_until(name.entry)` does not target
+  a mark; use `step_until(statement(i).entry)`.
 
 **Failure, checking, and tools:**
 
@@ -660,7 +660,7 @@ leaves an open claim to the report that names it
 
 ### Execution to a point
 
-**Form:** `step_until(statement(i))`
+**Form:** `step_until(statement(i).entry)`
 
 `step_until` repeats `step()` up to the target, walking any loop the facts
 decide, and never splits: an undecided branch before the target refuses it, as
@@ -669,12 +669,13 @@ and names `step_until`.
 
 **Specialized.** Write it to stop execution at a chosen statement, loop, or read
 and do proof work there, instead of a run of `step();` lines. From a live
-frontier, execute forward to the selected region's entry without creating a
-proof interface. Any statement region names a target:
-`step_until(statement(i).statement(j))` stops before a nested statement and
-`step_until(statement(i).call(f, j))` stops just before one of its calls
-(`mdtests/step_until_runs_to_a_statement_region.md`);
-`.assignment(x, j)` and `.read(j)` end a chain the same way, at the
+frontier, execute forward to the written program point. An entry uses the
+same spelling as in `at(point, expression)`. Append `.entry` to a
+statement or one of its subregions:
+`step_until(statement(i).statement(j).entry)` stops before a nested statement and
+`step_until(statement(i).call(f, j).entry)` stops just before one of its calls
+(`mdtests/execute_until_runs_to_a_statement_region.md`);
+`.assignment(x, j).entry` and `.read(j).entry` end a chain the same way, at the
 statement's `j`th own store to `x` or memory load
 (`mdtests/a_chained_region_ends_in_an_assignment_or_read.md`).
 An ordinary scalar C call assignment has a call-result step followed by an
@@ -682,17 +683,17 @@ assignment step. A C aggregate call with a declared return type similarly has
 a call-result step followed by a destination-copy step. Their `.call(...).exit`
 and `.assignment(...).exit` name distinct points, even when both effects come
 from one C statement (`mdtests/aggregate_call_and_destination_copy_have_separate_points.md`).
-`step_until(region(N))` stops before the `N`th atomic region;
-`step_until(loop(N))` selects the indexed loop entry;
-`step_until(assignment(local, N))` selects the Nth static local assignment
+`step_until(region(N).entry)` stops before the `N`th atomic region;
+`step_until(loop(N).entry)` selects the indexed loop entry;
+`step_until(assignment(local, N).entry)` selects the Nth static local assignment
 of the function before it executes.
 
-`step_until(read(N))` stops before the Nth statement of the function
-containing an explicit scalar memory read. `step_until(back_edge())`
+`step_until(read(N).entry)` stops before the Nth statement of the function
+containing an explicit scalar memory read. `step_until(loop.back_edge)`
 finishes the current loop preservation region with checked steps; invariant
-and ranking closure are separate. `step_until(loop(i).back_edge())` does the
+and ranking closure are separate. `step_until(loop(i).back_edge)` does the
 same and is refused outside `loop(i)`'s preservation region
-(`mdtests/step_until_refuses_another_loop_s_back_edge.md`).
+(`mdtests/execute_until_refuses_another_loop_s_back_edge.md`).
 
 A construction-return proof may use `&result` before the return to name the
 destination object. Its address alone supplies neither initialized field
@@ -716,7 +717,7 @@ The indexed source layout resolves loop entries. Click checks every crossed
 transition; expansion prints those steps, and profiling reports the selected
 site.
 
-**Checked examples:** [`step_until_runs_to_a_statement_region.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_runs_to_a_statement_region.md), [`step_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_current_frontier.md), [`step_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_selects_loop_entry.md), [`step_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_assignment.md), [`step_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_read.md), [`step_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_back_edge.md), [`step_until_back_edge_of_a_named_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_back_edge_of_a_named_loop.md), [`a_chained_region_ends_in_an_assignment_or_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_chained_region_ends_in_an_assignment_or_read.md), [`step_until_steps_to_function_exit.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_steps_to_function_exit.md)
+**Checked examples:** [`execute_until_runs_to_a_statement_region.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_runs_to_a_statement_region.md), [`execute_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_current_frontier.md), [`execute_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_selects_loop_entry.md), [`execute_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_assignment.md), [`execute_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_read.md), [`execute_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_back_edge.md), [`execute_until_back_edge_of_a_named_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_back_edge_of_a_named_loop.md), [`a_chained_region_ends_in_an_assignment_or_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_chained_region_ends_in_an_assignment_or_read.md), [`step_until_steps_to_function_exit.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_steps_to_function_exit.md)
 
 ### Source branches
 

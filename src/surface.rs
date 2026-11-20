@@ -6077,7 +6077,7 @@ pub enum ProofTactic {
     /// the author wrote keep their source indices; indexing unwraps it.
     Synthetic(Box<ProofTactic>),
     SmartExecute,
-    ExecuteUntil(CodeRegionRef),
+    ExecuteUntil(ExecutionPoint),
     UnfoldProposition(ClickProposition),
     UnfoldFunction(ClickFunctionApplication),
     UnfoldResource(ResourceClause),
@@ -7433,9 +7433,6 @@ pub struct ClickFunctionApplication {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum CodeRegionRef {
     Function,
-    /// The function's exit, written `function.exit`. Accepted only by
-    /// `step_until`, which steps there without splitting.
-    FunctionExit,
     Loop(usize),
     /// The `N`th region `step()` crosses: one lowered statement, in
     /// executable preorder. Each call a C statement makes is its own region.
@@ -7449,9 +7446,6 @@ pub enum CodeRegionRef {
     },
     /// A statement with an explicit scalar memory load, in executable preorder.
     Read(usize),
-    /// The current loop preservation region's checked back edge; with a
-    /// loop, written `loop(i).back_edge()`, it must be that loop's.
-    BackEdge(Option<usize>),
     /// A region written as a chain of regions, each inside the one before
     /// it, such as `statement(2).statement(0)` or `statement(3).call(f, 1)`;
     /// it names the atomic regions it resolves to through the function's
@@ -7495,8 +7489,8 @@ pub enum SourcePathStep {
 
 impl CodeRegionRef {
     /// The C code region this written region names, through the one binding
-    /// of each loop label: the structural clause that declared it. Assignment,
-    /// read and back-edge regions name execution targets, not regions.
+    /// of each loop label: the structural clause that declared it. Assignment and
+    /// read selectors are resolved by the execution layout.
     pub(in crate::surface) fn resolve(
         &self,
         structural_clauses: &StructuralClauses,
@@ -7509,16 +7503,10 @@ impl CodeRegionRef {
                 .labelled_region(label)
                 .copied()
                 .ok_or_else(|| CodeRegionResolutionError::UnknownLabel(label.clone())),
-            CodeRegionRef::BackEdge(_) => Err(CodeRegionResolutionError::ExecutionTargetOnly(
-                "back_edge regions are",
-            )),
             CodeRegionRef::Path(_) => Err(CodeRegionResolutionError::StatementRegionTarget),
             CodeRegionRef::Assignment { .. } | CodeRegionRef::Read(_) => Err(
                 CodeRegionResolutionError::ExecutionTargetOnly("assignment and read regions are"),
             ),
-            CodeRegionRef::FunctionExit => Err(CodeRegionResolutionError::ExecutionTargetOnly(
-                "`function.exit` is",
-            )),
         }
     }
 }
@@ -7602,6 +7590,21 @@ pub enum ProgramPointKind {
     /// the memory just after each argument was copied into its parameter
     /// object. Only `R.parameter(name)` reads at it.
     Parameters,
+}
+
+/// A destination for forward execution. A loop back edge selects the
+/// boundary of the current iteration, with an optional check of its loop.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExecutionPoint {
+    ProgramPoint(ProgramPointRef),
+    BackEdge(Option<usize>),
+}
+
+impl ExecutionPoint {
+    pub const FUNCTION_EXIT: Self = Self::ProgramPoint(ProgramPointRef {
+        region: CodeRegionRef::Function,
+        kind: ProgramPointKind::Exit,
+    });
 }
 
 /// `witness(value, ...)`: instantiate the outermost existential binders

@@ -33,7 +33,7 @@ unsigned count(int n) {
     requires n >= 0;
     ensures to_integer(result) == to_integer(n) + 1;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases to_integer(n) - to_integer(c);
         invariant left >= 0;

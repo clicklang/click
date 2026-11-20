@@ -461,7 +461,7 @@ uint64 spell(const uint8* b, uint64 n) {
     views b[0u64..n];
     ensures result < 4u64;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases vl;
         views b[0u64..n];

@@ -13,7 +13,7 @@ int ordered(void) {
 import click::bytes;
 verifying "compare.c";
 int32 ordered() { ensures result == 1; } by {
-    step_until(statement(2).call(memcmp, 0));
+    step_until(statement(2).call(memcmp, 0).entry);
     let { result: cmp } = step(memcmp);
     have bytes::equal(left, 0u64, right, 0u64, 1u64) by {
         unfold(bytes::equal(left, 0u64, right, 0u64, 1u64));

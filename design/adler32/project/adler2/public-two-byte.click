@@ -27,7 +27,7 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
  ensures data[0] == old(data[0]);
  ensures data[1] == old(data[1]);
 } by {
- step_until(assignment(__rust_mir_0, 0));
+ step_until(assignment(__rust_mir_0, 0).entry);
  have to_integer(h.a) == old(adler_spec_a_u64(data, 2u64, 1));
  have to_integer(h.b) == old(adler_spec_b_u64(data, 2u64, 1, 0));
  have 65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, 2u64, 1, 0)) by {

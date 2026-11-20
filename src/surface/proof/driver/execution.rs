@@ -379,7 +379,7 @@ fn checked_execution_arm_tactics_end(
         };
         if matches!(
             tactic,
-            ProofTactic::SmartExecute | ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit)
+            ProofTactic::SmartExecute | ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT)
         ) {
             at_function_exit = true;
             continue;
@@ -1217,8 +1217,8 @@ fn apply_frontier_source_tactic<'a>(
                 )
             })?;
         selected.join()?
-    } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
-        match crate::kernel::search::ProofSearch::try_execute_until(&(proof), region)? {
+    } else if let ProofTactic::ExecuteUntil(point) = &indexed.tactic {
+        match crate::kernel::search::ProofSearch::try_execute_until(&(proof), point)? {
             Some(executed) => executed,
             None => {
                 // An arm of `branch` that does not return ends at the C
@@ -5031,9 +5031,9 @@ fn advance_linear_open_scope<'a>(
             }
             continue;
         }
-        if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
+        if let ProofTactic::ExecuteUntil(point) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
-            let Some(executed) = (scope).driver().try_execute_until(region)? else {
+            let Some(executed) = (scope).driver().try_execute_until(point)? else {
                 return decline();
             };
             scope = executed;
@@ -5574,9 +5574,9 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
         ProofTactic::StepCall(transport) => transport.to_string(),
         ProofTactic::UserTactic(application) => application.tactic_spelling(),
         ProofTactic::SmartExecute => "the implicit tail".to_string(),
-        ProofTactic::ExecuteUntil(region) => format!(
+        ProofTactic::ExecuteUntil(point) => format!(
             "step_until({})",
-            crate::surface::diagnostics::describe_code_region_ref(region)
+            crate::surface::diagnostics::describe_execution_point(point)
         ),
         // These act on the frontier's memory and program points, which a
         // function outcome no longer has.

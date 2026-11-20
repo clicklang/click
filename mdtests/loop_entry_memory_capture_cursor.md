@@ -25,7 +25,7 @@ int32 cursor(const uint8* p, int32 n) {
    have 0 <= to_integer(old(n) - n) by solve() using { 0 <= n; n <= old(n); old(n) <= 15; n > 0; };
    have to_integer(old(n) - n) <= 14 by solve() using { 0 <= n; n <= old(n); old(n) <= 15; n > 0; };
    mark head;
-   step_until(back_edge());
+   step_until(loop.back_edge);
    have p == at(head, p) + 1 by solve();
    have to_integer(old(n) - n) == to_integer((old(n) - at(head, n)) + 1) by solve() using {
     at(head, n) > 0; at(head, n) <= old(n); old(n) <= 15;

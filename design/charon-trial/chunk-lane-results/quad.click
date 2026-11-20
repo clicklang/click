@@ -42,7 +42,7 @@ fn quad::walk(bytes: &[u8]) -> u32 {
     views bytes[0..16];
     ensures result == 0u32;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.v.len();
         views bytes[0..16];
@@ -58,11 +58,11 @@ fn quad::walk(bytes: &[u8]) -> u32 {
                 have to_integer(16u64 - iter.v.len()) + 4 <= 18446744073709551615;
                 have (bytes + (16u64 - iter.v.len())) + 4u64 == bytes + ((16u64 - iter.v.len()) + 4u64);
                 mark taken;
-                step_until(assignment(chunk, 0)); step(); step();
+                step_until(assignment(chunk, 0).entry); step(); step();
                 have chunk == bytes + (16u64 - at(taken, iter.v.len()));
                 have chunk.len() == 4u64;
                 mark before;
-                step_until(assignment(_byte, 0));
+                step_until(assignment(_byte, 0).entry);
                 have lanes.lanes[0] == at(before, chunk[0]);
                 have lanes.lanes[0] == chunk[0];
                 have lanes.lanes[1] == at(before, chunk[1]);
@@ -80,7 +80,7 @@ fn quad::walk(bytes: &[u8]) -> u32 {
                 have to_integer(lanes.lanes[2]) == to_integer(chunk[2] as int32) by { rewrite(lanes.lanes[2], chunk[2] as uint32); apply(quad_byte_observation(chunk[2])); known(); }
                 have lanes.lanes[3] == chunk[3] as uint32;
                 have to_integer(lanes.lanes[3]) == to_integer(chunk[3] as int32) by { rewrite(lanes.lanes[3], chunk[3] as uint32); apply(quad_byte_observation(chunk[3])); known(); }
-                step_until(loop(0).back_edge());
+                step_until(loop(0).back_edge);
                 have 4u64 <= at(taken, iter.v.len());
                 have to_integer(iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
                 have (16u64 - at(taken, iter.v.len())) + 4u64 == 16u64 - iter.v.len();

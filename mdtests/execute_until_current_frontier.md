@@ -52,7 +52,7 @@ int32 execute_until_after_step(int32 x) {
         and at(region(2).exit, y) == 5
         and at(region(3).entry, y) == 5 by {
         step();
-        step_until(region(3));
+        step_until(region(3).entry);
         step();
         solve();
     }
@@ -66,8 +66,8 @@ int32 execute_until_selected_branch(int32 flag) {
         and at(region(5).entry, y) == 2 by {
         step();
         step();
-        step_until(region(3));
-        step_until(region(5));
+        step_until(region(3).entry);
+        step_until(region(5).entry);
         step();
         solve();
     }
@@ -86,7 +86,7 @@ int32 execute_until_after_advance(int32 flag) {
                 step();
             }
         }
-        step_until(region(6));
+        step_until(region(6).entry);
         step();
         solve();
     }

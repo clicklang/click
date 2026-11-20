@@ -8,7 +8,7 @@ trait trait_methods::Shape {
         requires 0 <= scale and scale <= 1000;
         ensures result <= 6002;
     } by {
-        step_until(call(trait_methods::Shape::area, 0));
+        step_until(call(trait_methods::Shape::area, 0).entry);
     }
 }
 

@@ -266,7 +266,7 @@ fn explicit_frame_refusal_replays_without_transport() {
     let mut expanded = source;
     for prefix_step in [
         "have to_integer(s + 1) <= to_integer(e);",
-        "step_until(statement(2));",
+        "step_until(statement(2).entry);",
     ] {
         let at = expansion::position_at_offset(&expanded, expanded.find(prefix_step).unwrap());
         expanded = expand_c_tactic_source_at(&expanded, &sources, at.line, at.column)
@@ -5814,7 +5814,7 @@ fn selected_post_execution_solve_keeps_the_surviving_execution_branch() {
                 ensures result != tail implies result->value == value;
                 ensures result != tail implies result->next == tail;
             } by {
-                step_until(statement(1));
+                step_until(statement(1).entry);
                 if node == 0 {
                     step_until(function.exit);
                     solve();
@@ -6911,7 +6911,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
                 ensures result == expected;
             } by {
                 observe(equal_cell(data, expected));
-                step_until(statement(2));
+                step_until(statement(2).entry);
                 apply(int32_equality_transitive(observed, data[0], expected));
                 step_until(function.exit);
                 solve();
@@ -11497,7 +11497,7 @@ fn linear_execute_until_inside_open_stops_on_checked_frontier() {
             ensures result == x;
         } by {
             open(marker(x)) {
-                step_until(region(2));
+                step_until(region(2).entry);
                 step();
             }
             step();
@@ -12636,7 +12636,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             have selected >= 0 by {
                 apply(positive_is_nonnegative(selected));
             }
-            step_until(region(5));
+            step_until(region(5).entry);
             step();
             solve();
         }
@@ -15954,7 +15954,7 @@ fn source_expander_recalls_a_fact_at_a_recorded_statement_entry() {
                 ensures result == 1;
             } by {
                 observe(one(p));
-                step_until(region(2));
+                step_until(region(2).entry);
                 have at(region(1).entry, p[0]) == 1 by solve();
                 step_until(function.exit);
                 solve();
@@ -16056,7 +16056,7 @@ fn source_expander_derives_separation_from_call_postconditions() {
                 views data[0..length];
                 ensures result == 0;
             } by {
-                step_until(region(2));
+                step_until(region(2).entry);
                 have separate(
                     memory(*right),
                     memory(left->data[0..left->len])
@@ -24618,7 +24618,7 @@ fn bit_field_pointer_and_value_capture_expand_and_replay() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let source = format!(
-        "{source}\nby {{ step_until(statement(2)); have p != 0; step_until(function.exit); solve(); }}"
+        "{source}\nby {{ step_until(statement(2).entry); have p != 0; step_until(function.exit); solve(); }}"
     );
     let claim = "answer.contract";
     let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
@@ -24651,7 +24651,7 @@ fn bit_field_declarations_keep_later_local_ordinals() {
     let click = r#"
         verifying "fields.c";
         int32 answer() { ensures result == 1; } by {
-            step_until(statement(3));
+            step_until(statement(3).entry);
             have answer.local(4) == 1;
             step_until(function.exit);
             solve();
@@ -24670,7 +24670,7 @@ fn bit_field_record_storage_expands_and_replays() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let source = format!(
-        "{source}\nby {{ step_until(statement(3)); have &source != 0; step_until(function.exit); solve(); }}"
+        "{source}\nby {{ step_until(statement(3).entry); have &source != 0; step_until(function.exit); solve(); }}"
     );
     let claim = "answer.contract";
     let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
@@ -24719,9 +24719,9 @@ fn row_pointer_source_binding_expands_and_replays() {
         .collect::<Vec<_>>();
     let source = format!(
         "{source}\nby {{
-            step_until(statement(4));
+            step_until(statement(4).entry);
             have row != 0;
-            step_until(statement(5));
+            step_until(statement(5).entry);
             have next != 0;
             step_until(function.exit);
             solve();
@@ -24753,7 +24753,7 @@ fn row_pointer_declaration_keeps_later_local_ordinals() {
     let click = r#"
         verifying "matrix.c";
         int32 select_rows() { ensures result == 21; } by {
-            step_until(statement(3));
+            step_until(statement(3).entry);
             have select_rows.local(3) == 21;
             step_until(function.exit);
             solve();

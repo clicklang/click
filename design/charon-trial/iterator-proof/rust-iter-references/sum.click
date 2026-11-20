@@ -19,7 +19,7 @@ fn sum(bytes: &[u8]) -> i32 {
     views bytes[0..bytes.len()];
     ensures to_integer(result) == old(prefix(bytes, bytes.len()));
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     have loop(0).iter.len() == bytes.len();
     have loop(0).iter.as_slice() == bytes;
     have bytes.len() - loop(0).iter.len() == 0u64;
@@ -56,7 +56,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 have to_integer((bytes.len() - iter.len())) + 1 <= 18446744073709551615;
                 have to_integer((bytes.len() - iter.len()) + 1u64) == to_integer((bytes.len() - iter.len())) + 1;
                 // `next` binds `byte` to the element, then moves the slice on.
-                step_until(assignment(byte, 0));
+                step_until(assignment(byte, 0).entry);
                 step();
                 have byte == bytes + (bytes.len() - at(iteration, iter.len()));
                 step(); step();
@@ -67,7 +67,7 @@ fn sum(bytes: &[u8]) -> i32 {
                     rewrite(bytes + ((bytes.len() - at(iteration, iter.len())) + 1u64), (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64);
                     known();
                 }
-                step_until(read(0));
+                step_until(read(0).entry);
                 let { result: loaded_byte } = step();
                 mark loaded;
                 have at(iteration, bytes[(bytes.len() - iter.len())]) == loaded_byte;
@@ -79,8 +79,8 @@ fn sum(bytes: &[u8]) -> i32 {
                 have to_integer(total + loaded_byte as i32) <= 255 * at(iteration, to_integer((bytes.len() - iter.len()) + 1u64));
                 have (bytes.len() - iter.len()) == (bytes.len() - at(iteration, iter.len())) + 1u64;
                 have to_integer(bytes.len() - iter.len()) == to_integer((bytes.len() - at(iteration, iter.len())) + 1u64);
-                step_until(assignment(total, 1)); step();
-                step_until(back_edge());
+                step_until(assignment(total, 1).entry); step();
+                step_until(loop.back_edge);
                 have iter.len() <= bytes.len();
                 have iter.as_slice() == bytes + (bytes.len() - iter.len()) by {
                     rewrite((bytes.len() - iter.len()), (bytes.len() - at(iteration, iter.len())) + 1u64);

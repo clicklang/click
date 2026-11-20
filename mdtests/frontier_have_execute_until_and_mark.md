@@ -64,7 +64,7 @@ int32 fill_zero(int32 p[], int32 n) {
 int32 state_y(int32 x) {
     ensures result >= 0;
 } by {
-    step_until(region(4));
+    step_until(region(4).entry);
     have y >= 0 by {
         solve();
     }

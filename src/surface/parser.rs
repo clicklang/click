@@ -8106,12 +8106,17 @@ impl Parser {
         if callee == "pthread_mutex_init" && !bound.contains("state") {
             declared.remove("state");
         }
-        if let Some((missing, _)) = declared.iter().find(|(name, entry)| {
-            matches!(
-                entry.kind,
-                CalleeResourceBinderKind::Supplied | CalleeResourceBinderKind::Type
-            ) && !bound.contains(*name)
-        }) {
+        // An unbound named-contract step uses the ordinary contract checker,
+        // which can give a combined input-map and output-pattern hint.
+        let plain_contract_step = named_contract && output.is_none() && bound.is_empty();
+        if !plain_contract_step
+            && let Some((missing, _)) = declared.iter().find(|(name, entry)| {
+                matches!(
+                    entry.kind,
+                    CalleeResourceBinderKind::Supplied | CalleeResourceBinderKind::Type
+                ) && !bound.contains(*name)
+            })
+        {
             return Err(self.error(format!("call map omits `{callee}` binder `{missing}`")));
         }
         // Instantiate the runtime's ordinary state output from the resource
@@ -8162,6 +8167,7 @@ impl Parser {
         let mut produced = Vec::new();
         match (output, produced_declarations.as_slice()) {
             (None, []) => {}
+            (None, _) if plain_contract_step => {}
             (None, _) => {
                 let names = produced_declarations
                     .iter()
@@ -11402,17 +11408,9 @@ impl Parser {
             }
             "step_until" => {
                 self.expect(Token::LParen)?;
-                let region_ref = if self.peek_ident() == Some("function")
-                    && self.peek_next() == Some(&Token::Dot)
-                    && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(kind)) if kind == "exit")
-                {
-                    self.position += 3;
-                    CodeRegionRef::FunctionExit
-                } else {
-                    self.parse_code_region_ref()?
-                };
+                let point = self.parse_execution_point()?;
                 self.expect(Token::RParen)?;
-                ProofTactic::ExecuteUntil(region_ref)
+                ProofTactic::ExecuteUntil(point)
             }
             "unfold" => {
                 self.expect(Token::LParen)?;
@@ -12429,13 +12427,6 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let index = self.expect_index("loop index")?;
                 self.expect(Token::RParen)?;
-                if self.chained_region_follows(&["back_edge"]) {
-                    self.expect(Token::Dot)?;
-                    self.expect_ident("back_edge")?;
-                    self.expect(Token::LParen)?;
-                    self.expect(Token::RParen)?;
-                    return Ok(CodeRegionRef::BackEdge(Some(index)));
-                }
                 if self.source_path_step_follows() {
                     return self.parse_source_path(vec![SourcePathStep::Loop(index)]);
                 }
@@ -12456,11 +12447,6 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 self.parse_source_path(vec![SourcePathStep::Statement(index)])
             }
-            Some(Token::Ident(kind)) if kind == "back_edge" && self.peek() == Some(&Token::LParen) => {
-                self.expect(Token::LParen)?;
-                self.expect(Token::RParen)?;
-                Ok(CodeRegionRef::BackEdge(None))
-            }
             Some(Token::Ident(kind)) if kind == "read" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
                 let occurrence = self.expect_index("read occurrence")?;
@@ -12477,10 +12463,10 @@ impl Parser {
             }
             Some(Token::Ident(label)) => Ok(CodeRegionRef::Label(label)),
             Some(token) => Err(self.error(format!(
-                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got {token}"
+                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, or label, got {token}"
             ))),
             None => Err(self.error(
-                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got end of input",
+                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, or label, got end of input",
             )),
         }
     }
@@ -17038,6 +17024,44 @@ impl Parser {
 
     fn parse_program_point_ref(&mut self) -> Result<ProgramPointRef, ClickError> {
         let region = self.parse_code_region_ref()?;
+        self.parse_program_point_after_region(region)
+    }
+
+    fn parse_execution_point(&mut self) -> Result<ExecutionPoint, ClickError> {
+        // Bare `loop` in this spelling means the active iteration.
+        if self.peek_ident() == Some("loop")
+            && self.peek_next() == Some(&Token::Dot)
+            && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(name)) if name == "back_edge")
+        {
+            self.position += 3;
+            return Ok(ExecutionPoint::BackEdge(None));
+        }
+        let region = self.parse_code_region_ref()?;
+        if let CodeRegionRef::Loop(index) = &region
+            && self.peek() == Some(&Token::Dot)
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "back_edge")
+        {
+            self.position += 2;
+            return Ok(ExecutionPoint::BackEdge(Some(*index)));
+        }
+        if self.peek() == Some(&Token::RParen) {
+            return Err(self.error("`step_until` requires an explicit program point, such as `loop(0).entry` or `function.exit`"));
+        }
+        let point = self.parse_program_point_after_region(region)?;
+        if point.kind != ProgramPointKind::Entry
+            && !(point.region == CodeRegionRef::Function && point.kind == ProgramPointKind::Exit)
+        {
+            return Err(self.error(
+                "`step_until` supports entry points, `function.exit`, and loop back edges",
+            ));
+        }
+        Ok(ExecutionPoint::ProgramPoint(point))
+    }
+
+    fn parse_program_point_after_region(
+        &mut self,
+        region: CodeRegionRef,
+    ) -> Result<ProgramPointRef, ClickError> {
         self.expect(Token::Dot)?;
         let kind = match self.expect_ident("program point kind")?.as_str() {
             "entry" => ProgramPointKind::Entry,
@@ -18600,7 +18624,7 @@ mod tactic_classification_tests {
             "step() { requires x == 1 by { normalize(); }; }",
         ),
         ("user-tactic", "name(x, { cell: c });"),
-        ("step-until", "step_until(label);"),
+        ("step-until", "step_until(label.entry);"),
         ("unfold-predicate", "unfold(predicate(x));"),
         ("unfold-function", "unfold(f(x));"),
         ("unfold-resource", "unfold(reference(p));"),

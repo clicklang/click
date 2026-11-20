@@ -4,7 +4,7 @@ fn final_header(bytes: &[u8]) -> usize {
     requires bytes.len() <= 2147483647u64;
     ensures result == bytes.len();
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases bytes.len() - i;
         invariant i <= bytes.len();
@@ -15,7 +15,7 @@ fn negated(bytes: &[u8]) -> usize {
     requires bytes.len() <= 2147483647u64;
     ensures result == bytes.len();
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases bytes.len() - i;
         invariant i <= bytes.len();

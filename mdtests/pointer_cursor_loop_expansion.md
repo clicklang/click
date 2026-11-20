@@ -16,7 +16,7 @@ int32 f(const uint8* bytes) {
 ```click
 verifying "cursor-loop.c";
 int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  have viewable(bytes[0..8]) by { observe(bytes[0..8]); }
  loop {
  decreases 2 - outer;

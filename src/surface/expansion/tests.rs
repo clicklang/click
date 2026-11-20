@@ -444,12 +444,12 @@ fn execute_until_in_proof_if_arms_expands_and_rechecks() {
 verifying "identity.c";
 int32 identity(int32 x) { ensures result == x; } by {
     if x == 0 {
-        step_until(region(0));
-        step_until(assignment(y, 0));
+        step_until(region(0).entry);
+        step_until(assignment(y, 0).entry);
         step(); step_until(function.exit); solve();
     } else {
-        step_until(region(0));
-        step_until(assignment(y, 0));
+        step_until(region(0).entry);
+        step_until(assignment(y, 0).entry);
         step(); step_until(function.exit); solve();
     }
 }
