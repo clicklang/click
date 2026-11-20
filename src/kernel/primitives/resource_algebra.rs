@@ -3242,7 +3242,11 @@ impl ResourceContext {
         });
         self.advance_observable_removal(&previous, entry);
         self.advance_published_resource_entries();
-        if fact.is_own() {
+        // Ranks need rebuilding only when an equal authority has a cached
+        // expansion. Caching or dropping one rekeys at once, so no key for
+        // `fact` means none does, and the rebuild would walk every equal
+        // unit to produce the same empty bucket.
+        if fact.is_own() && self.storage.expansions_by_support_entry.contains_key(&fact) {
             self.rekey_cached_support_entries(&fact);
         }
         fact
