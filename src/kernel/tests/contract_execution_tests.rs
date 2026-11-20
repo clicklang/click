@@ -530,7 +530,7 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
     let resources =
         ResourceContext::new().unchecked_with_facts([owned_target, owned_source, viewed.clone()]);
     let support = resources.occurrences_for_fact(&viewed)[0];
-    let ledger = crate::kernel::loans::LoanLedger::new();
+    let ledger = crate::kernel::loans::BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("a fresh participant");
     let opening = ledger
         .borrowed_contract_input(participant, support, viewed.clone(), None)
@@ -619,7 +619,7 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
     let resources = ResourceContext::new().unchecked_with_facts([owned, viewed.clone()]);
     let support = resources.occurrences_for_fact(&viewed)[0];
-    let ledger = crate::kernel::loans::LoanLedger::new();
+    let ledger = crate::kernel::loans::BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("a fresh participant");
     let opening = ledger
         .borrowed_contract_input(participant, support, viewed.clone(), None)
@@ -699,7 +699,7 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
     let resources = ResourceContext::new().unchecked_with_facts([owned, viewed.clone()]);
     let support = resources.occurrences_for_fact(&viewed)[0];
-    let ledger = crate::kernel::loans::LoanLedger::new();
+    let ledger = crate::kernel::loans::BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("a fresh participant");
     let opening = ledger
         .borrowed_contract_input(participant, support, viewed.clone(), None)

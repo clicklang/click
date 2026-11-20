@@ -32,8 +32,8 @@ int32 first(int32 p[], int32 n) {
 void mark(int32 p[], int32 n) {
     requires 0 < n;
     requires forall (k: int32) { 0 <= k and k < n implies defined(p[k]) };
-    views p[0..n];
-    produces valid(p, n);
+    views p[0..n] as input;
+    produces valid(p, n) from input;
 }
 ```
 

@@ -230,7 +230,7 @@ fn construction_binding_retains_the_full_destination_loan_requirement() {
     ));
     let (_, occurrences) =
         ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let holder = ledger.fresh_participant().unwrap();
     let opening = ledger
         .borrowed_contract_input(holder, occurrences[0].1, view, None)
@@ -315,7 +315,7 @@ fn direct_native_construction_distinguishes_fields_from_padding() {
         ));
         let (_, occurrences) =
             ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let holder = ledger.fresh_participant().unwrap();
         let opening = ledger
             .borrowed_contract_input(holder, occurrences[0].1, view, None)

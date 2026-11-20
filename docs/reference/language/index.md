@@ -2790,6 +2790,9 @@ input must cover the output, and the output keeps the input borrow active
 until the caller gives it up. You can omit `from` when exactly one input
 view has the same lowered range. See
 [Producing a view](../../concepts/resources.md#producing-a-view).
+A newly produced composite that contains a view names its source with
+`produces cursor(...) from source;`. The source can be a `views ... as source;`
+requirement or an existing borrowing composite named by `consumes ... as source;`.
 `requires` and `ensures` accept pure propositions
 only. `consumes X;` beside `produces X;` for the same `X` is exactly
 `owns X;`, and the pair is refused with that one clause to write (with the

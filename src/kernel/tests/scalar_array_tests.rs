@@ -309,7 +309,7 @@ fn compact_scalar_array_initialization_cannot_bypass_an_active_view_loan() {
     let resources = ResourceContext::new()
         .unchecked_with_facts([own_memory_fact(target.clone(), 0, 4), viewed.clone()]);
     let support = resources.occurrences_for_fact(&viewed)[0];
-    let ledger = crate::kernel::loans::LoanLedger::new();
+    let ledger = crate::kernel::loans::BorrowLedger::new();
     let participant = ledger.fresh_participant().unwrap();
     let opening = ledger
         .borrowed_contract_input(participant, support, viewed.clone(), None)
@@ -393,7 +393,7 @@ fn execute_test_scalar_array_write(
 
 #[test]
 fn scalar_array_region_writes_require_separation_for_the_entire_destination() {
-    use crate::kernel::loans::LoanLedger;
+    use crate::kernel::loans::BorrowLedger;
 
     let state = scalar_array_region_state();
     let assumptions = PureFactContext::new();
@@ -406,7 +406,7 @@ fn scalar_array_region_writes_require_separation_for_the_entire_destination() {
             .unique_owned_occurrence_for_fact(&backing)
             .unwrap()
             .0;
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let lender = ledger.fresh_participant().unwrap();
         let reader = ledger.fresh_participant().unwrap();
         let opening = ledger.lend(lender, reader, occurrence, backing).unwrap();

@@ -1888,7 +1888,7 @@ mod resource_frame_substitution_tests {
             .try_compose_with_fact(live.clone(), &PureFactContext::new())
             .unwrap();
         let support = resources.unique_owned_occurrence_for_fact(&live).unwrap().0;
-        let ledger = crate::kernel::loans::LoanLedger::new();
+        let ledger = crate::kernel::loans::BorrowLedger::new();
         let participant = ledger.fresh_participant().unwrap();
         let (ledger, loan) = ledger
             .lend_mutex_use(participant, participant, support, live)
@@ -1942,7 +1942,7 @@ mod resource_frame_substitution_tests {
 
     #[test]
     fn state_substitutions_preserve_the_exact_loan_ledger_root() {
-        let ledger = crate::kernel::loans::LoanLedger::new();
+        let ledger = crate::kernel::loans::BorrowLedger::new();
         let participant = ledger.fresh_participant().expect("participant identity");
         let state = ExecutionState::new()
             .with_local("x", int32(MachineTerm::Variable(Variable(71_100))))

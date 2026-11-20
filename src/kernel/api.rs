@@ -6,7 +6,7 @@ use super::functions::{
     function_return_resources_definitionally_established,
 };
 use super::loans::{
-    BorrowedContractInputBacking, LoanLedger, LoanRefusal, LoanRefusalDiagnostic,
+    BorrowLedger, BorrowedContractInputBacking, LoanRefusal, LoanRefusalDiagnostic,
     LoanRefusalOperation, LoanRefusalSubject, LoanViewBinding, LoanViewBindings,
 };
 pub(super) use super::memory_history::*;
@@ -2157,7 +2157,7 @@ fn join_variable(
 fn branch_memory_delta_requirements(
     base: &SymbolicMemory,
     sibling: &SymbolicMemory,
-    ledger: &crate::kernel::loans::LoanLedger,
+    ledger: &crate::kernel::loans::BorrowLedger,
     requirements: &mut BTreeSet<Proposition>,
 ) -> Result<(), String> {
     if !ledger.has_active_memory_loans() {
@@ -3906,7 +3906,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
         let mut ledger = rooted
             .loan_ledger()
             .cloned()
-            .unwrap_or_else(LoanLedger::new);
+            .unwrap_or_else(BorrowLedger::new);
         let holder = match rooted.loan_participant() {
             Some(holder) => holder,
             None => ledger
@@ -4175,7 +4175,7 @@ fn install_borrowed_contract_inputs(
         return Ok(state);
     }
 
-    let mut ledger = LoanLedger::new();
+    let mut ledger = BorrowLedger::new();
     let participant = ledger
         .fresh_participant()
         .map_err(|error| error.diagnostic(LoanRefusalOperation::Entry))?;
@@ -5976,7 +5976,7 @@ mod proof_case_evidence_tests {
             .unique_owned_occurrence_for_fact(&escrow)
             .expect("the test escrow has one backing occurrence")
             .0;
-        let ledger = crate::kernel::loans::LoanLedger::new();
+        let ledger = crate::kernel::loans::BorrowLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let opening = ledger.lend(owner, owner, support, escrow).unwrap();
         let ledger = ledger.apply(&opening.transition).unwrap();
@@ -6010,7 +6010,7 @@ mod proof_case_evidence_tests {
             Vec::new(),
             ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
         );
-        let ledger = crate::kernel::loans::LoanLedger::new();
+        let ledger = crate::kernel::loans::BorrowLedger::new();
         let first_holder = ledger.fresh_participant().unwrap();
         let second_holder = ledger.fresh_participant().unwrap();
         let first = ExecutionState::new()

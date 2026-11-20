@@ -5977,7 +5977,6 @@ pub(in crate::surface) fn function_resource_summary(
                 ResourceClause::ViewMemory(_) | ResourceClause::Declared { .. }
             )
             && requires.len() == first_spec + 1
-            && requires[first_spec].is_view()
         {
             let source = function_block
                 .requirement_source_clauses
@@ -6109,7 +6108,7 @@ pub(in crate::surface) fn function_resource_summary(
             if let Some(source) = ensure.view_source {
                 let input = view_inputs.get(&source).ok_or_else(|| {
                     ClickError::new(
-                        "the selected input view must lower to one memory range or composite",
+                        "the selected borrow source must lower to one memory range or composite",
                     )
                 })?;
                 if !spec.is_view()
@@ -8414,8 +8413,8 @@ resource box(p: struct s*) {
 extern int32 setup(struct s* p, int32 d[], int32 n) {
     requires 0 <= n;
     consumes *p;
-    views d[0..n];
-    produces box(p);
+    views d[0..n] as input;
+    produces box(p) from input;
     ensures p->b == n;
     ensures p->d == d;
 }
@@ -8573,7 +8572,7 @@ int32 f(struct s* p, int32 n) {
         assert!(
             error
                 .message()
-                .contains("no viewed input of this call backs"),
+                .contains("needs an explicit borrow source declared with `from`"),
             "{}",
             error.message()
         );

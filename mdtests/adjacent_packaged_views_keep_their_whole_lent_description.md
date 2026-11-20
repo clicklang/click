@@ -21,8 +21,8 @@ resource reader_pair(p: int32*) {
 }
 
 extern void pack(int32* p) {
-    views p[0..2];
-    produces reader_pair(p);
+    views p[0..2] as input;
+    produces reader_pair(p) from input;
 }
 
 extern void drop(int32* p) {

@@ -17,7 +17,7 @@ fn backing(fact: &ResourceFact) -> ResourceOccurrenceId {
 }
 
 fn lend_test(
-    ledger: &LoanLedger,
+    ledger: &BorrowLedger,
     lender: LoanParticipantId,
     borrower: LoanParticipantId,
     escrow: ResourceFact,
@@ -27,8 +27,8 @@ fn lend_test(
         .unwrap()
 }
 
-fn participants() -> (LoanLedger, LoanParticipantId, LoanParticipantId) {
-    let ledger = LoanLedger::new();
+fn participants() -> (BorrowLedger, LoanParticipantId, LoanParticipantId) {
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let reader = ledger.fresh_participant().unwrap();
     (ledger, owner, reader)
@@ -275,7 +275,7 @@ fn symbolic_external_write_still_refuses_a_second_symbolic_loan() {
 
 fn rooted_parameter_view(
     variable: u64,
-) -> (LoanLedger, LoanParticipantId, LoanOpening, ResourceFact) {
+) -> (BorrowLedger, LoanParticipantId, LoanOpening, ResourceFact) {
     let (ledger, holder, _) = participants();
     let viewed = ResourceFact::view_memory(parameter_range(variable, 0, 1, 4));
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
@@ -939,12 +939,12 @@ fn mutex_owner(epoch: Option<u64>) -> ResourceFact {
 }
 
 fn abstract_mutex_input() -> (
-    LoanLedger,
+    BorrowLedger,
     LoanParticipantId,
     MutexUseContractInput,
     ResourceFact,
 ) {
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let holder = ledger.fresh_participant().unwrap();
     let live = mutex_owner(None);
     let Resource::MutexLive(identity) = live.resource() else {
@@ -966,7 +966,7 @@ fn abstract_mutex_input() -> (
 
 #[test]
 fn assumed_use_initializations_cannot_be_exchanged_between_sibling_roots() {
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let holder = ledger.fresh_participant().unwrap();
     let support = backing(&owned("same principal input"));
     let mutex = Address::symbolic(Variable(901));
@@ -1155,7 +1155,7 @@ fn mutex_contract_input_return_requires_exact_owned_root_and_current_holder() {
             .check_mutex_use_input_return(&input, holder, &other_resources)
             .is_err()
     );
-    let foreign = LoanLedger::new().fresh_participant().unwrap();
+    let foreign = BorrowLedger::new().fresh_participant().unwrap();
     assert!(ledger.mutex_use_resource(input.usage, foreign).is_err());
     let receiver = ledger.fresh_participant().unwrap();
     let moved = ledger
@@ -1273,7 +1273,7 @@ fn mutex_contract_input_return_requires_unsplit_unit_ownership() {
 
 #[test]
 fn mutex_contract_input_evidence_checks_anchor_freshness_and_predecessor() {
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let holder = ledger.fresh_participant().unwrap();
     let arena = ledger.storage.data.arena;
     let mut evidence = LoanTransitionEvidence::BorrowedMutexUseRoot {
@@ -1305,7 +1305,7 @@ fn mutex_contract_input_evidence_checks_anchor_freshness_and_predecessor() {
     };
     *support = ResourceOccurrenceId::default();
     assert_eq!(ledger.issue(evidence), Err(LoanRefusal::MissingBacking));
-    let foreign = LoanLedger::new().fresh_participant().unwrap();
+    let foreign = BorrowLedger::new().fresh_participant().unwrap();
     assert!(
         ledger
             .borrowed_mutex_use_input(
@@ -2354,7 +2354,7 @@ fn transitions_are_bound_to_their_exact_predecessor() {
             .category(),
         LoanRefusalCategory::StalePredecessor
     );
-    let unrelated = LoanLedger::new();
+    let unrelated = BorrowLedger::new();
     let stale = unrelated
         .apply(&opening.transition)
         .expect_err("a transition cannot cross ledger histories");
@@ -2520,7 +2520,7 @@ fn checked_call_evidence_rejects_stale_or_swapped_recovery() {
         LoanRefusalCategory::Recovery
     );
 
-    let unrelated = LoanLedger::new();
+    let unrelated = BorrowLedger::new();
     let unrelated_error = evidence
         .recheck(&unrelated, Some(caller), &planned_ledger, Some(callee))
         .expect_err("a cross-call predecessor must be refused");
@@ -2822,7 +2822,7 @@ pub(super) fn memory(start: u32, end: u32, own: bool) -> ResourceFact {
 
 /// A ledger holding one live view of `buffer[0..4]`, which is what the
 /// write barrier is there to protect.
-fn ledger_lending_the_first_four_elements() -> LoanLedger {
+fn ledger_lending_the_first_four_elements() -> BorrowLedger {
     let (ledger, holder, _) = participants();
     let viewed = memory(0, 4, false);
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
@@ -3376,7 +3376,7 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
         vec![EscapingBorrow {
             head: head.clone(),
             occurrence: heads[0].1,
-            root_permission: None,
+            root_permission: plan.stable_views()[0].requirement.fact.clone(),
         }],
     );
     let planned_ledger = plan.ledger.clone();
@@ -4842,7 +4842,7 @@ fn indexed_write_witness_keeps_the_least_loan_across_buckets_and_aliases() {
         Err(LoanRefusal::UnsupportedPartition)
     );
     assert_eq!(
-        LoanLedger::new().first_active_memory_overlap(&unknown),
+        BorrowLedger::new().first_active_memory_overlap(&unknown),
         Ok(None)
     );
 }
@@ -4871,7 +4871,7 @@ fn equal_returned_composite_occurrences_keep_independent_holds() {
             .map(|(head, occurrence)| EscapingBorrow {
                 head,
                 occurrence,
-                root_permission: None,
+                root_permission: plan.stable_views()[0].requirement.fact.clone(),
             })
             .collect(),
     )]);

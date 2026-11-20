@@ -71,7 +71,7 @@ pub(crate) use iterated::{IteratedStep, apply_iterated_step, plan_iterated_guard
 // V7 routes ordinary calls through it.
 mod loans;
 #[cfg(test)]
-pub(crate) use loans::LoanLedger;
+pub(crate) use loans::BorrowLedger;
 
 /// The memory a canonical load projection was built from, for a read of
 /// `pointer`: the source `reasoning::memory_resolution` recorded when it

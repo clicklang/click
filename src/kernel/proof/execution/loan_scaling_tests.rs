@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::loans::{LoanLedger, LoanViewBinding};
+use crate::kernel::loans::{BorrowLedger, LoanViewBinding};
 use crate::kernel::{AddressBase, AddressOffset, int32};
 use std::collections::BTreeSet;
 
@@ -36,7 +36,7 @@ fn interface_join_states(count: usize, claimed: usize) -> (ExecutionState, Execu
     let resources = ResourceContext::new()
         .unchecked_with_facts(std::iter::once(support_fact.clone()).chain(viewed.iter().cloned()));
     let support = resources.owned_occurrences_for_fact(&support_fact)[0];
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner identity");
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
@@ -97,10 +97,10 @@ fn parameter_view(variable: u64) -> ResourceFact {
 }
 
 /// `count` live symbolic contract-input loans, all in one block.
-fn symbolic_contract_input_ledger(count: usize) -> LoanLedger {
+fn symbolic_contract_input_ledger(count: usize) -> BorrowLedger {
     let viewed = (0..count as u64).map(parameter_view).collect::<Vec<_>>();
     let resources = ResourceContext::new().unchecked_with_facts(viewed.iter().cloned());
-    let mut ledger = LoanLedger::new();
+    let mut ledger = BorrowLedger::new();
     let holder = ledger.fresh_participant().expect("holder identity");
     for fact in &viewed {
         let support = resources.occurrences_for_fact(fact)[0];

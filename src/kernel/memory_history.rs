@@ -8635,7 +8635,7 @@ mod wide_range_reader_tests {
 #[cfg(test)]
 mod borrow_partition_tests {
     use super::*;
-    use crate::kernel::loans::{LoanLedger, LoanViewBinding};
+    use crate::kernel::loans::{BorrowLedger, LoanViewBinding};
 
     fn range(id: u64) -> MemoryRange {
         MemoryRange::new(
@@ -8656,7 +8656,7 @@ mod borrow_partition_tests {
             .unchecked_with_fact(ResourceFact::own_memory(write.clone()))
             .unchecked_with_fact(view.clone());
         let support = bare.occurrences_for_fact(&view)[0];
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let holder = ledger.fresh_participant().unwrap();
         let opening = ledger
             .borrowed_contract_input(holder, support, view.clone(), None)

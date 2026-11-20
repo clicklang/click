@@ -2,7 +2,7 @@
 //! Each entry remains reachable only through its inventoried compatibility caller.
 use super::*;
 
-impl crate::kernel::search::ProofSearch<LoanLedger> {
+impl crate::kernel::search::ProofSearch<BorrowLedger> {
     pub(crate) fn loan_aliases(
         range: &MemoryRange,
         assumptions: &PureFactContext,
@@ -30,10 +30,10 @@ impl crate::kernel::search::ProofSearch<LoanLedger> {
     }
 }
 
-impl crate::kernel::search::ProofSearch<LoanLedger> {
+impl crate::kernel::search::ProofSearch<BorrowLedger> {
     #[cfg(test)]
     pub(crate) fn loan_access(
-        proof_input: &LoanLedger,
+        proof_input: &BorrowLedger,
         range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> Result<(), LoanRefusal> {
