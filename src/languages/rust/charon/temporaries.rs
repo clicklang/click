@@ -1369,6 +1369,159 @@ pub(super) fn bind_slice_payloads(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
+/// Bind a copied slice element to the written pattern variable. The yielded
+/// shared reference can go when its only use is the matching dereference at
+/// the start of the sole successor, under the same source site.
+pub(super) fn bind_copied_slice_elements(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    let types: BTreeMap<_, _> = locals
+        .iter()
+        .map(|local| (local.name.as_str(), &local.value_type))
+        .collect();
+    let mut reads = BTreeMap::new();
+    let mut named = BTreeSet::new();
+    let mut yields = BTreeMap::<String, usize>::new();
+    let mut predecessors = vec![0usize; blocks.len()];
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            if let S::SharedArrayNext {
+                iterator,
+                option: None,
+                payload: Some(reference),
+                taken: Some(true),
+            } = statement
+            {
+                *yields.entry(reference.clone()).or_default() += 1;
+                named.insert(iterator.clone());
+            } else {
+                statement_uses(statement, &mut reads, &mut named);
+                if let S::Assign {
+                    target: E::Local { name },
+                    ..
+                } = statement
+                {
+                    named.insert(name.clone());
+                }
+            }
+        }
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if let Some(name) = call_destination(&block.terminator) {
+            named.insert(name.clone());
+        }
+        for successor in successors(&block.terminator) {
+            if let Some(count) = predecessors.get_mut(successor) {
+                *count += 1;
+            }
+        }
+    }
+    let mut removed = BTreeSet::new();
+    for index in 0..blocks.len() {
+        let (
+            Some(S::SharedArrayNext {
+                iterator,
+                option: None,
+                payload: Some(reference),
+                taken: Some(true),
+            }),
+            T::Goto { target },
+        ) = (blocks[index].statements.last(), &blocks[index].terminator)
+        else {
+            continue;
+        };
+        let target = *target;
+        if target == 0
+            || target == index
+            || predecessors.get(target) != Some(&1)
+            || !temporaries.contains(reference)
+            || reads.get(reference) != Some(&1)
+            || yields.get(reference) != Some(&1)
+            || named.contains(reference)
+        {
+            continue;
+        }
+        let Some(Type::SharedArrayIterator { element }) = types.get(iterator.as_str()) else {
+            continue;
+        };
+        if !element.is_integer()
+            || !matches!(types.get(reference.as_str()),
+                Some(Type::Reference { mutable: false, pointee }) if pointee == element)
+        {
+            continue;
+        }
+        let Some(site) = blocks[index].terminator_site else {
+            continue;
+        };
+        if blocks[index]
+            .statements
+            .iter()
+            .rev()
+            .find_map(|statement| match statement {
+                S::Site { site } => Some(*site),
+                _ => None,
+            })
+            != Some(site)
+        {
+            continue;
+        }
+        let Some((
+            position,
+            S::Assign {
+                target: E::Local { name },
+                value:
+                    E::Deref {
+                        reference: input,
+                        value_type,
+                    },
+            },
+        )) = blocks[target]
+            .statements
+            .iter()
+            .enumerate()
+            .find(|(_, statement)| {
+                !matches!(statement, S::Site { site: next } if *next == site)
+                    && !matches!(statement, S::BeginStorage { .. })
+            })
+        else {
+            continue;
+        };
+        let prefix = &blocks[target].statements[..position];
+        if temporaries.contains(name)
+            || *value_type != **element
+            || types.get(name.as_str()) != Some(&value_type)
+            || !matches!(input.as_ref(), E::Local { name: read } if read == reference)
+            || !prefix
+                .iter()
+                .any(|statement| matches!(statement, S::Site { site: next } if *next == site))
+            || prefix
+                .iter()
+                .any(|statement| matches!(statement, S::BeginStorage { local } if local != name))
+        {
+            continue;
+        }
+        let (reference, name) = (reference.clone(), name.clone());
+        blocks[target].statements.remove(position);
+        start_storage_at_next(blocks, index, target, [name.as_str()]);
+        let Some(S::SharedArrayNext { payload, .. }) = blocks[index].statements.last_mut() else {
+            unreachable!("yield remains the last statement")
+        };
+        *payload = Some(name);
+        removed.insert(reference);
+    }
+    if removed.is_empty() {
+        return;
+    }
+    for block in blocks {
+        block.statements.retain(|statement| match statement {
+            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
+}
+
 /// Starts the storage of the locals the taken `next` ending block `next`
 /// now binds there, rather than in the `Some` arm `arm` that bound them: a
 /// binding's storage starts before its first write. Only the arm's leading
@@ -2940,6 +3093,84 @@ mod tests {
             terminator,
         }
     }
+
+    #[test]
+    fn copied_slice_payload_binds_a_written_local_at_the_yield() {
+        let iterator = Place {
+            value_type: Type::SharedArrayIterator {
+                element: Box::new(Type::U32),
+            },
+            ..place("iter")
+        };
+        let reference = Place {
+            value_type: Type::Reference {
+                mutable: false,
+                pointee: Box::new(Type::U32),
+            },
+            ..place("t1")
+        };
+        let load = E::Deref {
+            reference: Box::new(local("t1")),
+            value_type: Type::U32,
+        };
+        let temporaries = BTreeSet::from(["t1".into()]);
+        for (binding_site, used_again) in [(1, false), (2, false), (1, true)] {
+            let mut locals = vec![iterator.clone(), reference.clone(), place("value")];
+            let mut blocks = [
+                MirBlock {
+                    terminator_site: Some(1),
+                    ..block(
+                        vec![
+                            S::Site { site: 1 },
+                            S::SharedArrayNext {
+                                iterator: "iter".into(),
+                                option: None,
+                                payload: Some("t1".into()),
+                                taken: Some(true),
+                            },
+                        ],
+                        T::Goto { target: 1 },
+                    )
+                },
+                block(
+                    vec![
+                        S::Site { site: binding_site },
+                        S::BeginStorage {
+                            local: "value".into(),
+                        },
+                        assign("value", load.clone()),
+                        S::EndStorage { local: "t1".into() },
+                    ],
+                    T::Return { value: None },
+                ),
+            ];
+            if used_again {
+                blocks[1]
+                    .statements
+                    .insert(3, assign("value", load.clone()));
+            }
+
+            super::bind_copied_slice_elements(&mut locals, &mut blocks, &temporaries);
+
+            if binding_site == 1 && !used_again {
+                assert!(!locals.iter().any(|place| place.name == "t1"));
+                assert!(matches!(
+                    blocks[0].statements.as_slice(),
+                    [S::Site { .. }, S::BeginStorage { local }, S::SharedArrayNext {
+                        payload: Some(payload), ..
+                    }] if local == "value" && payload == "value"
+                ));
+                assert!(matches!(blocks[1].statements.as_slice(), [S::Site { .. }]));
+            } else {
+                assert!(locals.iter().any(|place| place.name == "t1"));
+                assert!(matches!(
+                    blocks[0].statements.last(),
+                    Some(S::SharedArrayNext { payload: Some(payload), .. }) if payload == "t1"
+                ));
+            }
+        }
+    }
+
     /// Runs the return-place pass over `blocks`, with locals `_0` and `x`.
     fn returned(mut blocks: Vec<MirBlock>) -> (Vec<String>, Vec<MirBlock>) {
         let mut locals = ["__rust_mir_0", "x"].map(place).to_vec();
