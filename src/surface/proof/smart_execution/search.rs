@@ -1309,6 +1309,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     argument,
                     ContractEnvironment::new(context.values, context.array_refs),
                     bindings,
+                    context.integer_values,
                     FixedStateFrame::new(
                         context.pre_state,
                         context.post_state,
