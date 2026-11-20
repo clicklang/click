@@ -183,6 +183,34 @@ fn program_branch_condition_at_frontier(
 }
 
 impl<'a> Proof<'a> {
+    /// Binds one call map entry: the callee's binder to the caller's
+    /// resource, which must be of the binder's sort. Returns whether the
+    /// binder was already bound.
+    fn bind_call_map_entry(
+        &self,
+        bindings: &mut crate::kernel::ResourceBindings,
+        binding: &crate::surface::CallBinderBinding,
+        map: &str,
+    ) -> Result<bool, ClickError> {
+        bindings
+            .insert(binding.binder_identity(), binding.identity())
+            .map_err(|()| {
+                let (expected, actual) = match binding.binder_identity() {
+                    crate::kernel::ResourceBinder::Instance(_) => {
+                        ("a resource instance", "a mutex authority")
+                    }
+                    crate::kernel::ResourceBinder::MutexAuthority(_) => {
+                        ("a mutex authority", "a resource instance")
+                    }
+                };
+                self.step_error(format!(
+                    "{map} binder `{}` takes {expected}, but `{}` is {actual}",
+                    binding.binder(),
+                    binding.instance()
+                ))
+            })
+    }
+
     /// Prepare the selected operation with all its required obligations,
     /// including prerequisites already present in the input fact index.
     /// The candidate is conditional until the driver proves those obligations
@@ -737,17 +765,16 @@ impl<'a> Proof<'a> {
             let callee = transport.callee();
             // One lookup per written entry builds the whole binding; the
             // kernel consults nothing else at this call.
-            let mut bindings = BTreeMap::new();
+            let mut bindings = crate::kernel::ResourceBindings::new();
             for binding in transport.binders().iter().chain(transport.produced()) {
                 crate::instrumentation::record_deterministic_work(1);
-                crate::kernel::model_fields::register_instance_spelling(
-                    binding.identity().instance(),
-                    binding.instance(),
-                );
-                if bindings
-                    .insert(binding.binder_identity(), binding.identity())
-                    .is_some()
-                {
+                if let Some(identity) = binding.identity().instance() {
+                    crate::kernel::model_fields::register_instance_spelling(
+                        identity,
+                        binding.instance(),
+                    );
+                }
+                if self.bind_call_map_entry(&mut bindings, binding, "call map")? {
                     return Err(self.step_error(format!(
                         "duplicate binder `{}` in the call map",
                         binding.binder()
@@ -999,13 +1026,10 @@ impl<'a> Proof<'a> {
                 application.arguments().len()
             )));
         }
-        let mut bindings = BTreeMap::new();
+        let mut bindings = crate::kernel::ResourceBindings::new();
         for binding in application.binders().iter().chain(application.produced()) {
             crate::instrumentation::record_deterministic_work(1);
-            if bindings
-                .insert(binding.binder_identity(), binding.identity())
-                .is_some()
-            {
+            if self.bind_call_map_entry(&mut bindings, binding, "tactic's map")? {
                 return Err(self.step_error(format!(
                     "duplicate binder `{}` in the tactic's map",
                     binding.binder()

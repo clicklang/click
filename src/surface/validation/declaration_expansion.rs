@@ -1321,7 +1321,7 @@ fn expand_declared_resource_definition(
             .contains
             .iter()
             .filter_map(|clause| match clause {
-                ResourceClause::Named { binding, .. } => Some(binding.identity.instance()),
+                ResourceClause::Named { binding, .. } => Some(binding.identity.instance()?),
                 _ => None,
             })
             .collect::<BTreeSet<_>>();
@@ -1332,12 +1332,9 @@ fn expand_declared_resource_definition(
                 let ResourceClause::Named { binding, .. } = parameter else {
                     unreachable!()
                 };
-                (!owned.contains(&binding.identity.instance())).then(|| {
-                    (
-                        binding.identity.instance(),
-                        SurfaceBinder::from(binding.name.clone()),
-                    )
-                })
+                let identity = binding.identity.instance()?;
+                (!owned.contains(&identity))
+                    .then(|| (identity, SurfaceBinder::from(binding.name.clone())))
             })
             .collect();
         let previous = resource_definitions
@@ -2416,24 +2413,19 @@ fn expand_declared_resource_clause(
             // prefer what an earlier declaration fixed.
             let construction = binding.fold_fields.is_some();
             if !construction {
-                resource_definitions
-                    .refuse_ambiguous(binding.identity.instance(), &binding.name)?;
+                resource_definitions.refuse_ambiguous(binding.instance()?, &binding.name)?;
             }
             let parent = if construction {
                 name.clone()
             } else {
                 resource_definitions
-                    .instance_resource(binding.identity.instance())
+                    .instance_resource(binding.instance()?)
                     .unwrap_or_else(|| name.clone())
             };
             // Unfold syntax can still carry the parser's provisional parent
             // family for a child. Keep the family resolved above, including
             // after an explicit child fold removed its slot annotation.
-            resource_definitions.record_instance(
-                binding.identity.instance(),
-                &parent,
-                construction,
-            );
+            resource_definitions.record_instance(binding.instance()?, &parent, construction);
             if let Some(children) = binding.child_bindings.as_ref() {
                 let slots = resource_definitions
                     .get(&parent)
@@ -2472,7 +2464,7 @@ fn expand_declared_resource_clause(
                     // `match` selects.
                     let Some(declared) = declared.clone().or_else(|| {
                         resource_definitions.selected_arm_slot(
-                            binding.identity.instance(),
+                            binding.identity.instance()?,
                             &parent,
                             slot,
                         )
@@ -3908,8 +3900,9 @@ pub(in crate::surface) fn standard_library_theorem_index(name: &str) -> Option<u
 /// child's resource no longer describes it.
 fn record_produced_instances(transport: &CallBinderTransport, definitions: &DeclaredResourceScope) {
     for produced in transport.produced() {
-        if let Some(family) = produced.family() {
-            definitions.record_instance(produced.identity().instance(), family, true);
+        if let (Some(family), Some(identity)) = (produced.family(), produced.identity().instance())
+        {
+            definitions.record_instance(identity, family, true);
         }
     }
 }
@@ -3931,9 +3924,9 @@ fn validate_resource_reference_arguments(
         )));
     }
     for (reference, expected) in references.iter().zip(&info.resource_parameter_families) {
-        definitions.refuse_ambiguous(reference.identity.instance(), &reference.name)?;
+        definitions.refuse_ambiguous(reference.instance()?, &reference.name)?;
         let actual = definitions
-            .instance_resource(reference.identity.instance())
+            .instance_resource(reference.instance()?)
             .ok_or_else(|| {
                 ClickError::new(format!("unknown resource argument `{}`", reference.name))
             })?;

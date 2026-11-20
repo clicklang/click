@@ -2144,7 +2144,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
             // Ownership names select current fields, but the clause still
             // determines the required resource family, arguments, and schema.
             let fields = state
-                .owned_resource_instance(binding.identity.instance())
+                .owned_resource_instance(binding.instance()?)
                 .map(|instance| instance.fields().to_vec().into())
                 .or_else(|| binding.fields.clone())
                 .ok_or_else(|| {
@@ -2156,7 +2156,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     ))
                 })?;
             let instance = crate::kernel::ResourceInstance::new_with_resource_arguments(
-                binding.identity.instance(),
+                binding.instance()?,
                 name,
                 arguments,
                 schema,
@@ -4218,7 +4218,7 @@ pub(in crate::surface) fn lower_resource_reference_arguments(
         .map(|binding| {
             crate::instrumentation::record_deterministic_work(1);
             state
-                .resource_instance_fields(binding.identity.instance())
+                .resource_instance_fields(binding.instance()?)
                 .map(crate::kernel::ResourceReference::from_instance)
                 .ok_or_else(|| {
                     ClickError::new(format!("Requires resource reference `{}`", binding.name))

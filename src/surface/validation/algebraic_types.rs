@@ -603,7 +603,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
         let mut field_bindings = Vec::new();
         for field in child_definition.fields() {
             let candidates = equations
-                .get(&(binding.identity.instance(), field.name()))
+                .get(&(binding.instance()?, field.name()))
                 .ok_or_else(|| {
                     ClickError::new(format!(
                         "child `{}` needs an equation for field `{}`",
@@ -666,7 +666,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
         children.push(ResourceChildBody {
             name: binding.name.clone(),
             resource: name.clone(),
-            identity: binding.identity.instance(),
+            identity: binding.instance()?,
             arguments,
             field_bindings,
         });

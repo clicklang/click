@@ -2777,26 +2777,6 @@ fn selected_call_binder_application(
         .filter(|resource| resource.binding_identity().is_some())
         .cloned()
         .collect::<Vec<_>>();
-    // The proof's map names binders and caller resources by binder number;
-    // each binder's declaring clause, a requirement or a production, gives
-    // the sort its caller resource is read in.
-    let written = written.map(|written| {
-        let mut bindings = ResourceBindings::new();
-        for resource in interface
-            .resource_requires()
-            .iter()
-            .chain(interface.resource_ensures())
-        {
-            crate::instrumentation::record_deterministic_work(1);
-            let Some(binder) = resource.binding_identity() else {
-                continue;
-            };
-            if let Some(actual) = written.get(&binder.written()) {
-                bindings.insert_written(binder, *actual);
-            }
-        }
-        bindings
-    });
     let mut inferred = ResourceBindings::new();
     for parameter in &parameters {
         crate::instrumentation::record_deterministic_work(1);
@@ -2857,7 +2837,7 @@ fn selected_call_binder_application(
     }
     let bindings = match (written, inferred.is_empty()) {
         (None, true) => return Ok(None),
-        (Some(written), true) => std::sync::Arc::new(written),
+        (Some(written), true) => written,
         (written, false) => {
             if let Some(written) = &written {
                 inferred.extend(written);

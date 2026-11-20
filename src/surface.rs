@@ -1458,12 +1458,12 @@ pub struct CallBinderBinding {
     /// The callee's binder name, written on the left of the map entry.
     binder: String,
     /// The binder number the callee's own contract gave that binder.
-    binder_identity: crate::kernel::ResourceBinderId,
+    binder_identity: crate::kernel::ResourceBinder,
     /// The caller's resource name.
     instance: String,
     /// The binder number of the caller's resource; the callee's clause for
     /// `binder` says whether it names an instance or a mutex authority.
-    identity: crate::kernel::ResourceBinderId,
+    identity: crate::kernel::ResourceBinder,
     /// The resource a produced instance is, from the callee's contract;
     /// `None` for an instance the caller supplies.
     family: Option<String>,
@@ -1483,11 +1483,11 @@ impl CallBinderBinding {
         &self.instance
     }
 
-    pub(crate) fn binder_identity(&self) -> crate::kernel::ResourceBinderId {
+    pub(crate) fn binder_identity(&self) -> crate::kernel::ResourceBinder {
         self.binder_identity
     }
 
-    pub(crate) fn identity(&self) -> crate::kernel::ResourceBinderId {
+    pub(crate) fn identity(&self) -> crate::kernel::ResourceBinder {
         self.identity
     }
 
@@ -2276,7 +2276,7 @@ pub struct ResourceInstanceBinding {
     name: String,
     /// What the binder names comes from its resource: an instance, or a
     /// mutex authority for a named mutex live, use or guard clause.
-    identity: crate::kernel::ResourceBinderId,
+    identity: crate::kernel::ResourceBinder,
     children: Vec<String>,
     schema: Option<crate::kernel::ResourceFieldSchema>,
     fields: Option<crate::kernel::ResourceFieldValues>,
@@ -2285,6 +2285,20 @@ pub struct ResourceInstanceBinding {
     /// Explicit child slot, surface name, and instance identity. Shared to
     /// keep recursive tactic syntax small.
     child_bindings: Option<std::sync::Arc<[(String, String, crate::kernel::InstanceId)]>>,
+}
+
+impl ResourceInstanceBinding {
+    /// The instance this binding names. A binding of a named mutex live,
+    /// use or guard authority names no instance, so a use that needs one
+    /// (a field, a fold or unfold, a child, an instance argument) is refused.
+    pub(crate) fn instance(&self) -> Result<crate::kernel::InstanceId, ClickError> {
+        self.identity.instance().ok_or_else(|| {
+            ClickError::new(format!(
+                "`{}` names a mutex authority, not a resource instance",
+                self.name
+            ))
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

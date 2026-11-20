@@ -123,6 +123,24 @@ impl MutexResourceBinder {
     pub const fn name(self) -> &'static str {
         self.role.name()
     }
+
+    /// The binder in its role's sort: lifetime, access and guard binders name
+    /// mutex authorities; storage and state binders name instances.
+    pub const fn resource_binder(self) -> crate::kernel::ResourceBinder {
+        let number = crate::kernel::Variable(self.identity);
+        match self.role {
+            MutexResourceRole::Lifetime | MutexResourceRole::Access | MutexResourceRole::Guard => {
+                crate::kernel::ResourceBinder::MutexAuthority(
+                    crate::kernel::MutexAuthorityId::from_variable(number),
+                )
+            }
+            MutexResourceRole::Storage | MutexResourceRole::State => {
+                crate::kernel::ResourceBinder::Instance(crate::kernel::InstanceId::from_variable(
+                    number,
+                ))
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

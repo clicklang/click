@@ -471,6 +471,10 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
                 }),
         );
     for (binding, resource) in bindings {
+        // A named mutex authority has no instance and no fields.
+        let Some(instance) = binding.identity.instance() else {
+            continue;
+        };
         let (Some(schema), Some(fields)) = (&binding.schema, &binding.fields) else {
             continue;
         };
@@ -483,7 +487,7 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
             crate::kernel::model_fields::register_model_field_variable(
                 variable,
                 crate::kernel::model_fields::ModelFieldOrigin {
-                    identity: binding.identity.instance(),
+                    identity: instance,
                     field: std::sync::Arc::from(field.as_str()),
                     field_index,
                     minted_by: crate::kernel::model_fields::ModelMint::ContractEntry,
@@ -504,10 +508,7 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         } else {
             binding.name.clone()
         };
-        crate::kernel::model_fields::register_instance_spelling(
-            binding.identity.instance(),
-            &spelling,
-        );
+        crate::kernel::model_fields::register_instance_spelling(instance, &spelling);
     }
 }
 

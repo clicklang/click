@@ -1026,7 +1026,7 @@ struct Parser {
     /// resource is declared by the parent's matched arm, which may not be
     /// parsed yet, so the recorded family is the parent's and every family
     /// comparison against these instances is left to declaration expansion.
-    child_slot_identities: BTreeSet<crate::kernel::ResourceBinderId>,
+    child_slot_identities: BTreeSet<crate::kernel::ResourceBinder>,
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
@@ -1257,7 +1257,7 @@ struct Parser {
 /// block, recorded so a caller's call step can bind it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct CalleeResourceBinder {
-    pub(in crate::surface) identity: crate::kernel::ResourceBinderId,
+    pub(in crate::surface) identity: crate::kernel::ResourceBinder,
     // None denotes a supplied resource assertion parameter. Its concrete
     // family is checked by the instantiated runtime contract in the kernel.
     pub(in crate::surface) family: Option<String>,
@@ -4092,7 +4092,7 @@ impl Parser {
                 left: ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: binding.name.clone(),
                     resource_name: child.clone(),
-                    identity: binding.identity.instance(),
+                    identity: binding.instance()?,
                     children: vec![],
                     field: child_field.name.clone(),
                     field_index: 0,
@@ -7817,11 +7817,15 @@ impl Parser {
         }
         if let Some(name) = self.peek_ident()
             && self.peek_next() != Some(&Token::LParen)
-            && let Some((identity, _)) = self.names.resource_bindings.get(name)
+            && let Some(identity) = self
+                .names
+                .resource_bindings
+                .get(name)
+                .and_then(|(identity, _)| identity.instance())
         {
             let subject = ResourceSubject::Instance {
                 name: name.to_string(),
-                identity: identity.instance(),
+                identity,
                 at: None,
             };
             self.position += 1;
@@ -8367,7 +8371,7 @@ impl Parser {
                 }
                 *identity
             }
-            None => self.fresh_resource_identity(),
+            None => self.fresh_resource_identity(declaration.family.as_deref()),
         };
         self.names
             .bind_instance(name.to_string(), (identity, family.clone()));
@@ -8438,9 +8442,7 @@ impl Parser {
                 let resource = family.map(|family| ResourceClause::Named {
                     binding: ResourceInstanceBinding {
                         name: binder.name().to_string(),
-                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(
-                            binder.identity,
-                        )),
+                        identity: binder.resource_binder(),
                         children: vec![],
                         schema: None,
                         fields: None,
@@ -8463,9 +8465,7 @@ impl Parser {
                 binders.insert(
                     binder.name().to_string(),
                     CalleeResourceBinder {
-                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(
-                            binder.identity,
-                        )),
+                        identity: binder.resource_binder(),
                         family: family.map(str::to_string),
                         resource,
                         parameter_names: vec!["mutex".to_string(), "attributes".to_string()],
@@ -8488,8 +8488,8 @@ impl Parser {
             .insert(
                 "payload".to_string(),
                 CalleeResourceBinder {
-                    identity: crate::kernel::ResourceBinderId::from_variable(Variable(
-                        ATOMIC_INIT_PAYLOAD_BINDER_ID,
+                    identity: crate::kernel::ResourceBinder::Instance(InstanceId::from_variable(
+                        Variable(ATOMIC_INIT_PAYLOAD_BINDER_ID),
                     )),
                     family: None,
                     resource: None,
@@ -8526,7 +8526,9 @@ impl Parser {
     /// name it: the map gives its value.
     fn value_parameter_callee_binder() -> CalleeResourceBinder {
         CalleeResourceBinder {
-            identity: crate::kernel::ResourceBinderId::from_variable(Variable(0)),
+            identity: crate::kernel::ResourceBinder::Instance(InstanceId::from_variable(Variable(
+                0,
+            ))),
             family: None,
             resource: None,
             parameter_names: Vec::new(),
@@ -8681,7 +8683,7 @@ impl Parser {
                 }
                 identity
             }
-            None => self.fresh_resource_identity(),
+            None => self.fresh_resource_identity(Some(resource_name)),
         };
         self.names
             .bind_instance(name.clone(), (identity, resource_name.clone()));
@@ -8734,7 +8736,7 @@ impl Parser {
         if let Some(held) = self.hidden_binder(&target) {
             return held;
         }
-        let identity = self.fresh_resource_identity();
+        let identity = crate::kernel::ResourceBinder::Instance(self.fresh_instance_identity());
         let binder = format!("#{name}{}", identity.variable().0);
         self.names
             .bind_instance(binder.clone(), (identity, name.clone()));
@@ -10183,12 +10185,29 @@ impl Parser {
 
     /// The refusal for a name that binds no resource instance here: one
     /// whose binding block has ended is refused as out of scope.
-    /// A fresh identity for a resource binder this file introduces.
-    fn fresh_resource_identity(&mut self) -> crate::kernel::ResourceBinderId {
-        let identity =
-            crate::kernel::ResourceBinderId::from_variable(Variable(self.next_resource_identity));
+    /// A fresh identity for a resource binder this file introduces, in the
+    /// sort its resource family gives it: a named mutex live, use or guard
+    /// authority is a mutex authority binder, and every other resource is an
+    /// exclusive instance. These are the families that lower to mutex
+    /// authority terms.
+    fn fresh_resource_identity(&mut self, family: Option<&str>) -> crate::kernel::ResourceBinder {
+        let number = Variable(self.next_resource_identity);
         self.next_resource_identity += 1;
-        identity
+        if matches!(family, Some("mutex_live" | "mutex_use" | "mutex_guard")) {
+            crate::kernel::ResourceBinder::MutexAuthority(
+                crate::kernel::MutexAuthorityId::from_variable(number),
+            )
+        } else {
+            crate::kernel::ResourceBinder::Instance(InstanceId::from_variable(number))
+        }
+    }
+
+    /// A fresh identity for a binder that can only name an instance: a child
+    /// slot, a fold result, or a hidden record.
+    fn fresh_instance_identity(&mut self) -> InstanceId {
+        let number = Variable(self.next_resource_identity);
+        self.next_resource_identity += 1;
+        InstanceId::from_variable(number)
     }
 
     fn unknown_instance(&self, name: &str, kind: &str) -> ClickError {
@@ -10396,9 +10415,9 @@ impl Parser {
                 if self.names.resource_bindings.contains_key(&name) {
                     return Err(self.error("field output conflicts with a resource binding"));
                 }
-                let identity = self.fresh_resource_identity();
+                let identity = self.fresh_instance_identity();
                 self.names.insert(NameKind::ProofBinder, name.clone());
-                result.push((slot, name, identity.instance()));
+                result.push((slot, name, identity));
                 continue;
             }
             let existing = self.names.resource_bindings.get(&name).cloned();
@@ -10408,7 +10427,7 @@ impl Parser {
                 // expansion checks the supplied instance against it.
                 *identity
             } else if introduce {
-                self.fresh_resource_identity()
+                crate::kernel::ResourceBinder::Instance(self.fresh_instance_identity())
             } else {
                 return Err(self.unknown_instance(&name, "child resource"));
             };
@@ -10449,7 +10468,10 @@ impl Parser {
                     },
                 );
             }
-            result.push((slot, name, identity.instance()));
+            let identity = identity
+                .instance()
+                .ok_or_else(|| self.error(format!("child `{name}` names a mutex authority")))?;
+            result.push((slot, name, identity));
         }
         Ok(result)
     }
@@ -10708,7 +10730,7 @@ impl Parser {
             }
             *identity
         } else {
-            self.fresh_resource_identity()
+            crate::kernel::ResourceBinder::Instance(self.fresh_instance_identity())
         };
         let declared = self
             .declared_resource_fields
@@ -11930,7 +11952,7 @@ impl Parser {
                     "interface binder `{name}` rebinds an instance of resource `{family}`, not `{resource_name}`"
                 )));
             }
-            None => self.fresh_resource_identity(),
+            None => self.fresh_resource_identity(Some(resource_name)),
         };
         self.names
             .bind_instance(name.clone(), (identity, resource_name.clone()));
@@ -15334,7 +15356,9 @@ impl Parser {
                         expression = ContractExpression::ResourceField(ResourceFieldAccess {
                             owner,
                             resource_name,
-                            identity: identity.instance(),
+                            identity: identity
+                                .instance()
+                                .ok_or_else(|| self.error("a mutex authority has no fields"))?,
                             children: vec![],
                             field,
                             field_index: 0,
@@ -16512,7 +16536,9 @@ impl Parser {
                 return Ok(ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: crate::surface::diagnostics::describe_contract_expression(&call),
                     resource_name: name,
-                    identity: identity.instance(),
+                    identity: identity
+                        .instance()
+                        .ok_or_else(|| self.error("a mutex authority has no fields"))?,
                     children: vec![],
                     field: path.join("."),
                     field_index: 0,
@@ -18848,7 +18874,9 @@ mod tactic_classification_tests {
                 let cell = BTreeMap::from([(
                     "cell".to_string(),
                     CalleeResourceBinder {
-                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(1)),
+                        identity: crate::kernel::ResourceBinder::Instance(
+                            InstanceId::from_variable(Variable(1)),
+                        ),
                         family: Some("reference".to_string()),
                         resource: None,
                         parameter_names: Vec::new(),
@@ -18871,7 +18899,9 @@ mod tactic_classification_tests {
                 parser.names.resource_bindings.insert(
                     "c".to_string(),
                     (
-                        crate::kernel::ResourceBinderId::from_variable(Variable(2)),
+                        crate::kernel::ResourceBinder::Instance(InstanceId::from_variable(
+                            Variable(2),
+                        )),
                         "reference".to_string(),
                     ),
                 );
@@ -19045,7 +19075,7 @@ mod preserve_syntax_tests {
         parser.names.resource_bindings.insert(
             "r".into(),
             (
-                crate::kernel::ResourceBinderId::from_variable(Variable(123)),
+                crate::kernel::ResourceBinder::Instance(InstanceId::from_variable(Variable(123))),
                 "Node".into(),
             ),
         );
