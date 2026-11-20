@@ -422,6 +422,14 @@ time and exit status. `scripts/nightly-report.py` renders them, and
 without recording a failing check, such as a build error or a timeout, is
 reported as that job's failure, with the run log as its reference.
 
+The `lowering` job (`scripts/check.sh --lowering`, which runs
+`scripts/lowering-audits.sh`) runs the mdtest corpus once under each
+lowering audit of [the raise-lower principle](raise-lower-principle.md#the-raise-lower-principle)
+and records each outcome's count. A fact-stability `differs` or `paths`
+line fails the night, as does an audit run whose corpus did not pass. The
+raise/lower round trip is not enforced: the report lists its counts beside
+the previous night's and flags a rise in any outcome but `same`.
+
 ## Gate timing baselines
 
 The **gate timing baselines** are the reference for expected gate speed. When

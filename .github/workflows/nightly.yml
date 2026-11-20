@@ -4,8 +4,10 @@ name: nightly
 # leaves out. The `nightly` job runs the tests
 # marked `#[ignore = "nightly: ..."]`, the nightly examples, `click audit` in
 # the import tests, and the live Charon re-extraction. The `audit` job
-# expands and reverifies every smart tactic in the examples and mdtests.
-# Neither has a time budget.
+# expands and reverifies every smart tactic in the examples and mdtests. The
+# `lowering` job runs the mdtests under the fact-stability audit, which the
+# report enforces, and the raise/lower audit, whose counts it tracks. None
+# has a time budget.
 on:
   schedule:
     - cron: '17 6 * * *'
@@ -89,13 +91,44 @@ jobs:
           path: ${{ runner.temp }}/nightly-report
           if-no-files-found: ignore
 
+  lowering:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/click/tools
+          key: ${{ runner.os }}-click-tools-${{ hashFiles('scripts/tools.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-nextest
+          key: ${{ runner.os }}-click-nextest-${{ hashFiles('scripts/setup-environment.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/click/llvm
+          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh', 'scripts/cache-llvm.sh') }}
+      - name: Set up full test environment
+        run: scripts/setup-environment.sh
+      - uses: Swatinem/rust-cache@v2
+      - name: Run the fact-stability and raise/lower audits
+        env:
+          CLICK_NIGHTLY_REPORT_DIR: ${{ runner.temp }}/nightly-report
+        run: scripts/check.sh --lowering
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lowering-results
+          path: ${{ runner.temp }}/nightly-report
+          if-no-files-found: ignore
+
   # One short report per night: each failure's first line and the command
   # that reproduces it, which failures are new since the previous night, and
   # the slowest checks. It is committed to the `nightly-reports` branch, which
   # shares no history with `master`, and shown on the run page
   # (docs/internals/testing.md, "Nightly report").
   report:
-    needs: [nightly, audit]
+    needs: [nightly, audit, lowering]
     if: always()
     runs-on: ubuntu-24.04
     permissions:
@@ -108,8 +141,9 @@ jobs:
       - name: Record job results
         run: |
           mkdir -p "$RUNNER_TEMP/results/jobs"
-          printf 'nightly\t%s\naudit\t%s\n' \
+          printf 'nightly\t%s\naudit\t%s\nlowering\t%s\n' \
             '${{ needs.nightly.result }}' '${{ needs.audit.result }}' \
+            '${{ needs.lowering.result }}' \
             > "$RUNNER_TEMP/results/jobs/jobs.tsv"
       - name: Build the report
         run: |
