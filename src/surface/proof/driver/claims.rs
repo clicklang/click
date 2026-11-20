@@ -2499,11 +2499,11 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     // supplies vacuity evidence for each selected claim.
     if matches!(&outcome, FunctionOutcome::VerificationDiverges) {
         let certificate = ProofCertificate::from_proof_tactics(&[
-            ProofTactic::Normalize,
+            ProofTactic::Known,
         ])
         .map_err(|error| {
             ClickError::new(format!(
-                "`{proof_label}` path {path_index}, tactic {tactic_index}: divergence produced an invalid normalize certificate: {error}"
+                "`{proof_label}` path {path_index}, tactic {tactic_index}: divergence produced an invalid known certificate: {error}"
             ))
         })?;
         for (claim_index, closure) in closures.iter_mut().enumerate() {
@@ -4616,8 +4616,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // the main goal: `known`, the normalizing
                                 // closers and `both`. Only `known` reads
                                 // a resource claim and the outcome's recorded
-                                // lowerings; only the others close a divergent
-                                // path's claims vacuously.
+                                // lowerings.
                                 let is_known = matches!(
                                     post_tactic,
                                     PostExecutionTactic::Leaf(ProofTactic::Known)
@@ -4736,18 +4735,15 @@ pub(super) fn finish_ordered_proof<'a>(
                                 for claim_index in main_claim.into_iter() {
                                     let claim = &claims[claim_index];
                                     let ensure_clause = claim.clause();
-                                    if !is_known
-                                        && matches!(outcome, FunctionOutcome::VerificationDiverges)
-                                    {
+                                    if matches!(outcome, FunctionOutcome::VerificationDiverges) {
                                         if matches!(post_tactic, PostExecutionTactic::Both(_)) {
                                             return Err(ClickError::new(
                                                 "`both` requires a return-state conjunction",
                                             ));
                                         }
                                         // Postconditions are conditional on return.
-                                        // Normalization exposes that definitional
-                                        // partial-correctness rule without requiring a
-                                        // nonexistent return value or state.
+                                        // The checked execution outcome supplies
+                                        // vacuity without a return value or state.
                                         if matches!(closer_step, ProofStep::OrderChain(_)) {
                                             return Err(ClickError::new(
                                                 "`order_chain` requires a return-state proposition",
@@ -4755,7 +4751,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         }
                                         if matches!(closer_step, ProofStep::NormalizeUsing(_)) {
                                             return Err(ClickError::new(
-                                                "`normalize using` requires a return-state proposition; use context-free `normalize()` for a divergent path",
+                                                "`normalize using` requires a return-state proposition; use `known()` for a divergent path",
                                             ));
                                         }
                                         // Same rule for the explicit arithmetic
@@ -4763,7 +4759,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         // a return state this path does not have.
                                         if matches!(closer_step, ProofStep::ArithmeticUsing(_)) {
                                             return Err(ClickError::new(
-                                                "`arithmetic using` requires a return-state proposition; use context-free `normalize()` for a divergent path",
+                                                "`arithmetic using` requires a return-state proposition; use `known()` for a divergent path",
                                             ));
                                         }
                                         record_claim_closure(

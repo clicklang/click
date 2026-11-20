@@ -33,8 +33,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let facts = crate::kernel::proof::PureFactStore::from_ordered(&selected);
         // The mirrored spelling is already an exact indexed lookup in
         // `known()`. Keep restricted search tied to the selected facts.
-        let mirrored = crate::kernel::mirrored_equality(goal)
-            .is_some_and(|premise| facts.contains(&premise));
+        let mirrored =
+            crate::kernel::mirrored_equality(goal).is_some_and(|premise| facts.contains(&premise));
         Ok(mirrored || check(&|p| facts.pure_known_available(p)))
     }
 }

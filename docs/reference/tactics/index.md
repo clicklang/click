@@ -1583,6 +1583,11 @@ available when one of these holds:
 
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
+- It is a viewability goal for a concrete byte span within the exact block
+  recorded in the goal's memory state. The check uses the written base
+  identity, offset, and span size.
+- The completed execution path diverges and the goal is a return
+  postcondition.
 - It is a typed read-definedness goal whose memory state holds a compatible
   cell or one unambiguous live slot of the requested type at the exact
   address. It also accepts the whole read of a declared local `uint32` when

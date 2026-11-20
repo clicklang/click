@@ -9844,6 +9844,40 @@ fn returned_narrowing_rewrites_the_selected_literal_call_result() {
 }
 
 #[test]
+fn divergent_loop_postcondition_expands_to_known_and_rejects_a_return() {
+    let (source, program) = mdtest_sources("mdtests/infinite_loop_vacuous_ensure.md");
+    let program = crate::cli::source_refs(&program);
+    let label = "spin_with_postcondition.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &program, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    let returning = "int spin_with_postcondition(void) { while (0) {} return 0; }";
+    let returning = [(program[0].0, returning)];
+    assert!(verify_c_sources(&expanded, &returning).is_err());
+}
+
+#[test]
+fn concrete_viewability_prerequisite_expands_to_known() {
+    let (source, program) =
+        mdtest_sources("mdtests/integer_uint32_from_le_bytes_initialization.md");
+    let program = crate::cli::source_refs(&program);
+    let label = "decode.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &program, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn selected_mirrored_disequality_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/int32_disequality_symmetry.md");
     let expanded = expand_c_claim_source_by_label(&source, &[], "swap_disequality.ensures_0")
@@ -10135,10 +10169,8 @@ fn outcome_solve_closes_its_recorded_order_path_by_arithmetic() {
         position.column,
     )
     .expect("the retained outcome theorem path should expand");
-    assert!(
-        (expanded.contains("click::integer::") || expanded.contains("normalize")),
-        "{expanded}"
-    );
+    assert!(expanded.contains("order_chain() using"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[("validate_chain.c", c_source)])
         .expect("the transcribed outcome theorem path should check");
