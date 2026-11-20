@@ -1374,6 +1374,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 | ContractExpression::ShiftRight(_, _)
                 | ContractExpression::BitwiseAnd(_, _)
                 | ContractExpression::CUnary { .. }
+                | ContractExpression::MemoryLoad { .. }
                 | ContractExpression::ProgramExpression(
                     ProgramExpression::Add(..)
                     | ProgramExpression::Subtract(..)

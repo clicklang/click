@@ -2458,7 +2458,9 @@ fn collect_resource_fact_reads_from_contract_expression(
         }
 
         ContractExpression::IntegerLiteral(_) => Ok(()),
-        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::MemoryLoad { pointer: inner, .. }
+        | ContractExpression::Negate(inner) => {
             collect_resource_fact_reads_from_contract_expression(
                 inner,
                 predicate_definitions,

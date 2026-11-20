@@ -147,6 +147,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         | ContractExpression::ProgramBinding(_)
         | ContractExpression::ProgramExpression(_)
         | ContractExpression::CUnary { .. }
+        | ContractExpression::MemoryLoad { .. }
         | ContractExpression::ResourceWildcard => None,
         ContractExpression::AlgebraicConstructor { arguments, .. }
         | ContractExpression::Call { arguments, .. } => {
@@ -6853,6 +6854,16 @@ impl AnnotationLowerer<'_> {
                 self.lower_contract_expression_to_spec(&reduced, environment)
             }
 
+            ContractExpression::MemoryLoad {
+                pointer,
+                value_type,
+                ..
+            } => Ok(SpecExpression::MemoryLoad {
+                point: environment.current_point.clone(),
+                pointer: Box::new(self.lower_contract_expression_to_spec(pointer, environment)?),
+                value_type: *value_type,
+                exact: false,
+            }),
             ContractExpression::CUnary { operand, lowered } => {
                 let value = self.lower_contract_expression_to_spec(operand, environment)?;
                 match lowered {
@@ -10338,6 +10349,9 @@ impl AnnotationLowerer<'_> {
                     })
                 })
                 .unwrap_or(ProgramType::Int32),
+            ContractExpression::MemoryLoad { value_type, .. } => {
+                value_type.pointee_type().unwrap_or(ProgramType::Int32)
+            }
             ContractExpression::CUnary { operand, lowered } => match lowered {
                 ProgramExpression::Cast { target_type, .. } => {
                     target_type.pointee_type().unwrap_or(ProgramType::Int32)
@@ -10493,6 +10507,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<ProgramType> {
         match expression {
+            ContractExpression::MemoryLoad { value_type, .. } => value_type.pointee_type(),
             ContractExpression::CUnary { operand, lowered } => match lowered {
                 ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
                 ProgramExpression::PointerOffsetBytes { .. } => {

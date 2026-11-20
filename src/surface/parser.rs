@@ -16438,17 +16438,11 @@ impl Parser {
             // The operand remains authoritative during spec lowering. A
             // historical pointer selects an address, while this load uses
             // the surrounding clause's memory state.
-            let pointer = ProgramExpression::Value(int32(0));
-            return Ok(ContractExpression::CUnary {
-                operand: Box::new(source_pointer),
-                lowered: ProgramExpression::TypedLoad {
-                    pointer: Box::new(pointer),
-                    value_type,
-                    volatile,
-                    pointee_constant,
-                    access_class: None,
-                    source: Default::default(),
-                },
+            return Ok(ContractExpression::MemoryLoad {
+                pointer: Box::new(source_pointer),
+                value_type,
+                volatile,
+                pointee_constant,
             });
         }
 

@@ -890,6 +890,7 @@ pub(in crate::surface) fn walk_written_expressions(
         | ContractExpression::ResourceWildcard
         | ContractExpression::ResourceCount(_) => {}
         ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::MemoryLoad { pointer: inner, .. }
         | ContractExpression::Negate(inner)
         | ContractExpression::BitwiseNot(inner)
         | ContractExpression::Old(inner)

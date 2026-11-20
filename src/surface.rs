@@ -3142,6 +3142,7 @@ pub(crate) fn collect_current_contract_expression_variables(
             collect_current_contract_expression_variables(inner, names);
         }
         ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::MemoryLoad { pointer: inner, .. }
         | ContractExpression::Negate(inner)
         | ContractExpression::Exact(inner) => {
             collect_current_contract_expression_variables(inner, names);
@@ -3332,6 +3333,14 @@ pub enum SurfaceTerm {
     SequenceConcat(Box<ContractExpression>, Box<ContractExpression>),
     /// A C expression fragment appearing inside Surface Click.
     ProgramExpression(ProgramExpression),
+    /// A typed read in the surrounding memory. The pointer expression may
+    /// select an address in a different state.
+    MemoryLoad {
+        pointer: Box<SurfaceTerm>,
+        value_type: ProgramType,
+        volatile: bool,
+        pointee_constant: bool,
+    },
     /// A C unary operation whose operand retains source and binding syntax.
     /// Scalar casts and typed loads may also wrap a pure or historical expression. `operand` is authoritative;
     /// in that case `lowered` retains the cast metadata with a placeholder, and
@@ -8194,6 +8203,7 @@ fn contract_expression_reads_memory(
         | ContractExpression::ResourceWildcard
         | ContractExpression::ProgramExpression(_)
         | ContractExpression::CUnary { .. }
+        | ContractExpression::MemoryLoad { .. }
         | ContractExpression::Field { .. }
         | ContractExpression::Index(_, _)
         | ContractExpression::ArrayIndex { .. }
