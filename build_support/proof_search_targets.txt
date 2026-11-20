@@ -43,8 +43,8 @@ extract_special_conjunct_premises
 fact_transport_candidate_search
 increment_headroom_premises
 indexed_arithmetic_premises
-loan_access
-loan_aliases
+borrow_access
+borrow_aliases
 memory_range_aliases
 named_returned_pointer_surface_fact
 owned_anchor_distinctness

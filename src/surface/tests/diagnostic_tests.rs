@@ -1328,9 +1328,9 @@ fn statement_head_names_the_guard_without_the_loop_node() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
-fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
+fn borrow_refusal_diagnostic_renders_only_its_selected_subject() {
     use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, MemoryRange};
-    use crate::kernel::{LoanRefusal, LoanRefusalOperation, LoanRefusalSubject};
+    use crate::kernel::{BorrowRefusal, LoanRefusalOperation, LoanRefusalSubject};
 
     let pointer = Address {
         base: AddressBase::Concrete("selected_resource".to_string()),
@@ -1341,7 +1341,7 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
         MachineTerm::constant(0),
         MachineTerm::constant(4),
     ));
-    let diagnostic = LoanRefusal::ActiveDependency.diagnostic_with_subject(
+    let diagnostic = BorrowRefusal::ActiveDependency.diagnostic_with_subject(
         LoanRefusalOperation::MemoryAccess,
         LoanRefusalSubject::for_resource(selected),
     );
@@ -1364,9 +1364,9 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
-fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
+fn borrow_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
     use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, MemoryRange};
-    use crate::kernel::{LoanRefusal, LoanRefusalOperation, LoanRefusalSubject};
+    use crate::kernel::{BorrowRefusal, LoanRefusalOperation, LoanRefusalSubject};
 
     let range = MemoryRange::new(
         Address {
@@ -1376,7 +1376,7 @@ fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
         MachineTerm::constant(1),
         MachineTerm::constant(3),
     );
-    let diagnostic = LoanRefusal::UnsupportedPartition.diagnostic_with_subject(
+    let diagnostic = BorrowRefusal::UnsupportedPartition.diagnostic_with_subject(
         LoanRefusalOperation::Plan,
         LoanRefusalSubject::for_range(range),
     );
@@ -1680,7 +1680,7 @@ fn a_uint32_order_is_named_as_unsigned() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_11")]
-fn missing_mutex_use_names_the_required_resource_without_loan_internals() {
+fn missing_mutex_use_names_the_required_resource_without_borrow_internals() {
     let mutex = crate::kernel::Address {
         base: "selected_mutex".into(),
         offset: crate::kernel::AddressOffset::Constant(0),
@@ -1701,7 +1701,7 @@ fn missing_mutex_use_names_the_required_resource_without_loan_internals() {
         "{rendered}"
     );
     assert!(rendered.contains("selected_mutex"), "{rendered}");
-    assert!(!rendered.contains("Loan"), "{rendered}");
+    assert!(!rendered.contains("Borrow"), "{rendered}");
 }
 
 /// C source whose refusals each name one statement: a struct-field store
@@ -4507,8 +4507,8 @@ test_batches! {
     ],
     diagnostic_batch_09: [
         statement_head_names_the_guard_without_the_loop_node,
-        loan_refusal_diagnostic_renders_only_its_selected_subject,
-        loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state,
+        borrow_refusal_diagnostic_renders_only_its_selected_subject,
+        borrow_refusal_diagnostic_renders_a_range_subject_without_ledger_state,
         identical_load_renders_name_distinct_state_loads,
     ],
     diagnostic_batch_10: [
@@ -4518,7 +4518,7 @@ test_batches! {
         a_uint32_order_is_named_as_unsigned,
     ],
     diagnostic_batch_11: [
-        missing_mutex_use_names_the_required_resource_without_loan_internals,
+        missing_mutex_use_names_the_required_resource_without_borrow_internals,
         statement_sites_change_nothing_but_the_location_line,
         failed_generated_loop_closer_reports_a_short_summary_at_the_loop_tactic,
         a_passing_theorem_retains_its_accepted_trace_path,

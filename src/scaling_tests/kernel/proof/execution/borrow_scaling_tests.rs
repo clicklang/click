@@ -1,4 +1,4 @@
-// Scaling tests of `src/kernel/proof/execution.rs` (module `loan_scaling_tests`): deterministic work measured at several
+// Scaling tests of `src/kernel/proof/execution.rs` (module `borrow_scaling_tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
@@ -11,7 +11,7 @@ fn interface_binding_inheritance_visits_only_claimed_bindings() {
             let (arm, successor) = interface_join_states(count, claimed);
             let empty = ExecutionState::new();
             let (inherited, work) = crate::instrumentation::measure_deterministic_work(|| {
-                interface_successor_loans_are_inherited(&successor, [&empty, &arm])
+                interface_successor_borrows_are_inherited(&successor, [&empty, &arm])
             });
             assert!(inherited);
             assert_eq!(work, 2 * claimed, "{count} held, {claimed} claimed");
@@ -20,7 +20,7 @@ fn interface_binding_inheritance_visits_only_claimed_bindings() {
             // missing binding describes a resource at a fresh occurrence.
             let (other, _) = interface_join_states(count, 0);
             let (inherited, work) = crate::instrumentation::measure_deterministic_work(|| {
-                interface_successor_loans_are_inherited(&successor, [&other, &other])
+                interface_successor_borrows_are_inherited(&successor, [&other, &other])
             });
             assert_eq!(inherited, claimed == 0);
             assert_eq!(work, if claimed == 0 { 0 } else { 2 });
@@ -29,13 +29,13 @@ fn interface_binding_inheritance_visits_only_claimed_bindings() {
 }
 
 #[test]
-fn loop_head_havoc_work_over_cells_and_symbolic_loans() {
+fn loop_head_havoc_work_over_cells_and_symbolic_borrows() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
         let ledger = symbolic_contract_input_ledger(count);
         let memory = cells_in_the_symbolic_block(count);
         let (havoced, work) = crate::instrumentation::measure_deterministic_work(|| {
-            memory.with_loop_memory_havoc_preserving_loans(
+            memory.with_loop_memory_havoc_preserving_borrows(
                 Variable(7),
                 &BTreeSet::new(),
                 None,
@@ -66,14 +66,14 @@ fn loop_head_havoc_work_over_cells_and_symbolic_loans() {
 }
 
 #[test]
-fn loop_head_havoc_symbolic_read_ignores_other_loans() {
+fn loop_head_havoc_symbolic_read_ignores_other_borrows() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
         let ledger = symbolic_contract_input_ledger(count);
         let pointer = parameter_view(0).memory_range().unwrap().base().clone();
         let memory = SymbolicMemory::new().store(pointer.clone(), int32(7));
         let (havoced, work) = crate::instrumentation::measure_deterministic_work(|| {
-            memory.with_loop_memory_havoc_preserving_loans(
+            memory.with_loop_memory_havoc_preserving_borrows(
                 Variable(7),
                 &BTreeSet::new(),
                 None,

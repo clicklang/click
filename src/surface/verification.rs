@@ -8583,7 +8583,7 @@ int32 f(struct s* p, int32 n) {
     /// carries this call's own borrows, because lending has removed the owner
     /// from the preserved residual (docs/internals/stable-views.md).
     #[test]
-    fn call_retirement_requires_separation_from_its_own_loan() {
+    fn call_retirement_requires_separation_from_its_own_borrow() {
         let click = r#"
 verifying "reader.c";
 

@@ -1,4 +1,4 @@
-// Scaling tests of `src/kernel/loans/exclusive_calls.rs` (module `tests`): deterministic work measured at several
+// Scaling tests of `src/kernel/borrows/exclusive_calls.rs` (module `tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 

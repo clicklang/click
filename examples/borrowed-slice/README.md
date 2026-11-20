@@ -24,5 +24,5 @@ the ordinary viewed getter after reconstruction. Its postconditions show that
 the slice mutation survives the split and rejoin.
 
 The caller supplies the metadata object and backing array. Allocation,
-deallocation, overlapping loans, and multiple simultaneous slices are outside
+deallocation, overlapping borrows, and multiple simultaneous slices are outside
 this example's scope.

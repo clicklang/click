@@ -12,7 +12,7 @@ discharges it, by reserving every owned requirement out of the caller's
 residual before it plans a view. A caller passing one range to both clauses
 is refused — `a_caller_cannot_lend_and_transfer_one_range.md`.
 
-```c filename=pointer_params_separate_by_transfer_and_loan.c
+```c filename=pointer_params_separate_by_transfer_and_borrow.c
 int32 clobber_dst(int32* dst, int32* src) {
     dst[0] = 1;
     return src[0];
@@ -20,7 +20,7 @@ int32 clobber_dst(int32* dst, int32* src) {
 ```
 
 ```click
-verifying "pointer_params_separate_by_transfer_and_loan.c";
+verifying "pointer_params_separate_by_transfer_and_borrow.c";
 
 int32 clobber_dst(int32* dst, int32* src) {
     consumes dst[0..1];

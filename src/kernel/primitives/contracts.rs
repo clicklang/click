@@ -4235,12 +4235,12 @@ impl ExecutionEnvironment {
             // A retained head obligation names the borrows of its checked
             // entry. An equal resource description may have different live
             // borrows, including when the original entry had none.
-            let active_loans = |state: &ExecutionState| {
-                state.loan_ledger()
-                    .filter(|ledger| ledger.has_active_memory_loans())
-                    .map(crate::kernel::loans::BorrowLedger::state_identity)
+            let active_borrows = |state: &ExecutionState| {
+                state.borrow_ledger()
+                    .filter(|ledger| ledger.has_active_memory_borrows())
+                    .map(crate::kernel::borrows::BorrowLedger::state_identity)
             };
-            let state_matches = active_loans(&rule.symbolic_entry_state) == active_loans(state)
+            let state_matches = active_borrows(&rule.symbolic_entry_state) == active_borrows(state)
                 && rule.symbolic_entry_state.locals == state.locals
                 && rule.symbolic_entry_state.memory == state.memory
                 && crate::kernel::api::contract_certification::resource_contexts_definitionally_equal_with_definitions(

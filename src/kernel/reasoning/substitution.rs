@@ -955,9 +955,9 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
         instance_field_scope: walk_resource_context(&state.instance_field_scope, s),
         body_field_view: state.body_field_view.clone(),
         resources: walk_resource_context(&state.resources, s),
-        loan_ledger: state.loan_ledger.clone(),
-        loan_participant: state.loan_participant,
-        loan_view_bindings: state.loan_view_bindings.clone(),
+        borrow_ledger: state.borrow_ledger.clone(),
+        borrow_participant: state.borrow_participant,
+        borrow_bindings: state.borrow_bindings.clone(),
         thread_ledger: state.thread_ledger.clone(),
         mutex_ledger: state.mutex_ledger.clone(),
         mutex_input_reservations: state.mutex_input_reservations.clone(),
@@ -1892,12 +1892,14 @@ mod resource_frame_substitution_tests {
             .try_compose_with_fact(live.clone(), &PureFactContext::new())
             .unwrap();
         let support = resources.unique_owned_occurrence_for_fact(&live).unwrap().0;
-        let ledger = crate::kernel::loans::BorrowLedger::new();
+        let ledger = crate::kernel::borrows::BorrowLedger::new();
         let participant = ledger.fresh_participant().unwrap();
-        let (ledger, loan) = ledger
+        let (ledger, borrow) = ledger
             .lend_mutex_use(participant, participant, support, live)
             .unwrap();
-        let fact = ledger.mutex_use_resource(loan.usage, participant).unwrap();
+        let fact = ledger
+            .mutex_use_resource(borrow.usage, participant)
+            .unwrap();
         let resource = fact.resource();
         assert_eq!(
             substitute_pointer_variable_in_resource(
@@ -1945,13 +1947,13 @@ mod resource_frame_substitution_tests {
     }
 
     #[test]
-    fn state_substitutions_preserve_the_exact_loan_ledger_root() {
-        let ledger = crate::kernel::loans::BorrowLedger::new();
+    fn state_substitutions_preserve_the_exact_borrow_ledger_root() {
+        let ledger = crate::kernel::borrows::BorrowLedger::new();
         let participant = ledger.fresh_participant().expect("participant identity");
         let state = ExecutionState::new()
             .with_local("x", int32(MachineTerm::Variable(Variable(71_100))))
-            .with_loan_ledger(Some(ledger))
-            .with_loan_participant(Some(participant));
+            .with_borrow_ledger(Some(ledger))
+            .with_borrow_participant(Some(participant));
         let bitvector_substituted = substitute_bitvector_variable_in_execution_state(
             &state,
             Variable(71_100),
@@ -1963,23 +1965,26 @@ mod resource_frame_substitution_tests {
             &Address::symbolic(Variable(71_101)),
         );
 
-        let original = state.loan_ledger().expect("state has ledger");
+        let original = state.borrow_ledger().expect("state has ledger");
         assert!(
             original.shares_storage_with(
                 bitvector_substituted
-                    .loan_ledger()
+                    .borrow_ledger()
                     .expect("bitvector substitution has ledger")
             )
         );
         assert!(
             original.shares_storage_with(
                 pointer_substituted
-                    .loan_ledger()
+                    .borrow_ledger()
                     .expect("pointer substitution has ledger")
             )
         );
-        assert_eq!(bitvector_substituted.loan_participant(), Some(participant));
-        assert_eq!(pointer_substituted.loan_participant(), Some(participant));
+        assert_eq!(
+            bitvector_substituted.borrow_participant(),
+            Some(participant)
+        );
+        assert_eq!(pointer_substituted.borrow_participant(), Some(participant));
     }
 
     fn inherited_check(range: MemoryRange) -> LoopEffectCheck {

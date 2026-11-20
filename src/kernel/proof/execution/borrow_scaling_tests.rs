@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::loans::{BorrowLedger, LoanViewBinding};
+use crate::kernel::borrows::{BorrowBinding, BorrowLedger};
 use crate::kernel::{AddressBase, AddressOffset, int32};
 use std::collections::BTreeSet;
 
@@ -44,8 +44,8 @@ fn interface_join_states(count: usize, claimed: usize) -> (ExecutionState, Execu
         .expect("one shared borrow backs every exposed child");
     let bindings = viewed
         .iter()
-        .map(|fact| LoanViewBinding {
-            loan: opening.loan,
+        .map(|fact| BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support,
@@ -59,9 +59,9 @@ fn interface_join_states(count: usize, claimed: usize) -> (ExecutionState, Execu
         .map(|(fact, binding)| (resources.occurrences_for_fact(fact)[0], binding.clone()))
         .collect::<Vec<_>>();
     let arm = ExecutionState::new()
-        .with_loan_ledger(Some(ledger))
-        .with_loan_participant(Some(reader))
-        .with_resource_context_and_loan_dependencies(resources, arm_dependencies);
+        .with_borrow_ledger(Some(ledger))
+        .with_borrow_participant(Some(reader))
+        .with_resource_context_and_borrow_dependencies(resources, arm_dependencies);
 
     let successor_resources =
         ResourceContext::new().unchecked_with_facts(viewed.iter().take(claimed).cloned());
@@ -77,7 +77,7 @@ fn interface_join_states(count: usize, claimed: usize) -> (ExecutionState, Execu
         })
         .collect::<Vec<_>>();
     let successor = ExecutionState::new()
-        .with_resource_context_and_loan_dependencies(successor_resources, successor_dependencies);
+        .with_resource_context_and_borrow_dependencies(successor_resources, successor_dependencies);
     (arm, successor)
 }
 
@@ -111,7 +111,7 @@ fn symbolic_contract_input_ledger(count: usize) -> BorrowLedger {
             .apply(&opening.transition)
             .expect("the input root applies");
     }
-    assert!(ledger.has_active_memory_loans());
+    assert!(ledger.has_active_memory_borrows());
     ledger
 }
 
@@ -131,13 +131,13 @@ fn cells_in_the_symbolic_block(count: usize) -> SymbolicMemory {
 }
 
 #[test]
-fn symbolic_loan_retains_its_exact_cached_value_without_a_search() {
+fn symbolic_borrow_retains_its_exact_cached_value_without_a_search() {
     let ledger = symbolic_contract_input_ledger(1);
     let range = parameter_view(0).memory_range().unwrap().clone();
     assert!(ledger.permits_memory_access(&range).is_err());
     let pointer = range.base().clone();
     let before = SymbolicMemory::new().store(pointer.clone(), int32(7));
-    let after = before.clone().with_loop_memory_havoc_preserving_loans(
+    let after = before.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(7),
         &BTreeSet::new(),
         None,
@@ -150,5 +150,5 @@ fn symbolic_loan_retains_its_exact_cached_value_without_a_search() {
 
 #[cfg(test)]
 mod scaling_tests {
-    include!("../../../scaling_tests/kernel/proof/execution/loan_scaling_tests.rs");
+    include!("../../../scaling_tests/kernel/proof/execution/borrow_scaling_tests.rs");
 }

@@ -5,9 +5,10 @@
 //! while retaining the caller's lifetime obligation.
 
 use super::*;
-use crate::kernel::loans::{
-    CheckedLoanCallEvidence, CheckedLoanCallEvidenceSequence, CheckedLoanTransition, LoanRefusal,
-    append_checked_loan_evidence, empty_checked_loan_evidence_sequence,
+use crate::kernel::borrows::{
+    BorrowRefusal, CheckedBorrowCallEvidence, CheckedBorrowCallEvidenceSequence,
+    CheckedBorrowTransition, append_checked_borrow_evidence,
+    empty_checked_borrow_evidence_sequence,
 };
 
 /// A description backed by one actual, rooted use input, not by its address.
@@ -15,7 +16,7 @@ use crate::kernel::loans::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AssumedMutexProtocol {
     pub(super) usage: MutexUseBinding,
-    pub(super) holder: LoanParticipantId,
+    pub(super) holder: BorrowParticipantId,
     pub(super) use_fact: ResourceFact,
     pub(super) lifetime: ResourceFact,
 }
@@ -26,13 +27,13 @@ pub(super) struct AssumedMutexProtocol {
 pub(super) struct AssumedMutexGuard {
     pub(super) protocol: AssumedMutexProtocol,
     pub(super) fact: ResourceFact,
-    pub(super) hold: LoanHoldId,
+    pub(super) hold: BorrowHoldId,
     pub(super) payload: Option<crate::kernel::ResourceInstance>,
 }
 
 pub(super) struct AssumedMutexTransition {
     pub(super) state: ExecutionState,
-    pub(super) evidence: CheckedLoanCallEvidenceSequence,
+    pub(super) evidence: CheckedBorrowCallEvidenceSequence,
 }
 
 impl AssumedMutexProtocol {
@@ -44,13 +45,13 @@ impl AssumedMutexProtocol {
             return Err("abstract mutex protocols require independent contract input state".into());
         }
         let holder = state
-            .loan_participant
+            .borrow_participant
             .ok_or("missing mutex use participant")?;
-        let loans = state
-            .loan_ledger
+        let borrows = state
+            .borrow_ledger
             .as_ref()
             .ok_or("missing mutex use borrow")?;
-        let use_fact = loans.mutex_use_resource(usage, holder).map_err(|error| {
+        let use_fact = borrows.mutex_use_resource(usage, holder).map_err(|error| {
             MutexTransitionError::OwnedRefusal(format!("missing rooted mutex use input: {error}"))
         })?;
         let Resource::MutexUse(identity) = use_fact.resource() else {
@@ -85,13 +86,13 @@ impl AssumedMutexProtocol {
         &identity.mutex
     }
 
-    pub(super) fn loans<'a>(
+    pub(super) fn borrows<'a>(
         &self,
         state: &'a ExecutionState,
     ) -> Result<&'a BorrowLedger, MutexTransitionError> {
         let missing = || MutexTransitionError::MissingUse(self.mutex().clone());
         if !state.preserves_mutex_protocols
-            || state.loan_participant != Some(self.holder)
+            || state.borrow_participant != Some(self.holder)
             || state
                 .resources
                 .unique_owned_occurrence_for_fact(&self.use_fact)
@@ -99,7 +100,7 @@ impl AssumedMutexProtocol {
         {
             return Err(missing());
         }
-        let ledger = state.loan_ledger.as_ref().ok_or_else(missing)?;
+        let ledger = state.borrow_ledger.as_ref().ok_or_else(missing)?;
         if ledger
             .mutex_use_resource(self.usage, self.holder)
             .map_err(|_| missing())?
@@ -133,10 +134,10 @@ impl AssumedMutexProtocol {
         output: Option<crate::kernel::InstanceId>,
         budget: &mut crate::kernel::ExecutionBudget,
     ) -> Result<(AssumedMutexTransition, AssumedMutexGuard), MutexTransitionError> {
-        let loans = self.loans(state)?;
+        let borrows = self.borrows(state)?;
         // A hidden or removed guard still pins the scope. Do not decide local
         // heldness by merely searching the visible resource context.
-        loans
+        borrows
             .check_mutex_use_available(self.usage, self.holder, &state.resources)
             .map_err(|error| {
                 MutexTransitionError::OwnedRefusal(format!(
@@ -146,7 +147,7 @@ impl AssumedMutexProtocol {
         if state.resources.mutex_guard_at(self.mutex()).is_some() {
             return Err("mutex is already guarded".into());
         }
-        let (next, hold, transition) = loans
+        let (next, hold, transition) = borrows
             .hold_mutex_use_with_transition(self.usage, &self.lifetime, self.holder)
             .map_err(|_| MutexTransitionError::MissingUse(self.mutex().clone()))?;
         let fact = ResourceFact::own(Resource::MutexGuard(super::super::MutexIdentity {
@@ -163,7 +164,7 @@ impl AssumedMutexProtocol {
                     "mutex guard conflicts with current authority: {error}"
                 ))
             })?;
-        let evidence = self.evidence(loans, transition, &next)?;
+        let evidence = self.evidence(borrows, transition, &next)?;
         let mut state = state.clone();
         state.resources = if let Some(payload) = &payload {
             resources
@@ -180,7 +181,7 @@ impl AssumedMutexProtocol {
             resources
         };
         state.set_memory_directly(memory);
-        state.loan_ledger = Some(next);
+        state.borrow_ledger = Some(next);
         if let (Some(payload), Some(definition)) = (&payload, definition) {
             state = state
                 .import_acquired_control_authorities(payload, definition, assumptions)
@@ -257,7 +258,7 @@ impl AssumedMutexProtocol {
         if guard.protocol != *self {
             return Err(MutexTransitionError::MissingGuard(self.mutex().clone()));
         }
-        let loans = self.loans(state)?;
+        let borrows = self.borrows(state)?;
         if state
             .resources
             .unique_owned_occurrence_for_fact(&guard.fact)
@@ -285,7 +286,8 @@ impl AssumedMutexProtocol {
                     supplied: ResourceFact::own(Resource::Instance(current.clone())),
                 });
             }
-            if loans.has_active_memory_loans() || state.loan_view_bindings.iter().next().is_some() {
+            if borrows.has_active_memory_borrows() || state.borrow_bindings.iter().next().is_some()
+            {
                 return Err("protected mutex release requires returned memory borrows".into());
             }
             Some(ResourceFact::own(Resource::Instance(current.clone())))
@@ -295,7 +297,7 @@ impl AssumedMutexProtocol {
             }
             None
         };
-        let (next, transition) = loans
+        let (next, transition) = borrows
             .release_mutex_use_hold_with_transition(
                 self.usage,
                 &self.lifetime,
@@ -326,17 +328,17 @@ impl AssumedMutexProtocol {
             )?,
             None => state.memory.clone(),
         };
-        let evidence = self.evidence(loans, transition, &next)?;
+        let evidence = self.evidence(borrows, transition, &next)?;
         let mut state = state.clone();
         state.resources = resources;
         state.set_memory_directly(memory);
-        state.loan_ledger = Some(next);
+        state.borrow_ledger = Some(next);
         Ok(AssumedMutexTransition { state, evidence })
     }
 
     #[cfg(test)]
     pub(super) fn check_return(&self, state: &ExecutionState) -> Result<(), MutexTransitionError> {
-        self.loans(state)?
+        self.borrows(state)?
             .check_assumed_mutex_use_return(self.usage, self.holder, &state.resources)
             .map_err(|_| MutexTransitionError::MissingUse(self.mutex().clone()))
     }
@@ -344,20 +346,20 @@ impl AssumedMutexProtocol {
     fn evidence(
         &self,
         before: &BorrowLedger,
-        transition: CheckedLoanTransition,
+        transition: CheckedBorrowTransition,
         after: &BorrowLedger,
-    ) -> Result<CheckedLoanCallEvidenceSequence, MutexTransitionError> {
-        let evidence = CheckedLoanCallEvidence::runtime_mutex_transition(
+    ) -> Result<CheckedBorrowCallEvidenceSequence, MutexTransitionError> {
+        let evidence = CheckedBorrowCallEvidence::runtime_mutex_transition(
             before,
             self.holder,
             transition,
             after,
         )
-        .map_err(|_: LoanRefusal| {
+        .map_err(|_: BorrowRefusal| {
             MutexTransitionError::Refusal("invalid mutex lifetime transition")
         })?;
-        Ok(append_checked_loan_evidence(
-            &empty_checked_loan_evidence_sequence(),
+        Ok(append_checked_borrow_evidence(
+            &empty_checked_borrow_evidence_sequence(),
             Some(Arc::new(evidence)),
         ))
     }
@@ -370,11 +372,14 @@ pub(in crate::kernel) struct OpaqueMutexAcquisitions {
     pub(super) identity: u64,
     pub(super) receipts: PersistentMap<Address, Arc<AssumedMutexGuard>>,
     pub(super) storage: MutexLedger,
-    pub(super) holders: PersistentMap<LoanParticipantId, usize>,
+    pub(super) holders: PersistentMap<BorrowParticipantId, usize>,
 }
 
 impl OpaqueMutexAcquisitions {
-    pub(in crate::kernel) fn has_local_hold(&self, participant: Option<LoanParticipantId>) -> bool {
+    pub(in crate::kernel) fn has_local_hold(
+        &self,
+        participant: Option<BorrowParticipantId>,
+    ) -> bool {
         participant.is_none_or(|holder| self.holders.contains_key(&holder))
     }
     pub(super) fn guard_resource(&self, mutex: &Address) -> Option<ResourceFact> {
@@ -425,7 +430,7 @@ pub(in crate::kernel) fn opaque_runtime_transition(
     mutex: &Address,
     acquire: bool,
     assumptions: &PureFactContext,
-) -> Result<(ExecutionState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
+) -> Result<(ExecutionState, CheckedBorrowCallEvidenceSequence), MutexTransitionError> {
     opaque_runtime_transition_with_payload(
         state,
         mutex,
@@ -447,7 +452,7 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
     definitions: &Arc<[crate::kernel::CompositeResourceDefinition]>,
     payload_identity: Option<crate::kernel::InstanceId>,
     budget: &mut crate::kernel::ExecutionBudget,
-) -> Result<(ExecutionState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
+) -> Result<(ExecutionState, CheckedBorrowCallEvidenceSequence), MutexTransitionError> {
     opaque_runtime_transition_with_selected_use(
         state,
         mutex,
@@ -471,7 +476,7 @@ pub(super) fn opaque_runtime_transition_with_selected_use(
     payload_identity: Option<crate::kernel::InstanceId>,
     budget: &mut crate::kernel::ExecutionBudget,
     selected_use: Option<&ResourceFact>,
-) -> Result<(ExecutionState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
+) -> Result<(ExecutionState, CheckedBorrowCallEvidenceSequence), MutexTransitionError> {
     if !state.preserves_mutex_protocols {
         return Err("opaque mutex transitions require preserving use authority".into());
     }
@@ -797,8 +802,8 @@ mod tests {
         let fact = ledger.mutex_use_resource(root.usage, holder).unwrap();
         let mut state = ExecutionState::new();
         state.preserves_mutex_protocols = true;
-        state.loan_ledger = Some(ledger);
-        state.loan_participant = Some(holder);
+        state.borrow_ledger = Some(ledger);
+        state.borrow_participant = Some(holder);
         state.resources = ResourceContext::new().unchecked_with_fact(fact);
         let protocol = AssumedMutexProtocol::bind(&state, root.usage).unwrap();
         (state, protocol)
@@ -837,9 +842,9 @@ mod tests {
         let fact = ledger.mutex_use_resource(root.usage, holder).unwrap();
         let mut state = ExecutionState::new();
         state.preserves_mutex_protocols = true;
-        state.loan_participant = Some(holder);
+        state.borrow_participant = Some(holder);
         state.resources = ResourceContext::new().unchecked_with_fact(fact);
-        state.loan_ledger = Some(ledger);
+        state.borrow_ledger = Some(ledger);
         let protocol = AssumedMutexProtocol::bind(&state, root.usage).unwrap();
         let definition = CompositeResourceDefinition::new(
             "counter_state",
@@ -984,9 +989,9 @@ mod tests {
         concrete.preserves_mutex_protocols = false;
         assert!(AssumedMutexProtocol::bind(&concrete, protocol.usage).is_err());
         let mut wrong = state.clone();
-        wrong.loan_participant = Some(
+        wrong.borrow_participant = Some(
             state
-                .loan_ledger
+                .borrow_ledger
                 .as_ref()
                 .unwrap()
                 .fresh_participant()
@@ -1033,17 +1038,19 @@ mod tests {
         assert_eq!(released.state.memory, state.memory);
         assert!(protocol.check_return(&released.state).is_ok());
         assert_eq!(released.state.resources.facts(), state.resources.facts());
-        let evidence =
-            crate::kernel::loans::concat_checked_loan_evidence(&held.evidence, &released.evidence);
+        let evidence = crate::kernel::borrows::concat_checked_borrow_evidence(
+            &held.evidence,
+            &released.evidence,
+        );
         assert_eq!(evidence.len(), 2);
         assert!(evidence.is_valid());
         assert_eq!(
             evidence.recovered_ledger_for(
-                state.loan_ledger.as_ref().unwrap(),
+                state.borrow_ledger.as_ref().unwrap(),
                 protocol.holder,
                 false
             ),
-            released.state.loan_ledger
+            released.state.borrow_ledger
         );
         let (again, next_guard) = protocol.acquire(&released.state, &assumptions).unwrap();
         assert_ne!(guard.fact, next_guard.fact);
@@ -1096,14 +1103,14 @@ mod tests {
         let resources = ResourceContext::new().unchecked_with_fact(marker.clone());
         let (support, _) = resources.unique_owned_occurrence_for_fact(&marker).unwrap();
         let (ledger, root) = state
-            .loan_ledger
+            .borrow_ledger
             .as_ref()
             .unwrap()
             .borrowed_mutex_use_input(first.holder, support, Address::symbolic(Variable(766)))
             .unwrap();
         let second_fact = ledger.mutex_use_resource(root.usage, first.holder).unwrap();
         state.resources = state.resources.unchecked_with_fact(second_fact);
-        state.loan_ledger = Some(ledger);
+        state.borrow_ledger = Some(ledger);
         let second = AssumedMutexProtocol::bind(&state, root.usage).unwrap();
         let (held_first, mut first_guard) = first.acquire(&state, &assumptions).unwrap();
         let (held_both, second_guard) = second.acquire(&held_first.state, &assumptions).unwrap();
@@ -1148,16 +1155,16 @@ mod tests {
         assert!(protocol.check_return(&released).is_ok());
         assert_eq!(released.resources.facts(), state.resources.facts());
         assert_eq!(released.memory, state.memory);
-        let evidence = crate::kernel::loans::concat_checked_loan_evidence(&acquired, &returned);
+        let evidence = crate::kernel::borrows::concat_checked_borrow_evidence(&acquired, &returned);
         assert_eq!(evidence.len(), 2);
         assert!(evidence.is_valid());
         assert_eq!(
             evidence.recovered_ledger_for(
-                state.loan_ledger.as_ref().unwrap(),
+                state.borrow_ledger.as_ref().unwrap(),
                 protocol.holder,
                 false
             ),
-            released.loan_ledger
+            released.borrow_ledger
         );
     }
 

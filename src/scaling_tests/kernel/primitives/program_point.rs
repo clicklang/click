@@ -256,7 +256,7 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
         let mut loop_memory = written
             .memory()
             .clone()
-            .with_loop_memory_havoc_preserving_loans(
+            .with_loop_memory_havoc_preserving_borrows(
                 Variable(38_132),
                 &std::collections::BTreeSet::from([slot.base.clone()]),
                 Some(&ranges),

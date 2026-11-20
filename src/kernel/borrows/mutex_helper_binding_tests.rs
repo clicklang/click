@@ -27,7 +27,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
     let ledger = ledger.apply(&split).unwrap();
     let left = ledger
         .mutex_use_resource(
-            MutexUseBinding(LoanAuthorityBinding {
+            MutexUseBinding(BorrowAuthorityBinding {
                 share: left,
                 ..input.usage.0
             }),
@@ -36,7 +36,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
         .unwrap();
     let right = ledger
         .mutex_use_resource(
-            MutexUseBinding(LoanAuthorityBinding {
+            MutexUseBinding(BorrowAuthorityBinding {
                 share: right,
                 ..input.usage.0
             }),
@@ -45,8 +45,8 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
         .unwrap();
     let mut state = crate::kernel::ExecutionState::new();
     state.preserves_mutex_protocols = true;
-    state.loan_ledger = Some(ledger.clone());
-    state.loan_participant = Some(holder);
+    state.borrow_ledger = Some(ledger.clone());
+    state.borrow_participant = Some(holder);
     state.resources = ResourceContext::new().unchecked_with_facts([left.clone(), right.clone()]);
     // Select the opposite of address lookup's candidate deliberately.
     let (selected, other) = if state.resources.mutex_use_candidate_at(&mutex) == Some(&left) {
@@ -69,7 +69,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
     .unwrap();
     assert_eq!(
         acquire_evidence.recovered_ledger_for(&ledger, holder, false),
-        held.loan_ledger
+        held.borrow_ledger
     );
     let guard = crate::kernel::mutexes::guard_resource(&held, &mutex, false).unwrap();
     assert!(
@@ -100,11 +100,11 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
         &mut crate::kernel::ExecutionBudget::new(),
     )
     .unwrap();
-    let evidence = concat_checked_loan_evidence(&acquire_evidence, &release_evidence);
+    let evidence = concat_checked_borrow_evidence(&acquire_evidence, &release_evidence);
     assert!(evidence.is_valid());
     assert_eq!(
         evidence.recovered_ledger_for(&ledger, holder, false),
-        released.loan_ledger
+        released.borrow_ledger
     );
     assert_eq!(released.resources.facts(), state.resources.facts());
     let (again, _, _) = apply_call_effect(

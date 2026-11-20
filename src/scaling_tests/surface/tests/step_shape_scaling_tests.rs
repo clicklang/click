@@ -2022,8 +2022,8 @@ fn explicit_pointer_separation_ignores_ambient_aliases() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: active loan alias scaling"]
-fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
+#[ignore = "nightly: active borrow alias scaling"]
+fn one_write_with_a_borrow_does_not_walk_unrelated_aliases() {
     let mut curves = Vec::new();
     for viewed in [false, true] {
         for size in [4, 16, 64] {
@@ -2036,7 +2036,7 @@ fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
             let c = format!("void set(int32* p, int32* q{parameters}) {{ *p = 1; }}");
             let view = if viewed { "views *q;" } else { "" };
             let proof = format!(
-                "verifying \"loan.c\";\nvoid set(int32* p, int32* q{parameters}) {{ owns *p; {view} {requirements} }} by {{ step(); }}"
+                "verifying \"borrow.c\";\nvoid set(int32* p, int32* q{parameters}) {{ owns *p; {view} {requirements} }} by {{ step(); }}"
             );
             let proof = if viewed {
                 proof.replace(
@@ -2047,7 +2047,7 @@ fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
                 proof
             };
             let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-                verify_c_sources(&proof, &[("loan.c", &c)])
+                verify_c_sources(&proof, &[("borrow.c", &c)])
             });
             result.unwrap_or_else(|e| panic!("viewed={viewed}, aliases={size}: {}", e.report()));
             let work = samples

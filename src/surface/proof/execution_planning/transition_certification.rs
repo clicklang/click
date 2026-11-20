@@ -1076,7 +1076,7 @@ fn certified_transitions_from_execution(
                     fact_transports: transported_facts,
                     generated_load_bindings,
                     generated_load_source_events,
-                    loan_evidence: path.loan_evidence().clone(),
+                    borrow_evidence: path.borrow_evidence().clone(),
                 });
             }
             let generated_load_bindings = generated_load_bindings_from_facts(&execution_facts);
@@ -1106,7 +1106,7 @@ fn certified_transitions_from_execution(
                 fact_transports: Vec::new(),
                 generated_load_bindings,
                 generated_load_source_events,
-                loan_evidence: path.loan_evidence().clone(),
+                borrow_evidence: path.borrow_evidence().clone(),
             })
         })
         .collect::<Result<Vec<_>, _>>()?;

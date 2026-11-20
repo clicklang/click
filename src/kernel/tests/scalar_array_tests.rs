@@ -303,22 +303,22 @@ fn compact_scalar_array_initialization_rejects_readonly_storage_and_pointer_qual
 }
 
 #[test]
-fn compact_scalar_array_initialization_cannot_bypass_an_active_view_loan() {
+fn compact_scalar_array_initialization_cannot_bypass_an_active_view_borrow() {
     let target = pointer("local:array-target", 0);
     let viewed = view_memory_fact(target.clone(), 0, 4);
     let resources = ResourceContext::new()
         .unchecked_with_facts([own_memory_fact(target.clone(), 0, 4), viewed.clone()]);
     let support = resources.occurrences_for_fact(&viewed)[0];
-    let ledger = crate::kernel::loans::BorrowLedger::new();
+    let ledger = crate::kernel::borrows::BorrowLedger::new();
     let participant = ledger.fresh_participant().unwrap();
     let opening = ledger
         .borrowed_contract_input(participant, support, viewed.clone(), None)
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let bindings = crate::kernel::loans::LoanViewBindings::default().with_inserted(
+    let bindings = crate::kernel::borrows::BorrowBindings::default().with_inserted(
         support,
-        crate::kernel::loans::LoanViewBinding {
-            loan: opening.loan,
+        crate::kernel::borrows::BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support,
@@ -329,9 +329,9 @@ fn compact_scalar_array_initialization_cannot_bypass_an_active_view_loan() {
     let state = ExecutionState::new()
         .with_memory(fresh(4))
         .with_resource_context(resources)
-        .with_loan_ledger(Some(ledger))
-        .with_loan_participant(Some(participant))
-        .with_loan_view_bindings(bindings);
+        .with_borrow_ledger(Some(ledger))
+        .with_borrow_participant(Some(participant))
+        .with_borrow_bindings(bindings);
     let statement = program_initialize_scalar_array(
         crate::kernel::program_expression::pointer_value(target),
         crate::kernel::program_expression::uint32_literal(7),
@@ -393,7 +393,7 @@ fn execute_test_scalar_array_write(
 
 #[test]
 fn scalar_array_region_writes_require_separation_for_the_entire_destination() {
-    use crate::kernel::loans::BorrowLedger;
+    use crate::kernel::borrows::BorrowLedger;
 
     let state = scalar_array_region_state();
     let assumptions = PureFactContext::new();
@@ -412,7 +412,7 @@ fn scalar_array_region_writes_require_separation_for_the_entire_destination() {
         let opening = ledger.lend(lender, reader, occurrence, backing).unwrap();
         let state = state
             .clone()
-            .with_loan_ledger(Some(ledger.apply(&opening.transition).unwrap()));
+            .with_borrow_ledger(Some(ledger.apply(&opening.transition).unwrap()));
 
         let borrowed = Resource::Memory(range);
         for copy in [true, false] {

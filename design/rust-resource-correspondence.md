@@ -3,7 +3,7 @@
 This record tests whether ordinary safe Rust ownership and borrowing can map
 naturally to Click resources. It pairs compiler/runtime witnesses in
 `design/borrow-probes/resource_correspondence.rs` with the
-`rust_correspondence_` tests in `src/kernel/tests/loan_model_tests.rs`.
+`rust_correspondence_` tests in `src/kernel/tests/borrow_model_tests.rs`.
 The witnesses are synthetic and unchanged between compiler and model analysis.
 The complete runtime witnesses are not imported as Click proofs. Native Rust
 regressions now check the unchanged `set_seven` helper body and related field

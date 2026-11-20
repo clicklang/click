@@ -32,8 +32,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::kernel::borrows::{
+    BorrowBinding, BorrowLedger, BorrowRefusal, plan_stable_view_transfer,
+};
 use crate::kernel::functions::CheckedResourceFact;
-use crate::kernel::loans::{BorrowLedger, LoanRefusal, LoanViewBinding, plan_stable_view_transfer};
 use crate::kernel::{
     Address, AddressOffset, MachineTerm, MemoryRange, PureFactContext, ResourceContext,
     ResourceFact, ResourceOccurrenceId, ResourceStateSource, ResourceTransferRole,
@@ -52,14 +54,14 @@ struct Location(u8);
 struct ScopeId(u16);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-struct LoanId(u16);
+struct BorrowId(u16);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 struct ShareId(u16);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 struct ViewDescription {
-    loan: LoanId,
+    borrow: BorrowId,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -70,7 +72,7 @@ struct Scope {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-struct Loan {
+struct Borrow {
     scope: ScopeId,
     location: Location,
     recovery_holder: Holder,
@@ -90,10 +92,10 @@ struct Model {
     owners: BTreeMap<Location, Holder>,
     values: BTreeMap<Location, u8>,
     scopes: BTreeMap<ScopeId, Scope>,
-    loans: BTreeMap<LoanId, Loan>,
+    borrows: BTreeMap<BorrowId, Borrow>,
     shares: BTreeMap<ShareId, Share>,
     next_scope: u16,
-    next_loan: u16,
+    next_borrow: u16,
     next_share: u16,
 }
 
@@ -117,10 +119,10 @@ impl Model {
             owners: BTreeMap::new(),
             values: BTreeMap::new(),
             scopes: BTreeMap::new(),
-            loans: BTreeMap::new(),
+            borrows: BTreeMap::new(),
             shares: BTreeMap::new(),
             next_scope: 0,
-            next_loan: 0,
+            next_borrow: 0,
             next_share: 0,
         };
         for (location, holder, value) in locations {
@@ -144,15 +146,15 @@ impl Model {
         owner: Holder,
         reader: Holder,
         location: Location,
-    ) -> Result<(ScopeId, LoanId, ShareId, ViewDescription), Refusal> {
+    ) -> Result<(ScopeId, BorrowId, ShareId, ViewDescription), Refusal> {
         if self.owners.get(&location) != Some(&owner) {
             return Err(Refusal::MissingOwner);
         }
         self.owners.remove(&location);
         let scope = ScopeId(self.next_scope);
         self.next_scope += 1;
-        let loan = LoanId(self.next_loan);
-        self.next_loan += 1;
+        let borrow = BorrowId(self.next_borrow);
+        self.next_borrow += 1;
         let root = self.fresh_share();
         self.scopes.insert(
             scope,
@@ -162,9 +164,9 @@ impl Model {
                 close_holder: owner,
             },
         );
-        self.loans.insert(
-            loan,
-            Loan {
+        self.borrows.insert(
+            borrow,
+            Borrow {
                 scope,
                 location,
                 recovery_holder: owner,
@@ -180,7 +182,7 @@ impl Model {
                 active_holder: Some(reader),
             },
         );
-        Ok((scope, loan, root, ViewDescription { loan }))
+        Ok((scope, borrow, root, ViewDescription { borrow }))
     }
 
     fn split(
@@ -262,16 +264,16 @@ impl Model {
         description: ViewDescription,
         share: ShareId,
     ) -> Result<u8, Refusal> {
-        let loan = self
-            .loans
-            .get(&description.loan)
+        let borrow = self
+            .borrows
+            .get(&description.borrow)
             .ok_or(Refusal::WrongScope)?;
-        let scope = self.scopes.get(&loan.scope).ok_or(Refusal::WrongScope)?;
+        let scope = self.scopes.get(&borrow.scope).ok_or(Refusal::WrongScope)?;
         if !scope.active {
             return Err(Refusal::ScopeEnded);
         }
         let share = self.shares.get(&share).ok_or(Refusal::MissingShare)?;
-        if share.scope != loan.scope {
+        if share.scope != borrow.scope {
             return Err(Refusal::WrongScope);
         }
         if share.active_holder != Some(holder) {
@@ -279,7 +281,7 @@ impl Model {
         }
         Ok(*self
             .values
-            .get(&loan.location)
+            .get(&borrow.location)
             .expect("borrowed location is live"))
     }
 
@@ -314,23 +316,23 @@ impl Model {
         Ok(())
     }
 
-    fn recover(&mut self, holder: Holder, loan: LoanId) -> Result<(), Refusal> {
-        let loan_record = self.loans.get(&loan).ok_or(Refusal::WrongScope)?;
-        if loan_record.recovery_holder != holder {
+    fn recover(&mut self, holder: Holder, borrow: BorrowId) -> Result<(), Refusal> {
+        let borrow_record = self.borrows.get(&borrow).ok_or(Refusal::WrongScope)?;
+        if borrow_record.recovery_holder != holder {
             return Err(Refusal::WrongHolder);
         }
-        if loan_record.recovered {
+        if borrow_record.recovered {
             return Err(Refusal::AlreadyRecovered);
         }
         if self
             .scopes
-            .get(&loan_record.scope)
+            .get(&borrow_record.scope)
             .is_some_and(|scope| scope.active)
         {
             return Err(Refusal::ScopeStillActive);
         }
-        let location = loan_record.location;
-        self.loans.get_mut(&loan).expect("checked").recovered = true;
+        let location = borrow_record.location;
+        self.borrows.get_mut(&borrow).expect("checked").recovered = true;
         assert!(self.owners.insert(location, holder).is_none());
         Ok(())
     }
@@ -338,27 +340,27 @@ impl Model {
     fn invariant_holds(&self) -> bool {
         for location in self.values.keys() {
             let live_escrows = self
-                .loans
+                .borrows
                 .values()
-                .filter(|loan| loan.location == *location && !loan.recovered)
+                .filter(|borrow| borrow.location == *location && !borrow.recovered)
                 .count();
             if live_escrows > 1 || self.owners.contains_key(location) == (live_escrows == 1) {
                 return false;
             }
         }
-        for (loan_id, loan) in &self.loans {
-            let Some(scope) = self.scopes.get(&loan.scope) else {
+        for (borrow_id, borrow) in &self.borrows {
+            let Some(scope) = self.scopes.get(&borrow.scope) else {
                 return false;
             };
-            if loan.recovered && scope.active {
+            if borrow.recovered && scope.active {
                 return false;
             }
-            if !self.scope_tree_is_conserved(loan.scope, scope.root) {
+            if !self.scope_tree_is_conserved(borrow.scope, scope.root) {
                 return false;
             }
-            if !loan.recovered
-                && self.loans.iter().any(|(other_id, other)| {
-                    other_id != loan_id && !other.recovered && other.location == loan.location
+            if !borrow.recovered
+                && self.borrows.iter().any(|(other_id, other)| {
+                    other_id != borrow_id && !other.recovered && other.location == borrow.location
                 })
             {
                 return false;
@@ -410,7 +412,7 @@ impl Model {
 fn two_reader_trace_conserves_authority_and_rejects_stale_description() {
     let x = Location(0);
     let mut model = Model::with_owned([(x, Holder::Left, 0)]);
-    let (scope, loan, root, view) = model.lend(Holder::Left, Holder::Left, x).unwrap();
+    let (scope, borrow, root, view) = model.lend(Holder::Left, Holder::Left, x).unwrap();
     let copied_view = view;
     let (left, right) = model
         .split(root, Holder::Left, Holder::Left, Holder::Right)
@@ -425,17 +427,17 @@ fn two_reader_trace_conserves_authority_and_rejects_stale_description() {
     model.transfer(right, Holder::Right, Holder::Left).unwrap();
     assert_eq!(model.join(left, right, Holder::Left), Ok(root));
     model.end(Holder::Left, scope).unwrap();
-    model.recover(Holder::Left, loan).unwrap();
+    model.recover(Holder::Left, borrow).unwrap();
     model.write(Holder::Left, x, 1).unwrap();
     assert_eq!(
         model.read(Holder::Left, copied_view, root),
         Err(Refusal::ScopeEnded)
     );
     assert_eq!(
-        model.recover(Holder::Left, loan),
+        model.recover(Holder::Left, borrow),
         Err(Refusal::AlreadyRecovered)
     );
-    let (_new_scope, _new_loan, _new_root, _new_view) =
+    let (_new_scope, _new_borrow, _new_root, _new_view) =
         model.lend(Holder::Left, Holder::Left, x).unwrap();
     assert_eq!(
         model.read(Holder::Left, copied_view, root),
@@ -448,7 +450,7 @@ fn two_reader_trace_conserves_authority_and_rejects_stale_description() {
 fn splitting_and_joining_require_exact_linear_siblings() {
     let x = Location(0);
     let mut model = Model::with_owned([(x, Holder::Left, 3)]);
-    let (scope, _loan, root, _view) = model.lend(Holder::Left, Holder::Left, x).unwrap();
+    let (scope, _borrow, root, _view) = model.lend(Holder::Left, Holder::Left, x).unwrap();
     let (left, right) = model
         .split(root, Holder::Left, Holder::Left, Holder::Left)
         .unwrap();
@@ -555,10 +557,10 @@ fn bounded_successors(model: &Model) -> Vec<Model> {
             }
         }
     }
-    for loan in model.loans.keys().copied() {
+    for borrow in model.borrows.keys().copied() {
         for holder in [Holder::Left, Holder::Right] {
             let mut next = model.clone();
-            if next.recover(holder, loan).is_ok() {
+            if next.recover(holder, borrow).is_ok() {
                 successors.insert(next);
             }
         }
@@ -655,7 +657,7 @@ struct RangeShare {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-struct RangeLoan {
+struct RangeBorrow {
     range: ByteRange,
     lender: ContextId,
     active: bool,
@@ -667,9 +669,9 @@ struct RangeLoan {
 struct RangeOwnershipModel {
     values: BTreeMap<u8, u8>,
     owners: BTreeMap<ByteRange, ContextId>,
-    loans: BTreeMap<u8, RangeLoan>,
+    borrows: BTreeMap<u8, RangeBorrow>,
     shares: BTreeMap<u8, RangeShare>,
-    next_loan: u8,
+    next_borrow: u8,
     next_share: u8,
 }
 
@@ -678,9 +680,9 @@ impl RangeOwnershipModel {
         let mut model = Self {
             values: BTreeMap::new(),
             owners: BTreeMap::new(),
-            loans: BTreeMap::new(),
+            borrows: BTreeMap::new(),
             shares: BTreeMap::new(),
-            next_loan: 0,
+            next_borrow: 0,
             next_share: 0,
         };
         for (range, context, value) in values {
@@ -768,13 +770,13 @@ impl RangeOwnershipModel {
             return Err(RangeRefusal::MissingOwner);
         }
         self.owners.remove(&range);
-        let loan = self.next_loan;
-        self.next_loan = self.next_loan.checked_add(1).expect("tiny borrow bound");
+        let borrow = self.next_borrow;
+        self.next_borrow = self.next_borrow.checked_add(1).expect("tiny borrow bound");
         let root = self.next_share;
         self.next_share = self.next_share.checked_add(1).expect("tiny share bound");
-        self.loans.insert(
-            loan,
-            RangeLoan {
+        self.borrows.insert(
+            borrow,
+            RangeBorrow {
                 range,
                 lender,
                 active: true,
@@ -791,7 +793,7 @@ impl RangeOwnershipModel {
                 holder: Some(reader),
             },
         );
-        Ok((loan, root))
+        Ok((borrow, root))
     }
 
     fn split_share(
@@ -873,8 +875,11 @@ impl RangeOwnershipModel {
         Ok(parent)
     }
 
-    fn end_shared(&mut self, loan: u8, holder: ContextId) -> Result<(), RangeRefusal> {
-        let record = self.loans.get(&loan).ok_or(RangeRefusal::MissingShare)?;
+    fn end_shared(&mut self, borrow: u8, holder: ContextId) -> Result<(), RangeRefusal> {
+        let record = self
+            .borrows
+            .get(&borrow)
+            .ok_or(RangeRefusal::MissingShare)?;
         if !record.active {
             return Err(RangeRefusal::ScopeEnded);
         }
@@ -889,12 +894,18 @@ impl RangeOwnershipModel {
             .get_mut(&record.root)
             .expect("checked root")
             .holder = None;
-        self.loans.get_mut(&loan).expect("checked borrow").active = false;
+        self.borrows
+            .get_mut(&borrow)
+            .expect("checked borrow")
+            .active = false;
         Ok(())
     }
 
-    fn recover(&mut self, loan: u8) -> Result<(), RangeRefusal> {
-        let record = self.loans.get(&loan).ok_or(RangeRefusal::MissingShare)?;
+    fn recover(&mut self, borrow: u8) -> Result<(), RangeRefusal> {
+        let record = self
+            .borrows
+            .get(&borrow)
+            .ok_or(RangeRefusal::MissingShare)?;
         if record.active {
             return Err(RangeRefusal::ScopeStillActive);
         }
@@ -909,7 +920,10 @@ impl RangeOwnershipModel {
         {
             return Err(RangeRefusal::Overlap);
         }
-        self.loans.get_mut(&loan).expect("checked borrow").recovered = true;
+        self.borrows
+            .get_mut(&borrow)
+            .expect("checked borrow")
+            .recovered = true;
         self.owners.insert(record.range, record.lender);
         Ok(())
     }
@@ -923,22 +937,24 @@ impl RangeOwnershipModel {
         }) {
             return false;
         }
-        for (loan_id, loan) in &self.loans {
-            let Some(root) = self.shares.get(&loan.root) else {
+        for (borrow_id, borrow) in &self.borrows {
+            let Some(root) = self.shares.get(&borrow.root) else {
                 return false;
             };
-            if root.range != loan.range || !self.range_tree_is_conserved(loan.root, loan.active) {
+            if root.range != borrow.range
+                || !self.range_tree_is_conserved(borrow.root, borrow.active)
+            {
                 return false;
             }
-            if !loan.recovered && self.owners.keys().any(|range| range.overlaps(loan.range)) {
+            if !borrow.recovered && self.owners.keys().any(|range| range.overlaps(borrow.range)) {
                 return false;
             }
-            if loan.recovered && self.owners.get(&loan.range) != Some(&loan.lender) {
+            if borrow.recovered && self.owners.get(&borrow.range) != Some(&borrow.lender) {
                 return false;
             }
-            if !loan.recovered
-                && self.loans.iter().any(|(other, candidate)| {
-                    other != loan_id && !candidate.recovered && candidate.range == loan.range
+            if !borrow.recovered
+                && self.borrows.iter().any(|(other, candidate)| {
+                    other != borrow_id && !candidate.recovered && candidate.range == borrow.range
                 })
             {
                 return false;
@@ -1078,35 +1094,35 @@ impl FieldDependencyModel {
     }
 
     fn child_read(&self, child: ContextId, id: u8) -> Result<u8, FieldRefusal> {
-        let loan = self.child.as_ref().ok_or(FieldRefusal::WrongChild)?;
-        if loan.id != id || loan.child != child {
+        let borrow = self.child.as_ref().ok_or(FieldRefusal::WrongChild)?;
+        if borrow.id != id || borrow.child != child {
             return Err(FieldRefusal::WrongChild);
         }
-        Ok(loan.value)
+        Ok(borrow.value)
     }
 
     fn child_write(&mut self, child: ContextId, id: u8, value: u8) -> Result<(), FieldRefusal> {
-        let loan = self.child.as_mut().ok_or(FieldRefusal::WrongChild)?;
-        if loan.id != id || loan.child != child {
+        let borrow = self.child.as_mut().ok_or(FieldRefusal::WrongChild)?;
+        if borrow.id != id || borrow.child != child {
             return Err(FieldRefusal::WrongChild);
         }
-        if loan.mode == ReborrowMode::Shared {
+        if borrow.mode == ReborrowMode::Shared {
             return Err(FieldRefusal::ChildWriteThroughShared);
         }
-        loan.value = value;
+        borrow.value = value;
         Ok(())
     }
 
     // Model-only value transport: the child returns its updated field to the
     // caller before the parent dependency is discharged.
     fn end_child(&mut self, child: ContextId, id: u8) -> Result<u8, FieldRefusal> {
-        let loan = self.child.take().ok_or(FieldRefusal::WrongChild)?;
-        if loan.id != id || loan.child != child {
-            self.child = Some(loan);
+        let borrow = self.child.take().ok_or(FieldRefusal::WrongChild)?;
+        if borrow.id != id || borrow.child != child {
+            self.child = Some(borrow);
             return Err(FieldRefusal::WrongChild);
         }
-        self.values.insert(loan.field, loan.value);
-        Ok(loan.value)
+        self.values.insert(borrow.field, borrow.value);
+        Ok(borrow.value)
     }
 }
 
@@ -1290,7 +1306,7 @@ fn r27_reader_in_one_context_excludes_overlapping_writer_in_another() {
     let reader_b = ContextId(2);
     let range = ByteRange::new(0, 2);
     let mut model = RangeOwnershipModel::new([(range, owner, 7)]);
-    let (loan, root) = model.lend_shared(owner, reader_a, range).unwrap();
+    let (borrow, root) = model.lend_shared(owner, reader_a, range).unwrap();
     let (left, right) = model
         .split_share(root, reader_a, reader_a, reader_b)
         .unwrap();
@@ -1302,8 +1318,8 @@ fn r27_reader_in_one_context_excludes_overlapping_writer_in_another() {
     );
     model.transfer_share(right, reader_b, reader_a).unwrap();
     model.join_share(left, right, reader_a).unwrap();
-    model.end_shared(loan, reader_a).unwrap();
-    model.recover(loan).unwrap();
+    model.end_shared(borrow, reader_a).unwrap();
+    model.recover(borrow).unwrap();
     model.write(owner, range, 8).unwrap();
     assert!(model.invariant_holds());
 }
@@ -1314,7 +1330,7 @@ fn range_share_invariant_rejects_a_missing_split_child() {
     let reader = ContextId(1);
     let range = ByteRange::new(0, 2);
     let mut model = RangeOwnershipModel::new([(range, owner, 7)]);
-    let (_loan, root) = model.lend_shared(owner, reader, range).unwrap();
+    let (_borrow, root) = model.lend_shared(owner, reader, range).unwrap();
     let (_left, right) = model.split_share(root, reader, reader, reader).unwrap();
     model.shares.get_mut(&right).expect("split child").holder = None;
     assert!(!model.invariant_holds());
@@ -1376,16 +1392,16 @@ fn rust_correspondence_move_transfers_authority_without_copying_it() {
     );
     model.write(recipient, whole, 8).unwrap();
 
-    let (loan, root) = model.lend_shared(recipient, reader, whole).unwrap();
+    let (borrow, root) = model.lend_shared(recipient, reader, whole).unwrap();
     assert_eq!(
         model.transfer(whole, recipient, original),
         Err(RangeRefusal::WrongContext)
     );
-    assert_eq!(model.recover(loan), Err(RangeRefusal::ScopeStillActive));
+    assert_eq!(model.recover(borrow), Err(RangeRefusal::ScopeStillActive));
     assert_eq!(model.read_shared(root, reader), Ok(8));
-    model.end_shared(loan, reader).unwrap();
-    model.recover(loan).unwrap();
-    assert_eq!(model.recover(loan), Err(RangeRefusal::AlreadyRecovered));
+    model.end_shared(borrow, reader).unwrap();
+    model.recover(borrow).unwrap();
+    assert_eq!(model.recover(borrow), Err(RangeRefusal::AlreadyRecovered));
     assert_eq!(
         model.read_shared(root, reader),
         Err(RangeRefusal::WrongHolder)
@@ -1399,7 +1415,7 @@ fn rust_correspondence_shared_field_preserves_value_and_allows_disjoint_write() 
     let parent = ContextId(0);
     let child = ContextId(1);
     let mut model = FieldDependencyModel::new(parent, [(0, 4), (1, 9)]);
-    let loan = model
+    let borrow = model
         .reborrow(parent, child, 0, ReborrowMode::Shared)
         .unwrap();
     assert_eq!(
@@ -1407,12 +1423,12 @@ fn rust_correspondence_shared_field_preserves_value_and_allows_disjoint_write() 
         Err(FieldRefusal::ParentSuspended)
     );
     assert_eq!(
-        model.child_write(child, loan, 8),
+        model.child_write(child, borrow, 8),
         Err(FieldRefusal::ChildWriteThroughShared)
     );
     model.parent_write(parent, 1, 12).unwrap();
-    assert_eq!(model.child_read(child, loan), Ok(4));
-    assert_eq!(model.end_child(child, loan), Ok(4));
+    assert_eq!(model.child_read(child, borrow), Ok(4));
+    assert_eq!(model.end_child(child, borrow), Ok(4));
     model.parent_write(parent, 0, 8).unwrap();
     assert_eq!(model.parent_read(parent, 0), Ok(8));
     assert_eq!(model.parent_read(parent, 1), Ok(12));
@@ -1424,7 +1440,7 @@ fn rust_correspondence_exclusive_reborrow_recovers_updated_value_once() {
     let child = ContextId(1);
     let stranger = ContextId(2);
     let mut model = FieldDependencyModel::new(parent, [(0, 4), (1, 9)]);
-    let loan = model
+    let borrow = model
         .reborrow(parent, child, 0, ReborrowMode::ExclusiveModelOnly)
         .unwrap();
     assert_eq!(
@@ -1439,32 +1455,38 @@ fn rust_correspondence_exclusive_reborrow_recovers_updated_value_once() {
         model.reborrow(parent, stranger, 0, ReborrowMode::Shared),
         Err(FieldRefusal::ActiveChild)
     );
-    model.child_write(child, loan, 7).unwrap();
+    model.child_write(child, borrow, 7).unwrap();
 
     // A forged recovery must leave the outstanding child and its value intact.
     let before = model.clone();
     assert_eq!(
-        model.end_child(stranger, loan),
+        model.end_child(stranger, borrow),
         Err(FieldRefusal::WrongChild)
     );
     assert_eq!(model, before);
     assert_eq!(
-        model.end_child(child, loan + 1),
+        model.end_child(child, borrow + 1),
         Err(FieldRefusal::WrongChild)
     );
     assert_eq!(model, before);
-    assert_eq!(model.end_child(child, loan), Ok(7));
+    assert_eq!(model.end_child(child, borrow), Ok(7));
     model.parent_write(parent, 0, 8).unwrap();
     assert_eq!(model.parent_read(parent, 0), Ok(8));
     assert_eq!(model.parent_read(parent, 1), Ok(9));
     // Borrow legality alone does not imply the stale/false final-value claim.
     assert_ne!(model.parent_read(parent, 0), Ok(7));
-    assert_eq!(model.child_read(child, loan), Err(FieldRefusal::WrongChild));
     assert_eq!(
-        model.child_write(child, loan, 99),
+        model.child_read(child, borrow),
         Err(FieldRefusal::WrongChild)
     );
-    assert_eq!(model.end_child(child, loan), Err(FieldRefusal::WrongChild));
+    assert_eq!(
+        model.child_write(child, borrow, 99),
+        Err(FieldRefusal::WrongChild)
+    );
+    assert_eq!(
+        model.end_child(child, borrow),
+        Err(FieldRefusal::WrongChild)
+    );
 }
 
 #[test]
@@ -1496,21 +1518,24 @@ fn rust_correspondence_partition_supports_disjoint_exclusive_access() {
 }
 
 #[test]
-fn r29_returned_field_loan_recovers_updated_value_after_dependency() {
+fn r29_returned_field_borrow_recovers_updated_value_after_dependency() {
     let parent = ContextId(0);
     let child = ContextId(1);
     let mut model = FieldDependencyModel::new(parent, [(7, 10)]);
-    let loan = model
+    let borrow = model
         .reborrow(parent, child, 7, ReborrowMode::ExclusiveModelOnly)
         .unwrap();
-    model.child_write(child, loan, 99).unwrap();
+    model.child_write(child, borrow, 99).unwrap();
     assert_eq!(
         model.parent_read(parent, 7),
         Err(FieldRefusal::ParentSuspended)
     );
-    assert_eq!(model.end_child(child, loan), Ok(99));
+    assert_eq!(model.end_child(child, borrow), Ok(99));
     assert_eq!(model.parent_read(parent, 7), Ok(99));
-    assert_eq!(model.end_child(child, loan), Err(FieldRefusal::WrongChild));
+    assert_eq!(
+        model.end_child(child, borrow),
+        Err(FieldRefusal::WrongChild)
+    );
 }
 
 #[test]
@@ -1559,7 +1584,7 @@ fn two_reader_trace_places_readers_in_different_model_contexts() {
     let second_reader = ContextId(2);
     let range = ByteRange::new(0, 1);
     let mut model = RangeOwnershipModel::new([(range, owner, 0)]);
-    let (loan, root) = model.lend_shared(owner, first_reader, range).unwrap();
+    let (borrow, root) = model.lend_shared(owner, first_reader, range).unwrap();
     let (first, second) = model
         .split_share(root, first_reader, first_reader, second_reader)
         .unwrap();
@@ -1573,8 +1598,8 @@ fn two_reader_trace_places_readers_in_different_model_contexts() {
         .transfer_share(second, second_reader, first_reader)
         .unwrap();
     model.join_share(first, second, first_reader).unwrap();
-    model.end_shared(loan, first_reader).unwrap();
-    model.recover(loan).unwrap();
+    model.end_shared(borrow, first_reader).unwrap();
+    model.recover(borrow).unwrap();
     assert!(model.invariant_holds());
 }
 
@@ -1629,7 +1654,7 @@ fn correspondence_calls_production_partition_lend_split_transfer_join() {
     let ledger = ledger.apply(&join).unwrap();
     let end = ledger.end(opening.scope, caller).unwrap();
     let ledger = ledger.apply(&end).unwrap();
-    let (recover, recovered, _) = ledger.recover(opening.loan, caller).unwrap();
+    let (recover, recovered, _) = ledger.recover(opening.borrow, caller).unwrap();
     assert!(recovered.is_own());
     let _ledger = ledger.apply(&recover).unwrap();
     assert!(model.invariant_holds());
@@ -1650,8 +1675,8 @@ fn correspondence_calls_production_shared_reborrow_and_end_ordering() {
         )
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let binding = LoanViewBinding {
-        loan: opening.loan,
+    let binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support: opening.description.support(),
@@ -1664,7 +1689,7 @@ fn correspondence_calls_production_shared_reborrow_and_end_ordering() {
     let ledger = ledger.apply(&child.transition).unwrap();
     assert_eq!(
         ledger.end(opening.scope, parent_holder),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     let returned = ledger
         .transfer(child.root_share, child_holder, parent_holder)

@@ -311,8 +311,8 @@ fn scalar_array_state_region_does_not_scan_unrelated_sibling_cells() {
 }
 
 #[test]
-fn scalar_array_write_loan_requirement_ignores_alias_and_loan_counts() {
-    use crate::kernel::loans::BorrowLedger;
+fn scalar_array_write_borrow_requirement_ignores_alias_and_borrow_counts() {
+    use crate::kernel::borrows::BorrowLedger;
 
     let _session = crate::kernel::VerificationSession::enter();
     let state = scalar_array_region_state();
@@ -349,7 +349,7 @@ fn scalar_array_write_loan_requirement_ignores_alias_and_loan_counts() {
                 let opening = ledger.lend(lender, reader, occurrence, backing).unwrap();
                 ledger = ledger.apply(&opening.transition).unwrap();
             }
-            let state = state.clone().with_loan_ledger(Some(ledger));
+            let state = state.clone().with_borrow_ledger(Some(ledger));
             for (copy, samples) in [true, false].into_iter().zip(&mut samples) {
                 let (write, work) = crate::instrumentation::measure_deterministic_work(|| {
                     execute_test_scalar_array_write(&state, 4, copy, &assumptions)

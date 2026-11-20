@@ -1,4 +1,4 @@
-// Scaling tests of `src/kernel/loans/mutex_calls.rs` (module `tests`): deterministic work measured at several
+// Scaling tests of `src/kernel/borrows/mutex_calls.rs` (module `tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
@@ -185,7 +185,7 @@ fn integrated_use_planner_reserves_and_recovers_without_scanning_the_frame() {
                     &ledger,
                     caller,
                     callee,
-                    &LoanViewBindings::default(),
+                    &BorrowBindings::default(),
                     &BTreeMap::new(),
                     false,
                 )
@@ -213,7 +213,7 @@ fn integrated_use_planner_reserves_and_recovers_without_scanning_the_frame() {
                 &ledger,
                 caller,
                 callee,
-                &LoanViewBindings::default(),
+                &BorrowBindings::default(),
                 &BTreeMap::new(),
                 false
             )
@@ -226,7 +226,7 @@ fn integrated_use_planner_reserves_and_recovers_without_scanning_the_frame() {
             &ledger,
             caller,
             callee,
-            &LoanViewBindings::default(),
+            &BorrowBindings::default(),
             &BTreeMap::new(),
             true,
         )
@@ -238,7 +238,7 @@ fn integrated_use_planner_reserves_and_recovers_without_scanning_the_frame() {
             .recover_suspended_views(
                 entry.clone(),
                 retained,
-                LoanViewBindings::default(),
+                BorrowBindings::default(),
                 BTreeMap::new(),
                 &assumptions,
             )

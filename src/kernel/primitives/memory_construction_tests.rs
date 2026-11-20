@@ -64,7 +64,7 @@ fn memory_constructions_cover_non_transition_producers() {
         ),
         memory
             .clone()
-            .with_interface_memory_havoc_preserving_loans(
+            .with_interface_memory_havoc_preserving_borrows(
                 Variable(990_812),
                 &BTreeSet::new(),
                 &[&memory],

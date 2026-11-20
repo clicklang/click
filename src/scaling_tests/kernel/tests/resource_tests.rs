@@ -2677,7 +2677,7 @@ fn memory_invalidation_scales_with_affected_intervals_and_barrier_output() {
             crate::instrumentation::measure_deterministic_work(|| {
                 state
                     .clone()
-                    .with_memory(memory.clone().with_loop_memory_havoc_preserving_loans(
+                    .with_memory(memory.clone().with_loop_memory_havoc_preserving_borrows(
                         Variable(820),
                         &BTreeSet::new(),
                         None,
@@ -3263,7 +3263,7 @@ fn known_exclusion_skips_refutation_of_unpublishable_arms() {
 }
 
 #[test]
-fn observable_projection_ignores_excluded_loan_bindings_when_hashing() {
+fn observable_projection_ignores_excluded_borrow_bindings_when_hashing() {
     let mut costs = Vec::new();
     for size in [4, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -3273,7 +3273,7 @@ fn observable_projection_ignores_excluded_loan_bindings_when_hashing() {
                 .map(Into::into)
                 .collect(),
         );
-        let base = context_with_one_loan_dependency(false);
+        let base = context_with_one_borrow_dependency(false);
         let expected = base.observable_composition();
         let mut context = base;
         let ledger = BorrowLedger::new();
@@ -3294,10 +3294,10 @@ fn observable_projection_ignores_excluded_loan_bindings_when_hashing() {
                 .unwrap();
             context = context.unchecked_with_supported_facts(&support, [view.clone()]);
             let occurrence = context.occurrences_for_fact(&view)[0];
-            context = context.with_loan_dependency(
+            context = context.with_borrow_dependency(
                 occurrence,
-                LoanViewBinding {
-                    loan: opening.loan,
+                BorrowBinding {
+                    borrow: opening.borrow,
                     scope: opening.scope,
                     share: opening.root_share,
                     support: support_occurrence,
@@ -3311,7 +3311,7 @@ fn observable_projection_ignores_excluded_loan_bindings_when_hashing() {
         let (hash, work) =
             crate::instrumentation::measure_deterministic_work(|| resource_context_hash(&observed));
         assert_eq!(hash, resource_context_hash(&expected));
-        assert_eq!(observed.live_loan_dependencies().count(), 1);
+        assert_eq!(observed.live_borrow_dependencies().count(), 1);
         assert!(
             work <= 16,
             "{size} excluded borrows caused {work} hash units"
@@ -3330,9 +3330,9 @@ fn observable_projection_with_one_owner_and_borrow_does_not_scan_views() {
     for size in [4, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let context =
-            context_with_one_loan_dependency(false).unchecked_with_facts((0..size).map(|index| {
-                ResourceFact::view_token(format!("ambient_observer_{index}"), Vec::new())
-            }));
+            context_with_one_borrow_dependency(false).unchecked_with_facts((0..size).map(
+                |index| ResourceFact::view_token(format!("ambient_observer_{index}"), Vec::new()),
+            ));
         let expected = context.observable_composition();
         let assumptions = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

@@ -20,7 +20,7 @@ fn merged_exit_equations_have_output_sized_work() {
                     restatement.restate(
                         vec![ExecutionPureFact::new(fact(1, value as i64))].into(),
                         Vec::new(),
-                        crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+                        crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
                         false,
                     )
                 })

@@ -1,6 +1,8 @@
 use super::*;
 use crate::kernel::StatementStoreSource;
-use crate::kernel::loans::{CheckedLoanCallEvidenceSequence, empty_checked_loan_evidence_sequence};
+use crate::kernel::borrows::{
+    CheckedBorrowCallEvidenceSequence, empty_checked_borrow_evidence_sequence,
+};
 #[cfg(test)]
 mod aggregate_results;
 mod scalar_arrays;
@@ -497,17 +499,17 @@ fn memory_write_obligation_outcome(
     {
         return Some(StatementOutcome::RuntimeError(error));
     }
-    require_write_loan_separation(state, range, obligations);
+    require_write_borrow_separation(state, range, obligations);
     memory_write_ownership_outcome(state, storage_range, assumptions)
 }
 
-fn require_write_loan_separation(
+fn require_write_borrow_separation(
     state: &ExecutionState,
     range: &MemoryRange,
     obligations: &mut Vec<ProofObligation>,
 ) {
     if let Some(requirement) = state
-        .loan_ledger()
+        .borrow_ledger()
         .and_then(|ledger| ledger.memory_access_requirement(range))
     {
         obligations
@@ -772,7 +774,7 @@ fn write_program_lvalue_paths_for_initialization(
                     memory_write_storage_outcome(state, pointer, bytes, &effective_assumptions)
                         .or_else(|| {
                             state
-                                .automatic_storage_loan_refusal(&pointer.base)
+                                .automatic_storage_borrow_refusal(&pointer.base)
                                 .map(StatementOutcome::RuntimeError)
                         })
                 } else {
@@ -1313,7 +1315,7 @@ fn end_aggregate_step_lifetimes(
             continue;
         };
         let range = MemoryRange::new_with_element_width(pointer.clone(), 0.into(), bytes, 1);
-        if let Some(error) = next.automatic_storage_loan_refusal(&pointer.base) {
+        if let Some(error) = next.automatic_storage_borrow_refusal(&pointer.base) {
             return Err(error);
         }
         retire_automatic_storage_owner(&mut next, &range);
@@ -1401,7 +1403,8 @@ fn memory_region_write_obligation_outcome(
     obligations: &mut Vec<ProofObligation>,
 ) -> Option<StatementOutcome> {
     #[cfg(test)]
-    let _fast = crate::kernel::search::FastOperationScope::enter("memory region write loan check");
+    let _fast =
+        crate::kernel::search::FastOperationScope::enter("memory region write borrow check");
     let storage =
         MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes);
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &storage, assumptions)
@@ -1411,7 +1414,7 @@ fn memory_region_write_obligation_outcome(
     if let Some(outcome) = memory_write_ownership_outcome(state, storage, assumptions) {
         return Some(outcome);
     }
-    require_write_loan_separation(state, destination, obligations);
+    require_write_borrow_separation(state, destination, obligations);
     None
 }
 
@@ -2941,7 +2944,7 @@ fn execute_program_realloc_result_paths(
             };
             // Save the call-entry borrow footprint. Only success retires the
             // old allocation, and intervening proof steps can change the ledger.
-            let retirement_separation = state.loan_ledger().and_then(|ledger| {
+            let retirement_separation = state.borrow_ledger().and_then(|ledger| {
                 let byte_pointer = super::expression::cast_pointer_value(
                     old_argument.clone(),
                     ProgramType::UInt8Pointer,
@@ -3236,7 +3239,7 @@ fn execute_program_heap_free_paths(
             ));
             continue;
         }
-        if let Some(ledger) = state.loan_ledger() {
+        if let Some(ledger) = state.borrow_ledger() {
             // Check the full allocation at the argument's address, which was
             // resolved to its live base above. Keep the Surface byte carrier
             // so the separation can be stated at the free's entry.
@@ -3541,7 +3544,7 @@ fn has_live_mutex(state: &ExecutionState) -> bool {
     state
         .opaque_mutex_acquisitions
         .as_ref()
-        .is_some_and(|held| held.has_local_hold(state.loan_participant))
+        .is_some_and(|held| held.has_local_hold(state.borrow_participant))
         && !super::super::mutexes::helper_contracts::permits_return(state)
         || (!state.preserves_mutex_protocols
             && state
@@ -3835,7 +3838,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
                     .clone(),
                 1,
             );
-            if let Some(error) = state.automatic_storage_loan_refusal(&slot.base) {
+            if let Some(error) = state.automatic_storage_borrow_refusal(&slot.base) {
                 return Err(error);
             }
             retire_automatic_storage_owner(&mut state, &range);
@@ -3983,7 +3986,7 @@ pub(in crate::kernel) fn execute_statement_paths(
                 outcome,
                 facts,
                 obligations,
-                loan_evidence,
+                borrow_evidence,
             } = first_path;
             match outcome {
                 StatementOutcome::Normal(state) => {
@@ -3994,7 +3997,7 @@ pub(in crate::kernel) fn execute_statement_paths(
                         execution_context,
                         &facts,
                         &obligations,
-                        &loan_evidence,
+                        &borrow_evidence,
                         budget,
                         judgment,
                     )?);
@@ -4016,7 +4019,7 @@ pub(in crate::kernel) fn execute_statement_paths(
                     outcome,
                     facts,
                     obligations,
-                    loan_evidence,
+                    borrow_evidence,
                 }),
             }
         }
@@ -4067,7 +4070,7 @@ pub(in crate::kernel) fn execute_statement_paths_with_prefix(
     execution_context: ExecutionContext<'_>,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
-    prefix_loan_evidence: &CheckedLoanCallEvidenceSequence,
+    prefix_borrow_evidence: &CheckedBorrowCallEvidenceSequence,
     budget: &mut ExecutionBudget,
     judgment: &mut StatementJudgment<'_, '_>,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
@@ -4097,9 +4100,9 @@ pub(in crate::kernel) fn execute_statement_paths_with_prefix(
             outcome: path.outcome,
             facts,
             obligations,
-            loan_evidence: crate::kernel::loans::concat_checked_loan_evidence(
-                prefix_loan_evidence,
-                &path.loan_evidence,
+            borrow_evidence: crate::kernel::borrows::concat_checked_borrow_evidence(
+                prefix_borrow_evidence,
+                &path.borrow_evidence,
             ),
         })
     })
@@ -4139,7 +4142,7 @@ pub(in crate::kernel) fn paths_after_loop_update(
             execution_context,
             &path.facts,
             &path.obligations,
-            &path.loan_evidence,
+            &path.borrow_evidence,
             budget,
             judgment,
         )? {
@@ -4578,7 +4581,7 @@ fn execute_execution_statement_leaf_paths(
                 Ok(declared) => {
                     if *kind == AggregateDeclarationKind::ConstructionDestination
                         && name.local_id().is_some_and(LocalBindingId::is_temporary)
-                        && let Some(ledger) = state.loan_ledger()
+                        && let Some(ledger) = state.borrow_ledger()
                     {
                         // A new hidden automatic object cannot be part of a
                         // borrow admitted before its lifetime began. Retain the
@@ -5105,7 +5108,7 @@ fn execute_execution_statement_leaf_paths(
                             ),
                             facts: try_path.facts,
                             obligations: try_path.obligations,
-                            loan_evidence: try_path.loan_evidence,
+                            borrow_evidence: try_path.borrow_evidence,
                         });
                         continue;
                     }
@@ -5126,7 +5129,7 @@ fn execute_execution_statement_leaf_paths(
                         execution_context,
                         &try_path.facts,
                         &try_path.obligations,
-                        &try_path.loan_evidence,
+                        &try_path.borrow_evidence,
                         budget,
                         judgment,
                     )?);
@@ -5165,7 +5168,7 @@ fn execute_execution_statement_leaf_paths(
                         execution_context,
                         &body_path.facts,
                         &body_path.obligations,
-                        &body_path.loan_evidence,
+                        &body_path.borrow_evidence,
                         budget,
                         judgment,
                     )?);
@@ -5312,7 +5315,7 @@ fn execute_execution_statement_leaf_paths(
                                     execution_context,
                                     &truthiness_path.facts,
                                     &truthiness_path.obligations,
-                                    &empty_checked_loan_evidence_sequence(),
+                                    &empty_checked_borrow_evidence_sequence(),
                                     budget,
                                     judgment,
                                 )?,
@@ -5799,7 +5802,7 @@ pub(in crate::kernel) fn execute_loop_iteration_paths(
             execution_context,
             prefix_facts,
             prefix_obligations,
-            &empty_checked_loan_evidence_sequence(),
+            &empty_checked_borrow_evidence_sequence(),
             budget,
             judgment,
         )?
@@ -5822,7 +5825,7 @@ pub(in crate::kernel) fn execute_loop_iteration_paths(
                     execution_context,
                     &entry.facts,
                     &entry.obligations,
-                    &entry.loan_evidence,
+                    &entry.borrow_evidence,
                     budget,
                     judgment,
                 )?,
@@ -5997,7 +6000,7 @@ fn local_declaration_pointer(
             .unwrap_or(MachineTerm::Variable(Variable(u64::MAX)));
         let old_range =
             MemoryRange::new_with_element_width(previous.clone(), MachineTerm::constant(0), end, 1);
-        if let Some(error) = state.automatic_storage_loan_refusal(&previous.base) {
+        if let Some(error) = state.automatic_storage_borrow_refusal(&previous.base) {
             return Err(error);
         }
         retire_automatic_storage_owner(state, &old_range);

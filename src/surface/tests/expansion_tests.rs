@@ -24737,7 +24737,7 @@ fn explicit_partition_pointer_distinctness_expands_and_replays() {
 }
 
 #[test]
-fn write_loan_obligations_expand_and_replay() {
+fn write_borrow_obligations_expand_and_replay() {
     for (path, function, claim) in [
         (
             "mdtests/explicit_write_separation_from_two_views.md",
@@ -24750,12 +24750,12 @@ fn write_loan_obligations_expand_and_replay() {
             "set_and_read.contract",
         ),
         (
-            "mdtests/indexed_write_loan_obligation.md",
+            "mdtests/indexed_write_borrow_obligation.md",
             "write_i_read_j",
             "write_i_read_j.keeps_j",
         ),
         (
-            "mdtests/indexed_wide_write_loan_obligation.md",
+            "mdtests/indexed_wide_write_borrow_obligation.md",
             "set_at",
             "set_at.contract",
         ),

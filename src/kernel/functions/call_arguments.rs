@@ -985,9 +985,9 @@ fn bind_program_function_arguments_impl(
     // Preserve an already-active candidate borrow through calls whose resource
     // interface is empty; the resource-transfer planner may replace these
     // fields with a checked callee participant when it lends new views.
-    callee_state.loan_ledger = caller_state.loan_ledger.clone();
-    callee_state.loan_participant = caller_state.loan_participant;
-    callee_state.loan_view_bindings = caller_state.loan_view_bindings.clone();
+    callee_state.borrow_ledger = caller_state.borrow_ledger.clone();
+    callee_state.borrow_participant = caller_state.borrow_participant;
+    callee_state.borrow_bindings = caller_state.borrow_bindings.clone();
     callee_state = initialize_program_function_globals(&callee_state, function);
     for (index, (parameter, value)) in function.parameters().iter().zip(values).enumerate() {
         if let Some(layout) = parameter.aggregate_layout() {
@@ -1196,9 +1196,9 @@ pub(super) fn bind_contract_arguments(
         .creation
         .as_ref()
         .map(|events| events.enter_call());
-    callee_state.loan_ledger = caller_state.loan_ledger.clone();
-    callee_state.loan_participant = caller_state.loan_participant;
-    callee_state.loan_view_bindings = caller_state.loan_view_bindings.clone();
+    callee_state.borrow_ledger = caller_state.borrow_ledger.clone();
+    callee_state.borrow_participant = caller_state.borrow_participant;
+    callee_state.borrow_bindings = caller_state.borrow_bindings.clone();
     if let Some(function) = storage {
         callee_state = initialize_program_function_globals(&callee_state, function);
     }

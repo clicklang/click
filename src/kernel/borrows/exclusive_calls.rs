@@ -10,8 +10,8 @@ pub(super) struct ExclusiveCallId(u64);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct ExclusiveCallBinding {
     id: ExclusiveCallId,
-    caller: LoanParticipantId,
-    callee: LoanParticipantId,
+    caller: BorrowParticipantId,
+    callee: BorrowParticipantId,
     parent: Option<ExclusiveCallId>,
     // Only this call's selected memory reservations, including every support
     // when the planner joined several fragments. Sharing avoids copying them
@@ -70,10 +70,10 @@ impl BorrowLedger {
 
     pub(super) fn open_exclusive_call(
         &self,
-        caller: LoanParticipantId,
-        callee: LoanParticipantId,
+        caller: BorrowParticipantId,
+        callee: BorrowParticipantId,
         supports: Vec<(ResourceFact, ResourceOccurrenceId)>,
-    ) -> Result<(ExclusiveCallBinding, CheckedLoanTransition), LoanRefusal> {
+    ) -> Result<(ExclusiveCallBinding, CheckedBorrowTransition), BorrowRefusal> {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = NEXT
             .fetch_update(
@@ -82,7 +82,7 @@ impl BorrowLedger {
                 |value| value.checked_add(1),
             )
             .map(ExclusiveCallId)
-            .map_err(|_| LoanRefusal::IdentitySpaceExhausted)?;
+            .map_err(|_| BorrowRefusal::IdentitySpaceExhausted)?;
         let binding = ExclusiveCallBinding {
             id,
             caller,
@@ -90,32 +90,33 @@ impl BorrowLedger {
             parent: self.storage.data.exclusive_holders.get(&caller).copied(),
             supports: supports.into(),
         };
-        let transition = self.issue(LoanTransitionEvidence::OpenExclusiveCall(binding.clone()))?;
+        let transition =
+            self.issue(BorrowTransitionEvidence::OpenExclusiveCall(binding.clone()))?;
         Ok((binding, transition))
     }
 
     pub(super) fn validate_exclusive_call(
         &self,
         binding: &ExclusiveCallBinding,
-        holder: LoanParticipantId,
-    ) -> Result<(), LoanRefusal> {
+        holder: BorrowParticipantId,
+    ) -> Result<(), BorrowRefusal> {
         self.require_participant(holder)?;
         if holder != binding.callee {
-            return Err(LoanRefusal::WrongHolder);
+            return Err(BorrowRefusal::WrongHolder);
         }
         let record = self
             .storage
             .data
             .exclusive_calls
             .get(&binding.id)
-            .ok_or(LoanRefusal::MissingLoanBinding)?;
+            .ok_or(BorrowRefusal::MissingBorrowBinding)?;
         if !record.active {
-            return Err(LoanRefusal::AlreadyRecovered);
+            return Err(BorrowRefusal::AlreadyRecovered);
         }
         if record.binding != *binding
             || self.storage.data.exclusive_holders.get(&holder) != Some(&binding.id)
         {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         Ok(())
     }
@@ -123,9 +124,9 @@ impl BorrowLedger {
     pub(super) fn return_exclusive_call(
         &self,
         binding: &ExclusiveCallBinding,
-        holder: LoanParticipantId,
-    ) -> Result<CheckedLoanTransition, LoanRefusal> {
-        self.issue(LoanTransitionEvidence::ReturnExclusiveCall {
+        holder: BorrowParticipantId,
+    ) -> Result<CheckedBorrowTransition, BorrowRefusal> {
+        self.issue(BorrowTransitionEvidence::ReturnExclusiveCall {
             binding: binding.clone(),
             holder,
         })
@@ -134,27 +135,27 @@ impl BorrowLedger {
     pub(super) fn validate_returned_exclusive_call(
         &self,
         binding: &ExclusiveCallBinding,
-    ) -> Result<(), LoanRefusal> {
+    ) -> Result<(), BorrowRefusal> {
         let record = self
             .storage
             .data
             .exclusive_calls
             .get(&binding.id)
-            .ok_or(LoanRefusal::MissingLoanBinding)?;
+            .ok_or(BorrowRefusal::MissingBorrowBinding)?;
         if record.binding != *binding {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         if record.active || record.children != 0 {
-            return Err(LoanRefusal::ScopeStillActive);
+            return Err(BorrowRefusal::ScopeStillActive);
         }
         Ok(())
     }
 
     pub(super) fn apply_exclusive_open(
         &self,
-        data: &mut LoanLedgerData,
+        data: &mut BorrowLedgerData,
         binding: &ExclusiveCallBinding,
-    ) -> Result<(), LoanRefusal> {
+    ) -> Result<(), BorrowRefusal> {
         self.require_participant(binding.caller)?;
         self.require_participant(binding.callee)?;
         if binding.caller == binding.callee
@@ -167,21 +168,21 @@ impl BorrowLedger {
             || data.exclusive_holders.contains_key(&binding.callee)
             || data.exclusive_holders.get(&binding.caller).copied() != binding.parent
         {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         if let Some(parent) = binding.parent {
             let mut record = data
                 .exclusive_calls
                 .get(&parent)
                 .cloned()
-                .ok_or(LoanRefusal::MissingLoanBinding)?;
+                .ok_or(BorrowRefusal::MissingBorrowBinding)?;
             if !record.active || record.binding.callee != binding.caller {
-                return Err(LoanRefusal::InvalidEvidence);
+                return Err(BorrowRefusal::InvalidEvidence);
             }
             record.children = record
                 .children
                 .checked_add(1)
-                .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
             data.exclusive_calls = data.exclusive_calls.with_inserted(parent, record);
         }
         data.exclusive_calls = data.exclusive_calls.with_inserted(
@@ -200,22 +201,22 @@ impl BorrowLedger {
 
     pub(super) fn apply_exclusive_return(
         &self,
-        data: &mut LoanLedgerData,
+        data: &mut BorrowLedgerData,
         binding: &ExclusiveCallBinding,
-        holder: LoanParticipantId,
-    ) -> Result<(), LoanRefusal> {
+        holder: BorrowParticipantId,
+    ) -> Result<(), BorrowRefusal> {
         self.require_participant(holder)?;
         if holder != binding.caller {
-            return Err(LoanRefusal::WrongHolder);
+            return Err(BorrowRefusal::WrongHolder);
         }
         self.validate_exclusive_call(binding, binding.callee)?;
         let mut record = data
             .exclusive_calls
             .get(&binding.id)
             .cloned()
-            .ok_or(LoanRefusal::MissingLoanBinding)?;
+            .ok_or(BorrowRefusal::MissingBorrowBinding)?;
         if record.children != 0 {
-            return Err(LoanRefusal::ActiveDependency);
+            return Err(BorrowRefusal::ActiveDependency);
         }
         record.active = false;
         data.exclusive_calls = data.exclusive_calls.with_inserted(binding.id, record);
@@ -225,11 +226,11 @@ impl BorrowLedger {
                 .exclusive_calls
                 .get(&parent)
                 .cloned()
-                .ok_or(LoanRefusal::MissingLoanBinding)?;
+                .ok_or(BorrowRefusal::MissingBorrowBinding)?;
             record.children = record
                 .children
                 .checked_sub(1)
-                .ok_or(LoanRefusal::InvalidEvidence)?;
+                .ok_or(BorrowRefusal::InvalidEvidence)?;
             data.exclusive_calls = data.exclusive_calls.with_inserted(parent, record);
         }
         Ok(())
@@ -243,8 +244,8 @@ mod tests {
     fn plan(
         resources: &ResourceContext,
         ledger: &BorrowLedger,
-        caller: LoanParticipantId,
-        callee: LoanParticipantId,
+        caller: BorrowParticipantId,
+        callee: BorrowParticipantId,
         fact: ResourceFact,
     ) -> StableViewTransferPlan {
         plan_stable_view_transfer(
@@ -290,7 +291,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             first.ledger.validate_exclusive_call(&binding, owner),
-            Err(LoanRefusal::WrongHolder)
+            Err(BorrowRefusal::WrongHolder)
         );
         let nested = plan(
             &first.callee_resources,
@@ -307,7 +308,7 @@ mod tests {
         );
         assert_eq!(
             nested.ledger.return_exclusive_call(&binding, owner),
-            Err(LoanRefusal::ActiveDependency)
+            Err(BorrowRefusal::ActiveDependency)
         );
         let nested_binding = nested.exclusive_call.clone().unwrap();
         let back = nested
@@ -318,11 +319,11 @@ mod tests {
         assert!(after.invariant_holds());
         assert_eq!(
             after.validate_exclusive_call(&nested_binding, grandchild),
-            Err(LoanRefusal::AlreadyRecovered)
+            Err(BorrowRefusal::AlreadyRecovered)
         );
         assert_eq!(
             after.return_exclusive_call(&nested_binding, child),
-            Err(LoanRefusal::AlreadyRecovered)
+            Err(BorrowRefusal::AlreadyRecovered)
         );
         let back = after.return_exclusive_call(&binding, owner).unwrap();
         after.apply(&back).unwrap();
@@ -348,7 +349,7 @@ mod tests {
         let binding = first.exclusive_call.clone().unwrap();
         assert_eq!(
             first.ledger.return_exclusive_call(&binding, child),
-            Err(LoanRefusal::WrongHolder)
+            Err(BorrowRefusal::WrongHolder)
         );
         let second = plan(&resources, &ledger, owner, child, memory(0, 4, true));
         assert_ne!(second.exclusive_call.as_ref().unwrap().id, binding.id);
@@ -362,7 +363,7 @@ mod tests {
         forged.supports = Arc::from([]);
         assert_eq!(
             first.ledger.return_exclusive_call(&forged, owner),
-            Err(LoanRefusal::InvalidEvidence)
+            Err(BorrowRefusal::InvalidEvidence)
         );
         let mut missing = first.clone();
         missing.exclusive_call = None;
@@ -375,7 +376,7 @@ mod tests {
             .clone()
             .recover_stable_views(&facts, &BTreeMap::new(), &[])
             .unwrap();
-        let mut evidence = CheckedLoanCallEvidence::new(
+        let mut evidence = CheckedBorrowCallEvidence::new(
             first.clone(),
             recovery.ledger,
             recovery.terminal_ledger,
@@ -396,7 +397,7 @@ mod tests {
         evidence.recovery_terminal_ledger = first.ledger.clone();
         assert_eq!(
             evidence.recheck(&ledger, Some(owner), &first.ledger, Some(child)),
-            Err(LoanRefusal::ScopeStillActive)
+            Err(BorrowRefusal::ScopeStillActive)
         );
     }
 
@@ -427,6 +428,6 @@ mod tests {
 
     #[cfg(test)]
     mod scaling_tests {
-        include!("../../scaling_tests/kernel/loans/exclusive_calls/tests.rs");
+        include!("../../scaling_tests/kernel/borrows/exclusive_calls/tests.rs");
     }
 }

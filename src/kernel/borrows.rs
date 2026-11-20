@@ -37,19 +37,19 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(crate) struct LoanParticipantId {
+pub(crate) struct BorrowParticipantId {
     arena: u64,
     ordinal: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(crate) struct LoanScopeId {
+pub(crate) struct BorrowScopeId {
     arena: u64,
     ordinal: u64,
 }
 
 #[cfg(test)]
-impl LoanScopeId {
+impl BorrowScopeId {
     pub(crate) fn for_test(arena: u64, ordinal: u64) -> Self {
         Self { arena, ordinal }
     }
@@ -64,13 +64,13 @@ impl LoanScopeId {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(crate) struct LoanId {
+pub(crate) struct BorrowId {
     arena: u64,
     ordinal: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(crate) struct LoanShareId {
+pub(crate) struct BorrowShareId {
     arena: u64,
     ordinal: u64,
 }
@@ -81,14 +81,14 @@ pub(crate) struct LoanShareId {
 /// still describes it. A hold mints no share, scope, or recovery right, but
 /// changes whether the scope may end and therefore changes the ledger identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(crate) struct LoanHoldId {
+pub(crate) struct BorrowHoldId {
     arena: u64,
     ordinal: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StableViewDescription {
-    loan: LoanId,
+    borrow: BorrowId,
     support: ResourceOccurrenceId,
     viewed: ResourceFact,
 }
@@ -109,10 +109,10 @@ impl StableViewDescription {
 /// dependency only: it grants no resource description, memory access, escrow
 /// ownership, or close/recovery right. Every use rechecks the current ledger.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-struct LoanAuthorityBinding {
-    loan: LoanId,
-    scope: LoanScopeId,
-    share: LoanShareId,
+struct BorrowAuthorityBinding {
+    borrow: BorrowId,
+    scope: BorrowScopeId,
+    share: BorrowShareId,
     support: ResourceOccurrenceId,
 }
 
@@ -120,7 +120,7 @@ struct LoanAuthorityBinding {
 /// it carries no readable resource description. Possession is checked against
 /// the current ledger whenever it is used.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(crate) struct MutexUseBinding(LoanAuthorityBinding);
+pub(crate) struct MutexUseBinding(BorrowAuthorityBinding);
 
 #[cfg(test)]
 mod mutex_helper_binding_tests;
@@ -129,25 +129,25 @@ mod mutex_helper_binding_tests;
 /// return check. This receipt grants no close or recovery right.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MutexUseContractInput {
-    holder: LoanParticipantId,
+    holder: BorrowParticipantId,
     pub(crate) usage: MutexUseBinding,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct MutexUseLoan {
-    scope: LoanScopeId,
-    loan: LoanId,
+pub(crate) struct MutexUseBorrow {
+    scope: BorrowScopeId,
+    borrow: BorrowId,
     pub(crate) usage: MutexUseBinding,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ReborrowBinding {
-    View(LoanViewBinding),
+    View(BorrowBinding),
     MutexUse(MutexUseBinding),
 }
 
 impl ReborrowBinding {
-    fn authority(&self) -> LoanAuthorityBinding {
+    fn authority(&self) -> BorrowAuthorityBinding {
         match self {
             Self::View(binding) => binding.authority(),
             Self::MutexUse(binding) => binding.0,
@@ -155,20 +155,20 @@ impl ReborrowBinding {
     }
 }
 
-/// Exact binding from a resource occurrence to the live loan/share that
+/// Exact binding from a resource occurrence to the live borrow/share that
 /// authorizes reading it. This is carried by checked state, never inferred by
 /// searching the ambient ledger or resource frame.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(crate) struct LoanViewBinding {
-    pub(crate) loan: LoanId,
-    pub(crate) scope: LoanScopeId,
-    pub(crate) share: LoanShareId,
+pub(crate) struct BorrowBinding {
+    pub(crate) borrow: BorrowId,
+    pub(crate) scope: BorrowScopeId,
+    pub(crate) share: BorrowShareId,
     pub(crate) support: ResourceOccurrenceId,
     pub(crate) viewed: ResourceFact,
     /// Present on the binding of a folded borrowing composite (and on the
     /// body piece it restores when unfolded): the occurrence keeps this
     /// borrow's scope open until the hold is released.
-    pub(crate) hold: Option<LoanHoldId>,
+    pub(crate) hold: Option<BorrowHoldId>,
 }
 
 impl ExecutionState {
@@ -188,14 +188,14 @@ impl ExecutionState {
             .ok_or_else(|| "the operand must name one directly held view".to_string())?;
         let binding = self
             .resources()
-            .loan_dependency(occurrence)
+            .borrow_dependency(occurrence)
             .ok_or_else(|| {
                 "release_view requires a produced view that holds a borrow".to_string()
             })?;
         let hold = binding.hold.ok_or_else(|| {
             "release_view requires a produced view that holds a borrow".to_string()
         })?;
-        let (Some(ledger), Some(holder)) = (self.loan_ledger(), self.loan_participant()) else {
+        let (Some(ledger), Some(holder)) = (self.borrow_ledger(), self.borrow_participant()) else {
             return Err("the view has no active borrow".into());
         };
         let mut resources = self
@@ -203,7 +203,7 @@ impl ExecutionState {
             .clone()
             .without_exact_representation_for_occurrence(occurrence)
             .ok_or_else(|| "the produced view is no longer held".to_string())?;
-        if LoanViewBindings::from_state(resources.loan_dependency_state())
+        if BorrowBindings::from_state(resources.borrow_dependency_state())
             .hold_occurrence_count(hold)
             != 0
         {
@@ -220,13 +220,13 @@ impl ExecutionState {
                 .end(binding.scope, holder)
                 .map_err(|error| error.to_string())?;
             ledger = ledger.apply(&end).map_err(|error| error.to_string())?;
-            if ledger.loan_is_recoverable_by(binding.loan, holder) {
+            if ledger.borrow_is_recoverable_by(binding.borrow, holder) {
                 let (recover, escrow, support) = ledger
-                    .recover(binding.loan, holder)
+                    .recover(binding.borrow, holder)
                     .map_err(|error| error.to_string())?;
                 ledger = ledger.apply(&recover).map_err(|error| error.to_string())?;
                 let member =
-                    RecoveredEscrow::from_loan(&ledger, binding.loan, escrow, support, None);
+                    RecoveredEscrow::from_borrow(&ledger, binding.borrow, escrow, support, None);
                 resources = resources
                     .restore_checked_escrow(&member, assumptions)
                     .map_err(|error| format!("cannot restore the borrowed resource: {error:?}"))?;
@@ -235,7 +235,7 @@ impl ExecutionState {
         Ok(self
             .clone()
             .with_resource_context(resources)
-            .with_loan_ledger(Some(ledger)))
+            .with_borrow_ledger(Some(ledger)))
     }
 
     /// Select the checked occurrence used to fold a viewed child. A single
@@ -244,11 +244,11 @@ impl ExecutionState {
         &self,
         resource: &ResourceFact,
         assumptions: &PureFactContext,
-    ) -> Result<Option<(Option<ResourceOccurrenceId>, LoanViewBinding)>, String> {
-        if !self.loan_bindings_are_consistent() {
+    ) -> Result<Option<(Option<ResourceOccurrenceId>, BorrowBinding)>, String> {
+        if !self.borrow_bindings_are_consistent() {
             return Err("resource and borrow binding sidecars disagree".into());
         }
-        let bindings = self.loan_view_bindings();
+        let bindings = self.borrow_bindings();
         let resources = self.resources();
         let mut exact_principals = resources.exact_principal_view_occurrences(resource);
         let selected = match exact_principals.next() {
@@ -269,8 +269,8 @@ impl ExecutionState {
             .get(&occurrence)
             .expect("the selected view is bound");
         let (ledger, holder) = self
-            .loan_ledger()
-            .zip(self.loan_participant())
+            .borrow_ledger()
+            .zip(self.borrow_participant())
             .ok_or("selected viewed resource has no active borrow ledger or holder")?;
         ledger
             .validate_view_binding(binding.clone(), holder)
@@ -283,15 +283,15 @@ impl ExecutionState {
     pub(crate) fn unique_borrowed_resource_dependency(
         &self,
         resource: &ResourceFact,
-    ) -> Result<Option<LoanViewBinding>, String> {
-        if !self.loan_bindings_are_consistent() {
+    ) -> Result<Option<BorrowBinding>, String> {
+        if !self.borrow_bindings_are_consistent() {
             return Err("resource and borrow binding sidecars disagree".into());
         }
         let mut selected = None;
         let mut saw_unbound = false;
         let mut saw_bound = false;
         for occurrence in self.resources().occurrences_for_fact(resource) {
-            let Some(binding) = self.resources().loan_dependency(occurrence) else {
+            let Some(binding) = self.resources().borrow_dependency(occurrence) else {
                 saw_unbound = true;
                 continue;
             };
@@ -312,10 +312,10 @@ impl ExecutionState {
             );
         }
         if let Some(binding) = &selected {
-            let ledger = self.loan_ledger().ok_or_else(|| {
+            let ledger = self.borrow_ledger().ok_or_else(|| {
                 "selected viewed resource has no active borrow ledger".to_string()
             })?;
-            let holder = self.loan_participant().ok_or_else(|| {
+            let holder = self.borrow_participant().ok_or_else(|| {
                 "selected viewed resource has no active borrow holder".to_string()
             })?;
             ledger
@@ -326,10 +326,10 @@ impl ExecutionState {
     }
 }
 
-impl LoanViewBinding {
-    fn authority(&self) -> LoanAuthorityBinding {
-        LoanAuthorityBinding {
-            loan: self.loan,
+impl BorrowBinding {
+    fn authority(&self) -> BorrowAuthorityBinding {
+        BorrowAuthorityBinding {
+            borrow: self.borrow,
             scope: self.scope,
             share: self.share,
             support: self.support,
@@ -338,8 +338,8 @@ impl LoanViewBinding {
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct LoanViewBindings {
-    state: Arc<LoanViewBindingsState>,
+pub(crate) struct BorrowBindings {
+    state: Arc<BorrowBindingsState>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -358,27 +358,27 @@ impl BoundViewKey {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct LoanViewBindingsState {
+pub(crate) struct BorrowBindingsState {
     pub(crate) identity: u64,
-    pub(crate) map: PersistentMap<ResourceOccurrenceId, LoanViewBinding>,
+    pub(crate) map: PersistentMap<ResourceOccurrenceId, BorrowBinding>,
     changes: imbl::Vector<(u64, ResourceOccurrenceId)>,
     by_view: PersistentMap<ResourceFact, PersistentSet<ResourceOccurrenceId>>,
     // A join can re-key a view, so exact inheritance looks up the whole
     // authority by value. Keep all its occurrences so removing one leaves
     // the others available.
-    by_binding: PersistentMap<LoanViewBinding, PersistentSet<ResourceOccurrenceId>>,
+    by_binding: PersistentMap<BorrowBinding, PersistentSet<ResourceOccurrenceId>>,
     by_key: PersistentMap<BoundViewKey, PersistentSet<ResourceOccurrenceId>>,
-    by_hold: PersistentMap<LoanHoldId, PersistentSet<ResourceOccurrenceId>>,
+    by_hold: PersistentMap<BorrowHoldId, PersistentSet<ResourceOccurrenceId>>,
 }
 
-impl LoanViewBindingsState {
+impl BorrowBindingsState {
     pub(crate) fn updated(
         &self,
-        map: PersistentMap<ResourceOccurrenceId, LoanViewBinding>,
+        map: PersistentMap<ResourceOccurrenceId, BorrowBinding>,
         changed: impl IntoIterator<Item = ResourceOccurrenceId>,
     ) -> Arc<Self> {
         let mut changes = self.changes.clone();
-        let identity = next_loan_binding_identity();
+        let identity = next_borrow_binding_identity();
         let mut by_view = self.by_view.clone();
         let mut by_binding = self.by_binding.clone();
         let mut by_key = self.by_key.clone();
@@ -463,21 +463,21 @@ fn remove_bound_occurrence<K: Ord + Clone>(
     }
 }
 
-pub(crate) fn next_loan_binding_identity() -> u64 {
+pub(crate) fn next_borrow_binding_identity() -> u64 {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-impl PartialEq for LoanViewBindings {
+impl PartialEq for BorrowBindings {
     fn eq(&self, other: &Self) -> bool {
         (self.state.map.is_empty() && other.state.map.is_empty())
             || self.state.identity == other.state.identity
     }
 }
 
-impl Eq for LoanViewBindings {}
+impl Eq for BorrowBindings {}
 
-impl Hash for LoanViewBindings {
+impl Hash for BorrowBindings {
     fn hash<H: Hasher>(&self, state: &mut H) {
         if self.state.map.is_empty() {
             0_u64.hash(state);
@@ -487,7 +487,7 @@ impl Hash for LoanViewBindings {
     }
 }
 
-impl Ord for LoanViewBindings {
+impl Ord for BorrowBindings {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self.state.map.is_empty(), other.state.map.is_empty()) {
             (true, true) => Ordering::Equal,
@@ -498,7 +498,7 @@ impl Ord for LoanViewBindings {
     }
 }
 
-impl PartialOrd for LoanViewBindings {
+impl PartialOrd for BorrowBindings {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -507,35 +507,35 @@ impl PartialOrd for LoanViewBindings {
 /// Authority selected from an already checked caller view occurrence. The
 /// private constructor retains its producer-issued borrow binding; using it at
 /// return checks liveness/holder status, not the old permission proof again.
-pub(crate) struct ReturnedViewAuthority(LoanViewBinding);
+pub(crate) struct ReturnedViewAuthority(BorrowBinding);
 
-impl LoanViewBindings {
+impl BorrowBindings {
     pub(crate) fn is_empty(&self) -> bool {
         self.state.map.is_empty()
     }
 
-    pub(crate) fn from_state(state: Arc<LoanViewBindingsState>) -> Self {
+    pub(crate) fn from_state(state: Arc<BorrowBindingsState>) -> Self {
         Self { state }
     }
 
-    pub(crate) fn state(&self) -> Arc<LoanViewBindingsState> {
+    pub(crate) fn state(&self) -> Arc<BorrowBindingsState> {
         self.state.clone()
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&ResourceOccurrenceId, &LoanViewBinding)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&ResourceOccurrenceId, &BorrowBinding)> {
         self.state.map.iter()
     }
 
-    pub(crate) fn get(&self, occurrence: &ResourceOccurrenceId) -> Option<&LoanViewBinding> {
+    pub(crate) fn get(&self, occurrence: &ResourceOccurrenceId) -> Option<&BorrowBinding> {
         self.state.map.get(occurrence)
     }
 
-    pub(crate) fn hold_occurrence_count(&self, hold: LoanHoldId) -> usize {
+    pub(crate) fn hold_occurrence_count(&self, hold: BorrowHoldId) -> usize {
         crate::instrumentation::record_deterministic_work(1);
         self.state.by_hold.get(&hold).map_or(0, PersistentSet::len)
     }
 
-    pub(crate) fn contains_binding(&self, binding: &LoanViewBinding) -> bool {
+    pub(crate) fn contains_binding(&self, binding: &BorrowBinding) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         self.state.by_binding.contains_key(binding)
     }
@@ -608,7 +608,7 @@ impl LoanViewBindings {
                 && let Some(source_occurrence) = self.select_bound_view(fact, source, assumptions)
                 && let Some(binding) = self.get(&source_occurrence)
             {
-                destination = destination.with_loan_dependency(*occurrence, binding.clone());
+                destination = destination.with_borrow_dependency(*occurrence, binding.clone());
             }
         }
         destination
@@ -617,7 +617,7 @@ impl LoanViewBindings {
     pub(crate) fn with_inserted(
         &self,
         occurrence: ResourceOccurrenceId,
-        binding: LoanViewBinding,
+        binding: BorrowBinding,
     ) -> Self {
         if self.state.map.get(&occurrence) == Some(&binding) {
             return self.clone();
@@ -658,19 +658,19 @@ fn ledger_interval_nodes(range: &MemoryRange) -> Option<Vec<ResourceMemoryInterv
 }
 
 fn update_active_memory_index(
-    index: &PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>,
+    index: &PersistentMap<ResourceMemoryIntervalNode, PersistentSet<BorrowId>>,
     range: &MemoryRange,
-    loan: LoanId,
+    borrow: BorrowId,
     insert: bool,
-) -> Result<PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>, LoanRefusal> {
-    let nodes = ledger_interval_nodes(range).ok_or(LoanRefusal::UnsupportedPartition)?;
+) -> Result<PersistentMap<ResourceMemoryIntervalNode, PersistentSet<BorrowId>>, BorrowRefusal> {
+    let nodes = ledger_interval_nodes(range).ok_or(BorrowRefusal::UnsupportedPartition)?;
     let mut index = index.clone();
     for node in nodes {
         let key_set = index.get(&node).cloned().unwrap_or_default();
         let key_set = if insert {
-            key_set.with_value(loan)
+            key_set.with_value(borrow)
         } else {
-            key_set.without_value(&loan)
+            key_set.without_value(&borrow)
         };
         index = if key_set.is_empty() {
             index.without_key(&node)
@@ -682,20 +682,20 @@ fn update_active_memory_index(
 }
 
 fn update_active_memory_subtree(
-    subtree: &PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>,
+    subtree: &PersistentMap<ResourceMemoryIntervalNode, PersistentSet<BorrowId>>,
     range: &MemoryRange,
-    loan: LoanId,
+    borrow: BorrowId,
     insert: bool,
-) -> Result<PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>, LoanRefusal> {
-    let nodes = ledger_interval_nodes(range).ok_or(LoanRefusal::UnsupportedPartition)?;
+) -> Result<PersistentMap<ResourceMemoryIntervalNode, PersistentSet<BorrowId>>, BorrowRefusal> {
+    let nodes = ledger_interval_nodes(range).ok_or(BorrowRefusal::UnsupportedPartition)?;
     let mut subtree = subtree.clone();
     for node in nodes {
         for ancestor in memory_interval_ancestors(&node) {
             let key_set = subtree.get(&ancestor).cloned().unwrap_or_default();
             let key_set = if insert {
-                key_set.with_value(loan)
+                key_set.with_value(borrow)
             } else {
-                key_set.without_value(&loan)
+                key_set.without_value(&borrow)
             };
             subtree = if key_set.is_empty() {
                 subtree.without_key(&ancestor)
@@ -716,10 +716,10 @@ fn symbolic_memory_ranges(ranges: &[MemoryRange]) -> Vec<MemoryRange> {
 }
 
 fn with_unindexed_memory(
-    map: &PersistentMap<AddressBase, PersistentMap<LoanId, Vec<MemoryRange>>>,
-    loan: LoanId,
+    map: &PersistentMap<AddressBase, PersistentMap<BorrowId, Vec<MemoryRange>>>,
+    borrow: BorrowId,
     ranges: &[MemoryRange],
-) -> PersistentMap<AddressBase, PersistentMap<LoanId, Vec<MemoryRange>>> {
+) -> PersistentMap<AddressBase, PersistentMap<BorrowId, Vec<MemoryRange>>> {
     let mut map = map.clone();
     let mut by_block: BTreeMap<AddressBase, Vec<MemoryRange>> = BTreeMap::new();
     for range in ranges {
@@ -730,23 +730,23 @@ fn with_unindexed_memory(
     }
     for (block, ranges) in by_block {
         let bucket = map.get(&block).cloned().unwrap_or_default();
-        map = map.with_inserted(block, bucket.with_inserted(loan, ranges));
+        map = map.with_inserted(block, bucket.with_inserted(borrow, ranges));
     }
     map
 }
 
 fn without_unindexed_memory(
-    map: &PersistentMap<AddressBase, PersistentMap<LoanId, Vec<MemoryRange>>>,
-    loan: LoanId,
+    map: &PersistentMap<AddressBase, PersistentMap<BorrowId, Vec<MemoryRange>>>,
+    borrow: BorrowId,
     ranges: &[MemoryRange],
-) -> PersistentMap<AddressBase, PersistentMap<LoanId, Vec<MemoryRange>>> {
+) -> PersistentMap<AddressBase, PersistentMap<BorrowId, Vec<MemoryRange>>> {
     let mut map = map.clone();
     for range in ranges {
         let block = &range.base().base;
         let Some(bucket) = map.get(block) else {
             continue;
         };
-        let bucket = bucket.without_key(&loan);
+        let bucket = bucket.without_key(&borrow);
         map = if bucket.is_empty() {
             map.without_key(block)
         } else {
@@ -782,7 +782,7 @@ fn memory_range_is_empty(range: &MemoryRange) -> bool {
 
 #[cfg(test)]
 fn memory_range_aliases(range: &MemoryRange, assumptions: &PureFactContext) -> Vec<MemoryRange> {
-    crate::kernel::search::ProofSearch::<BorrowLedger>::loan_aliases(range, assumptions)
+    crate::kernel::search::ProofSearch::<BorrowLedger>::borrow_aliases(range, assumptions)
 }
 
 /// Whether a query range provably touches a protected range, compared
@@ -908,7 +908,7 @@ pub(crate) fn returned_permission_covers(
 /// borrow of a composite head, whose body is memory whether or not the
 /// one-level frontier enumerated any of it. The fail-closed barriers
 /// (unknown loop write sets, branch joins) consult this count.
-fn loan_protects_memory<'a>(
+fn borrow_protects_memory<'a>(
     memory_backing: &[MemoryRange],
     mut permitted: impl Iterator<Item = &'a ResourceFact>,
 ) -> bool {
@@ -934,7 +934,7 @@ fn loan_protects_memory<'a>(
 /// The child therefore never protects bytes outside the parent's footprint,
 /// and its own barrier registrations are the ones its end removes.
 fn reborrowed_authority(
-    parent: &LoanRecord,
+    parent: &BorrowRecord,
     viewed: &ResourceFact,
 ) -> (Vec<ResourceFact>, Vec<MemoryRange>) {
     let memory_backing = if let Some(range) = viewed.memory_range() {
@@ -978,35 +978,35 @@ impl OwnedResourceObservation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct LoanScopeRecord {
-    loan: LoanId,
-    root: LoanShareId,
+struct BorrowScopeRecord {
+    borrow: BorrowId,
+    root: BorrowShareId,
     /// The participant allowed to end this scope. A borrowed contract input
     /// has no local close right: its lender lives outside the modular proof.
-    close_right: Option<LoanParticipantId>,
+    close_right: Option<BorrowParticipantId>,
     active: bool,
-    parent: Option<LoanScopeId>,
-    parent_share: Option<LoanShareId>,
-    dependencies: crate::persistent::PersistentSet<LoanScopeId>,
+    parent: Option<BorrowScopeId>,
+    parent_share: Option<BorrowShareId>,
+    dependencies: crate::persistent::PersistentSet<BorrowScopeId>,
     /// Holds placed by folded borrowing composites; `End` refuses while any
     /// remain.
-    holds: crate::persistent::PersistentSet<LoanHoldId>,
+    holds: crate::persistent::PersistentSet<BorrowHoldId>,
 }
 
-fn origin_kind(origin: &LoanOrigin) -> LoanOriginKind {
+fn origin_kind(origin: &BorrowOrigin) -> LoanOriginKind {
     match origin {
-        LoanOrigin::Escrowed(_) => LoanOriginKind::LentOwner,
-        LoanOrigin::Reborrowed => LoanOriginKind::Reborrow,
-        LoanOrigin::BorrowedContractInput => LoanOriginKind::ContractInputView,
-        LoanOrigin::LocalStorage(_) => LoanOriginKind::LocalStorage,
+        BorrowOrigin::Escrowed(_) => LoanOriginKind::LentOwner,
+        BorrowOrigin::Reborrowed => LoanOriginKind::Reborrow,
+        BorrowOrigin::BorrowedContractInput => LoanOriginKind::ContractInputView,
+        BorrowOrigin::LocalStorage(_) => LoanOriginKind::LocalStorage,
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum LoanOrigin {
+enum BorrowOrigin {
     /// Ownership was placed in this ledger's escrow and may be recovered by
     /// exactly this participant after the scope closes.
-    Escrowed(LoanParticipantId),
+    Escrowed(BorrowParticipantId),
     /// A checked child scope pins an already-live parent share.
     Reborrowed,
     /// Modular verification began with a caller-supplied shared borrow. The
@@ -1014,15 +1014,15 @@ enum LoanOrigin {
     BorrowedContractInput,
     /// A live local object backs a read borrow without manufacturing an owned
     /// resource. Closing it restores implicit access, not an escrowed fact.
-    LocalStorage(LoanParticipantId),
+    LocalStorage(BorrowParticipantId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct LoanRecord {
-    scope: LoanScopeId,
+struct BorrowRecord {
+    scope: BorrowScopeId,
     /// Direct anchor to the escrowed or caller-assumed mutex identity. Child scopes carry
     /// this identity, never an owner copy or a walk through ancestor scopes.
-    mutex_root: Option<LoanId>,
+    mutex_root: Option<BorrowId>,
     /// Identity promised by a modular input; this is never recoverable escrow.
     assumed_mutex: Option<ResourceFact>,
     assumed_mutex_protected: Option<ResourceDescription>,
@@ -1035,7 +1035,7 @@ struct LoanRecord {
     /// borrow keeps its folded head plus all primitive body views here so a
     /// child binding cannot be minted from the head alone.
     permitted: PermittedDescriptions,
-    origin: LoanOrigin,
+    origin: BorrowOrigin,
     recovered: bool,
     /// Primitive body pieces whose memory remains protected while a
     /// composite head is lent.  The head is retained as the restoration
@@ -1043,14 +1043,14 @@ struct LoanRecord {
     memory_backing: Vec<MemoryRange>,
 }
 
-impl LoanRecord {
+impl BorrowRecord {
     fn mutex_identity_description(&self) -> Option<&ResourceFact> {
         match self.origin {
-            LoanOrigin::Escrowed(_) if self.assumed_mutex.is_none() => self
+            BorrowOrigin::Escrowed(_) if self.assumed_mutex.is_none() => self
                 .escrow
                 .as_ref()
                 .filter(|owner| is_mutex_lifetime_owner(owner)),
-            LoanOrigin::BorrowedContractInput if self.escrow.is_none() => {
+            BorrowOrigin::BorrowedContractInput if self.escrow.is_none() => {
                 self.assumed_mutex.as_ref().filter(|owner| {
                     matches!(owner,
                     ResourceFact::Own(Resource::MutexLive(identity), quantity)
@@ -1063,40 +1063,40 @@ impl LoanRecord {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct LoanShareRecord {
-    scope: LoanScopeId,
-    parent: Option<LoanShareId>,
-    children: Option<(LoanShareId, LoanShareId)>,
-    holder: Option<LoanParticipantId>,
-    pinned_by: Option<LoanScopeId>,
+struct BorrowShareRecord {
+    scope: BorrowScopeId,
+    parent: Option<BorrowShareId>,
+    children: Option<(BorrowShareId, BorrowShareId)>,
+    holder: Option<BorrowParticipantId>,
+    pinned_by: Option<BorrowScopeId>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct LoanLedgerData {
+struct BorrowLedgerData {
     arena: u64,
     exclusive_calls: PersistentMap<ExclusiveCallId, ExclusiveCallRecord>,
-    exclusive_holders: PersistentMap<LoanParticipantId, ExclusiveCallId>,
+    exclusive_holders: PersistentMap<BorrowParticipantId, ExclusiveCallId>,
     next_scope: u64,
-    next_loan: u64,
+    next_borrow: u64,
     next_share: u64,
     next_hold: u64,
     /// Every live hold, with the scope it restricts and the participant that
     /// placed it and may release it.
-    holds: PersistentMap<LoanHoldId, (LoanScopeId, LoanParticipantId)>,
-    scopes: PersistentMap<LoanScopeId, LoanScopeRecord>,
-    loans: PersistentMap<LoanId, LoanRecord>,
-    shares: PersistentMap<LoanShareId, LoanShareRecord>,
-    active_memory_index: PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>,
-    active_memory_subtree: PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>,
+    holds: PersistentMap<BorrowHoldId, (BorrowScopeId, BorrowParticipantId)>,
+    scopes: PersistentMap<BorrowScopeId, BorrowScopeRecord>,
+    borrows: PersistentMap<BorrowId, BorrowRecord>,
+    shares: PersistentMap<BorrowShareId, BorrowShareRecord>,
+    active_memory_index: PersistentMap<ResourceMemoryIntervalNode, PersistentSet<BorrowId>>,
+    active_memory_subtree: PersistentMap<ResourceMemoryIntervalNode, PersistentSet<BorrowId>>,
     /// Counted from the same live ranges as the interval index. A symbolic
     /// external argument can only skip that index when every indexed borrow
     /// protects fresh function-local storage.
     active_nonlocal_indexed_ranges: usize,
-    active_memory_loans: usize,
+    active_memory_borrows: usize,
     active_footprint: active_footprint::ActiveFootprint,
     /// Whole automatic objects pinned by live backing, with one diagnostic
     /// range per borrow and object. Bounds cannot release the object's lifetime.
-    automatic_storage_loans: PersistentMap<AddressBase, PersistentMap<LoanId, MemoryRange>>,
+    automatic_storage_borrows: PersistentMap<AddressBase, PersistentMap<BorrowId, MemoryRange>>,
     /// Exact coordinate origins, including symbolic pointers. Constant byte
     /// intervals support cache retention without searching the symbolic borrows.
     cache_memory_index: CacheProtectionIndex,
@@ -1108,17 +1108,17 @@ struct LoanLedgerData {
     /// entries in its own block, and the entries are bounded by the active
     /// borrows with symbolic footprints, which a modular proof creates only
     /// from its contract's explicit view clauses and its own calls.
-    unindexed_memory: PersistentMap<AddressBase, PersistentMap<LoanId, Vec<MemoryRange>>>,
+    unindexed_memory: PersistentMap<AddressBase, PersistentMap<BorrowId, Vec<MemoryRange>>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct LoanLedgerStorage {
-    state: LoanLedgerStateId,
-    data: LoanLedgerData,
+struct BorrowLedgerStorage {
+    state: BorrowLedgerStateId,
+    data: BorrowLedgerData,
 }
 
 type CacheProtectionIndex =
-    PersistentMap<(Address, ResourceMemoryIntervalNode), PersistentSet<LoanId>>;
+    PersistentMap<(Address, ResourceMemoryIntervalNode), PersistentSet<BorrowId>>;
 
 fn cache_protection_nodes(
     range: &MemoryRange,
@@ -1135,14 +1135,14 @@ fn cache_protection_nodes(
 fn update_cache_protection_bucket(
     index: &mut CacheProtectionIndex,
     key: (Address, ResourceMemoryIntervalNode),
-    loan: LoanId,
+    borrow: BorrowId,
     insert: bool,
 ) {
     let bucket = index.get(&key).cloned().unwrap_or_default();
     let bucket = if insert {
-        bucket.with_value(loan)
+        bucket.with_value(borrow)
     } else {
-        bucket.without_value(&loan)
+        bucket.without_value(&borrow)
     };
     *index = if bucket.is_empty() {
         index.without_key(&key)
@@ -1152,9 +1152,9 @@ fn update_cache_protection_bucket(
 }
 
 fn update_cache_protection(
-    data: &mut LoanLedgerData,
+    data: &mut BorrowLedgerData,
     range: &MemoryRange,
-    loan: LoanId,
+    borrow: BorrowId,
     insert: bool,
 ) {
     // Charge one explicit backing-range update, as with the write-barrier
@@ -1169,20 +1169,20 @@ fn update_cache_protection(
             update_cache_protection_bucket(
                 &mut data.cache_memory_subtree,
                 (origin.clone(), ancestor),
-                loan,
+                borrow,
                 insert,
             );
         }
         update_cache_protection_bucket(
             &mut data.cache_memory_index,
             (origin.clone(), node),
-            loan,
+            borrow,
             insert,
         );
     }
 }
 
-fn automatic_loan_blocks(range: &MemoryRange) -> impl Iterator<Item = &AddressBase> {
+fn automatic_borrow_blocks(range: &MemoryRange) -> impl Iterator<Item = &AddressBase> {
     let base = &range.base().base;
     let origin = &range.access_provenance().0.base;
     std::iter::once(base)
@@ -1190,22 +1190,22 @@ fn automatic_loan_blocks(range: &MemoryRange) -> impl Iterator<Item = &AddressBa
         .filter(|block| block.is_local_block() || matches!(block, AddressBase::Temporary(_)))
 }
 
-fn update_automatic_storage_loans(
-    index: &mut PersistentMap<AddressBase, PersistentMap<LoanId, MemoryRange>>,
+fn update_automatic_storage_borrows(
+    index: &mut PersistentMap<AddressBase, PersistentMap<BorrowId, MemoryRange>>,
     range: &MemoryRange,
-    loan: LoanId,
+    borrow: BorrowId,
     insert: bool,
 ) {
     let (start, end) = range.bound_terms();
     if start == end || memory_range_is_empty(range) {
         return;
     }
-    for block in automatic_loan_blocks(range) {
+    for block in automatic_borrow_blocks(range) {
         let bucket = index.get(block).cloned().unwrap_or_default();
         let bucket = if insert {
-            bucket.with_inserted(loan, range.clone())
+            bucket.with_inserted(borrow, range.clone())
         } else {
-            bucket.without_key(&loan)
+            bucket.without_key(&borrow)
         };
         *index = if bucket.is_empty() {
             index.without_key(block)
@@ -1216,28 +1216,28 @@ fn update_automatic_storage_loans(
 }
 
 fn update_indexed_memory_range(
-    data: &mut LoanLedgerData,
+    data: &mut BorrowLedgerData,
     range: &MemoryRange,
-    loan: LoanId,
+    borrow: BorrowId,
     insert: bool,
-) -> Result<(), LoanRefusal> {
-    update_automatic_storage_loans(&mut data.automatic_storage_loans, range, loan, insert);
-    update_cache_protection(data, range, loan, insert);
+) -> Result<(), BorrowRefusal> {
+    update_automatic_storage_borrows(&mut data.automatic_storage_borrows, range, borrow, insert);
+    update_cache_protection(data, range, borrow, insert);
     if ledger_interval_nodes(range).is_none() {
         return Ok(());
     }
-    let index = update_active_memory_index(&data.active_memory_index, range, loan, insert)?;
-    let subtree = update_active_memory_subtree(&data.active_memory_subtree, range, loan, insert)?;
+    let index = update_active_memory_index(&data.active_memory_index, range, borrow, insert)?;
+    let subtree = update_active_memory_subtree(&data.active_memory_subtree, range, borrow, insert)?;
     let nonlocal = if range.base().base.is_local_block() {
         data.active_nonlocal_indexed_ranges
     } else if insert {
         data.active_nonlocal_indexed_ranges
             .checked_add(1)
-            .ok_or(LoanRefusal::IdentitySpaceExhausted)?
+            .ok_or(BorrowRefusal::IdentitySpaceExhausted)?
     } else {
         data.active_nonlocal_indexed_ranges
             .checked_sub(1)
-            .ok_or(LoanRefusal::InvalidEvidence)?
+            .ok_or(BorrowRefusal::InvalidEvidence)?
     };
     data.active_memory_index = index;
     data.active_memory_subtree = subtree;
@@ -1246,9 +1246,9 @@ fn update_indexed_memory_range(
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-struct LoanLedgerStateId(u64);
+struct BorrowLedgerStateId(u64);
 
-impl LoanLedgerStateId {
+impl BorrowLedgerStateId {
     fn fresh() -> Self {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Self(NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
@@ -1257,7 +1257,7 @@ impl LoanLedgerStateId {
 
 #[derive(Clone)]
 pub(crate) struct BorrowLedger {
-    storage: Arc<LoanLedgerStorage>,
+    storage: Arc<BorrowLedgerStorage>,
 }
 
 impl std::fmt::Debug for BorrowLedger {
@@ -1350,7 +1350,7 @@ pub struct LoanRefusalSubject {
     /// sides keeps the diagnostic within its bounded payload size.
     conflicting: Option<Box<ResourceFact>>,
     origin: Option<LoanOriginKind>,
-    loan: Option<(u64, u64)>,
+    borrow: Option<(u64, u64)>,
     scope: Option<(u64, u64)>,
     share: Option<(u64, u64)>,
     support: Option<(u64, u64)>,
@@ -1363,7 +1363,7 @@ impl LoanRefusalSubject {
             range: None,
             conflicting: None,
             origin: None,
-            loan: None,
+            borrow: None,
             scope: None,
             share: None,
             support: None,
@@ -1376,14 +1376,14 @@ impl LoanRefusalSubject {
     pub(crate) fn for_memory_conflict(
         attempted: MemoryRange,
         protected: ResourceFact,
-        loan: LoanId,
+        borrow: BorrowId,
         origin: LoanOriginKind,
     ) -> Self {
         Self {
             range: Some(Box::new(attempted)),
             conflicting: Some(Box::new(protected)),
             origin: Some(origin),
-            loan: Some((loan.arena, loan.ordinal)),
+            borrow: Some((borrow.arena, borrow.ordinal)),
             ..Self::none()
         }
     }
@@ -1440,21 +1440,21 @@ impl LoanRefusalSubject {
         }
     }
 
-    fn with_loan_id(loan: LoanId) -> Self {
+    fn with_borrow_id(borrow: BorrowId) -> Self {
         Self {
-            loan: Some((loan.arena, loan.ordinal)),
+            borrow: Some((borrow.arena, borrow.ordinal)),
             ..Self::none()
         }
     }
 
-    fn with_scope_id(scope: LoanScopeId) -> Self {
+    fn with_scope_id(scope: BorrowScopeId) -> Self {
         Self {
             scope: Some((scope.arena, scope.ordinal)),
             ..Self::none()
         }
     }
 
-    fn with_share_id(share: LoanShareId) -> Self {
+    fn with_share_id(share: BorrowShareId) -> Self {
         Self {
             share: Some((share.arena, share.ordinal)),
             ..Self::none()
@@ -1485,7 +1485,7 @@ impl LoanRefusalSubject {
     }
 
     pub fn loan_id(&self) -> Option<(u64, u64)> {
-        self.loan
+        self.borrow
     }
 
     pub fn scope_id(&self) -> Option<(u64, u64)> {
@@ -1513,7 +1513,7 @@ pub enum LoanOverlapStatus {
 /// format a ledger or resource frame to explain a refusal.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct LoanRefusalDiagnostic {
-    pub(crate) refusal: LoanRefusal,
+    pub(crate) refusal: BorrowRefusal,
     pub(crate) category: LoanRefusalCategory,
     pub(crate) operation: LoanRefusalOperation,
     pub(crate) subject: LoanRefusalSubject,
@@ -1553,10 +1553,10 @@ impl LoanRefusalDiagnostic {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub(crate) enum LoanRefusal {
+pub(crate) enum BorrowRefusal {
     NotOwnership,
     WrongArena,
-    MissingLoan,
+    MissingBorrow,
     MissingScope,
     MissingShare,
     WrongHolder,
@@ -1572,19 +1572,19 @@ pub(crate) enum LoanRefusal {
     UnsupportedPartition,
     ActiveDependency,
     MissingBacking,
-    MissingLoanBinding,
+    MissingBorrowBinding,
     IdentitySpaceExhausted,
 }
 
 /// A refusal's reason as a sentence fragment, for a kernel message that has
 /// no subject to name. A refusal with one goes through
-/// [`LoanRefusal::diagnostic_with_subject`] and the surface renderer instead.
-impl std::fmt::Display for LoanRefusal {
+/// [`BorrowRefusal::diagnostic_with_subject`] and the surface renderer instead.
+impl std::fmt::Display for BorrowRefusal {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::NotOwnership => "the lent resource is not an ownership fact",
             Self::WrongArena => "the borrow evidence belongs to a different authority arena",
-            Self::MissingLoan => "the borrow is not recorded in the ledger",
+            Self::MissingBorrow => "the borrow is not recorded in the ledger",
             Self::MissingScope => "the borrow scope is not recorded in the ledger",
             Self::MissingShare => "the borrow share is not recorded in the ledger",
             Self::WrongHolder => "the borrow evidence names the wrong participant",
@@ -1602,13 +1602,13 @@ impl std::fmt::Display for LoanRefusal {
             }
             Self::ActiveDependency => "the access overlaps a live borrowed footprint",
             Self::MissingBacking => "the required borrow backing is missing",
-            Self::MissingLoanBinding => "the required borrow binding is missing",
+            Self::MissingBorrowBinding => "the required borrow binding is missing",
             Self::IdentitySpaceExhausted => "the borrow identity space is exhausted",
         })
     }
 }
 
-impl LoanRefusal {
+impl BorrowRefusal {
     pub(crate) fn diagnostic(self, operation: LoanRefusalOperation) -> LoanRefusalDiagnostic {
         self.diagnostic_with_subject(operation, LoanRefusalSubject::none())
     }
@@ -1664,10 +1664,10 @@ impl LoanRefusal {
                 LoanRefusalSubject::none(),
                 LoanOverlapStatus::NotApplicable,
             ),
-            Self::MissingLoan
+            Self::MissingBorrow
             | Self::MissingShare
             | Self::MissingBacking
-            | Self::MissingLoanBinding => (
+            | Self::MissingBorrowBinding => (
                 LoanRefusalCategory::Missing,
                 LoanRefusalSubject::none(),
                 LoanOverlapStatus::NotApplicable,
@@ -1691,7 +1691,7 @@ impl LoanRefusal {
             subject: if selected_subject.resource.is_some()
                 || selected_subject.range.is_some()
                 || selected_subject.conflicting.is_some()
-                || selected_subject.loan.is_some()
+                || selected_subject.borrow.is_some()
                 || selected_subject.scope.is_some()
                 || selected_subject.share.is_some()
                 || selected_subject.support.is_some()
@@ -1719,127 +1719,127 @@ impl LoanRefusal {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum LoanTransitionEvidence {
+enum BorrowTransitionEvidence {
     OpenExclusiveCall(ExclusiveCallBinding),
     ReturnExclusiveCall {
         binding: ExclusiveCallBinding,
-        holder: LoanParticipantId,
+        holder: BorrowParticipantId,
     },
     Lend {
-        lender: LoanParticipantId,
-        borrower: LoanParticipantId,
+        lender: BorrowParticipantId,
+        borrower: BorrowParticipantId,
         support: ResourceOccurrenceId,
         escrow: ResourceFact,
-        scope: LoanScopeId,
-        loan: LoanId,
-        root: LoanShareId,
+        scope: BorrowScopeId,
+        borrow: BorrowId,
+        root: BorrowShareId,
     },
     LendComposite {
-        lender: LoanParticipantId,
-        borrower: LoanParticipantId,
+        lender: BorrowParticipantId,
+        borrower: BorrowParticipantId,
         support: ResourceOccurrenceId,
         support_fact: ResourceFact,
         escrow: ResourceFact,
         backing: Vec<ResourceFact>,
         adapted: Vec<ResourceFact>,
-        scope: LoanScopeId,
-        loan: LoanId,
-        root: LoanShareId,
+        scope: BorrowScopeId,
+        borrow: BorrowId,
+        root: BorrowShareId,
     },
     BorrowedMutexUseRoot {
-        holder: LoanParticipantId,
+        holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
         mutex: super::Address,
         protected: Option<ResourceDescription>,
         initialization: super::mutexes::MutexInitializationId,
-        scope: LoanScopeId,
-        loan: LoanId,
-        root: LoanShareId,
+        scope: BorrowScopeId,
+        borrow: BorrowId,
+        root: BorrowShareId,
     },
     BorrowedRoot {
-        local: Option<(LoanParticipantId, LocalViewBacking)>,
-        holder: LoanParticipantId,
+        local: Option<(BorrowParticipantId, LocalViewBacking)>,
+        holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
         viewed: ResourceFact,
         backing: Vec<ResourceFact>,
-        scope: LoanScopeId,
-        loan: LoanId,
-        root: LoanShareId,
+        scope: BorrowScopeId,
+        borrow: BorrowId,
+        root: BorrowShareId,
     },
     Reborrow {
         parent: ReborrowBinding,
-        lender: LoanParticipantId,
-        borrower: LoanParticipantId,
-        scope: LoanScopeId,
-        loan: LoanId,
-        root: LoanShareId,
+        lender: BorrowParticipantId,
+        borrower: BorrowParticipantId,
+        scope: BorrowScopeId,
+        borrow: BorrowId,
+        root: BorrowShareId,
     },
     Split {
-        share: LoanShareId,
-        holder: LoanParticipantId,
-        left_holder: LoanParticipantId,
-        right_holder: LoanParticipantId,
-        left: LoanShareId,
-        right: LoanShareId,
+        share: BorrowShareId,
+        holder: BorrowParticipantId,
+        left_holder: BorrowParticipantId,
+        right_holder: BorrowParticipantId,
+        left: BorrowShareId,
+        right: BorrowShareId,
     },
     Transfer {
-        share: LoanShareId,
-        from: LoanParticipantId,
-        to: LoanParticipantId,
+        share: BorrowShareId,
+        from: BorrowParticipantId,
+        to: BorrowParticipantId,
     },
     Join {
-        left: LoanShareId,
-        right: LoanShareId,
-        holder: LoanParticipantId,
+        left: BorrowShareId,
+        right: BorrowShareId,
+        holder: BorrowParticipantId,
     },
     Hold {
-        binding: LoanAuthorityBinding,
-        holder: LoanParticipantId,
-        hold: LoanHoldId,
+        binding: BorrowAuthorityBinding,
+        holder: BorrowParticipantId,
+        hold: BorrowHoldId,
     },
     Release {
-        hold: LoanHoldId,
-        scope: LoanScopeId,
-        holder: LoanParticipantId,
+        hold: BorrowHoldId,
+        scope: BorrowScopeId,
+        holder: BorrowParticipantId,
     },
     End {
-        scope: LoanScopeId,
-        holder: LoanParticipantId,
+        scope: BorrowScopeId,
+        holder: BorrowParticipantId,
     },
     Recover {
-        loan: LoanId,
-        holder: LoanParticipantId,
+        borrow: BorrowId,
+        holder: BorrowParticipantId,
     },
 }
 
 /// Kernel-issued evidence for one exact ledger transition.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedLoanTransition {
-    before_state: LoanLedgerStateId,
-    after_state: LoanLedgerStateId,
-    checked_after_state: LoanLedgerStateId,
-    evidence: LoanTransitionEvidence,
+pub(crate) struct CheckedBorrowTransition {
+    before_state: BorrowLedgerStateId,
+    after_state: BorrowLedgerStateId,
+    checked_after_state: BorrowLedgerStateId,
+    evidence: BorrowTransitionEvidence,
     /// A structural seal over the bounded operation payload. A second opaque
     /// copy avoids probabilistic hashing and avoids comparing whole ledgers.
-    checked_evidence: LoanTransitionEvidence,
+    checked_evidence: BorrowTransitionEvidence,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct LoanOpening {
-    pub(crate) scope: LoanScopeId,
-    pub(crate) loan: LoanId,
-    pub(crate) root_share: LoanShareId,
+pub(crate) struct BorrowOpening {
+    pub(crate) scope: BorrowScopeId,
+    pub(crate) borrow: BorrowId,
+    pub(crate) root_share: BorrowShareId,
     pub(crate) description: StableViewDescription,
-    pub(crate) transition: CheckedLoanTransition,
+    pub(crate) transition: CheckedBorrowTransition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PlannedStableView {
     pub(crate) requirement: CheckedResourceFact,
     pub(crate) support: ResourceOccurrenceId,
-    pub(crate) loan: LoanId,
-    pub(crate) scope: LoanScopeId,
-    pub(crate) share: LoanShareId,
+    pub(crate) borrow: BorrowId,
+    pub(crate) scope: BorrowScopeId,
+    pub(crate) share: BorrowShareId,
     pub(crate) description: StableViewDescription,
 }
 
@@ -1848,7 +1848,7 @@ pub(crate) struct PlannedStableView {
 /// boundary; the ledger never accepts an untyped list of alleged backing
 /// resources.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CompositeLoanBacking {
+pub(crate) struct CompositeBorrowBacking {
     support: ResourceOccurrenceId,
     head: ResourceFact,
     pieces: Vec<ResourceFact>,
@@ -1939,7 +1939,7 @@ impl BorrowedContractInputBacking {
     }
 }
 
-impl CompositeLoanBacking {
+impl CompositeBorrowBacking {
     /// The ordinary same-composite lend: the caller owns the very composite
     /// the callee views, so the escrowed head is also the only description
     /// the borrow permits and the exact restoration recipe.
@@ -1956,7 +1956,7 @@ impl CompositeLoanBacking {
     /// composite descriptions this borrow permits beside its own head, and
     /// `restored` are the owned facts recovery hands back in place of the
     /// head. Both are empty for an ordinary same-composite lend, which is
-    /// what the test-only `CompositeLoanBacking::from_checked_expansion`
+    /// what the test-only `CompositeBorrowBacking::from_checked_expansion`
     /// builds.
     pub(crate) fn from_checked_adapter(
         support: ResourceOccurrenceId,
@@ -2054,7 +2054,7 @@ impl LocalViewBacking {
         assumptions: &PureFactContext,
     ) -> Result<(), StableViewPlanError> {
         #[cfg(test)]
-        let _fast = crate::kernel::search::FastOperationScope::enter("local loan admission");
+        let _fast = crate::kernel::search::FastOperationScope::enter("local borrow admission");
         crate::instrumentation::record_deterministic_work(1);
         let range = self.viewed.memory_range().expect("checked local view");
         let Some(goal) = ledger.memory_access_requirement(range) else {
@@ -2065,8 +2065,9 @@ impl LocalViewBacking {
             base: self.block.clone(),
             offset: super::AddressOffset::Constant(0),
         };
-        let has_possible_symbolic_overlap = data.automatic_storage_loans.contains_key(&self.block)
-            && !data.unindexed_memory.is_empty();
+        let has_possible_symbolic_overlap =
+            data.automatic_storage_borrows.contains_key(&self.block)
+                && !data.unindexed_memory.is_empty();
         if !has_possible_symbolic_overlap
             && !assumptions
                 .equality_graph
@@ -2076,8 +2077,8 @@ impl LocalViewBacking {
         {
             match ledger.first_active_memory_overlap(range) {
                 Ok(None) => return Ok(()),
-                Ok(Some(_)) => return Err(LoanRefusal::ActiveDependency.into()),
-                Err(LoanRefusal::UnsupportedPartition) => {}
+                Ok(Some(_)) => return Err(BorrowRefusal::ActiveDependency.into()),
+                Err(BorrowRefusal::UnsupportedPartition) => {}
                 Err(error) => return Err(error.into()),
             }
         }
@@ -2118,15 +2119,21 @@ pub(crate) struct StableViewTransferPlan {
     /// of that one occurrence.
     pub(crate) reserved_ownership_supports: Vec<(ResourceFact, ResourceOccurrenceId)>,
     pub(crate) ledger: BorrowLedger,
-    pub(crate) entry_transitions: Vec<CheckedLoanTransition>,
+    pub(crate) entry_transitions: Vec<CheckedBorrowTransition>,
     pub(crate) mutex_uses: Vec<mutex_calls::MutexUseCallTransfer>,
     pub(crate) mutex_use_requirements: BTreeMap<ResourceFact, ResourceFact>,
-    callee_view_bindings: LoanViewBindings,
-    parent_view_bindings: LoanViewBindings,
+    callee_view_bindings: BorrowBindings,
+    parent_view_bindings: BorrowBindings,
     parent_ledger: BorrowLedger,
-    caller: LoanParticipantId,
-    callee: LoanParticipantId,
-    loan_roots: Vec<(LoanScopeId, LoanId, LoanShareId, ResourceOccurrenceId, bool)>,
+    caller: BorrowParticipantId,
+    callee: BorrowParticipantId,
+    borrow_roots: Vec<(
+        BorrowScopeId,
+        BorrowId,
+        BorrowShareId,
+        ResourceOccurrenceId,
+        bool,
+    )>,
     /// The owned facts this plan escrowed and will hand back at recovery.
     /// A lend empties them out of the caller residual, so a check that reads
     /// the residual alone would not see what the caller still holds across
@@ -2136,7 +2143,7 @@ pub(crate) struct StableViewTransferPlan {
     /// The head leaves the caller residual for the call, but its hold stays
     /// in the ledger, and recovery hands the binding back to the restored
     /// head (step 7).
-    escrowed_holds: BTreeMap<ResourceOccurrenceId, LoanViewBinding>,
+    escrowed_holds: BTreeMap<ResourceOccurrenceId, BorrowBinding>,
     /// Owned requirements whose caller occurrence carried a hold binding: the
     /// composite went to the callee together with its borrow. Recovery
     /// re-binds it if the callee returned it and releases the hold if the
@@ -2144,18 +2151,18 @@ pub(crate) struct StableViewTransferPlan {
     pub(crate) transferred_holds: Vec<TransferredHold>,
     /// For a view lent as a child of the caller's own binding: that parent
     /// binding, which an escaping borrow holds after the child ends.
-    pub(crate) rebound_parents: BTreeMap<LoanId, LoanViewBinding>,
+    pub(crate) rebound_parents: BTreeMap<BorrowId, BorrowBinding>,
     /// Reborrows whose parent share was split for a suspended worker.
-    suspended_split_reborrows: BTreeMap<LoanId, (ResourceOccurrenceId, LoanShareId)>,
+    suspended_split_reborrows: BTreeMap<BorrowId, (ResourceOccurrenceId, BorrowShareId)>,
     /// Implicit stack roots retained by the parent while modeled workers read.
-    suspended_local_parents: BTreeMap<ResourceFact, LoanViewBinding>,
-    suspended_local_reborrows: BTreeMap<LoanId, (ResourceFact, LoanShareId)>,
+    suspended_local_parents: BTreeMap<ResourceFact, BorrowBinding>,
+    suspended_local_reborrows: BTreeMap<BorrowId, (ResourceFact, BorrowShareId)>,
     /// For an adapter lend whose escrowed head was materialized for the call
     /// out of owned facts the caller already held: exactly those facts, which
     /// recovery hands back in place of the head (docs/internals/stable-views.md). The
     /// escrow stays the head in the ledger, so the borrow still protects the
     /// whole frontier; only what the caller gets back differs.
-    adapter_restorations: BTreeMap<LoanId, Vec<RecoveredEscrow>>,
+    adapter_restorations: BTreeMap<BorrowId, Vec<RecoveredEscrow>>,
     protected_escrows: BTreeMap<ResourceOccurrenceId, RecoveredEscrow>,
 }
 
@@ -2168,7 +2175,7 @@ pub(crate) struct RecoveredEscrow {
     // Retained adapter ancestry, not a premise for recovery to rediscover.
     #[allow(dead_code)]
     source: ResourceOccurrenceId,
-    binding: Option<LoanViewBinding>,
+    binding: Option<BorrowBinding>,
     frontier: Arc<Vec<ResourceFact>>,
 }
 
@@ -2176,7 +2183,7 @@ impl RecoveredEscrow {
     fn root(
         fact: ResourceFact,
         source: ResourceOccurrenceId,
-        binding: Option<LoanViewBinding>,
+        binding: Option<BorrowBinding>,
     ) -> Self {
         Self {
             frontier: Arc::new(vec![fact.clone()]),
@@ -2187,19 +2194,19 @@ impl RecoveredEscrow {
         }
     }
 
-    fn from_loan(
+    fn from_borrow(
         ledger: &BorrowLedger,
-        loan: LoanId,
+        borrow: BorrowId,
         fact: ResourceFact,
         source: ResourceOccurrenceId,
-        binding: Option<LoanViewBinding>,
+        binding: Option<BorrowBinding>,
     ) -> Self {
         Self {
             frontier: ledger
                 .storage
                 .data
-                .loans
-                .get(&loan)
+                .borrows
+                .get(&borrow)
                 .expect("checked borrow recovery")
                 .restoration_frontier
                 .clone(),
@@ -2237,7 +2244,7 @@ impl RecoveredEscrow {
     pub(crate) fn occurrence(&self) -> ResourceOccurrenceId {
         self.occurrence
     }
-    pub(crate) fn binding(&self) -> Option<&LoanViewBinding> {
+    pub(crate) fn binding(&self) -> Option<&BorrowBinding> {
         self.binding.as_ref()
     }
 }
@@ -2256,14 +2263,14 @@ pub(crate) struct EscapingBorrow {
 pub(crate) struct TransferredHold {
     pub(crate) section_index: Option<usize>,
     pub(crate) occurrence: ResourceOccurrenceId,
-    pub(crate) binding: LoanViewBinding,
+    pub(crate) binding: BorrowBinding,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct EscapedHold {
     pub(crate) head: ResourceFact,
     pub(crate) occurrence: ResourceOccurrenceId,
-    pub(crate) binding: LoanViewBinding,
+    pub(crate) binding: BorrowBinding,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2273,19 +2280,19 @@ pub(crate) struct StableViewRecovery {
     /// The canonical predecessor on which escaped composite holds are added.
     pub(crate) hold_base_ledger: BorrowLedger,
     /// Exact hold transitions after the terminal recovery path is selected.
-    pub(crate) hold_transitions: Vec<CheckedLoanTransition>,
+    pub(crate) hold_transitions: Vec<CheckedBorrowTransition>,
     pub(crate) resources: ResourceContext,
     restorations: Vec<RecoveredEscrow>,
-    pub(crate) recovered_hold_occurrences: Vec<(ResourceOccurrenceId, LoanViewBinding)>,
+    pub(crate) recovered_hold_occurrences: Vec<(ResourceOccurrenceId, BorrowBinding)>,
     protected_escrows: BTreeMap<ResourceOccurrenceId, RecoveredEscrow>,
     pub(crate) mutex_authority_updates: Vec<mutex_calls::MutexAuthorityUpdate>,
     /// The holds this call's produced borrowing composites now carry.
     pub(crate) escaped_holds: Vec<EscapedHold>,
-    pub(crate) view_bindings: LoanViewBindings,
+    pub(crate) view_bindings: BorrowBindings,
     /// A completed local reader either advances its parent's share or closes
     /// the implicit root after the final sibling returns.
-    pub(crate) local_view_updates: BTreeMap<ResourceFact, Option<LoanViewBinding>>,
-    pub(crate) transitions: Vec<CheckedLoanTransition>,
+    pub(crate) local_view_updates: BTreeMap<ResourceFact, Option<BorrowBinding>>,
+    pub(crate) transitions: Vec<CheckedBorrowTransition>,
 }
 
 impl StableViewRecovery {
@@ -2294,13 +2301,8 @@ impl StableViewRecovery {
         mut resources: ResourceContext,
         boundary: &crate::kernel::functions::EscrowRecoveryBoundary,
         assumptions: &PureFactContext,
-    ) -> Result<
-        (
-            ResourceContext,
-            Vec<(ResourceOccurrenceId, LoanViewBinding)>,
-        ),
-        super::RuntimeError,
-    > {
+    ) -> Result<(ResourceContext, Vec<(ResourceOccurrenceId, BorrowBinding)>), super::RuntimeError>
+    {
         #[cfg(test)]
         let _fast = crate::kernel::search::FastOperationScope::enter("escrow return restoration");
         self.check_escrow_boundary(&resources, boundary, assumptions)?;
@@ -2354,67 +2356,72 @@ impl StableViewRecovery {
         self.transitions
             .last()
             .map(|transition| match &transition.evidence {
-                LoanTransitionEvidence::OpenExclusiveCall(_)
-                | LoanTransitionEvidence::ReturnExclusiveCall { .. } => LoanRefusalSubject::none(),
-                LoanTransitionEvidence::Lend {
+                BorrowTransitionEvidence::OpenExclusiveCall(_)
+                | BorrowTransitionEvidence::ReturnExclusiveCall { .. } => {
+                    LoanRefusalSubject::none()
+                }
+                BorrowTransitionEvidence::Lend {
                     scope,
-                    loan,
+                    borrow,
                     root,
                     support,
                     ..
                 }
-                | LoanTransitionEvidence::LendComposite {
+                | BorrowTransitionEvidence::LendComposite {
                     scope,
-                    loan,
+                    borrow,
                     root,
                     support,
                     ..
                 }
-                | LoanTransitionEvidence::BorrowedMutexUseRoot {
+                | BorrowTransitionEvidence::BorrowedMutexUseRoot {
                     scope,
-                    loan,
+                    borrow,
                     root,
                     support,
                     ..
                 }
-                | LoanTransitionEvidence::BorrowedRoot {
+                | BorrowTransitionEvidence::BorrowedRoot {
                     scope,
-                    loan,
+                    borrow,
                     root,
                     support,
                     ..
                 } => LoanRefusalSubject {
-                    loan: Some((loan.arena, loan.ordinal)),
+                    borrow: Some((borrow.arena, borrow.ordinal)),
                     scope: Some((scope.arena, scope.ordinal)),
                     share: Some((root.arena, root.ordinal)),
                     support: Some((support.arena(), support.ordinal())),
                     ..LoanRefusalSubject::none()
                 },
-                LoanTransitionEvidence::Recover { loan, .. } => {
-                    LoanRefusalSubject::with_loan_id(*loan)
+                BorrowTransitionEvidence::Recover { borrow, .. } => {
+                    LoanRefusalSubject::with_borrow_id(*borrow)
                 }
-                LoanTransitionEvidence::End { scope, .. } => {
+                BorrowTransitionEvidence::End { scope, .. } => {
                     LoanRefusalSubject::with_scope_id(*scope)
                 }
-                LoanTransitionEvidence::Split { share, .. }
-                | LoanTransitionEvidence::Transfer { share, .. } => {
+                BorrowTransitionEvidence::Split { share, .. }
+                | BorrowTransitionEvidence::Transfer { share, .. } => {
                     LoanRefusalSubject::with_share_id(*share)
                 }
-                LoanTransitionEvidence::Join { left, .. } => {
+                BorrowTransitionEvidence::Join { left, .. } => {
                     LoanRefusalSubject::with_share_id(*left)
                 }
-                LoanTransitionEvidence::Hold { binding, .. } => LoanRefusalSubject {
-                    loan: Some((binding.loan.arena, binding.loan.ordinal)),
+                BorrowTransitionEvidence::Hold { binding, .. } => LoanRefusalSubject {
+                    borrow: Some((binding.borrow.arena, binding.borrow.ordinal)),
                     scope: Some((binding.scope.arena, binding.scope.ordinal)),
                     ..LoanRefusalSubject::none()
                 },
-                LoanTransitionEvidence::Release { scope, .. } => {
+                BorrowTransitionEvidence::Release { scope, .. } => {
                     LoanRefusalSubject::with_scope_id(*scope)
                 }
-                LoanTransitionEvidence::Reborrow {
-                    scope, loan, root, ..
+                BorrowTransitionEvidence::Reborrow {
+                    scope,
+                    borrow,
+                    root,
+                    ..
                 } => LoanRefusalSubject {
-                    loan: Some((loan.arena, loan.ordinal)),
+                    borrow: Some((borrow.arena, borrow.ordinal)),
                     scope: Some((scope.arena, scope.ordinal)),
                     share: Some((root.arena, root.ordinal)),
                     ..LoanRefusalSubject::none()
@@ -2431,15 +2438,15 @@ impl StableViewRecovery {
 /// roots so artifact reuse cannot treat an equal final state as proof that a
 /// different predecessor or transition history was valid.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedLoanCallEvidence {
+pub(crate) struct CheckedBorrowCallEvidence {
     pub(crate) entry: StableViewTransferPlan,
     pub(crate) recovered_ledger: BorrowLedger,
     pub(crate) recovery_terminal_ledger: BorrowLedger,
-    pub(crate) recovery_transitions: Vec<CheckedLoanTransition>,
+    pub(crate) recovery_transitions: Vec<CheckedBorrowTransition>,
     /// Holds are applied to either the exact caller predecessor or the
     /// terminal recovery successor, and retain their own checked identities.
     pub(crate) recovery_hold_base: BorrowLedger,
-    pub(crate) recovery_hold_transitions: Vec<CheckedLoanTransition>,
+    pub(crate) recovery_hold_transitions: Vec<CheckedBorrowTransition>,
 }
 
 /// The part of a call-evidence trace that is needed by the artifact boundary.
@@ -2450,15 +2457,15 @@ pub(crate) struct CheckedLoanCallEvidence {
 /// rechecking every completed call on the path.  The maps are persistent so a
 /// branch or a repeated call copies only the update path.
 #[derive(Clone)]
-struct CheckedLoanCallEvidenceSummary {
+struct CheckedBorrowCallEvidenceSummary {
     valid: bool,
-    recovered_by_caller: PersistentMap<(u64, LoanParticipantId), BorrowLedger>,
-    last_pristine_recovered: Option<(LoanParticipantId, BorrowLedger)>,
-    chain_origin: Option<(u64, LoanParticipantId)>,
-    last_recovered: Option<(LoanParticipantId, BorrowLedger)>,
+    recovered_by_caller: PersistentMap<(u64, BorrowParticipantId), BorrowLedger>,
+    last_pristine_recovered: Option<(BorrowParticipantId, BorrowLedger)>,
+    chain_origin: Option<(u64, BorrowParticipantId)>,
+    last_recovered: Option<(BorrowParticipantId, BorrowLedger)>,
 }
 
-impl Default for CheckedLoanCallEvidenceSummary {
+impl Default for CheckedBorrowCallEvidenceSummary {
     fn default() -> Self {
         Self {
             valid: true,
@@ -2470,8 +2477,8 @@ impl Default for CheckedLoanCallEvidenceSummary {
     }
 }
 
-impl CheckedLoanCallEvidenceSummary {
-    fn append(&self, evidence: &CheckedLoanCallEvidence) -> CheckedLoanCallEvidenceSummary {
+impl CheckedBorrowCallEvidenceSummary {
+    fn append(&self, evidence: &CheckedBorrowCallEvidence) -> CheckedBorrowCallEvidenceSummary {
         let caller_ledger = evidence.entry.caller_ledger();
         let caller_participant = evidence.entry.caller_participant();
         let valid = self.valid
@@ -2510,7 +2517,7 @@ impl CheckedLoanCallEvidenceSummary {
         } else {
             self.last_pristine_recovered.clone()
         };
-        CheckedLoanCallEvidenceSummary {
+        CheckedBorrowCallEvidenceSummary {
             valid,
             recovered_by_caller,
             last_pristine_recovered,
@@ -2521,39 +2528,39 @@ impl CheckedLoanCallEvidenceSummary {
 }
 
 #[derive(Clone)]
-enum CheckedLoanCallEvidenceSequenceNode {
+enum CheckedBorrowCallEvidenceSequenceNode {
     Empty,
     Append {
-        prefix: Arc<CheckedLoanCallEvidenceSequenceNode>,
-        evidence: Arc<CheckedLoanCallEvidence>,
+        prefix: Arc<CheckedBorrowCallEvidenceSequenceNode>,
+        evidence: Arc<CheckedBorrowCallEvidence>,
     },
 }
 
 #[derive(Clone)]
-pub(crate) struct CheckedLoanCallEvidenceSequence {
-    node: Arc<CheckedLoanCallEvidenceSequenceNode>,
+pub(crate) struct CheckedBorrowCallEvidenceSequence {
+    node: Arc<CheckedBorrowCallEvidenceSequenceNode>,
     len: usize,
-    summary: Arc<CheckedLoanCallEvidenceSummary>,
+    summary: Arc<CheckedBorrowCallEvidenceSummary>,
 }
 
-pub(crate) fn empty_checked_loan_evidence_sequence() -> CheckedLoanCallEvidenceSequence {
-    CheckedLoanCallEvidenceSequence {
-        node: Arc::new(CheckedLoanCallEvidenceSequenceNode::Empty),
+pub(crate) fn empty_checked_borrow_evidence_sequence() -> CheckedBorrowCallEvidenceSequence {
+    CheckedBorrowCallEvidenceSequence {
+        node: Arc::new(CheckedBorrowCallEvidenceSequenceNode::Empty),
         len: 0,
-        summary: Arc::new(CheckedLoanCallEvidenceSummary::default()),
+        summary: Arc::new(CheckedBorrowCallEvidenceSummary::default()),
     }
 }
 
-pub(crate) fn append_checked_loan_evidence(
-    sequence: &CheckedLoanCallEvidenceSequence,
-    evidence: Option<Arc<CheckedLoanCallEvidence>>,
-) -> CheckedLoanCallEvidenceSequence {
+pub(crate) fn append_checked_borrow_evidence(
+    sequence: &CheckedBorrowCallEvidenceSequence,
+    evidence: Option<Arc<CheckedBorrowCallEvidence>>,
+) -> CheckedBorrowCallEvidenceSequence {
     let Some(evidence) = evidence else {
         return sequence.clone();
     };
     let summary = Arc::new(sequence.summary.append(&evidence));
-    CheckedLoanCallEvidenceSequence {
-        node: Arc::new(CheckedLoanCallEvidenceSequenceNode::Append {
+    CheckedBorrowCallEvidenceSequence {
+        node: Arc::new(CheckedBorrowCallEvidenceSequenceNode::Append {
             prefix: sequence.node.clone(),
             evidence,
         }),
@@ -2562,10 +2569,10 @@ pub(crate) fn append_checked_loan_evidence(
     }
 }
 
-pub(crate) fn concat_checked_loan_evidence(
-    prefix: &CheckedLoanCallEvidenceSequence,
-    suffix: &CheckedLoanCallEvidenceSequence,
-) -> CheckedLoanCallEvidenceSequence {
+pub(crate) fn concat_checked_borrow_evidence(
+    prefix: &CheckedBorrowCallEvidenceSequence,
+    suffix: &CheckedBorrowCallEvidenceSequence,
+) -> CheckedBorrowCallEvidenceSequence {
     if prefix.is_empty() {
         return suffix.clone();
     }
@@ -2576,11 +2583,11 @@ pub(crate) fn concat_checked_loan_evidence(
         .to_vec()
         .into_iter()
         .fold(prefix.clone(), |sequence, evidence| {
-            append_checked_loan_evidence(&sequence, Some(evidence))
+            append_checked_borrow_evidence(&sequence, Some(evidence))
         })
 }
 
-impl CheckedLoanCallEvidenceSequence {
+impl CheckedBorrowCallEvidenceSequence {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.len
@@ -2599,7 +2606,7 @@ impl CheckedLoanCallEvidenceSequence {
     pub(crate) fn recovered_ledger_for(
         &self,
         caller_ledger: &BorrowLedger,
-        caller_participant: LoanParticipantId,
+        caller_participant: BorrowParticipantId,
         pristine_start: bool,
     ) -> Option<BorrowLedger> {
         if pristine_start {
@@ -2618,7 +2625,7 @@ impl CheckedLoanCallEvidenceSequence {
     }
 
     #[cfg(test)]
-    pub(crate) fn pristine_recovery(&self) -> (Option<LoanParticipantId>, Option<BorrowLedger>) {
+    pub(crate) fn pristine_recovery(&self) -> (Option<BorrowParticipantId>, Option<BorrowLedger>) {
         self.summary
             .last_pristine_recovered
             .as_ref()
@@ -2632,20 +2639,20 @@ impl CheckedLoanCallEvidenceSequence {
     /// keeps branch-join work proportional to the path delta.
     pub(crate) fn suffix_since(
         &self,
-        prefix: &CheckedLoanCallEvidenceSequence,
-    ) -> Option<CheckedLoanCallEvidenceSequence> {
+        prefix: &CheckedBorrowCallEvidenceSequence,
+    ) -> Option<CheckedBorrowCallEvidenceSequence> {
         if self.len < prefix.len {
             return None;
         }
         if self.len == prefix.len {
             return (self.len == 0 || Arc::ptr_eq(&self.node, &prefix.node))
-                .then(empty_checked_loan_evidence_sequence);
+                .then(empty_checked_borrow_evidence_sequence);
         }
         let mut node = self.node.clone();
         let mut remaining = self.len;
         let mut suffix = Vec::with_capacity(self.len - prefix.len);
         while remaining > prefix.len {
-            let CheckedLoanCallEvidenceSequenceNode::Append {
+            let CheckedBorrowCallEvidenceSequenceNode::Append {
                 prefix: predecessor,
                 evidence,
             } = &*node
@@ -2661,17 +2668,17 @@ impl CheckedLoanCallEvidenceSequence {
         }
         suffix.reverse();
         Some(suffix.into_iter().fold(
-            empty_checked_loan_evidence_sequence(),
-            |sequence, evidence| append_checked_loan_evidence(&sequence, Some(evidence)),
+            empty_checked_borrow_evidence_sequence(),
+            |sequence, evidence| append_checked_borrow_evidence(&sequence, Some(evidence)),
         ))
     }
 
     /// Materialize only at an artifact boundary or diagnostic/test boundary.
     /// Hot-path path forks clone the immutable node root instead.
-    pub(crate) fn to_vec(&self) -> Vec<Arc<CheckedLoanCallEvidence>> {
+    pub(crate) fn to_vec(&self) -> Vec<Arc<CheckedBorrowCallEvidence>> {
         let mut result = Vec::with_capacity(self.len);
         let mut node = &*self.node;
-        while let CheckedLoanCallEvidenceSequenceNode::Append { prefix, evidence } = node {
+        while let CheckedBorrowCallEvidenceSequenceNode::Append { prefix, evidence } = node {
             result.push(evidence.clone());
             node = prefix;
         }
@@ -2680,7 +2687,7 @@ impl CheckedLoanCallEvidenceSequence {
     }
 }
 
-impl PartialEq for CheckedLoanCallEvidenceSequence {
+impl PartialEq for CheckedBorrowCallEvidenceSequence {
     fn eq(&self, other: &Self) -> bool {
         // Cloned proof paths retain the exact persistent node identity.  This
         // is the common artifact-comparison case and must not revisit the
@@ -2697,15 +2704,15 @@ impl PartialEq for CheckedLoanCallEvidenceSequence {
         loop {
             match (left, right) {
                 (
-                    CheckedLoanCallEvidenceSequenceNode::Empty,
-                    CheckedLoanCallEvidenceSequenceNode::Empty,
+                    CheckedBorrowCallEvidenceSequenceNode::Empty,
+                    CheckedBorrowCallEvidenceSequenceNode::Empty,
                 ) => return true,
                 (
-                    CheckedLoanCallEvidenceSequenceNode::Append {
+                    CheckedBorrowCallEvidenceSequenceNode::Append {
                         prefix: left_prefix,
                         evidence: left_evidence,
                     },
-                    CheckedLoanCallEvidenceSequenceNode::Append {
+                    CheckedBorrowCallEvidenceSequenceNode::Append {
                         prefix: right_prefix,
                         evidence: right_evidence,
                     },
@@ -2722,32 +2729,32 @@ impl PartialEq for CheckedLoanCallEvidenceSequence {
     }
 }
 
-impl Eq for CheckedLoanCallEvidenceSequence {}
+impl Eq for CheckedBorrowCallEvidenceSequence {}
 
-impl std::fmt::Debug for CheckedLoanCallEvidenceSequence {
+impl std::fmt::Debug for CheckedBorrowCallEvidenceSequence {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut recent = Vec::new();
         let mut node = &*self.node;
         while recent.len() < 3 {
-            let CheckedLoanCallEvidenceSequenceNode::Append { prefix, evidence } = node else {
+            let CheckedBorrowCallEvidenceSequenceNode::Append { prefix, evidence } = node else {
                 break;
             };
             recent.push((evidence.entry.caller, evidence.entry.callee));
             node = prefix;
         }
         formatter
-            .debug_struct("CheckedLoanCallEvidenceSequence")
+            .debug_struct("CheckedBorrowCallEvidenceSequence")
             .field("len", &self.len)
             .field("recent_call_participants", &recent)
             .finish()
     }
 }
 
-impl Drop for CheckedLoanCallEvidenceSequence {
+impl Drop for CheckedBorrowCallEvidenceSequence {
     fn drop(&mut self) {
         let mut node = std::mem::replace(
             &mut self.node,
-            Arc::new(CheckedLoanCallEvidenceSequenceNode::Empty),
+            Arc::new(CheckedBorrowCallEvidenceSequenceNode::Empty),
         );
         loop {
             if Arc::strong_count(&node) != 1 {
@@ -2757,8 +2764,8 @@ impl Drop for CheckedLoanCallEvidenceSequence {
                 break;
             };
             match unwrapped {
-                CheckedLoanCallEvidenceSequenceNode::Empty => break,
-                CheckedLoanCallEvidenceSequenceNode::Append { prefix, evidence } => {
+                CheckedBorrowCallEvidenceSequenceNode::Empty => break,
+                CheckedBorrowCallEvidenceSequenceNode::Append { prefix, evidence } => {
                     drop(evidence);
                     node = prefix;
                 }
@@ -2767,19 +2774,19 @@ impl Drop for CheckedLoanCallEvidenceSequence {
     }
 }
 
-impl CheckedLoanCallEvidence {
+impl CheckedBorrowCallEvidence {
     /// A modeled runtime call retains its participant and transfers no
     /// resource clauses. Its only borrow effect is one checked hold or release.
     pub(crate) fn runtime_mutex_transition(
         before: &BorrowLedger,
-        holder: LoanParticipantId,
-        transition: CheckedLoanTransition,
+        holder: BorrowParticipantId,
+        transition: CheckedBorrowTransition,
         after: &BorrowLedger,
-    ) -> Result<Self, LoanRefusal> {
+    ) -> Result<Self, BorrowRefusal> {
         let is_hold = match &transition.evidence {
-            LoanTransitionEvidence::Hold { holder: actual, .. } if *actual == holder => true,
-            LoanTransitionEvidence::Release { holder: actual, .. } if *actual == holder => false,
-            _ => return Err(LoanRefusal::InvalidEvidence),
+            BorrowTransitionEvidence::Hold { holder: actual, .. } if *actual == holder => true,
+            BorrowTransitionEvidence::Release { holder: actual, .. } if *actual == holder => false,
+            _ => return Err(BorrowRefusal::InvalidEvidence),
         };
         let entry = plan_stable_view_transfer(
             &ResourceContext::new(),
@@ -2789,7 +2796,7 @@ impl CheckedLoanCallEvidence {
             holder,
             holder,
         )
-        .map_err(|_| LoanRefusal::InvalidEvidence)?;
+        .map_err(|_| BorrowRefusal::InvalidEvidence)?;
         let evidence = if is_hold {
             Self::new(
                 entry,
@@ -2818,7 +2825,7 @@ impl CheckedLoanCallEvidence {
             &evidence.recovery_transitions[0]
         };
         if before.apply(checked)? != *after {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         Ok(evidence)
     }
@@ -2827,9 +2834,9 @@ impl CheckedLoanCallEvidence {
         entry: StableViewTransferPlan,
         recovered_ledger: BorrowLedger,
         recovery_terminal_ledger: BorrowLedger,
-        recovery_transitions: Vec<CheckedLoanTransition>,
+        recovery_transitions: Vec<CheckedBorrowTransition>,
         recovery_hold_base: BorrowLedger,
-        recovery_hold_transitions: Vec<CheckedLoanTransition>,
+        recovery_hold_transitions: Vec<CheckedBorrowTransition>,
     ) -> Self {
         Self {
             entry,
@@ -2847,27 +2854,29 @@ impl CheckedLoanCallEvidence {
     pub(crate) fn recheck(
         &self,
         caller_ledger: &BorrowLedger,
-        caller_participant: Option<LoanParticipantId>,
+        caller_participant: Option<BorrowParticipantId>,
         callee_ledger: &BorrowLedger,
-        callee_participant: Option<LoanParticipantId>,
-    ) -> Result<(), LoanRefusal> {
+        callee_participant: Option<BorrowParticipantId>,
+    ) -> Result<(), BorrowRefusal> {
         if caller_participant != Some(self.entry.caller)
             || callee_participant != Some(self.entry.callee)
         {
-            return Err(LoanRefusal::WrongHolder);
+            return Err(BorrowRefusal::WrongHolder);
         }
         let entry_successor = self.entry.recheck_entry(caller_ledger)?;
         if entry_successor != *callee_ledger {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         let mut recovery_successor = callee_ledger.clone();
         for transition in &self.recovery_transitions {
             match &transition.evidence {
-                LoanTransitionEvidence::Hold { .. } => {
-                    return Err(LoanRefusal::InvalidEvidence);
+                BorrowTransitionEvidence::Hold { .. } => {
+                    return Err(BorrowRefusal::InvalidEvidence);
                 }
-                LoanTransitionEvidence::Release { holder, .. } if *holder != self.entry.caller => {
-                    return Err(LoanRefusal::InvalidEvidence);
+                BorrowTransitionEvidence::Release { holder, .. }
+                    if *holder != self.entry.caller =>
+                {
+                    return Err(BorrowRefusal::InvalidEvidence);
                 }
                 _ => {}
             }
@@ -2878,18 +2887,18 @@ impl CheckedLoanCallEvidence {
             recovery_successor.validate_returned_exclusive_call(binding)?;
         }
         if recovery_successor != self.recovery_terminal_ledger {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         if self.recovery_hold_base != *caller_ledger
             && self.recovery_hold_base != self.recovery_terminal_ledger
         {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         let mut hold_successor = self.recovery_hold_base.clone();
         for transition in &self.recovery_hold_transitions {
             match &transition.evidence {
-                LoanTransitionEvidence::Hold { holder, .. } if *holder == self.entry.caller => {}
-                _ => return Err(LoanRefusal::InvalidEvidence),
+                BorrowTransitionEvidence::Hold { holder, .. } if *holder == self.entry.caller => {}
+                _ => return Err(BorrowRefusal::InvalidEvidence),
             }
             crate::instrumentation::record_deterministic_work(1);
             hold_successor = hold_successor.apply(transition)?;
@@ -2901,7 +2910,7 @@ impl CheckedLoanCallEvidence {
             && self.recovered_ledger != self.recovery_terminal_ledger
             && self.recovered_ledger != hold_successor
         {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         Ok(())
     }
@@ -2915,16 +2924,16 @@ impl StableViewRecovery {
     pub(crate) fn recheck_transitions(
         &self,
         predecessor: &BorrowLedger,
-        caller: LoanParticipantId,
-    ) -> Result<BorrowLedger, LoanRefusal> {
+        caller: BorrowParticipantId,
+    ) -> Result<BorrowLedger, BorrowRefusal> {
         let mut current = predecessor.clone();
         for transition in &self.transitions {
             match &transition.evidence {
-                LoanTransitionEvidence::Hold { .. } => {
-                    return Err(LoanRefusal::InvalidEvidence);
+                BorrowTransitionEvidence::Hold { .. } => {
+                    return Err(BorrowRefusal::InvalidEvidence);
                 }
-                LoanTransitionEvidence::Release { holder, .. } if *holder != caller => {
-                    return Err(LoanRefusal::InvalidEvidence);
+                BorrowTransitionEvidence::Release { holder, .. } if *holder != caller => {
+                    return Err(BorrowRefusal::InvalidEvidence);
                 }
                 _ => {}
             }
@@ -2965,7 +2974,7 @@ pub(crate) enum StableViewPlanError {
     InvalidRequirement,
     MissingResource(ResourceFact),
     ConflictingRequirement(ResourceFact),
-    Loan(LoanRefusal),
+    Borrow(BorrowRefusal),
     InvalidResidual,
     UnsupportedPartition,
 }
@@ -2992,21 +3001,21 @@ fn composition_conflict(
 }
 
 impl StableViewPlanError {
-    pub(crate) fn loan_diagnostic(
+    pub(crate) fn borrow_diagnostic(
         &self,
         operation: LoanRefusalOperation,
     ) -> Option<LoanRefusalDiagnostic> {
         match self {
             Self::UnestablishedOwnedBoundary(_) | Self::UnestablishedLocalSeparation(_) => None,
-            Self::Loan(refusal) => Some(refusal.diagnostic(operation)),
+            Self::Borrow(refusal) => Some(refusal.diagnostic(operation)),
             Self::MissingResource(resource) => {
-                Some(LoanRefusal::MissingBacking.diagnostic_with_subject(
+                Some(BorrowRefusal::MissingBacking.diagnostic_with_subject(
                     operation,
                     LoanRefusalSubject::resource(resource.clone()),
                 ))
             }
             Self::ConflictingRequirement(resource) => Some(LoanRefusalDiagnostic {
-                refusal: LoanRefusal::ActiveDependency,
+                refusal: BorrowRefusal::ActiveDependency,
                 category: LoanRefusalCategory::ProvenOverlap,
                 operation,
                 subject: LoanRefusalSubject::resource(resource.clone()),
@@ -3015,19 +3024,19 @@ impl StableViewPlanError {
                 source_step: None,
             }),
             Self::InvalidRequirement => {
-                Some(LoanRefusal::UnsupportedResource.diagnostic(operation))
+                Some(BorrowRefusal::UnsupportedResource.diagnostic(operation))
             }
-            Self::InvalidResidual => Some(LoanRefusal::InvalidEvidence.diagnostic(operation)),
+            Self::InvalidResidual => Some(BorrowRefusal::InvalidEvidence.diagnostic(operation)),
             Self::UnsupportedPartition => {
-                Some(LoanRefusal::UnsupportedPartition.diagnostic(operation))
+                Some(BorrowRefusal::UnsupportedPartition.diagnostic(operation))
             }
         }
     }
 }
 
-impl From<LoanRefusal> for StableViewPlanError {
-    fn from(error: LoanRefusal) -> Self {
-        Self::Loan(error)
+impl From<BorrowRefusal> for StableViewPlanError {
+    fn from(error: BorrowRefusal) -> Self {
+        Self::Borrow(error)
     }
 }
 
@@ -3042,8 +3051,8 @@ pub(crate) fn plan_stable_view_transfer(
     requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
     ledger: &BorrowLedger,
-    caller: LoanParticipantId,
-    callee: LoanParticipantId,
+    caller: BorrowParticipantId,
+    callee: BorrowParticipantId,
 ) -> Result<StableViewTransferPlan, StableViewPlanError> {
     plan_stable_view_transfer_with_bindings(
         caller_resources,
@@ -3052,7 +3061,7 @@ pub(crate) fn plan_stable_view_transfer(
         ledger,
         caller,
         callee,
-        &LoanViewBindings::default(),
+        &BorrowBindings::default(),
     )
 }
 
@@ -3061,9 +3070,9 @@ pub(crate) fn plan_stable_view_transfer_with_bindings(
     requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
     ledger: &BorrowLedger,
-    caller: LoanParticipantId,
-    callee: LoanParticipantId,
-    parent_view_bindings: &LoanViewBindings,
+    caller: BorrowParticipantId,
+    callee: BorrowParticipantId,
+    parent_view_bindings: &BorrowBindings,
 ) -> Result<StableViewTransferPlan, StableViewPlanError> {
     plan_stable_view_transfer_with_bindings_and_composites(
         caller_resources,
@@ -3082,10 +3091,10 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites(
     requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
     ledger: &BorrowLedger,
-    caller: LoanParticipantId,
-    callee: LoanParticipantId,
-    parent_view_bindings: &LoanViewBindings,
-    composite_backings: &BTreeMap<ResourceOccurrenceId, CompositeLoanBacking>,
+    caller: BorrowParticipantId,
+    callee: BorrowParticipantId,
+    parent_view_bindings: &BorrowBindings,
+    composite_backings: &BTreeMap<ResourceOccurrenceId, CompositeBorrowBacking>,
 ) -> Result<StableViewTransferPlan, StableViewPlanError> {
     plan_stable_view_transfer_with_bindings_and_composites_for_worker(
         caller_resources,
@@ -3106,17 +3115,17 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites(
 /// path. The view is removed when the final join recovers the exact escrow.
 fn lend_owned_view_to_suspended_worker(
     ledger: &mut BorrowLedger,
-    transitions: &mut Vec<CheckedLoanTransition>,
+    transitions: &mut Vec<CheckedBorrowTransition>,
     residual: &mut ResourceContext,
     split_origins: &mut MemorySplitOrigins,
-    parent_bindings: &mut LoanViewBindings,
-    split_reborrows: &mut BTreeMap<LoanId, (ResourceOccurrenceId, LoanShareId)>,
+    parent_bindings: &mut BorrowBindings,
+    split_reborrows: &mut BTreeMap<BorrowId, (ResourceOccurrenceId, BorrowShareId)>,
     selected: &ResourceFact,
     support: ResourceOccurrenceId,
-    caller: LoanParticipantId,
-    callee: LoanParticipantId,
+    caller: BorrowParticipantId,
+    callee: BorrowParticipantId,
     assumptions: &PureFactContext,
-) -> Result<LoanOpening, StableViewPlanError> {
+) -> Result<BorrowOpening, StableViewPlanError> {
     let range = selected
         .memory_own_range()
         .cloned()
@@ -3137,24 +3146,24 @@ fn lend_owned_view_to_suspended_worker(
     let (split, retained, worker) = ledger.split(root.root_share, caller, caller, caller)?;
     *ledger = ledger.apply(&split)?;
     transitions.push(split);
-    let binding = LoanViewBinding {
-        loan: root.loan,
+    let binding = BorrowBinding {
+        borrow: root.borrow,
         scope: root.scope,
         share: retained,
         support,
         viewed,
         hold: None,
     };
-    *residual = next_residual.with_loan_dependency(occurrence, binding.clone());
+    *residual = next_residual.with_borrow_dependency(occurrence, binding.clone());
     *parent_bindings = parent_bindings.with_inserted(occurrence, binding.clone());
-    let worker_binding = LoanViewBinding {
+    let worker_binding = BorrowBinding {
         share: worker,
         ..binding
     };
     let child = ledger.reborrow(worker_binding, caller, callee)?;
     *ledger = ledger.apply(&child.transition)?;
     transitions.push(child.transition.clone());
-    split_reborrows.insert(child.loan, (occurrence, worker));
+    split_reborrows.insert(child.borrow, (occurrence, worker));
     Ok(child)
 }
 
@@ -3196,10 +3205,10 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
     requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
     ledger: &BorrowLedger,
-    caller: LoanParticipantId,
-    callee: LoanParticipantId,
-    parent_view_bindings: &LoanViewBindings,
-    composite_backings: &BTreeMap<ResourceOccurrenceId, CompositeLoanBacking>,
+    caller: BorrowParticipantId,
+    callee: BorrowParticipantId,
+    parent_view_bindings: &BorrowBindings,
+    composite_backings: &BTreeMap<ResourceOccurrenceId, CompositeBorrowBacking>,
     split_reborrowed_views: bool,
 ) -> Result<StableViewTransferPlan, StableViewPlanError> {
     plan_stable_view_transfer_with_protocol_effect(
@@ -3221,10 +3230,10 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
     ledger: &BorrowLedger,
-    caller: LoanParticipantId,
-    callee: LoanParticipantId,
-    parent_view_bindings: &LoanViewBindings,
-    composite_backings: &BTreeMap<ResourceOccurrenceId, CompositeLoanBacking>,
+    caller: BorrowParticipantId,
+    callee: BorrowParticipantId,
+    parent_view_bindings: &BorrowBindings,
+    composite_backings: &BTreeMap<ResourceOccurrenceId, CompositeBorrowBacking>,
     split_reborrowed_views: bool,
     same_thread_protocol_effect: bool,
 ) -> Result<StableViewTransferPlan, StableViewPlanError> {
@@ -3249,7 +3258,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     let mut rebound_parents = BTreeMap::new();
     let mut suspended_split_reborrows = BTreeMap::new();
     let mut stable_views = Vec::new();
-    let mut callee_view_bindings = LoanViewBindings::default();
+    let mut callee_view_bindings = BorrowBindings::default();
     let mut memory_effects = Vec::new();
     // Several clauses naming one token or composite are a single demand for
     // their combined count. Reservation stays clause by clause -- one entry
@@ -3384,7 +3393,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 assumptions,
             )
             .map_err(|error| match error {
-                mutex_calls::MutexUseCallError::Loan(error) => StableViewPlanError::Loan(error),
+                mutex_calls::MutexUseCallError::Borrow(error) => StableViewPlanError::Borrow(error),
                 _ => StableViewPlanError::MissingResource(requirement.fact.clone()),
             })?;
             use_plan = use_plan.with_required_type(identity.protected.clone());
@@ -3583,16 +3592,14 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         transferred_ownership.push(requirement.clone());
     }
 
-    let mut loan_roots = Vec::new();
-    let mut adapter_restorations = BTreeMap::<LoanId, Vec<RecoveredEscrow>>::new();
+    let mut borrow_roots = Vec::new();
+    let mut adapter_restorations = BTreeMap::<BorrowId, Vec<RecoveredEscrow>>::new();
     let mut protected_escrows = BTreeMap::new();
     let mut escrowed_owners = Vec::new();
     let mut escrowed_holds = BTreeMap::new();
     let mut grouped = BTreeMap::<ResourceOccurrenceId, Vec<(usize, CheckedResourceFact)>>::new();
-    let mut rebound = BTreeMap::<
-        LoanViewBinding,
-        (ResourceOccurrenceId, Vec<(usize, CheckedResourceFact)>),
-    >::new();
+    let mut rebound =
+        BTreeMap::<BorrowBinding, (ResourceOccurrenceId, Vec<(usize, CheckedResourceFact)>)>::new();
     // Retain the actual backing support selected by the adapter producer.
     // Ambiguous descriptions do not nominate an arbitrary occurrence.
     let mut adapter_sources = BTreeMap::<ResourceFact, Option<ResourceOccurrenceId>>::new();
@@ -3648,7 +3655,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             // A view description with no live borrow binding carries no
             // authority (law 4), so it can neither be reborrowed nor stand in
             // for backing that the caller does not hold.
-            return Err(StableViewPlanError::Loan(LoanRefusal::MissingLoanBinding));
+            return Err(StableViewPlanError::Borrow(
+                BorrowRefusal::MissingBorrowBinding,
+            ));
         }
         if let Some((parent_occurrence, binding)) = bound_occurrence {
             ledger.validate_view_binding(binding.clone(), caller)?;
@@ -3658,13 +3667,13 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 &requirement.fact,
                 assumptions,
             ) {
-                return Err(StableViewPlanError::Loan(LoanRefusal::InvalidEvidence));
+                return Err(StableViewPlanError::Borrow(BorrowRefusal::InvalidEvidence));
             }
             let grouped = rebound
                 .entry(binding)
                 .or_insert_with(|| (parent_occurrence, Vec::new()));
             if grouped.0 != parent_occurrence {
-                return Err(StableViewPlanError::Loan(LoanRefusal::InvalidEvidence));
+                return Err(StableViewPlanError::Borrow(BorrowRefusal::InvalidEvidence));
             }
             grouped.1.push((index, requirement.clone()));
             continue;
@@ -3690,7 +3699,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             | Resource::MutexUse(_)
             | Resource::Publication(_)
             | Resource::Iterated(_) => {
-                return Err(StableViewPlanError::Loan(LoanRefusal::UnsupportedResource));
+                return Err(StableViewPlanError::Borrow(
+                    BorrowRefusal::UnsupportedResource,
+                ));
             }
             Resource::Composite { .. } => {
                 if caller_resources.owned_occurrences_for_fact(owned).len() != 1
@@ -3698,7 +3709,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                         .get(&support)
                         .is_some_and(|backing| backing.support == support && backing.head == *owned)
                 {
-                    return Err(StableViewPlanError::Loan(LoanRefusal::UnsupportedResource));
+                    return Err(StableViewPlanError::Borrow(
+                        BorrowRefusal::UnsupportedResource,
+                    ));
                 }
             }
             Resource::Memory(_) | Resource::Token { .. } => {}
@@ -3776,9 +3789,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     .ok_or_else(|| StableViewPlanError::MissingResource(owned.clone()))?;
                 opening
             };
-            loan_roots.push((
+            borrow_roots.push((
                 opening.scope,
-                opening.loan,
+                opening.borrow,
                 opening.root_share,
                 support,
                 !split_reborrowed_views,
@@ -3786,9 +3799,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             escrowed_owners.push(selected.clone());
             protected_escrows.insert(
                 support,
-                RecoveredEscrow::from_loan(
+                RecoveredEscrow::from_borrow(
                     &planned_ledger,
-                    opening.loan,
+                    opening.borrow,
                     selected.clone(),
                     support,
                     None,
@@ -3799,15 +3812,15 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             {
                 escrowed_holds.insert(support, binding.clone());
             }
-            let mut owner_occurrences = BTreeMap::<LoanViewBinding, ResourceOccurrenceId>::new();
+            let mut owner_occurrences = BTreeMap::<BorrowBinding, ResourceOccurrenceId>::new();
             for (index, requirement) in cluster {
                 let description = planned_ledger
-                    .describe_view(opening.loan, requirement.fact.clone(), assumptions)
+                    .describe_view(opening.borrow, requirement.fact.clone(), assumptions)
                     .map_err(|_| {
                         StableViewPlanError::ConflictingRequirement(requirement.fact.clone())
                     })?;
-                let binding = LoanViewBinding {
-                    loan: opening.loan,
+                let binding = BorrowBinding {
+                    borrow: opening.borrow,
                     scope: opening.scope,
                     share: opening.root_share,
                     support,
@@ -3831,7 +3844,8 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 // the sidecar: normalization must not merge two adjacent bound
                 // views into one fact whose occurrence no requirement can then
                 // find again.
-                callee_resources = next_resources.with_loan_dependency(occurrence, binding.clone());
+                callee_resources =
+                    next_resources.with_borrow_dependency(occurrence, binding.clone());
                 owner_occurrences.insert(binding.clone(), occurrence);
                 callee_view_bindings = callee_view_bindings.with_inserted(occurrence, binding);
                 planned_views.push((
@@ -3839,7 +3853,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     PlannedStableView {
                         requirement,
                         support,
-                        loan: opening.loan,
+                        borrow: opening.borrow,
                         scope: opening.scope,
                         share: opening.root_share,
                         description,
@@ -3868,7 +3882,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             }
             let Some(range) = item.1.fact.memory_range().cloned() else {
                 if !matches!(item.1.fact.resource(), Resource::Token { .. }) {
-                    return Err(StableViewPlanError::Loan(LoanRefusal::UnsupportedResource));
+                    return Err(StableViewPlanError::Borrow(
+                        BorrowRefusal::UnsupportedResource,
+                    ));
                 }
                 let resource = item.1.fact.resource().clone();
                 let cluster_index = *non_memory_clusters.entry(resource).or_insert_with(|| {
@@ -3948,7 +3964,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                         })?
                 };
                 if !composite_backings.contains_key(&support) {
-                    return Err(StableViewPlanError::Loan(LoanRefusal::UnsupportedResource));
+                    return Err(StableViewPlanError::Borrow(
+                        BorrowRefusal::UnsupportedResource,
+                    ));
                 }
                 owned.clone()
             } else {
@@ -4048,9 +4066,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     )
                     .ok_or_else(|| StableViewPlanError::MissingResource(owned.clone()))?;
             }
-            loan_roots.push((
+            borrow_roots.push((
                 opening.scope,
-                opening.loan,
+                opening.borrow,
                 opening.root_share,
                 support,
                 !suspended_owned_reader,
@@ -4069,15 +4087,15 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     for member in &restored {
                         protected_escrows.insert(member.occurrence(), member.clone());
                     }
-                    adapter_restorations.insert(opening.loan, restored);
+                    adapter_restorations.insert(opening.borrow, restored);
                 }
                 None => {
                     escrowed_owners.push(selected.clone());
                     protected_escrows.insert(
                         support,
-                        RecoveredEscrow::from_loan(
+                        RecoveredEscrow::from_borrow(
                             &planned_ledger,
-                            opening.loan,
+                            opening.borrow,
                             selected.clone(),
                             support,
                             None,
@@ -4090,15 +4108,15 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             {
                 escrowed_holds.insert(support, binding.clone());
             }
-            let mut owner_occurrences = BTreeMap::<LoanViewBinding, ResourceOccurrenceId>::new();
+            let mut owner_occurrences = BTreeMap::<BorrowBinding, ResourceOccurrenceId>::new();
             for (index, requirement) in cluster {
                 let description = planned_ledger
-                    .describe_view(opening.loan, requirement.fact.clone(), assumptions)
+                    .describe_view(opening.borrow, requirement.fact.clone(), assumptions)
                     .map_err(|_| {
                         StableViewPlanError::ConflictingRequirement(requirement.fact.clone())
                     })?;
-                let binding = LoanViewBinding {
-                    loan: opening.loan,
+                let binding = BorrowBinding {
+                    borrow: opening.borrow,
                     scope: opening.scope,
                     share: opening.root_share,
                     support,
@@ -4122,7 +4140,8 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 // the sidecar: normalization must not merge two adjacent bound
                 // views into one fact whose occurrence no requirement can then
                 // find again.
-                callee_resources = next_resources.with_loan_dependency(occurrence, binding.clone());
+                callee_resources =
+                    next_resources.with_borrow_dependency(occurrence, binding.clone());
                 owner_occurrences.insert(binding.clone(), occurrence);
                 callee_view_bindings = callee_view_bindings.with_inserted(occurrence, binding);
                 planned_views.push((
@@ -4130,7 +4149,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     PlannedStableView {
                         requirement,
                         support,
-                        loan: opening.loan,
+                        borrow: opening.borrow,
                         scope: opening.scope,
                         share: opening.root_share,
                         description,
@@ -4145,14 +4164,14 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 planned_ledger.split(binding.share, caller, caller, caller)?;
             planned_ledger = planned_ledger.apply(&split)?;
             entry_transitions.push(split);
-            let retained_binding = LoanViewBinding {
+            let retained_binding = BorrowBinding {
                 share: retained,
                 ..binding.clone()
             };
             parent_view_bindings =
                 parent_view_bindings.with_inserted(parent_occurrence, retained_binding.clone());
-            residual = residual.with_loan_dependency(parent_occurrence, retained_binding);
-            LoanViewBinding {
+            residual = residual.with_borrow_dependency(parent_occurrence, retained_binding);
+            BorrowBinding {
                 share: worker,
                 ..binding.clone()
             }
@@ -4162,25 +4181,25 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         let opening = planned_ledger.reborrow(worker_binding.clone(), caller, callee)?;
         entry_transitions.push(opening.transition.clone());
         planned_ledger = planned_ledger.apply(&opening.transition)?;
-        let child_binding = LoanViewBinding {
-            loan: opening.loan,
+        let child_binding = BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support: binding.support,
             viewed: binding.viewed.clone(),
             hold: None,
         };
-        loan_roots.push((
+        borrow_roots.push((
             opening.scope,
-            opening.loan,
+            opening.borrow,
             opening.root_share,
             binding.support,
             false,
         ));
-        rebound_parents.insert(opening.loan, binding.clone());
+        rebound_parents.insert(opening.borrow, binding.clone());
         if split_reborrowed_views {
             suspended_split_reborrows
-                .insert(opening.loan, (parent_occurrence, worker_binding.share));
+                .insert(opening.borrow, (parent_occurrence, worker_binding.share));
         }
         let mut child_occurrence = None;
         for (index, requirement) in group {
@@ -4202,7 +4221,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 })
                 .ok_or(StableViewPlanError::InvalidResidual)?;
             callee_resources =
-                next_resources.with_loan_dependency(occurrence, child_binding.clone());
+                next_resources.with_borrow_dependency(occurrence, child_binding.clone());
             child_occurrence = Some(occurrence);
             callee_view_bindings =
                 callee_view_bindings.with_inserted(occurrence, child_binding.clone());
@@ -4215,7 +4234,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 PlannedStableView {
                     requirement,
                     support: binding.support,
-                    loan: opening.loan,
+                    borrow: opening.borrow,
                     scope: opening.scope,
                     share: opening.root_share,
                     description,
@@ -4254,7 +4273,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         parent_ledger: ledger.clone(),
         caller,
         callee,
-        loan_roots,
+        borrow_roots,
         escrowed_owners,
         escrowed_holds,
         transferred_holds,
@@ -4285,7 +4304,7 @@ impl StableViewTransferPlan {
         memory: &super::SymbolicMemory,
         requirements: &[CheckedResourceFact],
         assumptions: &PureFactContext,
-        existing: Option<&BTreeMap<ResourceFact, LoanViewBinding>>,
+        existing: Option<&BTreeMap<ResourceFact, BorrowBinding>>,
     ) -> Result<(), StableViewPlanError> {
         let mut seen = std::collections::BTreeSet::new();
         for requirement in requirements {
@@ -4320,8 +4339,8 @@ impl StableViewTransferPlan {
                     )?;
                     self.ledger = self.ledger.apply(&opening.transition)?;
                     self.entry_transitions.push(opening.transition);
-                    LoanViewBinding {
-                        loan: opening.loan,
+                    BorrowBinding {
+                        borrow: opening.borrow,
                         scope: opening.scope,
                         share: opening.root_share,
                         support,
@@ -4334,7 +4353,7 @@ impl StableViewTransferPlan {
                         .split(parent.share, self.caller, self.caller, self.caller)?;
                 self.ledger = self.ledger.apply(&split)?;
                 self.entry_transitions.push(split);
-                let worker_binding = LoanViewBinding {
+                let worker_binding = BorrowBinding {
                     share: worker,
                     ..parent.clone()
                 };
@@ -4343,8 +4362,8 @@ impl StableViewTransferPlan {
                     .reborrow(worker_binding, self.caller, self.callee)?;
                 self.ledger = self.ledger.apply(&opening.transition)?;
                 self.entry_transitions.push(opening.transition);
-                let child_binding = LoanViewBinding {
-                    loan: opening.loan,
+                let child_binding = BorrowBinding {
+                    borrow: opening.borrow,
                     scope: opening.scope,
                     share: opening.root_share,
                     support: parent.support,
@@ -4352,13 +4371,13 @@ impl StableViewTransferPlan {
                     hold: None,
                 };
                 self.callee_resources =
-                    resources.with_loan_dependency(support, child_binding.clone());
+                    resources.with_borrow_dependency(support, child_binding.clone());
                 self.callee_view_bindings = self
                     .callee_view_bindings
                     .with_inserted(support, child_binding);
-                self.loan_roots.push((
+                self.borrow_roots.push((
                     opening.scope,
-                    opening.loan,
+                    opening.borrow,
                     opening.root_share,
                     support,
                     false,
@@ -4366,20 +4385,20 @@ impl StableViewTransferPlan {
                 self.stable_views.push(PlannedStableView {
                     requirement: requirement.clone(),
                     support,
-                    loan: opening.loan,
+                    borrow: opening.borrow,
                     scope: opening.scope,
                     share: opening.root_share,
                     description: opening.description,
                 });
                 self.suspended_local_parents.insert(
                     requirement.fact.clone(),
-                    LoanViewBinding {
+                    BorrowBinding {
                         share: retained,
                         ..parent
                     },
                 );
                 self.suspended_local_reborrows
-                    .insert(opening.loan, (requirement.fact.clone(), worker));
+                    .insert(opening.borrow, (requirement.fact.clone(), worker));
                 continue;
             }
             // An ordinary local borrow closes with its call. New local
@@ -4394,19 +4413,19 @@ impl StableViewTransferPlan {
             )?;
             self.ledger = self.ledger.apply(&opening.transition)?;
             self.entry_transitions.push(opening.transition);
-            let binding = LoanViewBinding {
-                loan: opening.loan,
+            let binding = BorrowBinding {
+                borrow: opening.borrow,
                 scope: opening.scope,
                 share: opening.root_share,
                 support,
                 viewed: requirement.fact.clone(),
                 hold: None,
             };
-            self.callee_resources = resources.with_loan_dependency(support, binding.clone());
+            self.callee_resources = resources.with_borrow_dependency(support, binding.clone());
             self.callee_view_bindings = self.callee_view_bindings.with_inserted(support, binding);
-            self.loan_roots.push((
+            self.borrow_roots.push((
                 opening.scope,
-                opening.loan,
+                opening.borrow,
                 opening.root_share,
                 support,
                 false,
@@ -4414,7 +4433,7 @@ impl StableViewTransferPlan {
             self.stable_views.push(PlannedStableView {
                 requirement: requirement.clone(),
                 support,
-                loan: opening.loan,
+                borrow: opening.borrow,
                 scope: opening.scope,
                 share: opening.root_share,
                 description: opening.description,
@@ -4427,19 +4446,19 @@ impl StableViewTransferPlan {
         &self.parent_ledger
     }
 
-    pub(crate) fn suspended_local_parents(&self) -> &BTreeMap<ResourceFact, LoanViewBinding> {
+    pub(crate) fn suspended_local_parents(&self) -> &BTreeMap<ResourceFact, BorrowBinding> {
         &self.suspended_local_parents
     }
 
-    pub(crate) fn caller_participant(&self) -> LoanParticipantId {
+    pub(crate) fn caller_participant(&self) -> BorrowParticipantId {
         self.caller
     }
 
-    pub(crate) fn caller_view_bindings_after_requirements(&self) -> &LoanViewBindings {
+    pub(crate) fn caller_view_bindings_after_requirements(&self) -> &BorrowBindings {
         &self.parent_view_bindings
     }
 
-    pub(crate) fn callee_participant(&self) -> LoanParticipantId {
+    pub(crate) fn callee_participant(&self) -> BorrowParticipantId {
         self.callee
     }
 
@@ -4458,7 +4477,7 @@ impl StableViewTransferPlan {
         &self.escrowed_owners
     }
 
-    pub(crate) fn callee_view_bindings(&self) -> &LoanViewBindings {
+    pub(crate) fn callee_view_bindings(&self) -> &BorrowBindings {
         &self.callee_view_bindings
     }
 
@@ -4475,8 +4494,8 @@ impl StableViewTransferPlan {
     pub(crate) fn recover_stable_views(
         self,
         assumptions: &PureFactContext,
-        escaping: &BTreeMap<LoanId, Vec<EscapingBorrow>>,
-        consumed_holds: &[LoanViewBinding],
+        escaping: &BTreeMap<BorrowId, Vec<EscapingBorrow>>,
+        consumed_holds: &[BorrowBinding],
     ) -> Result<StableViewRecovery, StableViewPlanError> {
         self.recover_stable_views_impl(assumptions, escaping, consumed_holds, false, false)
     }
@@ -4489,14 +4508,14 @@ impl StableViewTransferPlan {
         resources: ResourceContext,
         boundary: &crate::kernel::functions::EscrowRecoveryBoundary,
         assumptions: &PureFactContext,
-        escaping: &BTreeMap<LoanId, Vec<EscapingBorrow>>,
-        consumed_holds: &[LoanViewBinding],
+        escaping: &BTreeMap<BorrowId, Vec<EscapingBorrow>>,
+        consumed_holds: &[BorrowBinding],
     ) -> Result<StableViewRecovery, super::RuntimeError> {
         let mut recovery = self
             .recover_stable_views_impl(assumptions, escaping, consumed_holds, false, true)
             .map_err(|error| {
                 error
-                    .loan_diagnostic(LoanRefusalOperation::Recovery)
+                    .borrow_diagnostic(LoanRefusalOperation::Recovery)
                     .map(|diagnostic| super::RuntimeError::LoanRefusal(Box::new(diagnostic)))
                     .unwrap_or_else(|| {
                         super::RuntimeError::FunctionContract(
@@ -4511,12 +4530,12 @@ impl StableViewTransferPlan {
         Ok(recovery)
     }
 
-    pub(crate) fn escrowed_hold(&self, source: &PlannedStableView) -> Option<&LoanViewBinding> {
+    pub(crate) fn escrowed_hold(&self, source: &PlannedStableView) -> Option<&BorrowBinding> {
         self.escrowed_holds.get(&source.support)
     }
 
     pub(crate) fn supports_explicit_view_escape(&self, source: &PlannedStableView) -> bool {
-        !self.adapter_restorations.contains_key(&source.loan)
+        !self.adapter_restorations.contains_key(&source.borrow)
             && !self.escrowed_holds.contains_key(&source.support)
     }
 
@@ -4534,8 +4553,8 @@ impl StableViewTransferPlan {
         self,
         ledger: BorrowLedger,
         resources: ResourceContext,
-        bindings: LoanViewBindings,
-        local_bindings: BTreeMap<ResourceFact, LoanViewBinding>,
+        bindings: BorrowBindings,
+        local_bindings: BTreeMap<ResourceFact, BorrowBinding>,
         assumptions: &PureFactContext,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
         self.recover_suspended_views_with_entry_partition(
@@ -4552,8 +4571,8 @@ impl StableViewTransferPlan {
         mut self,
         ledger: BorrowLedger,
         resources: ResourceContext,
-        bindings: LoanViewBindings,
-        local_bindings: BTreeMap<ResourceFact, LoanViewBinding>,
+        bindings: BorrowBindings,
+        local_bindings: BTreeMap<ResourceFact, BorrowBinding>,
         partition: Option<super::functions::ReturnedEntryPartition>,
         assumptions: &PureFactContext,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
@@ -4578,8 +4597,8 @@ impl StableViewTransferPlan {
     fn recover_stable_views_impl(
         self,
         assumptions: &PureFactContext,
-        escaping: &BTreeMap<LoanId, Vec<EscapingBorrow>>,
-        consumed_holds: &[LoanViewBinding],
+        escaping: &BTreeMap<BorrowId, Vec<EscapingBorrow>>,
+        consumed_holds: &[BorrowBinding],
         mut keep_terminal: bool,
         defer_restoration: bool,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
@@ -4595,7 +4614,7 @@ impl StableViewTransferPlan {
         };
         self.validate_exclusive_reservation()?;
         let parent_ledger = self.parent_ledger;
-        let loan_roots = self.loan_roots.clone();
+        let borrow_roots = self.borrow_roots.clone();
         let mut ledger = self.ledger;
         let mut resources = self.caller_resources_after_requirements;
         let mut view_bindings = self.parent_view_bindings.clone();
@@ -4603,29 +4622,31 @@ impl StableViewTransferPlan {
         let mut transitions = Vec::new();
         let mut restorations = Vec::new();
         let mut mutex_authority_updates = Vec::new();
-        let mut pending_holds: Vec<(&[EscapingBorrow], LoanViewBinding)> = Vec::new();
-        for (scope, loan, root, support, recoverable) in loan_roots.into_iter().rev() {
+        let mut pending_holds: Vec<(&[EscapingBorrow], BorrowBinding)> = Vec::new();
+        for (scope, borrow, root, support, recoverable) in borrow_roots.into_iter().rev() {
             let transfer = ledger.transfer(root, self.callee, self.caller)?;
             ledger = ledger.apply(&transfer)?;
             transitions.push(transfer);
-            if let Some(heads) = escaping.get(&loan) {
+            if let Some(heads) = escaping.get(&borrow) {
                 if recoverable
                     || (ledger
                         .storage
                         .data
-                        .loans
-                        .get(&loan)
-                        .is_some_and(|record| matches!(record.origin, LoanOrigin::LocalStorage(_)))
+                        .borrows
+                        .get(&borrow)
+                        .is_some_and(|record| {
+                            matches!(record.origin, BorrowOrigin::LocalStorage(_))
+                        })
                         && heads.iter().all(|head| head.head.is_view())
-                        && !self.suspended_local_reborrows.contains_key(&loan))
+                        && !self.suspended_local_reborrows.contains_key(&borrow))
                 {
                     // Keep the caller's escrow or implicit local authority
                     // suspended under the returned occurrence's hold.
                     for head in heads {
                         pending_holds.push((
                             std::slice::from_ref(head),
-                            LoanViewBinding {
-                                loan,
+                            BorrowBinding {
+                                borrow,
                                 scope,
                                 share: root,
                                 support,
@@ -4642,23 +4663,19 @@ impl StableViewTransferPlan {
                 let end = ledger.end(scope, self.caller)?;
                 ledger = ledger.apply(&end)?;
                 transitions.push(end);
-                let parent = self
-                    .rebound_parents
-                    .get(&loan)
-                    .cloned()
-                    .ok_or(StableViewPlanError::Loan(LoanRefusal::MissingLoanBinding))?;
+                let parent = self.rebound_parents.get(&borrow).cloned().ok_or(
+                    StableViewPlanError::Borrow(BorrowRefusal::MissingBorrowBinding),
+                )?;
                 pending_holds.push((heads, parent));
                 continue;
             }
             let end = ledger.end(scope, self.caller)?;
             ledger = ledger.apply(&end)?;
             transitions.push(end);
-            if let Some((fact, worker_share)) = self.suspended_local_reborrows.get(&loan) {
-                let binding = self
-                    .suspended_local_parents
-                    .get(fact)
-                    .cloned()
-                    .ok_or(StableViewPlanError::Loan(LoanRefusal::MissingLoanBinding))?;
+            if let Some((fact, worker_share)) = self.suspended_local_reborrows.get(&borrow) {
+                let binding = self.suspended_local_parents.get(fact).cloned().ok_or(
+                    StableViewPlanError::Borrow(BorrowRefusal::MissingBorrowBinding),
+                )?;
                 ledger.validate_view_binding(binding.clone(), self.caller)?;
                 let (joined, merged_share, joins) =
                     ledger.join_available_share_ancestors(*worker_share, self.caller)?;
@@ -4675,7 +4692,7 @@ impl StableViewTransferPlan {
                 {
                     Some(binding)
                 } else {
-                    let updated = LoanViewBinding {
+                    let updated = BorrowBinding {
                         share: merged_share,
                         ..binding
                     };
@@ -4684,36 +4701,39 @@ impl StableViewTransferPlan {
                 };
                 local_view_updates.insert(fact.clone(), updated);
             }
-            if let Some((occurrence, worker_share)) = self.suspended_split_reborrows.get(&loan) {
-                let binding = view_bindings
-                    .get(occurrence)
-                    .cloned()
-                    .ok_or(StableViewPlanError::Loan(LoanRefusal::MissingLoanBinding))?;
+            if let Some((occurrence, worker_share)) = self.suspended_split_reborrows.get(&borrow) {
+                let binding =
+                    view_bindings
+                        .get(occurrence)
+                        .cloned()
+                        .ok_or(StableViewPlanError::Borrow(
+                            BorrowRefusal::MissingBorrowBinding,
+                        ))?;
                 ledger.validate_view_binding(binding.clone(), self.caller)?;
                 let (joined, merged_share, joins) =
                     ledger.join_available_share_ancestors(*worker_share, self.caller)?;
                 ledger = joined;
                 transitions.extend(joins);
-                if ledger.loan_is_recoverable_by(binding.loan, self.caller)
+                if ledger.borrow_is_recoverable_by(binding.borrow, self.caller)
                     && ledger.scope_can_end(binding.scope, self.caller)
                 {
                     let close = ledger.end(binding.scope, self.caller)?;
                     ledger = ledger.apply(&close)?;
                     transitions.push(close);
                     let (recover, escrow, recovered_support) =
-                        ledger.recover(binding.loan, self.caller)?;
+                        ledger.recover(binding.borrow, self.caller)?;
                     ledger = ledger.apply(&recover)?;
                     transitions.push(recover);
                     if recovered_support != binding.support {
-                        return Err(StableViewPlanError::Loan(LoanRefusal::InvalidEvidence));
+                        return Err(StableViewPlanError::Borrow(BorrowRefusal::InvalidEvidence));
                     }
                     resources = resources
                         .without_bound_view_occurrence(*occurrence, &binding)
                         .ok_or(StableViewPlanError::InvalidResidual)?;
                     view_bindings = view_bindings.without(*occurrence);
-                    let member = RecoveredEscrow::from_loan(
+                    let member = RecoveredEscrow::from_borrow(
                         &ledger,
-                        binding.loan,
+                        binding.borrow,
                         escrow.clone(),
                         recovered_support,
                         None,
@@ -4724,27 +4744,27 @@ impl StableViewTransferPlan {
                     .validate_view_binding(binding.clone(), self.caller)
                     .is_err()
                 {
-                    let binding = LoanViewBinding {
+                    let binding = BorrowBinding {
                         share: merged_share,
                         ..binding
                     };
                     ledger.validate_view_binding(binding.clone(), self.caller)?;
                     view_bindings = view_bindings.with_inserted(*occurrence, binding.clone());
-                    resources = resources.with_loan_dependency(*occurrence, binding);
+                    resources = resources.with_borrow_dependency(*occurrence, binding);
                 }
             }
             if recoverable {
-                let (recover, escrow, recovered_support) = ledger.recover(loan, self.caller)?;
+                let (recover, escrow, recovered_support) = ledger.recover(borrow, self.caller)?;
                 ledger = ledger.apply(&recover)?;
                 transitions.push(recover);
                 if recovered_support != support {
-                    return Err(StableViewPlanError::Loan(LoanRefusal::InvalidEvidence));
+                    return Err(StableViewPlanError::Borrow(BorrowRefusal::InvalidEvidence));
                 }
                 // An adapter lend escrowed a head the planner materialized
                 // for this call. Recovery restores exactly the owned facts it
                 // was materialized from, so a `views` requirement leaves the
                 // caller's own packaging exactly as it found it.
-                if let Some(restored) = self.adapter_restorations.get(&loan) {
+                if let Some(restored) = self.adapter_restorations.get(&borrow) {
                     for member in restored {
                         resources = restore_resource(resources, member)?;
 
@@ -4753,9 +4773,9 @@ impl StableViewTransferPlan {
                     continue;
                 }
                 let hold_binding = self.escrowed_holds.get(&recovered_support).cloned();
-                let member = RecoveredEscrow::from_loan(
+                let member = RecoveredEscrow::from_borrow(
                     &ledger,
-                    loan,
+                    borrow,
                     escrow.clone(),
                     recovered_support,
                     hold_binding.clone(),
@@ -4785,14 +4805,14 @@ impl StableViewTransferPlan {
             let end = ledger.end(binding.scope, self.caller)?;
             ledger = ledger.apply(&end)?;
             transitions.push(end);
-            if ledger.loan_is_recoverable_by(binding.loan, self.caller) {
+            if ledger.borrow_is_recoverable_by(binding.borrow, self.caller) {
                 let (recover, escrow, recovered_support) =
-                    ledger.recover(binding.loan, self.caller)?;
+                    ledger.recover(binding.borrow, self.caller)?;
                 ledger = ledger.apply(&recover)?;
                 transitions.push(recover);
-                let member = RecoveredEscrow::from_loan(
+                let member = RecoveredEscrow::from_borrow(
                     &ledger,
-                    binding.loan,
+                    binding.borrow,
                     escrow.clone(),
                     recovered_support,
                     None,
@@ -4811,8 +4831,8 @@ impl StableViewTransferPlan {
                         assumptions,
                     )
                     .map_err(|error| match error {
-                        mutex_calls::MutexUseCallError::Loan(error) => {
-                            StableViewPlanError::Loan(error)
+                        mutex_calls::MutexUseCallError::Borrow(error) => {
+                            StableViewPlanError::Borrow(error)
                         }
                         _ => StableViewPlanError::InvalidResidual,
                     })?;
@@ -4825,8 +4845,8 @@ impl StableViewTransferPlan {
                 let returned = use_plan
                     .finish_checked_ledger(ledger, &use_plan.callee_resources, assumptions)
                     .map_err(|error| match error {
-                        mutex_calls::MutexUseCallError::Loan(error) => {
-                            StableViewPlanError::Loan(error)
+                        mutex_calls::MutexUseCallError::Borrow(error) => {
+                            StableViewPlanError::Borrow(error)
                         }
                         _ => StableViewPlanError::InvalidResidual,
                     })?;
@@ -4838,7 +4858,7 @@ impl StableViewTransferPlan {
                 restorations.push(member);
             }
         }
-        // Every scope in loan_roots that this plan ended has just passed End
+        // Every scope in borrow_roots that this plan ended has just passed End
         // and Recover. End checks its indexed dependency set, so a registered
         // child would have refused before this checkpoint. When nothing
         // survives the call, the plan rolls back to the exact predecessor
@@ -4866,7 +4886,7 @@ impl StableViewTransferPlan {
                 escaped_holds.push(EscapedHold {
                     head: head.head.clone(),
                     occurrence: head.occurrence,
-                    binding: LoanViewBinding {
+                    binding: BorrowBinding {
                         hold: Some(hold),
                         ..binding.clone()
                     },
@@ -4898,7 +4918,7 @@ impl StableViewTransferPlan {
         })
     }
 
-    fn validate_exclusive_reservation(&self) -> Result<(), LoanRefusal> {
+    fn validate_exclusive_reservation(&self) -> Result<(), BorrowRefusal> {
         let recorded = self.ledger.storage.data.exclusive_holders.get(&self.callee);
         match &self.exclusive_call {
             None if recorded.is_none() => Ok(()),
@@ -4912,19 +4932,19 @@ impl StableViewTransferPlan {
                             .callee_resources
                             .satisfies_fact(&reservation.0, &PureFactContext::new())
                     {
-                        return Err(LoanRefusal::InvalidEvidence);
+                        return Err(BorrowRefusal::InvalidEvidence);
                     }
                 }
                 Ok(())
             }
-            _ => Err(LoanRefusal::InvalidEvidence),
+            _ => Err(BorrowRefusal::InvalidEvidence),
         }
     }
 
     pub(crate) fn recheck_entry(
         &self,
         predecessor: &BorrowLedger,
-    ) -> Result<BorrowLedger, LoanRefusal> {
+    ) -> Result<BorrowLedger, BorrowRefusal> {
         self.validate_exclusive_reservation()?;
         let mut current = predecessor.clone();
         for transition in &self.entry_transitions {
@@ -4933,7 +4953,7 @@ impl StableViewTransferPlan {
         }
         (current == self.ledger)
             .then_some(current)
-            .ok_or(LoanRefusal::InvalidEvidence)
+            .ok_or(BorrowRefusal::InvalidEvidence)
     }
 }
 
@@ -4973,26 +4993,26 @@ impl BorrowLedger {
         static NEXT_ARENA: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let arena = NEXT_ARENA.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self {
-            storage: Arc::new(LoanLedgerStorage {
-                state: LoanLedgerStateId::fresh(),
-                data: LoanLedgerData {
+            storage: Arc::new(BorrowLedgerStorage {
+                state: BorrowLedgerStateId::fresh(),
+                data: BorrowLedgerData {
                     arena,
                     exclusive_calls: PersistentMap::default(),
                     exclusive_holders: PersistentMap::default(),
                     next_scope: 0,
-                    next_loan: 0,
+                    next_borrow: 0,
                     next_share: 0,
                     next_hold: 0,
                     holds: PersistentMap::default(),
                     scopes: PersistentMap::default(),
-                    loans: PersistentMap::default(),
+                    borrows: PersistentMap::default(),
                     shares: PersistentMap::default(),
                     active_memory_index: PersistentMap::default(),
                     active_memory_subtree: PersistentMap::default(),
                     active_nonlocal_indexed_ranges: 0,
-                    active_memory_loans: 0,
+                    active_memory_borrows: 0,
                     active_footprint: Default::default(),
-                    automatic_storage_loans: PersistentMap::default(),
+                    automatic_storage_borrows: PersistentMap::default(),
                     cache_memory_index: PersistentMap::default(),
                     cache_memory_subtree: PersistentMap::default(),
                     unindexed_memory: PersistentMap::default(),
@@ -5001,10 +5021,10 @@ impl BorrowLedger {
         }
     }
 
-    pub(crate) fn fresh_participant(&self) -> Result<LoanParticipantId, LoanRefusal> {
+    pub(crate) fn fresh_participant(&self) -> Result<BorrowParticipantId, BorrowRefusal> {
         static NEXT_PARTICIPANT: std::sync::atomic::AtomicU64 =
             std::sync::atomic::AtomicU64::new(0);
-        let participant = LoanParticipantId {
+        let participant = BorrowParticipantId {
             arena: self.storage.data.arena,
             ordinal: NEXT_PARTICIPANT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         };
@@ -5017,10 +5037,10 @@ impl BorrowLedger {
             return false;
         }
         data.next_scope == 0
-            && data.next_loan == 0
+            && data.next_borrow == 0
             && data.next_share == 0
             && data.scopes.is_empty()
-            && data.loans.is_empty()
+            && data.borrows.is_empty()
             && data.shares.is_empty()
     }
 
@@ -5031,58 +5051,58 @@ impl BorrowLedger {
         self.storage.state.0
     }
 
-    pub(crate) fn contains_participant(&self, participant: LoanParticipantId) -> bool {
+    pub(crate) fn contains_participant(&self, participant: BorrowParticipantId) -> bool {
         self.storage.data.arena == participant.arena
     }
 
     pub(crate) fn lend(
         &self,
-        lender: LoanParticipantId,
-        borrower: LoanParticipantId,
+        lender: BorrowParticipantId,
+        borrower: BorrowParticipantId,
         support: ResourceOccurrenceId,
         escrow: ResourceFact,
-    ) -> Result<LoanOpening, LoanRefusal> {
+    ) -> Result<BorrowOpening, BorrowRefusal> {
         self.require_participant(lender)?;
         self.require_participant(borrower)?;
         if support == ResourceOccurrenceId::default() {
-            return Err(LoanRefusal::MissingBacking);
+            return Err(BorrowRefusal::MissingBacking);
         }
         if !escrow.is_own() {
-            return Err(LoanRefusal::NotOwnership);
+            return Err(BorrowRefusal::NotOwnership);
         }
         if !matches!(
             escrow.resource(),
             Resource::Memory(_) | Resource::Token { .. }
         ) {
-            return Err(LoanRefusal::UnsupportedResource);
+            return Err(BorrowRefusal::UnsupportedResource);
         }
-        let scope = LoanScopeId {
+        let scope = BorrowScopeId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_scope,
         };
-        let loan = LoanId {
+        let borrow = BorrowId {
             arena: self.storage.data.arena,
-            ordinal: self.storage.data.next_loan,
+            ordinal: self.storage.data.next_borrow,
         };
-        let root = LoanShareId {
+        let root = BorrowShareId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_share,
         };
-        let evidence = LoanTransitionEvidence::Lend {
+        let evidence = BorrowTransitionEvidence::Lend {
             lender,
             borrower,
             support,
             escrow: escrow.clone(),
             scope,
-            loan,
+            borrow,
             root,
         };
-        Ok(LoanOpening {
+        Ok(BorrowOpening {
             scope,
-            loan,
+            borrow,
             root_share: root,
             description: StableViewDescription {
-                loan,
+                borrow,
                 support,
                 viewed: ResourceFact::View(escrow.resource().clone()),
             },
@@ -5096,54 +5116,54 @@ impl BorrowLedger {
     #[cfg(test)]
     pub(crate) fn lend_mutex_use(
         &self,
-        lender: LoanParticipantId,
-        borrower: LoanParticipantId,
+        lender: BorrowParticipantId,
+        borrower: BorrowParticipantId,
         support: ResourceOccurrenceId,
         escrow: ResourceFact,
-    ) -> Result<(Self, MutexUseLoan), LoanRefusal> {
-        let (ledger, loan, _) =
+    ) -> Result<(Self, MutexUseBorrow), BorrowRefusal> {
+        let (ledger, borrow, _) =
             self.lend_mutex_use_with_transition(lender, borrower, support, escrow)?;
-        Ok((ledger, loan))
+        Ok((ledger, borrow))
     }
 
     pub(crate) fn lend_mutex_use_with_transition(
         &self,
-        lender: LoanParticipantId,
-        borrower: LoanParticipantId,
+        lender: BorrowParticipantId,
+        borrower: BorrowParticipantId,
         support: ResourceOccurrenceId,
         escrow: ResourceFact,
-    ) -> Result<(Self, MutexUseLoan, CheckedLoanTransition), LoanRefusal> {
+    ) -> Result<(Self, MutexUseBorrow, CheckedBorrowTransition), BorrowRefusal> {
         if !is_mutex_lifetime_owner(&escrow) {
-            return Err(LoanRefusal::UnsupportedResource);
+            return Err(BorrowRefusal::UnsupportedResource);
         }
-        let scope = LoanScopeId {
+        let scope = BorrowScopeId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_scope,
         };
-        let loan = LoanId {
+        let borrow = BorrowId {
             arena: self.storage.data.arena,
-            ordinal: self.storage.data.next_loan,
+            ordinal: self.storage.data.next_borrow,
         };
-        let root = LoanShareId {
+        let root = BorrowShareId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_share,
         };
-        let transition = self.issue(LoanTransitionEvidence::Lend {
+        let transition = self.issue(BorrowTransitionEvidence::Lend {
             lender,
             borrower,
             support,
             escrow,
             scope,
-            loan,
+            borrow,
             root,
         })?;
         Ok((
             self.apply(&transition)?,
-            MutexUseLoan {
+            MutexUseBorrow {
                 scope,
-                loan,
-                usage: MutexUseBinding(LoanAuthorityBinding {
-                    loan,
+                borrow,
+                usage: MutexUseBinding(BorrowAuthorityBinding {
+                    borrow,
                     scope,
                     share: root,
                     support,
@@ -5160,16 +5180,18 @@ impl BorrowLedger {
     fn mutex_use_identity_description(
         &self,
         usage: MutexUseBinding,
-        holder: LoanParticipantId,
-    ) -> Result<&ResourceFact, LoanRefusal> {
+        holder: BorrowParticipantId,
+    ) -> Result<&ResourceFact, BorrowRefusal> {
         let record = self.validate_authority_binding(usage.0, holder)?;
-        let root_id = record.mutex_root.ok_or(LoanRefusal::MissingLoanBinding)?;
+        let root_id = record
+            .mutex_root
+            .ok_or(BorrowRefusal::MissingBorrowBinding)?;
         let root = self
             .storage
             .data
-            .loans
+            .borrows
             .get(&root_id)
-            .ok_or(LoanRefusal::MissingLoan)?;
+            .ok_or(BorrowRefusal::MissingBorrow)?;
         if !record.permitted.is_empty()
             || !record.memory_backing.is_empty()
             || root.mutex_root != Some(root_id)
@@ -5182,10 +5204,10 @@ impl BorrowLedger {
                 .get(&root.scope)
                 .is_some_and(|scope| scope.active)
         {
-            return Err(LoanRefusal::MissingLoanBinding);
+            return Err(BorrowRefusal::MissingBorrowBinding);
         }
         root.mutex_identity_description()
-            .ok_or(LoanRefusal::MissingLoanBinding)
+            .ok_or(BorrowRefusal::MissingBorrowBinding)
     }
 
     /// Only the authenticated root's type is visible through reborrows.
@@ -5193,29 +5215,33 @@ impl BorrowLedger {
     pub(crate) fn mutex_use_protected_type(
         &self,
         usage: MutexUseBinding,
-        holder: LoanParticipantId,
-    ) -> Result<Option<&ResourceDescription>, LoanRefusal> {
+        holder: BorrowParticipantId,
+    ) -> Result<Option<&ResourceDescription>, BorrowRefusal> {
         self.mutex_use_identity_description(usage, holder)?;
         let record = self.validate_authority_binding(usage.0, holder)?;
         let root = self
             .storage
             .data
-            .loans
-            .get(&record.mutex_root.ok_or(LoanRefusal::MissingLoanBinding)?)
-            .ok_or(LoanRefusal::MissingLoan)?;
+            .borrows
+            .get(
+                &record
+                    .mutex_root
+                    .ok_or(BorrowRefusal::MissingBorrowBinding)?,
+            )
+            .ok_or(BorrowRefusal::MissingBorrow)?;
         Ok(root.assumed_mutex_protected.as_ref())
     }
 
     /// Describing the occurrence grants no ownership. The mutex adapter must
-    /// insert or consume it as part of the checked loan/state exchange.
+    /// insert or consume it as part of the checked borrow/state exchange.
     pub(crate) fn mutex_use_resource(
         &self,
         usage: MutexUseBinding,
-        holder: LoanParticipantId,
-    ) -> Result<ResourceFact, LoanRefusal> {
+        holder: BorrowParticipantId,
+    ) -> Result<ResourceFact, BorrowRefusal> {
         let owner = self.mutex_use_identity_description(usage, holder)?;
         let Resource::MutexLive(identity) = owner.resource() else {
-            return Err(LoanRefusal::MissingLoanBinding);
+            return Err(BorrowRefusal::MissingBorrowBinding);
         };
         Ok(ResourceFact::own(Resource::MutexUse(
             super::MutexUseIdentity {
@@ -5232,33 +5258,33 @@ impl BorrowLedger {
     #[cfg(test)]
     pub(crate) fn end_mutex_reborrow_with_parent(
         &self,
-        opening: &MutexUseLoan,
-        holder: LoanParticipantId,
-    ) -> Result<(Self, ResourceFact), LoanRefusal> {
+        opening: &MutexUseBorrow,
+        holder: BorrowParticipantId,
+    ) -> Result<(Self, ResourceFact), BorrowRefusal> {
         let ended = self.end_mutex_reborrow(opening, holder)?;
         let child = self
             .storage
             .data
             .scopes
             .get(&opening.scope)
-            .ok_or(LoanRefusal::MissingScope)?;
-        let parent_scope = child.parent.ok_or(LoanRefusal::MissingScope)?;
+            .ok_or(BorrowRefusal::MissingScope)?;
+        let parent_scope = child.parent.ok_or(BorrowRefusal::MissingScope)?;
         let parent = self
             .storage
             .data
             .scopes
             .get(&parent_scope)
-            .ok_or(LoanRefusal::MissingScope)?;
+            .ok_or(BorrowRefusal::MissingScope)?;
         let record = self
             .storage
             .data
-            .loans
-            .get(&parent.loan)
-            .ok_or(LoanRefusal::MissingLoan)?;
-        let usage = MutexUseBinding(LoanAuthorityBinding {
-            loan: parent.loan,
+            .borrows
+            .get(&parent.borrow)
+            .ok_or(BorrowRefusal::MissingBorrow)?;
+        let usage = MutexUseBinding(BorrowAuthorityBinding {
+            borrow: parent.borrow,
             scope: parent_scope,
-            share: child.parent_share.ok_or(LoanRefusal::MissingShare)?,
+            share: child.parent_share.ok_or(BorrowRefusal::MissingShare)?,
             support: record.support,
         });
         let resource = ended.mutex_use_resource(usage, holder)?;
@@ -5272,50 +5298,50 @@ impl BorrowLedger {
     #[cfg(test)]
     pub(crate) fn borrowed_mutex_use_input(
         &self,
-        holder: LoanParticipantId,
+        holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
         mutex: super::Address,
-    ) -> Result<(Self, MutexUseContractInput), LoanRefusal> {
+    ) -> Result<(Self, MutexUseContractInput), BorrowRefusal> {
         self.borrowed_mutex_use_input_with_protected(holder, support, mutex, None)
     }
 
     pub(crate) fn borrowed_mutex_use_input_with_protected(
         &self,
-        holder: LoanParticipantId,
+        holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
         mutex: super::Address,
         protected: Option<ResourceDescription>,
-    ) -> Result<(Self, MutexUseContractInput), LoanRefusal> {
+    ) -> Result<(Self, MutexUseContractInput), BorrowRefusal> {
         let arena = self.storage.data.arena;
-        let scope = LoanScopeId {
+        let scope = BorrowScopeId {
             arena,
             ordinal: self.storage.data.next_scope,
         };
-        let loan = LoanId {
+        let borrow = BorrowId {
             arena,
-            ordinal: self.storage.data.next_loan,
+            ordinal: self.storage.data.next_borrow,
         };
-        let root = LoanShareId {
+        let root = BorrowShareId {
             arena,
             ordinal: self.storage.data.next_share,
         };
-        let transition = self.issue(LoanTransitionEvidence::BorrowedMutexUseRoot {
+        let transition = self.issue(BorrowTransitionEvidence::BorrowedMutexUseRoot {
             holder,
             support,
             mutex,
             protected,
             initialization: super::mutexes::MutexInitializationId::fresh()
-                .map_err(|_| LoanRefusal::IdentitySpaceExhausted)?,
+                .map_err(|_| BorrowRefusal::IdentitySpaceExhausted)?,
             scope,
-            loan,
+            borrow,
             root,
         })?;
         Ok((
             self.apply(&transition)?,
             MutexUseContractInput {
                 holder,
-                usage: MutexUseBinding(LoanAuthorityBinding {
-                    loan,
+                usage: MutexUseBinding(BorrowAuthorityBinding {
+                    borrow,
                     scope,
                     share: root,
                     support,
@@ -5330,21 +5356,21 @@ impl BorrowLedger {
     pub(crate) fn check_mutex_use_available(
         &self,
         usage: MutexUseBinding,
-        holder: LoanParticipantId,
+        holder: BorrowParticipantId,
         resources: &ResourceContext,
-    ) -> Result<(), LoanRefusal> {
+    ) -> Result<(), BorrowRefusal> {
         let fact = self.mutex_use_resource(usage, holder)?;
         let scope = self
             .storage
             .data
             .scopes
             .get(&usage.0.scope)
-            .ok_or(LoanRefusal::MissingScope)?;
+            .ok_or(BorrowRefusal::MissingScope)?;
         if !scope.holds.is_empty() {
-            return Err(LoanRefusal::ActiveDependency);
+            return Err(BorrowRefusal::ActiveDependency);
         }
         if resources.unique_owned_occurrence_for_fact(&fact).is_none() {
-            return Err(LoanRefusal::MissingBacking);
+            return Err(BorrowRefusal::MissingBacking);
         }
         Ok(())
     }
@@ -5352,9 +5378,9 @@ impl BorrowLedger {
     pub(crate) fn check_assumed_mutex_use_return(
         &self,
         usage: MutexUseBinding,
-        holder: LoanParticipantId,
+        holder: BorrowParticipantId,
         resources: &ResourceContext,
-    ) -> Result<(), LoanRefusal> {
+    ) -> Result<(), BorrowRefusal> {
         self.check_mutex_use_input_return(
             &MutexUseContractInput { usage, holder },
             holder,
@@ -5367,37 +5393,37 @@ impl BorrowLedger {
     pub(crate) fn check_mutex_use_input_return(
         &self,
         input: &MutexUseContractInput,
-        holder: LoanParticipantId,
+        holder: BorrowParticipantId,
         resources: &ResourceContext,
-    ) -> Result<(), LoanRefusal> {
+    ) -> Result<(), BorrowRefusal> {
         if input.holder != holder {
-            return Err(LoanRefusal::WrongHolder);
+            return Err(BorrowRefusal::WrongHolder);
         }
         let fact = self.mutex_use_resource(input.usage, holder)?;
         let record = self
             .storage
             .data
-            .loans
-            .get(&input.usage.0.loan)
-            .ok_or(LoanRefusal::MissingLoan)?;
+            .borrows
+            .get(&input.usage.0.borrow)
+            .ok_or(BorrowRefusal::MissingBorrow)?;
         let scope = self
             .storage
             .data
             .scopes
             .get(&record.scope)
-            .ok_or(LoanRefusal::MissingScope)?;
-        if record.origin != LoanOrigin::BorrowedContractInput
+            .ok_or(BorrowRefusal::MissingScope)?;
+        if record.origin != BorrowOrigin::BorrowedContractInput
             || record.assumed_mutex.is_none()
-            || record.mutex_root != Some(input.usage.0.loan)
+            || record.mutex_root != Some(input.usage.0.borrow)
             || scope.root != input.usage.0.share
         {
-            return Err(LoanRefusal::MissingLoanBinding);
+            return Err(BorrowRefusal::MissingBorrowBinding);
         }
         if !scope.dependencies.is_empty() || !scope.holds.is_empty() {
-            return Err(LoanRefusal::ActiveDependency);
+            return Err(BorrowRefusal::ActiveDependency);
         }
         if resources.unique_owned_occurrence_for_fact(&fact).is_none() {
-            return Err(LoanRefusal::MissingBacking);
+            return Err(BorrowRefusal::MissingBacking);
         }
         Ok(())
     }
@@ -5406,47 +5432,47 @@ impl BorrowLedger {
     pub(crate) fn reborrow_mutex_use(
         &self,
         parent: MutexUseBinding,
-        lender: LoanParticipantId,
-        borrower: LoanParticipantId,
-    ) -> Result<(Self, MutexUseLoan), LoanRefusal> {
-        let (ledger, loan, _) =
+        lender: BorrowParticipantId,
+        borrower: BorrowParticipantId,
+    ) -> Result<(Self, MutexUseBorrow), BorrowRefusal> {
+        let (ledger, borrow, _) =
             self.reborrow_mutex_use_with_transition(parent, lender, borrower)?;
-        Ok((ledger, loan))
+        Ok((ledger, borrow))
     }
 
     pub(crate) fn reborrow_mutex_use_with_transition(
         &self,
         parent: MutexUseBinding,
-        lender: LoanParticipantId,
-        borrower: LoanParticipantId,
-    ) -> Result<(Self, MutexUseLoan, CheckedLoanTransition), LoanRefusal> {
-        let scope = LoanScopeId {
+        lender: BorrowParticipantId,
+        borrower: BorrowParticipantId,
+    ) -> Result<(Self, MutexUseBorrow, CheckedBorrowTransition), BorrowRefusal> {
+        let scope = BorrowScopeId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_scope,
         };
-        let loan = LoanId {
+        let borrow = BorrowId {
             arena: self.storage.data.arena,
-            ordinal: self.storage.data.next_loan,
+            ordinal: self.storage.data.next_borrow,
         };
-        let root = LoanShareId {
+        let root = BorrowShareId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_share,
         };
-        let transition = self.issue(LoanTransitionEvidence::Reborrow {
+        let transition = self.issue(BorrowTransitionEvidence::Reborrow {
             parent: ReborrowBinding::MutexUse(parent),
             lender,
             borrower,
             scope,
-            loan,
+            borrow,
             root,
         })?;
         Ok((
             self.apply(&transition)?,
-            MutexUseLoan {
+            MutexUseBorrow {
                 scope,
-                loan,
-                usage: MutexUseBinding(LoanAuthorityBinding {
-                    loan,
+                borrow,
+                usage: MutexUseBinding(BorrowAuthorityBinding {
+                    borrow,
                     scope,
                     share: root,
                     support: parent.0.support,
@@ -5461,23 +5487,23 @@ impl BorrowLedger {
     #[cfg(test)]
     pub(crate) fn end_mutex_reborrow(
         &self,
-        opening: &MutexUseLoan,
-        holder: LoanParticipantId,
-    ) -> Result<Self, LoanRefusal> {
+        opening: &MutexUseBorrow,
+        holder: BorrowParticipantId,
+    ) -> Result<Self, BorrowRefusal> {
         self.mutex_use_identity_description(opening.usage, holder)?;
         let authority = opening.usage.0;
         let record = self
             .storage
             .data
-            .loans
-            .get(&authority.loan)
-            .ok_or(LoanRefusal::MissingLoan)?;
+            .borrows
+            .get(&authority.borrow)
+            .ok_or(BorrowRefusal::MissingBorrow)?;
         if opening.scope != authority.scope
-            || opening.loan != authority.loan
-            || record.origin != LoanOrigin::Reborrowed
+            || opening.borrow != authority.borrow
+            || record.origin != BorrowOrigin::Reborrowed
             || record.escrow.is_some()
         {
-            return Err(LoanRefusal::MissingLoanBinding);
+            return Err(BorrowRefusal::MissingBorrowBinding);
         }
         self.apply(&self.end(opening.scope, holder)?)
     }
@@ -5485,22 +5511,22 @@ impl BorrowLedger {
     #[cfg(test)]
     pub(crate) fn recover_mutex_use(
         &self,
-        opening: &MutexUseLoan,
-        holder: LoanParticipantId,
-    ) -> Result<(Self, ResourceFact), LoanRefusal> {
+        opening: &MutexUseBorrow,
+        holder: BorrowParticipantId,
+    ) -> Result<(Self, ResourceFact), BorrowRefusal> {
         let authority = opening.usage.0;
         let record = self.validate_authority_binding(authority, holder)?;
         if opening.scope != authority.scope
-            || opening.loan != authority.loan
-            || record.mutex_root != Some(opening.loan)
+            || opening.borrow != authority.borrow
+            || record.mutex_root != Some(opening.borrow)
             || !record.escrow.as_ref().is_some_and(is_mutex_lifetime_owner)
             || !record.permitted.is_empty()
             || !record.memory_backing.is_empty()
         {
-            return Err(LoanRefusal::MissingLoanBinding);
+            return Err(BorrowRefusal::MissingBorrowBinding);
         }
         let closed = self.apply(&self.end(opening.scope, holder)?)?;
-        let (recovery, owner, _) = closed.recover(opening.loan, holder)?;
+        let (recovery, owner, _) = closed.recover(opening.borrow, holder)?;
         Ok((closed.apply(&recovery)?, owner))
     }
 
@@ -5509,8 +5535,8 @@ impl BorrowLedger {
         &self,
         usage: MutexUseBinding,
         owner: &ResourceFact,
-        holder: LoanParticipantId,
-    ) -> Result<(Self, LoanHoldId), LoanRefusal> {
+        holder: BorrowParticipantId,
+    ) -> Result<(Self, BorrowHoldId), BorrowRefusal> {
         let (held, hold, _) = self.hold_mutex_use_with_transition(usage, owner, holder)?;
         Ok((held, hold))
     }
@@ -5519,10 +5545,10 @@ impl BorrowLedger {
         &self,
         usage: MutexUseBinding,
         owner: &ResourceFact,
-        holder: LoanParticipantId,
-    ) -> Result<(Self, LoanHoldId, CheckedLoanTransition), LoanRefusal> {
+        holder: BorrowParticipantId,
+    ) -> Result<(Self, BorrowHoldId, CheckedBorrowTransition), BorrowRefusal> {
         if self.mutex_use_identity_description(usage, holder)? != owner {
-            return Err(LoanRefusal::MissingLoanBinding);
+            return Err(BorrowRefusal::MissingBorrowBinding);
         }
         self.hold_authority_with_transition(usage.0, holder)
     }
@@ -5534,28 +5560,28 @@ impl BorrowLedger {
     /// supported anchor, so an equal-looking fact cannot reuse this root.
     pub(crate) fn borrowed_contract_input(
         &self,
-        holder: LoanParticipantId,
+        holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
         viewed: ResourceFact,
         backing: Option<BorrowedContractInputBacking>,
-    ) -> Result<LoanOpening, LoanRefusal> {
+    ) -> Result<BorrowOpening, BorrowRefusal> {
         self.open_borrowed_root(holder, support, viewed, backing, None)
     }
 
     fn open_borrowed_root(
         &self,
-        holder: LoanParticipantId,
+        holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
         viewed: ResourceFact,
         backing: Option<BorrowedContractInputBacking>,
-        local: Option<(LoanParticipantId, LocalViewBacking)>,
-    ) -> Result<LoanOpening, LoanRefusal> {
+        local: Option<(BorrowParticipantId, LocalViewBacking)>,
+    ) -> Result<BorrowOpening, BorrowRefusal> {
         self.require_participant(holder)?;
         if support == ResourceOccurrenceId::default() {
-            return Err(LoanRefusal::MissingBacking);
+            return Err(BorrowRefusal::MissingBacking);
         }
         if !viewed.is_view() {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         let backing = match (viewed.resource(), backing) {
             (Resource::Memory(_) | Resource::Token { .. }, None) => Vec::new(),
@@ -5564,36 +5590,36 @@ impl BorrowLedger {
             {
                 backing.pieces
             }
-            _ => return Err(LoanRefusal::UnsupportedResource),
+            _ => return Err(BorrowRefusal::UnsupportedResource),
         };
-        let scope = LoanScopeId {
+        let scope = BorrowScopeId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_scope,
         };
-        let loan = LoanId {
+        let borrow = BorrowId {
             arena: self.storage.data.arena,
-            ordinal: self.storage.data.next_loan,
+            ordinal: self.storage.data.next_borrow,
         };
-        let root = LoanShareId {
+        let root = BorrowShareId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_share,
         };
-        let evidence = LoanTransitionEvidence::BorrowedRoot {
+        let evidence = BorrowTransitionEvidence::BorrowedRoot {
             local,
             holder,
             support,
             viewed: viewed.clone(),
             backing,
             scope,
-            loan,
+            borrow,
             root,
         };
-        Ok(LoanOpening {
+        Ok(BorrowOpening {
             scope,
-            loan,
+            borrow,
             root_share: root,
             description: StableViewDescription {
-                loan,
+                borrow,
                 support,
                 viewed,
             },
@@ -5608,44 +5634,44 @@ impl BorrowLedger {
     /// from opaque token escrow and refuses hidden writable memory.
     pub(crate) fn lend_composite(
         &self,
-        lender: LoanParticipantId,
-        borrower: LoanParticipantId,
+        lender: BorrowParticipantId,
+        borrower: BorrowParticipantId,
         support: ResourceOccurrenceId,
         escrow: ResourceFact,
-        backing: CompositeLoanBacking,
-    ) -> Result<LoanOpening, LoanRefusal> {
+        backing: CompositeBorrowBacking,
+    ) -> Result<BorrowOpening, BorrowRefusal> {
         self.require_participant(lender)?;
         self.require_participant(borrower)?;
         if support == ResourceOccurrenceId::default() {
-            return Err(LoanRefusal::MissingBacking);
+            return Err(BorrowRefusal::MissingBacking);
         }
         if !matches!(escrow.resource(), Resource::Composite { .. })
             || !escrow.is_own()
             || backing.support != support
             || backing.head != escrow
         {
-            return Err(LoanRefusal::UnsupportedResource);
+            return Err(BorrowRefusal::UnsupportedResource);
         }
         if backing
             .pieces
             .iter()
             .any(|fact| matches!(fact.resource(), Resource::Instance(_)))
         {
-            return Err(LoanRefusal::UnsupportedResource);
+            return Err(BorrowRefusal::UnsupportedResource);
         }
-        let scope = LoanScopeId {
+        let scope = BorrowScopeId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_scope,
         };
-        let loan = LoanId {
+        let borrow = BorrowId {
             arena: self.storage.data.arena,
-            ordinal: self.storage.data.next_loan,
+            ordinal: self.storage.data.next_borrow,
         };
-        let root = LoanShareId {
+        let root = BorrowShareId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_share,
         };
-        let evidence = LoanTransitionEvidence::LendComposite {
+        let evidence = BorrowTransitionEvidence::LendComposite {
             lender,
             borrower,
             support,
@@ -5654,15 +5680,15 @@ impl BorrowLedger {
             backing: backing.pieces,
             adapted: backing.adapted,
             scope,
-            loan,
+            borrow,
             root,
         };
-        Ok(LoanOpening {
+        Ok(BorrowOpening {
             scope,
-            loan,
+            borrow,
             root_share: root,
             description: StableViewDescription {
-                loan,
+                borrow,
                 support,
                 viewed: ResourceFact::View(escrow.resource().clone()),
             },
@@ -5694,29 +5720,29 @@ impl BorrowLedger {
     /// the same checked rewrites re-derives the same projections.
     pub(crate) fn project(
         &self,
-        holder: LoanParticipantId,
-        loan: LoanId,
+        holder: BorrowParticipantId,
+        borrow: BorrowId,
         parent: &ResourceFact,
         evidence: &CompositeProjectionEvidence,
         child: ResourceFact,
-    ) -> Result<Self, LoanRefusal> {
-        self.require_arena(loan.arena)?;
+    ) -> Result<Self, BorrowRefusal> {
+        self.require_arena(borrow.arena)?;
         self.require_participant(holder)?;
         let record = self
             .storage
             .data
-            .loans
-            .get(&loan)
+            .borrows
+            .get(&borrow)
             .cloned()
-            .ok_or(LoanRefusal::MissingLoan)?;
+            .ok_or(BorrowRefusal::MissingBorrow)?;
         let scope = self
             .storage
             .data
             .scopes
             .get(&record.scope)
-            .ok_or(LoanRefusal::MissingScope)?;
+            .ok_or(BorrowRefusal::MissingScope)?;
         if !scope.active || record.recovered {
-            return Err(LoanRefusal::ScopeEnded);
+            return Err(BorrowRefusal::ScopeEnded);
         }
         // Binding identity is checked without importing ambient equality facts.
         let assumptions = &PureFactContext::default();
@@ -5728,16 +5754,16 @@ impl BorrowLedger {
                     .satisfies_fact(parent, assumptions)
             })
         {
-            return Err(LoanRefusal::MissingLoanBinding);
+            return Err(BorrowRefusal::MissingBorrowBinding);
         }
         if evidence.head != *parent {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         if !child.is_view() || matches!(child.resource(), Resource::Instance(_)) {
-            return Err(LoanRefusal::UnsupportedResource);
+            return Err(BorrowRefusal::UnsupportedResource);
         }
         if !evidence.contains_child(&child) {
-            return Err(LoanRefusal::MissingBacking);
+            return Err(BorrowRefusal::MissingBacking);
         }
         if record.permitted.contains(&child) {
             return Ok(self.clone());
@@ -5745,15 +5771,15 @@ impl BorrowLedger {
         let mut permitted = record.permitted;
         permitted.push(child);
         let mut data = self.storage.data.clone();
-        data.loans = data.loans.with_inserted(
-            loan,
-            LoanRecord {
+        data.borrows = data.borrows.with_inserted(
+            borrow,
+            BorrowRecord {
                 permitted,
                 ..record
             },
         );
         Ok(Self {
-            storage: Arc::new(LoanLedgerStorage {
+            storage: Arc::new(BorrowLedgerStorage {
                 state: self.storage.state,
                 data,
             }),
@@ -5764,20 +5790,20 @@ impl BorrowLedger {
     /// borrow-bound head. The evidence owns the child list this rule can add.
     pub(in crate::kernel) fn project_observed_body(
         &self,
-        holder: LoanParticipantId,
-        binding: &LoanViewBinding,
+        holder: BorrowParticipantId,
+        binding: &BorrowBinding,
         evidence: CompositeProjectionEvidence,
-    ) -> Result<Self, LoanRefusal> {
+    ) -> Result<Self, BorrowRefusal> {
         if evidence.head != binding.viewed {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         self.validate_view_binding(binding.clone(), holder)?;
         let record = self
             .storage
             .data
-            .loans
-            .get(&binding.loan)
-            .ok_or(LoanRefusal::MissingLoan)?;
+            .borrows
+            .get(&binding.borrow)
+            .ok_or(BorrowRefusal::MissingBorrow)?;
         let mut permitted = record.permitted.clone();
         for child in evidence.children {
             if !permitted.contains(&child) {
@@ -5785,15 +5811,15 @@ impl BorrowLedger {
             }
         }
         let mut data = self.storage.data.clone();
-        data.loans = data.loans.with_inserted(
-            binding.loan,
-            LoanRecord {
+        data.borrows = data.borrows.with_inserted(
+            binding.borrow,
+            BorrowRecord {
                 permitted,
                 ..record.clone()
             },
         );
         Ok(Self {
-            storage: Arc::new(LoanLedgerStorage {
+            storage: Arc::new(BorrowLedgerStorage {
                 state: self.storage.state,
                 data,
             }),
@@ -5813,18 +5839,18 @@ impl BorrowLedger {
     #[cfg(test)]
     pub(crate) fn hold(
         &self,
-        binding: &LoanViewBinding,
-        holder: LoanParticipantId,
-    ) -> Result<(Self, LoanHoldId), LoanRefusal> {
+        binding: &BorrowBinding,
+        holder: BorrowParticipantId,
+    ) -> Result<(Self, BorrowHoldId), BorrowRefusal> {
         let (ledger, hold, _) = self.hold_with_transition(binding, holder)?;
         Ok((ledger, hold))
     }
 
     pub(crate) fn hold_with_transition(
         &self,
-        binding: &LoanViewBinding,
-        holder: LoanParticipantId,
-    ) -> Result<(Self, LoanHoldId, CheckedLoanTransition), LoanRefusal> {
+        binding: &BorrowBinding,
+        holder: BorrowParticipantId,
+    ) -> Result<(Self, BorrowHoldId, CheckedBorrowTransition), BorrowRefusal> {
         self.validate_view_binding(binding.clone(), holder)?;
         self.hold_authority_with_transition(binding.authority(), holder)
     }
@@ -5838,12 +5864,12 @@ impl BorrowLedger {
     /// different transition or a hold the head does not carry, is refused.
     pub(crate) fn apply_borrowing_fold_hold(
         &self,
-        transition: &CheckedLoanTransition,
-        binding: &LoanViewBinding,
-        holder: LoanParticipantId,
-    ) -> Result<Self, LoanRefusal> {
+        transition: &CheckedBorrowTransition,
+        binding: &BorrowBinding,
+        holder: BorrowParticipantId,
+    ) -> Result<Self, BorrowRefusal> {
         match &transition.evidence {
-            LoanTransitionEvidence::Hold {
+            BorrowTransitionEvidence::Hold {
                 binding: held,
                 holder: placed_by,
                 hold,
@@ -5853,7 +5879,7 @@ impl BorrowLedger {
             {
                 self.apply(transition)
             }
-            _ => Err(LoanRefusal::InvalidEvidence),
+            _ => Err(BorrowRefusal::InvalidEvidence),
         }
     }
 
@@ -5861,11 +5887,11 @@ impl BorrowLedger {
     /// view adapter above must still check its description before delegating.
     fn hold_authority_with_transition(
         &self,
-        binding: LoanAuthorityBinding,
-        holder: LoanParticipantId,
-    ) -> Result<(Self, LoanHoldId, CheckedLoanTransition), LoanRefusal> {
+        binding: BorrowAuthorityBinding,
+        holder: BorrowParticipantId,
+    ) -> Result<(Self, BorrowHoldId, CheckedBorrowTransition), BorrowRefusal> {
         self.validate_authority_binding(binding, holder)?;
-        let hold = LoanHoldId {
+        let hold = BorrowHoldId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_hold,
         };
@@ -5873,8 +5899,8 @@ impl BorrowLedger {
             .data
             .next_hold
             .checked_add(1)
-            .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
-        let transition = self.issue(LoanTransitionEvidence::Hold {
+            .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
+        let transition = self.issue(BorrowTransitionEvidence::Hold {
             binding,
             holder,
             hold,
@@ -5888,9 +5914,9 @@ impl BorrowLedger {
     #[cfg(test)]
     pub(crate) fn release(
         &self,
-        hold: LoanHoldId,
-        holder: LoanParticipantId,
-    ) -> Result<Self, LoanRefusal> {
+        hold: BorrowHoldId,
+        holder: BorrowParticipantId,
+    ) -> Result<Self, BorrowRefusal> {
         let (ledger, _) = self.release_with_transition(hold, holder)?;
         Ok(ledger)
     }
@@ -5899,22 +5925,22 @@ impl BorrowLedger {
         &self,
         usage: MutexUseBinding,
         owner: &ResourceFact,
-        hold: LoanHoldId,
-        holder: LoanParticipantId,
-    ) -> Result<(Self, CheckedLoanTransition), LoanRefusal> {
+        hold: BorrowHoldId,
+        holder: BorrowParticipantId,
+    ) -> Result<(Self, CheckedBorrowTransition), BorrowRefusal> {
         if self.mutex_use_identity_description(usage, holder)? != owner
             || self.storage.data.holds.get(&hold) != Some(&(usage.0.scope, holder))
         {
-            return Err(LoanRefusal::MissingLoanBinding);
+            return Err(BorrowRefusal::MissingBorrowBinding);
         }
         self.release_with_transition(hold, holder)
     }
 
     pub(crate) fn release_with_transition(
         &self,
-        hold: LoanHoldId,
-        holder: LoanParticipantId,
-    ) -> Result<(Self, CheckedLoanTransition), LoanRefusal> {
+        hold: BorrowHoldId,
+        holder: BorrowParticipantId,
+    ) -> Result<(Self, CheckedBorrowTransition), BorrowRefusal> {
         self.require_arena(hold.arena)?;
         self.require_participant(holder)?;
         let (scope, placed_by) = self
@@ -5923,11 +5949,11 @@ impl BorrowLedger {
             .holds
             .get(&hold)
             .copied()
-            .ok_or(LoanRefusal::MissingScope)?;
+            .ok_or(BorrowRefusal::MissingScope)?;
         if placed_by != holder {
-            return Err(LoanRefusal::WrongHolder);
+            return Err(BorrowRefusal::WrongHolder);
         }
-        let transition = self.issue(LoanTransitionEvidence::Release {
+        let transition = self.issue(BorrowTransitionEvidence::Release {
             hold,
             scope,
             holder,
@@ -5939,10 +5965,10 @@ impl BorrowLedger {
     /// The descriptions a live borrow authorizes, or none for an ended or
     /// unknown borrow.
     #[cfg(test)]
-    pub(crate) fn permitted_descriptions(&self, loan: LoanId) -> Vec<ResourceFact> {
+    pub(crate) fn permitted_descriptions(&self, borrow: BorrowId) -> Vec<ResourceFact> {
         let data = &self.storage.data;
-        data.loans
-            .get(&loan)
+        data.borrows
+            .get(&borrow)
             .filter(|record| {
                 !record.recovered
                     && data
@@ -5958,13 +5984,13 @@ impl BorrowLedger {
     /// nominee is final; neither permission buckets nor pointer aliases are searched.
     pub(crate) fn selected_return_permission(
         &self,
-        loan: LoanId,
+        borrow: BorrowId,
         required: &ResourceFact,
         preferred: &ResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<ResourceFact> {
         let data = &self.storage.data;
-        let record = data.loans.get(&loan)?;
+        let record = data.borrows.get(&borrow)?;
         if record.recovered || !data.scopes.get(&record.scope)?.active {
             return None;
         }
@@ -5989,13 +6015,13 @@ impl BorrowLedger {
 
     /// The scope a live hold restricts, if the hold exists.
     #[cfg(test)]
-    pub(crate) fn held_scope(&self, hold: LoanHoldId) -> Option<LoanScopeId> {
+    pub(crate) fn held_scope(&self, hold: BorrowHoldId) -> Option<BorrowScopeId> {
         self.storage.data.holds.get(&hold).map(|(scope, _)| *scope)
     }
 
     /// Whether `holder` could end `scope` now: it holds the close right and
     /// the whole root share, and nothing depends on or holds the scope.
-    pub(crate) fn scope_can_end(&self, scope: LoanScopeId, holder: LoanParticipantId) -> bool {
+    pub(crate) fn scope_can_end(&self, scope: BorrowScopeId, holder: BorrowParticipantId) -> bool {
         let data = &self.storage.data;
         data.scopes.get(&scope).is_some_and(|record| {
             record.active
@@ -6011,114 +6037,122 @@ impl BorrowLedger {
 
     /// Whether `holder` is the recovery right of an escrowed, unrecovered
     /// borrow.
-    pub(crate) fn loan_is_recoverable_by(&self, loan: LoanId, holder: LoanParticipantId) -> bool {
-        self.storage.data.loans.get(&loan).is_some_and(|record| {
-            !record.recovered && record.origin == LoanOrigin::Escrowed(holder)
-        })
+    pub(crate) fn borrow_is_recoverable_by(
+        &self,
+        borrow: BorrowId,
+        holder: BorrowParticipantId,
+    ) -> bool {
+        self.storage
+            .data
+            .borrows
+            .get(&borrow)
+            .is_some_and(|record| {
+                !record.recovered && record.origin == BorrowOrigin::Escrowed(holder)
+            })
     }
 
     fn validate_authority_binding(
         &self,
-        binding: LoanAuthorityBinding,
-        holder: LoanParticipantId,
-    ) -> Result<&LoanRecord, LoanRefusal> {
+        binding: BorrowAuthorityBinding,
+        holder: BorrowParticipantId,
+    ) -> Result<&BorrowRecord, BorrowRefusal> {
         self.require_participant(holder)?;
-        let loan = self
+        let borrow = self
             .storage
             .data
-            .loans
-            .get(&binding.loan)
-            .ok_or(LoanRefusal::MissingLoan)?;
+            .borrows
+            .get(&binding.borrow)
+            .ok_or(BorrowRefusal::MissingBorrow)?;
         let scope = self
             .storage
             .data
             .scopes
             .get(&binding.scope)
-            .ok_or(LoanRefusal::MissingScope)?;
+            .ok_or(BorrowRefusal::MissingScope)?;
         let share = self
             .storage
             .data
             .shares
             .get(&binding.share)
-            .ok_or(LoanRefusal::MissingShare)?;
-        if loan.scope != binding.scope
-            || scope.loan != binding.loan
-            || loan.support != binding.support
+            .ok_or(BorrowRefusal::MissingShare)?;
+        if borrow.scope != binding.scope
+            || scope.borrow != binding.borrow
+            || borrow.support != binding.support
             || !scope.active
-            || loan.recovered
+            || borrow.recovered
             || share.scope != binding.scope
             || share.holder != Some(holder)
             || share.pinned_by.is_some()
         {
-            return Err(LoanRefusal::MissingLoanBinding);
+            return Err(BorrowRefusal::MissingBorrowBinding);
         }
-        Ok(loan)
+        Ok(borrow)
     }
 
     pub(crate) fn validate_returned_view_authority(
         &self,
         authority: ReturnedViewAuthority,
-        holder: LoanParticipantId,
-    ) -> Result<(), LoanRefusal> {
+        holder: BorrowParticipantId,
+    ) -> Result<(), BorrowRefusal> {
         self.validate_authority_binding(authority.0.authority(), holder)
             .map(|_| ())
     }
 
     pub(crate) fn validate_view_binding(
         &self,
-        binding: LoanViewBinding,
-        holder: LoanParticipantId,
-    ) -> Result<(), LoanRefusal> {
-        let loan = self.validate_authority_binding(binding.authority(), holder)?;
+        binding: BorrowBinding,
+        holder: BorrowParticipantId,
+    ) -> Result<(), BorrowRefusal> {
+        let borrow = self.validate_authority_binding(binding.authority(), holder)?;
         // Binding identity is checked without importing ambient equality facts.
         let assumptions = &PureFactContext::default();
         if !binding.viewed.is_view()
-            || (!loan.permitted.contains(&binding.viewed)
-                && !loan.permitted.iter().any(|permitted| {
+            || (!borrow.permitted.contains(&binding.viewed)
+                && !borrow.permitted.iter().any(|permitted| {
                     ResourceContext::new_with_equalities(assumptions)
                         .unchecked_with_fact(permitted.clone())
                         .satisfies_fact(&binding.viewed, assumptions)
                 }))
         {
-            return Err(LoanRefusal::MissingLoanBinding);
+            return Err(BorrowRefusal::MissingBorrowBinding);
         }
         Ok(())
     }
 
     pub(crate) fn reborrow(
         &self,
-        parent: LoanViewBinding,
-        lender: LoanParticipantId,
-        borrower: LoanParticipantId,
-    ) -> Result<LoanOpening, LoanRefusal> {
+        parent: BorrowBinding,
+        lender: BorrowParticipantId,
+        borrower: BorrowParticipantId,
+    ) -> Result<BorrowOpening, BorrowRefusal> {
         self.validate_view_binding(parent.clone(), lender)?;
         self.require_participant(borrower)?;
-        let scope = LoanScopeId {
+        let scope = BorrowScopeId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_scope,
         };
-        let loan = LoanId {
+        let borrow = BorrowId {
             arena: self.storage.data.arena,
-            ordinal: self.storage.data.next_loan,
+            ordinal: self.storage.data.next_borrow,
         };
-        let root = LoanShareId {
+        let root = BorrowShareId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_share,
         };
-        let evidence = LoanTransitionEvidence::Reborrow {
+        let evidence = BorrowTransitionEvidence::Reborrow {
             parent: ReborrowBinding::View(parent.clone()),
             lender,
             borrower,
             scope,
-            loan,
+            borrow,
             root,
         };
-        Ok(LoanOpening {
+        Ok(BorrowOpening {
             scope,
-            loan,
+            borrow,
             root_share: root,
             description: StableViewDescription {
-                loan,
+                borrow,
                 support: parent.support,
                 viewed: parent.viewed,
             },
@@ -6128,29 +6162,29 @@ impl BorrowLedger {
 
     pub(crate) fn split(
         &self,
-        share: LoanShareId,
-        holder: LoanParticipantId,
-        left_holder: LoanParticipantId,
-        right_holder: LoanParticipantId,
-    ) -> Result<(CheckedLoanTransition, LoanShareId, LoanShareId), LoanRefusal> {
+        share: BorrowShareId,
+        holder: BorrowParticipantId,
+        left_holder: BorrowParticipantId,
+        right_holder: BorrowParticipantId,
+    ) -> Result<(CheckedBorrowTransition, BorrowShareId, BorrowShareId), BorrowRefusal> {
         self.require_arena(share.arena)?;
         self.require_participant(holder)?;
         self.require_participant(left_holder)?;
         self.require_participant(right_holder)?;
-        let left = LoanShareId {
+        let left = BorrowShareId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_share,
         };
-        let right = LoanShareId {
+        let right = BorrowShareId {
             arena: self.storage.data.arena,
             ordinal: self
                 .storage
                 .data
                 .next_share
                 .checked_add(1)
-                .ok_or(LoanRefusal::IdentitySpaceExhausted)?,
+                .ok_or(BorrowRefusal::IdentitySpaceExhausted)?,
         };
-        let transition = self.issue(LoanTransitionEvidence::Split {
+        let transition = self.issue(BorrowTransitionEvidence::Split {
             share,
             holder,
             left_holder,
@@ -6163,26 +6197,26 @@ impl BorrowLedger {
 
     pub(crate) fn transfer(
         &self,
-        share: LoanShareId,
-        from: LoanParticipantId,
-        to: LoanParticipantId,
-    ) -> Result<CheckedLoanTransition, LoanRefusal> {
+        share: BorrowShareId,
+        from: BorrowParticipantId,
+        to: BorrowParticipantId,
+    ) -> Result<CheckedBorrowTransition, BorrowRefusal> {
         self.require_arena(share.arena)?;
         self.require_participant(from)?;
         self.require_participant(to)?;
-        self.issue(LoanTransitionEvidence::Transfer { share, from, to })
+        self.issue(BorrowTransitionEvidence::Transfer { share, from, to })
     }
 
     pub(crate) fn join(
         &self,
-        left: LoanShareId,
-        right: LoanShareId,
-        holder: LoanParticipantId,
-    ) -> Result<CheckedLoanTransition, LoanRefusal> {
+        left: BorrowShareId,
+        right: BorrowShareId,
+        holder: BorrowParticipantId,
+    ) -> Result<CheckedBorrowTransition, BorrowRefusal> {
         self.require_arena(left.arena)?;
         self.require_arena(right.arena)?;
         self.require_participant(holder)?;
-        self.issue(LoanTransitionEvidence::Join {
+        self.issue(BorrowTransitionEvidence::Join {
             left,
             right,
             holder,
@@ -6195,9 +6229,9 @@ impl BorrowLedger {
     /// affected branch of the explicit share tree.
     pub(crate) fn join_available_share_ancestors(
         &self,
-        share: LoanShareId,
-        holder: LoanParticipantId,
-    ) -> Result<(Self, LoanShareId, Vec<CheckedLoanTransition>), LoanRefusal> {
+        share: BorrowShareId,
+        holder: BorrowParticipantId,
+    ) -> Result<(Self, BorrowShareId, Vec<CheckedBorrowTransition>), BorrowRefusal> {
         let mut ledger = self.clone();
         let mut current = share;
         let mut transitions = Vec::new();
@@ -6207,9 +6241,9 @@ impl BorrowLedger {
                 .data
                 .shares
                 .get(&current)
-                .ok_or(LoanRefusal::MissingShare)?;
+                .ok_or(BorrowRefusal::MissingShare)?;
             if record.holder != Some(holder) || record.pinned_by.is_some() {
-                return Err(LoanRefusal::WrongHolder);
+                return Err(BorrowRefusal::WrongHolder);
             }
             let Some(parent) = record.parent else {
                 break;
@@ -6221,12 +6255,12 @@ impl BorrowLedger {
                 .get(&parent)
                 .and_then(|record| record.children)
             else {
-                return Err(LoanRefusal::NotSiblings);
+                return Err(BorrowRefusal::NotSiblings);
             };
             let sibling = match current {
                 current if current == left => right,
                 current if current == right => left,
-                _ => return Err(LoanRefusal::NotSiblings),
+                _ => return Err(BorrowRefusal::NotSiblings),
             };
             if !ledger
                 .storage
@@ -6247,34 +6281,34 @@ impl BorrowLedger {
 
     pub(crate) fn end(
         &self,
-        scope: LoanScopeId,
-        holder: LoanParticipantId,
-    ) -> Result<CheckedLoanTransition, LoanRefusal> {
+        scope: BorrowScopeId,
+        holder: BorrowParticipantId,
+    ) -> Result<CheckedBorrowTransition, BorrowRefusal> {
         self.require_arena(scope.arena)?;
         self.require_participant(holder)?;
-        self.issue(LoanTransitionEvidence::End { scope, holder })
+        self.issue(BorrowTransitionEvidence::End { scope, holder })
     }
 
     pub(crate) fn recover(
         &self,
-        loan: LoanId,
-        holder: LoanParticipantId,
-    ) -> Result<(CheckedLoanTransition, ResourceFact, ResourceOccurrenceId), LoanRefusal> {
-        self.require_arena(loan.arena)?;
+        borrow: BorrowId,
+        holder: BorrowParticipantId,
+    ) -> Result<(CheckedBorrowTransition, ResourceFact, ResourceOccurrenceId), BorrowRefusal> {
+        self.require_arena(borrow.arena)?;
         self.require_participant(holder)?;
         let record = self
             .storage
             .data
-            .loans
-            .get(&loan)
-            .ok_or(LoanRefusal::MissingLoan)?;
-        if !matches!(record.origin, LoanOrigin::Escrowed(right) if right == holder) {
-            return Err(LoanRefusal::InvalidEvidence);
+            .borrows
+            .get(&borrow)
+            .ok_or(BorrowRefusal::MissingBorrow)?;
+        if !matches!(record.origin, BorrowOrigin::Escrowed(right) if right == holder) {
+            return Err(BorrowRefusal::InvalidEvidence);
         }
-        let escrow = record.escrow.clone().ok_or(LoanRefusal::MissingBacking)?;
+        let escrow = record.escrow.clone().ok_or(BorrowRefusal::MissingBacking)?;
         let support = record.support;
         Ok((
-            self.issue(LoanTransitionEvidence::Recover { loan, holder })?,
+            self.issue(BorrowTransitionEvidence::Recover { borrow, holder })?,
             escrow,
             support,
         ))
@@ -6283,18 +6317,18 @@ impl BorrowLedger {
     #[cfg(test)]
     pub(crate) fn permits_view(
         &self,
-        holder: LoanParticipantId,
+        holder: BorrowParticipantId,
         description: &StableViewDescription,
-        share: LoanShareId,
+        share: BorrowShareId,
         assumptions: &PureFactContext,
     ) -> bool {
-        let Some(loan) = self.storage.data.loans.get(&description.loan) else {
+        let Some(borrow) = self.storage.data.borrows.get(&description.borrow) else {
             return false;
         };
         self.validate_authority_binding(
-            LoanAuthorityBinding {
-                loan: description.loan,
-                scope: loan.scope,
+            BorrowAuthorityBinding {
+                borrow: description.borrow,
+                scope: borrow.scope,
                 share,
                 support: description.support,
             },
@@ -6302,7 +6336,7 @@ impl BorrowLedger {
         )
         .is_ok()
             && description.viewed.is_view()
-            && loan.permitted.iter().any(|permitted| {
+            && borrow.permitted.iter().any(|permitted| {
                 ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(permitted.clone())
                     .satisfies_fact(&description.viewed, assumptions)
@@ -6311,11 +6345,11 @@ impl BorrowLedger {
 
     pub(crate) fn describe_view(
         &self,
-        loan: LoanId,
+        borrow: BorrowId,
         viewed: ResourceFact,
         assumptions: &PureFactContext,
-    ) -> Result<StableViewDescription, LoanRefusal> {
-        self.describe_view_through(loan, viewed, None, assumptions)
+    ) -> Result<StableViewDescription, BorrowRefusal> {
+        self.describe_view_through(borrow, viewed, None, assumptions)
     }
 
     /// [`Self::describe_view`] for a view reached through one the holder
@@ -6326,18 +6360,18 @@ impl BorrowLedger {
     /// is two offsets deep.
     pub(crate) fn describe_view_through(
         &self,
-        loan: LoanId,
+        borrow: BorrowId,
         viewed: ResourceFact,
         held: Option<&ResourceFact>,
         assumptions: &PureFactContext,
-    ) -> Result<StableViewDescription, LoanRefusal> {
-        self.require_arena(loan.arena)?;
+    ) -> Result<StableViewDescription, BorrowRefusal> {
+        self.require_arena(borrow.arena)?;
         let record = self
             .storage
             .data
-            .loans
-            .get(&loan)
-            .ok_or(LoanRefusal::MissingLoan)?;
+            .borrows
+            .get(&borrow)
+            .ok_or(BorrowRefusal::MissingBorrow)?;
         if record.recovered
             || !self
                 .storage
@@ -6346,7 +6380,7 @@ impl BorrowLedger {
                 .get(&record.scope)
                 .is_some_and(|scope| scope.active)
         {
-            return Err(LoanRefusal::ScopeEnded);
+            return Err(BorrowRefusal::ScopeEnded);
         }
         let covers = |available: &ResourceFact, required: &ResourceFact| {
             ResourceContext::new_with_equalities(assumptions)
@@ -6361,28 +6395,31 @@ impl BorrowLedger {
                     })
             })
         {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         Ok(StableViewDescription {
-            loan,
+            borrow,
             support: record.support,
             viewed,
         })
     }
 
-    pub(crate) fn apply(&self, transition: &CheckedLoanTransition) -> Result<Self, LoanRefusal> {
+    pub(crate) fn apply(
+        &self,
+        transition: &CheckedBorrowTransition,
+    ) -> Result<Self, BorrowRefusal> {
         if self.storage.state != transition.before_state {
-            return Err(LoanRefusal::StalePredecessor);
+            return Err(BorrowRefusal::StalePredecessor);
         }
         if transition.evidence != transition.checked_evidence {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         if transition.after_state != transition.checked_after_state {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         let data = self.apply_evidence(&transition.evidence)?;
         Ok(Self {
-            storage: Arc::new(LoanLedgerStorage {
+            storage: Arc::new(BorrowLedgerStorage {
                 state: transition.after_state,
                 data,
             }),
@@ -6400,24 +6437,24 @@ impl BorrowLedger {
     fn first_active_memory_overlap(
         &self,
         range: &MemoryRange,
-    ) -> Result<Option<LoanId>, LoanRefusal> {
+    ) -> Result<Option<BorrowId>, BorrowRefusal> {
         if memory_range_is_empty(range) {
             return Ok(None);
         }
         let Some(nodes) = memory_interval_nodes(range) else {
-            return if self.storage.data.active_memory_loans == 0 {
+            return if self.storage.data.active_memory_borrows == 0 {
                 Ok(None)
             } else {
-                Err(LoanRefusal::UnsupportedPartition)
+                Err(BorrowRefusal::UnsupportedPartition)
             };
         };
-        let mut selected: Option<LoanId> = None;
-        let mut consider = |bucket: Option<&PersistentSet<LoanId>>| {
+        let mut selected: Option<BorrowId> = None;
+        let mut consider = |bucket: Option<&PersistentSet<BorrowId>>| {
             crate::instrumentation::record_deterministic_work(1);
             // PersistentSet's iterator descends to the least key lazily.
             // Taking one member does not enumerate or collect the bucket.
-            if let Some(loan) = bucket.and_then(|bucket| bucket.iter().next()).copied() {
-                selected = Some(selected.map_or(loan, |previous| previous.min(loan)));
+            if let Some(borrow) = bucket.and_then(|bucket| bucket.iter().next()).copied() {
+                selected = Some(selected.map_or(borrow, |previous| previous.min(borrow)));
             }
         };
         for node in nodes {
@@ -6436,37 +6473,37 @@ impl BorrowLedger {
     pub(crate) fn active_memory_overlaps(
         &self,
         range: &MemoryRange,
-    ) -> Result<Vec<LoanId>, LoanRefusal> {
+    ) -> Result<Vec<BorrowId>, BorrowRefusal> {
         if memory_range_is_empty(range) {
             return Ok(Vec::new());
         }
         let Some(query_nodes) = memory_interval_nodes(range) else {
-            return if self.storage.data.active_memory_loans == 0 {
+            return if self.storage.data.active_memory_borrows == 0 {
                 Ok(Vec::new())
             } else {
-                Err(LoanRefusal::UnsupportedPartition)
+                Err(BorrowRefusal::UnsupportedPartition)
             };
         };
-        let mut loans = PersistentSet::default();
+        let mut borrows = PersistentSet::default();
         for query in query_nodes {
             crate::instrumentation::record_deterministic_work(1);
             for ancestor in memory_interval_ancestors(&query) {
                 crate::instrumentation::record_deterministic_work(1);
                 if let Some(bucket) = self.storage.data.active_memory_index.get(&ancestor) {
-                    for loan in bucket.iter() {
+                    for borrow in bucket.iter() {
                         crate::instrumentation::record_deterministic_work(1);
-                        loans = loans.with_value(*loan);
+                        borrows = borrows.with_value(*borrow);
                     }
                 }
             }
             if let Some(bucket) = self.storage.data.active_memory_subtree.get(&query) {
-                for loan in bucket.iter() {
+                for borrow in bucket.iter() {
                     crate::instrumentation::record_deterministic_work(1);
-                    loans = loans.with_value(*loan);
+                    borrows = borrows.with_value(*borrow);
                 }
             }
         }
-        Ok(loans.iter().copied().collect())
+        Ok(borrows.iter().copied().collect())
     }
 
     #[cfg(test)]
@@ -6474,13 +6511,13 @@ impl BorrowLedger {
         &self,
         range: &MemoryRange,
         assumptions: &PureFactContext,
-    ) -> Result<Option<LoanId>, LoanRefusal> {
-        let mut selected: Option<LoanId> = None;
+    ) -> Result<Option<BorrowId>, BorrowRefusal> {
+        let mut selected: Option<BorrowId> = None;
         for alias in memory_range_aliases(range, assumptions) {
             if memory_interval_nodes(&alias).is_some()
-                && let Some(loan) = self.first_active_memory_overlap(&alias)?
+                && let Some(borrow) = self.first_active_memory_overlap(&alias)?
             {
-                selected = Some(selected.map_or(loan, |previous| previous.min(loan)));
+                selected = Some(selected.map_or(borrow, |previous| previous.min(borrow)));
             }
         }
         Ok(selected)
@@ -6500,12 +6537,12 @@ impl BorrowLedger {
         &self,
         range: &MemoryRange,
         assumptions: &PureFactContext,
-    ) -> Result<(), LoanRefusal> {
+    ) -> Result<(), BorrowRefusal> {
         // An empty barrier is a fast decision, not a search invocation.
-        if !self.has_active_memory_loans() || memory_range_is_empty(range) {
+        if !self.has_active_memory_borrows() || memory_range_is_empty(range) {
             return Ok(());
         }
-        crate::kernel::search::ProofSearch::<BorrowLedger>::loan_access(self, range, assumptions)
+        crate::kernel::search::ProofSearch::<BorrowLedger>::borrow_access(self, range, assumptions)
     }
 
     /// The write's complete borrow condition, retained as an ordinary resource
@@ -6515,7 +6552,7 @@ impl BorrowLedger {
         range: &MemoryRange,
     ) -> Option<super::Proposition> {
         #[cfg(test)]
-        let _fast = crate::kernel::search::FastOperationScope::enter("loan access requirement");
+        let _fast = crate::kernel::search::FastOperationScope::enter("borrow access requirement");
         let footprint = self.storage.data.active_footprint.resource();
         if matches!(footprint, Resource::Emp) || memory_range_is_empty(range) {
             return None;
@@ -6546,7 +6583,7 @@ impl BorrowLedger {
 
     /// A proof-only ownership exchange may expose writable authority. Use
     /// the exact separation established before the exchange.
-    pub(crate) fn rewrite_separates_from_loans(
+    pub(crate) fn rewrite_separates_from_borrows(
         &self,
         range: &MemoryRange,
         assumptions: &PureFactContext,
@@ -6567,8 +6604,8 @@ impl BorrowLedger {
             crate::kernel::search::FastOperationScope::enter("automatic storage retirement");
         crate::instrumentation::record_deterministic_work(1);
         let data = &self.storage.data;
-        let (loan, protected) = data.automatic_storage_loans.get(block)?.iter().next()?;
-        let record = data.loans.get(loan).expect("indexed live borrow");
+        let (borrow, protected) = data.automatic_storage_borrows.get(block)?.iter().next()?;
+        let record = data.borrows.get(borrow).expect("indexed live borrow");
         let attempted = MemoryRange::new_with_element_width(
             Address {
                 base: block.clone(),
@@ -6578,12 +6615,12 @@ impl BorrowLedger {
             size.clone(),
             1,
         );
-        Some(LoanRefusal::ActiveDependency.diagnostic_with_subject(
+        Some(BorrowRefusal::ActiveDependency.diagnostic_with_subject(
             LoanRefusalOperation::MemoryAccess,
             LoanRefusalSubject::for_memory_conflict(
                 attempted,
                 ResourceFact::view_memory(protected.clone()),
-                *loan,
+                *borrow,
                 origin_kind(&record.origin),
             ),
         ))
@@ -6605,11 +6642,11 @@ impl BorrowLedger {
         let refusal = self
             .permits_memory_access_with_assumptions(range, assumptions)
             .err()?;
-        let subject = match self.conflicting_memory_loan(range, assumptions) {
-            Some((loan, protected, origin)) => LoanRefusalSubject::for_memory_conflict(
+        let subject = match self.conflicting_memory_borrow(range, assumptions) {
+            Some((borrow, protected, origin)) => LoanRefusalSubject::for_memory_conflict(
                 range.clone(),
                 ResourceFact::view_memory(protected),
-                loan,
+                borrow,
                 origin,
             ),
             None => LoanRefusalSubject::for_range(range.clone()),
@@ -6620,18 +6657,18 @@ impl BorrowLedger {
     /// The first active borrow whose protected footprint explains a refusal of
     /// `range`, with the protected range and the borrow's origin.
     #[cfg(test)]
-    fn conflicting_memory_loan(
+    fn conflicting_memory_borrow(
         &self,
         range: &MemoryRange,
         assumptions: &PureFactContext,
-    ) -> Option<(LoanId, MemoryRange, LoanOriginKind)> {
-        let described = |loan: LoanId, protected: &MemoryRange| {
-            let record = self.storage.data.loans.get(&loan)?;
-            Some((loan, protected.clone(), origin_kind(&record.origin)))
+    ) -> Option<(BorrowId, MemoryRange, LoanOriginKind)> {
+        let described = |borrow: BorrowId, protected: &MemoryRange| {
+            let record = self.storage.data.borrows.get(&borrow)?;
+            Some((borrow, protected.clone(), origin_kind(&record.origin)))
         };
-        if let Ok(Some(loan)) =
+        if let Ok(Some(borrow)) =
             self.first_active_memory_overlap_with_assumptions(range, assumptions)
-            && let Some(record) = self.storage.data.loans.get(&loan)
+            && let Some(record) = self.storage.data.borrows.get(&borrow)
         {
             let protected = record
                 .memory_backing
@@ -6639,7 +6676,7 @@ impl BorrowLedger {
                 .find(|protected| protected_range_proven_overlapping(range, protected, assumptions))
                 .or_else(|| record.memory_backing.first());
             if let Some(protected) = protected {
-                return described(loan, protected);
+                return described(borrow, protected);
             }
         }
         let mut checked_blocks = BTreeSet::new();
@@ -6650,10 +6687,10 @@ impl BorrowLedger {
             let Some(block) = self.storage.data.unindexed_memory.get(&alias.base().base) else {
                 continue;
             };
-            for (loan, protected_ranges) in block.iter() {
+            for (borrow, protected_ranges) in block.iter() {
                 for protected in protected_ranges {
                     if protected_range_proven_overlapping(range, protected, assumptions) {
-                        return described(*loan, protected);
+                        return described(*borrow, protected);
                     }
                 }
             }
@@ -6668,7 +6705,7 @@ impl BorrowLedger {
     /// more permissive form; the ordinary owned-authority check remains the
     /// primary guard on every write.
     #[cfg(test)]
-    pub(crate) fn permits_memory_access(&self, range: &MemoryRange) -> Result<(), LoanRefusal> {
+    pub(crate) fn permits_memory_access(&self, range: &MemoryRange) -> Result<(), BorrowRefusal> {
         self.permits_memory_access_with_assumptions(range, &PureFactContext::default())
     }
 
@@ -6732,19 +6769,19 @@ impl BorrowLedger {
     /// A zero count skips write-barrier alias discovery. Loop and branch havoc
     /// also need this fail-closed answer when no checked write set is available.
     /// Read the maintained count; do not rediscover it from borrows or scopes.
-    pub(crate) fn has_active_memory_loans(&self) -> bool {
-        self.storage.data.active_memory_loans != 0
+    pub(crate) fn has_active_memory_borrows(&self) -> bool {
+        self.storage.data.active_memory_borrows != 0
     }
 
     fn issue(
         &self,
-        evidence: LoanTransitionEvidence,
-    ) -> Result<CheckedLoanTransition, LoanRefusal> {
+        evidence: BorrowTransitionEvidence,
+    ) -> Result<CheckedBorrowTransition, BorrowRefusal> {
         // Validate at issue time; applying repeats the same local transition
         // check against the exact predecessor.
         self.apply_evidence(&evidence)?;
-        let after_state = LoanLedgerStateId::fresh();
-        Ok(CheckedLoanTransition {
+        let after_state = BorrowLedgerStateId::fresh();
+        Ok(CheckedBorrowTransition {
             before_state: self.storage.state,
             after_state,
             checked_after_state: after_state,
@@ -6753,45 +6790,45 @@ impl BorrowLedger {
         })
     }
 
-    fn require_arena(&self, arena: u64) -> Result<(), LoanRefusal> {
+    fn require_arena(&self, arena: u64) -> Result<(), BorrowRefusal> {
         (arena == self.storage.data.arena)
             .then_some(())
-            .ok_or(LoanRefusal::WrongArena)
+            .ok_or(BorrowRefusal::WrongArena)
     }
 
-    fn require_participant(&self, participant: LoanParticipantId) -> Result<(), LoanRefusal> {
+    fn require_participant(&self, participant: BorrowParticipantId) -> Result<(), BorrowRefusal> {
         (participant.arena == self.storage.data.arena)
             .then_some(())
-            .ok_or(LoanRefusal::WrongArena)
+            .ok_or(BorrowRefusal::WrongArena)
     }
 
     fn apply_evidence(
         &self,
-        evidence: &LoanTransitionEvidence,
-    ) -> Result<LoanLedgerData, LoanRefusal> {
+        evidence: &BorrowTransitionEvidence,
+    ) -> Result<BorrowLedgerData, BorrowRefusal> {
         crate::instrumentation::record_deterministic_work(1);
         let mut data = self.storage.data.clone();
         match evidence {
-            LoanTransitionEvidence::OpenExclusiveCall(binding) => {
+            BorrowTransitionEvidence::OpenExclusiveCall(binding) => {
                 self.apply_exclusive_open(&mut data, binding)?
             }
-            LoanTransitionEvidence::ReturnExclusiveCall { binding, holder } => {
+            BorrowTransitionEvidence::ReturnExclusiveCall { binding, holder } => {
                 self.apply_exclusive_return(&mut data, binding, *holder)?
             }
-            LoanTransitionEvidence::Lend {
+            BorrowTransitionEvidence::Lend {
                 lender,
                 borrower,
                 support,
                 escrow,
                 scope,
-                loan,
+                borrow,
                 root,
             } => {
                 if !escrow.is_own() {
-                    return Err(LoanRefusal::NotOwnership);
+                    return Err(BorrowRefusal::NotOwnership);
                 }
                 if *support == ResourceOccurrenceId::default() {
-                    return Err(LoanRefusal::MissingBacking);
+                    return Err(BorrowRefusal::MissingBacking);
                 }
                 self.require_participant(*lender)?;
                 self.require_participant(*borrower)?;
@@ -6800,24 +6837,26 @@ impl BorrowLedger {
                     Resource::Memory(_) | Resource::Token { .. }
                 ) && !is_mutex_lifetime_owner(escrow)
                 {
-                    return Err(LoanRefusal::UnsupportedResource);
+                    return Err(BorrowRefusal::UnsupportedResource);
                 }
-                if scope.arena != data.arena || loan.arena != data.arena || root.arena != data.arena
+                if scope.arena != data.arena
+                    || borrow.arena != data.arena
+                    || root.arena != data.arena
                 {
-                    return Err(LoanRefusal::WrongArena);
+                    return Err(BorrowRefusal::WrongArena);
                 }
                 if scope.ordinal != data.next_scope
-                    || loan.ordinal != data.next_loan
+                    || borrow.ordinal != data.next_borrow
                     || root.ordinal != data.next_share
                 {
-                    return Err(LoanRefusal::InvalidEvidence);
+                    return Err(BorrowRefusal::InvalidEvidence);
                 }
                 let memory_backing = match escrow.resource() {
                     Resource::Footprint(_)
                     | Resource::Parameter(_)
                     | Resource::Emp
                     | Resource::Star(_) => {
-                        return Err(LoanRefusal::InvalidEvidence);
+                        return Err(BorrowRefusal::InvalidEvidence);
                     }
                     Resource::Memory(range) => vec![range.clone()],
                     Resource::Token { .. } | Resource::MutexLive(_) => Vec::new(),
@@ -6829,26 +6868,26 @@ impl BorrowLedger {
                     | Resource::MutexUse(_)
                     | Resource::Publication(_)
                     | Resource::Iterated(_) => {
-                        return Err(LoanRefusal::UnsupportedResource);
+                        return Err(BorrowRefusal::UnsupportedResource);
                     }
                 };
                 let protects_memory = !memory_backing.is_empty();
                 data.next_scope = data
                     .next_scope
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
-                data.next_loan = data
-                    .next_loan
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
+                data.next_borrow = data
+                    .next_borrow
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.next_share = data
                     .next_share
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.scopes = data.scopes.with_inserted(
                     *scope,
-                    LoanScopeRecord {
-                        loan: *loan,
+                    BorrowScopeRecord {
+                        borrow: *borrow,
                         root: *root,
                         close_right: Some(*lender),
                         active: true,
@@ -6858,11 +6897,11 @@ impl BorrowLedger {
                         holds: crate::persistent::PersistentSet::default(),
                     },
                 );
-                data.loans = data.loans.with_inserted(
-                    *loan,
-                    LoanRecord {
+                data.borrows = data.borrows.with_inserted(
+                    *borrow,
+                    BorrowRecord {
                         scope: *scope,
-                        mutex_root: is_mutex_lifetime_owner(escrow).then_some(*loan),
+                        mutex_root: is_mutex_lifetime_owner(escrow).then_some(*borrow),
                         assumed_mutex: None,
                         assumed_mutex_protected: None,
                         support: *support,
@@ -6874,14 +6913,14 @@ impl BorrowLedger {
                             vec![ResourceFact::View(escrow.resource().clone())]
                         }
                         .into(),
-                        origin: LoanOrigin::Escrowed(*lender),
+                        origin: BorrowOrigin::Escrowed(*lender),
                         recovered: false,
                         memory_backing: memory_backing.clone(),
                     },
                 );
                 data.shares = data.shares.with_inserted(
                     *root,
-                    LoanShareRecord {
+                    BorrowShareRecord {
                         scope: *scope,
                         parent: None,
                         children: None,
@@ -6889,23 +6928,23 @@ impl BorrowLedger {
                         pinned_by: None,
                     },
                 );
-                data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
+                data.active_footprint = data.active_footprint.with_borrow(*borrow, &memory_backing);
                 for range in &memory_backing {
-                    update_indexed_memory_range(&mut data, range, *loan, true)?;
+                    update_indexed_memory_range(&mut data, range, *borrow, true)?;
                 }
                 data.unindexed_memory = with_unindexed_memory(
                     &data.unindexed_memory,
-                    *loan,
+                    *borrow,
                     &symbolic_memory_ranges(&memory_backing),
                 );
                 if protects_memory {
-                    data.active_memory_loans = data
-                        .active_memory_loans
+                    data.active_memory_borrows = data
+                        .active_memory_borrows
                         .checked_add(1)
-                        .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                        .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 }
             }
-            LoanTransitionEvidence::LendComposite {
+            BorrowTransitionEvidence::LendComposite {
                 lender,
                 borrower,
                 support,
@@ -6914,17 +6953,17 @@ impl BorrowLedger {
                 backing,
                 adapted,
                 scope,
-                loan,
+                borrow,
                 root,
             } => {
                 if !escrow.is_own()
                     || support_fact != escrow
                     || !matches!(escrow.resource(), Resource::Composite { .. })
                 {
-                    return Err(LoanRefusal::UnsupportedResource);
+                    return Err(BorrowRefusal::UnsupportedResource);
                 }
                 if *support == ResourceOccurrenceId::default() {
-                    return Err(LoanRefusal::MissingBacking);
+                    return Err(BorrowRefusal::MissingBacking);
                 }
                 self.require_participant(*lender)?;
                 self.require_participant(*borrower)?;
@@ -6932,7 +6971,7 @@ impl BorrowLedger {
                     .iter()
                     .any(|fact| matches!(fact.resource(), Resource::Instance(_)))
                 {
-                    return Err(LoanRefusal::UnsupportedResource);
+                    return Err(BorrowRefusal::UnsupportedResource);
                 }
                 // An adapted description is another name for the very bytes
                 // this escrow suspends, never a second authority: it is a
@@ -6941,16 +6980,16 @@ impl BorrowLedger {
                     !description.is_view()
                         || !matches!(description.resource(), Resource::Composite { .. })
                 }) {
-                    return Err(LoanRefusal::UnsupportedResource);
+                    return Err(BorrowRefusal::UnsupportedResource);
                 }
                 if scope.arena != data.arena
-                    || loan.arena != data.arena
+                    || borrow.arena != data.arena
                     || root.arena != data.arena
                     || scope.ordinal != data.next_scope
-                    || loan.ordinal != data.next_loan
+                    || borrow.ordinal != data.next_borrow
                     || root.ordinal != data.next_share
                 {
-                    return Err(LoanRefusal::InvalidEvidence);
+                    return Err(BorrowRefusal::InvalidEvidence);
                 }
                 let memory_backing = backing
                     .iter()
@@ -6963,19 +7002,19 @@ impl BorrowLedger {
                 data.next_scope = data
                     .next_scope
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
-                data.next_loan = data
-                    .next_loan
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
+                data.next_borrow = data
+                    .next_borrow
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.next_share = data
                     .next_share
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.scopes = data.scopes.with_inserted(
                     *scope,
-                    LoanScopeRecord {
-                        loan: *loan,
+                    BorrowScopeRecord {
+                        borrow: *borrow,
                         root: *root,
                         close_right: Some(*lender),
                         active: true,
@@ -6985,9 +7024,9 @@ impl BorrowLedger {
                         holds: crate::persistent::PersistentSet::default(),
                     },
                 );
-                data.loans = data.loans.with_inserted(
-                    *loan,
-                    LoanRecord {
+                data.borrows = data.borrows.with_inserted(
+                    *borrow,
+                    BorrowRecord {
                         scope: *scope,
                         mutex_root: None,
                         assumed_mutex: None,
@@ -7003,14 +7042,14 @@ impl BorrowLedger {
                             )
                             .chain(adapted.iter().cloned())
                             .collect(),
-                        origin: LoanOrigin::Escrowed(*lender),
+                        origin: BorrowOrigin::Escrowed(*lender),
                         recovered: false,
                         memory_backing: memory_backing.clone(),
                     },
                 );
                 data.shares = data.shares.with_inserted(
                     *root,
-                    LoanShareRecord {
+                    BorrowShareRecord {
                         scope: *scope,
                         parent: None,
                         children: None,
@@ -7018,61 +7057,61 @@ impl BorrowLedger {
                         pinned_by: None,
                     },
                 );
-                data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
+                data.active_footprint = data.active_footprint.with_borrow(*borrow, &memory_backing);
                 for range in &memory_backing {
-                    update_indexed_memory_range(&mut data, range, *loan, true)?;
+                    update_indexed_memory_range(&mut data, range, *borrow, true)?;
                 }
                 data.unindexed_memory = with_unindexed_memory(
                     &data.unindexed_memory,
-                    *loan,
+                    *borrow,
                     &symbolic_memory_ranges(&memory_backing),
                 );
                 if protects_memory {
-                    data.active_memory_loans = data
-                        .active_memory_loans
+                    data.active_memory_borrows = data
+                        .active_memory_borrows
                         .checked_add(1)
-                        .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                        .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 }
             }
-            LoanTransitionEvidence::BorrowedMutexUseRoot {
+            BorrowTransitionEvidence::BorrowedMutexUseRoot {
                 holder,
                 support,
                 mutex,
                 protected,
                 initialization,
                 scope,
-                loan,
+                borrow,
                 root,
             } => {
                 self.require_participant(*holder)?;
                 if *support == ResourceOccurrenceId::default() {
-                    return Err(LoanRefusal::MissingBacking);
+                    return Err(BorrowRefusal::MissingBacking);
                 }
                 if scope.arena != data.arena
-                    || loan.arena != data.arena
+                    || borrow.arena != data.arena
                     || root.arena != data.arena
                     || scope.ordinal != data.next_scope
-                    || loan.ordinal != data.next_loan
+                    || borrow.ordinal != data.next_borrow
                     || root.ordinal != data.next_share
                 {
-                    return Err(LoanRefusal::InvalidEvidence);
+                    return Err(BorrowRefusal::InvalidEvidence);
                 }
                 data.next_scope = data
                     .next_scope
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
-                data.next_loan = data
-                    .next_loan
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
+                data.next_borrow = data
+                    .next_borrow
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.next_share = data
                     .next_share
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.scopes = data.scopes.with_inserted(
                     *scope,
-                    LoanScopeRecord {
-                        loan: *loan,
+                    BorrowScopeRecord {
+                        borrow: *borrow,
                         root: *root,
                         close_right: None,
                         active: true,
@@ -7082,25 +7121,25 @@ impl BorrowLedger {
                         holds: PersistentSet::default(),
                     },
                 );
-                data.loans = data.loans.with_inserted(
-                    *loan,
-                    LoanRecord {
+                data.borrows = data.borrows.with_inserted(
+                    *borrow,
+                    BorrowRecord {
                         scope: *scope,
-                        mutex_root: Some(*loan),
+                        mutex_root: Some(*borrow),
                         support: *support,
                         assumed_mutex: Some(initialization.description(mutex)),
                         assumed_mutex_protected: protected.clone(),
                         escrow: None,
                         restoration_frontier: Arc::new(Vec::new()),
                         permitted: Vec::new().into(),
-                        origin: LoanOrigin::BorrowedContractInput,
+                        origin: BorrowOrigin::BorrowedContractInput,
                         recovered: false,
                         memory_backing: Vec::new(),
                     },
                 );
                 data.shares = data.shares.with_inserted(
                     *root,
-                    LoanShareRecord {
+                    BorrowShareRecord {
                         scope: *scope,
                         parent: None,
                         children: None,
@@ -7109,25 +7148,25 @@ impl BorrowLedger {
                     },
                 );
             }
-            LoanTransitionEvidence::BorrowedRoot {
+            BorrowTransitionEvidence::BorrowedRoot {
                 local,
                 holder,
                 support,
                 viewed,
                 backing,
                 scope,
-                loan,
+                borrow,
                 root,
             } => {
                 self.require_participant(*holder)?;
                 if let Some((lender, backing)) = local {
                     self.require_participant(*lender)?;
                     if backing.viewed != *viewed {
-                        return Err(LoanRefusal::InvalidEvidence);
+                        return Err(BorrowRefusal::InvalidEvidence);
                     }
                 }
                 if *support == ResourceOccurrenceId::default() {
-                    return Err(LoanRefusal::MissingBacking);
+                    return Err(BorrowRefusal::MissingBacking);
                 }
                 let valid_backing = match viewed.resource() {
                     Resource::Memory(_) | Resource::Token { .. } => backing.is_empty(),
@@ -7137,16 +7176,16 @@ impl BorrowLedger {
                     _ => false,
                 };
                 if !viewed.is_view() || !valid_backing {
-                    return Err(LoanRefusal::UnsupportedResource);
+                    return Err(BorrowRefusal::UnsupportedResource);
                 }
                 if scope.arena != data.arena
-                    || loan.arena != data.arena
+                    || borrow.arena != data.arena
                     || root.arena != data.arena
                     || scope.ordinal != data.next_scope
-                    || loan.ordinal != data.next_loan
+                    || borrow.ordinal != data.next_borrow
                     || root.ordinal != data.next_share
                 {
-                    return Err(LoanRefusal::InvalidEvidence);
+                    return Err(BorrowRefusal::InvalidEvidence);
                 }
                 let mut permitted = vec![viewed.clone()];
                 permitted.extend(backing.iter().cloned());
@@ -7155,23 +7194,23 @@ impl BorrowLedger {
                     .filter_map(ResourceFact::memory_range)
                     .cloned()
                     .collect::<Vec<_>>();
-                let protects_memory = loan_protects_memory(&memory_backing, permitted.iter());
+                let protects_memory = borrow_protects_memory(&memory_backing, permitted.iter());
                 data.next_scope = data
                     .next_scope
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
-                data.next_loan = data
-                    .next_loan
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
+                data.next_borrow = data
+                    .next_borrow
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.next_share = data
                     .next_share
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.scopes = data.scopes.with_inserted(
                     *scope,
-                    LoanScopeRecord {
-                        loan: *loan,
+                    BorrowScopeRecord {
+                        borrow: *borrow,
                         root: *root,
                         close_right: local.as_ref().map(|(lender, _)| *lender),
                         active: true,
@@ -7181,9 +7220,9 @@ impl BorrowLedger {
                         holds: crate::persistent::PersistentSet::default(),
                     },
                 );
-                data.loans = data.loans.with_inserted(
-                    *loan,
-                    LoanRecord {
+                data.borrows = data.borrows.with_inserted(
+                    *borrow,
+                    BorrowRecord {
                         scope: *scope,
                         mutex_root: None,
                         assumed_mutex: None,
@@ -7194,8 +7233,8 @@ impl BorrowLedger {
                         permitted: permitted.into(),
                         origin: local
                             .as_ref()
-                            .map_or(LoanOrigin::BorrowedContractInput, |(lender, _)| {
-                                LoanOrigin::LocalStorage(*lender)
+                            .map_or(BorrowOrigin::BorrowedContractInput, |(lender, _)| {
+                                BorrowOrigin::LocalStorage(*lender)
                             }),
                         recovered: false,
                         memory_backing: memory_backing.clone(),
@@ -7203,7 +7242,7 @@ impl BorrowLedger {
                 );
                 data.shares = data.shares.with_inserted(
                     *root,
-                    LoanShareRecord {
+                    BorrowShareRecord {
                         scope: *scope,
                         parent: None,
                         children: None,
@@ -7211,28 +7250,28 @@ impl BorrowLedger {
                         pinned_by: None,
                     },
                 );
-                data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
+                data.active_footprint = data.active_footprint.with_borrow(*borrow, &memory_backing);
                 for range in &memory_backing {
-                    update_indexed_memory_range(&mut data, range, *loan, true)?;
+                    update_indexed_memory_range(&mut data, range, *borrow, true)?;
                 }
                 data.unindexed_memory = with_unindexed_memory(
                     &data.unindexed_memory,
-                    *loan,
+                    *borrow,
                     &symbolic_memory_ranges(&memory_backing),
                 );
                 if protects_memory {
-                    data.active_memory_loans = data
-                        .active_memory_loans
+                    data.active_memory_borrows = data
+                        .active_memory_borrows
                         .checked_add(1)
-                        .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                        .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 }
             }
-            LoanTransitionEvidence::Reborrow {
+            BorrowTransitionEvidence::Reborrow {
                 parent,
                 lender,
                 borrower,
                 scope,
-                loan,
+                borrow,
                 root,
             } => {
                 let (permitted, memory_backing, mutex_root, repeats_parent_footprint) = match parent
@@ -7242,9 +7281,9 @@ impl BorrowLedger {
                         let record = self
                             .storage
                             .data
-                            .loans
-                            .get(&binding.loan)
-                            .ok_or(LoanRefusal::MissingLoan)?;
+                            .borrows
+                            .get(&binding.borrow)
+                            .ok_or(BorrowRefusal::MissingBorrow)?;
                         let (permitted, backing) = reborrowed_authority(record, &binding.viewed);
                         let repeats_parent = backing.len() == record.memory_backing.len()
                             && backing
@@ -7258,9 +7297,9 @@ impl BorrowLedger {
                         let record = self
                             .storage
                             .data
-                            .loans
-                            .get(&binding.0.loan)
-                            .ok_or(LoanRefusal::MissingLoan)?;
+                            .borrows
+                            .get(&binding.0.borrow)
+                            .ok_or(BorrowRefusal::MissingBorrow)?;
                         (Vec::new(), Vec::new(), record.mutex_root, false)
                     }
                 };
@@ -7271,43 +7310,43 @@ impl BorrowLedger {
                     .scopes
                     .get(&parent.scope)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingScope)?;
+                    .ok_or(BorrowRefusal::MissingScope)?;
                 let parent_share = data
                     .shares
                     .get(&parent.share)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingShare)?;
+                    .ok_or(BorrowRefusal::MissingShare)?;
                 if scope.arena != data.arena
-                    || loan.arena != data.arena
+                    || borrow.arena != data.arena
                     || root.arena != data.arena
                     || scope.ordinal != data.next_scope
-                    || loan.ordinal != data.next_loan
+                    || borrow.ordinal != data.next_borrow
                     || root.ordinal != data.next_share
                 {
-                    return Err(LoanRefusal::MissingLoanBinding);
+                    return Err(BorrowRefusal::MissingBorrowBinding);
                 }
                 data.next_scope = data
                     .next_scope
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
-                data.next_loan = data
-                    .next_loan
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
+                data.next_borrow = data
+                    .next_borrow
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.next_share = data
                     .next_share
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.scopes = data.scopes.with_inserted(
                     parent.scope,
-                    LoanScopeRecord {
+                    BorrowScopeRecord {
                         dependencies: parent_scope.dependencies.with_value(*scope),
                         ..parent_scope
                     },
                 );
                 data.shares = data.shares.with_inserted(
                     parent.share,
-                    LoanShareRecord {
+                    BorrowShareRecord {
                         holder: None,
                         pinned_by: Some(*scope),
                         ..parent_share
@@ -7315,8 +7354,8 @@ impl BorrowLedger {
                 );
                 data.scopes = data.scopes.with_inserted(
                     *scope,
-                    LoanScopeRecord {
-                        loan: *loan,
+                    BorrowScopeRecord {
+                        borrow: *borrow,
                         root: *root,
                         close_right: Some(*lender),
                         active: true,
@@ -7326,9 +7365,9 @@ impl BorrowLedger {
                         holds: crate::persistent::PersistentSet::default(),
                     },
                 );
-                data.loans = data.loans.with_inserted(
-                    *loan,
-                    LoanRecord {
+                data.borrows = data.borrows.with_inserted(
+                    *borrow,
+                    BorrowRecord {
                         scope: *scope,
                         mutex_root,
                         assumed_mutex: None,
@@ -7337,14 +7376,14 @@ impl BorrowLedger {
                         escrow: None,
                         restoration_frontier: Arc::new(Vec::new()),
                         permitted: permitted.clone().into(),
-                        origin: LoanOrigin::Reborrowed,
+                        origin: BorrowOrigin::Reborrowed,
                         recovered: false,
                         memory_backing: memory_backing.clone(),
                     },
                 );
                 data.shares = data.shares.with_inserted(
                     *root,
-                    LoanShareRecord {
+                    BorrowShareRecord {
                         scope: *scope,
                         parent: None,
                         children: None,
@@ -7355,24 +7394,25 @@ impl BorrowLedger {
                 // The parent remains pinned. Reuse its footprint for an
                 // exact repeat, retaining any other checked child spelling.
                 if !repeats_parent_footprint {
-                    data.active_footprint = data.active_footprint.with_loan(*loan, &memory_backing);
+                    data.active_footprint =
+                        data.active_footprint.with_borrow(*borrow, &memory_backing);
                 }
                 for range in &memory_backing {
                     // A symbolic parent range stays protected by the parent
                     // entry, which remains active while its share is pinned.
-                    update_indexed_memory_range(&mut data, range, *loan, true)?;
+                    update_indexed_memory_range(&mut data, range, *borrow, true)?;
                 }
                 // Counted by the same predicate `End` decrements with, over
                 // the narrowed authority this child actually holds, so a
                 // reborrow of a byte-less composite borrow is conserved.
-                if loan_protects_memory(&memory_backing, permitted.iter()) {
-                    data.active_memory_loans = data
-                        .active_memory_loans
+                if borrow_protects_memory(&memory_backing, permitted.iter()) {
+                    data.active_memory_borrows = data
+                        .active_memory_borrows
                         .checked_add(1)
-                        .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                        .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 }
             }
-            LoanTransitionEvidence::Split {
+            BorrowTransitionEvidence::Split {
                 share,
                 holder,
                 left_holder,
@@ -7384,35 +7424,35 @@ impl BorrowLedger {
                     .shares
                     .get(share)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingShare)?;
+                    .ok_or(BorrowRefusal::MissingShare)?;
                 if parent.holder != Some(*holder) {
-                    return Err(LoanRefusal::WrongHolder);
+                    return Err(BorrowRefusal::WrongHolder);
                 }
                 if !data
                     .scopes
                     .get(&parent.scope)
                     .is_some_and(|scope| scope.active)
                 {
-                    return Err(LoanRefusal::ScopeEnded);
+                    return Err(BorrowRefusal::ScopeEnded);
                 }
                 let expected_right = data
                     .next_share
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 if left.arena != data.arena
                     || right.arena != data.arena
                     || left.ordinal != data.next_share
                     || right.ordinal != expected_right
                 {
-                    return Err(LoanRefusal::InvalidEvidence);
+                    return Err(BorrowRefusal::InvalidEvidence);
                 }
                 data.next_share = data
                     .next_share
                     .checked_add(2)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.shares = data.shares.with_inserted(
                     *share,
-                    LoanShareRecord {
+                    BorrowShareRecord {
                         holder: None,
                         children: Some((*left, *right)),
                         ..parent.clone()
@@ -7421,7 +7461,7 @@ impl BorrowLedger {
                 for (child, child_holder) in [(*left, *left_holder), (*right, *right_holder)] {
                     data.shares = data.shares.with_inserted(
                         child,
-                        LoanShareRecord {
+                        BorrowShareRecord {
                             scope: parent.scope,
                             parent: Some(*share),
                             children: None,
@@ -7431,24 +7471,24 @@ impl BorrowLedger {
                     );
                 }
             }
-            LoanTransitionEvidence::Transfer { share, from, to } => {
+            BorrowTransitionEvidence::Transfer { share, from, to } => {
                 let record = data
                     .shares
                     .get(share)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingShare)?;
+                    .ok_or(BorrowRefusal::MissingShare)?;
                 if record.holder != Some(*from) {
-                    return Err(LoanRefusal::WrongHolder);
+                    return Err(BorrowRefusal::WrongHolder);
                 }
                 data.shares = data.shares.with_inserted(
                     *share,
-                    LoanShareRecord {
+                    BorrowShareRecord {
                         holder: Some(*to),
                         ..record
                     },
                 );
             }
-            LoanTransitionEvidence::Join {
+            BorrowTransitionEvidence::Join {
                 left,
                 right,
                 holder,
@@ -7457,30 +7497,30 @@ impl BorrowLedger {
                     .shares
                     .get(left)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingShare)?;
+                    .ok_or(BorrowRefusal::MissingShare)?;
                 let right_record = data
                     .shares
                     .get(right)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingShare)?;
+                    .ok_or(BorrowRefusal::MissingShare)?;
                 if left_record.holder != Some(*holder) || right_record.holder != Some(*holder) {
-                    return Err(LoanRefusal::WrongHolder);
+                    return Err(BorrowRefusal::WrongHolder);
                 }
                 if left_record.scope != right_record.scope {
-                    return Err(LoanRefusal::WrongScope);
+                    return Err(BorrowRefusal::WrongScope);
                 }
-                let parent = left_record.parent.ok_or(LoanRefusal::NotSiblings)?;
+                let parent = left_record.parent.ok_or(BorrowRefusal::NotSiblings)?;
                 if right_record.parent != Some(parent)
                     || data.shares.get(&parent).and_then(|record| record.children)
                         != Some((*left, *right))
                 {
-                    return Err(LoanRefusal::NotSiblings);
+                    return Err(BorrowRefusal::NotSiblings);
                 }
                 for child in [*left, *right] {
                     let record = data.shares.get(&child).cloned().expect("checked child");
                     data.shares = data.shares.with_inserted(
                         child,
-                        LoanShareRecord {
+                        BorrowShareRecord {
                             holder: None,
                             ..record
                         },
@@ -7490,16 +7530,16 @@ impl BorrowLedger {
                     .shares
                     .get(&parent)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingShare)?;
+                    .ok_or(BorrowRefusal::MissingShare)?;
                 data.shares = data.shares.with_inserted(
                     parent,
-                    LoanShareRecord {
+                    BorrowShareRecord {
                         holder: Some(*holder),
                         ..parent_record
                     },
                 );
             }
-            LoanTransitionEvidence::Hold {
+            BorrowTransitionEvidence::Hold {
                 binding,
                 holder,
                 hold,
@@ -7509,111 +7549,111 @@ impl BorrowLedger {
                     .scopes
                     .get(&binding.scope)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingScope)?;
+                    .ok_or(BorrowRefusal::MissingScope)?;
                 if hold.arena != data.arena || hold.ordinal != data.next_hold {
-                    return Err(LoanRefusal::InvalidEvidence);
+                    return Err(BorrowRefusal::InvalidEvidence);
                 }
                 data.next_hold = data
                     .next_hold
                     .checked_add(1)
-                    .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
+                    .ok_or(BorrowRefusal::IdentitySpaceExhausted)?;
                 data.holds = data.holds.with_inserted(*hold, (binding.scope, *holder));
                 data.scopes = data.scopes.with_inserted(
                     binding.scope,
-                    LoanScopeRecord {
+                    BorrowScopeRecord {
                         holds: scope_record.holds.with_value(*hold),
                         ..scope_record
                     },
                 );
             }
-            LoanTransitionEvidence::Release {
+            BorrowTransitionEvidence::Release {
                 hold,
                 scope,
                 holder,
             } => {
                 if hold.arena != data.arena || holder.arena != data.arena {
-                    return Err(LoanRefusal::WrongArena);
+                    return Err(BorrowRefusal::WrongArena);
                 }
                 let (actual_scope, placed_by) = data
                     .holds
                     .get(hold)
                     .copied()
-                    .ok_or(LoanRefusal::MissingScope)?;
+                    .ok_or(BorrowRefusal::MissingScope)?;
                 if actual_scope != *scope {
-                    return Err(LoanRefusal::InvalidEvidence);
+                    return Err(BorrowRefusal::InvalidEvidence);
                 }
                 if placed_by != *holder {
-                    return Err(LoanRefusal::WrongHolder);
+                    return Err(BorrowRefusal::WrongHolder);
                 }
                 let scope_record = data
                     .scopes
                     .get(scope)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingScope)?;
+                    .ok_or(BorrowRefusal::MissingScope)?;
                 data.holds = data.holds.without_key(hold);
                 data.scopes = data.scopes.with_inserted(
                     *scope,
-                    LoanScopeRecord {
+                    BorrowScopeRecord {
                         holds: scope_record.holds.without_value(hold),
                         ..scope_record
                     },
                 );
             }
-            LoanTransitionEvidence::End { scope, holder } => {
+            BorrowTransitionEvidence::End { scope, holder } => {
                 let scope_record = data
                     .scopes
                     .get(scope)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingScope)?;
+                    .ok_or(BorrowRefusal::MissingScope)?;
                 if !scope_record.active {
-                    return Err(LoanRefusal::ScopeEnded);
+                    return Err(BorrowRefusal::ScopeEnded);
                 }
                 if scope_record.close_right != Some(*holder) {
-                    return Err(LoanRefusal::WrongHolder);
+                    return Err(BorrowRefusal::WrongHolder);
                 }
                 if !scope_record.dependencies.is_empty() || !scope_record.holds.is_empty() {
-                    return Err(LoanRefusal::ActiveDependency);
+                    return Err(BorrowRefusal::ActiveDependency);
                 }
                 let root = data
                     .shares
                     .get(&scope_record.root)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingShare)?;
+                    .ok_or(BorrowRefusal::MissingShare)?;
                 if root.holder != Some(*holder) {
-                    return Err(LoanRefusal::ShareStillSplit);
+                    return Err(BorrowRefusal::ShareStillSplit);
                 }
                 data.shares = data.shares.with_inserted(
                     scope_record.root,
-                    LoanShareRecord {
+                    BorrowShareRecord {
                         holder: None,
                         ..root
                     },
                 );
                 data.scopes = data.scopes.with_inserted(
                     *scope,
-                    LoanScopeRecord {
+                    BorrowScopeRecord {
                         active: false,
                         ..scope_record
                     },
                 );
-                if let Some(record) = data.loans.get(&scope_record.loan).cloned() {
-                    if !matches!(record.origin, LoanOrigin::Reborrowed) {
+                if let Some(record) = data.borrows.get(&scope_record.borrow).cloned() {
+                    if !matches!(record.origin, BorrowOrigin::Reborrowed) {
                         data.active_footprint =
-                            data.active_footprint.without_loan(scope_record.loan);
+                            data.active_footprint.without_borrow(scope_record.borrow);
                     }
                     data.unindexed_memory = without_unindexed_memory(
                         &data.unindexed_memory,
-                        scope_record.loan,
+                        scope_record.borrow,
                         &symbolic_memory_ranges(&record.memory_backing),
                     );
                     for range in &record.memory_backing {
-                        update_indexed_memory_range(&mut data, range, scope_record.loan, false)?;
+                        update_indexed_memory_range(&mut data, range, scope_record.borrow, false)?;
                     }
-                    if loan_protects_memory(&record.memory_backing, record.permitted.iter()) {
-                        data.active_memory_loans = data
-                            .active_memory_loans
+                    if borrow_protects_memory(&record.memory_backing, record.permitted.iter()) {
+                        data.active_memory_borrows = data
+                            .active_memory_borrows
                             .checked_sub(1)
-                            .ok_or(LoanRefusal::InvalidEvidence)?;
+                            .ok_or(BorrowRefusal::InvalidEvidence)?;
                     }
                 }
                 if let Some(parent) = data.scopes.get(scope).and_then(|record| record.parent) {
@@ -7621,10 +7661,10 @@ impl BorrowLedger {
                         .scopes
                         .get(&parent)
                         .cloned()
-                        .ok_or(LoanRefusal::MissingScope)?;
+                        .ok_or(BorrowRefusal::MissingScope)?;
                     data.scopes = data.scopes.with_inserted(
                         parent,
-                        LoanScopeRecord {
+                        BorrowScopeRecord {
                             dependencies: parent_record.dependencies.without_value(scope),
                             ..parent_record
                         },
@@ -7634,17 +7674,17 @@ impl BorrowLedger {
                             .shares
                             .get(&parent_share)
                             .cloned()
-                            .ok_or(LoanRefusal::MissingShare)?;
+                            .ok_or(BorrowRefusal::MissingShare)?;
                         if pinned.pinned_by != Some(*scope) || pinned.holder.is_some() {
-                            return Err(LoanRefusal::InvalidEvidence);
+                            return Err(BorrowRefusal::InvalidEvidence);
                         }
                         data.shares = data.shares.with_inserted(
                             parent_share,
-                            LoanShareRecord {
+                            BorrowShareRecord {
                                 holder: Some(
                                     scope_record
                                         .close_right
-                                        .ok_or(LoanRefusal::InvalidEvidence)?,
+                                        .ok_or(BorrowRefusal::InvalidEvidence)?,
                                 ),
                                 pinned_by: None,
                                 ..pinned
@@ -7653,31 +7693,31 @@ impl BorrowLedger {
                     }
                 }
             }
-            LoanTransitionEvidence::Recover { loan, holder } => {
+            BorrowTransitionEvidence::Recover { borrow, holder } => {
                 let record = data
-                    .loans
-                    .get(loan)
+                    .borrows
+                    .get(borrow)
                     .cloned()
-                    .ok_or(LoanRefusal::MissingLoan)?;
-                let LoanOrigin::Escrowed(recovery_right) = record.origin else {
-                    return Err(LoanRefusal::InvalidEvidence);
+                    .ok_or(BorrowRefusal::MissingBorrow)?;
+                let BorrowOrigin::Escrowed(recovery_right) = record.origin else {
+                    return Err(BorrowRefusal::InvalidEvidence);
                 };
                 if recovery_right != *holder {
-                    return Err(LoanRefusal::WrongHolder);
+                    return Err(BorrowRefusal::WrongHolder);
                 }
                 if record.recovered {
-                    return Err(LoanRefusal::AlreadyRecovered);
+                    return Err(BorrowRefusal::AlreadyRecovered);
                 }
                 if data
                     .scopes
                     .get(&record.scope)
                     .is_some_and(|scope| scope.active)
                 {
-                    return Err(LoanRefusal::ScopeStillActive);
+                    return Err(BorrowRefusal::ScopeStillActive);
                 }
-                data.loans = data.loans.with_inserted(
-                    *loan,
-                    LoanRecord {
+                data.borrows = data.borrows.with_inserted(
+                    *borrow,
+                    BorrowRecord {
                         recovered: true,
                         ..record
                     },
@@ -7696,7 +7736,7 @@ impl BorrowLedger {
         let mut expected_cache_index = CacheProtectionIndex::default();
         let mut expected_cache_subtree = CacheProtectionIndex::default();
         let mut expected_automatic_storage = PersistentMap::default();
-        for (loan, record) in data.loans.iter() {
+        for (borrow, record) in data.borrows.iter() {
             if !data
                 .scopes
                 .get(&record.scope)
@@ -7705,28 +7745,33 @@ impl BorrowLedger {
                 continue;
             }
             for range in &record.memory_backing {
-                update_automatic_storage_loans(&mut expected_automatic_storage, range, *loan, true);
+                update_automatic_storage_borrows(
+                    &mut expected_automatic_storage,
+                    range,
+                    *borrow,
+                    true,
+                );
                 if let Some((origin, nodes)) = cache_protection_nodes(range) {
                     for node in nodes {
                         for ancestor in memory_interval_ancestors(&node) {
                             update_cache_protection_bucket(
                                 &mut expected_cache_subtree,
                                 (origin.clone(), ancestor),
-                                *loan,
+                                *borrow,
                                 true,
                             );
                         }
                         update_cache_protection_bucket(
                             &mut expected_cache_index,
                             (origin.clone(), node),
-                            *loan,
+                            *borrow,
                             true,
                         );
                     }
                 }
             }
         }
-        if expected_automatic_storage != data.automatic_storage_loans
+        if expected_automatic_storage != data.automatic_storage_borrows
             || !expected_cache_index
                 .iter()
                 .eq(data.cache_memory_index.iter())
@@ -7737,18 +7782,18 @@ impl BorrowLedger {
             return false;
         }
         let mut expected_unindexed = BTreeMap::new();
-        for (loan_id, loan) in data.loans.iter() {
-            if matches!(loan.origin, LoanOrigin::Reborrowed)
+        for (borrow_id, borrow) in data.borrows.iter() {
+            if matches!(borrow.origin, BorrowOrigin::Reborrowed)
                 || !data
                     .scopes
-                    .get(&loan.scope)
+                    .get(&borrow.scope)
                     .is_some_and(|scope| scope.active)
             {
                 continue;
             }
-            for range in symbolic_memory_ranges(&loan.memory_backing) {
+            for range in symbolic_memory_ranges(&borrow.memory_backing) {
                 expected_unindexed
-                    .entry((range.base().base.clone(), *loan_id))
+                    .entry((range.base().base.clone(), *borrow_id))
                     .or_insert_with(Vec::new)
                     .push(range);
             }
@@ -7758,11 +7803,11 @@ impl BorrowLedger {
             if bucket.is_empty() {
                 return false;
             }
-            for (loan_id, ranges) in bucket.iter() {
+            for (borrow_id, ranges) in bucket.iter() {
                 if ranges.is_empty() || ranges.iter().any(|range| &range.base().base != block) {
                     return false;
                 }
-                actual_unindexed.insert((block.clone(), *loan_id), ranges.clone());
+                actual_unindexed.insert((block.clone(), *borrow_id), ranges.clone());
             }
         }
         if expected_unindexed != actual_unindexed {
@@ -7770,28 +7815,28 @@ impl BorrowLedger {
         }
         // The fail-closed barrier counter is exactly the number of live borrows
         // that protect memory, whether or not they enumerated any bytes.
-        let expected_active_memory_loans = data
-            .loans
+        let expected_active_memory_borrows = data
+            .borrows
             .iter()
-            .filter(|(_, loan)| {
+            .filter(|(_, borrow)| {
                 data.scopes
-                    .get(&loan.scope)
+                    .get(&borrow.scope)
                     .is_some_and(|scope| scope.active)
-                    && loan_protects_memory(&loan.memory_backing, loan.permitted.iter())
+                    && borrow_protects_memory(&borrow.memory_backing, borrow.permitted.iter())
             })
             .count();
-        if data.active_memory_loans != expected_active_memory_loans {
+        if data.active_memory_borrows != expected_active_memory_borrows {
             return false;
         }
         let expected_nonlocal_indexed_ranges = data
-            .loans
+            .borrows
             .iter()
-            .filter(|(_, loan)| {
+            .filter(|(_, borrow)| {
                 data.scopes
-                    .get(&loan.scope)
+                    .get(&borrow.scope)
                     .is_some_and(|scope| scope.active)
             })
-            .flat_map(|(_, loan)| &loan.memory_backing)
+            .flat_map(|(_, borrow)| &borrow.memory_backing)
             .filter(|range| {
                 !range.base().base.is_local_block() && ledger_interval_nodes(range).is_some()
             })
@@ -7799,75 +7844,75 @@ impl BorrowLedger {
         if data.active_nonlocal_indexed_ranges != expected_nonlocal_indexed_ranges {
             return false;
         }
-        for (loan_id, loan) in data.loans.iter() {
-            if loan_id.arena != data.arena {
+        for (borrow_id, borrow) in data.borrows.iter() {
+            if borrow_id.arena != data.arena {
                 return false;
             }
-            let Some(scope) = data.scopes.get(&loan.scope) else {
+            let Some(scope) = data.scopes.get(&borrow.scope) else {
                 return false;
             };
-            if loan.recovered && scope.active {
+            if borrow.recovered && scope.active {
                 return false;
             }
-            if loan.assumed_mutex_protected.is_some() && loan.assumed_mutex.is_none() {
+            if borrow.assumed_mutex_protected.is_some() && borrow.assumed_mutex.is_none() {
                 return false;
             }
-            if loan.assumed_mutex.is_some()
-                && (loan.origin != LoanOrigin::BorrowedContractInput
-                    || loan.mutex_root != Some(*loan_id))
+            if borrow.assumed_mutex.is_some()
+                && (borrow.origin != BorrowOrigin::BorrowedContractInput
+                    || borrow.mutex_root != Some(*borrow_id))
             {
                 return false;
             }
-            if let Some(root_id) = loan.mutex_root {
-                let Some(root) = data.loans.get(&root_id) else {
+            if let Some(root_id) = borrow.mutex_root {
+                let Some(root) = data.borrows.get(&root_id) else {
                     return false;
                 };
                 if root.mutex_root != Some(root_id)
-                    || root.support != loan.support
+                    || root.support != borrow.support
                     || root.mutex_identity_description().is_none()
-                    || !loan.permitted.is_empty()
-                    || !loan.memory_backing.is_empty()
+                    || !borrow.permitted.is_empty()
+                    || !borrow.memory_backing.is_empty()
                     || (scope.active
                         && (root.recovered
                             || !data.scopes.get(&root.scope).is_some_and(|s| s.active)))
-                    || (root_id != *loan_id
-                        && (loan.escrow.is_some()
-                            || loan.assumed_mutex.is_some()
-                            || loan.origin != LoanOrigin::Reborrowed))
+                    || (root_id != *borrow_id
+                        && (borrow.escrow.is_some()
+                            || borrow.assumed_mutex.is_some()
+                            || borrow.origin != BorrowOrigin::Reborrowed))
                 {
                     return false;
                 }
             }
-            let origin_is_valid = match &loan.origin {
-                LoanOrigin::Escrowed(recovery_right) => {
-                    loan.escrow.as_ref().is_some_and(ResourceFact::is_own)
+            let origin_is_valid = match &borrow.origin {
+                BorrowOrigin::Escrowed(recovery_right) => {
+                    borrow.escrow.as_ref().is_some_and(ResourceFact::is_own)
                         && scope.close_right == Some(*recovery_right)
                         && scope.parent.is_none()
                 }
-                LoanOrigin::Reborrowed => {
-                    loan.escrow.is_none()
+                BorrowOrigin::Reborrowed => {
+                    borrow.escrow.is_none()
                         && scope.close_right.is_some()
                         && scope.parent.is_some()
-                        && !loan.recovered
+                        && !borrow.recovered
                 }
-                LoanOrigin::LocalStorage(lender) => {
-                    loan.escrow.is_none()
+                BorrowOrigin::LocalStorage(lender) => {
+                    borrow.escrow.is_none()
                         && scope.close_right == Some(*lender)
                         && scope.parent.is_none()
-                        && !loan.recovered
-                        && loan.support != ResourceOccurrenceId::default()
-                        && loan
+                        && !borrow.recovered
+                        && borrow.support != ResourceOccurrenceId::default()
+                        && borrow
                             .permitted
                             .iter()
                             .all(|fact| fact.is_view() && fact.memory_range().is_some())
                 }
-                LoanOrigin::BorrowedContractInput => {
-                    loan.escrow.is_none()
+                BorrowOrigin::BorrowedContractInput => {
+                    borrow.escrow.is_none()
                         && scope.close_right.is_none()
                         && scope.parent.is_none()
-                        && !loan.recovered
-                        && loan.support != ResourceOccurrenceId::default()
-                        && loan.permitted.iter().all(ResourceFact::is_view)
+                        && !borrow.recovered
+                        && borrow.support != ResourceOccurrenceId::default()
+                        && borrow.permitted.iter().all(ResourceFact::is_view)
                 }
             };
             if !origin_is_valid {
@@ -7908,7 +7953,7 @@ impl BorrowLedger {
     }
 
     #[cfg(test)]
-    fn conserved_active_leaves(&self, scope: LoanScopeId, share: LoanShareId) -> Option<usize> {
+    fn conserved_active_leaves(&self, scope: BorrowScopeId, share: BorrowShareId) -> Option<usize> {
         let record = self.storage.data.shares.get(&share)?;
         if record.scope != scope {
             return None;
@@ -7937,7 +7982,7 @@ impl BorrowLedger {
     }
 
     #[cfg(test)]
-    fn descendant_is_active(&self, record: &LoanShareRecord) -> bool {
+    fn descendant_is_active(&self, record: &BorrowShareRecord) -> bool {
         let Some((left, right)) = record.children else {
             return false;
         };

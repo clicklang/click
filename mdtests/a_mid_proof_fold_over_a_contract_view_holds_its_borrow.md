@@ -7,7 +7,7 @@ borrow. The fold is allowed anywhere in the proof, not only at a `produces`
 return: `first` folds and unfolds before executing, and `lend` folds, lends
 the head to a callee that views `cell(p)`, and unfolds it after the call.
 
-```c filename=a_mid_proof_fold_over_a_contract_view_holds_its_loan.c
+```c filename=a_mid_proof_fold_over_a_contract_view_holds_its_borrow.c
 int read_cell(int *p);
 
 int first(int p[])
@@ -26,7 +26,7 @@ resource cell(p: int32*) {
     views p[0..1];
 }
 
-verifying "a_mid_proof_fold_over_a_contract_view_holds_its_loan.c";
+verifying "a_mid_proof_fold_over_a_contract_view_holds_its_borrow.c";
 
 extern int32 read_cell(int32* p) {
     views cell(p);

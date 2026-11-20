@@ -16,7 +16,7 @@ fn selected_permissions_ignore_related_projection_history() {
         let missing = view(9999);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let _fast =
-                crate::kernel::search::FastOperationScope::enter("selected loan permission");
+                crate::kernel::search::FastOperationScope::enter("selected borrow permission");
             assert_eq!(permissions.candidate(&selected), Some(&selected));
             assert!(permissions.candidate(&missing).is_none());
         });

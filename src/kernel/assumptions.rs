@@ -10497,7 +10497,7 @@ impl ProofObligation {
         };
         self.live_view_write.then(|| {
             matches!((left.as_ref(), right.as_ref()), (Resource::Memory(write), Resource::Memory(protected))
-                if super::loans::protected_ranges_constant_overlap(write, protected) == Some(true))
+                if super::borrows::protected_ranges_constant_overlap(write, protected) == Some(true))
         })
     }
 
@@ -10978,8 +10978,10 @@ impl SymbolicExecutionPath {
         &self.obligations
     }
 
-    pub(crate) fn loan_evidence(&self) -> &crate::kernel::loans::CheckedLoanCallEvidenceSequence {
-        &self.loan_evidence
+    pub(crate) fn borrow_evidence(
+        &self,
+    ) -> &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence {
+        &self.borrow_evidence
     }
 
     pub fn theorem(&self) -> &Theorem {
@@ -11078,8 +11080,10 @@ impl FunctionExecutionCandidate {
         &self.data.obligations
     }
 
-    pub(crate) fn loan_evidence(&self) -> &crate::kernel::loans::CheckedLoanCallEvidenceSequence {
-        &self.data.loan_evidence
+    pub(crate) fn borrow_evidence(
+        &self,
+    ) -> &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence {
+        &self.data.borrow_evidence
     }
 }
 

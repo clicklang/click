@@ -192,7 +192,7 @@ impl ResourceContext {
     /// the recovery boundary, never by re-admitting this old footprint.
     pub(in crate::kernel) fn restore_checked_escrow(
         mut self,
-        member: &crate::kernel::loans::RecoveredEscrow,
+        member: &crate::kernel::borrows::RecoveredEscrow,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
         #[cfg(test)]
@@ -217,7 +217,7 @@ impl ResourceContext {
             Some(member.occurrence()),
         );
         if let Some(binding) = member.binding() {
-            self = self.with_loan_dependency(member.occurrence(), binding.clone());
+            self = self.with_borrow_dependency(member.occurrence(), binding.clone());
         }
         self.advance_prepared_memory_equalities(assumptions);
         Ok(self)

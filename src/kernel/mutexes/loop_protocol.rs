@@ -105,7 +105,7 @@ impl MutexContext {
         state.mutex_ledger = Some(ledger.with_inserted(mutex.clone(), entry));
         Ok(Some(Self {
             state,
-            runtime_loan_transition: None,
+            runtime_borrow_transition: None,
         }))
     }
 }
@@ -313,14 +313,20 @@ mod tests {
     }
 
     #[test]
-    fn loop_abstraction_requires_owned_lifetime_and_no_loan_hold() {
+    fn loop_abstraction_requires_owned_lifetime_and_no_borrow_hold() {
         let address = mutex(0);
         let context = initialized(&address);
-        let (loaned, usage) = context.lend_use(&address, &PureFactContext::new()).unwrap();
+        let (with_active_borrow, usage) =
+            context.lend_use(&address, &PureFactContext::new()).unwrap();
         assert!(
-            abstract_loop_mutex(loaned.state(), &address, ConditionTerm::Constant(false)).is_err()
+            abstract_loop_mutex(
+                with_active_borrow.state(),
+                &address,
+                ConditionTerm::Constant(false)
+            )
+            .is_err()
         );
-        let (held, _) = loaned
+        let (held, _) = with_active_borrow
             .acquire_using(&address, usage.usage, &PureFactContext::new())
             .unwrap();
         assert!(

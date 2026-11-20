@@ -2027,7 +2027,7 @@ pub(super) fn describe_runtime_error(
             render_resource_fact_diagnostic(held, parameter_binding)
         ),
         crate::kernel::RuntimeError::LoanRefusal(diagnostic) => {
-            describe_loan_refusal(diagnostic, parameter_binding)
+            describe_borrow_refusal(diagnostic, parameter_binding)
         }
     }
 }
@@ -2103,7 +2103,7 @@ fn describe_returned_borrow(
 /// where the borrow came from, what it protects, and what
 /// the refused operation attempted. Both halves are bounded facts from the
 /// refusal subject; nothing here reads the ledger or the resource frame.
-fn describe_loan_conflict(
+fn describe_borrow_conflict(
     diagnostic: &crate::kernel::LoanRefusalDiagnostic,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
@@ -2145,11 +2145,11 @@ fn describe_loan_conflict(
     ))
 }
 
-pub(in crate::surface) fn describe_loan_refusal(
+pub(in crate::surface) fn describe_borrow_refusal(
     diagnostic: &crate::kernel::LoanRefusalDiagnostic,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    if let Some(conflict) = describe_loan_conflict(diagnostic, parameter_binding) {
+    if let Some(conflict) = describe_borrow_conflict(diagnostic, parameter_binding) {
         return conflict;
     }
     use crate::kernel::{LoanRefusalCategory, LoanRefusalOperation};
@@ -3242,7 +3242,7 @@ pub(super) fn describe_missing_range_end_note(
             let resources = state.resources();
             if let Some((owner, fact)) = resources.owned_projection_support(occurrence)
                 && resources
-                    .loan_dependency(owner)
+                    .borrow_dependency(owner)
                     .is_some_and(|binding| binding.hold.is_some())
             {
                 note.push_str(&format!(
@@ -3251,7 +3251,7 @@ pub(super) fn describe_missing_range_end_note(
                 ));
             } else if resources.view_occurrence_is_principal(occurrence)
                 && resources
-                    .loan_dependency(occurrence)
+                    .borrow_dependency(occurrence)
                     .is_some_and(|binding| binding.hold.is_some())
             {
                 note.push_str("\n  borrow: use `release_view` to give up this view when it is no longer needed.");

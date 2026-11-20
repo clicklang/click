@@ -26,8 +26,8 @@ fn holding_a_scope_mints_a_distinct_ledger_identity() {
     let ledger = ledger
         .apply(&opening.transition)
         .expect("the borrow applies");
-    let binding = LoanViewBinding {
-        loan: opening.loan,
+    let binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,

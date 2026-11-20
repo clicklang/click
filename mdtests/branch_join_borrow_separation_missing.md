@@ -1,6 +1,6 @@
 # A branch join needs separation at entry even when both arms prove it
 
-```c filename=branch_join_loan_separation_missing.c
+```c filename=branch_join_borrow_separation_missing.c
 int run(int *out, const int *input, int choice) {
     if (choice) {
         *out = 10;
@@ -12,7 +12,7 @@ int run(int *out, const int *input, int choice) {
 ```
 
 ```click
-verifying "branch_join_loan_separation_missing.c";
+verifying "branch_join_borrow_separation_missing.c";
 int32 run(int32 *out, const int32 *input, int32 choice) {
     owns out[0..2];
     views input[0..1];

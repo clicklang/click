@@ -1918,7 +1918,7 @@ impl ResourceContext {
             }
         }
         self.shares_storage_with(other)
-            && std::sync::Arc::ptr_eq(&self.loan_dependencies, &other.loan_dependencies)
+            && std::sync::Arc::ptr_eq(&self.borrow_dependencies, &other.borrow_dependencies)
             && self.framed_origins.shares_root_with(&other.framed_origins)
             && same_root(&self.instance_consumptions, &other.instance_consumptions)
             && same_root(&self.structural_witnesses, &other.structural_witnesses)
@@ -2154,8 +2154,8 @@ impl ResourceContext {
                     .cloned(),
                 Some(occurrence),
             );
-            if let Some(binding) = after.loan_dependency(occurrence) {
-                self = self.with_loan_dependency(occurrence, binding.clone());
+            if let Some(binding) = after.borrow_dependency(occurrence) {
+                self = self.with_borrow_dependency(occurrence, binding.clone());
             }
         }
         // Folded expansions retain the state at which their body was
@@ -2572,7 +2572,7 @@ impl ResourceContext {
         let dependencies = additions
             .iter()
             .filter_map(|(_, occurrence)| {
-                self.loan_dependency(*occurrence)
+                self.borrow_dependency(*occurrence)
                     .map(|binding| (*occurrence, binding.clone()))
             })
             .collect::<Vec<_>>();
@@ -2603,7 +2603,7 @@ impl ResourceContext {
             }
         }
         for (occurrence, binding) in dependencies {
-            restored = restored.with_loan_dependency(occurrence, binding);
+            restored = restored.with_borrow_dependency(occurrence, binding);
         }
         Some(restored)
     }
@@ -2669,11 +2669,11 @@ impl ResourceContext {
     pub(crate) fn without_bound_view_occurrence(
         mut self,
         occurrence: ResourceOccurrenceId,
-        binding: &crate::kernel::loans::LoanViewBinding,
+        binding: &crate::kernel::borrows::BorrowBinding,
     ) -> Option<Self> {
         if !self.view_occurrence_is_principal(occurrence)
             || self.view_fact_at_occurrence(occurrence) != Some(&binding.viewed)
-            || self.loan_dependency(occurrence) != Some(binding)
+            || self.borrow_dependency(occurrence) != Some(binding)
         {
             return None;
         }
@@ -3065,14 +3065,14 @@ impl ResourceContext {
         // beside it, which is checked by pointer identity.
         if removed_occurrences
             .iter()
-            .any(|occurrence| self.loan_dependencies.map.get(occurrence).is_some())
+            .any(|occurrence| self.borrow_dependencies.map.get(occurrence).is_some())
         {
             let map = removed_occurrences
                 .iter()
-                .fold(self.loan_dependencies.map.clone(), |map, occurrence| {
+                .fold(self.borrow_dependencies.map.clone(), |map, occurrence| {
                     map.without_key(occurrence)
                 });
-            self.loan_dependencies = self.loan_dependencies.updated(map, removed_occurrences);
+            self.borrow_dependencies = self.borrow_dependencies.updated(map, removed_occurrences);
         }
         fact
     }
@@ -5460,7 +5460,7 @@ impl ResourceContext {
                     crate::instrumentation::record_deterministic_work(1);
                     let fact = self.fact(*entry);
                     let range = if borrowed {
-                        let Some(binding) = self.loan_dependency(self.occurrence(*entry)) else {
+                        let Some(binding) = self.borrow_dependency(self.occurrence(*entry)) else {
                             continue;
                         };
                         if binding.viewed != *fact {
@@ -7090,8 +7090,8 @@ impl ResourceContext {
             if let Some(error) = self.exclusive_validity_error(fact) {
                 return Err(error);
             }
-            if let Some(binding) = outputs.loan_dependency(occurrence) {
-                self = self.with_loan_dependency(occurrence, binding.clone());
+            if let Some(binding) = outputs.borrow_dependency(occurrence) {
+                self = self.with_borrow_dependency(occurrence, binding.clone());
             }
             if let Some(expansion) = outputs
                 .storage
@@ -7455,7 +7455,7 @@ impl ResourceContext {
         if composition.storage.index.owned_count >= 2
             || composition.storage.index.owned_composite_count != 0
             || (composition.storage.index.owned_count == 1
-                && !composition.loan_dependencies.map.is_empty())
+                && !composition.borrow_dependencies.map.is_empty())
         {
             vec![Proposition::ResourceComposition(composition)]
         } else {
@@ -8240,7 +8240,7 @@ impl ResourceContext {
             || entries.iter().any(|entry| {
                 self.storage.supported_by.contains_key(entry)
                     || self
-                        .loan_dependencies
+                        .borrow_dependencies
                         .map
                         .contains_key(&self.occurrence(*entry))
             })
@@ -8587,7 +8587,7 @@ impl ResourceContext {
     /// deliberately does not do first. The units are those the consumption
     /// already selected by key, admitted with the family's own pair rule in
     /// their index order until their constant total covers `fact`. Memory keeps
-    /// its own supplier composition, and a unit with a loan, support,
+    /// its own supplier composition, and a unit with a borrow, support,
     /// projection or witness keeps its identity.
     fn consume_fact_from_merged_units(
         &mut self,
@@ -8755,7 +8755,7 @@ impl ResourceContext {
                 crate::instrumentation::record_deterministic_work(1);
                 (matches!(support, ResourceFact::Own(Resource::Instance(_), _))
                     && self.fact(*entry).memory_view_range().is_some()
-                    && self.loan_dependency(self.occurrence(*entry)).is_none())
+                    && self.borrow_dependency(self.occurrence(*entry)).is_none())
                 .then_some(*entry)
             })
             .collect::<Vec<_>>();
@@ -8784,7 +8784,7 @@ impl ResourceContext {
                     && support
                         .owned_quantity_term()
                         .is_some_and(|q| q.as_const() == Some(1))
-                    && self.loan_dependency(occurrence).is_none())
+                    && self.borrow_dependency(occurrence).is_none())
                 .then_some(*entry)
             })
             .collect::<Vec<_>>();
@@ -8922,7 +8922,7 @@ impl ResourceContext {
                 .storage
                 .projections_by_support_occurrence
                 .contains_key(&occurrence)
-            && self.loan_dependency(occurrence).is_none()
+            && self.borrow_dependency(occurrence).is_none()
             && !self
                 .structural_witnesses
                 .as_ref()
@@ -8940,7 +8940,7 @@ impl ResourceContext {
                 .storage
                 .expansions_by_support_occurrence
                 .contains_key(&occurrence)
-            && self.loan_dependency(occurrence).is_none()
+            && self.borrow_dependency(occurrence).is_none()
             && !self
                 .structural_witnesses
                 .as_ref()
@@ -9046,9 +9046,9 @@ impl ResourceContext {
         // authorizes reading it. Under stable-borrow semantics the split
         // representation is the checked one; keep it. The map is empty under
         // legacy semantics, so this costs nothing and changes nothing there.
-        let loan_bound = |occurrence: &Option<ResourceOccurrenceId>| {
+        let borrow_bound = |occurrence: &Option<ResourceOccurrenceId>| {
             occurrence.is_some_and(|occurrence| {
-                self.loan_dependencies.map.get(&occurrence).is_some()
+                self.borrow_dependencies.map.get(&occurrence).is_some()
                     || self
                         .structural_witnesses
                         .as_ref()
@@ -9061,7 +9061,7 @@ impl ResourceContext {
                 i += 1;
                 continue;
             };
-            if loan_bound(&occurrence) {
+            if borrow_bound(&occurrence) {
                 i += 1;
                 continue;
             }
@@ -9071,7 +9071,7 @@ impl ResourceContext {
                 let Some((right_occurrence, right)) = slots[j].as_ref() else {
                     continue;
                 };
-                if loan_bound(right_occurrence) {
+                if borrow_bound(right_occurrence) {
                     continue;
                 }
                 if let Some(merged) = normalize_resource_fact_pair(&fact, right, assumptions) {
@@ -10757,11 +10757,11 @@ fn consume_exact_resource_fact(
 /// recovery entitlement, so this merge is sound exactly while the view it
 /// swallows is unbound.
 ///
-/// A **bound** view — one whose occurrence carries a live `loan_dependency` —
+/// A **bound** view — one whose occurrence carries a live `borrow_dependency` —
 /// must never be absorbed: the merged fact is a new authority with no
 /// occurrence, so the dependency that authorizes reading it would vanish and
 /// the borrow would disappear with it. `ResourceContext::normalized` is the
-/// only caller, and its `loan_bound` guard skips both sides of every pair
+/// only caller, and its `borrow_bound` guard skips both sides of every pair
 /// whose occurrence has a live dependency, and detaches supported projections
 /// before normalizing at all. That guard, not this function, is what makes
 /// the merge safe: `normalize_pair` sees two bare facts and cannot tell a
@@ -10801,7 +10801,7 @@ fn combine_exact_resource_facts(
 ///   (`memory_resource_fact_permits_read`), and which
 ///   [`consume_memory_resource_fact`] reuses to discharge a resource body's
 ///   viewed clause at a fold, an unfold, or an observation;
-/// * the escrow record in `crate::kernel::loans`, which names the viewed
+/// * the escrow record in `crate::kernel::borrows`, which names the viewed
 ///   description a checked lend transition hands the callee.
 ///
 /// It never answers a *call's* `views` requirement on its own. Meeting one
@@ -10900,7 +10900,7 @@ impl ResourceFamilyAlgebra for MemoryResourceAlgebra {
     /// overlapping a *view* is decided by the view's binding, which this
     /// check cannot see (the owner-observation rule in docs/internals/stable-views.md).
     ///
-    /// A **bound** view — one carrying a live `loan_dependency` — beside a
+    /// A **bound** view — one carrying a live `borrow_dependency` — beside a
     /// usable owner of the same bytes is invalid: lending escrows the owner
     /// out of the caller residual, so the two cannot coexist. That is
     /// enforced where the binding is visible, not here: the planner refuses
@@ -13206,7 +13206,7 @@ pub(in crate::kernel) fn contract_entry_memory_overlap(
     let _fast = crate::kernel::search::FastOperationScope::enter("contract entry view overlap");
     let wide = owned.wide_bounds().is_some() || viewed.wide_bounds().is_some();
     let overlap = |left: &MemoryRange, right: &MemoryRange| {
-        super::super::loans::protected_ranges_constant_overlap(left, right).unwrap_or_else(|| {
+        super::super::borrows::protected_ranges_constant_overlap(left, right).unwrap_or_else(|| {
             // Wide range comparison can consult memory-resolution separation
             // while matching bases. Entry needs a common base established
             // by the pointer graph alone, or exact byte geometry.
@@ -13833,7 +13833,7 @@ impl ResourceFact {
 /// of ownership this context holds, and dropping a description changes no
 /// live access share (the owner-observation rule and law 4 in docs/internals/stable-views.md). It is sound only because a
 /// *bound* view never reaches here — `ResourceContext::normalized` skips any
-/// entry with a live `loan_dependency` and detaches supported projections
+/// entry with a live `borrow_dependency` and detaches supported projections
 /// first. See [`combine_exact_resource_facts`] for the full argument; the
 /// same guard covers both families.
 fn combine_memory_resource_facts(

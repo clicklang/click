@@ -45,14 +45,14 @@ Synchronous `owns` calls already reserve exclusive footprints from the caller
 and give them to the callee. `plan_stable_view_transfer` reserves these before
 planning shared views, records supporting occurrences and retains disjoint
 caller resources. This prevents duplicated or overlapping call ownership.
-`LoanLedger::reborrow`, however, creates a shared view and pins its parent;
+`BorrowLedger::reborrow`, however, creates a shared view and pins its parent;
 the separate exclusive-call receipt now tracks synchronous borrowed memory.
 A successful native Rust example alone cannot close local exclusive borrowing: its
 reference declarations still create aliases without local child identities.
 
 ## Implemented first increment: synchronous borrowed-memory calls
 
-`src/kernel/loans/exclusive_calls.rs` is integrated into the existing call
+`src/kernel/borrows/exclusive_calls.rs` is integrated into the existing call
 planner and checked loan-call evidence. It covers `Borrow` requirements over
 owned memory. Consumed/moved resources, abstract/composite ownership, and
 suspended worker transfers retain their existing protocols.

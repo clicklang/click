@@ -286,7 +286,7 @@ fn a_loop_havoc_carries_a_block_outside_its_checked_write_set() {
         MachineTerm::constant(0),
         MachineTerm::constant(4),
     )];
-    let after = entry.clone().with_loop_memory_havoc_preserving_loans(
+    let after = entry.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(904),
         &std::collections::BTreeSet::new(),
         Some(&ranges),
@@ -321,7 +321,7 @@ fn a_loop_havoc_carries_a_block_outside_its_checked_write_set() {
 #[test]
 fn a_loop_without_a_write_set_needs_no_separation_check() {
     let entry = entry_memory();
-    let after = entry.clone().with_loop_memory_havoc_preserving_loans(
+    let after = entry.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(902),
         &std::collections::BTreeSet::new(),
         None,
@@ -1512,7 +1512,7 @@ fn a_cell_version_point_is_the_same_whichever_point_is_asked_first() {
         MachineTerm::constant(0),
         MachineTerm::constant(4),
     )];
-    let after_loop = entry.clone().with_loop_memory_havoc_preserving_loans(
+    let after_loop = entry.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(904),
         &std::collections::BTreeSet::new(),
         Some(&ranges),

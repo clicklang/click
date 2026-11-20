@@ -6068,7 +6068,7 @@ pub struct CertifiedStatementTransition {
     /// Checked stable-view call evidence produced by this exact transition.
     /// The loop planner forwards it to the kernel exit candidate instead of
     /// reconstructing it from the post-state.
-    pub(crate) loan_evidence: crate::kernel::CheckedLoanCallEvidenceSequence,
+    pub(crate) borrow_evidence: crate::kernel::CheckedBorrowCallEvidenceSequence,
 }
 
 #[doc(hidden)]
