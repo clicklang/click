@@ -707,6 +707,10 @@ fn collect_proposition_bitvector_variables_one(
             collect_term_bitvector_variables(left, variables);
             collect_term_bitvector_variables(right, variables);
         }
+        Proposition::SequenceMembership { element, sequence } => {
+            collect_expression_value_bitvector_variables(element.value(), variables);
+            collect_sequence_bitvector_variables(sequence, variables);
+        }
         Proposition::ConditionIs(condition, _) => {
             retained_folds::collect_boolean_variables(
                 condition.operand_view(),

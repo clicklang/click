@@ -67,6 +67,7 @@ pub(super) fn kind(proposition: &Proposition) -> String {
         Proposition::And(left, _) => format!("and/{}", kind(left)),
         Proposition::Or(left, _) => format!("or/{}", kind(left)),
         Proposition::Not(body) => format!("not/{}", kind(body)),
+        Proposition::SequenceMembership { .. } => "sequence-membership".into(),
         Proposition::Equal(left, _) => format!(
             "equal:{}",
             match left {
@@ -432,6 +433,56 @@ mod tests {
             error.to_string().contains("goal did not normalize to true"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn pure_sequence_membership_raises_after_intro_and_rewrite() {
+        let fixture =
+            include_str!("../../../mdtests/pure_sequence_membership_keeps_concatenation.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[])
+                .map(|_| ())
+                .unwrap()
+        });
+        for (claim, tactic, kind, written) in [
+            (
+                "membership_with_concat",
+                "intro()",
+                "sequence-membership",
+                "a in [] ++ ([b] ++ [a])",
+            ),
+            ("singleton", "intro()", "sequence-membership", "a in [a]"),
+            (
+                "empty",
+                "intro()",
+                "not/sequence-membership",
+                "not (a in [])",
+            ),
+            (
+                "rewrite_membership",
+                "rewrite",
+                "sequence-membership",
+                "b in [] ++ [b]",
+            ),
+        ] {
+            let prefix = format!("raised\tgoal\t{kind}\t{claim}.ensures_0\t{tactic}\twritten\t");
+            assert!(
+                lines
+                    .iter()
+                    .any(|line| line.trim_end().strip_prefix(&prefix) == Some(written)),
+                "{prefix:?}: {lines:#?}"
+            );
+        }
+        let wrong = source.replacen("a in [a]", "a in []", 1);
+        let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
+        assert!(error.to_string().contains("could not establish"), "{error}");
     }
 
     #[test]

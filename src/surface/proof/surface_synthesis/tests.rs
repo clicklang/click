@@ -3171,6 +3171,39 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
 }
 
 #[test]
+fn pure_sequence_membership_round_trips_its_operands_and_negation() {
+    let element =
+        |value| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value)));
+    let literal = |value| ContractExpression::SequenceLiteral(vec![element(value)]);
+    let empty = ContractExpression::SequenceLiteral(vec![]);
+    let concat = |left, right| ContractExpression::SequenceConcat(Box::new(left), Box::new(right));
+    let membership = ClickProposition::Comparison {
+        left: element(2),
+        operator: ComparisonOperator::In,
+        right: concat(empty, concat(literal(1), literal(2))),
+    };
+    let state = ExecutionState::new();
+    for written in [
+        membership.clone(),
+        ClickProposition::Not(Box::new(membership)),
+    ] {
+        let lowered = relower_written_proposition(&written, &state).unwrap();
+        let atom = match &lowered {
+            Proposition::Not(body) => body.as_ref(),
+            atom => atom,
+        };
+        assert!(matches!(atom, Proposition::SequenceMembership { .. }));
+        let raised =
+            synthesize_surface_proposition(&lowered, ParameterBinding::default(), &state).unwrap();
+        assert_eq!(raised, written);
+        assert_eq!(
+            relower_written_proposition(&raised, &state).unwrap(),
+            lowered
+        );
+    }
+}
+
+#[test]
 fn pure_sequence_equality_round_trips_empty_and_nested_concatenation() {
     let literal = |value| {
         ContractExpression::SequenceLiteral(vec![ContractExpression::ProgramExpression(

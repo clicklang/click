@@ -1449,6 +1449,10 @@ fn collect_integer_substitution_variables_with_carriers(
                 }
                 collect_integer_substitution_term_variables(right, carriers);
             }
+            Proposition::SequenceMembership { element, sequence } => {
+                collect_program_value_carriers(element.native_compat(), carriers);
+                collect_sequence_carriers(sequence, carriers);
+            }
             Proposition::ConditionIs(condition, _) => {
                 collect_condition_carriers(condition.native_compat(), carriers);
             }
@@ -3570,6 +3574,20 @@ impl<'a> TermRewrite<'a> {
                 }
                 Proposition::Equal(left, right)
             }
+            Proposition::SequenceMembership { element, sequence } => {
+                self.reserve_terms_variables_once(&[
+                    &Term::ProgramValue(element.clone()),
+                    &Term::Sequence(sequence.clone()),
+                ]);
+                if self.checked_work_exhausted() {
+                    return exhausted_proposition();
+                }
+                Proposition::SequenceMembership {
+                    element: self.rewrite_sequence_value(element.value()).into(),
+                    sequence: sequence
+                        .map_program_values(&mut |value| self.rewrite_sequence_value(value)),
+                }
+            }
             Proposition::ConditionIs(condition, value) => {
                 self.reserve_condition_variables_once(condition.native_compat());
                 if self.checked_work_exhausted() {
@@ -3766,15 +3784,9 @@ impl<'a> TermRewrite<'a> {
             Term::Condition(v) => Term::Condition(self.condition(v.native_compat()).into()),
             Term::PointerOffset(v) => Term::PointerOffset(self.contract_offset(v)),
             Term::Sequence(v) if matches!(v.element_type, Some(ProgramType::Int32) | None) => {
-                Term::Sequence(v.map_program_values(&mut |value| {
-                    match value {
-                        ExecutionValue::Shared(root) => self
-                            .shared_machine_operand(root)
-                            .map(ExecutionValue::Shared)
-                            .unwrap_or_else(|| value.clone()),
-                        ExecutionValue::Native(value) => ExecutionValue::Native(self.value(value)),
-                    }
-                }))
+                Term::Sequence(
+                    v.map_program_values(&mut |value| self.rewrite_sequence_value(value)),
+                )
             }
             _ => term.clone(),
         };
@@ -3782,6 +3794,15 @@ impl<'a> TermRewrite<'a> {
             exhausted_term(term)
         } else {
             result
+        }
+    }
+    fn rewrite_sequence_value(&mut self, value: &ExecutionValue) -> ExecutionValue {
+        match value {
+            ExecutionValue::Shared(root) => self
+                .shared_machine_operand(root)
+                .map(ExecutionValue::Shared)
+                .unwrap_or_else(|| value.clone()),
+            ExecutionValue::Native(value) => ExecutionValue::Native(self.value(value)),
         }
     }
     fn algebraic(&mut self, term: &AlgebraicTerm) -> AlgebraicTerm {

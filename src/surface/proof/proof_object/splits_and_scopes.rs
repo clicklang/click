@@ -581,13 +581,15 @@ impl<'a> Proof<'a> {
     ) -> Result<(Self, SplitId, [BranchId; 2]), ClickError> {
         let kernel = self.lower_surface_proposition(&disjunction, "`cases` disjunction")?;
         // The trace shows the disjunct each arm assumes.
-        let traced_arms =
-            crate::surface::proof_trace::enabled_for(self.claim_label()).then(|| match &kernel {
+        let traced_arms = crate::surface::proof_trace::enabled_for(self.claim_label()).then(|| {
+            let view = crate::kernel::sequence_membership_view(&kernel);
+            match view.as_ref().unwrap_or(&kernel) {
                 Proposition::Or(left, right) => {
                     [vec![left.as_ref().clone()], vec![right.as_ref().clone()]]
                 }
                 _ => [Vec::new(), Vec::new()],
-            });
+            }
+        });
         let (state, split, ids) = self
             .state
             .split_proposition_cases(kernel)

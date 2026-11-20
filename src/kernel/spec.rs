@@ -2922,6 +2922,10 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
         Proposition::Equal(left, right) => {
             term_contains(left, variable) || term_contains(right, variable)
         }
+        Proposition::SequenceMembership { element, sequence } => {
+            integer_carrier_in_program_value(element.native_compat(), variable)
+                || sequence_contains_integer_variable(sequence, variable)
+        }
         Proposition::ConditionIs(condition, _) => {
             condition_contains(condition.native_compat(), variable)
         }
@@ -4542,6 +4546,8 @@ fn lower_spec_sequence_membership_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let retain = super::functions::spec_sequence_element_is_state_independent(element)
+        && super::functions::spec_sequence_is_state_independent(sequence);
     let mut paths = Vec::new();
     for element_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
@@ -4559,7 +4565,7 @@ fn lower_spec_sequence_membership_at_state_in(
             sequence,
             &sequence_assumptions,
             budget,
-            false,
+            retain && element_path.value.program_type() == ProgramType::Int32,
         )? {
             if sequence_path
                 .value
@@ -4578,22 +4584,14 @@ fn lower_spec_sequence_membership_at_state_in(
             ) else {
                 continue;
             };
-            let comparisons = sequence_elements(&sequence_path.value)
-                .filter_map(|member| {
-                    program_value_comparison_proposition(
-                        &element_path.value.native(),
-                        ComparisonOperator::Equal,
-                        member,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let proposition = comparisons
-                .into_iter()
-                .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
-                .unwrap_or(Proposition::condition_is(
-                    ConditionTerm::Constant(false),
-                    true,
-                ));
+            let proposition = if retain && element_path.value.program_type() == ProgramType::Int32 {
+                Proposition::SequenceMembership {
+                    element: element_path.value.clone().into(),
+                    sequence: sequence_path.value,
+                }
+            } else {
+                sequence_membership_disjunction(&element_path.value.native(), &sequence_path.value)
+            };
             paths.push(SpecPropositionPath {
                 introductions: Vec::new(),
                 proposition,
@@ -4603,6 +4601,47 @@ fn lower_spec_sequence_membership_at_state_in(
         }
     }
     Ok(paths)
+}
+
+fn sequence_member_comparisons<'a>(
+    element: &'a ProgramValue,
+    sequence: &'a SequenceTerm,
+) -> impl Iterator<Item = Proposition> + 'a {
+    sequence_elements(sequence).filter_map(|member| {
+        program_value_comparison_proposition(element, ComparisonOperator::Equal, member)
+    })
+}
+
+fn sequence_membership_disjunction(element: &ProgramValue, sequence: &SequenceTerm) -> Proposition {
+    sequence_member_comparisons(element, sequence)
+        .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
+        .unwrap_or_else(|| Proposition::condition_is(ConditionTerm::Constant(false), true))
+}
+
+pub(crate) fn sequence_membership_view(proposition: &Proposition) -> Option<Proposition> {
+    let Proposition::SequenceMembership { element, sequence } = proposition else {
+        return None;
+    };
+    Some(sequence_membership_disjunction(
+        element.native_compat(),
+        sequence,
+    ))
+}
+
+pub(crate) fn sequence_nonmembership_components(
+    proposition: &Proposition,
+) -> Option<impl Iterator<Item = Proposition> + '_> {
+    let Proposition::SequenceMembership { element, sequence } = proposition else {
+        return None;
+    };
+    Some(
+        sequence_member_comparisons(element.native_compat(), sequence).map(|claim| {
+            let Proposition::ConditionIs(condition, truth) = claim else {
+                unreachable!("int32 membership")
+            };
+            Proposition::condition_is(condition, !truth)
+        }),
+    )
 }
 
 pub(super) fn sequence_elements(sequence: &SequenceTerm) -> SequenceElements<'_> {
@@ -4726,7 +4765,7 @@ pub(crate) fn int32_sequence_equality_view(proposition: &Proposition) -> Option<
 
 /// For a positive sequence comparison every component must hold. For its
 /// negation one component must be refuted. Undecided components prove neither.
-pub(crate) fn checks_int32_sequence_equality(
+pub(crate) fn checks_int32_sequence_comparison(
     proposition: &Proposition,
     expected: bool,
     mut proves: impl FnMut(&ConditionTerm, bool) -> bool,
@@ -4735,13 +4774,21 @@ pub(crate) fn checks_int32_sequence_equality(
         Proposition::Not(equation) => (equation.as_ref(), !expected),
         equation => (equation, expected),
     };
-    let mut components = int32_sequence_equalities(equation)?.into_iter();
     let check = |component: Proposition| {
         let Proposition::ConditionIs(condition, truth) = component else {
             unreachable!("int32 component equality")
         };
         proves(condition.native_compat(), truth == expected)
     };
+    if let Proposition::SequenceMembership { element, sequence } = equation {
+        let mut components = sequence_member_comparisons(element.native_compat(), sequence);
+        return Some(if expected {
+            components.any(check)
+        } else {
+            components.all(check)
+        });
+    }
+    let mut components = int32_sequence_equalities(equation)?.into_iter();
     Some(if expected {
         components.all(check)
     } else {
@@ -10112,6 +10159,9 @@ fn compound_spec_value_condition(proposition: &Proposition) -> Option<(Condition
             let (condition, expected) = compound_spec_value_condition(body)?;
             return Some((condition, !expected));
         }
+        Proposition::SequenceMembership { .. } => {
+            return compound_spec_value_condition(&sequence_membership_view(proposition)?);
+        }
         _ => return proposition_as_single_condition(proposition),
     };
     let (left, left_expected) = compound_spec_value_condition(left)?;
@@ -10217,6 +10267,14 @@ pub(super) fn proposition_as_single_condition(
     match proposition {
         Proposition::ConditionIs(condition, value) => {
             Some(((condition.clone()).native_compat().clone(), *value))
+        }
+        Proposition::SequenceMembership { element, sequence } => {
+            let mut comparisons = sequence_member_comparisons(element.native_compat(), sequence);
+            match (comparisons.next(), comparisons.next()) {
+                (None, _) => Some((ConditionTerm::Constant(false), true)),
+                (Some(comparison), None) => proposition_as_single_condition(&comparison),
+                (_, Some(_)) => None,
+            }
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((
             ConditionTerm::AlgebraicEqual(
