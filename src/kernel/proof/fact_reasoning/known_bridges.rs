@@ -226,7 +226,27 @@ fn bool_arm(
     [(true, then_condition), (false, else_condition)]
         .into_iter()
         .any(|(polarity, arm)| {
-            holds(&condition.truth_claim(polarity), available) && matches_arm(arm)
+            if !matches_arm(arm) {
+                return false;
+            }
+            if holds(&condition.truth_claim(polarity), available) {
+                return true;
+            }
+            // A generic value equality is stated as an algebraic proposition
+            // even though a Boolean conditional stores it as its guard.
+            let ConditionTerm::AlgebraicEqual(left, right) = condition.as_ref() else {
+                return false;
+            };
+            let equality = Proposition::Equal(
+                Term::Algebraic(left.as_ref().clone().into()),
+                Term::Algebraic(right.as_ref().clone().into()),
+            );
+            let premise = if polarity {
+                equality
+            } else {
+                Proposition::Not(Box::new(equality))
+            };
+            holds(&premise, available)
         })
 }
 

@@ -237,12 +237,7 @@ pub(crate) fn normalize_using_conditions(
     // Successful endpoint checks need no general rewriting context or its
     // mirrored condition forms over each increasingly large machine term.
     for (index, premise) in premises.iter().enumerate() {
-        if !facts.available(premise)
-            && !crate::kernel::listed_premise_holds(premise, |fact| facts.available(fact))
-            && !order_claim_forms(premise)
-                .iter()
-                .any(|form| facts.available(form))
-        {
+        if !listed_condition_available(premise, facts) {
             return Err(ConditionalNormalizationError::UnavailablePremise(index));
         }
     }
@@ -260,6 +255,17 @@ pub(crate) fn normalize_using_conditions(
     } else {
         Ok(())
     }
+}
+
+pub(super) fn listed_condition_available(
+    premise: &Proposition,
+    facts: &super::PureFactStore,
+) -> bool {
+    facts.available(premise)
+        || crate::kernel::listed_premise_holds(premise, |fact| facts.available(fact))
+        || order_claim_forms(premise)
+            .iter()
+            .any(|form| facts.available(form))
 }
 
 fn normalize_condition_selection(

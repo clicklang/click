@@ -1110,6 +1110,7 @@ step is still checked.
 | `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
+| `order_chain() using { P; ... }` | simple | Expansion output | Check a listed signed order chain. | [Reference](#signed-order-chains) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
@@ -1704,6 +1705,17 @@ Exact propagated consequences are already available facts. Expansion leaves
 this step unchanged, and profiling charges one simple leaf.
 
 **Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`known_computes_fast_leaves.md`](https://github.com/clicklang/click/blob/master/mdtests/known_computes_fast_leaves.md), [`known_closes_an_evaluated_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/known_closes_an_evaluated_goal.md), [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md)
+
+### Signed order chains
+
+`order_chain() using { P; ... }` closes a signed `int32` comparison by
+checking the listed comparisons in their written order. The list must be
+nonempty and every premise must be available. Adjacent endpoints must be
+the same term or connected by a comparison of signed literals. A strict
+goal requires a strict premise or literal comparison. Checking work scales
+with the written list and uses exact premise lookups.
+
+[Checked example](https://github.com/clicklang/click/blob/master/mdtests/order_chain_explicit.md)
 
 ### Context-free normalization
 

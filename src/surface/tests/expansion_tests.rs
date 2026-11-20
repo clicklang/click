@@ -9822,6 +9822,81 @@ fn restricted_solve_expands_adjacent_order_to_ordinary_arithmetic() {
 }
 
 #[test]
+fn returned_narrowing_rewrites_the_selected_literal_call_result() {
+    for fixture in [
+        "mdtests/private_state_narrowing_call.md",
+        "mdtests/a_program_entry_string_literal_provides_its_c_string_view.md",
+    ] {
+        let (source, program) = mdtest_sources(fixture);
+        let program = crate::cli::source_refs(&program);
+        let verified = verify_c_sources(&source, &program).unwrap();
+        let entry = verified
+            .iter()
+            .find(|theorem| theorem.function_block.signature().name() == "main")
+            .unwrap();
+        let proof = entry.expanded_proof_source().unwrap();
+        assert!(proof.contains("rewrite(statement(0).call("), "{proof}");
+        assert!(!proof.contains("normalize()"), "{proof}");
+        let expanded = format!("{source}\n{proof}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &program))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    }
+}
+
+#[test]
+fn selected_mirrored_disequality_expands_to_known() {
+    let (source, _) = mdtest_sources("mdtests/int32_disequality_symmetry.md");
+    let expanded = expand_c_claim_source_by_label(&source, &[], "swap_disequality.ensures_0")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let unselected = source.replace("x != y; };", "x == x; };");
+    assert_ne!(unselected, source);
+    assert!(verify_click_theorems(&unselected).is_err());
+}
+
+#[test]
+fn signed_order_chain_checks_a_store_prerequisite_without_search() {
+    let (source, program) = mdtest_sources("mdtests/stores_to_ordered_indices_keep_each_other.md");
+    let program = crate::cli::source_refs(&program);
+    let label = "mark.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &program, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("order_chain() using"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+fn signed_order_chain_checks_only_the_listed_available_links() {
+    let template = r#"
+        theorem chain(a: int32, b: int32, c: int32, d: int32) {
+            requires a <= b;
+            requires b < c;
+            requires c <= d;
+            ensures a < d by { order_chain() using { LINKS }; }
+        }
+    "#;
+    for (links, expected) in [
+        ("a <= b; b < c; c <= d;", None),
+        ("a <= b; c <= d;", Some("connected int32 comparisons")),
+        ("a < b; b < c; c <= d;", Some("not exactly available")),
+        ("a <= b; b <= c; c <= d;", Some("strict link")),
+    ] {
+        let result = verify_click_theorems(&template.replace("LINKS", links));
+        if let Some(expected) = expected {
+            let error = result.expect_err("invalid certificate should fail");
+            assert!(error.message().contains(expected), "{}", error.report());
+        } else {
+            result.expect("written links should suffice");
+        }
+    }
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_45")]
 fn smart_solve_transcribes_a_three_edge_signed_order_path() {
     let click_source = r#"

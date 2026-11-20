@@ -4018,6 +4018,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ProofTactic::Known
                                     | ProofTactic::Normalize
                                     | ProofTactic::NormalizeUsing(_)
+                                    | ProofTactic::OrderChain(_)
                                     | ProofTactic::ArithmeticUsing(_)
                                     | ProofTactic::Preserve(_)
                             ) | PostExecutionTactic::Both(_)
@@ -4107,6 +4108,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::Leaf(
                                 tactic @ (ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
+                                | ProofTactic::OrderChain(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_)),
                             ) => Some(tactic_name(tactic)),
@@ -4605,6 +4607,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ProofTactic::Known
                                 | ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
+                                | ProofTactic::OrderChain(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_),
                             )
@@ -4745,6 +4748,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                         // Normalization exposes that definitional
                                         // partial-correctness rule without requiring a
                                         // nonexistent return value or state.
+                                        if matches!(closer_step, ProofStep::OrderChain(_)) {
+                                            return Err(ClickError::new(
+                                                "`order_chain` requires a return-state proposition",
+                                            ));
+                                        }
                                         if matches!(closer_step, ProofStep::NormalizeUsing(_)) {
                                             return Err(ClickError::new(
                                                 "`normalize using` requires a return-state proposition; use context-free `normalize()` for a divergent path",
