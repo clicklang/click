@@ -12,6 +12,7 @@ pub mod syntax;
 pub(crate) mod system_headers;
 pub mod target;
 pub mod thread_runtime;
+pub(crate) mod variadic;
 
 #[cfg(test)]
 mod linux_rbtree_tests;

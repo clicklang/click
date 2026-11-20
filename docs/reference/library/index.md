@@ -48,6 +48,7 @@ how far it is trusted:
 | [`click::integer`](#clickinteger) | `import click::integer;` | specification |
 | [`click::permutation`](#clickpermutation) | `import click::permutation;` | specification |
 | [`click::bytes`](#clickbytes) | `import click::bytes;`, or with `click::c::string` | specification |
+| [`click::c::stdarg`](#clickcstdarg) | `import click::c::stdarg;`, or when a contract declares `...args` | C language interface |
 | [`click::c::stdio`](#clickcstdio) | `import click::c::stdio;`, or with the projected `<stdio.h>` | C library interface |
 | [`click::c::string`](#clickcstring) | `import click::c::string;`, or when the C declares or calls a modeled string function | C library interface and specification |
 | [C++ standard library interfaces](#c-standard-library-interfaces), `library/cpp/` (not a module) | when a C++ import calls one of its functions | C++ library interface |
@@ -4577,6 +4578,29 @@ theorem comparison_zero_when_equal(left: uint8[], right: uint8[], length: uint64
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) applies the comparison laws. C ordering clients are checked in [`mdtests/memcmp_orders_the_first_differing_byte.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_the_first_differing_byte.md) and [`mdtests/memcmp_orders_after_equal_prefix.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_after_equal_prefix.md).
 
+## `click::c::stdarg`
+
+Source: `library/c/stdarg.click`. A contract that declares `...args` brings
+it in.
+
+### `VarArg`
+
+```click
+spec enum VarArg {
+    Int(int32),
+    UInt(uint32),
+    Long(int64),
+    ULong(uint64),
+}
+```
+
+One variable argument of a C call after the default argument promotions. A
+variadic function's `extern` contract receives a call's variable arguments
+as its last parameter, `...args`, a `List<VarArg>` with the first argument
+first; see [variadic calls](../language/c.md#variadic-calls).
+
+**Verified use:** [`mdtests/a_variadic_contract_reads_its_variable_arguments.md`](https://github.com/clicklang/click/blob/master/mdtests/a_variadic_contract_reads_its_variable_arguments.md).
+
 ## `click::c::stdio`
 
 Source: `library/c/stdio.click`. The sidecar can import the module or
@@ -4929,85 +4953,124 @@ theorem pow10_9() {
 theorem pow10_nonzero(e: uint64) {
     requires e < 20u64;
     ensures stdio::pow10(e) != 0u64 by {
-        unfold(stdio::pow10(e));
         if e == 19u64 {
-            normalize() using { e == 19u64; };
+            unfold(stdio::pow10(e));
+            solve() using { e == 19u64; };
         } else {
             have e < 19u64 by { solve() using { e < 20u64; not (e == 19u64); }; }
             if e == 18u64 {
-                normalize() using { e == 18u64; };
+                unfold(stdio::pow10(e));
+                solve() using { e == 18u64; };
             } else {
                 have e < 18u64 by { solve() using { e < 19u64; not (e == 18u64); }; }
                 if e == 17u64 {
-                    normalize() using { e == 17u64; };
+                    unfold(stdio::pow10(e));
+                    solve() using { e == 17u64; };
                 } else {
                     have e < 17u64 by { solve() using { e < 18u64; not (e == 17u64); }; }
                     if e == 16u64 {
-                        normalize() using { e == 16u64; };
+                        unfold(stdio::pow10(e));
+                        solve() using { e == 16u64; };
                     } else {
                         have e < 16u64 by { solve() using { e < 17u64; not (e == 16u64); }; }
                         if e == 15u64 {
-                            normalize() using { e == 15u64; };
+                            unfold(stdio::pow10(e));
+                            solve() using { e == 15u64; };
                         } else {
                             have e < 15u64 by { solve() using { e < 16u64; not (e == 15u64); }; }
                             if e == 14u64 {
-                                normalize() using { e == 14u64; };
+                                unfold(stdio::pow10(e));
+                                solve() using { e == 14u64; };
                             } else {
                                 have e < 14u64 by { solve() using { e < 15u64; not (e == 14u64); }; }
                                 if e == 13u64 {
-                                    normalize() using { e == 13u64; };
+                                    unfold(stdio::pow10(e));
+                                    solve() using { e == 13u64; };
                                 } else {
                                     have e < 13u64 by { solve() using { e < 14u64; not (e == 13u64); }; }
                                     if e == 12u64 {
-                                        normalize() using { e == 12u64; };
+                                        unfold(stdio::pow10(e));
+                                        solve() using { e == 12u64; };
                                     } else {
                                         have e < 12u64 by { solve() using { e < 13u64; not (e == 12u64); }; }
                                         if e == 11u64 {
-                                            normalize() using { e == 11u64; };
+                                            unfold(stdio::pow10(e));
+                                            solve() using { e == 11u64; };
                                         } else {
                                             have e < 11u64 by { solve() using { e < 12u64; not (e == 11u64); }; }
                                             if e == 10u64 {
-                                                normalize() using { e == 10u64; };
+                                                unfold(stdio::pow10(e));
+                                                solve() using { e == 10u64; };
                                             } else {
                                                 have e < 10u64 by { solve() using { e < 11u64; not (e == 10u64); }; }
                                                 if e == 9u64 {
-                                                    normalize() using { e == 9u64; };
+                                                    rewrite(e, 9u64);
+                                                    apply(stdio::pow10_9());
+                                                    rewrite(stdio::pow10(9u64), 1000000000u64);
+                                                    known();
                                                 } else {
                                                     have e < 9u64 by { solve() using { e < 10u64; not (e == 9u64); }; }
                                                     if e == 8u64 {
-                                                        normalize() using { e == 8u64; };
+                                                        rewrite(e, 8u64);
+                                                        apply(stdio::pow10_8());
+                                                        rewrite(stdio::pow10(8u64), 100000000u64);
+                                                        known();
                                                     } else {
                                                         have e < 8u64 by { solve() using { e < 9u64; not (e == 8u64); }; }
                                                         if e == 7u64 {
-                                                            normalize() using { e == 7u64; };
+                                                            rewrite(e, 7u64);
+                                                            apply(stdio::pow10_7());
+                                                            rewrite(stdio::pow10(7u64), 10000000u64);
+                                                            known();
                                                         } else {
                                                             have e < 7u64 by { solve() using { e < 8u64; not (e == 7u64); }; }
                                                             if e == 6u64 {
-                                                                normalize() using { e == 6u64; };
+                                                                rewrite(e, 6u64);
+                                                                apply(stdio::pow10_6());
+                                                                rewrite(stdio::pow10(6u64), 1000000u64);
+                                                                known();
                                                             } else {
                                                                 have e < 6u64 by { solve() using { e < 7u64; not (e == 6u64); }; }
                                                                 if e == 5u64 {
-                                                                    normalize() using { e == 5u64; };
+                                                                    rewrite(e, 5u64);
+                                                                    apply(stdio::pow10_5());
+                                                                    rewrite(stdio::pow10(5u64), 100000u64);
+                                                                    known();
                                                                 } else {
                                                                     have e < 5u64 by { solve() using { e < 6u64; not (e == 5u64); }; }
                                                                     if e == 4u64 {
-                                                                        normalize() using { e == 4u64; };
+                                                                        rewrite(e, 4u64);
+                                                                        apply(stdio::pow10_4());
+                                                                        rewrite(stdio::pow10(4u64), 10000u64);
+                                                                        known();
                                                                     } else {
                                                                         have e < 4u64 by { solve() using { e < 5u64; not (e == 4u64); }; }
                                                                         if e == 3u64 {
-                                                                            normalize() using { e == 3u64; };
+                                                                            rewrite(e, 3u64);
+                                                                            apply(stdio::pow10_3());
+                                                                            rewrite(stdio::pow10(3u64), 1000u64);
+                                                                            known();
                                                                         } else {
                                                                             have e < 3u64 by { solve() using { e < 4u64; not (e == 3u64); }; }
                                                                             if e == 2u64 {
-                                                                                normalize() using { e == 2u64; };
+                                                                                rewrite(e, 2u64);
+                                                                                apply(stdio::pow10_2());
+                                                                                rewrite(stdio::pow10(2u64), 100u64);
+                                                                                known();
                                                                             } else {
                                                                                 have e < 2u64 by { solve() using { e < 3u64; not (e == 2u64); }; }
                                                                                 if e == 1u64 {
-                                                                                    normalize() using { e == 1u64; };
+                                                                                    rewrite(e, 1u64);
+                                                                                    apply(stdio::pow10_1());
+                                                                                    rewrite(stdio::pow10(1u64), 10u64);
+                                                                                    known();
                                                                                 } else {
                                                                                     have e < 1u64 by { solve() using { e < 2u64; not (e == 1u64); }; }
                                                                                     have e == 0u64 by { solve() using { e < 1u64; }; }
-                                                                                    normalize() using { e == 0u64; };
+                                                                                    rewrite(e, 0u64);
+                                                                                    apply(stdio::pow10_0());
+                                                                                    rewrite(stdio::pow10(0u64), 1u64);
+                                                                                    known();
                                                                                 }
                                                                             }
                                                                         }
@@ -5101,7 +5164,7 @@ theorem decimal_length_1(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -5177,7 +5240,7 @@ theorem decimal_length_2(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -5253,7 +5316,7 @@ theorem decimal_length_3(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -5329,7 +5392,7 @@ theorem decimal_length_4(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -5405,7 +5468,7 @@ theorem decimal_length_5(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -5481,7 +5544,7 @@ theorem decimal_length_6(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -5557,7 +5620,7 @@ theorem decimal_length_7(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -5633,7 +5696,7 @@ theorem decimal_length_8(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -5709,7 +5772,7 @@ theorem decimal_length_9(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -5785,7 +5848,7 @@ theorem decimal_length_10(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -5827,7 +5890,7 @@ theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
     ensures stdio::decimal_digit(v, k) == (48u64 + v / stdio::pow10(n - 1u64 - k) % 10u64) as uint8 by {
         unfold(stdio::decimal_digit(v, k));
         rewrite(stdio::decimal_length(v), n);
-        normalize() using { k < n; };
+        solve() using { k < n; };
     }
 }
 ```
@@ -5845,13 +5908,15 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
     ensures 48u8 <= stdio::decimal_digit(v, k) by {
         if k < stdio::decimal_length(v) {
             apply(stdio::decimal_digit_power_nonzero(v, k));
-            unfold(stdio::decimal_digit(v, k));
-            have 48u8 <= (48u64 + v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k) % 10u64) as uint8;
-            normalize() using { k < stdio::decimal_length(v); };
-            known();
+            apply(stdio::decimal_digit_of_length(v, stdio::decimal_length(v), k)) using {
+                stdio::decimal_length(v) == stdio::decimal_length(v);
+                k < stdio::decimal_length(v);
+            };
+            rewrite(stdio::decimal_digit(v, k), (48u64 + v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k) % 10u64) as uint8);
+            solve();
         } else {
             unfold(stdio::decimal_digit(v, k));
-            normalize() using { not (k < stdio::decimal_length(v)); };
+            solve() using { not (k < stdio::decimal_length(v)); };
         }
     }
 }```
@@ -5869,7 +5934,11 @@ theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
     ensures 48u8 <= stdio::padded_digit(v, width, 48u8, k) by {
         unfold(stdio::padded_digit(v, width, 48u8, k));
         if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) {
-            normalize() using { to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)); };
+            have (if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) { 48u8 } else { stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))) }) == 48u8 by {
+                solve() using { to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)); };
+            }
+            rewrite((if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) { 48u8 } else { stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))) }), 48u8);
+            known();
         } else {
             apply(stdio::decimal_digit_lower_bound(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))));
             solve() using { not (to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v))); 48u8 <= stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))); };

@@ -3583,6 +3583,17 @@ fn expand_declared_resource_expression_children(
             operand: Box::new(recurse(*operand)?),
             lowered,
         },
+        ContractExpression::MemoryLoad {
+            pointer,
+            value_type,
+            volatile,
+            pointee_constant,
+        } => ContractExpression::MemoryLoad {
+            pointer: Box::new(recurse(*pointer)?),
+            value_type,
+            volatile,
+            pointee_constant,
+        },
         ContractExpression::Field {
             base,
             field,

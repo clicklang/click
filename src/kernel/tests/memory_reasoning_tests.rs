@@ -7610,6 +7610,48 @@ fn a_cached_parameter_partition_does_not_hide_aliases_or_wide_cells() {
     );
 }
 
+#[test]
+fn a_checked_parameter_partition_refuses_an_indexed_address_alias() {
+    let p = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(991_011)),
+    };
+    let q = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(991_012)),
+    };
+    let index = MachineTerm::Variable(Variable(991_013));
+    let write = p.offset_by_elements(index, 4);
+    let fact = own_memory_fact(p, 0, 4);
+    let range = fact.memory_own_range().unwrap().clone();
+    let owner = ResourceContext::new()
+        .unchecked_with_fact(fact)
+        .unchecked_with_fact(own_memory_fact(q.clone(), 0, 4));
+    let context = PureFactContext::new().with_store_owner(Some(owner));
+    assert!(
+        context
+            .checked_parameter_store_partition(&write, 4, &range)
+            .is_some()
+    );
+    let aliased = context.clone().assume_condition(
+        ConditionTerm::uint64_equal(
+            MachineTerm::integer_address(write.clone()),
+            MachineTerm::integer_address(q),
+        ),
+        true,
+    );
+    assert!(
+        aliased
+            .checked_parameter_store_partition(&write, 4, &range)
+            .is_none()
+    );
+    assert!(
+        context
+            .checked_parameter_store_partition(&write, 8, &range)
+            .is_none()
+    );
+}
+
 /// Cross-block and full-width address copies can equate interior fields even
 /// when no direct equality names the parameter bases. The object index must
 /// bring the other object's cells back onto the ordinary store ladder.

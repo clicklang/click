@@ -3781,6 +3781,33 @@ fn typed_loads_lower_and_raise_back_to_the_same_term() {
 }
 
 #[test]
+fn selected_memory_load_keeps_the_written_pointer_and_qualifiers() {
+    let parse = |text: &str| {
+        let file = parser::parse_file_items(&format!(
+            "function read(p: uint64*) -> Integer {{ {text} }}"
+        ))
+        .unwrap();
+        file.click_function_definitions()[0].body().unwrap().clone()
+    };
+    let read = parse("load<const uint8*>(old(p))");
+    assert!(matches!(
+        &read,
+        ContractExpression::MemoryLoad {
+            pointer,
+            value_type: ProgramType::UInt8Pointer,
+            volatile: false,
+            pointee_constant: true,
+        } if matches!(pointer.as_ref(), ContractExpression::Old(_))
+    ));
+    assert_eq!(
+        parse(&crate::surface::diagnostics::describe_contract_expression(
+            &read
+        )),
+        read
+    );
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_27")]
 fn resource_array_size_excludes_struct_padding() {
     let c_source = "struct packet { uint8 bytes[3]; int64 aligned; }; uint8 read(struct packet* p) { return p->bytes[2]; }";

@@ -1899,6 +1899,24 @@ fn cell_value_recorded_on_path(
         .map(|converted| retained_cell_conversion(&value, converted))
 }
 
+/// The state whose read of the whole pointer cell at `pointer` `memory`
+/// still holds: both four-byte halves are held as that state's reads of
+/// them. A held lower half alone says nothing about the upper four bytes,
+/// so it never names the pointer. This reads only the two cells' contents.
+fn held_pointer_cell_state(
+    memory: &SymbolicMemory,
+    pointer: &Address,
+    lower_state: &SharedMemory,
+) -> Option<SharedMemory> {
+    let upper = pointer.offset_by_bytes(4);
+    let ProgramValue::Int32(MachineTerm::MemoryLoad(state, address, LoadKind::Int32)) =
+        memory.known_value(&upper)?
+    else {
+        return None;
+    };
+    (state.shared_memory() == lower_state && *address == upper).then(|| lower_state.clone())
+}
+
 /// Reinterprets a cached scalar read as a pointer while retaining its selected
 /// descriptor. Complete-pointer frame evidence remains separate from the
 /// numeric prefix. Only the legacy volatile route still allocates a name.
@@ -1913,6 +1931,11 @@ fn canonicalized_pointer_value_from_int_cell(
     purpose: LoadPurpose,
 ) -> Option<ProgramValue> {
     value_type.pointee_type()?;
+    // `prefix_read`: the state and cell the cached prefix reads. A pointer
+    // covers the whole eight-byte cell, so it is never named by the prefix's
+    // own version, which a four-byte walk may select across a write to the
+    // cell's upper bytes (`held_pointer_cell_state`).
+    let mut prefix_read = None;
     let (fresh, defining_load) = match value {
         ProgramValue::Int8(bits @ MachineTerm::MemoryLoad(..)) => {
             return Some(ProgramValue::Int8(canonical_scalar_read(bits)));
@@ -1925,6 +1948,9 @@ fn canonicalized_pointer_value_from_int_cell(
                 let fresh = load_variable_for_term(bits)?.0;
                 (Some(fresh), registered_load_term_for_variable(&fresh))
             } else {
+                if let MachineTerm::MemoryLoad(state, address, _) = bits {
+                    prefix_read = Some((state.shared_memory().clone(), address.as_ref().clone()));
+                }
                 (None, Some(canonical_scalar_read(bits)))
             }
         }
@@ -1961,6 +1987,12 @@ fn canonicalized_pointer_value_from_int_cell(
             &crate::kernel::intern_memory_ref(memory).unchanged_bytes_source(),
             pointer,
         )
+    } else if let Some((state, _)) = prefix_read.as_ref().filter(|(_, cell)| cell == pointer) {
+        // The whole cell's read: the prefix's state when the memory still
+        // holds both halves as that state's reads, else this memory.
+        let from = held_pointer_cell_state(memory, pointer, state)
+            .unwrap_or_else(|| crate::kernel::intern_memory_ref(memory));
+        Address::canonical_read(&from, pointer)
     } else {
         Address::loaded(defining_load.as_ref()?).expect("selected pointer read")
     };
@@ -2010,7 +2042,21 @@ fn canonicalized_pointer_value_from_int_cell(
                 || purpose == LoadPurpose::Program && SpecificationReadScope::is_active())
             && let MachineTerm::MemoryLoad(memory, address, _) = &load
         {
-            assumptions.register_pointer_read(&loaded, memory.shared_memory(), address);
+            // The read is registered at the state that names it.
+            match loaded.as_loaded_value() {
+                Some(read)
+                    if prefix_read
+                        .as_ref()
+                        .is_some_and(|(_, cell)| cell == pointer) =>
+                {
+                    assumptions.register_pointer_read(
+                        &loaded,
+                        &read.defining_memory,
+                        &read.defining_address,
+                    )
+                }
+                _ => assumptions.register_pointer_read(&loaded, memory.shared_memory(), address),
+            }
         }
         // Volatile observations retain their legacy opaque value until their
         // event representation migrates. Ordinary descriptors need no equation.
@@ -7884,6 +7930,54 @@ mod tests {
         let changed = read(&overwritten, &field);
         assert!(changed.bounds().is_none());
         assert!(!context.pointer_provenance_match(&changed, &stored));
+    }
+
+    #[test]
+    fn a_pointer_read_through_a_cached_prefix_changes_with_its_upper_half() {
+        // A pointer is the whole eight-byte cell. When only its lower four
+        // bytes are cached, a store to the upper four bytes changes the
+        // pointer, so the read after the store is not the read before it.
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Address {
+            base: "global:prefix-pointer".into(),
+            offset: AddressOffset::Constant(0),
+        };
+        let memory = SymbolicMemory::new()
+            .materialize_symbolic_cell(field.clone(), ProgramType::Int32)
+            .materialize_symbolic_cell(field.clone().offset_by_bytes(4), ProgramType::Int32);
+        let context = PureFactContext::new();
+        let read = |memory: &SymbolicMemory| {
+            let prefix = memory.known_value(&field).expect("cached prefix");
+            let ProgramValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
+                memory,
+                &field,
+                &prefix,
+                ProgramType::Int32Pointer,
+                &mut ExecutionFacts::new(),
+                &context,
+                None,
+                LoadPurpose::Program,
+            )
+            .unwrap() else {
+                panic!("pointer read")
+            };
+            value
+        };
+        let before = read(&memory);
+        let overwritten = memory.store(
+            field.clone().offset_by_bytes(4),
+            ProgramValue::UInt32(0u32.into()),
+        );
+        assert!(
+            overwritten.known_value(&field).is_some(),
+            "the lower half stays cached"
+        );
+        let after = read(&overwritten);
+        assert_ne!(
+            after.address(),
+            before.address(),
+            "the read after the upper-half store is a different pointer"
+        );
     }
 
     #[test]

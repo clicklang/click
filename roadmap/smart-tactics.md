@@ -243,9 +243,9 @@ excluding prose and Rust test strings, leaves:
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
 | `mdtests/` | 0 | 0 |
-| `examples/` | 9 | 60 |
+| `examples/` | 7 | 42 |
 | `library/` | 0 | 0 |
-| Total | 9 | 60 |
+| Total | 7 | 42 |
 
 Positive fixtures also supply exact input text to expansion and mutation tests.
 Migrate those inputs together with their tests and keep the smart proof inputs.
@@ -295,7 +295,6 @@ pattern is understood but the complete family has not yet been validated.
 | 22 | Deletion: primary color-fixup cases | Medium |
 | 23 | Deletion: mirrored and remaining fixups | Medium |
 | 24 | Augmented trees: basic rotation, model, propagation | Medium |
-| 25 | Augmented trees: color flips and mirrored flips | Medium |
 | 26 | Augmented trees: single/context rotations | Medium |
 | 27 | Augmented trees: local double rotations | Medium |
 | 28 | Augmented trees: context double/far rotations | Medium |
@@ -547,10 +546,10 @@ check each bounded write separately and refuse unnamed write effects with a
 live memory loan. The [recorded rbtree insertion run](rbtree-example.md#verification-evidence)
 exercised that refusal with a recursive tree and a live callback-table view.
 
-The legacy write guard has only test callers. Its bridge and search helper can
-be restricted to tests. Contract-entry own/view overlap checking still has a
-separate alias query. Cache retention independently uses indexed protection
-evidence to decide which observations survive.
+The legacy write guard and its alias search are test-only. Contract entry uses
+checked pointer coordinates to compare its selected owned/viewed ranges.
+Cache retention uses indexed protection evidence to decide which observations
+survive.
 
 ### C1: modular call framing
 
