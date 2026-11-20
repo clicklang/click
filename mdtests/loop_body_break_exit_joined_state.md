@@ -5,17 +5,11 @@ described by one state. The guard-false exit stands at the loop's own exit
 state, where every local the body writes is abstract; this `break` leaves after
 assigning `r`, so the two exits do not agree on `r`. A23 refused exactly this.
 
-The rule is decision D5 applied at the exits, the way the loop head and the
-back edge apply it: the component the exits disagree about — here the local
-`r` — becomes one fresh name, and each exit contributes, as its own disjunct,
-what it established about that name. The guard-false exit's own facts are
-restated about the successor's name (it reached the successor through the
-head's value, and its own disjunct says so), so the exported disjunction is
-`(i == 0 and r == 0) or r == 1` — the two ways out, in names a proof after the
-loop can spell. `solve` reads the postcondition straight off it.
+The join gives `r` one name after the loop. On the guard-false exit the
+invariant gives `r == 0`. On the break exit the assignment gives `r == 1`.
+Both exits establish `r == 0 or r == 1`, which the postcondition uses.
 
-Nothing is assumed of an exit that did not state it: a claim the disjunction
-does not support still fails, see
+A claim stronger than the disjunction still fails. See
 [`loop_body_break_exit_joined_state_rejected.md`](loop_body_break_exit_joined_state_rejected.md).
 
 ```c filename=assign_then_break.c
@@ -50,7 +44,11 @@ int32 assign_then_break(int32 n) {
         initialize by solve();
         maintain by {
             step();
+            have r == 0 or r == 1 by known();
             step();
+        }
+        otherwise {
+            have r == 0 or r == 1 by known();
         }
     }
     step();

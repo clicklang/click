@@ -5,11 +5,10 @@ call and the test are the loop's own atomic regions, between its head and its
 body: the pass steps the call, then the test, whose false side leaves the loop
 there. No statement of the source is invented for them.
 
-After the loop, the points of the pass that left are named as they were
-inside it: `statement(2).call(take, 0).entry` is that pass's call, its
-`.result` what the call returned, and `loop(0).test()` the test that found it
-false. The proof states the case the facts there decide, that `take` found
-`left` empty, and the rest closes.
+The proof uses `statement(2).call(take, 0).entry` and `.result` to
+establish that the call found `left` empty on the false path. That path
+exports the count relation before leaving the loop. The post-loop proof
+still refers to `loop(0).test().entry` to check the final test's state.
 
 ```c filename=take_loop.c
 int take(int *n) {
@@ -62,16 +61,20 @@ unsigned count(int n) {
                 }
                 have left == at(statement(2).call(take, 0).entry, left) - 1 by solve();
             } else {
+                have at(statement(2).call(take, 0).entry, left) == 0 by {
+                    if at(statement(2).call(take, 0).entry, left) == 0 {
+                        solve();
+                    } else {
+                        have statement(2).call(take, 0).result == 1 by solve();
+                        have statement(2).call(take, 0).result != 1 by solve();
+                        contradiction(statement(2).call(take, 0).result == 1);
+                    }
+                }
+                have left == 0 by solve();
+                have to_integer(c) + to_integer(at(statement(2).call(take, 0).entry, left))
+                    == to_integer(n) by known();
+                have to_integer(c) == to_integer(n) by solve();
             }
-        }
-    }
-    have at(statement(2).call(take, 0).entry, left) == 0 by {
-        if at(statement(2).call(take, 0).entry, left) == 0 {
-            solve();
-        } else {
-            have statement(2).call(take, 0).result == 1 by solve();
-            have statement(2).call(take, 0).result != 1 by solve();
-            contradiction(statement(2).call(take, 0).result == 1);
         }
     }
     have at(loop(0).test().entry, left) == 0 by solve();

@@ -13,8 +13,8 @@ the two reductions that used to verify and now fail.
 A body path's end state is now always one of the loop's exits, and it joins the
 `break` exits into the single successor on the same terms as a `while` loop's
 guard-false exit. `do_break_flag` has both: the `break` leaves with `i == 3`,
-the guard-false exit leaves with `i == 0`, and the post-loop claim reads their
-disjunction.
+the guard-false exit leaves with `i == 0`, and both prove the post-loop
+claim `i == 3 or i == 0`.
 
 The measure is `decreases i;`. Both ways out of the body are exits, so the back
 edge is unreachable and only the measure's nonnegativity, which the invariant
@@ -45,6 +45,20 @@ int32 do_break_flag(int32 flag) {
     loop {
         decreases i;
         invariant i >= 0;
+        maintain by {
+            if flag == 3 {
+                step();
+                step();
+                have i == 3 or i == 0 by known();
+                step();
+            } else {
+                step();
+                step();
+            }
+        }
+        otherwise {
+            have i == 3 or i == 0 by known();
+        }
     }
     step();
     solve();
