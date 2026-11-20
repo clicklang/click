@@ -9748,6 +9748,81 @@ fn branch_view_entry_loadability_ignores_prior_effects() {
 }
 
 #[test]
+fn named_unfold_constructs_the_selected_arm_once() {
+    use crate::instrumentation::{VerificationEvent, collect};
+
+    let c = "int32 read_cell(int32* p, int32 x) { return p[0]; }";
+    let sample = |body: usize, frame: usize| {
+        let owners = |count: usize, start: usize| {
+            (0..count)
+                .map(|i| {
+                    let slot = start + 2 * i;
+                    format!("owns p[{slot}..{}];\n", slot + 1)
+                })
+                .collect::<String>()
+        };
+        let arm_owners = owners(body, 0);
+        let frame_owners = owners(frame, 128);
+        let proof = format!(
+            r#"verifying "read_cell.c";
+            spec enum Model {{ Empty, Full(int32), }}
+            resource cell_at(p: int32*) {{
+                field model: Model;
+                match model {{
+                    Model::Empty => {{ fact p == 0; }},
+                    Model::Full(value) => {{
+                        {arm_owners}
+                        fact p[0] == value;
+                    }},
+                }}
+            }}
+            int32 read_cell(int32* p, int32 x) {{
+                consumes held: cell_at(p);
+                requires held.model == Model::Full(x);
+                {frame_owners}
+                ensures result == x;
+            }} by {{
+                unfold(held);
+                step();
+                solve();
+            }}"#
+        );
+        let (verified, events) = collect(|| verify_c_sources(&proof, &[("read_cell.c", c)]));
+        verified.unwrap_or_else(|error| panic!("body {body}, frame {frame}: {}", error.message()));
+        let mut in_unfold = false;
+        let mut arm_checks = 0;
+        for event in events {
+            match event {
+                VerificationEvent::TacticStarted(tactic) if tactic.tactic_name == "unfold" => {
+                    in_unfold = true;
+                }
+                VerificationEvent::OperationFinished { name, .. }
+                    if in_unfold && name == "instance arm refutations" =>
+                {
+                    arm_checks += 1;
+                }
+                VerificationEvent::TacticFinished { tactic, work, .. }
+                    if tactic.tactic_name == "unfold" =>
+                {
+                    assert_eq!(arm_checks, 1, "body {body}, frame {frame}");
+                    return work;
+                }
+                _ => {}
+            }
+        }
+        panic!("expected an explicit unfold");
+    };
+    let frame_work = [4, 16, 64].map(|frame| sample(1, frame));
+    assert!(
+        frame_work.iter().all(|work| *work <= frame_work[0] + 32),
+        "a fixed arm must ignore the unrelated frame: {frame_work:?}"
+    );
+    for body in [4, 8, 16] {
+        assert!(sample(body, 0) > 0);
+    }
+}
+
+#[test]
 fn scalar_read_after_branch_ignores_other_slots_on_its_line() {
     use crate::instrumentation::{VerificationEvent, collect};
 

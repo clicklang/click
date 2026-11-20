@@ -288,7 +288,7 @@ enum PointTransition {
 
 /// Which view may use the execution point's versions. Proof-local views may
 /// differ between copies of a path, so this is held on the link, not the node.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 enum IndexedView {
     #[default]
     Recorded,
@@ -297,6 +297,10 @@ enum IndexedView {
 }
 
 impl PathLink {
+    pub(in crate::kernel) fn shares_point_and_view(&self, other: &Self) -> bool {
+        self.id() == other.id() && self.1 == other.1
+    }
+
     pub(in crate::kernel) fn matches_indexed_view(&self, memory: &SharedMemory) -> bool {
         match self.1 {
             IndexedView::Recorded => self
