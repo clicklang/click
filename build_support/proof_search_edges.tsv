@@ -301,7 +301,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomi
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::extract_special_conjunct_premises	available_surface_fact	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::increment_headroom_premises	available_surface_fact	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::proposed_surface_goal	surface_fact_raw_for_purpose	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	driver	11
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	driver	13
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	prove_product_bound_from_ranges	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_product_bound_from_ranges	driver	5
@@ -818,3 +818,8 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_struct
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::try_signed_countdown_using	driver	8
 src/surface/proof/smart_closures/signed_intervals.rs	search	ProofSearch::ordinary_integer_fact	try_signed_countdown_using	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_signed_countdown_using	try_signed_countdown_using	1
+src/surface/proof/smart_closures/machine_bridges.rs	search	ProofSearch::try_intrinsic_sum_bound	driver	5
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_intrinsic_sum_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_leaf	try_intrinsic_sum_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	try_intrinsic_sum_bound	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_intrinsic_sum_bound	try_intrinsic_sum_bound	1

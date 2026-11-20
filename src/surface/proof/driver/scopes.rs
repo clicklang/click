@@ -133,6 +133,20 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
+    /// Compose an exact sum's intrinsic bounds inside an owned have body.
+    pub(in crate::surface::proof) fn try_intrinsic_sum_bound(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_intrinsic_sum_bound(&self.proof.body)?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Emit the explicit interval-product proof inside a selected have body.
     pub(in crate::surface::proof) fn try_product_bound_using(
         &self,

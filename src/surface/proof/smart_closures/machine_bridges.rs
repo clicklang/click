@@ -179,6 +179,129 @@ fn written_operands_inner(
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Compose two intrinsic operand bounds without selecting ambient facts.
+    /// The generated proof checks each operand at the observation in the goal.
+    pub(in crate::surface::proof) fn try_intrinsic_sum_bound(
+        input: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_intrinsic_sum_bound");
+        use crate::kernel::IntegerTerm;
+        use crate::kernel::machine_integer::range::observation_range;
+
+        let Some((condition, true)) = input.goal().and_then(Proposition::condition_native) else {
+            return Ok(None);
+        };
+        let (left, right) = match condition {
+            ConditionTerm::IntegerLessEqual(left, right) => (left.as_ref(), right.as_ref()),
+            ConditionTerm::IntegerGreaterEqual(left, right) => (right.as_ref(), left.as_ref()),
+            _ => return Ok(None),
+        };
+        let (upper, a, b, target) = match (left, right) {
+            (IntegerTerm::Add(a, b), IntegerTerm::Constant(target)) => (true, a, b, target),
+            (IntegerTerm::Constant(target), IntegerTerm::Add(a, b)) => (false, a, b, target),
+            _ => return Ok(None),
+        };
+        let endpoint = |term: &IntegerTerm| match term {
+            IntegerTerm::Machine(value) => {
+                let (min, max) = observation_range(value);
+                Some(if upper { max } else { min })
+            }
+            IntegerTerm::Constant(value) => Some(value.clone()),
+            _ => None,
+        };
+        let (Some(a_bound), Some(b_bound)) = (endpoint(a), endpoint(b)) else {
+            return Ok(None);
+        };
+        let sum = &a_bound + &b_bound;
+        if (upper && &sum > target) || (!upper && &sum < target) {
+            return Ok(None);
+        }
+
+        let Some(ClickProposition::Comparison { left, right, .. }) = input
+            .surface_goal()
+            .and_then(integer_composition::canonical_surface)
+        else {
+            return Ok(None);
+        };
+        let mut source = if upper { left } else { right };
+        while let ContractExpression::IntegerContext(inner) = source {
+            source = *inner;
+        }
+        let ContractExpression::Add(a_source, b_source) = source else {
+            return Ok(None);
+        };
+        let spelling = |term: &IntegerTerm, source: ContractExpression| {
+            term.as_const()
+                .map_or(source, |value| number(value.clone()))
+        };
+        let a_source = spelling(a, *a_source);
+        let b_source = spelling(b, *b_source);
+        let orient = |value, bound| {
+            if upper {
+                (value, bound)
+            } else {
+                (bound, value)
+            }
+        };
+        let (a_left, a_right) = orient(a_source, number(a_bound));
+        let (b_left, b_right) = orient(b_source, number(b_bound));
+        let operands = [
+            le(a_left.clone(), a_right.clone()),
+            le(b_left.clone(), b_right.clone()),
+        ];
+        let mut proof = input.clone();
+        for operand in &operands {
+            proof = proof
+                .driver()
+                .apply_step(super::super::wide_arithmetic::have(
+                    operand.clone(),
+                    vec![ProofStep::Known],
+                ))?;
+        }
+
+        let left = add(a_left.clone(), b_left.clone());
+        let right = add(a_right.clone(), b_right.clone());
+        let composition = application(
+            "add_le",
+            vec![a_left, a_right, b_left, b_right],
+            operands.to_vec(),
+        );
+        if &sum == target {
+            let closed = proof.driver().apply_step(composition)?;
+            return Ok(closed.focused_discharged().then_some(closed));
+        }
+        let combined = le(left.clone(), right.clone());
+        proof = proof
+            .driver()
+            .apply_step(super::super::wide_arithmetic::have(
+                combined.clone(),
+                vec![composition],
+            ))?;
+
+        let target = number(target.clone());
+        let (a, b, c, premises) = if upper {
+            let weakening = le(right.clone(), target.clone());
+            (left, right, target, [combined, weakening])
+        } else {
+            let weakening = le(target.clone(), left.clone());
+            (target, left, right, [weakening, combined])
+        };
+        let weakening = &premises[usize::from(upper)];
+        proof = proof
+            .driver()
+            .apply_step(super::super::wide_arithmetic::have(
+                weakening.clone(),
+                vec![ProofStep::Known],
+            ))?;
+        let proof = proof.driver().apply_step(application(
+            "le_transitive",
+            vec![a, b, c],
+            premises.to_vec(),
+        ))?;
+        Ok(proof.focused_discharged().then_some(proof))
+    }
+
     /// Replace the widened uint32-sum shortcut with its ordinary observation
     /// identity and selected Integer proof. Native widening is value preserving;
     /// the sum's int64 range follows from its operands' uint32 type ranges.

@@ -70,6 +70,7 @@ prove_theorem_application_obligations
 observe_step
 apply_ordinary_transport_steps
 apply_fact_application
+try_intrinsic_sum_bound
 try_integer_composition_using
 try_product_bound_using
 
