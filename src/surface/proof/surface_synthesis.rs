@@ -1758,13 +1758,19 @@ fn synthesize_zero_based_loadable_segment(
         return Some(named);
     }
     let (element_count, element_pointer_type) = if let Some(byte_count) = bytes.as_const() {
+        // A count that is not a whole number of four-byte units is a byte
+        // span, spelled over the base viewed as bytes.
         if !byte_count.is_multiple_of(4) {
-            return None;
+            (
+                ProgramExpression::Value(int32(byte_count)),
+                ProgramType::UInt8Pointer,
+            )
+        } else {
+            (
+                ProgramExpression::Value(int32(byte_count / 4)),
+                ProgramType::Int32Pointer,
+            )
         }
-        (
-            ProgramExpression::Value(int32(byte_count / 4)),
-            ProgramType::Int32Pointer,
-        )
     } else if let binary_term!(Int32, Multiply, left, right) = bytes {
         let elements = if right.as_const() == Some(4) {
             left.as_ref()
@@ -3696,12 +3702,28 @@ fn raise_call_argument(
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     match term.node() {
+        // A pointer a proof name holds is spelled by that name; any other
+        // pointer argument is spelled as the pointer itself.
         Node::Pointer(value)
         | Node::PointerRead { value, .. }
         | Node::PointerArithmetic { value, .. }
-        | Node::PointerCall { value, .. } => Some(SurfaceTerm::ProgramExpression(
-            ProgramExpression::Variable(pointer_names::shared_name(value)?.into()),
-        )),
+        | Node::PointerCall { value, .. }
+            if let Some(name) = pointer_names::shared_name(value) =>
+        {
+            Some(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                name.into(),
+            )))
+        }
+        // A null pointer argument is the literal `0` the parameter's type
+        // reads, as source writes it; an `int32` zero would not fit it.
+        Node::Pointer(_) | Node::PointerRead { .. } | Node::PointerArithmetic { .. }
+            if matches!(
+                term.pointer_native(),
+                Some(ProgramValue::Pointer(pointer)) if pointer.address() == &Address::null()
+            ) =>
+        {
+            Some(SurfaceTerm::IntegerLiteral("0".into()))
+        }
         _ => raise_kernel_term(term, parameter_binding, state, bound_variables),
     }
 }
@@ -5917,18 +5939,7 @@ fn synthesize_surface_bitvector(
         }
         MachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
             if memory.read_version_id().is_some() {
-                let value_type = match kind {
-                    crate::kernel::LoadKind::Int8 => ProgramType::Int8,
-                    crate::kernel::LoadKind::UInt8 => ProgramType::UInt8,
-                    crate::kernel::LoadKind::Int16 => ProgramType::Int16,
-                    crate::kernel::LoadKind::UInt16 => ProgramType::UInt16,
-                    crate::kernel::LoadKind::Int32 => ProgramType::Int32,
-                    crate::kernel::LoadKind::UInt32 => ProgramType::UInt32,
-                    crate::kernel::LoadKind::Bits64 => ProgramType::Int64,
-                    crate::kernel::LoadKind::Int128 => ProgramType::Int128,
-                    crate::kernel::LoadKind::UInt128 => ProgramType::UInt128,
-                    _ => return None,
-                };
+                let value_type = load_kind_value_type(*kind)?;
                 return synthesize_point_read(
                     memory,
                     kernel_pointer,
@@ -6132,13 +6143,30 @@ fn synthesize_surface_bitvector(
                         )?;
                         Some(element_type.to_kernel_type())
                     });
+                // A read through a pointer a pure function returns is a typed
+                // read through that call, at the load's own width.
+                if matches!(
+                    &kernel_pointer.base,
+                    AddressBase::PureFunctionApplication(application)
+                        if !application.name().starts_with('$')
+                ) {
+                    let pointer = synthesize_surface_pointer_expression(
+                        kernel_pointer,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?;
+                    return Some(synthesize_memory_load(
+                        pointer,
+                        load_kind_value_type(*kind)?,
+                    ));
+                }
                 let pointer = synthesize_surface_pointer(
                     kernel_pointer,
                     parameter_binding,
                     state,
                     bound_variables,
-                );
-                let pointer = pointer?;
+                )?;
                 // An unsigned byte read is spelled as one whatever the
                 // pointer's own element type: through a signed plain `char`
                 // pointer it is the byte's one name, not the pointer's read.
@@ -6510,10 +6538,16 @@ fn synthesize_legacy_call_argument(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     Some(match value {
-        crate::kernel::PureFunctionArgument::Value(value @ ProgramValue::Pointer(_)) => {
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
-                pointer_names::native_name(value)?.into(),
-            ))
+        // As `raise_call_argument`: a proof name, the literal `0` for null,
+        // or else the pointer itself.
+        crate::kernel::PureFunctionArgument::Value(value @ ProgramValue::Pointer(pointer)) => {
+            if let Some(name) = pointer_names::native_name(value) {
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.into()))
+            } else if pointer.address() == &Address::null() {
+                SurfaceTerm::IntegerLiteral("0".into())
+            } else {
+                synthesize_surface_value(value, parameter_binding, state)?
+            }
         }
         crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(word)) => {
             synthesize_surface_bool(
@@ -7138,6 +7172,22 @@ fn synthesize_struct_field_load(
 ) -> Option<ContractExpression> {
     synthesize_parameter_field_load(pointer, value_type, parameter_binding)
         .or_else(|| synthesize_local_field_load(pointer, value_type, parameter_binding, state))
+}
+
+/// The program type a load of `kind` reads.
+fn load_kind_value_type(kind: crate::kernel::LoadKind) -> Option<ProgramType> {
+    Some(match kind {
+        crate::kernel::LoadKind::Int8 => ProgramType::Int8,
+        crate::kernel::LoadKind::UInt8 => ProgramType::UInt8,
+        crate::kernel::LoadKind::Int16 => ProgramType::Int16,
+        crate::kernel::LoadKind::UInt16 => ProgramType::UInt16,
+        crate::kernel::LoadKind::Int32 => ProgramType::Int32,
+        crate::kernel::LoadKind::UInt32 => ProgramType::UInt32,
+        crate::kernel::LoadKind::Bits64 => ProgramType::Int64,
+        crate::kernel::LoadKind::Int128 => ProgramType::Int128,
+        crate::kernel::LoadKind::UInt128 => ProgramType::UInt128,
+        _ => return None,
+    })
 }
 
 fn synthesize_typed_load(
@@ -7801,6 +7851,21 @@ fn synthesize_surface_pointer_expression(
         let index =
             synthesize_surface_bitvector(&index, parameter_binding, state, bound_variables)?;
         return Some(ContractExpression::Add(Box::new(base), Box::new(index)));
+    }
+    // A pointer a pure function returns is that call: its base retains the
+    // function and the arguments it was applied to. A kernel-internal
+    // function (`$...`) has no Surface spelling.
+    if let (AddressBase::PureFunctionApplication(application), AddressOffset::Constant(0)) =
+        (&pointer.base, &pointer.offset)
+        && !application.name().starts_with('$')
+    {
+        return synthesize_surface_call(
+            application.name(),
+            application.arguments(),
+            parameter_binding,
+            state,
+            bound_variables,
+        );
     }
     if let Some(region) = SYNTHESIS_RECORDED_POINTS
         .with(|points| points.borrow().as_ref()?.read_event_naming_pointer(pointer))

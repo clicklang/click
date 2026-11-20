@@ -186,6 +186,51 @@ mod tests {
         );
     }
 
+    /// A pointer a pure function returns raises as that call, and a read
+    /// through it as a typed read through the call; a pointer argument of a
+    /// Click call with no proof name raises as the pointer itself; and a
+    /// constant byte span that is not a whole number of words raises over a
+    /// byte view.
+    #[test]
+    fn pure_call_pointers_pointer_arguments_and_byte_spans_round_trip() {
+        for (name, text, original) in [
+            (
+                "resource_child_pure_arguments.md",
+                include_str!("../../../mdtests/resource_child_pure_arguments.md"),
+                "model_pointer(Address::At(p)) == p",
+            ),
+            (
+                "resource_child_pure_arguments_recursive.md",
+                include_str!("../../../mdtests/resource_child_pure_arguments_recursive.md"),
+                "old(*root_pointer(Tree::Leaf(left, 2))) == 2",
+            ),
+            (
+                "const_pointer_parameter_fact_survives_a_step.md",
+                include_str!("../../../mdtests/const_pointer_parameter_fact_survives_a_step.md"),
+                "same(p, p) == 1",
+            ),
+            (
+                "an_ordinary_exit_produces_a_composite_whose_body_facts_hold.md",
+                include_str!(
+                    "../../../mdtests/an_ordinary_exit_produces_a_composite_whose_body_facts_hold.md"
+                ),
+                "viewable(p[0..6])",
+            ),
+        ] {
+            let lines = round_trips(name, text);
+            assert!(
+                lines.contains(&("same".to_string(), original.to_string())),
+                "{name}: {original}: {lines:#?}"
+            );
+            assert!(
+                !lines
+                    .iter()
+                    .any(|(outcome, line)| line == original && outcome != "same"),
+                "{name}: {original}: {lines:#?}"
+            );
+        }
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();
