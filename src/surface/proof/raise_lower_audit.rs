@@ -192,9 +192,24 @@ mod tests {
     fn debug_unraised_rows() {
         let path = std::env::var("DEBUG_FIXTURE").unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        for (outcome, original) in round_trips(&path, &text) {
-            if outcome != "same" && outcome != "no-state" {
-                eprintln!("DEBUG {outcome}\t{original}");
+        let fixture = crate::cli::parse_mdtest(std::path::Path::new(&path), &text).unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        for line in capture(|| {
+            let _ = crate::surface::verify_c_sources(
+                fixture.click_source.as_deref().unwrap(),
+                &sources,
+            );
+        }) {
+            let fields = line.split('\t').collect::<Vec<_>>();
+            if fields[0] != "same" && fields[0] != "no-state" {
+                eprintln!(
+                    "DEBUG {} [{}]\t{}\t=> {}\t=> {}",
+                    fields[0], fields[2], fields[6], fields[7], fields[8].trim_end()
+                );
             }
         }
     }

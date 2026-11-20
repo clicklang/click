@@ -3700,12 +3700,28 @@ fn raise_call_argument(
 ) -> Option<SurfaceTerm> {
     use crate::kernel::KernelTermNode as Node;
     match term.node() {
+        // A pointer a proof name holds is spelled by that name; any other
+        // pointer argument is spelled as the pointer itself.
         Node::Pointer(value)
         | Node::PointerRead { value, .. }
         | Node::PointerArithmetic { value, .. }
-        | Node::PointerCall { value, .. } => Some(SurfaceTerm::ProgramExpression(
-            ProgramExpression::Variable(pointer_names::shared_name(value)?.into()),
-        )),
+        | Node::PointerCall { value, .. }
+            if let Some(name) = pointer_names::shared_name(value) =>
+        {
+            Some(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                name.into(),
+            )))
+        }
+        // A null pointer argument is the literal `0` the parameter's type
+        // reads, as source writes it; an `int32` zero would not fit it.
+        Node::Pointer(_) | Node::PointerRead { .. } | Node::PointerArithmetic { .. }
+            if matches!(
+                term.pointer_native(),
+                Some(ProgramValue::Pointer(pointer)) if pointer.address() == &Address::null()
+            ) =>
+        {
+            Some(SurfaceTerm::IntegerLiteral("0".into()))
+        }
         _ => raise_kernel_term(term, parameter_binding, state, bound_variables),
     }
 }
@@ -5875,18 +5891,7 @@ fn synthesize_surface_bitvector(
         }
         MachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
             if memory.read_version_id().is_some() {
-                let value_type = match kind {
-                    crate::kernel::LoadKind::Int8 => ProgramType::Int8,
-                    crate::kernel::LoadKind::UInt8 => ProgramType::UInt8,
-                    crate::kernel::LoadKind::Int16 => ProgramType::Int16,
-                    crate::kernel::LoadKind::UInt16 => ProgramType::UInt16,
-                    crate::kernel::LoadKind::Int32 => ProgramType::Int32,
-                    crate::kernel::LoadKind::UInt32 => ProgramType::UInt32,
-                    crate::kernel::LoadKind::Bits64 => ProgramType::Int64,
-                    crate::kernel::LoadKind::Int128 => ProgramType::Int128,
-                    crate::kernel::LoadKind::UInt128 => ProgramType::UInt128,
-                    _ => return None,
-                };
+                let value_type = load_kind_value_type(*kind)?;
                 return synthesize_point_read(
                     memory,
                     kernel_pointer,
@@ -6090,6 +6095,20 @@ fn synthesize_surface_bitvector(
                         )?;
                         Some(element_type.to_kernel_type())
                     });
+                // A read through a pointer a pure function returns is a typed
+                // read through that call, at the load's own width.
+                if matches!(kernel_pointer.base, AddressBase::PureFunctionApplication(_)) {
+                    let pointer = synthesize_surface_pointer_expression(
+                        kernel_pointer,
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?;
+                    return Some(synthesize_memory_load(
+                        pointer,
+                        load_kind_value_type(*kind)?,
+                    ));
+                }
                 let pointer = synthesize_surface_pointer(
                     kernel_pointer,
                     parameter_binding,
@@ -6374,12 +6393,25 @@ fn synthesize_surface_call(
             if !consume_surface_synthesis_work("function-argument") {
                 return None;
             }
-            raise_call_argument(
+            let raised = raise_call_argument(
                 &importer.argument(value),
                 parameter_binding,
                 state,
                 bound_variables,
-            )
+            );
+            if raised.is_none() && std::env::var_os("CLICK_DEBUG_UNLOWERED").is_some() {
+                let node = match value {
+                    crate::kernel::PureFunctionArgument::Algebraic(term) => format!("{:?}", term.node),
+                    _ => String::new(),
+                };
+                let binders = SYNTHESIS_BINDER_NAMES
+                    .with(|slot| slot.borrow().as_ref().map(|names| format!("{:?}", names.keys().collect::<Vec<_>>())));
+                eprintln!(
+                    "DEBUG-ARG {name}: node={node} bound={:?} binders={binders:?}",
+                    bound_variables.keys().collect::<Vec<_>>()
+                );
+            }
+            raised
         })
         .collect::<Option<Vec<_>>>()?;
     Some(SurfaceTerm::Call {
@@ -7096,6 +7128,22 @@ fn synthesize_struct_field_load(
 ) -> Option<ContractExpression> {
     synthesize_parameter_field_load(pointer, value_type, parameter_binding)
         .or_else(|| synthesize_local_field_load(pointer, value_type, parameter_binding, state))
+}
+
+/// The program type a load of `kind` reads.
+fn load_kind_value_type(kind: crate::kernel::LoadKind) -> Option<ProgramType> {
+    Some(match kind {
+        crate::kernel::LoadKind::Int8 => ProgramType::Int8,
+        crate::kernel::LoadKind::UInt8 => ProgramType::UInt8,
+        crate::kernel::LoadKind::Int16 => ProgramType::Int16,
+        crate::kernel::LoadKind::UInt16 => ProgramType::UInt16,
+        crate::kernel::LoadKind::Int32 => ProgramType::Int32,
+        crate::kernel::LoadKind::UInt32 => ProgramType::UInt32,
+        crate::kernel::LoadKind::Bits64 => ProgramType::Int64,
+        crate::kernel::LoadKind::Int128 => ProgramType::Int128,
+        crate::kernel::LoadKind::UInt128 => ProgramType::UInt128,
+        _ => return None,
+    })
 }
 
 fn synthesize_typed_load(
