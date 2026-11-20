@@ -1735,13 +1735,19 @@ fn synthesize_zero_based_loadable_segment(
         return Some(named);
     }
     let (element_count, element_pointer_type) = if let Some(byte_count) = bytes.as_const() {
+        // A count that is not a whole number of four-byte units is a byte
+        // span, spelled over the base viewed as bytes.
         if !byte_count.is_multiple_of(4) {
-            return None;
+            (
+                ProgramExpression::Value(int32(byte_count)),
+                ProgramType::UInt8Pointer,
+            )
+        } else {
+            (
+                ProgramExpression::Value(int32(byte_count / 4)),
+                ProgramType::Int32Pointer,
+            )
         }
-        (
-            ProgramExpression::Value(int32(byte_count / 4)),
-            ProgramType::Int32Pointer,
-        )
     } else if let binary_term!(Int32, Multiply, left, right) = bytes {
         let elements = if right.as_const() == Some(4) {
             left.as_ref()
@@ -7753,6 +7759,19 @@ fn synthesize_surface_pointer_expression(
         let index =
             synthesize_surface_bitvector(&index, parameter_binding, state, bound_variables)?;
         return Some(ContractExpression::Add(Box::new(base), Box::new(index)));
+    }
+    // A pointer a pure function returns is that call: its base retains the
+    // function and the arguments it was applied to.
+    if let (AddressBase::PureFunctionApplication(application), AddressOffset::Constant(0)) =
+        (&pointer.base, &pointer.offset)
+    {
+        return synthesize_surface_call(
+            application.name(),
+            application.arguments(),
+            parameter_binding,
+            state,
+            bound_variables,
+        );
     }
     if let Some(region) = SYNTHESIS_RECORDED_POINTS
         .with(|points| points.borrow().as_ref()?.read_event_naming_pointer(pointer))

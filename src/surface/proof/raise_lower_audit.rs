@@ -186,6 +186,19 @@ mod tests {
         );
     }
 
+    /// Debug aid: prints the unraised rows of the fixture `DEBUG_FIXTURE`.
+    #[test]
+    #[ignore]
+    fn debug_unraised_rows() {
+        let path = std::env::var("DEBUG_FIXTURE").unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        for (outcome, original) in round_trips(&path, &text) {
+            if outcome != "same" && outcome != "no-state" {
+                eprintln!("DEBUG {outcome}\t{original}");
+            }
+        }
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();
