@@ -16,7 +16,8 @@ Run `click verify TARGET` and `click profile TARGET` on the slow sidecar,
 project, or Markdown fixture. Record the Click revision, build profile,
 target, limits, elapsed verification time, and reported work. Compare times
 on the same machine with comparable cache state. Prefer deterministic work
-to interpret small or noisy timing changes.
+to interpret small or noisy timing changes. For a controlled comparison of
+verifier builds, use [benchmarking](../benchmarking/SKILL.md).
 
 For a prompt proof failure, use [proof-repair](../proof-repair/SKILL.md).
 Profile a timeout or unexpectedly slow incomplete run to locate where it
