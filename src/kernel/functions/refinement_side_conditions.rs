@@ -196,11 +196,9 @@ pub(in crate::kernel) fn spec_sequence_is_state_independent(
     )
 }
 
-pub(in crate::kernel) fn spec_sequence_element_is_state_independent(
-    element: &SpecExpression,
-) -> bool {
+pub(in crate::kernel) fn spec_expression_is_state_independent(expression: &SpecExpression) -> bool {
     spec_tree_all(
-        SpecNode::Expression(element),
+        SpecNode::Expression(expression),
         sequence_state_independent_node,
     )
 }
