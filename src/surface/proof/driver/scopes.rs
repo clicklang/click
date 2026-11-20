@@ -185,21 +185,22 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         let ProofScopeStructure::Open {
             resource,
             source_index,
-            preserve_exposed_body,
+            restoration,
         } = scope.structure.as_ref()
         else {
             return scope.clone().join();
         };
         let close = |body: &Proof<'a>| {
-            scope.close_open_scope_from(body, resource, *source_index, *preserve_exposed_body)
+            scope.close_open_scope_from(body, resource, *source_index, restoration)
         };
         if scope.body.is_at_function_exit() {
             return close(&scope.body);
         }
-        let (closed, tail) = scope
-            .body
-            .driver()
-            .close_scope_with_body_fact_proof(resource, &close)?;
+        let (closed, tail) =
+            scope
+                .body
+                .driver()
+                .close_scope_with_body_fact_proof(resource, restoration, &close)?;
         let Some(tail) = tail else {
             return Ok(closed);
         };

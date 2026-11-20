@@ -883,20 +883,54 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
 
     /// Close an open resource, retaining any proofs of its restoration facts
     /// as ordinary `have` steps at the end of the block.
-    pub(in crate::surface::proof) fn close_scope_with_body_fact_proof<T>(
+    pub(in crate::surface::proof) fn close_scope_with_body_fact_proof(
         &self,
         resource: &ResourceClause,
-        close: &dyn Fn(&Proof<'a>) -> Result<T, ClickError>,
-    ) -> Result<(T, Option<ProofCertificate>), ClickError> {
+        restoration: &OpenResourceRestoration,
+        close: &dyn Fn(&Proof<'a>) -> Result<Proof<'a>, ClickError>,
+    ) -> Result<(Proof<'a>, Option<ProofCertificate>), ClickError> {
         let driver_proof = self.proof;
         if implicit_solve_disabled() {
             return Ok((close(driver_proof)?, None));
         }
-        let (probe, recorded) = probe_open_obligations(|| close(driver_proof));
-        if recorded.recorded.is_empty() {
-            return Ok((probe?, None));
+        // A named close uses the ordinary prepared instance fold. Keep its
+        // successor private until the missing body facts have been proved.
+        let named = matches!(restoration, OpenResourceRestoration::Named(_));
+        let (probe, recorded) = if named {
+            super::super::execution_planning::probe_step_obligations(|| close(driver_proof))
+        } else {
+            probe_open_obligations(|| close(driver_proof))
+        };
+        if named && let Err(error) = &probe {
+            return Err(error.clone());
         }
-        let open = distinct_requirements(recorded.recorded.clone());
+        let open = distinct_requirements(
+            recorded
+                .recorded
+                .iter()
+                .filter(|requirement| {
+                    !named
+                        || !driver_proof
+                            .facts()
+                            .assumptions()
+                            .states_required_goal(&requirement.proposition)
+                })
+                .cloned()
+                .collect(),
+        );
+        if open.is_empty() {
+            let closed = if named
+                && probe.as_ref().is_ok_and(|candidate| {
+                    candidate
+                        .execution()
+                        .is_some_and(|execution| execution.core.has_prepared_fold())
+                }) {
+                driver_proof.finish_prepared_step(probe, driver_proof, &recorded.recorded)?
+            } else {
+                probe?
+            };
+            return Ok((closed, None));
+        }
         let open = open.iter().collect::<Vec<_>>();
         let step = ProofStep::FoldResource(resource.clone());
         let (proved, entries) = match driver_proof
@@ -925,7 +959,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 proof: Box::new(entry.proof),
             })
             .collect();
-        Ok((close(&proved)?, Some(ProofCertificate::from_steps(haves)?)))
+        let closed = if named {
+            driver_proof.finish_prepared_step(probe, &proved, &recorded.recorded)?
+        } else {
+            close(&proved)?
+        };
+        Ok((closed, Some(ProofCertificate::from_steps(haves)?)))
     }
 
     /// Discharge a theorem's retained entry requirements before its main
