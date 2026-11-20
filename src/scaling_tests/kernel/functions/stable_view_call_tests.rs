@@ -242,6 +242,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
                     1024,
                 ))
                 .with_resource_context(resources);
+            state.prepare_modular_call_reservations();
             let function = reader_for_input("classify_local_storage", 1024);
             let environment = environment(&function);
             let arguments = [crate::kernel::program_expression::pointer_value(
@@ -342,6 +343,7 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
                 1024,
             ))
             .with_resource_context(resources);
+        state.prepare_modular_call_reservations();
         let function = reader_for_input("return_one_owner", 1024);
         let environment = environment(&function);
         let callee = state
@@ -554,6 +556,7 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
             .with_population_creation_tracking()
             .with_memory(SymbolicMemory::new().with_block(selected.base.clone(), 8))
             .with_resource_context(resources);
+        state.prepare_modular_call_reservations();
         let output = ResourceSpec::owned_memory(MemorySegment::new(
             crate::kernel::program_expression::variable("p"),
             crate::kernel::program_expression::int32_literal(0),
