@@ -22576,6 +22576,56 @@ void stamp(int* p, int* q) {
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
+#[test]
+fn composite_view_assembly_requires_the_rewritten_body_fact() {
+    let c = r#"
+void read_tagged(int *cell, int *p);
+void caller(int *cell, int *p, int *q) { read_tagged(cell, p); }
+"#;
+    let source = r#"verifying "tagged.c";
+function tag(p: int32*) -> int32 {
+    if p == 0 { 1 } else { 7 }
+}
+resource tagged(cell: int32*, formal: int32*) {
+    owns *cell;
+    fact forall (k: int32) { k == 1 implies tag(formal) == 7 };
+}
+extern void read_tagged(int32* cell, int32* p) { views tagged(cell, p); }
+void caller(int32* cell, int32* p, int32* q) {
+    owns *cell;
+    requires p == q;
+    requires forall (k: int32) { k == 1 implies tag(q) == 7 };
+} by {
+    have forall (k: int32) { k == 1 implies tag(p) == 7 } by { rewrite(p, q); solve(); }
+    step();
+    step();
+}
+"#;
+    let sources = [("tagged.c", c)];
+    let missing = source.replace(
+        "    have forall (k: int32) { k == 1 implies tag(p) == 7 } by { rewrite(p, q); solve(); }\n",
+        "",
+    );
+    let refusal = verify_c_sources(&missing, &sources)
+        .expect_err("the call must check the body fact in its own spelling")
+        .concise_report();
+    assert!(
+        refusal.contains("missing pure fact")
+            && refusal.contains("`forall (k: int32) { k == 1 implies tag(formal) == 7 }`"),
+        "{refusal}"
+    );
+    assert!(refusal.contains("formal = p"), "{refusal}");
+
+    let label = "caller.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("rewrite(p, q)"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 /// Expand one function's proof and replay it with that claim's implicit
 /// search off. `claim` is the label of the expanded claim.
 fn store_index_separation_replays(fixture: &str, function: &str, claim: &str) {
