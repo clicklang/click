@@ -4354,6 +4354,29 @@ fn anchored_byte_separation_checks_full_width_and_scope() {
 }
 
 #[test]
+fn numeric_address_connectivity_forks_and_invalidates_an_overlapping_cell() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Address::symbolic(Variable(970_151));
+    let q = Address::symbolic(Variable(970_152));
+    let word = MachineTerm::Variable(Variable(970_153));
+    let q_is_word =
+        ConditionTerm::uint64_equal(MachineTerm::integer_address(q.clone()), word.clone());
+    let p_is_word = ConditionTerm::uint64_equal(MachineTerm::integer_address(p.clone()), word);
+    let shared = PureFactContext::new().assume_condition(p_is_word, true);
+    let negative = shared.clone().assume_condition(q_is_word.clone(), false);
+    let connected = shared.clone().assume_condition(q_is_word, true);
+    assert!(!shared.addresses_numerically_connected(&p, &q));
+    assert!(!negative.addresses_numerically_connected(&p, &q));
+    assert!(connected.addresses_numerically_connected(&p, &q));
+    assert!(connected.addresses_numerically_connected(&q.offset_by_bytes(4), &p));
+
+    let cached = SymbolicMemory::new().store(q.clone(), int32(42));
+    let after = cached.without_possible_aliasing_cells(&p, 4, &connected);
+    assert!(!after.has_known_cell_at(&q));
+    assert!(cached.has_known_cell_at(&q));
+}
+
+#[test]
 fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = Address::symbolic(Variable(970_141));
@@ -4376,7 +4399,10 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
         true,
     );
     let context = address.clone().assume_proposition(owners.clone());
-    assert!(!context.address_connected_objects(&q).is_empty());
+    // The address of `p` occurs inside an addition, so it is not an
+    // address endpoint of the stated equality. The owner proves separation.
+    assert!(context.addresses_numerically_connected(&q, &q));
+    assert!(!context.addresses_numerically_connected(&q, &p));
     let before = intern_memory(SymbolicMemory::new().store(
         p.clone(),
         ProgramValue::UInt64(MachineTerm::uint64_constant(17)),

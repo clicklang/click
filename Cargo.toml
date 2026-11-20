@@ -28,6 +28,7 @@ path = "src/bin/click.rs"
 [dependencies]
 charon = { git = "https://github.com/AeneasVerif/charon", rev = "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb", default-features = false }
 flate2 = "1"
+hashbrown = { version = "0.17", default-features = false }
 imbl = "7"
 libc = "0.2"
 mimalloc = { version = "0.1", default-features = false }

@@ -1,8 +1,57 @@
 //! Exact wide equality premises indexed by shallow operand identity.
 use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
 use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
-use crate::kernel::{ConditionTerm, MachineIntegerType, MachineOperandView, Proposition};
-use crate::persistent::{PersistentMap, PersistentSet};
+use crate::kernel::{
+    Address, ConditionTerm, MachineIntegerType, MachineOperandView, MachineTerm, Proposition,
+};
+use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
+
+/// Reachability in the store's numeric-address graph. An equality joins two
+/// word operands, and each explicit address operand joins its object bucket.
+/// Keeping the two kinds of node distinct preserves the difference between
+/// numeric equality and possible byte overlap through another displacement.
+#[derive(Clone, Debug, Default)]
+pub(in crate::kernel) struct NumericAddressConnectivity {
+    operands: PersistentMap<Key, u64>,
+    objects: PersistentMap<Address, u64>,
+    components: PersistentComponents<u64>,
+    next_id: u64,
+}
+
+impl NumericAddressConnectivity {
+    pub(in crate::kernel) fn record(&mut self, endpoints: [(&Key, &MachineTerm); 2]) {
+        let [left, right] = endpoints.map(|(key, term)| {
+            let operand = Self::node(&mut self.operands, &mut self.next_id, key);
+            if let Some(address) = term.address_pointer() {
+                let bucket = crate::kernel::assumptions::parameter_alias_bucket(address);
+                let object = Self::node(&mut self.objects, &mut self.next_id, &bucket);
+                self.components.join(&operand, &object);
+            }
+            operand
+        });
+        self.components.join(&left, &right);
+    }
+
+    fn node<K: Ord + Clone>(nodes: &mut PersistentMap<K, u64>, next_id: &mut u64, key: &K) -> u64 {
+        if let Some(id) = nodes.get(key) {
+            return *id;
+        }
+        let id = *next_id;
+        *next_id += 1;
+        nodes.insert(key.clone(), id);
+        id
+    }
+
+    pub(in crate::kernel) fn connected(&self, left: &Address, right: &Address) -> bool {
+        use crate::kernel::assumptions::parameter_alias_bucket;
+        let Some(left) = self.objects.get(&parameter_alias_bucket(left)) else {
+            return false;
+        };
+        self.objects
+            .get(&parameter_alias_bucket(right))
+            .is_some_and(|right| self.components.root(left) == self.components.root(right))
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct WideEqualitySources {

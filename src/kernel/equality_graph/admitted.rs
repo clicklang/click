@@ -6,6 +6,8 @@ use crate::kernel::primitives::*;
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct InputData {
     pub(in crate::kernel) wide_constant_sources: super::wide_sources::WideEqualitySources,
+    pub(in crate::kernel) numeric_address_connectivity:
+        super::wide_sources::NumericAddressConnectivity,
     /// Value-level pointer origins. C address comparisons never enter this graph.
     pub(in crate::kernel) pointer_address_sources: crate::persistent::PersistentMap<
         ConditionTerm,

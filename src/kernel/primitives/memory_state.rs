@@ -7853,7 +7853,6 @@ impl SymbolicMemory {
         );
         // Objects a known address equality ties to the written one may share
         // the written bytes.
-        let address_connected = assumptions.address_connected_objects(&normalized_pointer);
         let cell_fate = |cell_pointer: &Address, cell_value: &ProgramValue| {
             let normalized_cell_pointer = Address {
                 base: cell_pointer.base.clone(),
@@ -7878,10 +7877,8 @@ impl SymbolicMemory {
                     CachedValueFate::Forgotten
                 };
             }
-            if !address_connected.is_empty()
-                && address_connected.contains(&crate::kernel::assumptions::parameter_alias_bucket(
-                    &normalized_cell_pointer,
-                ))
+            if assumptions
+                .addresses_numerically_connected(&normalized_pointer, &normalized_cell_pointer)
             {
                 return if crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                     &normalized_pointer,
@@ -7946,10 +7943,8 @@ impl SymbolicMemory {
                     CachedValueFate::Forgotten
                 };
             }
-            if !address_connected.is_empty()
-                && address_connected.contains(&crate::kernel::assumptions::parameter_alias_bucket(
-                    &normalized_cell_pointer,
-                ))
+            if assumptions
+                .addresses_numerically_connected(&normalized_pointer, &normalized_cell_pointer)
             {
                 return if crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                     &normalized_pointer,
@@ -10322,6 +10317,17 @@ impl ExecutionState {
     pub fn with_memory(mut self, memory: SymbolicMemory) -> Self {
         self.set_memory(memory);
         self
+    }
+
+    /// Install memory built from a shared base. Register its identity by
+    /// changed paths before resource invalidation or the point link looks it up.
+    pub(in crate::kernel) fn with_memory_relative_to(
+        self,
+        memory: SymbolicMemory,
+        base: &SymbolicMemory,
+    ) -> Self {
+        super::intern_memory_with(std::borrow::Cow::Borrowed(&memory), Some(base), None);
+        self.with_memory(memory)
     }
 
     /// Replace the memory state after proof-only cell naming.
