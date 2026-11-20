@@ -13911,6 +13911,10 @@ pub struct VolatileAccess {
 pub enum Proposition {
     VolatileAccess(Arc<VolatileAccess>),
     Equal(Term, Term),
+    SequenceMembership {
+        element: StoredProgramValue,
+        sequence: SequenceTerm,
+    },
     ConditionIs(StoredConditionTerm, bool),
     Predicate {
         name: String,
@@ -14152,6 +14156,10 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
         Proposition::Equal(left, right) => {
             left.hash(state);
             right.hash(state);
+        }
+        Proposition::SequenceMembership { element, sequence } => {
+            element.hash(state);
+            sequence.hash(state);
         }
         Proposition::ConditionIs(condition, value) => {
             condition.hash(state);
@@ -14437,6 +14445,10 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
     match proposition {
         Proposition::VolatileAccess(event) => Proposition::VolatileAccess(event.clone()),
         Proposition::Equal(left, right) => Proposition::Equal(left.clone(), right.clone()),
+        Proposition::SequenceMembership { element, sequence } => Proposition::SequenceMembership {
+            element: element.clone(),
+            sequence: sequence.clone(),
+        },
         Proposition::ConditionIs(condition, value) => {
             Proposition::condition_is(condition.clone(), *value)
         }

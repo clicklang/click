@@ -1097,6 +1097,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         }
         if compound_available.contains(&std::ptr::from_ref(proposition))
             || available(proposition)
+            || crate::kernel::spec::sequence_membership_view(proposition)
+                .as_ref()
+                .is_some_and(&available)
             || spelled_otherwise()
             || observed_otherwise()
         {
@@ -1948,6 +1951,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         if !branch.state.facts.contains(&disjunction) {
             return Err(PropositionSplitError::MissingDisjunction);
         }
+        let disjunction =
+            crate::kernel::spec::sequence_membership_view(&disjunction).unwrap_or(disjunction);
         let Proposition::Or(left, right) = disjunction else {
             return Err(PropositionSplitError::ExpectedDisjunction);
         };

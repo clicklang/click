@@ -6647,10 +6647,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 introduced_surfaces,
             );
         }
-        if matches!(goal, Proposition::Or(_, _))
-            && let Some((surface_left, surface_right)) =
-                surface_logical_children(surface_goal, false)
-        {
+        let disjuncts = if matches!(goal, Proposition::Or(..)) {
+            surface_logical_children(surface_goal, false)
+        } else {
+            // A retained membership goal exposes the same checked choices as
+            // its old disjunction. The singleton has just one candidate.
+            crate::kernel::sequence_membership_view(goal)
+                .and_then(|view| search_input.structural_proposition_candidate(&view))
+                .map(|surface| {
+                    surface_logical_children(&surface, false)
+                        .unwrap_or_else(|| (surface.clone(), surface))
+                })
+        };
+        if let Some((surface_left, surface_right)) = disjuncts {
             return crate::kernel::search::ProofSearch::try_structural_or_solve_closure(
                 search_input,
                 &surface_left,

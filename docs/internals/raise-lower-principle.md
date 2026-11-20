@@ -652,6 +652,11 @@ concatenation with an empty sequence. The checker compares corresponding
 elements in order and distinguishes different lengths. Admitting a sequence
 equality also publishes its element equalities through the existing fact
 propagation path.
+Pure finite `int32` membership also keeps the element and the sequence as
+operands of `in`. Checking proves membership from one equal element or
+nonmembership from every element's disequality. Held membership exposes the
+same element disjunction to `cases`, and held nonmembership supplies the
+individual disequalities.
 
 Arithmetic domains raise as ordinary comparisons and conjunctions, including
 the negation of a range conjunction on an overflowing execution branch.
