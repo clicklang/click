@@ -271,6 +271,16 @@ impl RegionFootprint {
 /// Establish collection separation from explicitly selected premises. Only the
 /// named region's recorded members are visited; no execution history is read.
 pub(crate) fn separate_using(left: &Resource, right: &Resource, facts: &PureFactContext) -> bool {
+    separate_members(left, right, |fact| {
+        byte_premise(fact).is_some_and(|bytes| facts.contains_known(&bytes))
+    })
+}
+
+pub(crate) fn separate_members(
+    left: &Resource,
+    right: &Resource,
+    available: impl Fn(&Proposition) -> bool,
+) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     // Do not turn two effect collections into a Cartesian product.
     if matches!(
@@ -306,21 +316,15 @@ pub(crate) fn separate_using(left: &Resource, right: &Resource, facts: &PureFact
             (Resource::Memory(left), Resource::Memory(right))
                 if left.base().blocks_proven_distinct(right.base()) => {}
             _ => {
-                let (Some(left), Some(right)) = (byte_resource(left), byte_resource(right)) else {
-                    return false;
-                };
                 let forward = Proposition::ResourceSeparate {
                     left: Box::new(left.clone()),
                     right: Box::new(right.clone()),
                 };
                 let reverse = Proposition::ResourceSeparate {
-                    left: Box::new(right),
-                    right: Box::new(left),
+                    left: Box::new(right.clone()),
+                    right: Box::new(left.clone()),
                 };
-                // Parent/child restriction is explicit. Exact physical spans
-                // use the maintained address-class/span index, never an
-                // alias or separation-fact search per member.
-                if !facts.contains_known(&forward) && !facts.contains_known(&reverse) {
+                if !available(&forward) && !available(&reverse) {
                     return false;
                 }
             }

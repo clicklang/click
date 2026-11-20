@@ -1884,7 +1884,7 @@ mod tests {
         let (root, path) = temporary_project(
             "omitted-have-location",
             "int helper(void) { return 1; }\nint f(void) { int x; x = helper(); return x; }",
-            "verifying \"program.c\";\nint32 helper() { ensures result == 1; }\nint32 f() { ensures result == 1; } by {\n    step();\n    step_until(statement(2));\n    have x == 2;\n}",
+            "verifying \"program.c\";\nint32 helper() { ensures result == 1; }\nint32 f() { ensures result == 1; } by {\n    step();\n    step_until(statement(2).entry);\n    have x == 2;\n}",
         );
         let report = entry_with([path.display().to_string()]).expect_err("x is 1, not 2");
         fs::remove_dir_all(root).unwrap();
@@ -1961,7 +1961,7 @@ mod tests {
                 requires 0 <= x;
                 ensures 0 <= result;
             } by {
-                let { result: r } = step(child, {});
+                let { result: r } = step(child);
                 have r < 1 by {
                     apply(negative(r)) using { 0 <= r; }
                 }
@@ -2256,7 +2256,7 @@ int32 read_first(int32 m) {
         if q == 0 {
             step_until(function.exit);
         } else {
-            step_until(statement(3));
+            step_until(statement(3).entry);
             have q[0] == 7 by solve();
             step_until(function.exit);
         }
@@ -2299,7 +2299,7 @@ int32 read_first(int32 m) {
         if q == 0 {
             step_until(function.exit);
         } else {
-            step_until(statement(4));
+            step_until(statement(4).entry);
             step();
             if 0 == to_integer(m - 1) {
                 step();

@@ -30,7 +30,7 @@ uint64 f(const uint8* input, const uint8* buf, int32 narrow, uint64 native, uint
  views input[0u64..5552u64];
  ensures result == 0u64;
 } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  loop {
   decreases to_integer(n);
   invariant n == 1u32;

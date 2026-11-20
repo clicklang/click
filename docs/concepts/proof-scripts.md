@@ -174,7 +174,7 @@ An execution proof carries a C frontier. The execution vocabulary is:
 
 - `mark name;` to name the current state for later `at(name, ...)` expressions;
 - `step()` for one simple deterministic transition;
-- `step_until(target)` for a forward prefix, up to a statement, region,
+- `step_until(point)` for a forward prefix, up to a statement, region,
   loop, assignment, read, back edge, or `function.exit`, never splitting;
 - `branch ensuring { ... } { true => { ... } false => { ... } }` for the C `if` at
   the frontier and its single joined continuation; and
@@ -300,7 +300,7 @@ result form names the call's value:
 
 <!-- verified-example: mdtests/call_result_in_condition.md -->
 ```click
-let { result: r } = step(classify, { });
+let { result: r } = step(classify);
 ```
 
 `r` is then an ordinary value name in `have`, `rewrite`, `normalize() using`,

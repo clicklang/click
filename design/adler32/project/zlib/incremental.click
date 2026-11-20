@@ -13,7 +13,7 @@ uint64 click_zlib_incremental(uint64 seed, const uint8* buf, uint64 len, uint64 
  have viewable(buf[0u64..len]) by solve();
  apply(zlib_seed_bounds(seed));
  have viewable(buf[0u64..split]) by solve();
- step_until(assignment(prefix, 0)); step();
+ step_until(assignment(prefix, 0).entry); step();
  apply(zlib_checksum_seed_u64(buf, split, prefix, to_integer(zlib_seed_a(seed)), to_integer(zlib_seed_b(seed))));
  have buf + split != 0 by known();
  have viewable((buf + split)[0u64..len - split]) by solve();

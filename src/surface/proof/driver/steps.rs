@@ -459,6 +459,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::NormalizeUsing(premises) => {
                 Some(driver_proof.apply_normalize_using(premises))
             }
+            ProofStep::OrderChain(premises) => Some(driver_proof.apply_order_chain(premises)),
             ProofStep::ArithmeticUsing(_) => {
                 return Err(driver_proof
                     .step_error("arithmetic search must expand into ordinary proof steps"));

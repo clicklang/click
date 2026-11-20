@@ -289,6 +289,63 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
 }
 
 #[test]
+fn complete_parameter_pointer_reads_keep_their_write_point_across_sibling_stores() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let cell = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(38_154)),
+    };
+    let target = Address::symbolic(Variable(38_155));
+    let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer)
+        .with_bounds(Some(SubobjectBounds::constant(target, 4)));
+    let state = ExecutionState::new();
+    let written = state.clone().with_memory(
+        state
+            .memory()
+            .clone()
+            .store(cell.clone(), ProgramValue::Pointer(stored.clone())),
+    );
+    let mut samples = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut state = written.clone();
+        for bits in 0..count {
+            state = state.clone().with_memory(state.memory().clone().store(
+                cell.offset_by_bytes(8),
+                ProgramValue::Int32(MachineTerm::constant(bits)),
+            ));
+        }
+        let (version, work) = crate::instrumentation::measure_deterministic_work(|| {
+            state
+                .program_point()
+                .indexed_typed_version(&cell, stored.program_type())
+                .expect("complete pointer store at the parameter cell")
+        });
+        assert_eq!(version.read_version_id(), written.program_point_id());
+        let read = Pointer::from_point_read(version, stored.program_type(), &cell);
+        assert_eq!(
+            crate::kernel::eval::pointer_read_over_write_program_value(read.address()).as_ref(),
+            Some(&stored)
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+
+    let partial = written.clone().with_memory(written.memory().clone().store(
+        cell.offset_by_bytes(4),
+        ProgramValue::Int32(MachineTerm::constant(0)),
+    ));
+    assert!(
+        partial
+            .program_point()
+            .indexed_typed_version(&cell, stored.program_type())
+            .is_none()
+    );
+}
+
+#[test]
 fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() {
     let _session = crate::kernel::VerificationSession::enter();
     let flag = slot();
@@ -368,4 +425,73 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
             .indexed_typed_version(&object, ProgramType::Int32Pointer)
             .is_none()
     );
+}
+
+#[test]
+fn opaque_call_word_versions_follow_checked_local_effects() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let output = slot();
+    let sibling = SymbolicMemory::local_pointer("disjoint");
+    let output_range = MemoryRange::new(output.clone(), 0.into(), 1.into());
+    let sibling_range = MemoryRange::new(sibling.clone(), 0.into(), 1.into());
+    let start = ExecutionState::new().with_memory(
+        SymbolicMemory::new()
+            .with_declared_scalar_block(output.base.clone(), 4, ProgramType::Int32)
+            .with_block(sibling.base.clone(), 4),
+    );
+    let call = |state: &ExecutionState, index, range: &MemoryRange| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().with_call_memory_havoc(
+                Variable(index),
+                std::slice::from_ref(range),
+                &PureFactContext::new(),
+                None,
+            ))
+    };
+    let output_return = |mut state: ExecutionState| {
+        state.set_memory_directly(state.memory().clone().with_initialized_call_word(&output));
+        state
+    };
+    let returned = output_return(call(&start, 38_201, &output_range));
+    let select = |state: &ExecutionState| {
+        state
+            .program_point()
+            .ordinary_typed_version(&output, ProgramType::Int32)
+    };
+    let version = select(&returned).expect("opaque output has a version");
+    assert_eq!(version.read_version_id(), returned.program_point_id());
+    assert!(version.indexed_integer_store_bits().is_none());
+    assert!(returned.memory().known_value(&output).is_none());
+    assert!(
+        returned
+            .memory()
+            .has_initialized_bytes_under(&output, 4, &PureFactContext::new())
+    );
+
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let mut state = returned.clone();
+        for i in 0..size {
+            state = call(&state, 39_000 + i, &sibling_range);
+        }
+        let (selected, work) =
+            crate::instrumentation::measure_deterministic_work(|| select(&state));
+        assert_eq!(selected, Some(version.clone()));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+
+    let changed = call(&returned, 40_000, &output_range);
+    assert!(select(&changed).is_none());
+    let returned_again = output_return(changed);
+    let new_version = select(&returned_again).expect("the new output has its own version");
+    assert_eq!(
+        new_version.read_version_id(),
+        returned_again.program_point_id()
+    );
+    assert_ne!(new_version, version);
 }

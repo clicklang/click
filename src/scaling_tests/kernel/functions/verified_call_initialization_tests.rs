@@ -19,6 +19,7 @@ fn aliased_byte_output_lookup_ignores_unrelated_memory_and_alias_history() {
                 &assumptions,
                 &mut facts,
                 &mut budget,
+                false,
             )
         });
         result.unwrap().unwrap();

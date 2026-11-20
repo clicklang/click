@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, LoopEffectOrigin};
+use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, LoopEffectOrigin, SpecIntegerExpression};
 use crate::kernel::{bits32_constant, constant_u32};
 
 // The lowerers share these two finite bands. Refusing at each ceiling keeps
@@ -517,9 +517,6 @@ fn contract_expression_is_sequence(expression: &ContractExpression) -> bool {
         _ => false,
     }
 }
-/// Match payloads are lexical values. Keep their declared carrier available
-/// without asking the C-local environment to invent a slot for generated IDs.
-
 fn constructor_arm_environment(
     scrutinee: &SpecAlgebraicExpression,
     arms: &[crate::surface::AlgebraicMatchArm],
@@ -529,51 +526,69 @@ fn constructor_arm_environment(
         return None;
     };
     let index = arms.iter().position(|arm| arm.variant == *variant)?;
-    let arm = &arms[index];
-    let mut body_environment = environment.clone();
-    for (binding, field) in arm.bindings.iter().zip(fields.iter()) {
-        match field {
-            SpecAlgebraicValue::Program(field) => {
-                body_environment.integer_values.remove(binding);
-                body_environment.algebraic_values.remove(binding);
-                body_environment
-                    .values
-                    .insert(binding.clone(), field.clone());
-            }
-            SpecAlgebraicValue::Algebraic(field) => {
-                body_environment.values.remove(binding);
-                body_environment.integer_values.remove(binding);
-                body_environment
-                    .algebraic_values
-                    .insert(binding.clone(), field.clone());
-            }
-            SpecAlgebraicValue::Integer(field) => {
-                body_environment.values.remove(binding);
-                body_environment.algebraic_values.remove(binding);
-                body_environment
-                    .integer_values
-                    .insert(binding.clone(), field.clone());
-            }
-        }
-    }
-    Some((index, body_environment))
+    Some((
+        index,
+        constructor_match_scope(environment, &arms[index].bindings, fields),
+    ))
 }
 
-fn bind_match_program_value(
+/// A match binding shadows same-named values in the other carriers.
+fn bind_match_value(
     environment: &mut SpecElaborationContext,
     binding: &SurfaceBinder,
-    value_type: ProgramType,
+    value: SpecAlgebraicValue,
 ) {
-    environment.integer_values.remove(binding);
-    environment.algebraic_values.remove(binding);
-    let value =
-        SpecExpression::ProgramExpression(ProgramExpression::Variable(binding.kernel_name()));
-    let value = if matches!(binding, SurfaceBinder::Generated(_)) {
-        SpecExpression::Cast(Box::new(value), value_type)
-    } else {
-        value
-    };
-    environment.values.insert(binding, value);
+    match value {
+        SpecAlgebraicValue::Program(value) => {
+            environment.integer_values.remove(binding);
+            environment.algebraic_values.remove(binding);
+            environment.values.insert(binding, value);
+        }
+        SpecAlgebraicValue::Algebraic(value) => {
+            environment.values.remove(binding);
+            environment.integer_values.remove(binding);
+            environment.algebraic_values.insert(binding.clone(), value);
+        }
+        SpecAlgebraicValue::Integer(value) => {
+            environment.values.remove(binding);
+            environment.algebraic_values.remove(binding);
+            environment.integer_values.insert(binding.clone(), value);
+        }
+    }
+}
+
+fn constructor_match_scope(
+    environment: &SpecElaborationContext,
+    bindings: &[SurfaceBinder],
+    fields: &[SpecAlgebraicValue],
+) -> SpecElaborationContext {
+    let mut scope = environment.clone();
+    for (binding, field) in bindings.iter().zip(fields) {
+        bind_match_value(&mut scope, binding, field.clone());
+    }
+    scope
+}
+
+fn match_binding_variables(
+    scope: &SpecElaborationContext,
+    bindings: &[SurfaceBinder],
+    field_types: &[AlgebraicValueType],
+) -> Vec<Option<Variable>> {
+    bindings
+        .iter()
+        .zip(field_types)
+        .map(
+            |(binding, field_type)| match (field_type, scope.integer_values.get(binding)) {
+                (
+                    AlgebraicValueType::Integer,
+                    Some(SpecIntegerExpression::Term(crate::kernel::IntegerTerm::Variable(
+                        variable,
+                    ))),
+                ) => Some(*variable),
+                _ => None,
+            },
+        )
+        .collect()
 }
 
 fn contract_expression_is_algebraic(
@@ -6269,43 +6284,8 @@ impl AnnotationLowerer<'_> {
                         arm.variant
                     ));
                 }
-                let mut body_environment = environment.clone();
-                for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
-                    match binding_type {
-                        AlgebraicValueType::Program(value_type)
-                        | AlgebraicValueType::ObjectPointer(value_type, _) => {
-                            bind_match_program_value(&mut body_environment, binding, *value_type);
-                        }
-                        AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_) => {
-                            body_environment.values.remove(binding);
-                            body_environment.integer_values.remove(binding);
-                            body_environment.algebraic_values.insert(
-                                binding.clone(),
-                                crate::kernel::SpecAlgebraicExpression {
-                                    algebraic_type: self
-                                        .cached_algebraic_kernel_type_from_value_type(
-                                            binding_type,
-                                        )?,
-                                    node: crate::kernel::SpecAlgebraicExpressionNode::Binding(
-                                        binding.kernel_name(),
-                                    ),
-                                },
-                            );
-                        }
-                        AlgebraicValueType::Integer => {
-                            body_environment.values.remove(binding);
-                            body_environment.algebraic_values.remove(binding);
-                            let variable =
-                                allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
-                            body_environment.integer_values.insert(
-                                binding.clone(),
-                                crate::kernel::SpecIntegerExpression::Term(
-                                    crate::kernel::IntegerTerm::var(variable),
-                                ),
-                            );
-                        }
-                    }
-                }
+                let body_environment =
+                    self.symbolic_match_scope(environment, &arm.bindings, &variant.fields)?;
                 let body = self.lower_contract_integer_to_spec(&arm.body, &body_environment)?;
                 lowered_arms.push(crate::kernel::SpecIntegerMatchArm {
                     variant: arm.variant.clone(),
@@ -6315,23 +6295,11 @@ impl AnnotationLowerer<'_> {
                         .map(SurfaceBinder::kernel_name)
                         .collect(),
                     binding_types: variant.fields.clone(),
-                    binding_variables: arm
-                        .bindings
-                        .iter()
-                        .zip(&variant.fields)
-                        .map(|(binding, binding_type)| {
-                            if binding_type == &AlgebraicValueType::Integer {
-                                match body_environment.integer_values.get(binding) {
-                                    Some(crate::kernel::SpecIntegerExpression::Term(
-                                        crate::kernel::IntegerTerm::Variable(variable),
-                                    )) => Some(*variable),
-                                    _ => None,
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .collect(),
+                    binding_variables: match_binding_variables(
+                        &body_environment,
+                        &arm.bindings,
+                        &variant.fields,
+                    ),
                     body: Box::new(body),
                 });
             }
@@ -7133,48 +7101,8 @@ impl AnnotationLowerer<'_> {
                             .iter()
                             .find(|variant| variant.name == arm.variant)
                             .ok_or_else(|| format!("unknown match variant `{}`", arm.variant))?;
-                        let mut body_environment = environment.clone();
-                        for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
-                            match binding_type {
-                                AlgebraicValueType::Program(value_type)
-                                | AlgebraicValueType::ObjectPointer(value_type, _) => {
-                                    bind_match_program_value(
-                                        &mut body_environment,
-                                        binding,
-                                        *value_type,
-                                    );
-                                }
-                                AlgebraicValueType::Algebraic { .. }
-                                | AlgebraicValueType::Parameter(_) => {
-                                    body_environment.values.remove(binding);
-                                    body_environment.algebraic_values.insert(
-                                        binding.clone(),
-                                        SpecAlgebraicExpression {
-                                            algebraic_type: self
-                                                .cached_algebraic_kernel_type_from_value_type(
-                                                    binding_type,
-                                                )?,
-                                            node: SpecAlgebraicExpressionNode::Binding(
-                                                binding.kernel_name(),
-                                            ),
-                                        },
-                                    );
-                                }
-                                AlgebraicValueType::Integer => {
-                                    body_environment.values.remove(binding);
-                                    body_environment.algebraic_values.remove(binding);
-                                    let variable = allocate_quantifier_variable(
-                                        &mut self.next_quantifier_variable,
-                                    )?;
-                                    body_environment.integer_values.insert(
-                                        binding.clone(),
-                                        crate::kernel::SpecIntegerExpression::Term(
-                                            crate::kernel::IntegerTerm::var(variable),
-                                        ),
-                                    );
-                                }
-                            }
-                        }
+                        let body_environment =
+                            self.symbolic_match_scope(environment, &arm.bindings, &variant.fields)?;
                         Ok(crate::kernel::SpecAlgebraicMatchArm {
                             variant: arm.variant.clone(),
                             bindings: arm
@@ -8100,48 +8028,8 @@ impl AnnotationLowerer<'_> {
                         .iter()
                         .find(|variant| variant.name == arm.variant)
                         .ok_or_else(|| format!("unknown match variant `{}`", arm.variant))?;
-                    let mut body_environment = environment.clone();
-                    for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
-                        match binding_type {
-                            AlgebraicValueType::Program(value_type)
-                            | AlgebraicValueType::ObjectPointer(value_type, _) => {
-                                bind_match_program_value(
-                                    &mut body_environment,
-                                    binding,
-                                    *value_type,
-                                );
-                            }
-                            AlgebraicValueType::Algebraic { .. }
-                            | AlgebraicValueType::Parameter(_) => {
-                                body_environment.values.remove(binding);
-                                body_environment.algebraic_values.insert(
-                                    binding.clone(),
-                                    SpecAlgebraicExpression {
-                                        algebraic_type: self
-                                            .cached_algebraic_kernel_type_from_value_type(
-                                                binding_type,
-                                            )?,
-                                        node: SpecAlgebraicExpressionNode::Binding(
-                                            binding.kernel_name(),
-                                        ),
-                                    },
-                                );
-                            }
-                            AlgebraicValueType::Integer => {
-                                body_environment.values.remove(binding);
-                                body_environment.algebraic_values.remove(binding);
-                                let variable = allocate_quantifier_variable(
-                                    &mut self.next_quantifier_variable,
-                                )?;
-                                body_environment.integer_values.insert(
-                                    binding.clone(),
-                                    crate::kernel::SpecIntegerExpression::Term(
-                                        crate::kernel::IntegerTerm::var(variable),
-                                    ),
-                                );
-                            }
-                        }
-                    }
+                    let body_environment =
+                        self.symbolic_match_scope(environment, &arm.bindings, &variant.fields)?;
                     let body =
                         self.lower_contract_algebraic_to_spec(&arm.body, &body_environment)?;
                     result_type.get_or_insert_with(|| body.algebraic_type.clone());
@@ -8153,23 +8041,11 @@ impl AnnotationLowerer<'_> {
                             .map(SurfaceBinder::kernel_name)
                             .collect(),
                         binding_types: variant.fields.clone(),
-                        binding_variables: arm
-                            .bindings
-                            .iter()
-                            .zip(&variant.fields)
-                            .map(|(binding, ty)| {
-                                if ty == &AlgebraicValueType::Integer {
-                                    match body_environment.integer_values.get(binding) {
-                                        Some(crate::kernel::SpecIntegerExpression::Term(
-                                            crate::kernel::IntegerTerm::Variable(variable),
-                                        )) => Some(*variable),
-                                        _ => None,
-                                    }
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect(),
+                        binding_variables: match_binding_variables(
+                            &body_environment,
+                            &arm.bindings,
+                            &variant.fields,
+                        ),
                         body: Box::new(body),
                     });
                 }
@@ -8333,6 +8209,47 @@ impl AnnotationLowerer<'_> {
         let algebraic_type = algebraic_kernel_type(self.spec_definitions.functions, application)?;
         self.algebraic_types.insert(key, algebraic_type.clone());
         Ok(algebraic_type)
+    }
+
+    fn symbolic_match_scope(
+        &mut self,
+        environment: &SpecElaborationContext,
+        bindings: &[SurfaceBinder],
+        field_types: &[AlgebraicValueType],
+    ) -> Result<SpecElaborationContext, String> {
+        let mut scope = environment.clone();
+        for (binding, field_type) in bindings.iter().zip(field_types) {
+            let value = match field_type {
+                AlgebraicValueType::Program(value_type)
+                | AlgebraicValueType::ObjectPointer(value_type, _) => {
+                    let value = SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                        binding.kernel_name(),
+                    ));
+                    let value = if matches!(binding, SurfaceBinder::Generated(_)) {
+                        SpecExpression::Cast(Box::new(value), *value_type)
+                    } else {
+                        value
+                    };
+                    SpecAlgebraicValue::Program(value)
+                }
+                AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_) => {
+                    SpecAlgebraicValue::Algebraic(SpecAlgebraicExpression {
+                        algebraic_type: self
+                            .cached_algebraic_kernel_type_from_value_type(field_type)?,
+                        node: SpecAlgebraicExpressionNode::Binding(binding.kernel_name()),
+                    })
+                }
+                AlgebraicValueType::Integer => {
+                    let variable =
+                        allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
+                    SpecAlgebraicValue::Integer(SpecIntegerExpression::Term(
+                        crate::kernel::IntegerTerm::var(variable),
+                    ))
+                }
+            };
+            bind_match_value(&mut scope, binding, value);
+        }
+        Ok(scope)
     }
 
     fn cached_algebraic_kernel_type_from_value_type(

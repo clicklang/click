@@ -35,7 +35,7 @@ void inspect(struct node *p) {
  requires p == tree_identity(t.model);
  ensures 1 == 1;
 } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  loop { owns t: parent(root); invariant p == tree_identity(t.model); decreases 0; initialize by solve(); maintain by {
  match t.model { Tree::At(pid, cm) => {
  have p == tree_identity(Tree::At(pid, cm)) by { rewrite(Tree::At(pid, cm), t.model); known(); }
@@ -48,7 +48,7 @@ void inspect(struct node *p) {
    step();
    have q == identity;
    mark rotation;
-   step(copy_tag, {});
+   step(copy_tag);
    have q->tag == at(rotation,p->tag);
    have identity->tag == q->tag by { normalize() using { q == identity; }; }
    have identity->tag == at(rotation,p->tag) by { rewrite(identity->tag, q->tag); known(); }

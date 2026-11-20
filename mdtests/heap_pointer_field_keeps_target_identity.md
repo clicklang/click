@@ -39,7 +39,7 @@ int32 run() {
             step_until(function.exit);
         } else {
             step(); step();
-            step(put, {});
+            step(put);
             have defined(h->target) by { known(); }
             mark stored;
             step();

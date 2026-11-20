@@ -1529,11 +1529,10 @@ fn call_binder_transport_prints_and_expands_its_map_unchanged() {
     .unwrap();
 }
 
-/// A `let` naming a call's outputs is parsed only with a binder map, so a
-/// call that lends no instance prints its empty map, the spelling the source
-/// above parsed from: expansion emits exactly this printing.
+/// Outputs are independent of the optional map. Both input spellings print
+/// a named call without a map when it has no entries.
 #[test]
-fn call_output_binding_without_lent_instances_prints_its_empty_map() {
+fn call_output_binding_omits_an_empty_input_map() {
     let source = r#"
         resource Counter() { field revision: int32; }
         void make(int32* state) {
@@ -1550,9 +1549,9 @@ fn call_output_binding_without_lent_instances_prints_its_empty_map() {
             owns c: Counter();
             ensures c.revision == 1;
         } by {
-            let { made: m } = step(make, {});
-            let { result: value } = step(get, {});
-            let { made: another, result: status } = step(mixed, {});
+            let { made: m } = step(make);
+            let { result: value } = step(get);
+            let { made: another, result: status } = step(mixed);
         }
     "#;
     let file = parser::parse(source).unwrap();
@@ -1561,26 +1560,52 @@ fn call_output_binding_without_lent_instances_prints_its_empty_map() {
     };
     let printed = printing::format_proof_tactics(tactics).unwrap();
     assert!(
-        printed.contains("let { made: m } = step(make, {});"),
+        printed.contains("let { made: m } = step(make);"),
         "{printed}"
     );
     assert!(
-        printed.contains("let { result: value } = step(get, {});"),
+        printed.contains("let { result: value } = step(get);"),
         "{printed}"
     );
     assert!(
-        printed.contains("let { result: status, made: another } = step(mixed, {});"),
+        printed.contains("let { result: status, made: another } = step(mixed);"),
         "{printed}"
     );
-    let reparsed = parser::parse(&source.replace(
-        "let { made: another, result: status } = step(mixed, {});",
-        "let { result: status, made: another } = step(mixed, {});",
-    ))
-    .unwrap();
+    let with_empty_map = source.replace("step(make)", "step(make, {})").replace(
+        "let { made: another, result: status } = step(mixed);",
+        "let { result: status, made: another } = step(mixed);",
+    );
+    let reparsed = parser::parse(&with_empty_map).unwrap();
     let SourceProof::Script(again) = reparsed.function_blocks()[3].grouped_proof().unwrap() else {
         panic!("expected script")
     };
     assert_eq!(printed, printing::format_proof_tactics(again).unwrap());
+}
+
+#[test]
+fn named_contract_call_can_bind_a_result_without_an_input_map() {
+    let source = r#"verifying "call.c";
+        contract int32 Exact(int32 n) { ensures result == n; }
+        int32 run(int32 (*cb)(int32), int32 n) {
+            requires Exact(cb);
+            ensures result == n;
+        } by {
+            let { result: value } = step(Exact);
+            step_until(function.exit);
+            solve();
+        }
+    "#;
+    let inputs = [(
+        "call.c",
+        "int32 run(int32 (*cb)(int32), int32 n) { return cb(n); }",
+    )];
+    let verified = verify_c_sources(source, &inputs).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified, "run").unwrap();
+    assert!(
+        expanded.contains("let { result: value } = step(Exact);"),
+        "{expanded}"
+    );
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &inputs)).unwrap();
 }
 
 #[test]
@@ -1613,6 +1638,15 @@ fn call_binder_transport_rejects_a_frontier_call_to_another_function() {
             .contains("requires a call to `increment` at the current frontier"),
         "{}",
         error.message()
+    );
+
+    let missing = source.replace("step(increment, { first: c })", "step(increment)");
+    let error = verify_c_sources(&missing, &c).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("call map omits `increment` binder `first`"),
+        "{error}"
     );
 }
 
@@ -1718,7 +1752,10 @@ fn contract_application_binds_each_handle_by_name() {
             "Touch",
             "declares resource handles; write `step(Touch, { cell: ... })`",
         ),
-        ("Touch, {}", "call map omits `Touch` binder `cell`"),
+        (
+            "Touch, {}",
+            "declares resource handles; write `step(Touch, { cell: ... })`",
+        ),
         (
             "Touch, { slot: first }",
             "`Touch` declares no resource instance binder `slot`",
@@ -3011,28 +3048,28 @@ fn step_output_patterns_reject_ambiguous_and_conflicting_bindings() {
     "#;
     for (output, expected) in [
         (
-            "let value = step(scalar, {});",
+            "let value = step(scalar);",
             "step outputs require named bindings",
         ),
         (
-            "let value = step(make, {});",
+            "let value = step(make);",
             "step outputs require named bindings",
         ),
         ("let value = step();", "step outputs require named bindings"),
         (
-            "let { result: a, result: b } = step(scalar, {});",
+            "let { result: a, result: b } = step(scalar);",
             "duplicate output key",
         ),
         (
-            "let { result: a, made: a } = step(make, {});",
+            "let { result: a, made: a } = step(make);",
             "introduces name `a` twice",
         ),
         (
-            "let { result: a } = step(make, {});",
+            "let { result: a } = step(make);",
             "omits produced resource binder",
         ),
         (
-            "let { unknown: a } = step(scalar, {});",
+            "let { unknown: a } = step(scalar);",
             "does not produce named resource",
         ),
         ("let { made: a } = step();", "only the `result` output"),

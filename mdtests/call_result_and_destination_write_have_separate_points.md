@@ -23,7 +23,7 @@ extern int32 replace(int32 *p) {
 int32 caller() {
     ensures result == 3;
 } by {
-    step_until(statement(1).call(0));
+    step_until(statement(1).call(0).entry);
     step();
     have at(statement(1).call(0).exit, x == 7) by { known(); }
     step();

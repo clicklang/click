@@ -193,7 +193,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 normalize() using { aligned(gparent, 8); };
                             }
                             have parent == y by { known(); }
-                            step_until(call(rb_set_parent_color, 7));
+                            step_until(call(rb_set_parent_color, 7).entry);
                             let links = fold(sized_context_flip_links(root, x, y, z), {
                                 top: x, xl: z, xr: y,
                                 yl: 0 as (int32 *), yr: old(node), zl: 0 as (int32 *), zr: 0 as (int32 *)
@@ -205,14 +205,14 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             let uncle_word = fold(sized_context_flip_black_word(tmp, gparent), {
                                 word: tmp->__rb_parent_color
                             });
-                            step_until(call(rb_set_parent_color, 8));
+                            step_until(call(rb_set_parent_color, 8).entry);
                             step();
                             let black_parent_word = fold(sized_context_flip_black_word(parent, gparent), {
                                 word: parent->__rb_parent_color
                             });
                             unfold(parent_word);
                             have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by known();
-                            step_until(call(rb_set_parent_color, 9));
+                            step_until(call(rb_set_parent_color, 9).entry);
                             have parent == 0 by known();
                             step();
                             unfold(uncle_word);

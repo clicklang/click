@@ -4,7 +4,7 @@ fn program_bindings::count(n: u32) -> u32 {
     requires n <= 1000u32;
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - program::iterations;
         invariant program::iterations <= n;

@@ -24,7 +24,7 @@ refused, because the entry state has no return value. See
 A Rust or C++ function that runs cleanup between computing its return value
 and returning, such as a Rust drop or a C++ destructor, holds that value in a
 local named `result` until it returns. Before the exit a proof reads that
-local as `result`, so `step_until(assignment(result, 0))` stops where the
+local as `result`, so `step_until(assignment(result, 0).entry)` stops where the
 value is written; at the exit it is the returned value. A function whose source
 already has a local named `result` names the holder `result_` in Rust and
 `result_1` in C++. Where nothing runs between computing the value and

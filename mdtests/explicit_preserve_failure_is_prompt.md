@@ -73,7 +73,7 @@ void arena_write(struct region* region, int32 value, int32 k) {
     have to_integer(region->start + 1) <= to_integer(e) by {
         rewrite(region->start, s); known();
     }
-    step_until(statement(2));
+    step_until(statement(2).entry);
     step();
     have region->arena->occupied[k] == at(statement(2).entry, region->arena->occupied[k]) by {
         preserve(memory(region->arena->occupied[k]), statement(2));

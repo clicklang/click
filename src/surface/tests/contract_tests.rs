@@ -2917,7 +2917,7 @@ uint64 nested(uint64 total) {
  requires total <= 64u64;
  ensures result < 16u64;
 } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  loop {
   decreases to_integer(remaining);
   invariant remaining <= total;
@@ -2927,7 +2927,7 @@ uint64 nested(uint64 total) {
    have 16u64 <= remaining by solve();
    have to_integer(remaining - 16u64) == to_integer(remaining) - 16;
    mark before_subtract;
-   step(); step_until(loop(1));
+   step(); step_until(loop(1).entry);
    loop {
     decreases to_integer(n);
     invariant n <= 2u32;

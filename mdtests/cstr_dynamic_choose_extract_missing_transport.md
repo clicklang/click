@@ -15,7 +15,7 @@ uint64 read_terminator(uint8 bytes[]) {
     requires click::c::string::readable(bytes);
     ensures result < 18446744073709551615u64 by {
         unfold(click::c::string::readable(bytes));
-        step_until(region(1));
+        step_until(region(1).entry);
         have exists (len: uint64) {
             len < 18446744073709551615u64 and
                 viewable(bytes[0..len + 1u64]) and

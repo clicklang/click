@@ -1983,7 +1983,10 @@ fn memory_resolution_graph_offsets_keep_load_states_distinct() {
 
 /// Substitute only stated scalar constants in an address, then use the
 /// cell map's exact index. Work is proportional to this address expression.
-fn pointer_with_exact_index_constants(pointer: &Address, assumptions: &PureFactContext) -> Address {
+pub(in crate::kernel) fn pointer_with_exact_index_constants(
+    pointer: &Address,
+    assumptions: &PureFactContext,
+) -> Address {
     enum Task<'a> {
         Visit(&'a AddressOffset),
         Add,

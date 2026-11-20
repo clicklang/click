@@ -449,6 +449,46 @@ impl AliasCandidates {
             .flat_map(move |interval| interval.entries(map))
     }
 
+    /// As `entries`, but seeks past the excluded key ranges of one candidate
+    /// block. The ranges and the keys restored within them are in key order.
+    pub(super) fn entries_excluding<'a, K: BlockKeyed, V>(
+        &'a self,
+        map: &'a HashedOrdMap<K, V>,
+        excluded: &'a [(K, K)],
+        restored: &'a [K],
+    ) -> impl Iterator<Item = (&'a K, &'a V)> + 'a {
+        self.intervals.iter().flat_map(move |interval| {
+            let excludes = excluded.first().is_some_and(|(first, _)| {
+                let block = first.key_block();
+                interval.start.as_ref().is_none_or(|start| start <= block)
+                    && interval.end.admits(block)
+            });
+            let mut lower = interval.start.as_ref().map_or(Bound::Unbounded, |start| {
+                Bound::Included(K::first_key_of(start))
+            });
+            let upper = match &interval.end {
+                Upper::Before(end) => Bound::Excluded(K::first_key_of(end)),
+                Upper::Through(_) | Upper::Unbounded => Bound::Unbounded,
+            };
+            let mut ranges = Vec::new();
+            if excludes {
+                let mut restored = restored.iter().peekable();
+                for (first, last) in excluded {
+                    ranges.push((lower, Bound::Excluded(first.clone())));
+                    while let Some(key) = restored.next_if(|key| *key <= last) {
+                        ranges.push((Bound::Included(key.clone()), Bound::Included(key.clone())));
+                    }
+                    lower = Bound::Excluded(last.clone());
+                }
+            }
+            ranges.push((lower, upper));
+            ranges
+                .into_iter()
+                .flat_map(move |bounds| map.range::<_, K>(bounds))
+                .take_while(move |(key, _)| interval.end.admits(key.key_block()))
+        })
+    }
+
     /// The candidate elements of `set`, ascending.
     pub(crate) fn elements<'a, K: BlockKeyed>(
         &'a self,

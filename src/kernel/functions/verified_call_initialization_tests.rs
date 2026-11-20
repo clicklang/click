@@ -196,6 +196,7 @@ fn byte_output_initializes_the_concrete_storage_held_through_an_alias() {
             &assumptions,
             &mut facts,
             &mut budget,
+            false,
         )
         .unwrap()
         .unwrap();

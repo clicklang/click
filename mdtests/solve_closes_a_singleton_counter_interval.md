@@ -20,7 +20,7 @@ int32 count(int32 n) {
     requires n == 0;
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;

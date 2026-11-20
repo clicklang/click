@@ -116,14 +116,23 @@ theorem contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
                     rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value), if head == value { true } else { list::contains(list::append(tail, ys), value) });
                     apply(list::contains_cons(head, tail, value));
                     rewrite(list::contains(List<T>::Cons(head, tail), value), if head == value { true } else { list::contains(tail, value) });
-                    normalize() using { head == value; };
+                    have (if head == value { true } else { list::contains(list::append(tail, ys), value) }) == true by known();
+                    have (if head == value { true } else { list::contains(tail, value) }) == true by known();
+                    have (if (if head == value { true } else { list::contains(tail, value) }) { true } else { list::contains(ys, value) }) == true by {
+                        rewrite((if head == value { true } else { list::contains(tail, value) }), true);
+                        known();
+                    }
+                    rewrite((if (if head == value { true } else { list::contains(tail, value) }) { true } else { list::contains(ys, value) }), true);
+                    known();
                 } else {
                     apply(list::contains_cons(head, list::append(tail, ys), value));
                     rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value), if head == value { true } else { list::contains(list::append(tail, ys), value) });
                     apply(list::contains_cons(head, tail, value));
                     rewrite(list::contains(List<T>::Cons(head, tail), value), if head == value { true } else { list::contains(tail, value) });
                     rewrite(list::contains(list::append(tail, ys), value), if list::contains(tail, value) { true } else { list::contains(ys, value) });
-                    solve() using { not(head == value); };
+                    have (if head == value { true } else { list::contains(tail, value) }) == list::contains(tail, value) by known();
+                    rewrite((if head == value { true } else { list::contains(tail, value) }), list::contains(tail, value));
+                    known();
                 }
             }
         }

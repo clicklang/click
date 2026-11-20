@@ -16,7 +16,7 @@ verifying "execute_until_unresolved_branch.c";
 
 int32 execute_until_unresolved_branch(int32 flag) {
     ensures result >= 0 by {
-        step_until(region(3));
+        step_until(region(3).entry);
     }
 }
 ```

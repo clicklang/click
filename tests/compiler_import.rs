@@ -941,7 +941,7 @@ fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let offset = proof.find("step_until(loop(0));").unwrap();
+    let offset = proof.find("step_until(loop(0).entry);").unwrap();
     let line = proof[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -1143,7 +1143,7 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let offset = proof.find("step_until(loop(3));").unwrap();
+    let offset = proof.find("step_until(loop(3).entry);").unwrap();
     let line = proof[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')

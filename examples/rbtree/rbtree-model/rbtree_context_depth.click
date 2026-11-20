@@ -19,7 +19,7 @@ theorem ctx_depth_is_nonnegative(ctx: Context) {
         match ctx {
             Context::Top => {
                 unfold(ctx_depth(Context::Top));
-                normalize();
+                known();
             }
             Context::Left(identity, grandparent, color, sibling_model, up_model) => {
                 apply(ih(up_model));

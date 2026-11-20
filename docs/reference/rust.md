@@ -1565,7 +1565,7 @@ premise in the contract's own form before the call:
 fn count(n: u32) -> u32 {
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.n;
         invariant to_integer(passes) + to_integer(iter.n) == to_integer(n);
@@ -1574,7 +1574,7 @@ fn count(n: u32) -> u32 {
                 mark iteration;
                 have iter.n != 0u32;
                 have passes <= 4294967294u32;
-                step_until(back_edge());
+                step_until(loop.back_edge);
                 have to_integer(iter.n) == to_integer(at(iteration, iter.n)) - 1;
             } else {
                 have iter.n == 0u32;
