@@ -1338,6 +1338,37 @@ fn terminal_result_selector_precedes_internal_load_cases() {
 }
 
 #[test]
+fn boolean_returns_split_expansions_inside_a_written_proof_arm() {
+    let sources = [(
+        "integers.c",
+        "bool below_i32(int a, int b) { return a < b; }",
+    )];
+    let source = r#"verifying "integers.c";
+        bool below_i32(int32 a, int32 b) {
+            ensures result implies a < b;
+            ensures a < b implies result;
+            ensures (a == -2147483648 and b == 0) implies result;
+        } by {
+            if a == -2147483648 and b == 0 { step_until(function.exit); solve(); }
+            else { step_until(function.exit); solve(); }
+        }"#;
+    let label = "below_i32.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, label).unwrap();
+    assert_eq!(expanded.matches("if result").count(), 1, "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    let at = expansion::position_at_offset(source, source.rfind("solve();").unwrap());
+    let selected = expand_c_tactic_source_at(source, &sources, at.line, at.column).unwrap();
+    assert_eq!(selected.matches("if result").count(), 1, "{selected}");
+    assert_eq!(selected.matches("solve();").count(), 1, "{selected}");
+    verify_c_sources(&selected, &sources)
+        .unwrap_or_else(|error| panic!("{}\n{selected}", error.report()));
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_01")]
 fn short_circuit_boolean_returns_expand_distinct_outcome_proofs() {
     for (expression, proposition) in [("a && b", "a and b"), ("a || b", "a or b")] {
