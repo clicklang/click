@@ -613,7 +613,11 @@ pub(in crate::surface) fn initial_call_state(
     }
 
     let state = state.begin_function_entry_memory();
-    let memory = memory_with_symbolic_loadable_cells(state.memory().clone(), &loadable_ranges);
+    let memory = memory_with_symbolic_loadable_cells(
+        state.memory().clone(),
+        &state.program_point(),
+        &loadable_ranges,
+    );
     // In particular, a resource such as `pointer[0..1]` must follow the
     // pointer value already present in the entry state, rather than deriving
     // a second pointer from the raw memory-load term for the pointer slot.
@@ -802,11 +806,28 @@ fn reject_aggregate_parameter_storage_resource(
     Ok(())
 }
 
+// Use the original point only when its receipt covers external storage.
+// Detached and unsupported producers retain the existing naming view.
+fn entry_cell_source<'a>(
+    entry: &'a crate::kernel::ProgramPoint,
+    fallback: &'a crate::kernel::ProgramPoint,
+    pointer: &Address,
+    ty: ProgramType,
+) -> &'a crate::kernel::ProgramPoint {
+    let version = match ty {
+        ProgramType::Int32 => entry.entry_integer_version(pointer, crate::kernel::LoadKind::Int32),
+        ProgramType::Parameter(parameter) => entry.generic_entry_version(pointer, parameter),
+        _ => None,
+    };
+    if version.is_some() { entry } else { fallback }
+}
+
 pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
     mut memory: SymbolicMemory,
+    entry: &crate::kernel::ProgramPoint,
     loadable_ranges: &BTreeMap<String, ConcreteMemoryRangeSeed>,
 ) -> SymbolicMemory {
-    let base_memory = memory.clone();
+    let legacy = crate::kernel::ProgramPoint::at(entry.shared_memory());
     for range in loadable_ranges.values() {
         if let Some(layout) = &range.struct_layout {
             let mut offset: u32 = 0;
@@ -830,23 +851,20 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
                             {
                                 return memory;
                             }
+                            let source = entry_cell_source(entry, &legacy, &pointer, element_type);
                             // A value of an abstract type is a cell of its
                             // own, seeded as a field owned alone is.
                             if let ProgramType::Parameter(_) = element_type {
-                                return memory.with_seeded_cells(
+                                return memory.with_seeded_cells_at(
                                     pointer,
                                     crate::kernel::ABSTRACT_VALUE_WIDTH,
                                     element_type,
                                     0,
                                     1,
-                                    crate::kernel::intern_memory(base_memory.clone()),
+                                    source.clone(),
                                 );
                             }
-                            memory.materialize_cell_from_source(
-                                pointer,
-                                element_type,
-                                crate::kernel::intern_memory(base_memory.clone()),
-                            )
+                            memory.materialize_cell_at(pointer, element_type, source)
                         },
                     );
                 }
@@ -863,13 +881,13 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
         // order, skipping elements that already hold a cell, at a cost that
         // does not depend on how many elements there are.
         let count = range.bytes.checked_div(range.element_width).unwrap_or(0);
-        memory = memory.with_seeded_cells(
+        memory = memory.with_seeded_cells_at(
             range.base.clone(),
             range.element_width,
             element_type,
             0,
             count,
-            crate::kernel::intern_memory(base_memory.clone()),
+            entry_cell_source(entry, &legacy, &range.base, element_type).clone(),
         );
     }
     memory
@@ -1333,11 +1351,13 @@ fn materialize_access_segment_cells(
         )));
     }
 
+    let entry = entry_frame.program_point();
+    let fallback = crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory));
+
     // A complete object (`*p`) is one struct at the base: its cells
     // take the field types of the layout, so a `uint64` or pointer field
     // reads back with its own type rather than as int32 words.
     if let Some(layout) = object_segment_layout(parameter_binding.parameters, source_segment) {
-        let base_memory = memory.clone();
         for field in layout.fields().values() {
             memory = visit_struct_field_cells(
                 field,
@@ -1349,11 +1369,8 @@ fn materialize_access_segment_cells(
                     {
                         return memory;
                     }
-                    memory.materialize_cell_from_source(
-                        pointer,
-                        element_type,
-                        crate::kernel::intern_memory(base_memory.clone()),
-                    )
+                    let source = entry_cell_source(&entry, &fallback, &pointer, element_type);
+                    memory.materialize_cell_at(pointer, element_type, source)
                 },
             );
         }
@@ -1362,7 +1379,6 @@ fn materialize_access_segment_cells(
     if let Some(layout) =
         contract_segment_struct_layout(parameter_binding.parameters, source_segment)
     {
-        let base_memory = memory.clone();
         for index in constant_u32(*start)..constant_u32(*end) {
             let element_pointer = offset_pointer_by_elements(
                 segment.base.clone(),
@@ -1380,11 +1396,8 @@ fn materialize_access_segment_cells(
                         {
                             return memory;
                         }
-                        memory.materialize_cell_from_source(
-                            pointer,
-                            element_type,
-                            crate::kernel::intern_memory(base_memory.clone()),
-                        )
+                        let source = entry_cell_source(&entry, &fallback, &pointer, element_type);
+                        memory.materialize_cell_at(pointer, element_type, source)
                     },
                 );
             }
@@ -1408,16 +1421,16 @@ fn materialize_access_segment_cells(
         end = end * element_width / width;
         element_width = width;
     }
-    let source = crate::kernel::intern_memory(memory.clone());
+    let source = entry_cell_source(&entry, &fallback, &segment.base, element_type);
     // One run for the segment's elements, spelled from the segment's own
     // base as each element's pointer is (see `memory_with_symbolic_loadable_cells`).
-    Ok(memory.with_seeded_cells(
+    Ok(memory.with_seeded_cells_at(
         segment.base.clone(),
         element_width,
         element_type,
         start,
         end,
-        source,
+        source.clone(),
     ))
 }
 
@@ -4305,5 +4318,85 @@ mod input_identity_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/surface/lowering/resource_lowering/input_identity_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod entry_cell_tests {
+    use super::*;
+
+    #[test]
+    fn entry_seeded_compact_cells_retain_their_point_without_visiting_other_slots() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let source = entry.program_point();
+        let address = |variable| Address {
+            base: crate::kernel::AddressBase::ExternalArgument,
+            offset: crate::kernel::AddressOffset::Variable(crate::kernel::Variable(variable)),
+        };
+        let integer_base = address(1_009_104);
+        let generic_base = address(1_009_105);
+        let generic = ProgramType::Parameter(crate::kernel::TypeParameterName::intern("SeededT"));
+        let mut work = Vec::new();
+        for count in [4, 16, 64, 256] {
+            let typed_range = |base: &Address, ty: ProgramType| ConcreteMemoryRangeSeed {
+                base: base.clone(),
+                bytes: count * ty.byte_width(),
+                element_width: ty.byte_width(),
+                element_type: Some(ty),
+                struct_layout: None,
+            };
+            let ranges = BTreeMap::from([
+                (
+                    "words".into(),
+                    typed_range(&integer_base, ProgramType::Int32),
+                ),
+                ("items".into(), typed_range(&generic_base, generic)),
+            ]);
+            let memory =
+                memory_with_symbolic_loadable_cells(entry.memory().clone(), &source, &ranges);
+            let ((word, item), cost) = crate::instrumentation::measure_deterministic_work(|| {
+                (
+                    memory.load(&integer_base.offset_by_bytes(4)),
+                    memory.load(&generic_base.offset_by_bytes(generic.byte_width())),
+                )
+            });
+            let ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::MemoryLoad(
+                integer,
+                _,
+                _,
+            ))) = word
+            else {
+                panic!("seeded integer cell");
+            };
+            let ExpressionOutcome::Value(ProgramValue::Parameter(item)) = item else {
+                panic!("seeded generic cell");
+            };
+            let crate::kernel::AlgebraicTermNode::MemoryLoad { point: generic, .. } = &item.node
+            else {
+                panic!("generic cell must name its read");
+            };
+            assert_eq!(integer.read_version_id(), source.id());
+            assert_eq!(generic.read_version_id(), source.id());
+            let installed = entry.clone().with_function_entry_memory(memory);
+            let symbolic_element = Address {
+                base: integer_base.base.clone(),
+                offset: crate::kernel::AddressOffset::add(
+                    integer_base.offset.clone(),
+                    crate::kernel::AddressOffset::scale_int32(
+                        MachineTerm::Variable(crate::kernel::Variable(1_009_106)),
+                        4,
+                    ),
+                ),
+            };
+            assert_eq!(
+                installed
+                    .program_point()
+                    .ordinary_typed_version(&symbolic_element, ProgramType::Int32),
+                Some(integer),
+            );
+            work.push(cost);
+        }
+        assert_eq!(work, vec![work[0]; work.len()]);
     }
 }

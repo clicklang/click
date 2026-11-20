@@ -5926,20 +5926,9 @@ impl SymbolicMemory {
                 .is_without(&before.union_cells, &dropped_union_cells)
     }
 
-    /// Seeds the cells of elements `first..count` at `base`,
-    /// `base + element_width`, …: each one the load of its own element in
-    /// `source`, typed as `element_type` ([`cell_run_value`]). This is exactly
-    /// `store` of each such value in element order, skipping every element
-    /// that already holds a cell, and
-    /// it costs the same whatever `count` is: the cells are one [`CellRun`]
-    /// and the stores one `CellsSeeded` edge.
-    ///
-    /// Two things a store does that a run does not represent are refused
-    /// rather than approximated: displacing typed union views (the state
-    /// holds some) and marking a live heap cell initialized (an allocation
-    /// may hold the range). Those fall back to the stores themselves.
+    #[cfg(test)]
     pub(crate) fn with_seeded_cells(
-        mut self,
+        self,
         base: Address,
         element_width: u32,
         element_type: ProgramType,
@@ -5947,16 +5936,50 @@ impl SymbolicMemory {
         count: u32,
         source: SharedMemory,
     ) -> Self {
+        self.with_seeded_cells_at(
+            base,
+            element_width,
+            element_type,
+            first,
+            count,
+            ProgramPoint::at(&source),
+        )
+    }
+
+    /// Seeds the cells of elements `first..count` at `base`,
+    /// `base + element_width`, …: each one the load of its own element in
+    /// `source`, typed as `element_type` ([`cell_run_value`]). This is exactly
+    /// `store` of each such value in element order, skipping every element
+    /// that already holds a cell. It costs the same whatever `count` is: the cells are one [`CellRun`]
+    /// and the stores one `CellsSeeded` edge.
+    ///
+    /// Two things a store does that a run does not represent are refused
+    /// rather than approximated: displacing typed union views (the state
+    /// holds some) and marking a live heap cell initialized (an allocation
+    /// may hold the range). Those fall back to the stores themselves.
+    ///
+    /// A recorded source point is retained for each slot whose version the
+    /// typed read selector can name.
+    pub(crate) fn with_seeded_cells_at(
+        mut self,
+        base: Address,
+        element_width: u32,
+        element_type: ProgramType,
+        first: u32,
+        count: u32,
+        source: ProgramPoint,
+    ) -> Self {
         if first >= count {
             return self;
         }
         if !self.run_can_stand_for_cells_at(&base) {
-            let run = CellRun::new(
+            let run = CellRun::new_at(
                 base,
                 element_width,
                 element_type,
                 count,
                 source,
+                RunValueMode::Load,
                 IndexIntervals::default(),
             );
             for index in first..count {
@@ -5973,7 +5996,7 @@ impl SymbolicMemory {
             element_type,
             first,
             count,
-            ProgramPoint::at(&source),
+            source,
             RunValueMode::Load,
         )
     }
@@ -5990,7 +6013,7 @@ impl SymbolicMemory {
     /// `Err` hands the memory back unchanged for the caller's own cells: an
     /// automatic object's block (a named load does not initialize one), a
     /// heap block (fresh storage stays uninitialized), and, as for
-    /// [`Self::with_seeded_cells`], a state with typed union views or a
+    /// [`Self::with_seeded_cells_at`], a state with typed union views or a
     /// base that may lie in a live allocation.
     pub(crate) fn with_named_cell_run(
         self,
@@ -6032,7 +6055,7 @@ impl SymbolicMemory {
     /// back unchanged for the caller's own stores: a block already holding a
     /// cell (a store overwrites it, where a run would keep it as a hole), an
     /// automatic or heap block (a store there marks initialization a run
-    /// does not), and, as for [`Self::with_seeded_cells`], a state with
+    /// does not), and, as for [`Self::with_seeded_cells_at`], a state with
     /// typed union views or a base that may lie in a live allocation.
     pub(crate) fn with_constant_run(
         self,
@@ -6617,7 +6640,7 @@ impl SymbolicMemory {
             && !candidates.any_entry(&self.heap.live_allocations, |_, _| true)
     }
 
-    /// The run of [`Self::with_seeded_cells`], its preconditions checked.
+    /// The run of [`Self::with_seeded_cells_at`], its preconditions checked.
     fn with_run_of_cells(
         mut self,
         base: Address,
@@ -7523,7 +7546,7 @@ impl SymbolicMemory {
     /// whatever `fate` would say of them: a dropped slot was written, and a
     /// caller that retires the storage forgets its record afterwards. A run
     /// carries no zero reading to lose: it is never seeded where a live
-    /// allocation may lie ([`Self::with_seeded_cells`] and its siblings
+    /// allocation may lie ([`Self::with_seeded_cells_at`] and its siblings
     /// refuse one).
     ///
     /// The work is the candidates `scope` admits, which every caller already

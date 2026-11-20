@@ -1366,6 +1366,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
     };
     let initial_memory = memory_with_symbolic_loadable_cells(
         SymbolicMemory::new(),
+        &crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new())),
         &std::collections::BTreeMap::from([(
             "p".to_string(),
             ConcreteMemoryRangeSeed {
