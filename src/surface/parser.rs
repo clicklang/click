@@ -11216,6 +11216,7 @@ impl Parser {
             let mut decreases = None;
             let mut initialize_proof = None;
             let mut preserve_proof = None;
+            let mut otherwise_proof = None;
             let enclosing_name_context = self.loop_name_context.take();
             // The loop's pass count, an Integer, is in scope in its clauses
             // and proofs, so a comparison with it reads its other side as an
@@ -11328,6 +11329,20 @@ impl Parser {
                     preserve_proof = Some(self.parse_loop_phase_proof(&items)?);
                     continue;
                 }
+                if self.peek_ident() == Some("otherwise") {
+                    let owner = self.here();
+                    self.position += 1;
+                    if otherwise_proof.is_some() {
+                        return Err(self.error("duplicate `otherwise` block"));
+                    }
+                    let start = self.here();
+                    otherwise_proof = Some(SourceProof::Script(
+                        self.parse_possibly_empty_tactic_block()?,
+                    ));
+                    self.record_proof_clause(start, owner);
+                    self.skip_redundant_semicolon();
+                    continue;
+                }
                 items.extend(self.parse_region_proof_items()?);
             }
             self.expect(Token::RBrace)?;
@@ -11356,6 +11371,7 @@ impl Parser {
                     resources,
                     initialize_proof,
                     preserve_proof,
+                    otherwise_proof,
                     scope: BinderMap::new(),
                 },
             )));

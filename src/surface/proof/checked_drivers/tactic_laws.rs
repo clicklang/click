@@ -426,6 +426,16 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
             .map(|certificate| certificate.to_proof_tactics().to_vec())
             .unwrap_or_else(|| vec![ProofTactic::Known]),
     ));
+    if loop_template.otherwise_proof().is_some() {
+        expanded_loop.otherwise_proof = Some(SourceProof::Script(
+            certificates
+                .otherwise
+                .as_ref()
+                .map_or_else(Vec::new, |certificate| {
+                    certificate.to_proof_tactics().to_vec()
+                }),
+        ));
+    }
     // The claim's environment with every frontier rule before this one,
     // extended from the one the previous loop on this path built.
     let earlier_rules = Arc::new(LoopRuleEnvironment::extending(

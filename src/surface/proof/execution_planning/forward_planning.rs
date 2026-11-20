@@ -449,7 +449,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     )
                 {
                     record_proof_site_tactic_expansion(
-                        expansion_capture,
+                        expansion_capture.as_deref_mut(),
                         site,
                         preserve_source_index,
                         &preservation_certificate.to_proof_tactics(),
@@ -459,6 +459,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             *next_statement_index = source_region.continuation_node;
 
             advance_execution_proof_statement(
+                expansion_capture,
                 statement,
                 contexts,
                 statement_index,
@@ -538,6 +539,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 }
             }
             let advanced = advance_execution_proof_statement(
+                None,
                 statement,
                 active,
                 statement_index,
@@ -606,6 +608,7 @@ fn split_execution_proof_branch_contexts(
 }
 
 fn advance_execution_proof_statement(
+    mut expansion_capture: Option<&mut ExpansionCapture>,
     statement: &ProgramStatement,
     contexts: Vec<PlanningExecutionContext>,
     statement_index: usize,
@@ -622,6 +625,7 @@ fn advance_execution_proof_statement(
 ) -> Result<Vec<PlanningExecutionContext>, ClickError> {
     let input = opening.cloned().unwrap_or_else(|| statement.into());
     let mut advanced = Vec::new();
+    let mut otherwise_certificates = Vec::new();
     for (context_index, mut context) in contexts.into_iter().enumerate() {
         record_code_region_program_state(
             &mut context.recorded_states,
@@ -661,7 +665,50 @@ fn advance_execution_proof_statement(
             }
             None => false,
         };
-        let (transitions, loop_rule) = match (initialization_proven, preservation_proven) {
+        let otherwise = loop_index.and_then(|index| {
+            environment
+                .function_block
+                .structural_clauses()
+                .for_loop(index)
+                .and_then(StructuralClause::otherwise_proof)
+                .and_then(SourceProof::tactics)
+                .filter(|tactics| !tactics.is_empty())
+                .map(|tactics| (index, tactics))
+        });
+        let mut otherwise_error = None;
+        let mut otherwise_certificate = None;
+        let mut prove_otherwise =
+            |loop_entry: &ExecutionState,
+             exit_state: &ExecutionState,
+             facts: &crate::kernel::ExecutionFacts| {
+                let (index, tactics) = otherwise.expect("only installed for an otherwise block");
+                match verify_loop_otherwise(
+                    expansion_capture.as_deref_mut(),
+                    index,
+                    tactics,
+                    loop_entry,
+                    exit_state,
+                    facts,
+                    &context,
+                    environment,
+                ) {
+                    Ok((facts, certificate)) => {
+                        otherwise_certificate = Some(certificate);
+                        Some(facts)
+                    }
+                    Err(error) => {
+                        otherwise_error = Some(locate_loop_phase_error(
+                            environment,
+                            error,
+                            LoopPhasePlace::Script("otherwise"),
+                        ));
+                        None
+                    }
+                }
+            };
+        let mut next_opaque_call = context.next_opaque_call;
+        let mut next_kernel_variable = context.next_kernel_variable;
+        let transitions_result = match (initialization_proven, preservation_proven) {
             (false, false) => certified_statement_transitions(
                 &context.state,
                 &context.pure_facts,
@@ -670,11 +717,11 @@ fn advance_execution_proof_statement(
                 Some(environment.spec_definitions.predicates),
                 ExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
                 &label,
-                &mut context.next_opaque_call,
-                &mut context.next_kernel_variable,
+                &mut next_opaque_call,
+                &mut next_kernel_variable,
                 StatementPrerequisitePolicy::Fast,
                 None,
-            )?,
+            ),
             _ => certified_loop_exit_transitions_with_proven_phases(
                 &context.state,
                 &context.pure_facts,
@@ -687,10 +734,25 @@ fn advance_execution_proof_statement(
                 final_exit_candidates,
                 early_exits,
                 return_exits,
-                &mut context.next_opaque_call,
-                &mut context.next_kernel_variable,
-            )?,
+                otherwise
+                    .map(|_| &mut prove_otherwise as &mut crate::kernel::LoopOtherwiseProof<'_>),
+                &mut next_opaque_call,
+                &mut next_kernel_variable,
+            ),
         };
+        if let Some(error) = otherwise_error {
+            return Err(error);
+        }
+        let (transitions, loop_rule) = transitions_result?;
+        context.next_opaque_call = next_opaque_call;
+        context.next_kernel_variable = next_kernel_variable;
+        if let Some(certificate) = otherwise_certificate {
+            otherwise_certificates.push(PathCertificate {
+                case_path: context.case_path.clone(),
+                case_offsets: None,
+                certificate,
+            });
+        }
         if matches!(statement, ProgramStatement::Loop { .. }) {
             let loop_index = loop_index.ok_or_else(|| {
                 ClickError::new(format!(
@@ -908,6 +970,15 @@ fn advance_execution_proof_statement(
                 }
             }
         }
+    }
+    if !otherwise_certificates.is_empty() {
+        environment
+            .frontier_loop_certificates
+            .borrow_mut()
+            .otherwise = Some(merge_path_aligned_certificates(
+            &environment.frontier_loop_source.claim_label,
+            otherwise_certificates,
+        )?);
     }
     Ok(advanced)
 }

@@ -493,8 +493,9 @@ fn collect_applied_theorems(tactics: &[ProofTactic], names: &mut BTreeSet<String
             }
             ProofTactic::Loop(clause) => {
                 for proof in [
-                    clause.initialize_proof.as_ref(),
-                    clause.preserve_proof.as_ref(),
+                    clause.initialize_proof(),
+                    clause.preserve_proof(),
+                    clause.otherwise_proof(),
                 ]
                 .into_iter()
                 .flatten()
@@ -7372,7 +7373,19 @@ pub(in crate::surface) fn validate_region_proof_clause(
     }
 
     validate_loop_phase_proof("initialize", region_proof_clause.initialize_proof())?;
-    validate_loop_phase_proof("maintain", region_proof_clause.preserve_proof())
+    validate_loop_phase_proof("maintain", region_proof_clause.preserve_proof())?;
+    if let Some(tactics) = region_proof_clause
+        .otherwise_proof()
+        .and_then(SourceProof::tactics)
+        && tactics
+            .iter()
+            .any(|tactic| !matches!(tactic, ProofTactic::Have(_)))
+    {
+        return Err(ClickError::new(
+            "`otherwise` takes `have` statements; put proof tactics in a `have` body",
+        ));
+    }
+    Ok(())
 }
 
 pub(in crate::surface) fn validate_loop_phase_proof(

@@ -48,6 +48,7 @@ pub(in crate::surface::proof) struct LoopProofCertificates {
     pub(in crate::surface::proof) returns: Vec<Arc<LoopReturnProof>>,
     pub(in crate::surface::proof) initialize: Option<ProofCertificate>,
     pub(in crate::surface::proof) preserve: Option<ProofCertificate>,
+    pub(in crate::surface::proof) otherwise: Option<ProofCertificate>,
     /// For each loop planned here, the points each path that left it
     /// recorded during its pass.
     pub(in crate::surface::proof) exit_points: BTreeMap<usize, Vec<RecordedRegionPoints>>,
@@ -63,6 +64,7 @@ pub(in crate::surface::proof) struct FrontierLoopProofSource {
     pub(in crate::surface::proof) loop_source_index: usize,
     pub(in crate::surface::proof) initialize_source_index: Option<usize>,
     pub(in crate::surface::proof) preserve_source_index: Option<usize>,
+    pub(in crate::surface::proof) otherwise_source_index: Option<usize>,
 }
 
 impl FrontierLoopProofSource {
@@ -86,6 +88,7 @@ impl FrontierLoopProofSource {
             next_source_index += width;
             start
         });
+        let otherwise_source_index = clause.otherwise_proof().map(|_| next_source_index);
         Self {
             proof_site,
             claim_label: claim_label.to_string(),
@@ -93,6 +96,7 @@ impl FrontierLoopProofSource {
             loop_source_index,
             initialize_source_index,
             preserve_source_index,
+            otherwise_source_index,
         }
     }
 
@@ -144,7 +148,7 @@ impl FrontierLoopProofSource {
 pub(in crate::surface::proof) enum LoopPhasePlace {
     /// The body steps Click plans for a loop without a written `maintain`.
     PlannedPreservation,
-    /// A written `initialize` or `maintain` script.
+    /// A written loop phase script.
     Script(&'static str),
 }
 

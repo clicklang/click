@@ -457,10 +457,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             ProofTactic::UnfoldFunction(application) => phase
                 .driver()
                 .apply_step(ProofStep::UnfoldFunction(application.clone()))?,
-            ProofTactic::Have(have) => {
-                let scope = phase.driver().open_have(have.proposition.clone())?;
-                check_initialization_body(&scope, &have.checking_proof(), None)?.join()?
-            }
+            ProofTactic::Have(have) => check_loop_phase_have(&phase, have, "initialization")?,
             _ => unreachable!("only unfold and have steps are phase helpers"),
         };
         if let Some(site) = initialize_site
@@ -539,56 +536,61 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             });
             let checkpoint = phase.checkpoint();
             let scope = phase.begin_loop_entry_goal(item.proposition().clone(), obligation)?;
-            let checked = check_initialization_body(&scope, invariant_proof, body_sites.as_deref())
-                .map_err(|error| {
-                    // The kernel already refused this declaration and says why.
-                    if obligation.is_impossible_goal()
-                        && let Some(reason) = obligation.context()
-                    {
-                        return ClickError::new(reason);
-                    }
-                    // Name the judgment that was compared: a declaration owes its
-                    // side conditions as goals of their own beside its body, so
-                    // "invariant N" alone does not say which one failed.
-                    let owed =
-                        crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
+            let body = check_loop_phase_goal(
+                &scope,
+                invariant_proof,
+                body_sites.as_deref(),
+                "initialization",
+            );
+            let checked = body.map_err(|error| {
+                // The kernel already refused this declaration and says why.
+                if obligation.is_impossible_goal()
+                    && let Some(reason) = obligation.context()
+                {
+                    return ClickError::new(reason);
+                }
+                // Name the judgment that was compared: a declaration owes its
+                // side conditions as goals of their own beside its body, so
+                // "invariant N" alone does not say which one failed.
+                let owed =
+                    crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
+                        obligation.proposition(),
+                        ParameterBinding::new(
+                            environment.parsed_function.parameters(),
+                            environment.arguments,
+                        ),
+                        &context.state,
+                    )
+                    .map(|surface| crate::surface::printing::source_click_proposition(&surface))
+                    .unwrap_or_else(|| {
+                        let (parameters, arguments) = phase.diagnostic_naming_tables();
+                        crate::surface::diagnostics::describe_stated_fact(
                             obligation.proposition(),
-                            ParameterBinding::new(
-                                environment.parsed_function.parameters(),
-                                environment.arguments,
-                            ),
-                            &context.state,
+                            ParameterBinding::new(&parameters, &arguments),
                         )
-                        .map(|surface| crate::surface::printing::source_click_proposition(&surface))
-                        .unwrap_or_else(|| {
-                            let (parameters, arguments) = phase.diagnostic_naming_tables();
-                            crate::surface::diagnostics::describe_stated_fact(
-                                obligation.proposition(),
-                                ParameterBinding::new(&parameters, &arguments),
-                            )
-                        });
-                    let error = if environment
-                        .function_block
-                        .signature()
-                        .rust_loop_iterators()
-                        .get(loop_index)
-                        .and_then(Option::as_ref)
-                        .is_some_and(|iterator| iterator.range_bounds.is_some())
-                    {
-                        // The bound can hold the same value as a parameter at
-                        // entry. Keep the written accessor beside the lowered
-                        // obligation, where they may share a value spelling.
-                        let written =
-                            crate::surface::printing::source_click_proposition(item.proposition());
-                        error.with_context(format!("written invariant `{written}`"))
-                    } else {
-                        error
-                    };
-                    error.with_context(format!(
-                        "loop {loop_index} {} entry, owing `{owed}`",
-                        item.title(invariant_index)
-                    ))
-                })?;
+                    });
+                let error = if environment
+                    .function_block
+                    .signature()
+                    .rust_loop_iterators()
+                    .get(loop_index)
+                    .and_then(Option::as_ref)
+                    .is_some_and(|iterator| iterator.range_bounds.is_some())
+                {
+                    // The bound can hold the same value as a parameter at
+                    // entry. Keep the written accessor beside the lowered
+                    // obligation, where they may share a value spelling.
+                    let written =
+                        crate::surface::printing::source_click_proposition(item.proposition());
+                    error.with_context(format!("written invariant `{written}`"))
+                } else {
+                    error
+                };
+                error.with_context(format!(
+                    "loop {loop_index} {} entry, owing `{owed}`",
+                    item.title(invariant_index)
+                ))
+            })?;
             completions.push(checked.completed_loop_entry_goal()?);
             phase = checked.join()?;
             if let Some((selected, _)) = own_body
@@ -612,13 +614,23 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
     })
 }
 
+fn check_loop_phase_have<'a>(
+    phase: &Proof<'a>,
+    have: &ProofHave,
+    phase_name: &str,
+) -> Result<Proof<'a>, ClickError> {
+    let scope = phase.driver().open_have(have.proposition.clone())?;
+    check_loop_phase_goal(&scope, &have.checking_proof(), None, phase_name)?.join()
+}
+
 /// Source execution and smart planning share the checked scope. An explicit
 /// failure is final; no other phase body or certificate checker is tried.
 /// `sites`, when given, addresses each tactic of a written script.
-fn check_initialization_body<'a>(
+fn check_loop_phase_goal<'a>(
     scope: &proof_object::ProofScope<'a>,
     source: &SourceProof,
     sites: Option<&[ProofStepSite]>,
+    phase_name: &str,
 ) -> Result<proof_object::ProofScope<'a>, ClickError> {
     let checked = match source {
         SourceProof::Tactic(SmartTactic::ImplicitTail) => scope.driver().try_solve_closure()?,
@@ -630,11 +642,11 @@ fn check_initialization_body<'a>(
             None => scope.driver().try_authoritative_linear_script(tactics)?,
         },
     }
-    .ok_or_else(|| ClickError::new("loop initialization body did not close its goal"))?;
+    .ok_or_else(|| ClickError::new(format!("loop {phase_name} body did not close its goal")))?;
     if !checked.is_complete() {
-        return Err(ClickError::new(
-            "loop initialization body retained an open goal",
-        ));
+        return Err(ClickError::new(format!(
+            "loop {phase_name} body retained an open goal"
+        )));
     }
     Ok(checked)
 }
@@ -673,6 +685,85 @@ impl CheckedLoopInitialization {
             });
         matched && completions.next().is_none()
     }
+}
+
+pub(in crate::surface::proof) fn verify_loop_otherwise(
+    mut expansion_capture: Option<&mut ExpansionCapture>,
+    loop_index: usize,
+    tactics: &[ProofTactic],
+    loop_entry: &ExecutionState,
+    exit_state: &ExecutionState,
+    exit_facts: &crate::kernel::ExecutionFacts,
+    context: &PlanningExecutionContext,
+    environment: &ExecutionProofEnvironment<'_>,
+) -> Result<(crate::kernel::ExecutionFacts, ProofCertificate), ClickError> {
+    let source = environment.frontier_loop_source;
+    let mut recorded_states = context.recorded_states.clone();
+    record_code_region_program_state(
+        &mut recorded_states,
+        environment.function_block,
+        CodeRegion::Loop(loop_index),
+        ProgramPointKind::Entry,
+        loop_entry.clone(),
+    );
+    let mut available = context.pure_facts.clone();
+    available.extend(exit_facts.iter().map(|fact| fact.proposition().clone()));
+    let mut phase = Proof::for_fixed_state_frontier_of_list(
+        &source.claim_label,
+        0,
+        &available,
+        ParameterBinding::new(
+            environment.parsed_function.parameters(),
+            environment.arguments,
+        ),
+        FixedStateFrame::new(
+            environment.initial_state,
+            exit_state,
+            None,
+            &recorded_states,
+        ),
+        &context.surface_propositions,
+        environment.spec_definitions,
+        environment.theorem_environment,
+        &[],
+    )
+    .with_surface_local_scope(&phase_proof_scope(environment))
+    .with_nested_tactic_capture(
+        expansion_capture
+            .as_deref()
+            .and_then(|capture| capture.nested_for_site(source.proof_site.as_ref())),
+    );
+    let initial_facts = phase.facts().clone();
+    let mut index = source
+        .otherwise_source_index
+        .unwrap_or(source.loop_source_index);
+    for tactic in tactics {
+        let ProofTactic::Have(have) = tactic else {
+            unreachable!("otherwise was validated as a sequence of have tactics");
+        };
+        phase = phase.at_source_tactic(index);
+        let checkpoint = phase.checkpoint();
+        phase = check_loop_phase_have(&phase, have, "otherwise")?;
+        if let Some(site) = source.proof_site.as_ref()
+            && capture_selects_source(expansion_capture.as_deref(), site, index)
+        {
+            record_proof_site_tactic_expansion(
+                expansion_capture.as_deref_mut(),
+                site,
+                index,
+                &phase.certificate_since(&checkpoint)?.to_proof_tactics(),
+            );
+        }
+        index += source_tactic_count(std::slice::from_ref(tactic));
+    }
+    let facts = phase
+        .facts()
+        .introduced_since(&initial_facts)
+        .expect("checked have extends the phase facts");
+    Ok((
+        facts.into_iter().map(ExecutionPureFact::new).collect(),
+        phase.certificate(),
+    ))
 }
 
 /// The body the automatic closer planned for a loop with no written
@@ -1616,6 +1707,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 &assumptions_from_propositions(checked.facts()),
             );
             let exit = LoopEarlyExit::from_store(state, checked.facts())
+                .with_guard_false(matches!(
+                    context_frontier.loop_control,
+                    crate::kernel::proof::LoopControlExit::TestFalse
+                ))
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             if seen_early_exits.is_new(exit.state(), exit.pure_facts(), &early_exits, &exit) {
                 early_exits.push(exit);

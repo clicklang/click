@@ -1473,6 +1473,11 @@ fn expand_declared_resource_structural_clause(
         .take()
         .map(|proof| expand_declared_resource_proof(proof, resource_definitions))
         .transpose()?;
+    clause.otherwise_proof = clause
+        .otherwise_proof
+        .take()
+        .map(|proof| expand_declared_resource_proof(proof, resource_definitions))
+        .transpose()?;
     // A `decreases` component is an ordinary contract expression now that the
     // slot takes pure expressions, so a resource field it reads needs the same
     // declared-resource expansion an invariant's does. Without it the field's

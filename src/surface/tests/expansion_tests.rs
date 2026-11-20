@@ -20540,6 +20540,26 @@ fn line_containing(source: &str, text: &str) -> usize {
         + 1
 }
 
+#[test]
+fn loop_otherwise_expands_without_by() {
+    let (click, sources) = mdtest_sources("mdtests/loop_otherwise.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c_claim_source_by_label(&click, &sources, "count_down.loop(0).otherwise").unwrap();
+    let written = "otherwise {\n            have n == 0 by solve();\n        }";
+    let start = click.find(written).unwrap();
+    let end = start + written.len();
+    assert!(expanded.starts_with(&click[..start]), "{expanded}");
+    assert!(expanded.ends_with(&click[end..]), "{expanded}");
+    let phase = &expanded[start..expanded.len() - (click.len() - end)];
+    assert!(phase.starts_with("otherwise {"), "{phase}");
+    assert!(!phase.contains("solve"), "{phase}");
+    verify_c_sources(&expanded, &sources).unwrap();
+}
+
 /// A loop phase written in a grouped proof's `loop` tactic is a claim of its
 /// own: its label, and a line of its proof, select just that phase, and the
 /// expansion replaces only the phase's `by` clause with its checked
