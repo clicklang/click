@@ -685,6 +685,68 @@ fn literal_constructor_field_known_work_scales_with_the_goal() {
 }
 
 #[test]
+fn computed_negations_known_work_scales_with_the_goal() {
+    use crate::kernel::{ConditionTerm, IntegerTerm, VerificationSession};
+
+    let mut goal_costs = Vec::new();
+    for leaves in [4, 16, 64] {
+        let mut samples = [Vec::new(), Vec::new()];
+        for size in [16, 64, 256] {
+            let _session = VerificationSession::enter();
+            let variable = IntegerTerm::var(Variable(972_000));
+            let equal = |left, right| {
+                Proposition::condition_is(ConditionTerm::integer_equal(left, right), true)
+            };
+            let false_atom = Proposition::condition_is(ConditionTerm::Constant(false), true);
+            let unknown = equal(variable.clone(), IntegerTerm::constant_i64(0));
+            let goal = |tail| {
+                let disjunction = (1..leaves).fold(tail, |right, _| {
+                    Proposition::Or(Box::new(false_atom.clone()), Box::new(right))
+                });
+                Proposition::Not(Box::new(disjunction))
+            };
+            let facts = (0..size)
+                .flat_map(|index| {
+                    [
+                        equal(
+                            variable.clone(),
+                            IntegerTerm::var(Variable(972_001 + index)),
+                        ),
+                        Proposition::Predicate {
+                            name: format!("unrelated_{index}"),
+                            arguments: vec![],
+                        },
+                    ]
+                })
+                .collect::<Vec<_>>();
+            let facts = PureFactStore::from_ordered(&facts);
+            for ((tail, expected), costs) in [(false_atom.clone(), true), (unknown, false)]
+                .into_iter()
+                .zip(&mut samples)
+            {
+                let proof = known_computation_proof(goal(tail), facts.clone());
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    proof.apply_known(PropositionKnownContext::Exact)
+                });
+                assert_eq!(result.is_ok(), expected);
+                costs.push(work);
+            }
+        }
+        for work in &samples {
+            assert!(
+                work.iter().all(|sample| *sample <= work[0] + 16),
+                "{work:?}"
+            );
+        }
+        goal_costs.push(samples[0][0]);
+    }
+    assert!(
+        goal_costs[0] > 0 && goal_costs.windows(2).all(|pair| pair[1] <= pair[0] * 5),
+        "{goal_costs:?}"
+    );
+}
+
+#[test]
 fn strict_literal_remainder_bound_known_work_ignores_context_growth() {
     use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
     let mut samples = [Vec::new(), Vec::new()];

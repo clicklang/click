@@ -1685,8 +1685,11 @@ tree. Missing guards and unsupported forms are refused.
 
 A conjunction goal closes when every conjunct does, and a disjunction goal
 when one disjunct does, using available facts or these computations recursively.
-Computational truths inside an implication or quantifier still require the
-ordinary introduction or witness steps. An implication or quantified goal
+A negated conjunction closes when direct computation refutes one conjunct.
+A negated disjunction closes when it refutes every disjunct. For example,
+different literal elements can prove finite-sequence disequality or
+non-membership. Computational truths inside an implication or quantifier
+still require the ordinary introduction or witness steps. An implication or quantified goal
 already held as a fact retains its existing exact-lookup behavior.
 
 **Outside it**, with what to write instead:
