@@ -2940,8 +2940,9 @@ fn call_field_requirements_substitute_actual_arguments_in_expansion() {
     }
 }
 
-/// The int64 postcondition retains a separate, guarded domain proof.
-/// Its expanded claim contains only simple proof steps.
+/// The int64 postcondition's domain is owed only where `result == 1`, and
+/// that guard establishes it from the call's postcondition without a written
+/// step. Its expanded claim contains only simple proof steps.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_10")]
 fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
@@ -2959,15 +2960,9 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
-        claim.contains("implies ((to_integer(old((st.total as "),
-        "{expanded}"
-    );
-    assert!(
-        claim.contains(": Integer) <= 9223372036854775807"),
-        "{expanded}"
-    );
-    assert!(
-        claim.contains(": Integer) >= -9223372036854775808"),
+        claim.contains(
+            "have result == 1 implies to_integer(st.total) == to_integer((old(st.total) + 1))"
+        ),
         "{expanded}"
     );
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
@@ -2978,7 +2973,8 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
     }
 }
 
-/// The int32 postcondition retains its domain proof outside the equality.
+/// The int32 postcondition's domain is owed only where its guard holds, and
+/// the guard establishes it without a written step.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_10")]
 fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
@@ -2995,10 +2991,6 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
     let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
-    assert!(
-        claim.contains("implies ((to_integer(old((st.total as "),
-        "{expanded}"
-    );
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
         panic!(
             "the expanded `caller` should re-verify: {}\n{expanded}",
@@ -3748,12 +3740,15 @@ theorem fixed_integer_witness(value: int32) {
     } by {
         witness(0);
         all {
-          to_integer(value) + 1 <= 2147483647 => { known(); }
-          to_integer(value) + 1 >= -2147483648 => { known(); }
-          to_integer(value) + 1 <= 2147483647 => { known(); }
-          to_integer(value) + 1 >= -2147483648 => { known(); }
-          (0 : Integer) == 0 => { normalize(); }
-          to_integer(value + 1) == to_integer(value + 1) => { normalize(); }
+          (0 : Integer) == 0 implies to_integer(value) + 1 <= 2147483647 and to_integer(value) + 1 >= -2147483648 => {
+            intro();
+            known();
+          }
+          (0 : Integer) == 0 implies to_integer(value) + 1 <= 2147483647 and to_integer(value) + 1 >= -2147483648 => {
+            intro();
+            known();
+          }
+          (0 : Integer) == 0 and to_integer(value + 1) == to_integer(value + 1) => { known(); }
         }
     }
 }
@@ -25607,3 +25602,4 @@ fn explicit_produced_view_release_expands_and_reverifies() {
     })
     .expect("replay the explicit view release");
 }
+
