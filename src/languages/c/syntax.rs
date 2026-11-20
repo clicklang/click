@@ -2914,6 +2914,7 @@ pub enum CExpression {
         name: BindingName,
         increment: bool,
         prefix: bool,
+        volatile_access: bool,
         interface_type: InterfaceType,
         struct_name: Option<String>,
         pointee_constant: bool,
@@ -7386,6 +7387,8 @@ struct Parser {
     variable_function_pointers: BTreeMap<BindingName, CallbackInterface>,
     variable_constants: BTreeSet<BindingName>,
     variable_pointee_constants: BTreeSet<BindingName>,
+    /// Automatic objects with a volatile object or pointee type.
+    volatile_locals: BTreeSet<BindingName>,
     unions: DeclarationMap<CUnionLayout>,
     /// The names declared in each open lexical scope, innermost last. The
     /// source name is retained for lookup, while `kernel_name` is the
@@ -7416,6 +7419,8 @@ struct Parser {
     /// function. A call can only change an automatic scalar through such an
     /// escaped address; static-storage scalars are handled separately.
     address_taken_variables: BTreeSet<BindingName>,
+    /// Cursor parameters that must remain value-only for a postfix byte copy.
+    postfix_copy_value_parameters: BTreeSet<BindingName>,
     next_static_binding: u32,
     file_static_bindings: BTreeMap<String, StaticBindingId>,
     /// The number the next call inside an expression gets: its result is
@@ -8045,6 +8050,7 @@ impl Parser {
             variable_function_pointers: BTreeMap::new(),
             variable_constants: BTreeSet::new(),
             variable_pointee_constants: BTreeSet::new(),
+            volatile_locals: BTreeSet::new(),
             unions: DeclarationMap::new(),
             scopes: Vec::new(),
             compound_literal_declarations: Vec::new(),
@@ -8060,6 +8066,7 @@ impl Parser {
             next_local_binding: 0,
             out_of_scope_names: BTreeSet::new(),
             address_taken_variables: BTreeSet::new(),
+            postfix_copy_value_parameters: BTreeSet::new(),
             next_static_binding: 0,
             file_static_bindings: BTreeMap::new(),
             next_call_result: 0,
@@ -8148,6 +8155,7 @@ impl Parser {
             self.variable_function_pointers.remove(&binding.kernel_name);
             self.variable_constants.remove(&binding.kernel_name);
             self.variable_pointee_constants.remove(&binding.kernel_name);
+            self.volatile_locals.remove(&binding.kernel_name);
             self.incomplete_array_names.remove(&binding.kernel_name);
             if let Some(metadata) = binding.shadowed {
                 let name = binding.kernel_name;
@@ -9501,6 +9509,8 @@ impl Parser {
             header.return_pointee_constant,
         );
         let previous_address_taken_variables = std::mem::take(&mut self.address_taken_variables);
+        let previous_postfix_copy_value_parameters =
+            std::mem::take(&mut self.postfix_copy_value_parameters);
         let previous_callback_sources = std::mem::take(&mut self.callback_statement_sources);
         let previous_source_regions = std::mem::replace(
             &mut self.source_regions,
@@ -9526,6 +9536,7 @@ impl Parser {
         self.current_return_type = previous_return_type;
         self.current_return_pointee_constant = previous_return_pointee_constant;
         self.address_taken_variables = previous_address_taken_variables;
+        self.postfix_copy_value_parameters = previous_postfix_copy_value_parameters;
         let mut body = body_result?;
         self.pop_scope();
         self.out_of_scope_names.clear();
@@ -10355,6 +10366,9 @@ impl Parser {
             }
             let object_volatile = parsed_type.object_is_volatile();
             let pointee_volatile = parsed_type.pointee_is_volatile();
+            if object_volatile || pointee_volatile {
+                self.volatile_locals.insert(kernel_name.clone());
+            }
             let object_constant = parsed_type.is_constant && !array_parameter;
             let pointee_constant =
                 parsed_type.pointee_constant || (parsed_type.is_constant && array_parameter);
@@ -12717,6 +12731,9 @@ impl Parser {
             }
             let object_volatile = parsed_type.object_is_volatile();
             let pointee_volatile = parsed_type.pointee_is_volatile();
+            if object_volatile || pointee_volatile {
+                self.volatile_locals.insert(name.clone());
+            }
             let object_constant = parsed_type.is_constant;
             let pointee_constant = parsed_type.pointee_constant;
             if object_constant {
@@ -13526,6 +13543,9 @@ impl Parser {
             }
             let object_volatile = parsed_type.object_is_volatile();
             let pointee_volatile = parsed_type.pointee_is_volatile();
+            if object_volatile || pointee_volatile {
+                self.volatile_locals.insert(name.clone());
+            }
             let object_constant = parsed_type.is_constant;
             let pointee_constant = parsed_type.pointee_constant;
             if object_constant {
@@ -15536,7 +15556,7 @@ impl Parser {
                 pointee_constant,
                 site,
             } => {
-                let (prefix, pointer, value) = self.lower_expression_pair(pointer, value)?;
+                let (prefix, pointer, value) = self.lower_store_operands(pointer, value)?;
                 Ok(prepend_statements(
                     prefix,
                     CStatement::Store {
@@ -15788,6 +15808,120 @@ impl Parser {
             } => self.reads_only_locals_other_than(expression, assigned),
             _ => false,
         }
+    }
+
+    fn lower_store_operands(
+        &mut self,
+        destination: CExpression,
+        value: CExpression,
+    ) -> Result<(Vec<CStatement>, CExpression, CExpression), CSyntaxError> {
+        if let CExpression::Load(source, loaded_type) = value {
+            if let Some(mut checks) = self.postfix_byte_copy_checks(&destination, &source) {
+                let (destination_prefix, destination) = self.lower_expression_calls(destination)?;
+                let (source_prefix, source) = self.lower_expression_calls(*source)?;
+                checks.extend(destination_prefix);
+                checks.extend(source_prefix);
+                return Ok((
+                    checks,
+                    destination,
+                    CExpression::Load(Box::new(source), loaded_type),
+                ));
+            }
+            return self.lower_expression_pair(destination, CExpression::Load(source, loaded_type));
+        }
+        self.lower_expression_pair(destination, value)
+    }
+
+    /// C sequences the final store after both operand values, but the cursor
+    /// updates are unsequenced relative to the other operand and to that
+    /// store. Once the byte accesses are shown disjoint from the cursor
+    /// objects, the two updates can run first, retaining their old values.
+    fn postfix_byte_copy_checks(
+        &mut self,
+        destination: &CExpression,
+        source: &CExpression,
+    ) -> Option<Vec<CStatement>> {
+        let (
+            CExpression::ScalarUpdate {
+                name: destination,
+                prefix: false,
+                volatile_access: false,
+                interface_type: InterfaceType::UInt8Pointer,
+                ..
+            },
+            CExpression::ScalarUpdate {
+                name: source,
+                prefix: false,
+                volatile_access: false,
+                interface_type: InterfaceType::UInt8Pointer,
+                ..
+            },
+        ) = (destination, source)
+        else {
+            return None;
+        };
+        let cursors = [destination, source];
+        if destination == source
+            || cursors
+                .iter()
+                .any(|name| !matches!(name, BindingName::Local(_)))
+        {
+            return None;
+        }
+
+        let is_parameter =
+            |name: &BindingName| name.local_id().is_some_and(LocalBindingId::is_parameter);
+        if cursors
+            .iter()
+            .any(|name| is_parameter(name) && self.address_taken_variables.contains(*name))
+        {
+            return None;
+        }
+
+        let width = self.abi.size_and_alignment(InterfaceType::UInt8Pointer).0;
+        let mut checks = Vec::new();
+        for cursor in cursors {
+            if is_parameter(cursor) {
+                // Pointer parameters have no addressable slot in the model.
+                // Require that the rest of the source never forms their address.
+                self.postfix_copy_value_parameters.insert(cursor.clone());
+                continue;
+            }
+            let address = CExpression::Cast {
+                expression: Box::new(CExpression::AddressOf(Box::new(CExpression::Variable(
+                    cursor.clone(),
+                )))),
+                interface_type: InterfaceType::UInt8Pointer,
+                struct_name: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            };
+            for access in cursors {
+                // An unsigned char can access any byte of the cursor itself.
+                // Test the whole pointer representation, including nonzero offsets.
+                let condition = (0..width)
+                    .map(|bytes| {
+                        CExpression::NotEqual(
+                            Box::new(CExpression::Variable(access.clone())),
+                            Box::new(CExpression::PointerOffsetBytes {
+                                pointer: Box::new(address.clone()),
+                                bytes,
+                            }),
+                        )
+                    })
+                    .reduce(|left, right| CExpression::And(Box::new(left), Box::new(right)))
+                    .expect("a data pointer occupies at least one byte");
+                checks.push(CStatement::Assert {
+                    condition,
+                    label: format!(
+                        "byte accessed through `{access}` must be separate from the unsequenced update of `{cursor}`"
+                    ),
+                    site: CSite::NONE,
+                });
+            }
+        }
+        Some(checks)
     }
 
     fn lower_expression_pair(
@@ -18056,6 +18190,11 @@ impl Parser {
                 ));
             }
             if let CExpression::Variable(name) = &target {
+                if self.postfix_copy_value_parameters.contains(name) {
+                    return Err(self.error_here(format!(
+                        "cannot take the address of postfix copy cursor parameter `{name}`"
+                    )));
+                }
                 self.address_taken_variables.insert(name.clone());
             }
             return Ok(CExpression::AddressOf(Box::new(target)));
@@ -18368,6 +18507,7 @@ impl Parser {
         Ok(CExpression::ScalarUpdate {
             struct_name: self.variable_structs.get(&name).cloned(),
             pointee_constant: self.variable_pointee_is_constant(&name),
+            volatile_access: self.volatile_locals.contains(&name),
             name,
             increment,
             prefix,
