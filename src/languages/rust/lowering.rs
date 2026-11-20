@@ -1371,6 +1371,9 @@ impl Context<'_> {
         statement
     }
     fn declare_slice_length(&mut self, place: &str) -> Result<BindingName, String> {
+        if let Some(declaration) = self.bindings.get(place).and_then(BindingName::local_id) {
+            return Ok(BindingName::lexical_local_slice_length(declaration));
+        }
         let ordinal = self.next_slice_local;
         self.next_slice_local = ordinal.checked_add(1).ok_or("too many Rust slice locals")?;
         Ok(BindingName::local_slice_length(LocalBindingId::new(
