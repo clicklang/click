@@ -823,3 +823,6 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalizati
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_leaf	try_intrinsic_sum_bound	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	try_intrinsic_sum_bound	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_intrinsic_sum_bound	try_intrinsic_sum_bound	1
+
+src/surface/proof/smart_closures/integer_composition.rs	search	ProofSearch::try_interval_exclusion_using	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_interval_exclusion_using	1
