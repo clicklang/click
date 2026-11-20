@@ -3732,6 +3732,78 @@ const SPAN_DEPENDENCIES: &[&str] = &[
     "sysroot/usr/include/c++/12/span",
     "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
 ];
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: pinned libstdc++ byte vector subscript"]
+fn byte_vector_subscript_reads_a_bounded_backing_byte() {
+    let (root, import) = axiomatic_span_fixture(
+        "byte-vector-index",
+        r#"#include <vector>
+
+unsigned char probe(const std::vector<unsigned char>& bytes, unsigned long index) noexcept {
+    return bytes[index];
+}
+"#,
+        &[],
+    );
+    let source = r#"import click::cpp::vector_state::{vector_state};
+verifying "span-probe.cpp";
+
+resource vector_bytes() {
+    field data: uint8*;
+    field length: uint64;
+    owns data[0..length];
+}
+
+uint8 probe(const std::vector<unsigned char>& bytes, uint64 index) {
+    owns state: vector_state(&bytes);
+    owns backing: vector_bytes();
+    requires state.data == backing.data;
+    requires state.length == backing.length;
+    requires index < state.length;
+    ensures state.length == backing.length;
+    ensures state.data == backing.data;
+} by {
+    unfold(backing);
+    step_until(function.exit);
+    fold(backing);
+}
+"#;
+    let sidecar = root.join("vector.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    let (summary, verification) =
+        click::surface::verify_project_with_summary(&parsed, &ProgramInputs::program(&import))
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    verification.unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(summary.assumptions["probe"].iter().any(|assumption| {
+        assumption.family == click::surface::ModelFamily::CppStd
+            && display_source_names(&assumption.name) == "std::vector<unsigned char>::operator[]"
+    }));
+
+    let without_bound = source.replace("    requires index < state.length;\n", "");
+    let without_backing = r#"import click::cpp::vector_state::{vector_state};
+verifying "span-probe.cpp";
+uint8 probe(const std::vector<unsigned char>& bytes, uint64 index) {
+    owns state: vector_state(&bytes);
+    requires index < state.length;
+    ensures state.data == old(state.data);
+}
+"#;
+    for (edited, expected) in [
+        (without_bound.as_str(), "precondition"),
+        (without_backing, "missing resource fact `views"),
+    ] {
+        let parsed = read_click_project(&sidecar, edited).unwrap();
+        let report = verify_program_prepared_project(&parsed, &import)
+            .unwrap_err()
+            .report();
+        assert!(report.contains(expected), "{report}");
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned libstdc++ vector and span handoff"]

@@ -2449,6 +2449,10 @@ id = "library.cpp.std::vector<unsigned char>::empty"
 path = "reference/library/index.md#stdvectorunsigned-char"
 
 [[item]]
+id = "library.cpp.std::vector<unsigned char>::operator[]"
+path = "reference/library/index.md#stdvectorunsigned-char"
+
+[[item]]
 id = "library.cpp.std::vector<unsigned char>::size"
 path = "reference/library/index.md#stdvectorunsigned-char"
 
