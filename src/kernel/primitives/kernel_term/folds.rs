@@ -59,12 +59,29 @@ impl KernelFold {
         })
     }
 
+    /// The seed of a statically empty machine fold. The body is never read.
+    pub(crate) fn empty_int32_initial(&self) -> Option<&KernelTerm> {
+        if self.index != KernelFoldIndex::Int32
+            || self.result_type() != &KernelType::Program(ProgramType::Int32)
+        {
+            return None;
+        }
+        let [start, end, initial, _] = &self.arguments;
+        let constant =
+            |bound| Some(MachineOperandView::Shared(bound).literal()?.as_const()? as i32);
+        let empty = match (constant(start), constant(end)) {
+            (Some(start), Some(end)) => end <= start,
+            _ => start == end || crate::kernel::shared_machine_syntax_equal(start, end),
+        };
+        empty.then_some(initial)
+    }
+
     /// Existing machine fold evaluation, used only by checking. Construction
     /// and lowering keep a symbolic fold unchanged.
     pub(crate) fn simplify_machine(&self) -> Option<KernelTerm> {
         use crate::kernel::proof::term_rewrite::TermRewrite;
         let [start, end, initial, body] = &self.arguments;
-        if crate::kernel::shared_machine_syntax_equal(start, end) {
+        if let Some(initial) = self.empty_int32_initial() {
             return Some(initial.clone());
         }
         let constant = |root| {

@@ -436,6 +436,51 @@ mod tests {
     }
 
     #[test]
+    fn empty_int32_range_fold_raises_bounds_seed_and_body() {
+        let fixture =
+            include_str!("../../../mdtests/pure_empty_int32_range_folds_keep_structure.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        let raised = |claim: &str| {
+            let marker = format!("\t{claim}.ensures_0\tintro()\twritten\t");
+            lines
+                .iter()
+                .find_map(|line| {
+                    line.split_once(&marker)
+                        .map(|(_, written)| written.trim_end())
+                })
+                .unwrap_or_else(|| panic!("{claim}: {lines:#?}"))
+        };
+        for (claim, bounds, seed, body) in [
+            ("literal_empty", "3..3", "5", "k"),
+            ("symbolic_empty", "n..n", "5", "k"),
+            ("descending_empty", "3..1", "5", "k"),
+            ("symbolic_seed", "n..n", "seed", "acc + k"),
+            ("symbolic_control", "lo..hi", "5", "k"),
+        ] {
+            let written = raised(claim);
+            assert!(written.contains(bounds), "{written}");
+            assert!(written.contains(&format!(".fold({seed},")), "{written}");
+            assert!(written.contains(&format!("{{ {body} }}")), "{written}");
+        }
+        assert_eq!(raised("literal_nonempty"), "2 == 2");
+        let wrong = source.replacen("k }) == 5", "k }) == 6", 1);
+        let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
+        assert!(
+            error.to_string().contains("goal did not normalize to true"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn pure_sequence_membership_raises_after_intro_and_rewrite() {
         let fixture =
             include_str!("../../../mdtests/pure_sequence_membership_keeps_concatenation.md");

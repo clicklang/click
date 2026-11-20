@@ -4546,7 +4546,7 @@ fn lower_spec_sequence_membership_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
-    let retain = super::functions::spec_sequence_element_is_state_independent(element)
+    let retain = super::functions::spec_expression_is_state_independent(element)
         && super::functions::spec_sequence_is_state_independent(sequence);
     let mut paths = Vec::new();
     for element_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -9881,8 +9881,8 @@ fn evaluate_spec_integer_if_paths_in(
 
 fn evaluate_spec_range_fold_paths_in(
     scope: SpecScope<'_>,
-    start: &SpecExpression,
-    end: &SpecExpression,
+    start_expression: &SpecExpression,
+    end_expression: &SpecExpression,
     initial: &SpecExpression,
     accumulator: &BindingName,
     item: &BindingName,
@@ -9891,9 +9891,10 @@ fn evaluate_spec_range_fold_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
+    let mut state_independent = None;
     for start_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
-        start,
+        start_expression,
         assumptions,
         budget,
     )? {
@@ -9905,7 +9906,7 @@ fn evaluate_spec_range_fold_paths_in(
             assumptions_with_path_context(assumptions, &start_path.facts, &start_path.obligations);
         for end_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
             scope,
-            end,
+            end_expression,
             &start_assumptions,
             budget,
         )? {
@@ -9951,6 +9952,13 @@ fn evaluate_spec_range_fold_paths_in(
                     accumulator,
                     item,
                     body,
+                    || {
+                        *state_independent.get_or_insert_with(|| {
+                            [start_expression, end_expression, initial, body]
+                                .into_iter()
+                                .all(super::functions::spec_expression_is_state_independent)
+                        })
+                    },
                     facts,
                     obligations,
                     assumptions,
@@ -9974,13 +9982,53 @@ fn evaluate_spec_range_fold_body_path_in(
     accumulator: &BindingName,
     item: &BindingName,
     body: &SpecExpression,
+    state_independent: impl FnOnce() -> bool,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Option<SpecExpressionPath>> {
     let constant = |value: &SpecValue| value.machine()?.1.literal()?.as_const();
-    match (constant(&start), constant(&end)) {
+    let endpoints = (constant(&start), constant(&end));
+    let same_bound = || {
+        int32_fold_operand(&start)
+            .zip(int32_fold_operand(&end))
+            .is_some_and(|(start, end)| crate::kernel::shared_machine_syntax_equal(&start, &end))
+    };
+    let empty = match endpoints {
+        (Some(start), Some(end)) => (end as i32) <= (start as i32),
+        _ => same_bound(),
+    };
+    if empty && state_independent() {
+        // Lower the callback in its binder scope for proof display and rewriting.
+        // With no iterations, only evaluation of the bounds and seed owes facts
+        // or obligations. A body with no single retained value uses the usual
+        // fold evaluator below.
+        let body_scope = symbolic_int32_fold_scope(scope, accumulator, item);
+        let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            body_scope.as_scope(),
+            body,
+            &PureFactContext::new(),
+            budget,
+        )?;
+        if body_paths.len() == 1
+            && let Some(value) = symbolic_spec_range_fold_value(
+                start.clone(),
+                end.clone(),
+                initial.clone(),
+                accumulator,
+                item,
+                body_paths.pop().unwrap().value,
+            )
+        {
+            return Ok(Some(SpecExpressionPath {
+                value,
+                facts,
+                obligations,
+            }));
+        }
+    }
+    match endpoints {
         (Some(start), Some(end)) => {
             let mut value = initial;
             let mut facts = facts;
@@ -10026,19 +10074,7 @@ fn evaluate_spec_range_fold_body_path_in(
             }))
         }
         _ => {
-            let mut body_scope = bindings::Scope::new(scope, [accumulator, item]);
-            body_scope.bind_program_local(
-                accumulator,
-                int32(MachineTerm::Variable(spec_fold_bound_variable(
-                    accumulator,
-                    0,
-                )))
-                .into(),
-            );
-            body_scope.bind_program_local(
-                item,
-                int32(MachineTerm::Variable(spec_fold_bound_variable(item, 1))).into(),
-            );
+            let body_scope = symbolic_int32_fold_scope(scope, accumulator, item);
             let body_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 body_scope.as_scope(),
@@ -10061,6 +10097,7 @@ fn evaluate_spec_range_fold_body_path_in(
             ) else {
                 return Ok(None);
             };
+            let legacy_empty = empty.then(|| int32_fold_operand(&initial)).flatten();
             let Some(value) = symbolic_spec_range_fold_value(
                 start,
                 end,
@@ -10071,6 +10108,7 @@ fn evaluate_spec_range_fold_body_path_in(
             ) else {
                 return Ok(None);
             };
+            let value = legacy_empty.map(SpecValue::Shared).unwrap_or(value);
             Ok(Some(SpecExpressionPath {
                 value,
                 facts,
@@ -10078,6 +10116,27 @@ fn evaluate_spec_range_fold_body_path_in(
             }))
         }
     }
+}
+
+fn symbolic_int32_fold_scope<'a>(
+    scope: SpecScope<'a>,
+    accumulator: &BindingName,
+    item: &BindingName,
+) -> bindings::Scope<'a> {
+    let mut body_scope = bindings::Scope::new(scope, [accumulator, item]);
+    body_scope.bind_program_local(
+        accumulator,
+        int32(MachineTerm::Variable(spec_fold_bound_variable(
+            accumulator,
+            0,
+        )))
+        .into(),
+    );
+    body_scope.bind_program_local(
+        item,
+        int32(MachineTerm::Variable(spec_fold_bound_variable(item, 1))).into(),
+    );
+    body_scope
 }
 
 pub(super) fn concrete_spec_fold_range(start: i32, end: i32) -> std::ops::Range<i32> {
@@ -10115,6 +10174,12 @@ pub(super) fn spec_fold_bound_variable(name: &BindingName, salt: u64) -> Variabl
     variable
 }
 
+fn int32_fold_operand(value: &SpecValue) -> Option<KernelTerm> {
+    let (format, operand) = value.machine()?;
+    (format == MachineIntegerType::Int32)
+        .then(|| KernelTerm::retained_machine_operand(format, operand))
+}
+
 pub(super) fn symbolic_spec_range_fold_value(
     start: SpecValue,
     end: SpecValue,
@@ -10123,18 +10188,10 @@ pub(super) fn symbolic_spec_range_fold_value(
     item: &BindingName,
     body_value: SpecValue,
 ) -> Option<SpecValue> {
-    let read = |value: &SpecValue| {
-        let (format, operand) = value.machine()?;
-        (format == MachineIntegerType::Int32)
-            .then(|| KernelTerm::retained_machine_operand(format, operand))
-    };
-    let start = read(&start)?;
-    let end = read(&end)?;
-    let initial = read(&initial)?;
-    let body = read(&body_value)?;
-    if crate::kernel::shared_machine_syntax_equal(&start, &end) {
-        return Some(SpecValue::Shared(initial));
-    }
+    let start = int32_fold_operand(&start)?;
+    let end = int32_fold_operand(&end)?;
+    let initial = int32_fold_operand(&initial)?;
+    let body = int32_fold_operand(&body_value)?;
     Some(SpecValue::Shared(
         KernelFold::new(
             KernelFoldIndex::Int32,
