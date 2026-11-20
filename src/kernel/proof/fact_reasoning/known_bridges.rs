@@ -225,6 +225,44 @@ fn mask_bound(a: &IntegerTerm, b: &IntegerTerm, available: &impl Fn(&Proposition
     false
 }
 
+fn unsigned_remainder_bound(
+    lower: &IntegerTerm,
+    upper: &IntegerTerm,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let IntegerTerm::Machine(remainder) = lower else {
+        return false;
+    };
+    let Some((ty, MachineBinaryOp::Remainder, [dividend, divisor])) =
+        remainder.operand_view().binary()
+    else {
+        return false;
+    };
+    if ty != remainder.ty()
+        || ty.format().is_signed()
+        || dividend.observe(ty).as_ref() != Some(upper)
+    {
+        return false;
+    }
+    let Some(divisor) = divisor.observe(ty) else {
+        return false;
+    };
+    let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
+    let one = IntegerTerm::constant_i64(1).into();
+    let divisor: SharedIntegerTerm = divisor.into();
+    [
+        (ConditionTerm::IntegerEqual(divisor.clone(), zero.clone()), false),
+        (ConditionTerm::IntegerLessThan(zero, divisor.clone()), true),
+        (ConditionTerm::IntegerLessEqual(one, divisor), true),
+    ]
+    .into_iter()
+    .any(|(guard, truth)| {
+        holds(&guard.truth_claim(truth), available)
+            || crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(&guard, truth)
+                .is_some_and(|(native, truth)| holds(&native.truth_claim(truth), available))
+    })
+}
+
 fn bool_arm(
     value: &ConditionTerm,
     matches_arm: impl Fn(&ConditionTerm) -> bool,
@@ -291,7 +329,7 @@ pub(crate) fn known_bridge_leaf(
             if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
                 condition_source_0.condition_native() =>
         {
-            mask_bound(a, b, available)
+            mask_bound(a, b, available) || unsigned_remainder_bound(a, b, available)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((ConditionTerm::BoolEqual(a, b), _)) =

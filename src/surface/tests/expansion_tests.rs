@@ -10038,6 +10038,36 @@ fn computed_sequence_negations_expand_to_known() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: unsigned remainder expansion and cold replay took 2.5s"]
+fn unsigned_remainder_dividend_bound_expands_to_known() {
+    let source = "
+theorem unsigned_tail(n: uint64, d: uint64) {
+    requires 0u64 < d;
+    ensures n % d <= n by { solve() using { 0u64 < d; }; }
+}";
+    let label = "unsigned_tail.ensures_0";
+    let expanded = expand_c_claim_source_by_label(source, &[], label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+
+    let omitted = source.replace("using { 0u64 < d; }", "using {}");
+    assert!(verify_click_theorems(&omitted).is_err());
+    let wrong_divisor = "theorem wrong_divisor(n: uint32, d: uint32, other: uint32) {
+        requires other != 0u32;
+        ensures n % d <= n by known();
+    }";
+    assert!(without_implicit_solve(|| verify_click_theorems(wrong_divisor)).is_err());
+    let exact_observation = "theorem exact_observation(n: uint32, d: uint32) {
+        requires d != 0u32;
+        ensures to_integer(n % d) <= to_integer(n) by known();
+    }";
+    without_implicit_solve(|| verify_click_theorems(exact_observation)).unwrap();
+}
+
+#[test]
 fn strict_literal_remainder_bound_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/solve_bounds_an_unsigned_quotient_by_its_operand.md");
     let label = "remainder_below_divisor.ensures_0";
