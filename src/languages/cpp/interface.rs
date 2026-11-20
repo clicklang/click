@@ -437,6 +437,8 @@ fn function_interface(
         || super::scalar::record_pointee(&source.return_type).is_some()
     {
         InterfaceType::Int32Pointer
+    } else if super::scalar::void_pointer(&source.return_type).is_some() {
+        InterfaceType::VoidPointer
     } else if let CppType::Pointer { pointee } = &source.return_type {
         Scalar::pointer_element(pointee, true)
             .and_then(|scalar| scalar.kind.pointer_proof_type())
@@ -543,6 +545,12 @@ fn function_interface(
                 parameter.name.clone(),
                 function_pointer_signature(&parameter.value_type)?,
             )),
+            pointer if let Some(is_const) = super::scalar::void_pointer(pointer) =>
+            {
+                Ok(crate::languages::interface::ImportedParameter::from_binding(
+                    InterfaceType::VoidPointer, carried_name.clone(), None,
+                ).with_pointee_constant(is_const))
+            }
             CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some() =>
             {
                 Ok(crate::languages::interface::ImportedParameter::from_binding(

@@ -1132,9 +1132,12 @@ private:
       }
     }
     const auto *pointer = parameter->getType()->getAs<clang::PointerType>();
-    const bool mutable_int_pointer =
-        pointer != nullptr && !parameter->getType().hasQualifiers() &&
-        supported_pointer_element(pointer->getPointeeType());
+    const bool native_pointer = pointer != nullptr &&
+        ((!parameter->getType().hasQualifiers() &&
+          supported_pointer_element(pointer->getPointeeType())) ||
+         (!parameter->getType().isConstQualified() &&
+          !parameter->getType().isVolatileQualified() &&
+          supported_void_pointee(pointer->getPointeeType())));
     const bool by_value_integer =
         !parameter->getType().hasQualifiers() &&
         supported_scalar_value_type(parameter->getType());
@@ -1153,14 +1156,14 @@ private:
         !parameter->getType().hasQualifiers() &&
         function_pointer_prototype(parameter->getType()) != nullptr;
     const auto *pointed_record = record_pointer_target(parameter->getType());
-    if (!int_reference && record_reference == nullptr && !mutable_int_pointer &&
+    if (!int_reference && record_reference == nullptr && !native_pointer &&
         !by_value_bool && !by_value_integer && !trivial_record_value &&
         !function_pointer && pointed_record == nullptr) {
       fail(parameter->getLocation(),
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, a native element "
-           "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, a native element pointer (possibly const pointee), or a "
+           "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, a native element or void pointer (possibly const pointee), or a "
            "mutable or const simple-record reference parameter, a trivially copied simple-record value, "
            "a mutable pointer to a simple record, or a pointer to a noexcept function");
       return std::nullopt;
@@ -1171,15 +1174,18 @@ private:
     if (trivial_record_value && !remember_record(by_value_record)) {
       return std::nullopt;
     }
-    // A layout-free library method exposes its canonical parameter types.
+    // A layout-free library method or an axiom's off-root header alias exposes
+    // the canonical parameter type without importing the alias declaration.
     const auto *method = llvm::dyn_cast_or_null<clang::CXXMethodDecl>(opaque);
-    const bool layout_free = method != nullptr &&
-        is_layout_free_library_record(method->getParent());
-    const clang::QualType type = layout_free
+    const auto *source_alias = direct_source_alias(parameter->getTypeSourceInfo());
+    const bool canonical =
+        (method != nullptr && is_layout_free_library_record(method->getParent())) ||
+        (source_alias != nullptr && opaque != nullptr && is_axiom(opaque) &&
+         !executable_source(source_alias->getLocation()));
+    const clang::QualType type = canonical
         ? parameter->getType().getCanonicalType() : parameter->getType();
-    const clang::TypedefNameDecl *source_alias = layout_free
-        ? nullptr : direct_source_alias(parameter->getTypeSourceInfo());
-    auto value_type = lower_type(type, parameter->getLocation(), source_alias);
+    auto value_type = lower_type(type, parameter->getLocation(),
+                                 canonical ? nullptr : source_alias);
     if (!value_type) {
       return std::nullopt;
     }
@@ -1243,6 +1249,21 @@ private:
         !source->getPointeeType().isConstQualified() &&
         target->getPointeeType().isConstQualified() &&
         context_.hasSameUnqualifiedType(source->getPointeeType(), target->getPointeeType());
+  }
+
+  bool supported_void_pointee(clang::QualType type) const {
+    return type->isVoidType() && !type.isVolatileQualified() &&
+           !type.isRestrictQualified();
+  }
+
+  bool supported_void_pointer_cast(const clang::CastExpr *cast) const {
+    const auto *source = cast->getSubExpr()->getType()->getAs<clang::PointerType>();
+    const auto *target = cast->getType()->getAs<clang::PointerType>();
+    return cast->getCastKind() == clang::CK_BitCast && source && target &&
+           supported_pointer_element(source->getPointeeType()) &&
+           supported_void_pointee(target->getPointeeType()) &&
+           (!source->getPointeeType().isConstQualified() ||
+            target->getPointeeType().isConstQualified());
   }
 
   // A mutable pointer to a simple, complete, non-polymorphic record, such
@@ -1394,7 +1415,7 @@ private:
       return lower_function_pointer_type(type, location);
     if (type->isVoidType()) {
       llvm::json::Object result;
-      result["kind"] = "void";
+      result["kind"] = type.isConstQualified() ? "const_void" : "void";
       return Json(std::move(result));
     }
     if (const auto *reference = type->getAs<clang::LValueReferenceType>()) {
@@ -3326,8 +3347,14 @@ private:
   // their read-only contracts before verifying the surrounding call.
   bool observer_argument(const clang::Expr *argument,
                          clang::QualType parameter_type) const {
+    if (!context_.hasSameUnqualifiedType(argument->getType(), parameter_type))
+      return false;
+    argument = argument->IgnoreParens();
+    if (const auto *cast = llvm::dyn_cast<clang::ImplicitCastExpr>(argument);
+        cast != nullptr && supported_void_pointer_cast(cast))
+      argument = cast->getSubExpr()->IgnoreParens();
     const auto *call =
-        llvm::dyn_cast<clang::CXXMemberCallExpr>(argument->IgnoreParens());
+        llvm::dyn_cast<clang::CXXMemberCallExpr>(argument);
     const auto *method = call == nullptr ? nullptr : call->getMethodDecl();
     const auto *prototype = method == nullptr ? nullptr :
         method->getType()->getAs<clang::FunctionProtoType>();
@@ -3335,8 +3362,7 @@ private:
            prototype != nullptr && prototype->isNothrow() &&
            call->getNumArgs() == 0 && call->isPRValue() &&
            !call->getType()->isRecordType() &&
-           !parameter_type->isReferenceType() &&
-           context_.hasSameType(call->getType(), parameter_type);
+           !parameter_type->isReferenceType();
   }
 
   bool field_scalar_argument(const clang::Expr *expression) const {
@@ -3624,9 +3650,11 @@ private:
     bool observe_arguments = false;
     if (allow_nested) {
       unsigned nested_calls = 0;
+      bool converted_observer = false;
       for (unsigned index = argument_offset; index < call->getNumArgs();
            ++index) {
-        const auto *nested = nested_argument_call(call->getArg(index));
+        const auto *argument = call->getArg(index);
+        const auto *nested = nested_argument_call(argument);
         if (nested != nullptr && nested->getDirectCallee() == nullptr) {
           fail(nested->getExprLoc(),
                "a call through a function pointer is not admitted as a call argument");
@@ -3634,8 +3662,13 @@ private:
         }
         if (nested != nullptr && !is_numeric_limits_max_call(nested))
           ++nested_calls;
+        const auto *cast = llvm::dyn_cast<clang::ImplicitCastExpr>(argument->IgnoreParens());
+        converted_observer = converted_observer ||
+            (cast != nullptr && supported_void_pointer_cast(cast) &&
+             observer_argument(argument, definition->getParamDecl(index - argument_offset)->getType()));
       }
-      if (nested_calls > 1 || (nested_calls != 0 && has_receiver && !stable_receiver)) {
+      if (converted_observer || nested_calls > 1 ||
+          (nested_calls != 0 && has_receiver && !stable_receiver)) {
         observe_arguments = true;
         for (unsigned index = argument_offset; index < call->getNumArgs(); ++index) {
           const auto *argument = call->getArg(index);
@@ -5068,6 +5101,18 @@ private:
             llvm::dyn_cast<clang::CXXBoolLiteralExpr>(expression)) {
       return boolean_constant(boolean->getValue(), boolean->getSourceRange(),
                               false);
+    }
+    if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression);
+        cast != nullptr && supported_void_pointer_cast(cast)) {
+      auto value = lower_expression(cast->getSubExpr(), function);
+      auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+      if (!value || !value_type) return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "void_pointer_cast";
+      result["value"] = std::move(*value);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(cast->getSourceRange());
+      return Json(std::move(result));
     }
     if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression);
         cast != nullptr && supported_pointer_qualification(cast)) {

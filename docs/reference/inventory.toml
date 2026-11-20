@@ -2362,6 +2362,10 @@ id = "library.extern.strlen"
 path = "reference/library/index.md#strlen"
 
 [[item]]
+id = "library.cpp.memcpy"
+path = "reference/library/index.md#c-memcpy"
+
+[[item]]
 id = "library.cpp.std::array<T, N>::back"
 path = "reference/library/index.md#stdarrayt-n"
 

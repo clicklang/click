@@ -935,8 +935,15 @@ fn sidecar_contract_path(line: &str) -> Option<String> {
             ch == ' ' && depth == 0
         })
         .map_or(0, |(index, _)| index + 1);
+    let return_type = head[..start].trim();
     let path = &head[start..];
-    path.contains("::").then(|| path.to_string())
+    (path.contains("::")
+        || (!return_type.is_empty()
+            && !matches!(
+                return_type.split_whitespace().next(),
+                Some("abstract" | "axiom" | "function" | "predicate" | "resource" | "theorem")
+            )))
+    .then(|| path.to_string())
 }
 
 /// The Click library files under `library/`, primitive modules or the

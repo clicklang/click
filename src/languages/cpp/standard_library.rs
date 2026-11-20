@@ -176,12 +176,20 @@ pub(crate) const AS_WRITABLE_BYTES_LIBRARY: &str =
 
 const VECTOR_LIBRARY: &str = include_str!("../../../library/cpp/vector.interface.click");
 
+const MEMCPY_LIBRARY: &str = include_str!("../../../library/cpp/memcpy.interface.click");
+
 /// Logical descriptor contracts, currently selected for dynamic `std::span<int>`.
 const SPAN_STATE_CONTRACTS: &str =
     include_str!("../../../library/cpp/span_state_contracts.interface.click");
 
 /// Resolved declarations whose contracts are written at their exact types.
 const CONCRETE_LIBRARY_FUNCTIONS: &[(&str, &str, &[&str], &str)] = &[
+    (
+        "memcpy",
+        "void *(void *, const void *, unsigned long) noexcept",
+        &["memcpy"],
+        MEMCPY_LIBRARY,
+    ),
     (
         "std::vector<unsigned char>::size",
         "unsigned long (void) const noexcept",
