@@ -20,6 +20,10 @@ can sit beside sources or in a separate tree under the project.
 The manifest is `.click/captures/manifest.json`. Captures live beside it,
 grouped by unit, with their source paths preserved.
 
+Ordinary `click verify` refreshes the missing or stale captures it needs.
+Use `click capture` to force a fresh capture or to produce files for later
+compiler-free verification with `click verify --locked`.
+
 ## Interface boundary
 
 Verification runs against interfaces that Click defines; it needs no compiler,
@@ -39,10 +43,9 @@ system headers, or frontend toolchain.
   under verification, such as Linux's own headers with their structs, inline
   helpers, macros, and `CONFIG_*` selection. Calls that code makes to
   anything outside it still use Click-side contracts.
-- **A language frontend is a separate case.** Click has no C++ or Rust type
-  checker of its own, so the pinned Clang 19 exporter and Charon are accepted
-  frontends. Each runs once at `click capture`; verification loads the
-  artifact offline.
+- **A language frontend is a separate case.** Click uses the pinned
+  Clang 19 exporter for C++ and Charon for Rust. They run when Click
+  captures source. Verification reuses current captures offline.
 - **The C++ standard library is axiomatic.** It is mostly header code that
   Clang must parse to type-check a program, so the real headers are parsed,
   but none of their code is trusted or verified: a call into a system header
@@ -2148,11 +2151,10 @@ this end-to-end subset.
 
 ## Validation and supported profile
 
-Explicit refresh runs preprocessing with controlled arguments and environment,
+Capturing C runs preprocessing with controlled arguments and environment,
 records the selected toolchain, dependencies, source and artifact, and refuses
-inputs that change during preparation. Ordinary loading does not invoke the
-compiler. It checks the lock's internal identities and the available project
-inputs against the recorded state. Changed C sources, opened project-local
+inputs that change during preparation. Loading a capture checks the manifest's
+internal identities and the available project inputs against the recorded state. Changed C sources, opened project-local
 headers, configuration, or artifact bytes cannot reuse that lock. External
 toolchain and header changes require a new explicit refresh to produce a proof
 about that new environment. A supplied digest alone does not authenticate who
@@ -2162,7 +2164,7 @@ Compiler-backed C imports accept the target `x86_64-unknown-linux-gnu` in two
 modes. A C unit is prepared for the project's `target` and
 `mode`, which a sidecar's `target` and `mode` directives must
 match; without them the project uses the default mode, `userspace`. A
-lock records both, so changing either requires `click capture` again.
+capture records both, so changing either triggers a refresh.
 Prepared imports retain their target through verification and expansion.
 
 | Mode | Fixed compiler profile |

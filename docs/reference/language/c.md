@@ -3,7 +3,7 @@
 This page lists the C that Click models. Coverage is incomplete: a construct
 that is not listed here is refused with a diagnostic rather than approximated.
 The same is true of C++ and Rust, whose coverage is described in
-[`click import`](../cli/capture.md) and
+[`click capture`](../cli/capture.md) and
 [Experimental Rust imports](../rust.md);
 [language coverage](../coverage.md) summarizes all three side by side. When C syntax appears inside Surface
 Click, this documentation calls that syntax a **C fragment**.

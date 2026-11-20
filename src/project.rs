@@ -144,6 +144,13 @@ pub struct Project {
     units: BTreeMap<String, Unit>,
 }
 
+struct SelectedSource<'a> {
+    spelling: &'a str,
+    path: &'a Path,
+    unit: &'a str,
+    relative: String,
+}
+
 impl Project {
     /// The project whose file is in `directory` or its nearest ancestor that
     /// has one, if any.
@@ -510,23 +517,29 @@ impl Project {
         crate::cli::write_file_atomically(&self.lock_path(), &encoded)
     }
 
-    /// The prepared inputs a sidecar's `verifying` declarations select, given
-    /// as `(spelling, canonical path)` pairs, or `None` when no unit lists any
-    /// of them.
-    pub fn prepared_sources(
-        &self,
-        requested: &[(String, Option<PathBuf>)],
-    ) -> Result<Option<UnitSelection>, String> {
+    fn selected_sources<'a>(
+        &'a self,
+        requested: &'a [(String, Option<PathBuf>)],
+    ) -> Result<Vec<SelectedSource<'a>>, String> {
         let mut selected = Vec::with_capacity(requested.len());
         let mut unlisted = Vec::new();
         for (spelling, path) in requested {
-            match path.as_deref().and_then(|path| self.unit_source(path)) {
-                Some((unit, relative)) => selected.push((spelling, unit, relative)),
+            let source = path.as_deref().and_then(|path| {
+                let (unit, relative) = self.unit_source(path)?;
+                Some(SelectedSource {
+                    spelling,
+                    path,
+                    unit,
+                    relative,
+                })
+            });
+            match source {
+                Some(source) => selected.push(source),
                 None => unlisted.push(spelling.as_str()),
             }
         }
         if selected.is_empty() {
-            return Ok(None);
+            return Ok(selected);
         }
         if let Some(spelling) = unlisted.first() {
             return Err(format!(
@@ -534,68 +547,131 @@ impl Project {
                 self.file.display()
             ));
         }
-        let lock = self.read_lock()?;
-        if let Some((spelling, unit, _)) = selected
-            .iter()
-            .find(|(_, unit, _)| self.units[*unit].spec.language != "c")
-            && selected.len() > 1
-            && self.units[*unit].spec.language == "c++"
-        {
-            // Several sources of one C++ unit link into one program; a
-            // source of another unit or language cannot join them.
-            if let Some((other, _, _)) = selected.iter().find(|(_, other, _)| other != unit) {
-                return Err(format!(
-                    "`verifying \"{other}\"` selects a source outside C++ unit `{unit}`, whose sources `verifying \"{spelling}\"` links; a sidecar links the sources of one C++ unit"
-                ));
-            }
-            let sources = selected
+        if selected.len() > 1
+            && let Some(source) = selected
                 .iter()
-                .map(|(spelling, unit, relative)| {
-                    Ok(self.load_cpp_unit(unit, relative, &lock)?.named(spelling))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
-            return Ok(Some(UnitSelection::Program(
-                cpp_import::LinkedCppProgram::new(sources).into(),
-            )));
-        }
-        if let Some((spelling, unit, relative)) = selected
-            .iter()
-            .find(|(_, unit, _)| self.units[*unit].spec.language != "c")
+                .find(|source| self.units[source.unit].spec.language != "c")
         {
-            if selected.len() != 1 {
+            let SelectedSource { spelling, unit, .. } = source;
+            let language = &self.units[*unit].spec.language;
+            if language != "c++" {
                 return Err(format!(
-                    "`verifying \"{spelling}\"` selects a source of {} unit `{unit}`, which a sidecar verifies on its own",
-                    self.units[*unit].spec.language
+                    "`verifying \"{spelling}\"` selects a source of {language} unit `{unit}`, which a sidecar verifies on its own"
                 ));
             }
-            let program: PreparedProgram = if self.units[*unit].spec.language == "rust" {
-                self.load_rust_unit(unit, &lock)?.named(spelling).into()
-            } else {
-                self.load_cpp_unit(unit, relative, &lock)?
-                    .named(spelling)
-                    .into()
-            };
-            return Ok(Some(UnitSelection::Program(program)));
-        }
-        let selected_by_unit = selected.iter().fold(
-            BTreeMap::<&str, BTreeSet<&str>>::new(),
-            |mut units, (_, unit, source)| {
-                units.entry(unit).or_default().insert(source);
-                units
-            },
-        );
-        let mut loaded = BTreeMap::new();
-        for (unit, sources) in selected_by_unit {
-            let imports = self.load_c_unit(unit, &sources, &lock)?;
-            for import in imports {
-                loaded.insert((unit, import.logical_source().to_owned()), import);
+            // Several sources of one C++ unit link into one program.
+            if let Some(other) = selected.iter().find(|other| other.unit != *unit) {
+                return Err(format!(
+                    "`verifying \"{}\"` selects a source outside C++ unit `{unit}`, whose sources `verifying \"{spelling}\"` links; a sidecar links the sources of one C++ unit",
+                    other.spelling
+                ));
             }
         }
-        let prepared = selected
-            .into_iter()
-            .map(|(spelling, unit, source)| loaded[&(unit, source)].named(spelling))
-            .collect();
-        Ok(Some(UnitSelection::C(prepared)))
+        Ok(selected)
+    }
+
+    /// The prepared inputs a sidecar's `verifying` declarations select, given
+    /// as `(spelling, canonical path)` pairs, or `None` when no unit lists any
+    /// of them.
+    pub fn prepared_sources(
+        &self,
+        requested: &[(String, Option<PathBuf>)],
+    ) -> Result<Option<UnitSelection>, String> {
+        let selected = self.selected_sources(requested)?;
+        self.load_selected_sources(&selected)
+    }
+
+    fn load_selected_sources(
+        &self,
+        selected: &[SelectedSource<'_>],
+    ) -> Result<Option<UnitSelection>, String> {
+        let Some(first) = selected.first() else {
+            return Ok(None);
+        };
+        let lock = self.read_lock()?;
+        let program: PreparedProgram = match self.units[first.unit].spec.language.as_str() {
+            "c++" if selected.len() > 1 => {
+                let sources = selected
+                    .iter()
+                    .map(|source| {
+                        Ok(self
+                            .load_cpp_unit(source.unit, &source.relative, &lock)?
+                            .named(source.spelling))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                cpp_import::LinkedCppProgram::new(sources).into()
+            }
+            "c++" => self
+                .load_cpp_unit(first.unit, &first.relative, &lock)?
+                .named(first.spelling)
+                .into(),
+            "rust" => self
+                .load_rust_unit(first.unit, &lock)?
+                .named(first.spelling)
+                .into(),
+            _ => {
+                let mut selected_by_unit = BTreeMap::<&str, BTreeSet<&str>>::new();
+                for source in selected {
+                    selected_by_unit
+                        .entry(source.unit)
+                        .or_default()
+                        .insert(&source.relative);
+                }
+                let mut loaded = BTreeMap::new();
+                for (unit, sources) in selected_by_unit {
+                    for import in self.load_c_unit(unit, &sources, &lock)? {
+                        loaded.insert((unit, import.logical_source().to_owned()), import);
+                    }
+                }
+                return Ok(Some(UnitSelection::C(
+                    selected
+                        .iter()
+                        .map(|source| {
+                            loaded[&(source.unit, source.relative.clone())].named(source.spelling)
+                        })
+                        .collect(),
+                )));
+            }
+        };
+        Ok(Some(UnitSelection::Program(program)))
+    }
+
+    /// Loads current captures and refreshes just the requested stale inputs.
+    pub fn prepared_sources_with_refresh(
+        &self,
+        requested: &[(String, Option<PathBuf>)],
+    ) -> Result<Option<UnitSelection>, String> {
+        let selected = self.selected_sources(requested)?;
+        let original_error = match self.load_selected_sources(&selected) {
+            Ok(inputs) => return Ok(inputs),
+            Err(error) => error,
+        };
+        let mut stale = BTreeMap::<String, BTreeSet<String>>::new();
+        for source in &selected {
+            if selected.len() > 1
+                && self
+                    .load_selected_sources(std::slice::from_ref(source))
+                    .is_ok()
+            {
+                continue;
+            }
+            if stale
+                .entry(source.unit.to_owned())
+                .or_default()
+                .insert(source.relative.clone())
+            {
+                let path = source.path;
+                eprintln!(
+                    "click: refreshing capture for `{}`",
+                    path.strip_prefix(&self.root).unwrap_or(path).display()
+                );
+            }
+        }
+        if stale.is_empty() {
+            return Err(original_error);
+        }
+        self.write_captures(Some(&stale), None)?;
+        self.load_selected_sources(&selected)
     }
 
     /// Whether a unit lists any of the requested sources.

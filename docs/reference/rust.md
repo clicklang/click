@@ -49,7 +49,7 @@ Rust project units use this frontend automatically. `CLICK_CHARON` is a
 contributor override: a bundle directory selects that bundle, while an
 executable selects the existing source-build path and its rustup-managed pinned
 toolchain. The project schema and lock format are described
-in [`click import`](cli/capture.md#project-units) and
+in [`click capture`](cli/capture.md#project-units) and
 [project configuration](../concepts/own-project.md).
 
 The release workflow builds Charon with `scripts/build-charon.sh --release`

@@ -194,24 +194,22 @@ they match that profile. Keep only the preprocessor flags:
 }
 ```
 
-Then lock the project and verify. `click capture` prints nothing on
-success; it writes the preprocessed `.click/captures/label/label_fit.c.i` and
-`.click/captures/manifest.json`. Given a sidecar, it locks the sidecar's project:
-
-```console
-$ click capture label.click
-```
+Run verification after writing the project configuration:
 
 ```console
 $ click verify label.click
+click: refreshing capture for `label_fit.c`
 1 selected proof verified
 ```
 
-Verification now reads the locked state without running GCC, so commit the
-lock and `.click/captures/` with the project. If you edit `label_fit.c` or
-`include/label_config.h`, verification refuses the stale lock until you run
-`click capture` again. See
-[`click import`](../reference/cli/capture.md#project-units) for every field.
+The first run captures the sidecar's source. It writes
+`.click/captures/label/label_fit.c.i` and `.click/captures/manifest.json`.
+Later runs reuse the capture until an input such as `label_fit.c` or
+`include/label_config.h` changes. Commit `.click/captures/` if others need to
+check the proof with `click verify --locked label.click` on a machine without
+GCC. Run `click capture label.click` to refresh the sidecar's source explicitly.
+See [`click capture`](../reference/cli/capture.md#project-units) for every
+project configuration field.
 
 Some details of the configuration:
 

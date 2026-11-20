@@ -2572,7 +2572,7 @@ fn foreign_layout_tree_is_read_in_place_and_never_written() {
     let mut bytes = fs::read(&header).unwrap();
     bytes[0] = b'#';
     fs::write(&header, bytes).unwrap();
-    let stale = click(&["verify", "ringq.click"]);
+    let stale = click(&["verify", "--locked", "ringq.click"]);
     let error = String::from_utf8_lossy(&stale.stderr);
     assert!(!stale.status.success());
     assert!(error.contains("RingQ.h"), "{error}");
@@ -2627,4 +2627,76 @@ fn capture_selects_sources_and_reuses_them_across_proof_layouts() {
     click(&["verify", "src/second.click"]);
     fs::write(root.join("src/second.c"), "int second(void) { return 8; }").unwrap();
     click(&["verify", "proofs/first.click"]);
+}
+
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+#[ignore = "nightly: live capture and verification with source and header edits"]
+fn verify_refreshes_only_the_captures_it_uses() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    fs::write(
+        root.join("click.project.json"),
+        r#"{"units":{"app":{"language":"c","compiler":"/usr/bin/gcc",
+           "env":{"PATH":"/usr/bin:/bin","LC_ALL":"C"},
+           "sources":{"first.c":{},"second.c":{}}}}}"#,
+    )
+    .unwrap();
+    fs::write(root.join("value.h"), "#define VALUE 42\n").unwrap();
+    for name in ["first", "second"] {
+        fs::write(
+            root.join(format!("{name}.c")),
+            format!("#include \"value.h\"\nint {name}(void) {{ return VALUE; }}\n"),
+        )
+        .unwrap();
+        fs::write(
+            root.join(format!("{name}.click")),
+            format!("verifying \"{name}.c\"; int {name}() {{ ensures result >= 42; }}"),
+        )
+        .unwrap();
+    }
+    let verify = |args: &[&str], expected_success: bool| {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_click"))
+            .arg("verify")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        assert_eq!(
+            output.status.success(),
+            expected_success,
+            "{args:?}: {stderr}"
+        );
+        stderr
+    };
+    let manifest = root.join(click::project::LOCK_NAME);
+    let captures = root.join(click::project::ARTIFACT_DIRECTORY).join("app");
+    verify(&["--locked", "first.click"], false);
+    assert!(!manifest.exists());
+    assert!(verify(&["first.click"], true).contains("refreshing capture for `first.c`"));
+    assert!(!captures.join("second.c.i").exists());
+    verify(&["second.click"], true);
+
+    fs::write(
+        root.join("first.click"),
+        "verifying \"first.c\"; int first() { ensures result > 41; }",
+    )
+    .unwrap();
+    assert!(!verify(&["first.click"], true).contains("refreshing capture"));
+
+    fs::write(
+        root.join("first.c"),
+        "#include \"value.h\"\nint first(void) { return VALUE + 1; }",
+    )
+    .unwrap();
+    verify(&["--locked", "first.click"], false);
+    assert!(verify(&["first.click"], true).contains("refreshing capture for `first.c`"));
+    verify(&["--locked", "second.click"], true);
+
+    fs::write(root.join("value.h"), "#define VALUE 43\n").unwrap();
+    assert!(verify(&["first.click"], true).contains("refreshing capture for `first.c`"));
+    verify(&["--locked", "second.click"], false);
+    assert!(verify(&["second.click"], true).contains("refreshing capture for `second.c`"));
+    verify(&["--locked", "first.click"], true);
 }

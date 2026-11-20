@@ -4,12 +4,18 @@
 or every sidecar in a project collection. Use it before profiling or
 expansion.
 
+For a compiler-backed proof, `click verify proof.click` checks the captures
+for its `verifying` sources and refreshes missing or stale ones before
+verification. A proof-only edit reuses the captures. `click verify --locked
+proof.click` requires existing, current captures and runs without the
+compiler. Use [`click capture`](capture.md) to refresh inputs explicitly.
+
 ## Synopsis
 
 ```text
-usage: click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
-       click verify --trace-proof <PROOF|PATH:LINE[:COLUMN]> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
-       click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
+usage: click verify [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
+       click verify [--locked] --trace-proof <PROOF|PATH:LINE[:COLUMN]> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
+       click verify [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
        click verify --changed-since <REVISION> [--explain] <sidecar.click|directory>
 ```
 
@@ -67,6 +73,7 @@ rather than checking their proofs.
 
 | Option | Meaning |
 | --- | --- |
+| `--locked` | Require existing, current captures and skip compiler invocation. |
 | `--work-limit UNITS` | Set the deterministic whole-run work budget independently for each selected sidecar, mdtest, or proof unit. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound independently for each selected sidecar, mdtest, or proof unit. The default is `10m`. This is not a verdict about the proof; see [Deterministic verdicts](#deterministic-verdicts). |
 | `--trace-proof PROOF` | Verify only this C function, theorem, or user-defined tactic of one sidecar, selected by name (a Rust item by its path or, for an operator-trait method, its qualified form such as `<adler2::algo::U32X4 as MulAssign<u32>>::mul_assign`), or by `PATH:LINE[:COLUMN]` of the target, which selects the function, theorem, or tactic owning the claim whose clause or proof covers that line ([claim labels](expand.md#claim-labels)), and, on a proof error, show checked steps on its failing path with added facts and changed resource counts. A sidecar cannot declare one name as both a C function and a theorem, so the name alone selects the proof. Other tactic contracts stay assumptions when tracing a tactic. Theorems that the traced theorem cites stay assumptions, and no C function is verified for a theorem trace. If the script completes but contract certification fails, show the failed obligation and a bounded view of facts available to that check. Trace length and total output size are not capped; individual fact previews remain bounded. |

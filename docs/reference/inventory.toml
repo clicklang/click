@@ -1583,6 +1583,10 @@ id = "cli.verify.--time-limit"
 path = "reference/cli/verify.md#options"
 
 [[item]]
+id = "cli.verify.--locked"
+path = "reference/cli/verify.md#options"
+
+[[item]]
 id = "cli.verify.--work-limit"
 path = "reference/cli/verify.md#options"
 
