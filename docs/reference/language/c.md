@@ -910,9 +910,11 @@ Supported C surface includes:
   `p->count++`, with the lvalue address evaluated once. A parenthesized
   target names the object it encloses, as in `(*count)++`, `++(*count)`, and
   `(pos) += n` (`mdtests/a_statement_may_update_a_parenthesized_lvalue.md`);
-  a compound update of a pointer stored in memory, such as `(*str)++` on a
-  `char **`, is refused at execution as a type mismatch
-  (`mdtests/a_parenthesized_update_of_a_stored_pointer_is_refused_at_execution.md`)
+  `+=`, `-=`, and statement increment or decrement also work on a pointer
+  stored in memory when its scalar pointee type is known. The update applies
+  ordinary pointer arithmetic, including element scaling and one-past bounds,
+  and stores the new value in the owned pointer cell
+  (`mdtests/a_parenthesized_update_of_a_stored_pointer.md`).
 - expression-valued prefix and postfix `++`/`--` on named arithmetic and
   typed data-pointer scalars. The update is a step of its own; prefix forms
   read the updated local, and postfix forms read the value the update

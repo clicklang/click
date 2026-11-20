@@ -282,7 +282,20 @@ fn execute_program_lvalue_update_paths(
                 UpdateOperator::Divide
             )
         );
-        if !supported_integer_update && !supported_float_update {
+        // A struct pointer can share a scalar pointer's kernel type.
+        // Require the C access class to name a scalar pointee before using
+        // the kernel type's stride.
+        let supported_pointer_update =
+            matches!(operator, UpdateOperator::Add | UpdateOperator::Subtract)
+                && lvalue.value_type.pointee_type().is_some()
+                && matches!(
+                    lvalue
+                        .access_class
+                        .as_ref()
+                        .and_then(crate::kernel::effective_type::CAccessClass::pointee),
+                    Some(crate::kernel::effective_type::CAccessClass::Scalar(_))
+                );
+        if !supported_integer_update && !supported_float_update && !supported_pointer_update {
             paths.push(StatementExecutionPath::new(
                 StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
                 facts,
@@ -354,6 +367,19 @@ fn execute_program_lvalue_update_paths(
                     continue;
                 };
 
+                if supported_pointer_update
+                    && !matches!(
+                        operand_value,
+                        crate::kernel::integer64_c_value!(_) | ProgramValue::Bool(_)
+                    )
+                {
+                    paths.push(StatementExecutionPath::new(
+                        StatementOutcome::RuntimeError(RuntimeError::TypeMismatch),
+                        facts,
+                        obligations,
+                    ));
+                    continue;
+                }
                 let update_expression = program_update_expression(
                     operator,
                     ProgramExpression::Value(current.clone()),
