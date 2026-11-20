@@ -131,8 +131,8 @@ facts hold at the call. A quantified fact the caller states matches the
 body's fact up to its binder and the registered loads that binder indexes.
 
 A composite view's body facts are checked in the form lowered at the call.
-If a fact is available under another pointer spelling, prove the required
-form explicitly with `have` and `rewrite` before the call.
+When a check misses a fact stated under another pointer spelling, prove
+the required form with `have` and `rewrite` before the call.
 A refused assembly retains the first missing body fact's written clause and
 its call argument bindings. The diagnostic names that clause even when its
 current-state lowering is just `false`; formal names that differ from their

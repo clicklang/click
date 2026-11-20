@@ -2899,7 +2899,8 @@ fn composite_view_body_check_does_not_try_pointer_aliases() {
     let facts = PureFactContext::new()
         .assume_condition(equality(&p, &q), true)
         .assume_proposition(clause(&q));
-    assert!(resource_body_fact_is_established(&facts, &goal));
+    assert!(facts.exact_pointer_aliases(&p).any(|alias| alias == &q));
+    assert!(composite_view_body_fact_is_established(&facts, &clause(&q)));
     let mut work = Vec::new();
     for count in [4, 16, 64] {
         let mut facts = facts.clone();
