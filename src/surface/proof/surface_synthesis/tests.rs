@@ -9482,9 +9482,18 @@ fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
     let right = address(1008402);
     let argument =
         |address| ProgramValue::typed_pointer(address, ProgramType::ParameterPointer(ty));
+    let parameters = ["p", "q"].map(|name| {
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::ParameterPointer(ty),
+            name.into(),
+            None,
+        )
+    });
+    let arguments =
+        [left.clone(), right.clone()].map(|address| ProgramExpression::Value(argument(address)));
     let entry = ExecutionState::new()
         .with_local("p", argument(left.clone()))
-        .with_local("q", argument(right.clone()))
+        .with_local("q", argument(right))
         .begin_function_entry_memory();
     let post = entry.clone().with_memory(
         entry
@@ -9530,7 +9539,7 @@ fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
     }
     let raised = synthesize_surface_proposition_at_entry_and_post(
         &original,
-        ParameterBinding::default(),
+        ParameterBinding::new(&parameters, &arguments),
         &entry,
         &post,
     )
