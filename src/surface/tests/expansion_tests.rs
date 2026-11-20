@@ -9878,6 +9878,36 @@ fn concrete_viewability_prerequisite_expands_to_known() {
 }
 
 #[test]
+fn literal_constructor_field_disequality_expands_to_known() {
+    let (source, program) = mdtest_sources("mdtests/algebraic_maybe.md");
+    let program = crate::cli::source_refs(&program);
+    let written = "Maybe<int32>::Some(0) != Maybe<int32>::Some(1) by known();";
+    let smart = source.replace(written, &written.replace("known()", "solve()"));
+    assert_ne!(source, smart);
+    let label = "maybe_payloads_compare_structurally.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&smart, &program, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap();
+    let symbolic = source.replace(
+        "maybe_payloads_compare_structurally()",
+        "maybe_payloads_compare_structurally(x: int32)",
+    );
+    assert_ne!(source, symbolic);
+    let symbolic = symbolic.replace(written, &written.replace("::Some(1)", "::Some(x)"));
+    assert!(symbolic.contains("::Some(x) by known();"));
+    let error = without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&symbolic, &program).map_err(|error| error.report())
+    })
+    .expect_err("a symbolic field does not establish disequality");
+    assert!(error.contains("known"), "{error}");
+}
+
+#[test]
 fn selected_mirrored_disequality_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/int32_disequality_symmetry.md");
     let expanded = expand_c_claim_source_by_label(&source, &[], "swap_disequality.ensures_0")

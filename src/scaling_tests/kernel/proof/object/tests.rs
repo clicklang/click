@@ -589,6 +589,102 @@ fn known_computation_work_ignores_related_and_unrelated_facts() {
 }
 
 #[test]
+fn literal_constructor_field_known_work_scales_with_the_goal() {
+    use crate::kernel::{
+        AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValue,
+        AlgebraicValueType, AlgebraicVariantType, ConditionTerm, ProgramType, ProgramValue,
+        VerificationSession,
+    };
+    let mut costs = Vec::new();
+    for count in [4, 16, 64] {
+        let _session = VerificationSession::enter();
+        let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+            name: "Wrap".into(),
+            fields: vec![AlgebraicValueType::Program(ProgramType::Int32); count],
+        }]
+        .into();
+        let ty = AlgebraicType {
+            rigid: false,
+            name: "LiteralFields".into(),
+            arguments: vec![],
+            variants: variants.clone(),
+            schemas: std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from(
+                [(
+                    AlgebraicValueType::Algebraic {
+                        name: "LiteralFields".into(),
+                        arguments: vec![],
+                    },
+                    variants,
+                )],
+            ))),
+        };
+        let field = |value| AlgebraicValue::Program(ProgramValue::Int32(value));
+        let constructor = |last| {
+            let mut fields = vec![field(MachineTerm::constant(0)); count - 1];
+            fields.push(field(last));
+            AlgebraicTerm {
+                algebraic_type: ty.clone(),
+                node: AlgebraicTermNode::Constructor {
+                    variant: "Wrap".into(),
+                    fields,
+                },
+            }
+        };
+        let goal = |last| {
+            Proposition::condition_is(
+                ConditionTerm::AlgebraicEqual(
+                    Box::new(constructor(MachineTerm::constant(0))),
+                    Box::new(constructor(last)),
+                ),
+                false,
+            )
+        };
+        let distinct = goal(MachineTerm::constant(1));
+        let symbolic = goal(MachineTerm::Variable(Variable(970103)));
+        let mut samples = [Vec::new(), Vec::new()];
+        for size in [0, 16, 64, 256] {
+            let facts = (0..size)
+                .flat_map(|index| {
+                    [
+                        goal(MachineTerm::Variable(Variable(970104 + index))),
+                        Proposition::Predicate {
+                            name: format!("unrelated_{index}"),
+                            arguments: vec![],
+                        },
+                    ]
+                })
+                .collect::<Vec<_>>();
+            let facts = PureFactStore::from_ordered(&facts);
+            for ((goal, expected), costs) in [(&distinct, true), (&symbolic, false)]
+                .into_iter()
+                .zip(&mut samples)
+            {
+                let proof = known_computation_proof(goal.clone(), facts.clone());
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    proof.apply_known(PropositionKnownContext::Exact)
+                });
+                assert_eq!(result.is_ok(), expected);
+                costs.push(work);
+            }
+        }
+        // The empty store skips indexed fact lookups. Compare populated
+        // stores to bound the additional work as those indexes grow.
+        for work in &samples {
+            let populated = &work[1..];
+            assert!(
+                populated.iter().all(|sample| *sample <= populated[0] + 16),
+                "{work:?}"
+            );
+        }
+        costs.push(samples[0][0]);
+    }
+    assert!(
+        costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= pair[0] * 5),
+        "{costs:?}"
+    );
+}
+
+#[test]
 fn known_computation_work_is_linear_in_shared_integer_terms() {
     use crate::kernel::{ConditionTerm, IntegerTerm};
     let mut costs = Vec::new();
