@@ -3742,12 +3742,13 @@ pub(in crate::kernel) fn run_shape_representatives(
     run: &crate::kernel::primitives::CellRun,
 ) -> Option<Vec<u32>> {
     if let crate::kernel::primitives::RunValueMode::Copy { source_base } = run.value_mode() {
-        let source_run = crate::kernel::primitives::CellRun::new(
+        let source_run = crate::kernel::primitives::CellRun::new_at(
             source_base.clone(),
             run.element_width(),
             run.element_type(),
             run.count(),
-            run.source().clone(),
+            run.source_point().clone(),
+            crate::kernel::primitives::RunValueMode::Load,
             run.holes().clone(),
         );
         if copied_source_has_observable_slots(&source_run) {

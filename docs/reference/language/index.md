@@ -2780,8 +2780,13 @@ int32 open(int32 fd) {
 
 `owns` means the function starts and ends with the owned resource. `views`
 means the function borrows the resource for the call and reads it only.
-`consumes` requires an owned resource and does not return it. `produces`
-returns an owned resource. `requires` and `ensures` accept pure propositions
+`consumes` requires an owned resource and does not return it. `produces X`
+returns an owned resource. To produce a memory view, name the input with
+`views *p as source;` and write `produces view(*p) from source;`. The
+input must cover the output, and the output keeps the input borrow active
+until the caller gives it up. See
+[Producing a view](../../concepts/resources.md#producing-a-view).
+`requires` and `ensures` accept pure propositions
 only. `consumes X;` beside `produces X;` for the same `X` is exactly
 `owns X;`, and the pair is refused with that one clause to write (with the
 `produces` clause's proof, `owns X by proof;`;

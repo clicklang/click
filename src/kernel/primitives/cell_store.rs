@@ -56,6 +56,7 @@
 //! which are functions of the run map, so a store's identity does not
 //! depend on the order its runs were added in.
 use super::alias_candidates::BlockKeyed;
+use super::program_point::{ProgramPoint, ReadKey};
 use super::{
     Address, AddressBase, AddressOffset, AliasCandidates, HashedOrdMap, HashedOrdMapChange,
     HashedOrdSet, ProgramType, ProgramValue, SharedMemory,
@@ -285,7 +286,7 @@ pub struct CellRun {
     element_width: u32,
     element_type: ProgramType,
     count: u32,
-    source: SharedMemory,
+    source: ProgramPoint,
     mode: RunValueMode,
     holes: IndexIntervals,
 }
@@ -320,12 +321,32 @@ impl CellRun {
         mode: RunValueMode,
         holes: IndexIntervals,
     ) -> Self {
+        Self::new_at(
+            base,
+            element_width,
+            element_type,
+            count,
+            ProgramPoint::at(&source),
+            mode,
+            holes,
+        )
+    }
+
+    pub(crate) fn new_at(
+        base: Address,
+        element_width: u32,
+        element_type: ProgramType,
+        count: u32,
+        source: ProgramPoint,
+        mode: RunValueMode,
+        holes: IndexIntervals,
+    ) -> Self {
         Self {
             base,
             element_width,
             element_type,
             count,
-            source,
+            source: source.for_exact_read(),
             mode,
             holes,
         }
@@ -377,7 +398,7 @@ impl CellRun {
                 element_width: self.element_width,
                 element_type: self.element_type,
                 count: self.count,
-                source: RunSource(self.source.clone()),
+                source: self.source_key(),
                 mode: self.mode.clone(),
             },
         }
@@ -424,7 +445,29 @@ impl CellRun {
 
     /// The memory every slot's load reads.
     pub(crate) fn source(&self) -> &SharedMemory {
+        self.source.shared_memory()
+    }
+
+    pub(crate) fn source_point(&self) -> &ProgramPoint {
         &self.source
+    }
+
+    fn source_key(&self) -> RunSource {
+        RunSource {
+            point: self
+                .source
+                .read_version_id()
+                .map(|_| self.source.read_key()),
+            view: self.source().clone(),
+        }
+    }
+
+    pub(crate) fn names_cells_at(&self, source: &ProgramPoint) -> bool {
+        matches!(self.mode, RunValueMode::Load)
+            && self.element_width >= self.value_width()
+            && (self.element_type != ProgramType::Bool || self.element_width == self.value_width())
+            && source.names_exact_read(&self.source)
+            && source.shared_memory().arena_id() == self.source().arena_id()
     }
 
     /// The memory range the run's elements span, element 0 up to `count`.
@@ -521,11 +564,11 @@ impl CellRun {
         if let ProgramType::Parameter(parameter) = self.element_type {
             let (source, pointer) = match &self.mode {
                 RunValueMode::Copy { source_base } => (
-                    self.source.clone(),
+                    self.source().clone(),
                     source_base.offset_by_bytes(index * self.element_width),
                 ),
                 RunValueMode::Constant(value) => return value.clone(),
-                RunValueMode::Load => (self.source.clone(), pointer),
+                RunValueMode::Load => (self.source().clone(), pointer),
             };
             return super::AlgebraicTermNode::parameter_load(source, pointer, parameter);
         }
@@ -539,7 +582,7 @@ impl CellRun {
                     self.element_type.byte_width(),
                 );
                 let load = crate::kernel::eval::canonical_cell_load(
-                    &super::ProgramPoint::at(&self.source),
+                    &self.source,
                     &pointer,
                     self.element_type,
                 );
@@ -554,7 +597,7 @@ impl CellRun {
                     self.element_type.byte_width(),
                 );
                 let load = crate::kernel::eval::canonical_cell_load(
-                    &super::ProgramPoint::at(&self.source),
+                    &self.source,
                     &source_pointer,
                     self.element_type,
                 );
@@ -591,7 +634,7 @@ impl CellRun {
             && self.element_width == other.element_width
             && self.element_type == other.element_type
             && self.count == other.count
-            && self.source == other.source
+            && self.source_key() == other.source_key()
             && self.mode == other.mode
     }
 
@@ -603,7 +646,7 @@ impl CellRun {
         u32,
         ProgramType,
         u32,
-        &SharedMemory,
+        RunSource,
         &RunValueMode,
         &IndexIntervals,
     ) {
@@ -612,7 +655,7 @@ impl CellRun {
             self.element_width,
             self.element_type,
             self.count,
-            &self.source,
+            self.source_key(),
             &self.mode,
             &self.holes,
         )
@@ -663,12 +706,14 @@ impl Ord for CellRun {
     }
 }
 
-/// A run's source memory, ordered by content hash before structure. The
-/// order is a function of the memories' contents, so it is the same in every
-/// check, and it reaches the structural comparison only for two distinct
-/// memories whose hashes collide.
+/// A run's source identity. Compare distinct program points directly.
+/// The view distinguishes different sources at one point and supplies the
+/// identity for runs with a bare memory source.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct RunSource(SharedMemory);
+pub(crate) struct RunSource {
+    point: Option<ReadKey>,
+    view: SharedMemory,
+}
 
 impl PartialOrd for RunSource {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -678,16 +723,18 @@ impl PartialOrd for RunSource {
 
 impl Ord for RunSource {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0
-            .content_hash
-            .cmp(&other.0.content_hash)
-            .then_with(|| {
-                if self.0 == other.0 {
-                    std::cmp::Ordering::Equal
-                } else {
-                    self.0.memory.cmp(&other.0.memory)
-                }
-            })
+        self.point.cmp(&other.point).then_with(|| {
+            self.view
+                .content_hash
+                .cmp(&other.view.content_hash)
+                .then_with(|| {
+                    if self.view == other.view {
+                        std::cmp::Ordering::Equal
+                    } else {
+                        self.view.memory.cmp(&other.view.memory)
+                    }
+                })
+        })
     }
 }
 
@@ -1212,7 +1259,7 @@ impl CellStore {
         };
         let connectivity = authorized
             .is_none()
-            .then(|| assumptions.parameter_store_numeric_connectivity())
+            .then(|| assumptions.parameter_store_numeric_connectivity(Some(&base)))
             .flatten();
         let checked_bases = if authorized.is_some() {
             Some(BTreeSet::from([base.clone()]))
@@ -1277,7 +1324,7 @@ impl CellStore {
     ) {
         drop(self.prepare_parameter_partition(
             resources,
-            assumptions.parameter_store_numeric_connectivity(),
+            assumptions.parameter_store_numeric_connectivity(None),
         ));
     }
 
@@ -2458,7 +2505,39 @@ impl CellStore {
         &'a self,
         other: &'a Self,
     ) -> impl Iterator<Item = HashedOrdMapChange<'a, Address>> + 'a {
-        if self.runs == other.runs {
+        self.diff_cells(other, self.runs == other.runs)
+    }
+
+    /// A run checked against its exact source is a descriptor for the added
+    /// cells. Those cells need no individual review. Live run slots are
+    /// disjoint from both the concrete map and every other run.
+    pub(crate) fn diff_after_naming<'a>(
+        &'a self,
+        other: &'a Self,
+        source: &ProgramPoint,
+    ) -> Result<impl Iterator<Item = HashedOrdMapChange<'a, Address>> + 'a, &'static str> {
+        let mut checked = true;
+        for (old, new) in self.run_diff(other) {
+            if let (None, Some(run)) = (old, new)
+                && matches!(run.value_mode(), RunValueMode::Load)
+                && run.source_point().read_version_id().is_some()
+            {
+                if !run.names_cells_at(source) {
+                    return Err("added a run without its selected source point");
+                }
+            } else {
+                checked = false;
+            }
+        }
+        Ok(self.diff_cells(other, checked))
+    }
+
+    fn diff_cells<'a>(
+        &'a self,
+        other: &'a Self,
+        concrete_only: bool,
+    ) -> impl Iterator<Item = HashedOrdMapChange<'a, Address>> + 'a {
+        if concrete_only {
             self.concrete.diff(&other.concrete)
         } else {
             self.logical().diff(other.logical())

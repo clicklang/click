@@ -8729,6 +8729,10 @@ fn spec_expression_pointer_step_width(
     expression: &SpecExpression,
 ) -> Option<u32> {
     match expression {
+        SpecExpression::Value(value) => value
+            .program_type()
+            .pointee_type()
+            .map(ProgramType::byte_width),
         SpecExpression::ObjectAddress(address) => address
             .value_type
             .pointer_to()

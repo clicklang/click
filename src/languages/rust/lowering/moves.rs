@@ -104,6 +104,12 @@ pub(super) fn lower(
     mir: &MirBody,
     owner: &LocalFunctionId,
 ) -> Result<Sited, String> {
+    let local_types: BTreeMap<_, _> = f
+        .parameters
+        .iter()
+        .chain(&mir.locals)
+        .map(|local| (local.name.as_str(), &local.value_type))
+        .collect();
     // Index storage starts once. Locals without a compiler storage event
     // retain their function-entry backing (including return-place arrays).
     let storage_starts: BTreeSet<&str> = mir
@@ -687,7 +693,16 @@ pub(super) fn lower(
                     payload,
                     taken,
                 } => {
-                    cx.shared_array_next(iterator, option.as_deref(), payload.as_deref(), *taken)?
+                    let payload = payload
+                        .as_deref()
+                        .map(|name| {
+                            local_types
+                                .get(name)
+                                .map(|ty| (name, *ty))
+                                .ok_or("unknown Rust slice iterator payload")
+                        })
+                        .transpose()?;
+                    cx.shared_array_next(iterator, option.as_deref(), payload, *taken)?
                 }
                 S::ChunkInitialize {
                     target,

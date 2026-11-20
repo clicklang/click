@@ -2240,7 +2240,11 @@ pub(in crate::kernel::functions) fn returned_hold_fixture_with_ledger(
         plan.stable_views()[0].loan,
         inserted
             .into_iter()
-            .map(|(head, occurrence)| crate::kernel::loans::EscapingComposite { head, occurrence })
+            .map(|(head, occurrence)| crate::kernel::loans::EscapingBorrow {
+                head,
+                occurrence,
+                root_permission: None,
+            })
             .collect(),
     )]);
     let recovered = plan.recover_stable_views(&facts, &escaping, &[]).unwrap();

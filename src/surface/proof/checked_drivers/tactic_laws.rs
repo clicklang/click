@@ -174,6 +174,10 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     // previous loop's clause is the one frontier clause bound since, this
     // loop binds no nested clause and no label, and every other input is the
     // one the previous annotation was made from.
+    let named_arguments = proof_context
+        .parameter_binding()
+        .naming
+        .map(|naming| &naming.arguments);
     let extendable = execution
         .presentation
         .loop_annotation
@@ -189,7 +193,8 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
                 )
                 && cached.function_entry_state == proof_context.constants.function_entry_state
                 && cached.initial_state == initial_state
-                && cached.arguments.as_slice() == arguments
+                && (named_arguments.is_some_and(|args| Arc::ptr_eq(&cached.arguments, args))
+                    || cached.arguments.as_ref() == arguments)
                 && execution
                     .presentation
                     .frontier_loop_clauses
@@ -205,7 +210,6 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
             arguments,
             SpecDefinitions::new(predicate_environment, click_function_environment),
             frame_entry,
-            Some(pointer_element_types),
             loop_index,
         )?,
         None => None,
@@ -257,7 +261,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         start_facts: proof_context.constants.execution_start_facts.clone(),
         function_entry_state: proof_context.constants.function_entry_state.clone(),
         initial_state: initial_state.clone(),
-        arguments: arguments.to_vec(),
+        arguments: named_arguments.cloned().unwrap_or_else(|| arguments.into()),
         frontier_clauses: execution.presentation.frontier_loop_clauses.clone(),
         bound_function_block: bound_function_block.clone(),
         bound_nested_clauses: current_loop_clauses.len() > 1,
@@ -336,6 +340,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
             .as_ref()
             .and_then(|entry| entry.strategy_root.as_ref().or(entry.completion.as_ref())),
         arguments,
+        parent_constants: &proof_context.constants,
         surface_propositions: &execution.presentation.surface_propositions,
         source_layout: &source_layout,
         function_source_registry: proof_context.function_source_registry(),
@@ -526,7 +531,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         let lowered_exit_condition = lower_fixed_state_proposition(
             &exit_surface,
             available_pure_facts,
-            ParameterBinding::new(parsed_function.parameters(), arguments),
+            proof_context.parameter_binding(),
             FixedStateFrame::new(&initial_state, state, None, &execution.presentation.recorded_states),
             SpecDefinitions::new(predicate_environment, click_function_environment),
         )

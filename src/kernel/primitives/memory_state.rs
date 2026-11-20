@@ -5973,7 +5973,7 @@ impl SymbolicMemory {
             element_type,
             first,
             count,
-            source,
+            ProgramPoint::at(&source),
             RunValueMode::Load,
         )
     }
@@ -5999,7 +5999,7 @@ impl SymbolicMemory {
         element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedMemory,
+        source: ProgramPoint,
     ) -> Result<Self, Self> {
         if first >= count {
             return Ok(self);
@@ -6063,7 +6063,7 @@ impl SymbolicMemory {
             element_type,
             0,
             count,
-            source,
+            ProgramPoint::at(&source),
             RunValueMode::Constant(value),
         ))
     }
@@ -6523,12 +6523,12 @@ impl SymbolicMemory {
                             source_base: run.slot_pointer(source_index),
                         },
                     };
-                    captured_runs.push(CellRun::new_with_mode(
+                    captured_runs.push(CellRun::new_at(
                         base.offset_by_bytes(first * element.byte_width()),
                         element.byte_width(),
                         element,
                         length,
-                        run.source().clone(),
+                        run.source_point().clone(),
                         mode,
                         IndexIntervals::default(),
                     ));
@@ -6625,17 +6625,17 @@ impl SymbolicMemory {
         element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedMemory,
+        source: ProgramPoint,
         mode: RunValueMode,
     ) -> Self {
         let mut holes = IndexIntervals::default();
         holes.insert_range(0, first);
-        let probe = CellRun::new_with_mode(
+        let probe = CellRun::new_at(
             base.clone(),
             element_width,
             element_type,
             count,
-            source.clone(),
+            source,
             mode,
             IndexIntervals::default(),
         );
@@ -6735,6 +6735,17 @@ impl SymbolicMemory {
             crate::kernel::cell_run_value(program_type, load)
         };
         self.materialize_named_cell(pointer, value)
+    }
+
+    pub(crate) fn materialize_entry_integer_cell_at(
+        self,
+        pointer: Address,
+        source: &ProgramPoint,
+    ) -> Self {
+        let Some(read) = crate::kernel::eval::observe_entry_integer_cell(source, &pointer) else {
+            return self;
+        };
+        self.materialize_named_cell(pointer, ProgramValue::Int32(read))
     }
 
     /// Cache the canonical value of an already existing cell for a resource

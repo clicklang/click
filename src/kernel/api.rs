@@ -5823,6 +5823,7 @@ pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
         | CheckedExecutionEvent::Call(_)
         | CheckedExecutionEvent::LoopEntry { .. } => None,
         CheckedExecutionEvent::AutomaticLifetimeEnd(end) => Some(end.before_state()),
+        CheckedExecutionEvent::ViewRelease(release) => Some(release.before_state()),
         CheckedExecutionEvent::ResourceObservation(observation) => Some(observation.before_state()),
         CheckedExecutionEvent::ResourceRewrite(rewrite) => Some(rewrite.before_state()),
         CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) => Some(rewrite.before_state()),
@@ -5899,6 +5900,7 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                 | CheckedExecutionEvent::CompletedContext(_)
                 | CheckedExecutionEvent::StatementEffects(_)
                 | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
+                | CheckedExecutionEvent::ViewRelease(_)
                 | CheckedExecutionEvent::ResourceObservation(_)
                 | CheckedExecutionEvent::ResourceRewrite(_)
                 | CheckedExecutionEvent::PopulationAuthorityRewrite(_)

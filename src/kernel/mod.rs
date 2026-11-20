@@ -53,6 +53,7 @@ mod resource_description;
 mod thread_confinement;
 pub(crate) use functions::ResourceBodyClauseRecord;
 pub(crate) use functions::TacticApplicationRefusal;
+pub(crate) use functions::check_produced_view_source;
 pub(crate) use functions::interface_join_instance_fields;
 pub(crate) use functions::memory_range_is_initialized;
 #[cfg(test)]

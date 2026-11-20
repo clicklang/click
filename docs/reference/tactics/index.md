@@ -1655,6 +1655,10 @@ and symbolic matches are opaque operands; their identical occurrences may
 cancel, but this check never unfolds a call or resolves a read. It does not
 invoke the general atomic prover.
 
+Two values of the same constructor are unequal if a corresponding field
+holds a different machine-integer literal of the same type. The check
+visits only the immediate fields and uses their literal values.
+
 Direct computation also recognizes the neutral bitwise identities `0 & x == 0`
 and `0 | x == x` at a native word's own format, in either operand order. Intrinsic
 alignment of a null, heap, global or static address reads only that address's
@@ -1662,8 +1666,9 @@ block registration and constant byte offset. It does not search alignment facts
 or infer alignment for a symbolic offset.
 
 The same fixed local check accepts intrinsic machine type ranges and
-constant-divisor quotient, remainder, and right-shift bounds. A written
-machine `+`, `-`, or `*` observation equals its exact Integer expression when
+constant-divisor quotient, remainder, and right-shift bounds. This includes
+`x % d < d` and its exact Integer reading for a positive machine literal `d`.
+A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.
 Each check reads the named operands and at most two exact bound keys; it does
@@ -3477,6 +3482,7 @@ mathematical product.
 | `unfold(predicate(args))` | simple | Core | Open one selected predicate application. | [Reference](#unfolding-predicates) |
 | `unfold(resource(args))` | simple | Core | Open an owned resource instance. | [Reference](#unfolding-resources) |
 | `fold(resource)` | simple | Core | Assemble a resource from its body and children. | [Reference](#folding-resources) |
+| `release_view(range)` | simple | Specialized | Give up one directly held produced view. | [Reference](#releasing-a-view) |
 | `fold(...) by { ... }` | control | Expansion output | Supply a proof for one fold obligation. | [Reference](#folding-with-one-obligation) |
 | `fold(...) { requires P by ...; }` | control | Expansion output | Supply proofs for selected fold obligations. | [Reference](#folding-with-several-obligations) |
 | `construct(resource)` | simple | Specialized | Create an abstract token authorized by a `constructs` clause. | [Reference](#constructing-resources) |
@@ -3794,6 +3800,14 @@ profiling charges the produced body.
 
 **Checked examples:** [`composite_resource_composes_token.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_composes_token.md), [`unfold_names_its_pieces_on_the_left.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_names_its_pieces_on_the_left.md), [`conditional_resource_unfold_requires_decided_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/conditional_resource_unfold_requires_decided_guard.md), [`composite_resource_once_flag.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_once_flag.md)
 
+### Releasing a view
+
+`release_view(*p);` gives up a directly held memory view produced by a
+call. Write the whole range held by the view. If this ends the borrow,
+write access the caller lent becomes available again. The tactic runs at
+the current C frontier without advancing it. See
+[Producing a view](../../concepts/resources.md#producing-a-view).
+
 ### Folding resources
 
 **Form:** `fold(resource)`
@@ -4039,7 +4053,8 @@ the tactic itself, for recursion), when:
   resource that the proof holds. The map is left out only when the tactic
   declares no such binder; an instance of the binder's own name is not
   picked up without it.
-- Every `produces` binder is named by the `let { binder: name }` pattern.
+- Every `produces` binder is named by the `let { binder: name }` pattern,
+  including when the tactic produces just one resource.
 - Each `requires`, at the arguments, is an available fact or a condition the
   kernel's condition decision settles (`n == 3` and `n >= 3` both discharge
   `requires t > 0;` at `t = n`). A recursive application also owes its

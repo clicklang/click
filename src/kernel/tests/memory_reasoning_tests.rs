@@ -7682,6 +7682,13 @@ fn a_parameter_partition_follows_transitive_interior_address_aliases() {
             .assume_condition(
                 ConditionTerm::address_equal(foreign.clone(), q.clone()),
                 true,
+            )
+            .assume_condition(
+                ConditionTerm::uint64_equal(
+                    MachineTerm::integer_address(write.clone()),
+                    MachineTerm::integer_address(foreign.clone()),
+                ),
+                true,
             ),
         original.clone().assume_condition(
             ConditionTerm::uint64_equal(
@@ -7705,6 +7712,81 @@ fn a_parameter_partition_follows_transitive_interior_address_aliases() {
             !memory
                 .without_possible_aliasing_cells(&write, 4, &alias)
                 .has_known_cell_at(&q)
+        );
+    }
+}
+
+#[test]
+fn a_parameter_partition_detects_exact_edges_reachable_through_numeric_aliases() {
+    let parameter = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(id)),
+    };
+    let p = parameter(991_011);
+    let q = parameter(991_012);
+    let foreign = Address::symbolic(Variable(991_013));
+    let through = Address::symbolic(Variable(991_014));
+    let equal = |left: &Address, right: &Address| {
+        let word = |address: &Address| {
+            MachineTerm::IntegerAddress(
+                Box::new(address.clone()),
+                crate::kernel::AddressObjectClass::NONE,
+            )
+        };
+        ConditionTerm::uint64_equal(word(left), word(right))
+    };
+    let numeric = [
+        equal(&p, &parameter(991_015)),
+        equal(&p, &parameter(991_016)),
+        equal(&foreign, &through),
+    ];
+    let exact = ConditionTerm::address_equal(foreign, q.clone());
+    let bridge = equal(&p, &through);
+    for facts in [
+        numeric.iter().chain([&exact]).collect::<Vec<_>>(),
+        [&exact].into_iter().chain(&numeric).collect(),
+    ] {
+        let separate = facts
+            .into_iter()
+            .fold(PureFactContext::new(), |facts, condition| {
+                facts.assume_condition(condition.clone(), true)
+            });
+        assert!(
+            separate
+                .parameter_store_numeric_connectivity(Some(&p))
+                .is_some()
+        );
+        let joined = separate.clone().assume_condition(bridge.clone(), true);
+        assert!(
+            joined
+                .parameter_store_numeric_connectivity(Some(&p))
+                .is_none()
+        );
+        assert!(joined.parameter_store_alias_bases(&p).unwrap().contains(&q));
+        // Exact edges have no authority to join the numeric-only byte test.
+        assert!(!joined.addresses_numerically_connected(&p, &q));
+
+        let selected = numeric
+            .iter()
+            .chain([&bridge])
+            .cloned()
+            .map(|fact| (fact, true));
+        let restricted = joined.restricted_to_facts(&selected.collect::<Vec<_>>(), &[]);
+        assert!(
+            restricted
+                .parameter_store_numeric_connectivity(Some(&p))
+                .is_some()
+        );
+        let selected = numeric
+            .iter()
+            .chain([&bridge, &exact])
+            .cloned()
+            .map(|fact| (fact, true));
+        let restricted = joined.restricted_to_facts(&selected.collect::<Vec<_>>(), &[]);
+        assert!(
+            restricted
+                .parameter_store_numeric_connectivity(Some(&p))
+                .is_none()
         );
     }
 }

@@ -56,11 +56,10 @@ fn sum(bytes: &[u8]) -> i32 {
                     solve();
                 }
                 have to_integer(bytes.len() - iter.len()) + 1 <= 18446744073709551615;
-                step_until(read(0).entry);
+                step_until(loop(0).statement(0).entry);
                 have iter.len() == at(iteration, iter.len()) - 1u64;
                 have iter.as_slice() == (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64;
                 apply(pointer_association(bytes, bytes.len() - at(iteration, iter.len()), 1u64));
-                step();
                 have at(iteration, bytes[(bytes.len() - iter.len())]) == byte;
                 have defined(total + byte as i32) by {
                     solve() using { 0 <= total; to_integer(total) <= 255000; };

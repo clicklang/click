@@ -80,6 +80,7 @@ pub enum ProofStep {
         names: Vec<(String, String)>,
     },
     FoldResource(ResourceClause),
+    ReleaseView(ResourceClause),
     Induct {
         parameter: String,
         hypothesis: String,
@@ -737,6 +738,7 @@ impl ProofStep {
                 names: names.clone(),
             },
             ProofTactic::FoldResource(resource) => Self::FoldResource(resource.clone()),
+            ProofTactic::ReleaseView(resource) => Self::ReleaseView(resource.clone()),
             ProofTactic::ConstructResource(resource) => Self::ConstructResource(resource.clone()),
             ProofTactic::Induct {
                 parameter,
@@ -910,6 +912,7 @@ impl ProofStep {
                 names: names.clone(),
             },
             Self::FoldResource(resource) => ProofTactic::FoldResource(resource.clone()),
+            Self::ReleaseView(resource) => ProofTactic::ReleaseView(resource.clone()),
             Self::ConstructResource(resource) => ProofTactic::ConstructResource(resource.clone()),
             Self::Induct {
                 parameter,
@@ -1212,6 +1215,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         }
         ProofStep::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
         ProofStep::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
+        ProofStep::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
         ProofStep::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
         ProofStep::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
         ProofStep::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),

@@ -39,7 +39,7 @@ theorem maybe_variants_are_distinct(value: int32) {
 }
 
 theorem maybe_payloads_compare_structurally() {
-    ensures Maybe<int32>::Some(0) != Maybe<int32>::Some(1) by solve();
+    ensures Maybe<int32>::Some(0) != Maybe<int32>::Some(1) by known();
 }
 
 theorem maybe_accepts_pointer_type_arguments(value: int32*) {
