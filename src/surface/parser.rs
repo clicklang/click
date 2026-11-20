@@ -5694,20 +5694,32 @@ impl Parser {
                 }
                 Some("produces") => {
                     self.position += 1;
-                    if self.peek_ident() == Some("view")
-                        && self.peek_next() == Some(&Token::LParen)
-                        && self.matching_parentheses[self.position + 1]
-                            .is_some_and(|close| matches!(self.tokens.get(close + 1), Some(Token::Ident(keyword)) if keyword == "from"))
+                    if self.peek_ident() == Some("view") && self.peek_next() == Some(&Token::LParen)
                     {
-                        self.position += 2;
-                        let resource = self.parse_resource_target(ResourceAccessMode::View)?;
-                        if matches!(resource, ResourceClause::ViewMemory(_)) {
+                        let explicit_source = self.matching_parentheses[self.position + 1]
+                            .is_some_and(|close| matches!(self.tokens.get(close + 1), Some(Token::Ident(keyword)) if keyword == "from"));
+                        let declared_resource = self
+                            .symbols
+                            .declares(names::DeclarationKind::Resource, "view")
+                            || self.declared_resource_fields.contains_key("view");
+                        if explicit_source || !declared_resource {
+                            self.position += 2;
+                            let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                            if !matches!(resource, ResourceClause::ViewMemory(_)) {
+                                return Err(
+                                    self.error("a produced view must name one memory range")
+                                );
+                            }
                             self.expect(Token::RParen)?;
-                            self.expect_ident_spelling("from")?;
-                            let name = self.expect_ident("input view name")?;
-                            let source = view_inputs.get(&name).copied().ok_or_else(|| {
-                                self.error(format!("unknown input view `{name}`"))
-                            })?;
+                            let source = if explicit_source {
+                                self.expect_ident_spelling("from")?;
+                                let name = self.expect_ident("input view name")?;
+                                Some(view_inputs.get(&name).copied().ok_or_else(|| {
+                                    self.error(format!("unknown input view `{name}`"))
+                                })?)
+                            } else {
+                                None
+                            };
                             let proof = self.parse_proof_clause_or_default()?;
                             ensure_kinds.push(ClaimClauseKind::Produces);
                             clause_positions.push(clause_start.clone());
@@ -5719,7 +5731,7 @@ impl Parser {
                                         ensure: Ensure::Resource(resource),
                                         proof,
                                         borrowed: false,
-                                        view_source: Some(source),
+                                        view_source: source,
                                         condition: None,
                                     },
                                     &contract_lets,
@@ -5728,7 +5740,6 @@ impl Parser {
                             );
                             continue;
                         }
-                        return Err(self.error("a produced view must name one memory range"));
                     }
                     let resource = self.parse_function_contract_memory_binding()?;
                     let proof = self.parse_proof_clause_or_default()?;

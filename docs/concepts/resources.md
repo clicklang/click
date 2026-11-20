@@ -356,6 +356,12 @@ produced view keeps that borrow active after the call. A write through any
 pointer to the protected memory is blocked. Other disjoint memory remains
 writable. The pure postcondition relates the resource to the C result.
 
+When exactly one input view has the same lowered memory range as the
+output, `produces view(*left);` selects it directly. The base expression,
+bounds, and element width must match. An alias equality or a larger input
+range can justify coverage once you name the source with `from`. An output
+with zero or multiple direct matches requires that explicit source.
+
 In a caller's proof, `release_view(*p);` gives up the exact held memory view
 when `p` points to that cell. The last hold releases the borrow and restores
 any ownership the caller lent. A borrowed input of the caller still has its
