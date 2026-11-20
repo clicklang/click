@@ -1331,21 +1331,34 @@ impl ProgramPoint {
         }
     }
 
+    /// The original entry version that a logical read or a materialized
+    /// observation can name even when entry setup attached a proof view.
+    pub(crate) fn entry_cell_version(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> Option<Self> {
+        match value_type {
+            ProgramType::Int32 => self.external_entry_read(pointer, true),
+            ProgramType::Parameter(parameter) if !parameter.is_enum() => {
+                self.external_entry_read(pointer, true)
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn ordinary_typed_version(
         &self,
         pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
         self.indexed_typed_version(pointer, value_type)
-            .or_else(|| match value_type {
-                ProgramType::Int32 => self
-                    .call_output_integer_version(pointer, LoadKind::Int32)
-                    .or_else(|| self.external_entry_read(pointer, true)),
-                ProgramType::Parameter(parameter) if !parameter.is_enum() => {
-                    self.external_entry_read(pointer, true)
-                }
-                _ => None,
+            .or_else(|| {
+                (value_type == ProgramType::Int32)
+                    .then(|| self.call_output_integer_version(pointer, LoadKind::Int32))
+                    .flatten()
             })
+            .or_else(|| self.entry_cell_version(pointer, value_type))
     }
 
     pub(in crate::kernel) fn supports_local_call_word(pointer: &Address) -> bool {

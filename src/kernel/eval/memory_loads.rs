@@ -4083,7 +4083,7 @@ pub(in crate::kernel) fn expected_point_named_cell_read(
             return None;
         }
         let kind = LoadKind::Int32;
-        let point = source.entry_integer_version(pointer, kind)?;
+        let point = source.entry_cell_version(pointer, ty)?;
         Some(MachineTerm::MemoryLoad(
             point,
             Box::new(pointer.clone()),

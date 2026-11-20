@@ -4969,7 +4969,8 @@ impl AlgebraicTermNode {
         pointer: Address,
         parameter: TypeParameterName,
     ) -> ProgramValue {
-        if let Some(entry) = source.generic_entry_version(&pointer, parameter) {
+        if let Some(entry) = source.entry_cell_version(&pointer, ProgramType::Parameter(parameter))
+        {
             return Self::parameter_load_at(entry, pointer, parameter);
         }
         Self::parameter_load(source.shared_memory().clone(), pointer, parameter)

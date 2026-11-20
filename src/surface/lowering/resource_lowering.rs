@@ -814,12 +814,11 @@ fn entry_cell_source<'a>(
     pointer: &Address,
     ty: ProgramType,
 ) -> &'a crate::kernel::ProgramPoint {
-    let version = match ty {
-        ProgramType::Int32 => entry.entry_integer_version(pointer, crate::kernel::LoadKind::Int32),
-        ProgramType::Parameter(parameter) => entry.generic_entry_version(pointer, parameter),
-        _ => None,
-    };
-    if version.is_some() { entry } else { fallback }
+    if entry.entry_cell_version(pointer, ty).is_some() {
+        entry
+    } else {
+        fallback
+    }
 }
 
 pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
