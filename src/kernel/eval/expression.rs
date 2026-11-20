@@ -3568,12 +3568,17 @@ fn read_retained_lvalue_paths_without_ranges(
                     }
                 }
                 let entry_read = (has_read_resource
-                    && lvalue.value_type == ProgramType::Int32
                     && pointer.base == AddressBase::ExternalArgument
                     && (!lvalue.is_volatile() || SpecificationAccessScope::is_active()))
                 .then(|| {
                     let point = state.program_point();
-                    let entry = point.entry_integer_version(pointer, LoadKind::Int32)?;
+                    let entry = match lvalue.value_type {
+                        ProgramType::Int32 => point.entry_integer_version(pointer, LoadKind::Int32),
+                        ProgramType::Parameter(parameter) => {
+                            point.generic_entry_version(pointer, parameter)
+                        }
+                        _ => None,
+                    }?;
                     Some((entry, point))
                 })
                 .flatten();

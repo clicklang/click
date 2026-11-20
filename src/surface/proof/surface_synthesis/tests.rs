@@ -9467,3 +9467,73 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
     );
     assert_eq!(lower(&raised), Ok(original));
 }
+
+#[test]
+fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
+    use crate::kernel::{AlgebraicTermNode, TypeParameterName};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = TypeParameterName::intern("GenericEntryRead");
+    let address = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(id)),
+    };
+    let left = address(1008401);
+    let right = address(1008402);
+    let argument =
+        |address| ProgramValue::typed_pointer(address, ProgramType::ParameterPointer(ty));
+    let entry = ExecutionState::new()
+        .with_local("p", argument(left.clone()))
+        .with_local("q", argument(right.clone()))
+        .begin_function_entry_memory();
+    let post = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .store(left, ProgramValue::Int32(MachineTerm::constant(9))),
+    );
+    let file = crate::surface::parse(
+        "theorem probe<GenericEntryRead>(p: GenericEntryRead*, q: GenericEntryRead*) {
+             requires old(*p) == old(*q);
+             ensures true;
+         }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("generic read premise");
+    };
+    let points = RecordedStates::new();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let lower = |surface: &ClickProposition| {
+        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+            surface,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
+            FixedStateFrame::new(&entry, &post, None, &points),
+            SpecDefinitions::new(&predicates, &functions),
+            FixedStateLoweringOptions::default(),
+        )
+        .map(|(proposition, _, _, _)| proposition)
+    };
+    let original = lower(written).unwrap();
+    let Some((ConditionTerm::AlgebraicEqual(left, right), true)) = original.condition_native()
+    else {
+        panic!("generic value equality: {original:?}");
+    };
+    for term in [left, right] {
+        assert!(matches!(
+            &term.node,
+            AlgebraicTermNode::MemoryLoad { point, .. }
+                if point.read_version_id() == entry.observation_point_id()
+        ));
+    }
+    let raised = synthesize_surface_proposition_at_entry_and_post(
+        &original,
+        ParameterBinding::default(),
+        &entry,
+        &post,
+    )
+    .expect("the generic entry read has a spelling");
+    assert_eq!(lower(&raised), Ok(original));
+}

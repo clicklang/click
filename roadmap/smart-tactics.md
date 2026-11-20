@@ -99,15 +99,18 @@ when the substituted index still uses the indexed entry selector. Checked
 resource quantities and materialized resource cells share that entry point for
 an `int32` field at a fixed displacement from its external parameter. Computed
 scalar fold endpoints, ordinary checked reads, loop boundaries and iterated
-ownership guards also carry the selected entry point. A join retains it when all incoming paths
-establish the same unchanged entry version. Scalar canonicalization,
-congruence and Integer arithmetic retain the point through comparison.
+ownership guards also carry the selected entry point. Generic cells at a
+verified function entry keep that point through individual observations,
+compact runs, and substitution. A join retains the entry point when all
+incoming paths establish the same unchanged entry version. Scalar
+canonicalization, congruence and Integer arithmetic retain the point through
+comparison.
 
 The remaining memory-state paths have production callers:
 
 | Path | Remaining caller |
 | --- | --- |
-| Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for generic parameter cells. |
+| Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for abstract cells supplied by bare memory producers or taken outside the verified entry path. |
 | Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` still construct memory-state observations for bare memory producers and unsupported indexed types or addresses. |
 | Preservation | `array_ref_argument_point` uses the block version walk outside the indexed suffix, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
 | Raising | `synthesize_at_memory` still raises function and predicate array arguments that carry a bare memory view. Legacy scalar and abstract reads use `RecordedStates::point_reading_load`. |

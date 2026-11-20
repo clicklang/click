@@ -1136,8 +1136,8 @@ fn memory_only_adds_named_cells(
         // A cell of an abstract type holds the load of its type, which no
         // machine load kind reads.
         if let ProgramValue::Parameter(term) = &value {
-            let load = crate::kernel::AlgebraicTermNode::parameter_load(
-                base.clone(),
+            let load = crate::kernel::AlgebraicTermNode::parameter_cell_load(
+                &source,
                 pointer.clone(),
                 crate::kernel::TypeParameterName::of(&term.algebraic_type),
             );
