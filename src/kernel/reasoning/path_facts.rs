@@ -1665,9 +1665,11 @@ pub(in crate::kernel) fn add_required_proof_obligation_with_context(
         introductions,
         None,
         false,
+        false,
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_required_proof_obligation_with_context_and_site(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -1676,6 +1678,7 @@ fn add_required_proof_obligation_with_context_and_site(
     introductions: Option<&std::sync::Arc<LoweringIntroductions>>,
     call_site: Option<&std::sync::Arc<CallRequirementSource>>,
     statement_entry_required: bool,
+    live_view_write: bool,
 ) {
     // Suppression is the exact index, the frozen condition checker for a
     // proposition that is already one bare condition, or the retained atomic
@@ -1691,6 +1694,7 @@ fn add_required_proof_obligation_with_context_and_site(
     let mut obligation = ProofObligation::verification_condition(proposition)
         .with_shared_introductions(introductions)
         .with_statement_entry_required(statement_entry_required);
+    obligation.live_view_write = live_view_write;
     if let Some(call_site) = call_site {
         obligation = obligation.with_call_requirement_site(call_site.clone());
     }
@@ -1741,6 +1745,7 @@ pub(in crate::kernel) fn add_required_proof_obligation_without_search(
         introductions,
         None,
         false,
+        false,
     );
 }
 
@@ -1769,6 +1774,7 @@ fn selected_obligation_is_stated(assumptions: &PureFactContext, proposition: &Pr
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_required_proof_obligation_without_search_and_site(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -1777,6 +1783,7 @@ fn add_required_proof_obligation_without_search_and_site(
     introductions: Option<&std::sync::Arc<LoweringIntroductions>>,
     call_site: Option<&std::sync::Arc<CallRequirementSource>>,
     statement_entry_required: bool,
+    live_view_write: bool,
 ) {
     if !statement_entry_required
         && !assumptions.retains_required_obligations()
@@ -1791,6 +1798,7 @@ fn add_required_proof_obligation_without_search_and_site(
     }
     .with_shared_introductions(introductions)
     .with_statement_entry_required(statement_entry_required);
+    obligation.live_view_write = live_view_write;
     if let Some(call_site) = call_site {
         obligation = obligation.with_call_requirement_site(call_site.clone());
     }
@@ -1835,6 +1843,7 @@ pub(in crate::kernel) fn append_required_proof_obligations(
             obligation.shared_introductions(),
             obligation.call_requirement_site(),
             obligation.statement_entry_required,
+            obligation.live_view_write,
         );
     }
 }
@@ -1853,6 +1862,7 @@ pub(in crate::kernel) fn append_required_proof_obligations_without_search(
             obligation.shared_introductions(),
             obligation.call_requirement_site(),
             obligation.statement_entry_required,
+            obligation.live_view_write,
         );
     }
 }
@@ -1886,6 +1896,7 @@ pub(in crate::kernel) fn append_required_proof_obligations_under_path_context(
             introductions.as_ref(),
             obligation.call_requirement_site(),
             obligation.statement_entry_required,
+            obligation.live_view_write,
         );
     }
 }
@@ -2518,6 +2529,7 @@ mod mandatory_integer_obligation_tests {
             Some("incoming context"),
             Some(&incoming_introductions),
             Some(&incoming_source),
+            false,
             false,
         );
         assert_eq!(tuple_obligations.len(), 1);

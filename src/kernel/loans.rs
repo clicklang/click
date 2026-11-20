@@ -750,7 +750,10 @@ fn protected_range_proven_overlapping_with_separation(
     })
 }
 
-fn protected_ranges_constant_overlap(query: &MemoryRange, protected: &MemoryRange) -> Option<bool> {
+pub(super) fn protected_ranges_constant_overlap(
+    query: &MemoryRange,
+    protected: &MemoryRange,
+) -> Option<bool> {
     // Compare concrete intervals in exact byte arithmetic. Negative offsets
     // and large widths must not wrap through a 32-bit byte-count term.
     let byte_bounds = |range: &MemoryRange| {
@@ -1294,6 +1297,14 @@ impl LoanRefusalSubject {
         }
     }
 
+    pub(crate) fn for_write_and_view(write: MemoryRange, viewed: MemoryRange) -> Self {
+        Self {
+            range: Some(Box::new(write)),
+            conflicting: Some(Box::new(ResourceFact::view_memory(viewed))),
+            ..Self::none()
+        }
+    }
+
     /// A contract input view and the owned entry in the same contract that
     /// already supports it.
     pub(crate) fn for_supported_view(
@@ -1319,20 +1330,12 @@ impl LoanRefusalSubject {
     pub(crate) fn for_resource(resource: ResourceFact) -> Self {
         Self::resource(resource)
     }
-    fn range(range: MemoryRange) -> Self {
+    #[cfg(test)]
+    pub(crate) fn for_range(range: MemoryRange) -> Self {
         Self {
             range: Some(Box::new(range)),
             ..Self::none()
         }
-    }
-
-    pub(crate) fn with_range(range: MemoryRange) -> Self {
-        Self::range(range)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn for_range(range: MemoryRange) -> Self {
-        Self::with_range(range)
     }
 
     fn with_loan_id(loan: LoanId) -> Self {
@@ -6400,6 +6403,15 @@ impl LoanLedger {
         })
     }
 
+    /// Name the protected range when the retained footprint is a single range.
+    /// A compound footprint needs no walk to report an unbounded call effect.
+    pub(super) fn single_protected_range(&self) -> Option<MemoryRange> {
+        match self.storage.data.active_footprint.resource() {
+            Resource::Memory(range) => Some(range),
+            _ => None,
+        }
+    }
+
     /// A proof-only ownership exchange may expose writable authority. Use
     /// the exact separation established before the exchange.
     pub(crate) fn rewrite_separates_from_loans(
@@ -6468,7 +6480,7 @@ impl LoanLedger {
                 loan,
                 origin,
             ),
-            None => LoanRefusalSubject::with_range(range.clone()),
+            None => LoanRefusalSubject::for_range(range.clone()),
         };
         Some(refusal.diagnostic_with_subject(operation, subject))
     }
