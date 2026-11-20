@@ -65,11 +65,8 @@ fn merged_unit_consumption_is_flat_in_unrelated_resources() {
         )
     };
     let samples = [16_u32, 64, 256, 1024].map(|size| {
-        let context = ResourceContext::new().unchecked_with_facts(
-            (0..size)
-                .map(unrelated)
-                .chain([one.clone(), one.clone()]),
-        );
+        let context = ResourceContext::new()
+            .unchecked_with_facts((0..size).map(unrelated).chain([one.clone(), one.clone()]));
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(
                 context
@@ -115,5 +112,4 @@ fn merged_unit_consumption_is_linear_in_the_units_it_merges() {
             "{samples:?}"
         );
     }
-
 }
