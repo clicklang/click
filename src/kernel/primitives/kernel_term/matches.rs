@@ -96,6 +96,53 @@ impl KernelMatchArm {
 }
 
 impl KernelMatch {
+    /// The Integer equality slice accepts shallow, total arithmetic over
+    /// scalar payloads. Inspect prepared roots without exporting arm bodies.
+    pub(crate) fn retains_known_integer_equality(&self) -> bool {
+        if self.result_type != KernelType::Integer {
+            return false;
+        }
+        let KernelTermNode::Constructor(constructor) = self.arguments[0].node() else {
+            return false;
+        };
+        crate::instrumentation::record_deterministic_work(constructor.fields.len());
+        constructor.fields.iter().all(|field| match field.node() {
+            KernelTermNode::IntegerLiteral(_) => true,
+            KernelTermNode::Variable(variable) => {
+                matches!(
+                    field.ty(),
+                    KernelType::Integer | KernelType::Program(ProgramType::Int32)
+                ) && !crate::kernel::is_load_variable(variable)
+            }
+            _ => {
+                field.ty() == &KernelType::Program(ProgramType::Int32)
+                    && MachineOperandView::Shared(field).literal().is_some()
+            }
+        }) && self
+            .arms
+            .iter()
+            .zip(&self.arguments[1..])
+            .all(|(arm, body)| {
+                crate::instrumentation::record_deterministic_work(arm.bindings.len() + 1);
+                let atom = |value: &KernelTerm| match value.node() {
+                    KernelTermNode::IntegerLiteral(_) => true,
+                    KernelTermNode::MachineObservation {
+                        format: MachineIntegerType::Int32,
+                        operand,
+                    } => arm.bindings.contains(operand),
+                    KernelTermNode::Variable(_) => arm.bindings.contains(value),
+                    _ => false,
+                };
+                match body.node() {
+                    KernelTermNode::IntegerOperation {
+                        operator: KernelIntegerOperator::Add | KernelIntegerOperator::Subtract,
+                        arguments,
+                    } => arguments.iter().all(atom),
+                    _ => atom(body),
+                }
+            })
+    }
+
     pub(crate) fn has_simple_int32_arms(&self) -> bool {
         self.result_type == KernelType::Program(ProgramType::Int32)
             && self

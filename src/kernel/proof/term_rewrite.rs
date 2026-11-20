@@ -1905,7 +1905,7 @@ pub(crate) struct TermRewrite<'a> {
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     pointer_context: Option<&'a PureFactContext>,
     collected_conditions: Option<Vec<ConditionTerm>>,
-    integer_cache: HashMap<(u64, u64, bool), IntegerTerm>,
+    integer_cache: HashMap<(u64, u64, bool, bool), IntegerTerm>,
     fold_integer_bridge: KernelTermExport,
     pointer_application_cache: HashMap<(u64, u64, bool, bool), AddressBase>,
     pointer_origin_cache: HashMap<(PointerLoadId, u64, bool, bool), AddressBase>,
@@ -4225,6 +4225,10 @@ impl<'a> TermRewrite<'a> {
         }
     }
     pub(crate) fn integer(&mut self, v: &IntegerTerm) -> IntegerTerm {
+        self.integer_with_match_retention(v, false)
+    }
+
+    fn integer_with_match_retention(&mut self, v: &IntegerTerm, retain_match: bool) -> IntegerTerm {
         self.reserve_integer_variables_once(v);
         if self.checked_work_exhausted() {
             return exhausted_integer(v);
@@ -4233,13 +4237,29 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return exhausted_integer(v);
         }
-        self.integer_shared(&SharedIntegerTerm::from(v.clone()))
+        self.integer_shared_with_match_retention(&SharedIntegerTerm::from(v.clone()), retain_match)
     }
+
     fn integer_shared(&mut self, shared: &SharedIntegerTerm) -> IntegerTerm {
+        self.integer_shared_with_match_retention(shared, false)
+    }
+
+    fn integer_shared_with_match_retention(
+        &mut self,
+        shared: &SharedIntegerTerm,
+        retain_match: bool,
+    ) -> IntegerTerm {
         if self.checked_work_exhausted() {
             return exhausted_integer(shared.as_ref());
         }
-        let cache_key = (shared.id(), self.scope_key(), self.resolve_registered_loads);
+        let retain_match =
+            retain_match && matches!(shared.as_ref(), IntegerTerm::AlgebraicMatch { .. });
+        let cache_key = (
+            shared.id(),
+            self.scope_key(),
+            self.resolve_registered_loads,
+            retain_match,
+        );
         if let Some(result) = self.integer_cache.get(&cache_key) {
             return result.clone();
         }
@@ -4409,7 +4429,7 @@ impl<'a> TermRewrite<'a> {
                 let KernelTermNode::Match(matched) = root.node() else {
                     unreachable!("Integer match")
                 };
-                match self.rewrite_retained_match_value_in(matched) {
+                match self.rewrite_retained_match_value_in(matched, retain_match) {
                     Some(root) => self
                         .fold_integer_bridge
                         .integer(&root)
@@ -5864,10 +5884,18 @@ impl<'a> TermRewrite<'a> {
                 ConditionTerm::IntegerGreaterEqual(self.integer(a).into(), self.integer(b).into())
             }
             ConditionTerm::IntegerEqual(a, b) => {
-                ConditionTerm::IntegerEqual(self.integer(a).into(), self.integer(b).into())
+                let retain_match = self.preserves_algebraic_matches();
+                ConditionTerm::IntegerEqual(
+                    self.integer_with_match_retention(a, retain_match).into(),
+                    self.integer_with_match_retention(b, retain_match).into(),
+                )
             }
             ConditionTerm::IntegerNotEqual(a, b) => {
-                ConditionTerm::IntegerNotEqual(self.integer(a).into(), self.integer(b).into())
+                let retain_match = self.preserves_algebraic_matches();
+                ConditionTerm::IntegerNotEqual(
+                    self.integer_with_match_retention(a, retain_match).into(),
+                    self.integer_with_match_retention(b, retain_match).into(),
+                )
             }
             // A `Bool` value rewrites its children, an application's
             // arguments and a read's pointer, as a word-valued application

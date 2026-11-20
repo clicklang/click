@@ -1,6 +1,43 @@
 use super::*;
 
 #[test]
+fn integer_equality_match_shape_scales_with_explicit_fields() {
+    for size in [8, 32, 128] {
+        let _session = VerificationSession::enter();
+        let mut scrutinee = KernelMatch::test_scrutinee(vec![AlgebraicValueType::Integer; size]);
+        scrutinee.node = AlgebraicTermNode::Constructor {
+            variant: "Arm".into(),
+            fields: vec![AlgebraicValue::Integer(IntegerTerm::constant_i64(1)); size],
+        };
+        let bindings: Vec<_> = (0..size)
+            .map(|offset| {
+                AlgebraicValue::Integer(IntegerTerm::var(Variable(991920 + offset as u64)))
+            })
+            .collect();
+        let AlgebraicValue::Integer(last) = bindings.last().unwrap() else {
+            unreachable!()
+        };
+        let body = IntegerTerm::Add(last.clone().into(), last.clone().into());
+        let native = IntegerTerm::AlgebraicMatch {
+            scrutinee: Box::new(scrutinee),
+            arms: vec![AlgebraicIntegerMatchArm {
+                variant: "Arm".into(),
+                bindings,
+                binding_names: Default::default(),
+                body: body.into(),
+            }],
+        };
+        let matched =
+            KernelMatch::import_integer(&mut KernelTermImport::default(), &native).unwrap();
+        let (retained, work) = crate::instrumentation::measure_deterministic_work(|| {
+            matched.retains_known_integer_equality()
+        });
+        assert!(retained);
+        assert!(work <= 4 * size + 16, "size={size}, work={work}");
+    }
+}
+
+#[test]
 fn common_match_rewrite_shares_arm_bodies_without_machine_exports() {
     for size in [8, 32, 128] {
         let _session = VerificationSession::enter();
