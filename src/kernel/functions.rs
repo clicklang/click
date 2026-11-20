@@ -8474,7 +8474,7 @@ fn matched_instance_body_ownership(
         return None;
     };
     let projection = ResourceFieldProjection {
-        identity: instance.identity(),
+        identity: instance.identity().into(),
         children: Vec::new(),
         field_index: matched.field_index,
         at_entry: false,
@@ -9042,16 +9042,15 @@ impl<'a> OwnedFootprintDerivation<'a> {
         }
         // Interpret logical parent fields without granting body ownership.
         if let Some(values) = fields.iter().cloned().collect::<Option<Vec<_>>>()
-            && let Some(instance) = ResourceInstance::new(
-                InstanceId::BODY,
+            && let Some(view) = ResourceInstance::field_view(
                 definition.name().to_string(),
                 arguments.iter().cloned().collect(),
                 schema.clone(),
                 values.into_iter().collect(),
             )
         {
-            evaluation.instance_field_scope = ResourceContext::new()
-                .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance)));
+            evaluation.instance_field_scope = ResourceContext::new();
+            evaluation.body_field_view = Some(std::sync::Arc::new(view));
             evaluation.resource_bindings = None;
         }
         for ((name, _), value) in schema.fields().iter().zip(fields) {
@@ -9132,8 +9131,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
         if let (Some(schema), Some(fields)) = (
             definition.instance_schema.as_ref(),
             fields.iter().cloned().collect::<Option<Vec<_>>>(),
-        ) && let Some(instance) = ResourceInstance::new(
-            InstanceId::BODY,
+        ) && let Some(instance) = ResourceInstance::field_view(
             definition.name().to_string(),
             arguments.iter().cloned().collect(),
             schema.clone(),
@@ -15722,7 +15720,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     child_evaluation.resources = body.clone();
     let child_assumptions = assumptions.clone().require_owned_expression_loads();
     let mut resource_bindings = ResourceBindings::new();
-    resource_bindings.insert_instance(InstanceId::BODY, instance.identity);
+    resource_bindings.bind_body(instance.identity);
     let mut introduced_children: Vec<ResourceInstance> = Vec::new();
     let mut child_read_definitions = Vec::new();
     for child in body_children {

@@ -3046,7 +3046,7 @@ pub(in crate::surface) fn narrow_typed_arithmetic(
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct InstanceRename {
     pub(in crate::surface) name: String,
-    pub(in crate::surface) identity: InstanceId,
+    pub(in crate::surface) identity: crate::kernel::InstanceRef,
     /// The identity the renamed reads take, when the new name denotes a
     /// different instance: a caller's instance bound to a callee's binder.
     /// `None` keeps the identity.
@@ -3367,8 +3367,9 @@ impl<'a> ContractSubstitutions<'a> {
     pub(in crate::surface) fn instance_rename(
         &self,
         owner: &str,
-        identity: InstanceId,
+        identity: impl Into<crate::kernel::InstanceRef>,
     ) -> Option<String> {
+        let identity = identity.into();
         self.instance_renames
             .get(owner)
             .filter(|rename| rename.identity == identity)
@@ -3380,15 +3381,15 @@ impl<'a> ContractSubstitutions<'a> {
     fn instance_rename_target(
         &self,
         owner: &str,
-        identity: InstanceId,
-    ) -> Option<(String, InstanceId)> {
+        identity: crate::kernel::InstanceRef,
+    ) -> Option<(String, crate::kernel::InstanceRef)> {
         self.instance_renames
             .get(owner)
             .filter(|rename| rename.identity == identity)
             .map(|rename| {
                 (
                     rename.name.clone(),
-                    rename.target_identity.unwrap_or(identity),
+                    rename.target_identity.map_or(identity, Into::into),
                 )
             })
     }
@@ -3983,7 +3984,7 @@ fn substitute_contract_expression_node(
         ContractExpression::IntegerLiteral(_) => Ok(expression.clone()),
         ContractExpression::ResourceField(access)
             if let Some(fields) = substitutions.body_field_values
-                && access.identity == InstanceId::BODY
+                && access.identity == crate::kernel::InstanceRef::Body
                 && access.owner == "__body"
                 && access.children.is_empty() =>
         {
@@ -5044,7 +5045,7 @@ pub(in crate::surface) fn resource_body_program_expression(
     expression: &ContractExpression,
 ) -> Option<ProgramExpression> {
     contract_expression_as_program_expression_resolving_fields(expression, &|access| {
-        (access.identity == InstanceId::BODY
+        (access.identity == crate::kernel::InstanceRef::Body
             && access.owner == "__body"
             && access.children.is_empty()
             && access

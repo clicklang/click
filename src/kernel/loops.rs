@@ -4204,6 +4204,7 @@ fn loop_exit_state_difference(
     let ExecutionState {
         aggregate_destination,
         instance_field_scope,
+        body_field_view,
         resource_bindings,
         loan_ledger,
         loan_participant,
@@ -4274,6 +4275,7 @@ fn loop_exit_state_difference(
     }
     component!(aggregate_destination, "aggregate call destination");
     component!(instance_field_scope, "resource field evaluation scope");
+    component!(body_field_view, "resource body field view");
     if resource_bindings != &right.resource_bindings {
         differences.push(format!(
             "call resource bindings (successor: {} entries; exit: {} entries)",

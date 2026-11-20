@@ -5765,7 +5765,9 @@ impl AnnotationLowerer<'_> {
         // fresh field variables were registered under. One insert per access,
         // so that a refusal downstream can spell a model-field variable
         // instead of printing it (`crate::kernel::model_fields`).
-        crate::kernel::model_fields::register_instance_spelling(access.identity, &access.owner);
+        if let Some(identity) = access.identity.instance() {
+            crate::kernel::model_fields::register_instance_spelling(identity, &access.owner);
+        }
         if let Some(state) = environment.reference_state.as_ref() {
             return state
                 .resource_instance_at_path(access.identity, &access.children)

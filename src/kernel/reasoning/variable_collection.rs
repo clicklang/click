@@ -1670,6 +1670,9 @@ pub(in crate::kernel) fn collect_execution_state_bitvector_variables(
     collect_memory_bitvector_variables(&state.memory, variables);
     collect_resource_context_bitvector_variables(&state.resources, variables);
     collect_resource_context_bitvector_variables(&state.instance_field_scope, variables);
+    if let Some(view) = &state.body_field_view {
+        collect_resource_bitvector_variables(&Resource::Instance(view.as_ref().clone()), variables);
+    }
 }
 
 pub(in crate::kernel) fn collect_resource_context_bitvector_variables(

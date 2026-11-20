@@ -2186,9 +2186,11 @@ fn expand_declared_resource_tactic_with_nested_proofs(
             // A match on an instance's own field selects one arm of its
             // resource's matched body in each proof arm.
             let selected_field = match &scrutinee {
-                ContractExpression::ResourceField(access) if access.children.is_empty() => {
-                    Some((access.identity, access.field.clone()))
-                }
+                // A body's own field selects no instance's arm.
+                ContractExpression::ResourceField(access) if access.children.is_empty() => access
+                    .identity
+                    .instance()
+                    .map(|identity| (identity, access.field.clone())),
                 _ => None,
             };
             let ensuring =
@@ -3307,22 +3309,26 @@ fn expand_declared_resource_expression_node(
         }
 
         ContractExpression::ResourceField(mut access) => {
-            if let Some(name) = resource_definitions
-                .unowned_resource_parameters
-                .borrow()
-                .get(&access.identity)
-            {
-                return Err(ClickError::new(format!("Requires owns {name}")));
-            }
-            match resource_definitions.family(access.identity) {
-                Some(InstanceFamily::FieldValue) => {
-                    return Err(ClickError::new(format!(
-                        "`{}` names the value of a resource field, not a resource instance",
-                        access.owner
-                    )));
+            // A body's own fields belong to the definition being expanded, not
+            // to an instance whose family or ownership is recorded here.
+            if let Some(identity) = access.identity.instance() {
+                if let Some(name) = resource_definitions
+                    .unowned_resource_parameters
+                    .borrow()
+                    .get(&identity)
+                {
+                    return Err(ClickError::new(format!("Requires owns {name}")));
                 }
-                Some(InstanceFamily::Child(name)) => access.resource_name = name,
-                _ => resource_definitions.refuse_ambiguous(access.identity, &access.owner)?,
+                match resource_definitions.family(identity) {
+                    Some(InstanceFamily::FieldValue) => {
+                        return Err(ClickError::new(format!(
+                            "`{}` names the value of a resource field, not a resource instance",
+                            access.owner
+                        )));
+                    }
+                    Some(InstanceFamily::Child(name)) => access.resource_name = name,
+                    _ => resource_definitions.refuse_ambiguous(identity, &access.owner)?,
+                }
             }
             let info = resource_definitions
                 .get(&access.resource_name)

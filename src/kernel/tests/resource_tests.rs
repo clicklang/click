@@ -1785,7 +1785,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
     for (at_entry, expected) in [(false, 4), (true, 3)] {
         let expression = SpecExpression::ResourceField {
             projection: ResourceFieldProjection {
-                identity: InstanceId::from_variable(Variable(10)),
+                identity: InstanceId::from_variable(Variable(10)).into(),
                 children: vec![],
                 field_index: 1,
                 at_entry,
@@ -1807,7 +1807,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
     let projection = |at_entry| SpecAlgebraicExpression {
         algebraic_type: ty.clone(),
         node: SpecAlgebraicExpressionNode::ResourceField(ResourceFieldProjection {
-            identity: InstanceId::from_variable(Variable(10)),
+            identity: InstanceId::from_variable(Variable(10)).into(),
             children: vec![],
             field_index: 0,
             at_entry,
@@ -1899,7 +1899,7 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
     ] {
         let expression = SpecExpression::ResourceField {
             projection: ResourceFieldProjection {
-                identity: InstanceId::from_variable(Variable(identity)),
+                identity: InstanceId::from_variable(Variable(identity)).into(),
                 children: vec![],
                 field_index,
                 at_entry: false,
@@ -4101,7 +4101,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
         // placeholder binding installed by `instance_body_evaluation`, not
         // through the concrete instance identity.  Keep the field payload's
         // free Integer identity independent from that resource placeholder.
-        identity: InstanceId::BODY,
+        identity: crate::kernel::InstanceRef::Body,
         children: vec![],
         field_index: 1,
         at_entry: false,

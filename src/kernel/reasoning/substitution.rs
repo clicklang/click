@@ -953,6 +953,7 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
         point: state.point.clone(),
         resource_bindings: state.resource_bindings.clone(),
         instance_field_scope: walk_resource_context(&state.instance_field_scope, s),
+        body_field_view: state.body_field_view.clone(),
         resources: walk_resource_context(&state.resources, s),
         loan_ledger: state.loan_ledger.clone(),
         loan_participant: state.loan_participant,
