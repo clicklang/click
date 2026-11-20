@@ -5595,6 +5595,12 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                     | native_constant!(_, _) => results.push(term.clone()),
                     MachineTerm::IntegerAddress(_, _) => results.push(term.clone()),
                     MachineTerm::MemoryLoad(memory, pointer, kind) => {
+                        // The selected entry already names the unchanged cell.
+                        // Resolving its empty view would discard that point.
+                        if memory.is_entry_read() {
+                            results.push(term.clone());
+                            continue;
+                        }
                         let kind = *kind;
                         let canonical_pointer = canonicalize_pointer_loads(pointer);
                         let resolved =
@@ -5641,6 +5647,10 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                                 results.push(canonicalize_atomic_loads_deep(&value));
                                 break;
                             };
+                            if next_memory.is_entry_read() {
+                                results.push(value);
+                                break;
+                            }
                             let next_kind = *next_kind;
                             let canonical_pointer = canonicalize_pointer_loads(next_pointer);
                             let resolved = cell_integer_for_read(
