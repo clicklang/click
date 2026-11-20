@@ -197,7 +197,12 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
             0,
             pairs
                 .iter()
-                .map(|(binder, instance)| (Variable(*binder), Variable(*instance)))
+                .map(|(binder, instance)| {
+                    (
+                        ResourceBinderId::from_variable(Variable(*binder)),
+                        ResourceBinderId::from_variable(Variable(*instance)),
+                    )
+                })
                 .collect(),
         );
         selected_call_binder_application(

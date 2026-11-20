@@ -7133,7 +7133,7 @@ pub struct CallBinderTransport {
     /// Every instance binder of that callee, mapped to the caller instance
     /// that supplies it. A `produces` binder maps to the fresh identity the
     /// caller's `let` introduced.
-    pub(crate) bindings: std::sync::Arc<BTreeMap<Variable, Variable>>,
+    pub(crate) bindings: std::sync::Arc<BTreeMap<ResourceBinderId, ResourceBinderId>>,
     /// Runtime binders that name a resource type, evaluated at the call.
     pub(crate) type_arguments: std::sync::Arc<BTreeMap<Variable, super::ResourceDescription>>,
 }
@@ -11961,6 +11961,67 @@ impl MutexAuthorityId {
     }
 }
 
+/// A resource binder's number as a proof or contract writes it, before the
+/// clause that declares the binder says what it names. A named resource
+/// clause, a call map entry and a proof's resource name all carry one. It
+/// becomes an [`InstanceId`] or a [`MutexAuthorityId`] only where a clause or
+/// a use decides which ([`Self::instance`], [`Self::mutex_authority`]).
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ResourceBinderId(Variable);
+
+/// Prints as the number it is carried as, like [`InstanceId`].
+impl std::fmt::Debug for ResourceBinderId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl ResourceBinderId {
+    /// A binder number given out by the surface parser or a runtime binder
+    /// descriptor.
+    pub const fn from_variable(variable: Variable) -> Self {
+        Self(variable)
+    }
+
+    /// The number this binder is carried as, for maps still keyed by it and
+    /// for hidden binder spellings.
+    pub const fn variable(self) -> Variable {
+        self.0
+    }
+
+    /// The binder read as an instance binder: its clause declares an
+    /// exclusive instance, or its use requires one.
+    pub const fn instance(self) -> InstanceId {
+        InstanceId::from_variable(self.0)
+    }
+
+    /// The binder read as a named mutex authority: its clause names a mutex
+    /// live, use or guard authority.
+    pub const fn mutex_authority(self) -> MutexAuthorityId {
+        MutexAuthorityId::from_variable(self.0)
+    }
+
+    /// The binder read in the sort `binder` has.
+    pub const fn in_sort_of(self, binder: ResourceBinder) -> ResourceBinder {
+        match binder {
+            ResourceBinder::Instance(_) => ResourceBinder::Instance(self.instance()),
+            ResourceBinder::MutexAuthority(_) => {
+                ResourceBinder::MutexAuthority(self.mutex_authority())
+            }
+        }
+    }
+}
+
+impl ResourceBinder {
+    /// The written binder number this classified binder came from.
+    pub const fn written(self) -> ResourceBinderId {
+        match self {
+            ResourceBinder::Instance(identity) => ResourceBinderId(identity.variable()),
+            ResourceBinder::MutexAuthority(identity) => ResourceBinderId(identity.variable()),
+        }
+    }
+}
+
 /// A callee's resource binder: an exclusive instance binder or a named
 /// mutex authority binder. Which one a binder is comes from the clause that
 /// declares it ([`ResourceSpec::binding_identity`]).
@@ -12029,13 +12090,13 @@ impl ResourceBindings {
     /// Binds `binder` to the caller resource a proof's map wrote by its
     /// binder number, read in the binder's sort. Returns whether the binder
     /// was already bound.
-    pub fn insert_written(&mut self, binder: ResourceBinder, written: Variable) -> bool {
+    pub fn insert_written(&mut self, binder: ResourceBinder, written: ResourceBinderId) -> bool {
         match binder {
-            ResourceBinder::Instance(binder) => self
-                .insert_instance(binder, InstanceId::from_variable(written))
-                .is_some(),
+            ResourceBinder::Instance(binder) => {
+                self.insert_instance(binder, written.instance()).is_some()
+            }
             ResourceBinder::MutexAuthority(binder) => self
-                .insert_mutex_authority(binder, MutexAuthorityId::from_variable(written))
+                .insert_mutex_authority(binder, written.mutex_authority())
                 .is_some(),
         }
     }
