@@ -58,6 +58,7 @@ pub(crate) struct MemoryStateLabels {
     pointer_sources: HashMap<Address, String>,
     source_memories: Vec<(SymbolicMemory, String, std::sync::Arc<NamingTables>)>,
     current_point: Option<crate::kernel::program_point::ProgramPointId>,
+    current_state: Option<ExecutionState>,
     source_points: HashMap<
         crate::kernel::program_point::ProgramPointId,
         (String, std::sync::Arc<NamingTables>),
@@ -361,6 +362,7 @@ impl MemoryStateLabels {
 
     pub(crate) fn register_current_state(&mut self, state: &ExecutionState) {
         self.current_point = state.observation_point_id();
+        self.current_state = Some(state.clone());
         let (names, values) = crate::surface::diagnostics::local_naming_tables(state);
         let current = Self::naming(ParameterBinding::new(&names, &values));
         // A reassigned parameter's entry value is not its current value.
@@ -732,6 +734,33 @@ impl MemoryStateLabels {
             .get(&variable)
             .map(String::as_str)
             .filter(|name| name.len() <= 256)
+    }
+
+    /// A field name denotes the value currently held by that resource. The
+    /// mint registry alone cannot name a field that was replaced or consumed.
+    fn current_algebraic_field_name(
+        &self,
+        variable: Variable,
+        term: &AlgebraicTerm,
+    ) -> Option<String> {
+        use crate::kernel::{ResourceFieldValue, model_fields};
+        let origin = model_fields::registered_model_field_origin(variable)?;
+        let instance = self
+            .current_state
+            .as_ref()?
+            .resource_instance_fields(origin.identity)?;
+        let held = match instance.fields().get(origin.field_index)? {
+            ResourceFieldValue::Algebraic(value) => value,
+            ResourceFieldValue::Program(crate::kernel::ProgramValue::Parameter(value)) => {
+                value.as_ref()
+            }
+            _ => return None,
+        };
+        if held != term {
+            return None;
+        }
+        let owner = model_fields::registered_instance_spelling(origin.identity)?;
+        Some(format!("{owner}.{}", origin.field))
     }
 
     fn variable_name(&mut self, variable: Variable, kind: &str) -> String {
@@ -1826,7 +1855,15 @@ impl Renderer<'_> {
         self.depth += 1;
         match &term.node {
             AlgebraicTermNode::Variable(variable) => {
-                let name = self.variable_name(*variable, "value");
+                let name = if self.bound_names.iter().any(|(bound, _)| bound == variable)
+                    || self.labels.source_name_for(*variable).is_some()
+                {
+                    self.variable_name(*variable, "value")
+                } else {
+                    self.labels
+                        .current_algebraic_field_name(*variable, term)
+                        .unwrap_or_else(|| self.variable_name(*variable, "value"))
+                };
                 self.fmt(format_args!("{name}:{}", term.algebraic_type.name))
             }
             AlgebraicTermNode::MemoryLoad {

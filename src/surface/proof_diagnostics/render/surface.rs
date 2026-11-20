@@ -2690,10 +2690,17 @@ impl Printer<'_> {
             return elided;
         }
         match &value.node {
-            AlgebraicTermNode::Variable(variable) => match self.variable_name(*variable) {
-                Some(name) => Some(atom(name)),
-                None => self.placeholder(|printer| printer.unnamed_variable(*variable)),
-            },
+            AlgebraicTermNode::Variable(variable) => self
+                .variable_name(*variable)
+                .or_else(|| {
+                    // This alias is for reports. Exact modes require their
+                    // own checked source spellings.
+                    self.source_mode()
+                        .then(|| self.labels.current_algebraic_field_name(*variable, value))
+                        .flatten()
+                })
+                .map(atom)
+                .or_else(|| self.placeholder(|printer| printer.unnamed_variable(*variable))),
             AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
                 self.call(name, arguments, depth + 1)
             }
