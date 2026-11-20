@@ -9908,6 +9908,49 @@ fn literal_constructor_field_disequality_expands_to_known() {
 }
 
 #[test]
+fn computed_sequence_negations_expand_to_known() {
+    let (source, _) = mdtest_sources("mdtests/sequence_literals.md");
+    let source = source.replace("[0, 1] != [1, 0] by known()", "[0, 1] != [1, 0] by solve()");
+    for (theorem, next_theorem) in [
+        (
+            "sequence_order_is_observable",
+            Some("singleton_contains_its_element"),
+        ),
+        ("absent_constant_is_not_a_member", None),
+    ] {
+        let label = format!("{theorem}.ensures_0");
+        let expanded = expand_c_claim_source_by_label(&source, &[], &label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        let claim = expanded
+            .split_once(&format!("theorem {theorem}"))
+            .unwrap()
+            .1;
+        let claim = next_theorem.map_or(claim, |name| {
+            claim.split_once(&format!("theorem {name}")).unwrap().0
+        });
+        assert!(claim.contains("known();"), "{claim}");
+        assert!(!claim.contains("normalize()"), "{claim}");
+        without_implicit_solve_for_claim(&label, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+
+    let mixed = "theorem mixed(x: int32) {
+        ensures not ((x == 0 and 0 == 1) or not (2 == 2)) by known();
+    }";
+    without_implicit_solve(|| verify_click_theorems(mixed)).unwrap();
+
+    for claim in ["not (1 in [0, 1])", "not (x in [0, 1])", "[0, 1] != [0, 1]"] {
+        let source = format!("theorem rejected(x: int32) {{ ensures {claim} by known(); }}");
+        let error = without_implicit_solve(|| verify_click_theorems(&source))
+            .unwrap_err()
+            .report();
+        assert!(error.contains("`known` requires"), "{error}");
+    }
+}
+
+#[test]
 fn strict_literal_remainder_bound_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/solve_bounds_an_unsigned_quotient_by_its_operand.md");
     let label = "remainder_below_divisor.ensures_0";
@@ -20605,6 +20648,28 @@ fn line_containing(source: &str, text: &str) -> usize {
         .position(|line| line.contains(text))
         .unwrap_or_else(|| panic!("no line contains `{text}`"))
         + 1
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.85s focused"]
+fn loop_otherwise_expands_without_by() {
+    let (click, sources) = mdtest_sources("mdtests/loop_otherwise.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c_claim_source_by_label(&click, &sources, "count_down.loop(0).otherwise").unwrap();
+    let written = "otherwise {\n            have n == 0 by solve();\n        }";
+    let start = click.find(written).unwrap();
+    let end = start + written.len();
+    assert!(expanded.starts_with(&click[..start]), "{expanded}");
+    assert!(expanded.ends_with(&click[end..]), "{expanded}");
+    let phase = &expanded[start..expanded.len() - (click.len() - end)];
+    assert!(phase.starts_with("otherwise {"), "{phase}");
+    assert!(!phase.contains("solve"), "{phase}");
+    verify_c_sources(&expanded, &sources).unwrap();
 }
 
 /// A loop phase written in a grouped proof's `loop` tactic is a claim of its

@@ -276,6 +276,17 @@ impl CarrierVariables {
     }
 }
 
+pub(super) fn is_simple_int32_match(value: &MachineTerm) -> bool {
+    let MachineTerm::AlgebraicMatch { arms, .. } = value else {
+        return false;
+    };
+    arms.iter().all(|arm| {
+        arm.body.as_const().is_some()
+            || matches!(&arm.body, MachineTerm::Variable(variable) if arm.bindings.iter().any(|binding|
+                matches!(binding, AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(bound))) if bound == variable)))
+    })
+}
+
 fn program_value_variable(value: &ProgramValue) -> Option<Variable> {
     match value {
         ProgramValue::PointerInteger(record) => program_value_variable(&record.numeric),
@@ -2059,6 +2070,10 @@ impl<'a> TermRewrite<'a> {
         let mut rewrite = Self::empty();
         rewrite.algebraic = Some((from, to));
         rewrite
+    }
+
+    fn preserves_algebraic_matches(&self) -> bool {
+        self.algebraic.is_some() || self.integer_exact.is_some() || self.integer_variables.is_some()
     }
 
     /// Exact Integer congruence over the selected logical DAG. Internal
@@ -3902,7 +3917,8 @@ impl<'a> TermRewrite<'a> {
                 }
                 // A checked constructor determines the arm without proof search.
                 // Validate the whole match before discarding its other arms.
-                if matches!(scrutinee.node, AlgebraicTermNode::Constructor { .. })
+                if (!self.preserves_algebraic_matches() || term.algebraic_type.rigid)
+                    && matches!(scrutinee.node, AlgebraicTermNode::Constructor { .. })
                     && term.is_well_formed()
                     && let Some(value) =
                         self.rewrite_algebraic_match_iota(&scrutinee, &rewritten_arms)
@@ -4773,6 +4789,20 @@ impl<'a> TermRewrite<'a> {
         // replacement's variables are free in this occurrence and must not
         // be remapped by an arm binder (or recursively substitute `from`).
         replacement
+    }
+
+    pub(super) fn reduce_known_int32_match(value: &MachineTerm) -> Option<MachineTerm> {
+        let MachineTerm::AlgebraicMatch { scrutinee, arms } = value else {
+            return None;
+        };
+        if !matches!(scrutinee.node, AlgebraicTermNode::Constructor { .. })
+            || !is_simple_int32_match(value)
+        {
+            return None;
+        }
+        let mut rewrite = Self::empty();
+        let reduced = rewrite.rewrite_bitvector_match_iota(scrutinee, arms);
+        rewrite.refusal().is_none().then_some(reduced).flatten()
     }
 
     fn rewrite_bitvector_match_iota(
@@ -5748,6 +5778,25 @@ impl<'a> TermRewrite<'a> {
                 ConditionTerm::Float64(condition.map_bitvector_terms(|b| self.bits(b)))
             }
             ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            } if self.preserves_algebraic_matches()
+                && (is_simple_int32_match(left) || is_simple_int32_match(right)) =>
+            {
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(
+                        self.bits_with_match_reduction(left, !is_simple_int32_match(left)),
+                    ),
+                    right: Box::new(
+                        self.bits_with_match_reduction(right, !is_simple_int32_match(right)),
+                    ),
+                }
+            }
+            ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: a,
@@ -6410,6 +6459,10 @@ impl<'a> TermRewrite<'a> {
     }
 
     pub(crate) fn bits(&mut self, v: &MachineTerm) -> MachineTerm {
+        self.bits_with_match_reduction(v, true)
+    }
+
+    fn bits_with_match_reduction(&mut self, v: &MachineTerm, reduce_match: bool) -> MachineTerm {
         self.reserve_bitvector_variables_once(v);
         if self.checked_work_exhausted() {
             return MachineTerm::constant(0);
@@ -6679,7 +6732,9 @@ impl<'a> TermRewrite<'a> {
                         body,
                     });
                 }
-                if let Some(value) = self.rewrite_bitvector_match_iota(&scrutinee, &rewritten_arms)
+                if reduce_match
+                    && let Some(value) =
+                        self.rewrite_bitvector_match_iota(&scrutinee, &rewritten_arms)
                 {
                     return value;
                 }

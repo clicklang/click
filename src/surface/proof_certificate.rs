@@ -106,7 +106,6 @@ pub enum ProofStep {
     },
     /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
-    ConstructResource(ResourceClause),
     Witness(ProofWitness),
     LetSatisfy(ProofLetSatisfy),
     Choose(ProofChoice),
@@ -183,6 +182,7 @@ pub struct CertificateStructuralClause {
     pub(super) resources: Vec<ResourceClause>,
     pub(super) initialize_proof: Option<Box<ProofCertificate>>,
     pub(super) preserve_proof: Option<Box<ProofCertificate>>,
+    pub(super) otherwise_proof: Option<Box<ProofCertificate>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -209,6 +209,7 @@ pub enum CertificatePathSegment {
     RightCase,
     LoopInitialize,
     LoopPreserve,
+    LoopOtherwise,
     StepBody,
     StepRequirement(usize),
 }
@@ -488,6 +489,9 @@ pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
                     if let Some(proof) = clause.preserve_proof.as_deref() {
                         pending.extend(proof.steps.iter());
                     }
+                    if let Some(proof) = clause.otherwise_proof.as_deref() {
+                        pending.extend(proof.steps.iter());
+                    }
                 }
                 _ => {}
             }
@@ -703,6 +707,9 @@ impl ProofStep {
                     .preserve_proof
                     .as_ref()
                     .map(|proof| Box::new(ProofCertificate::from_validated_proof(proof))),
+                otherwise_proof: clause
+                    .otherwise_proof()
+                    .map(|proof| Box::new(ProofCertificate::from_validated_proof(proof))),
             }),
             _ => Self::from_leaf_tactic(tactic)
                 .expect("certificate validation admitted a non-surface tactic"),
@@ -731,7 +738,6 @@ impl ProofStep {
             },
             ProofTactic::FoldResource(resource) => Self::FoldResource(resource.clone()),
             ProofTactic::ReleaseView(resource) => Self::ReleaseView(resource.clone()),
-            ProofTactic::ConstructResource(resource) => Self::ConstructResource(resource.clone()),
             ProofTactic::Induct {
                 parameter,
                 hypothesis,
@@ -905,7 +911,6 @@ impl ProofStep {
             },
             Self::FoldResource(resource) => ProofTactic::FoldResource(resource.clone()),
             Self::ReleaseView(resource) => ProofTactic::ReleaseView(resource.clone()),
-            Self::ConstructResource(resource) => ProofTactic::ConstructResource(resource.clone()),
             Self::Induct {
                 parameter,
                 hypothesis,
@@ -1092,6 +1097,10 @@ impl ProofStep {
                     .preserve_proof
                     .as_ref()
                     .map(|proof| proof.to_source_proof()),
+                otherwise_proof: clause
+                    .otherwise_proof
+                    .as_ref()
+                    .map(|proof| proof.to_source_proof()),
                 scope: BinderMap::new(),
             })),
         }
@@ -1144,6 +1153,7 @@ impl CertificateError {
                 CertificatePathSegment::RightCase => "right case".to_string(),
                 CertificatePathSegment::LoopInitialize => "loop `initialize`".to_string(),
                 CertificatePathSegment::LoopPreserve => "loop `maintain`".to_string(),
+                CertificatePathSegment::LoopOtherwise => "loop `otherwise`".to_string(),
                 CertificatePathSegment::StepBody => "step `by` body".to_string(),
                 CertificatePathSegment::StepRequirement(index) => {
                     format!("step `requires` entry {index}")
@@ -1203,7 +1213,6 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
         ProofStep::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
         ProofStep::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
-        ProofStep::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
         ProofStep::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
         ProofStep::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
         ProofStep::ApplyFactUsing { .. } | ProofStep::ApplyTheoremUsing { .. } => {
@@ -1508,6 +1517,13 @@ pub(super) fn validate_certificate_tactics(
                                 path: path.clone(),
                             }),
                         };
+                        path.pop();
+                    }
+                    if result.is_ok()
+                        && let Some(proof) = loop_clause.otherwise_proof()
+                    {
+                        path.push(CertificatePathSegment::LoopOtherwise);
+                        result = validate_certificate_proof(proof, path);
                         path.pop();
                     }
                     result

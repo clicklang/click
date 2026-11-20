@@ -837,11 +837,18 @@ callee cannot acquire an alias to the caller's storage. Its field siblings are
 checked and captured before the call; their values agree in every argument
 order, and a throwing call cannot skip a read's authority check. This covers
 `Div(Mul(fee, at_size), size, RoundDown)` with field-backed `fee` and `size`.
-General alias analysis is not provided. Reference reads, dereferences,
-arithmetic, additional calls, and side effects in sibling arguments fail import.
-No unsafe sibling operation can be hidden by selecting an argument order that
-skips it. Resource-bearing exceptional contracts remain outside the proof
-surface slice.
+Reference reads, dereferences, arithmetic and side effects in siblings
+remain outside this ordinary nested-call rule.
+
+An argument list can also contain several direct, nonvirtual
+`const noexcept` getters with no explicit parameters, as in
+`sink(dst.data(), src.data(), dst.size())`. Each getter must have a checked
+read-only, terminating contract. The argument types must match the getter results and
+any other arguments must be stable scalars. The same rule permits a
+projected receiver in a call such as `cursor.remaining.subspan(dst.size())`.
+Click evaluates each getter once in argument order after establishing
+that the evaluations are read-only and nonthrowing. The surrounding
+function may itself throw.
 
 An omitted argument of a supported integer type can come from a direct,
 non-`constexpr`, `noexcept` helper with no arguments, such as `limit()` for
@@ -1468,8 +1475,8 @@ by-value operations, and automatic storage require a modeled layout.
 
 The catalog can select this boundary for a complete system class as well. An
 existing `const std::vector<unsigned char>&` can call `size()`, `empty()`,
-and `data()` under Click contracts that read a `vector_state` resource
-keyed by the receiver. The
+`data()`, and bounded `operator[]` under Click contracts that read a
+`vector_state` resource keyed by the receiver. The
 [vector reference](../library/index.md#stdvectorunsigned-char) shows how
 a caller supplies backing bytes when it passes a span to a reader.
 The importer retains the class and method identities from Clang. The artifact
@@ -2754,6 +2761,25 @@ the lock's identity.
 The dependency calculation is conservative. Its name-based analysis can
 keep additional declarations with the same spelling. The prepared artifact
 and lock still cover the entire preprocessed translation unit and its inputs.
+
+### C89 compilation with native headers
+
+On x86-64 Linux in userspace, an explicit `-std=c89` uses GCC's C89
+preprocessor mode and its native feature-test macros. Supply the build's
+include directories with `-isystem`; Click inventories the opened headers.
+The retained source still uses Click's supported C subset. The C89 profile
+also accepts `-fPIC` and `-fstack-protector-strong`.
+
+For explicit function roots in that mode, Click reads balanced GCC
+`visibility push(default)` and `visibility pop` directives and GCC
+diagnostic push, pop, and ignored-warning directives. A declaration with an
+assembler label can leave the projection only if its plain symbol name is
+outside the retained dependencies. File-scope assembly is still refused.
+
+At `-O0`, this rooted import also accepts `-fvisibility=hidden`. Retained
+external declarations then need explicit default visibility. This preserves
+the source-level linkage of the projected definitions. See the unchanged
+[cJSON integration](https://github.com/clicklang/click/blob/master/integrations/cjson/README.md).
 
 ## Locations and trust boundary
 

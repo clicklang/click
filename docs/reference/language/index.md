@@ -2008,7 +2008,7 @@ The function-level clause `constructs open_fd(result);` authorizes creating
 one owned abstract token without consuming an input resource. At a normal
 return, Click can automatically construct a missing token directly owed by
 `produces open_fd(result);` when the two clauses denote the same token.
-Write `construct(open_fd(result));` to create an intermediate token, for
+Write `fold(open_fd(result));` to create an intermediate token, for
 example before folding it into a composite resource.
 
 An abstract resource may declare fields, and nothing else:
@@ -2784,7 +2784,8 @@ means the function borrows the resource for the call and reads it only.
 returns an owned resource. To produce a memory view, name the input with
 `views *p as source;` and write `produces view(*p) from source;`. The
 input must cover the output, and the output keeps the input borrow active
-until the caller gives it up. See
+until the caller gives it up. You can omit `from` when exactly one input
+view has the same lowered range. See
 [Producing a view](../../concepts/resources.md#producing-a-view).
 `requires` and `ensures` accept pure propositions
 only. `consumes X;` beside `produces X;` for the same `X` is exactly
@@ -3261,11 +3262,10 @@ gate checks each declaration below against that source.
 
 The seven resources are declared as
 [abstract resources](#read-and-write-resources), so none has a Click body
-and none grants memory access by itself. Unlike a file's own abstract
-resource, which only contracts and `construct` move, each one is created,
-consumed, transferred and counted by the kernel rules described under its
-entry: mutex operations, atomic publication, population folds, and heap
-allocation.
+and none grants memory access by itself. The kernel rules described under
+each entry govern how it is created, consumed, transferred, and counted.
+Those rules cover mutex operations, atomic publication, population folds,
+and heap allocation.
 
 ### Mutex acquisition authority
 

@@ -167,6 +167,9 @@ struct SpecEvaluation<'a> {
     conditional_guard: bool,
     machine_preparation_disabled: bool,
     machine_result_production_disabled: bool,
+    retain_known_matches: bool,
+    /// The enclosing match already checked the purity of this arm's syntax.
+    in_pure_algebraic_match: bool,
     integer_bindings: BTreeMap<Variable, IntegerResult>,
 }
 
@@ -227,6 +230,8 @@ impl<'a> SpecEvaluation<'a> {
             conditional_guard: false,
             machine_preparation_disabled: false,
             machine_result_production_disabled: false,
+            retain_known_matches: false,
+            in_pure_algebraic_match: false,
             integer_bindings: initial_integer_bindings(),
         }
     }
@@ -240,6 +245,8 @@ impl<'a> SpecEvaluation<'a> {
             conditional_guard: false,
             machine_preparation_disabled: false,
             machine_result_production_disabled: false,
+            retain_known_matches: false,
+            in_pure_algebraic_match: false,
             integer_bindings: initial_integer_bindings(),
         }
     }
@@ -1483,14 +1490,17 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             Ok(result)
         }
         SpecProposition::AlgebraicComparison { left, equal, right } => {
-            lower_spec_algebraic_comparison_at_state_in(
+            let previous = std::mem::replace(&mut budget.retain_known_matches, true);
+            let paths = lower_spec_algebraic_comparison_at_state_in(
                 scope,
                 left,
                 *equal,
                 right,
                 assumptions,
                 budget,
-            )
+            );
+            budget.retain_known_matches = previous;
+            paths
         }
         SpecProposition::SequenceMembership { element, sequence } => {
             lower_spec_sequence_membership_at_state_in(
@@ -1515,14 +1525,25 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             left,
             operator,
             right,
-        } => lower_spec_comparison_proposition_at_state_in(
-            scope,
-            left,
-            *operator,
-            right,
-            assumptions,
-            budget,
-        ),
+        } => {
+            let previous = std::mem::replace(
+                &mut budget.retain_known_matches,
+                matches!(
+                    operator,
+                    ComparisonOperator::Equal | ComparisonOperator::NotEqual
+                ),
+            );
+            let paths = lower_spec_comparison_proposition_at_state_in(
+                scope,
+                left,
+                *operator,
+                right,
+                assumptions,
+                budget,
+            );
+            budget.retain_known_matches = previous;
+            paths
+        }
         // A written literal is the constant condition itself; no comparison
         // is formed or folded.
         SpecProposition::Truth(value) => Ok(vec![SpecPropositionPath {
@@ -3823,13 +3844,27 @@ fn evaluate_spec_algebraic_non_call_in(
                 return Err(ExecutionLimit::Paths);
             }
             let mut result = Vec::new();
+            let mut pure_match = None;
             for scrutinee_path in evaluate_spec_algebraic_at_state_with_bindings_in(
                 scope,
                 scrutinee,
                 assumptions,
                 budget,
             )? {
-                if !scrutinee_path.value.is_constructor() {
+                let known_constructor = scrutinee_path.value.is_constructor();
+                let retain_known = known_constructor
+                    && budget.retain_known_matches
+                    && !expression.algebraic_type.rigid
+                    && !budget.checked_reads
+                    && (budget.in_pure_algebraic_match
+                        || *pure_match.get_or_insert_with(|| {
+                            super::functions::spec_algebraic_expression_is_obligation_free(
+                                expression,
+                            ) && super::functions::spec_algebraic_expression_is_state_independent(
+                                expression,
+                            )
+                        }));
+                if retain_known || !known_constructor {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
                     let facts = scrutinee_path.facts.clone();
                     let obligations = scrutinee_path.obligations.clone();
@@ -3858,12 +3893,16 @@ fn evaluate_spec_algebraic_non_call_in(
                             &arm.binding_variables,
                             &bindings,
                             |budget| {
-                                evaluate_spec_algebraic_at_state_with_bindings_in(
+                                let outer = budget.in_pure_algebraic_match;
+                                budget.in_pure_algebraic_match |= retain_known;
+                                let paths = evaluate_spec_algebraic_at_state_with_bindings_in(
                                     body_scope.as_scope(),
                                     &arm.body,
                                     &body_assumptions,
                                     budget,
-                                )
+                                );
+                                budget.in_pure_algebraic_match = outer;
+                                paths
                             },
                         )?;
                         let Some(body_path) = body_paths.pop() else {
@@ -4335,6 +4374,20 @@ fn guard_scalar_match_obligation(
         });
     }
     Ok(obligation)
+}
+
+pub(crate) fn scalar_match_has_pure_int32_arms(arms: &[SpecAlgebraicMatchArm]) -> bool {
+    arms.iter().all(|arm| match &arm.body {
+        SpecExpression::Value(ProgramValue::Int32(word)) => word.as_const().is_some(),
+        SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => arm
+            .bindings
+            .iter()
+            .zip(&arm.binding_types)
+            .any(|(binding, ty)| {
+                binding == name && *ty == AlgebraicValueType::Program(ProgramType::Int32)
+            }),
+        _ => false,
+    })
 }
 
 fn spec_scalar_match_arms_are_well_formed(
@@ -6824,13 +6877,28 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 return Err(ExecutionLimit::Paths);
             }
             let mut paths = Vec::new();
+            let mut pure_int32 = None;
             for scrutinee_path in evaluate_spec_algebraic_at_state_with_bindings_in(
                 SpecScope { state, ..scope },
                 scrutinee,
                 assumptions,
                 budget,
             )? {
-                if !scrutinee_path.value.is_constructor() {
+                let known_constructor = scrutinee_path.value.is_constructor();
+                let retain_known = known_constructor
+                    && budget.retain_known_matches
+                    && !budget.checked_reads
+                    && !budget.machine_result_production_disabled
+                    && *pure_int32.get_or_insert_with(|| {
+                        scalar_match_has_pure_int32_arms(arms)
+                            && super::functions::spec_algebraic_expression_is_state_independent(
+                                scrutinee,
+                            )
+                            && super::functions::spec_algebraic_expression_is_obligation_free(
+                                scrutinee,
+                            )
+                    });
+                if retain_known || !known_constructor {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
                     let mut parameter_arms = Vec::new();
                     let mut compatibility_arms = Vec::new();

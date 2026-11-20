@@ -139,7 +139,6 @@ fn cpp_release_archive_installs_and_locks() {
     let basic = t.path().join("basic");
     copy(&example, &basic);
     fs::remove_dir_all(basic.join(".click")).unwrap();
-    fs::remove_file(basic.join(".click/captures/manifest.json")).unwrap();
     success(cli(&binary, &relocated, &basic, &["capture"]));
     for file in [
         ".click/captures/manifest.json",

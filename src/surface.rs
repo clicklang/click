@@ -228,7 +228,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "call",
     "cases",
     "close_invariants",
-    "construct",
     "constructs",
     "consumes",
     "contains",
@@ -2100,6 +2099,7 @@ impl std::fmt::Debug for StructuralClause {
             .field("resources", &data.resources)
             .field("initialize_proof", &data.initialize_proof)
             .field("preserve_proof", &data.preserve_proof)
+            .field("otherwise_proof", &data.otherwise_proof)
             .finish()
     }
 }
@@ -2126,6 +2126,7 @@ pub struct StructuralClauseData {
     resources: Vec<ResourceClause>,
     initialize_proof: Option<SourceProof>,
     preserve_proof: Option<SourceProof>,
+    otherwise_proof: Option<SourceProof>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -6138,7 +6139,6 @@ pub enum ProofTactic {
     },
     /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
-    ConstructResource(ResourceClause),
     Witness(ProofWitness),
     LetSatisfy(ProofLetSatisfy),
     Choose(ProofChoice),
@@ -6268,7 +6268,6 @@ pub enum SimpleTactic {
     Instantiate,
     FoldResource,
     ReleaseView,
-    ConstructResource,
     IteratedOwnership,
 }
 
@@ -6465,11 +6464,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "unfold-iterated-clause",
         syntax: "unfold(resource(args)[..])",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "construct-resource",
-        syntax: "construct(resource)",
         class: "simple",
     },
     PublicTacticForm {
@@ -6751,6 +6745,7 @@ impl ProofTactic {
                 .initialize_proof()
                 .into_iter()
                 .chain(clause.preserve_proof())
+                .chain(clause.otherwise_proof())
                 .map(|proof| Continuing(Source(proof)))
                 .collect(),
             _ => Vec::new(),
@@ -6817,7 +6812,6 @@ impl ProofTactic {
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
-            Self::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
             Self::SmartExecute | Self::ExecuteUntil(_) => {
                 TacticClass::smart(SmartTacticKind::Execute)
             }
@@ -10149,6 +10143,10 @@ impl StructuralClause {
 
     pub fn preserve_proof(&self) -> Option<&SourceProof> {
         self.preserve_proof.as_ref()
+    }
+
+    pub fn otherwise_proof(&self) -> Option<&SourceProof> {
+        self.otherwise_proof.as_ref()
     }
 
     fn bound_to_loop(&self, loop_index: usize) -> Self {

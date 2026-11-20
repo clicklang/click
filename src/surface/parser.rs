@@ -5694,20 +5694,32 @@ impl Parser {
                 }
                 Some("produces") => {
                     self.position += 1;
-                    if self.peek_ident() == Some("view")
-                        && self.peek_next() == Some(&Token::LParen)
-                        && self.matching_parentheses[self.position + 1]
-                            .is_some_and(|close| matches!(self.tokens.get(close + 1), Some(Token::Ident(keyword)) if keyword == "from"))
+                    if self.peek_ident() == Some("view") && self.peek_next() == Some(&Token::LParen)
                     {
-                        self.position += 2;
-                        let resource = self.parse_resource_target(ResourceAccessMode::View)?;
-                        if matches!(resource, ResourceClause::ViewMemory(_)) {
+                        let explicit_source = self.matching_parentheses[self.position + 1]
+                            .is_some_and(|close| matches!(self.tokens.get(close + 1), Some(Token::Ident(keyword)) if keyword == "from"));
+                        let declared_resource = self
+                            .symbols
+                            .declares(names::DeclarationKind::Resource, "view")
+                            || self.declared_resource_fields.contains_key("view");
+                        if explicit_source || !declared_resource {
+                            self.position += 2;
+                            let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                            if !matches!(resource, ResourceClause::ViewMemory(_)) {
+                                return Err(
+                                    self.error("a produced view must name one memory range")
+                                );
+                            }
                             self.expect(Token::RParen)?;
-                            self.expect_ident_spelling("from")?;
-                            let name = self.expect_ident("input view name")?;
-                            let source = view_inputs.get(&name).copied().ok_or_else(|| {
-                                self.error(format!("unknown input view `{name}`"))
-                            })?;
+                            let source = if explicit_source {
+                                self.expect_ident_spelling("from")?;
+                                let name = self.expect_ident("input view name")?;
+                                Some(view_inputs.get(&name).copied().ok_or_else(|| {
+                                    self.error(format!("unknown input view `{name}`"))
+                                })?)
+                            } else {
+                                None
+                            };
                             let proof = self.parse_proof_clause_or_default()?;
                             ensure_kinds.push(ClaimClauseKind::Produces);
                             clause_positions.push(clause_start.clone());
@@ -5719,7 +5731,7 @@ impl Parser {
                                         ensure: Ensure::Resource(resource),
                                         proof,
                                         borrowed: false,
-                                        view_source: Some(source),
+                                        view_source: source,
                                         condition: None,
                                     },
                                     &contract_lets,
@@ -5728,7 +5740,6 @@ impl Parser {
                             );
                             continue;
                         }
-                        return Err(self.error("a produced view must name one memory range"));
                     }
                     let resource = self.parse_function_contract_memory_binding()?;
                     let proof = self.parse_proof_clause_or_default()?;
@@ -11273,6 +11284,7 @@ impl Parser {
             let mut decreases = None;
             let mut initialize_proof = None;
             let mut preserve_proof = None;
+            let mut otherwise_proof = None;
             let enclosing_name_context = self.loop_name_context.take();
             // The loop's pass count, an Integer, is in scope in its clauses
             // and proofs, so a comparison with it reads its other side as an
@@ -11385,6 +11397,20 @@ impl Parser {
                     preserve_proof = Some(self.parse_loop_phase_proof(&items)?);
                     continue;
                 }
+                if self.peek_ident() == Some("otherwise") {
+                    let owner = self.here();
+                    self.position += 1;
+                    if otherwise_proof.is_some() {
+                        return Err(self.error("duplicate `otherwise` block"));
+                    }
+                    let start = self.here();
+                    otherwise_proof = Some(SourceProof::Script(
+                        self.parse_possibly_empty_tactic_block()?,
+                    ));
+                    self.record_proof_clause(start, owner);
+                    self.skip_redundant_semicolon();
+                    continue;
+                }
                 items.extend(self.parse_region_proof_items()?);
             }
             self.expect(Token::RBrace)?;
@@ -11413,6 +11439,7 @@ impl Parser {
                     resources,
                     initialize_proof,
                     preserve_proof,
+                    otherwise_proof,
                     scope: BinderMap::new(),
                 },
             )));
@@ -11807,12 +11834,6 @@ impl Parser {
                 let resource = self.parse_owned_resource_target()?;
                 self.expect(Token::RParen)?;
                 return self.parse_step_proof(ProofTactic::FoldResource(resource));
-            }
-            "construct" => {
-                self.expect(Token::LParen)?;
-                let resource = self.parse_owned_resource_target()?;
-                self.expect(Token::RParen)?;
-                ProofTactic::ConstructResource(resource)
             }
             "induct" => return Err(self.error("induction uses `let ih = induct(value);`; follow structural induction with `match value { ... }`")),
             _ if let Some(refusal) = removed_tactic_refusal(&name) => {
@@ -18709,7 +18730,6 @@ mod tactic_classification_tests {
         ("fold-slot", "fold(reference(p)[0]);"),
         ("fold-iterated-clause", "fold(reference(p)[..]);"),
         ("unfold-iterated-clause", "unfold(reference(p)[..]);"),
-        ("construct-resource", "construct(reference(p));"),
         ("induct", "let ih = induct(n);"),
         (
             "proof-match",

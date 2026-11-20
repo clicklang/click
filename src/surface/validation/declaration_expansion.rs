@@ -1477,6 +1477,11 @@ fn expand_declared_resource_structural_clause(
         .take()
         .map(|proof| expand_declared_resource_proof(proof, resource_definitions))
         .transpose()?;
+    clause.otherwise_proof = clause
+        .otherwise_proof
+        .take()
+        .map(|proof| expand_declared_resource_proof(proof, resource_definitions))
+        .transpose()?;
     // A `decreases` component is an ordinary contract expression now that the
     // slot takes pure expressions, so a resource field it reads needs the same
     // declared-resource expansion an invariant's does. Without it the field's
@@ -1647,7 +1652,6 @@ fn expand_declared_resource_tactic(
         | ProofTactic::ObserveResource(_)
         | ProofTactic::ObserveSavedMemory { .. }
         | ProofTactic::FoldResource(_)
-        | ProofTactic::ConstructResource(_)
         | ProofTactic::Iterated(_)) => {
             expand_declared_resource_tactic_with_resources(tactic, resource_definitions)
         }
@@ -2089,9 +2093,6 @@ fn expand_declared_resource_tactic_with_resources(
             expand_declared_resource_clause(resource, resource_definitions)?,
         )),
         ProofTactic::FoldResource(resource) => Ok(ProofTactic::FoldResource(
-            expand_declared_resource_clause(resource, resource_definitions)?,
-        )),
-        ProofTactic::ConstructResource(resource) => Ok(ProofTactic::ConstructResource(
             expand_declared_resource_clause(resource, resource_definitions)?,
         )),
         ProofTactic::Iterated(IteratedTactic::Unfold(target)) => Ok(ProofTactic::Iterated(

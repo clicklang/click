@@ -663,6 +663,7 @@ impl LoopFinalExitCandidate {
 #[derive(Clone, Debug)]
 pub(crate) struct LoopEarlyExit {
     state: ExecutionState,
+    guard_false: bool,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: LoopExitFacts,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
@@ -671,6 +672,7 @@ pub(crate) struct LoopEarlyExit {
 impl PartialEq for LoopEarlyExit {
     fn eq(&self, other: &Self) -> bool {
         self.state == other.state
+            && self.guard_false == other.guard_false
             && self.pure_facts == other.pure_facts
             && self.loan_evidence == other.loan_evidence
     }
@@ -682,6 +684,7 @@ impl LoopEarlyExit {
         crate::instrumentation::record_deterministic_work(pure_facts.len());
         Self {
             state,
+            guard_false: false,
             pure_facts: pure_facts.into(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
@@ -694,9 +697,19 @@ impl LoopEarlyExit {
     ) -> Self {
         Self {
             state,
+            guard_false: false,
             pure_facts: LoopExitFacts::Retained(Arc::new(facts.clone())),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
+    }
+
+    pub(crate) fn with_guard_false(mut self, guard_false: bool) -> Self {
+        self.guard_false = guard_false;
+        self
+    }
+
+    pub(crate) fn guard_false(&self) -> bool {
+        self.guard_false
     }
 
     pub(crate) fn fact_context(&self) -> Option<&PureFactContext> {
@@ -5175,9 +5188,15 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
         final_exit_candidates,
         early_exits,
         return_exits,
+        None,
         &mut budget,
     )
 }
+
+/// Checks an explicit proof at the false-guard frontier. The caller gets
+/// that frontier's checked facts and returns the facts its proof added.
+pub(crate) type LoopOtherwiseProof<'a> =
+    dyn FnMut(&ExecutionState, &ExecutionState, &ExecutionFacts) -> Option<ExecutionFacts> + 'a;
 
 pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     state: ExecutionState,
@@ -5189,6 +5208,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     final_exit_candidates: Vec<LoopFinalExitCandidate>,
     early_exits: Vec<LoopEarlyExit>,
     return_exits: Vec<LoopReturnExit>,
+    otherwise: Option<&mut LoopOtherwiseProof<'_>>,
     budget: &mut ExecutionBudget,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
     let crate::kernel::StatementProofInput {
@@ -5217,6 +5237,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
         &final_exit_candidates,
         &early_exits,
         &return_exits,
+        otherwise,
         budget,
         &mut variables,
     );

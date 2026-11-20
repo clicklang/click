@@ -890,10 +890,11 @@ fn expand_loop_phase_claim(
             )));
         }
     };
-    let proof = if phase == "initialize" {
-        clause.initialize_proof()
-    } else {
-        clause.preserve_proof()
+    let proof = match phase {
+        "initialize" => clause.initialize_proof(),
+        "maintain" => clause.preserve_proof(),
+        "otherwise" => clause.otherwise_proof(),
+        _ => unreachable!("unknown loop phase"),
     };
     let tactics = proof
         .and_then(SourceProof::tactics)
@@ -905,7 +906,7 @@ fn expand_loop_phase_claim(
         .to_vec();
     // A phase with nothing to prove is checked by `known();`, as its
     // expansion by location writes it: a `by` block holds at least one tactic.
-    let tactics = if tactics.is_empty() {
+    let tactics = if tactics.is_empty() && phase != "otherwise" {
         vec![ProofTactic::Known]
     } else {
         tactics
@@ -921,7 +922,14 @@ fn expand_loop_phase_claim(
         source_spans: file.source_spans().clone(),
     };
     let (span, replacement) = located.replacement(click_source, &tactics)?;
-    let replacement = indent_replacement(click_source, span.start, &replacement);
+    let replacement = if phase == "otherwise" {
+        replacement
+            .strip_prefix("by ")
+            .expect("expanded proof begins with by")
+    } else {
+        &replacement
+    };
+    let replacement = indent_replacement(click_source, span.start, replacement);
     let expanded = splice_source(click_source, &tokens, &span, &replacement);
     let source = match project {
         Some(project) => {
@@ -949,10 +957,11 @@ fn expand_loop_phase_claim(
 
 /// The phase keyword a loop phase label spells, as a static name.
 fn loop_phase_keyword(phase: &str) -> &'static str {
-    if phase == "initialize" {
-        "initialize"
-    } else {
-        "maintain"
+    match phase {
+        "initialize" => "initialize",
+        "maintain" => "maintain",
+        "otherwise" => "otherwise",
+        _ => unreachable!("unknown loop phase"),
     }
 }
 
@@ -4311,7 +4320,7 @@ fn claim_source_regions(
     }
     if scope == ClaimLocationScope::Innermost {
         for tactic in written_loop_tactics(click_source, &tokens, file)? {
-            for phase in ["initialize", "maintain"] {
+            for phase in ["initialize", "maintain", "otherwise"] {
                 let (Some(keyword), edit) = written_loop_phase(&tokens, &tactic, phase)? else {
                     continue;
                 };
@@ -5813,6 +5822,17 @@ fn collect_tactic_block_spans<'t>(
                             })?;
                         collect_nested_proof_spans(tokens, phase_clause, proof, spans)?;
                     }
+                }
+                if let Some(body) = clause.otherwise_proof().and_then(SourceProof::tactics) {
+                    let (_, phase) =
+                        tokens
+                            .loop_phase(&token_range, "otherwise")
+                            .ok_or_else(|| {
+                                ClickError::new(
+                                    "parsed loop has an otherwise block with no source span",
+                                )
+                            })?;
+                    collect_tactic_block_spans(tokens, phase.start, phase.last, body, spans)?;
                 }
             }
             _ => {}

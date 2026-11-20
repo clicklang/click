@@ -21,3 +21,11 @@ const unsigned char* std::vector<unsigned char>::data() const {
     ensures state.data == old(state.data);
     ensures result == state.data;
 }
+
+const unsigned char& std::vector<unsigned char>::operator[](unsigned long index) const {
+    owns state: vector_state(this);
+    requires index < state.length;
+    ensures state.length == old(state.length);
+    ensures state.data == old(state.data);
+    ensures &result == state.data + index;
+}

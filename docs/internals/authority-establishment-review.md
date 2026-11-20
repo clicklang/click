@@ -208,11 +208,10 @@ it. Other wrapper bodies remain future work.
 
 The intended resource expression remains `authority(reference(p))`, composed
 using ordinary `owns`, `consumes`, and `produces`. No new keyword is selected.
-The existing `construct` operation creates abstract tokens under an outcome
-contract; it does not establish the lifetime or registration evidence above.
-The proposed reuse of `construct` has not been adopted. The selected source
-operations are `fold(authority(reference(p)))` for empty establishment and
-`unfold(authority(reference(p)))` for zero-count retirement. These reuse the
+Folding an ordinary abstract token uses an outcome contract's `constructs`
+clause. Population authority uses its own lifetime and registration rules.
+Use `fold(authority(reference(p)))` to establish an empty population and
+`unfold(authority(reference(p)))` to retire one with zero members. These reuse the
 existing tactic syntax and record a dedicated checked certificate event.
 Ordinary `fold(control(p))`, `open(control(p))`, and `unfold(control(p))` now use
 the checked resource-body exchange for the restricted shape above; folding

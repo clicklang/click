@@ -118,7 +118,7 @@ pub(crate) fn parse_loop_phase_claim_label<'a>(
 ) -> Option<(usize, &'a str)> {
     let rest = label.strip_prefix(owner)?.strip_prefix(".loop(")?;
     let (loop_index, phase) = rest.split_once(").")?;
-    matches!(phase, "initialize" | "maintain")
+    matches!(phase, "initialize" | "maintain" | "otherwise")
         .then_some(())
         .and(loop_index.parse().ok())
         .map(|loop_index| (loop_index, phase))

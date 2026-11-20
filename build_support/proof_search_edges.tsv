@@ -173,9 +173,10 @@ src/surface/proof/driver/theorems.rs	driver	ProofDriver::apply_theorem_applicati
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_theorem_application_obligations	driver	2
 src/surface/proof/driver/theorems.rs	driver	ProofDriver::prove_theorem_application_obligations	try_solve_closure	1
 src/surface/proof/driver/theorems.rs	operation	ProofDriver::apply_theorem_application	select_theorem_application_step	1
-src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_initialization_body	driver	4
-src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_initialization_body	try_solve_closure	2
-src/surface/proof/execution_planning/loop_planning.rs	mixed	::verify_loop_initialization_pure_proof	driver	3
+src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_loop_phase_goal	driver	4
+src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_loop_phase_goal	try_solve_closure	2
+src/surface/proof/execution_planning/loop_planning.rs	mixed	::check_loop_phase_have	driver	1
+src/surface/proof/execution_planning/loop_planning.rs	mixed	::verify_loop_initialization_pure_proof	driver	2
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::verify_one_loop_preservation_proof	driver	3
 src/surface/proof/execution_planning/loop_planning.rs	mixed	::verify_one_loop_preservation_proof	try_solve_closure_with_surfaces	1
 src/surface/proof/fixed_state_proofs/fact_transport.rs	mixed	::plan_explicit_fact_transport	derive_proposition	2

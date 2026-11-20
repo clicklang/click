@@ -18,6 +18,7 @@ fn loop_return_closer_routing_scales_with_certificate_size() {
                 items: Vec::new(),
                 resources: Vec::new(),
                 initialize_proof: None,
+                otherwise_proof: None,
                 preserve_proof: Some(Box::new(
                     ProofCertificate::from_steps(vec![ProofStep::Step]).unwrap(),
                 )),

@@ -36,7 +36,7 @@ int32 pack(int32 n) {
     produces wrapped(result);
 } by {
     step_until(function.exit);
-    construct(pair(result, result));
+    fold(pair(result, result));
     fold(wrapped(result));
 }
 ```

@@ -2182,7 +2182,7 @@ fn resource_fields_reject_counting_and_unimplemented_instance_operations() {
             "{clause}"
         );
     }
-    for tactic in ["fold", "unfold", "observe", "construct"] {
+    for tactic in ["fold", "unfold", "observe"] {
         let source = format!(
             "{declaration} int32 f(int32* p) {{ ensures result == 0 by {{ {tactic}(cell(p)); }} }}"
         );

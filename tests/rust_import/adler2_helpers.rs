@@ -2768,7 +2768,7 @@ fn charon_adler2_public_checksum_tools_recheck_original_contracts() {
     // checks the expanded proofs. Avoid a duplicate original verification.
     assert_cli(&p, &["profile"]);
     let offset = source
-        .find("have to_integer(__rust_mir_0) == old(adler_spec_checksum_u64(data")
+        .find("have to_integer(statement(2).call(0).result) == old(adler_spec_checksum_u64(data")
         .unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
@@ -3217,7 +3217,7 @@ fn check_public_boundary_tools(lengths: &[usize]) {
         // body; the focused ordinary tests only select the four API bodies.
         assert_cli(&p, &["profile"]);
         let needle = format!(
-            "have to_integer(__rust_mir_0) == old(adler_spec_checksum_u64(data, {length}u64"
+            "have to_integer(statement(2).call(0).result) == old(adler_spec_checksum_u64(data, {length}u64"
         );
         let offset = source.find(&needle).unwrap();
         let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;

@@ -36,18 +36,19 @@ impl adler2::Adler32 {
      have loop(2).iter.v.len() == 0u64 by { known(); }
      have loop(2).iter.v == old(bytes) + 4u64 by { known(); }
      step_until(loop(2).statement(1).entry);
-     have __rust_mir_68.0[0] == old((bytes[0] as u32));
-     have to_integer(__rust_mir_68.0[0]) <= 255;
+     // The four lanes of the written val binding are uint32 cells.
      have to_integer(a_vec.0[0]) == 0;
-     have __rust_mir_68.0[1] == old((bytes[1] as u32));
-     have to_integer(__rust_mir_68.0[1]) <= 255;
+     have load<uint32>(val) == old((bytes[0] as u32));
+     have to_integer(load<uint32>(val)) <= 255;
      have to_integer(a_vec.0[1]) == 0;
-     have __rust_mir_68.0[2] == old((bytes[2] as u32));
-     have to_integer(__rust_mir_68.0[2]) <= 255;
+     have load<uint32>(val + 4u64) == old((bytes[1] as u32));
+     have to_integer(load<uint32>(val + 4u64)) <= 255;
      have to_integer(a_vec.0[2]) == 0;
-     have __rust_mir_68.0[3] == old((bytes[3] as u32));
-     have to_integer(__rust_mir_68.0[3]) <= 255;
+     have load<uint32>(val + 8u64) == old((bytes[2] as u32));
+     have to_integer(load<uint32>(val + 8u64)) <= 255;
      have to_integer(a_vec.0[3]) == 0;
+     have load<uint32>(val + 12u64) == old((bytes[3] as u32));
+     have to_integer(load<uint32>(val + 12u64)) <= 255;
      step_until(loop(2).statement(2).entry);
      have a_vec.0[0] == old((bytes[0] as u32));
      have to_integer(a_vec.0[0]) <= 255 by { known(); }

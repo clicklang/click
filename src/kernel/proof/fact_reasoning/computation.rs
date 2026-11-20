@@ -11,10 +11,11 @@ use crate::kernel::{
     constant_i64, constant_u32, constant_u64, int32_constant, int64_constant, uint64_constant,
 };
 
-/// Whether this atomic goal is true by direct computation alone. Connective
-/// goals belong to the caller's structural walk; implications and quantifiers
-/// require their ordinary proof steps even when their bodies are trivial.
+/// Whether this leaf is true by direct computation alone. A negated
+/// connective can be checked here as a leaf of the caller's structural walk.
+/// Implications and quantifiers still require their ordinary proof steps.
 pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
+    let negated = matches!(goal, Proposition::Not(_));
     let mut goal = goal;
     let mut expected = true;
     while let Proposition::Not(body) = goal {
@@ -22,6 +23,48 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
         expected = !expected;
         goal = body;
     }
+    if negated && matches!(goal, Proposition::And(..) | Proposition::Or(..)) {
+        return computes_connective(goal, expected);
+    }
+    computes_atom(goal, expected)
+}
+
+/// Check the requested polarity of the explicit connective tree. Each
+/// connective either needs both sides or can stop at the first decisive
+/// side. An atom with unknown truth supplies neither polarity.
+fn computes_connective(root: &Proposition, expected: bool) -> bool {
+    enum Task<'a> {
+        Visit(&'a Proposition, bool),
+        VisitRightIf(&'a Proposition, bool, bool),
+    }
+    let mut tasks = vec![Task::Visit(root, expected)];
+    let mut proved = false;
+    while let Some(task) = tasks.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match task {
+            Task::Visit(Proposition::Not(body), expected) => {
+                tasks.push(Task::Visit(body, !expected));
+            }
+            Task::Visit(
+                side @ (Proposition::And(left, right) | Proposition::Or(left, right)),
+                expected,
+            ) => {
+                let needs_both = matches!(side, Proposition::And(..)) == expected;
+                tasks.push(Task::VisitRightIf(right, expected, needs_both));
+                tasks.push(Task::Visit(left, expected));
+            }
+            Task::Visit(atom, expected) => proved = computes_atom(atom, expected),
+            Task::VisitRightIf(right, expected, needs_both) => {
+                if proved == needs_both {
+                    tasks.push(Task::Visit(right, expected));
+                }
+            }
+        }
+    }
+    proved
+}
+
+fn computes_atom(goal: &Proposition, expected: bool) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     let value = match goal {
         Proposition::ConditionIs(condition, truth) => {
@@ -210,6 +253,9 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             left,
             right,
         } => {
+            if let Some(answer) = known_int32_match_comparison_value(condition) {
+                return Some(answer);
+            }
             if left == right {
                 return Some(matches!(
                     relation,
@@ -296,6 +342,38 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
         // compare unequal even when both operands have the same identity.
         _ => None,
     }
+}
+
+pub(super) fn known_int32_match_comparison_value(condition: &ConditionTerm) -> Option<bool> {
+    use crate::kernel::proof::term_rewrite::TermRewrite;
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    let reduced_left = TermRewrite::reduce_known_int32_match(left);
+    let reduced_right = TermRewrite::reduce_known_int32_match(right);
+    if reduced_left.is_none() && reduced_right.is_none() {
+        return None;
+    }
+    let left = reduced_left.as_ref().unwrap_or(left);
+    let right = reduced_right.as_ref().unwrap_or(right);
+    let ordering = if left == right {
+        std::cmp::Ordering::Equal
+    } else {
+        (left.as_const()? as i32).cmp(&(right.as_const()? as i32))
+    };
+    Some(match relation {
+        CompareRelation::Equal => ordering.is_eq(),
+        CompareRelation::LessThan => ordering.is_lt(),
+        CompareRelation::LessEqual => !ordering.is_gt(),
+        CompareRelation::GreaterThan => ordering.is_gt(),
+        CompareRelation::GreaterEqual => !ordering.is_lt(),
+    })
 }
 
 fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<bool> {

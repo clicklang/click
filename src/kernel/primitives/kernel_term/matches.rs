@@ -96,6 +96,18 @@ impl KernelMatchArm {
 }
 
 impl KernelMatch {
+    pub(crate) fn has_simple_int32_arms(&self) -> bool {
+        self.result_type == KernelType::Program(ProgramType::Int32)
+            && self
+                .arms
+                .iter()
+                .zip(&self.arguments[1..])
+                .all(|(arm, body)| {
+                    MachineOperandView::Shared(body).literal().is_some()
+                        || arm.bindings.iter().any(|binding| binding == body)
+                })
+    }
+
     pub(crate) fn into_term(self) -> KernelTerm {
         KernelTerm::intern(self.result_type.clone(), KernelTermNode::Match(self))
     }

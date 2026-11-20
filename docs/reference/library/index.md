@@ -6359,7 +6359,9 @@ types it maps to them. The model accessors `std_span_data`,
 
 The `click::cpp::vector_state::vector_state` resource records an existing
 byte vector's length and backing address. `size()`, `empty()`, and
-`data()` preserve it. A caller that reads the elements needs authority
+`data()` preserve it. Const `operator[]` preserves it too and returns a
+reference at the given byte offset when the index is less than the length.
+A caller that reads through the reference needs authority
 over the initialized byte range. The pinned libstdc++ fixture declares a
 byte-range resource in the sidecar, holds it alongside `vector_state(&bytes)`,
 and relates their `data` and `length` fields in the caller's contract. It
@@ -6368,7 +6370,8 @@ again afterward.
 
 **Verified use:** [C++ importer tests](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs)
 check the catalog calls. The [pinned libstdc++ tests](https://github.com/clicklang/click/blob/master/tests/bitcoin_core_money_range.rs)
-pass a byte vector's backing storage to a span reader.
+pass a byte vector's backing storage to a span reader and read directly
+through a bounded vector subscript.
 
 ```click
 abstract resource vector_state(vector: const void*) {
@@ -6396,6 +6399,14 @@ const unsigned char* std::vector<unsigned char>::data() const {
     ensures state.length == old(state.length);
     ensures state.data == old(state.data);
     ensures result == state.data;
+}
+
+const unsigned char& std::vector<unsigned char>::operator[](unsigned long index) const {
+    owns state: vector_state(this);
+    requires index < state.length;
+    ensures state.length == old(state.length);
+    ensures state.data == old(state.data);
+    ensures &result == state.data + index;
 }
 ```
 
