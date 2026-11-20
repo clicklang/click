@@ -160,6 +160,13 @@ if [[ "${1:-}" == "--audit" ]]; then
         .
 fi
 
+# The nightly lowering audits: fact stability, enforced, and the raise/lower
+# round trip, tracked (`scripts/lowering-audits.sh`). Each runs the mdtest
+# corpus once, so this is a job of the nightly workflow.
+if [[ "${1:-}" == "--lowering" ]]; then
+    exec scripts/lowering-audits.sh
+fi
+
 gate_started=$SECONDS
 nightly=""
 if [[ "${1:-}" == "--nightly" ]]; then

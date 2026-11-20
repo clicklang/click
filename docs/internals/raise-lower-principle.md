@@ -415,6 +415,19 @@ Baseline (2026-11-16, ordinary mdtest corpus, both runs passing):
   (`p == p` to `true`, 75 records); casts raised differently on the two
   sides of an equality; and reads raised at a neighbouring program point.
 
+Baseline (2026-11-20, ordinary mdtest corpus, both runs passing):
+fact stability 0 `differs`, 0 `paths:N`, 129 `refused`; round trip 76,957
+records, of which 34,508 `same`, 932 `polarity`, 1,076 `differs`, 338
+`unlowered`, 1,650 `unraised` and 38,453 `no-state`. The two runs take about
+18 minutes together.
+
+The nightly workflow's `lowering` job runs both audits
+(`scripts/lowering-audits.sh`). A fact-stability `differs` or `paths:N` line
+fails the nightly report, since it breaks the enforced rule. The round trip
+is tracked instead: the report lists each outcome's count beside the
+previous night's and flags a rise in any outcome but `same`
+([Nightly report](testing.md#nightly-report)).
+
 ## Lowering is structural
 
 A lowered term has the structure of the surface text it lowers: each
