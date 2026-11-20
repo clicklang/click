@@ -1611,6 +1611,26 @@ fn returned_have_transport_expansion_replays_without_search() {
 }
 
 #[test]
+fn returned_byte_across_a_separated_write_expands_to_preserve() {
+    let (source, sources) = mdtest_sources("mdtests/a_separation_from_a_64_bit_range.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let claim = "set_and_read.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(
+        expanded.contains("preserve(memory(bytes[index])"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn memory_observation_after_a_write_expands_and_replays() {
     let (source, sources) = mdtest_sources("mdtests/observe_memory_after_store.md");
     let sources = sources
