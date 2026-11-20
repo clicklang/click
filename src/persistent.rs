@@ -29,6 +29,21 @@ impl<K: Ord + Clone> PersistentComponents<K> {
         key
     }
 
+    pub(crate) fn parent(&self, key: &K) -> Option<&K> {
+        self.parents.get(key)
+    }
+
+    /// The changed links between two snapshots of the union forest.
+    pub(crate) fn parent_changes<'a>(
+        &'a self,
+        newer: &'a Self,
+    ) -> impl Iterator<Item = (&'a K, Option<&'a K>, Option<&'a K>)> + 'a
+    where
+        K: PartialEq,
+    {
+        self.parents.diff(&newer.parents)
+    }
+
     /// Return the surviving root and the absorbed root when two classes join.
     pub(crate) fn join(&mut self, left: &K, right: &K) -> Option<(K, K)> {
         let mut left = self.root(left);

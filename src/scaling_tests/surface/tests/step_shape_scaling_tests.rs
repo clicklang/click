@@ -744,10 +744,16 @@ fn band(work: usize) -> usize {
 
 #[test]
 fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
-    let measure = |size, alias_base, frame_owner| {
+    let measure = |size, alias_base, frame_owners| {
         let run = run(
             |size| {
                 let mut parameters = "int32* p, int32* other".to_string();
+                // Each initialized ownership clause seeds a cached cell.
+                let mut frame = String::new();
+                for i in 0..frame_owners {
+                    parameters += &format!(", int32* frame{i}");
+                    frame += &format!("    owns *frame{i};\n");
+                }
                 let mut requirements = String::new();
                 for i in 0..size {
                     parameters += &format!(", int32* alias{i}");
@@ -758,11 +764,6 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
                 let c = format!(
                     "void caller({parameters}) {{\n    *p = 17;\n    *p = 18;\n    *p = 19;\n    return;\n}}"
                 );
-                let frame = if frame_owner {
-                    "    owns *other;\n"
-                } else {
-                    ""
-                };
                 let click = format!(
                     "verifying \"hunt.c\";\nvoid caller({parameters}) {{\n    owns *p;\n{frame}{requirements}}} by {{ step(); step(); step(); step(); }}"
                 );
@@ -775,11 +776,11 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
     };
     // A 16-alias star already distinguishes the old scan from the indexed
     // check. Keep the larger source probes out of the budgeted gate.
-    for frame_owner in [false, true] {
+    for frame_owners in [0, 1, 8] {
         let samples = [2, 8, 16].map(|size| {
             (
-                measure(size, "p", frame_owner),
-                measure(size, "other", frame_owner),
+                measure(size, "p", frame_owners),
+                measure(size, "other", frame_owners),
             )
         });
         eprintln!("repeated store work with connected and disconnected aliases: {samples:?}");
