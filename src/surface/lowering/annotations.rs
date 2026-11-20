@@ -7899,6 +7899,31 @@ impl AnnotationLowerer<'_> {
                 .get(name)
                 .cloned()
                 .ok_or_else(|| format!("`{name}` is not an algebraic binding in this scope")),
+            // A program's constructor of a `spec enum`, such as the
+            // `List<VarArg>` a variadic C call passes, is that constructor
+            // applied to its fields, each the program value it names.
+            ContractExpression::ProgramExpression(ProgramExpression::EnumConstruct {
+                enum_type,
+                variant,
+                fields,
+            }) => {
+                let algebraic_type = AlgebraicTypeApplication::of_enum_interface_type(
+                    InterfaceType::Parameter(*enum_type),
+                )
+                .ok_or_else(|| "a program constructor of a type that is not a `spec enum`")?;
+                self.lower_contract_algebraic_to_spec(
+                    &ContractExpression::AlgebraicConstructor {
+                        algebraic_type,
+                        variant: variant.clone(),
+                        arguments: fields
+                            .iter()
+                            .cloned()
+                            .map(ContractExpression::ProgramExpression)
+                            .collect(),
+                    },
+                    environment,
+                )
+            }
             ContractExpression::AlgebraicConstructor {
                 algebraic_type,
                 variant,

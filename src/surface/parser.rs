@@ -6528,6 +6528,37 @@ impl Parser {
         }
 
         loop {
+            // `...args`: a C variadic function's variable arguments, one
+            // `List<VarArg>` (`crate::languages::c::variadic`). It is the
+            // last parameter.
+            if self.peek() == Some(&Token::DotDot) && self.peek_next() == Some(&Token::Dot) {
+                self.position += 2;
+                let name = self.expect_ident("variable-argument parameter name after `...`")?;
+                self.implied_library_modules
+                    .insert(crate::languages::c::variadic::STDARG_MODULE);
+                parameters.push(FunctionParameter {
+                    slice_length: None,
+                    click_type: ClickType::Program(InterfaceType::Parameter(
+                        crate::languages::c::variadic::variable_arguments_type(),
+                    )),
+                    name,
+                    struct_name: None,
+                    function_pointer_signature: None,
+                    constant: false,
+                    pointee_constant: false,
+                    reference: false,
+                });
+                if self.peek() != Some(&Token::RParen) {
+                    return Err(self.error("`...args` must be the last parameter"));
+                }
+                return Ok(ParsedParameters {
+                    parameters,
+                    struct_params,
+                    struct_array_params,
+                    reference_params,
+                    declared_loadable_bytes,
+                });
+            }
             // `const std::function<int(int)>& f` or `std::function<int(int)> f`:
             // a callable value, as a function pointer is; so is `unary f` for a
             // C function-pointer typedef.
