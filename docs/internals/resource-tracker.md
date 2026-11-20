@@ -155,6 +155,13 @@ agrees about its block, so equal names mean equal terms. The stop information
 is *computed from the point the walk stopped at* rather than recorded along the
 way, which is why naming pays nothing for it.
 
+For static storage, the memory arena maintains a persistent map from the
+changed block to its version. It extends the map when a derivation is
+recorded, using that edge's named object or checked write set. A barrier
+supplies the default version for the next suffix. When a loaded pointer
+needs the ordinary block rule, the walk starts at that edge and skips the
+suffix already covered by the index.
+
 Naming walks ask their questions in one empty fact context per verification
 session (`naming_context`). It holds no fact, but an alias question still
 registers the queried pointers, and the producer-recorded reads their

@@ -9682,6 +9682,41 @@ impl SharedMemory {
         })
     }
 
+    /// Choose the old block walk's endpoint for static storage, or the
+    /// first edge that the index leaves to that walk.
+    pub(in crate::kernel) fn indexed_static_block_version(
+        &self,
+        block: &AddressBase,
+    ) -> (SharedMemory, bool) {
+        debug_assert!(block.is_static_storage_block());
+        crate::instrumentation::record_deterministic_work(1);
+        C_MEMORY_ARENA.with(|arena| {
+            let arena = arena.borrow();
+            if arena.0 != self.arena {
+                return (self.clone(), true);
+            }
+            let mut start = self;
+            while let Some(index) = &arena.1.static_block_versions[start.id as usize] {
+                if let Some(version) = index.changed.get(block) {
+                    return (version.clone(), true);
+                }
+                start = match &index.anchor {
+                    StaticBlockVersionAnchor::Barrier(memory) => return (memory.clone(), true),
+                    StaticBlockVersionAnchor::Unclassified(memory) => {
+                        return (memory.clone(), false);
+                    }
+                    // A state interned before its derivation may acquire an
+                    // edge later. Reuse the prefix index now installed there.
+                    StaticBlockVersionAnchor::Root(memory) => memory,
+                };
+                if arena.1.static_block_versions[start.id as usize].is_some() {
+                    crate::instrumentation::record_deterministic_work(1);
+                }
+            }
+            (start.clone(), true)
+        })
+    }
+
     /// SymbolicMemory state identity for definedness of a direct automatic object.
     /// A producer updates only the local it stores; every other transition
     /// starts a fresh identity unless it merely forgets cached values.
@@ -10208,6 +10243,8 @@ struct MemoryArena {
     read_identities: Vec<u32>,
     /// Producer-maintained local-object versions; queries never walk history.
     local_definedness_versions: Vec<LocalDefinednessVersions>,
+    /// Block versions follow the same first-recorded edges as derivations.
+    static_block_versions: Vec<Option<StaticBlockVersions>>,
 }
 
 #[derive(Clone)]
@@ -10222,6 +10259,80 @@ impl LocalDefinednessVersions {
             base,
             changed: Default::default(),
         }
+    }
+}
+
+#[derive(Clone)]
+enum StaticBlockVersionAnchor {
+    Root(SharedMemory),
+    Barrier(SharedMemory),
+    /// Loaded pointers can be structurally separate via their stored value.
+    Unclassified(SharedMemory),
+}
+
+#[derive(Clone)]
+struct StaticBlockVersions {
+    anchor: StaticBlockVersionAnchor,
+    changed: crate::persistent::PersistentMap<AddressBase, SharedMemory>,
+}
+
+impl StaticBlockVersions {
+    fn after(previous: Option<&Self>, step: &MemoryDerivation, produced: &SharedMemory) -> Self {
+        use crate::kernel::resource_tracker::step_effect::{
+            BlockVersionEffect, block_version_effect,
+        };
+        let mut versions = previous.cloned().unwrap_or_else(|| Self {
+            anchor: StaticBlockVersionAnchor::Root(step.base().clone()),
+            changed: Default::default(),
+        });
+        match block_version_effect(step) {
+            BlockVersionEffect::Object(block, _) => versions.record_object(block, produced),
+            BlockVersionEffect::WriteSet(ranges) => {
+                for range in ranges {
+                    crate::instrumentation::record_deterministic_work(1);
+                    versions.record_object(&range.base().base, produced);
+                    if matches!(versions.anchor, StaticBlockVersionAnchor::Barrier(ref memory)
+                        if memory.arena_id() == produced.arena_id())
+                    {
+                        break;
+                    }
+                }
+            }
+            BlockVersionEffect::Unchanged => {}
+            BlockVersionEffect::Barrier => versions.end_at(produced, true),
+        }
+        versions
+    }
+
+    fn record_object(&mut self, block: &AddressBase, produced: &SharedMemory) {
+        match block {
+            block if block.is_static_storage_block() => {
+                self.changed.insert(block.clone(), produced.clone());
+            }
+            // These variants are proven distinct from both forms of static
+            // storage (StaticObject and the legacy Concrete names).
+            AddressBase::Concrete(_)
+            | AddressBase::StringLiteral { .. }
+            | AddressBase::Heap(_)
+            | AddressBase::Temporary(_)
+            | AddressBase::AutomaticLocal { .. }
+            | AddressBase::ReferenceCarrier { .. }
+            | AddressBase::SliceLength { .. }
+            | AddressBase::AggregateReturn { .. }
+            | AddressBase::ContractResult
+            | AddressBase::ContractException => {}
+            AddressBase::LoadedPointer(_) => self.end_at(produced, false),
+            _ => self.end_at(produced, true),
+        }
+    }
+
+    fn end_at(&mut self, produced: &SharedMemory, definite: bool) {
+        self.anchor = if definite {
+            StaticBlockVersionAnchor::Barrier(produced.clone())
+        } else {
+            StaticBlockVersionAnchor::Unclassified(produced.clone())
+        };
+        self.changed = Default::default();
     }
 }
 
@@ -10471,6 +10582,11 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
             return;
         }
         let base_id = derivation.base().id;
+        arena.static_block_versions[derived.id as usize] = Some(StaticBlockVersions::after(
+            arena.static_block_versions[base_id as usize].as_ref(),
+            &derivation,
+            &derived,
+        ));
         *slot = Some(derivation);
         arena
             .derived_children
@@ -10667,6 +10783,7 @@ fn intern_memory_with(
             .insert(shallow_identity, (id, content_hash));
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
+        arena.static_block_versions.push(None);
         arena
             .local_definedness_versions
             .push(LocalDefinednessVersions::fresh(id));
