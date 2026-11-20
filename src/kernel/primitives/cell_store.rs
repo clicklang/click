@@ -992,7 +992,7 @@ struct ParameterPartitionIndex {
     unknown_runs: HashedOrdMap<RunKey, ()>,
     run_bases: HashedOrdMap<RunKey, Address>,
     resources: crate::kernel::ResourceContext,
-    known: HashedOrdMap<(Address, Address), ()>,
+    known: HashedOrdMap<Address, HashedOrdMap<Address, ()>>,
     unknown: HashedOrdMap<Address, ()>,
     bases: HashedOrdMap<Address, Address>,
 }
@@ -1013,7 +1013,7 @@ struct PointerReachableIndex {
 
 #[derive(Clone)]
 struct OrderedIndexCache {
-    cells: HashedOrdMap<Address, StoredMemoryValue>,
+    cells: OrderedStoreCells,
     chains: crate::kernel::assumptions::variable_chains::VariableChains,
     block: AddressBase,
     base: AddressOffset,
@@ -1021,6 +1021,71 @@ struct OrderedIndexCache {
     root: Variable,
     known: HashedOrdMap<usize, Address>,
     unknown: HashedOrdMap<Address, ()>,
+}
+
+/// The ordered selector can rank all cells or just the cells left after
+/// ownership selection. The latter holds persistent roots for one owner and
+/// the unclassified cells, so it never diffs the cache of a different owner.
+#[derive(Clone)]
+pub(super) enum OrderedStoreCells {
+    All(HashedOrdMap<Address, StoredMemoryValue>),
+    Partition {
+        owned: HashedOrdMap<Address, ()>,
+        unknown: HashedOrdMap<Address, ()>,
+    },
+}
+
+impl OrderedStoreCells {
+    fn changes_from(&self, previous: &Self) -> Option<Vec<(Address, bool)>> {
+        fn diff<'a, V: PartialEq + 'a>(
+            before: &'a HashedOrdMap<Address, V>,
+            after: &'a HashedOrdMap<Address, V>,
+        ) -> impl Iterator<Item = (Address, bool)> + 'a {
+            before.diff(after).filter_map(|change| match change {
+                HashedOrdMapChange::Added(key) => Some((key.clone(), true)),
+                HashedOrdMapChange::Removed(key) => Some((key.clone(), false)),
+                HashedOrdMapChange::Changed(_) => None,
+            })
+        }
+        match (self, previous) {
+            (Self::All(after), Self::All(before)) => Some(diff(before, after).collect()),
+            (
+                Self::Partition { owned, unknown },
+                Self::Partition {
+                    owned: old_owned,
+                    unknown: old_unknown,
+                },
+            ) => {
+                // A cell that moves between buckets stays selected.
+                let changed: BTreeSet<_> = diff(old_owned, owned)
+                    .chain(diff(old_unknown, unknown))
+                    .map(|(key, _)| key)
+                    .collect();
+                Some(
+                    changed
+                        .into_iter()
+                        .map(|key| {
+                            let held = owned.contains_key(&key) || unknown.contains_key(&key);
+                            (key, held)
+                        })
+                        .collect(),
+                )
+            }
+            _ => None,
+        }
+    }
+
+    fn initial_entries(&self) -> Vec<(Address, bool)> {
+        match self {
+            Self::All(cells) => cells.keys().cloned().map(|key| (key, true)).collect(),
+            Self::Partition { owned, unknown } => owned
+                .keys()
+                .chain(unknown.keys())
+                .cloned()
+                .map(|key| (key, true))
+                .collect(),
+        }
+    }
 }
 
 impl Clone for CellStore {
@@ -1097,6 +1162,27 @@ struct SlotAt<'a> {
     index: u32,
 }
 
+fn collect_cells_outside_gaps(
+    cells: &HashedOrdMap<Address, ()>,
+    gaps: &[(Address, Address)],
+    selected: &mut Vec<Address>,
+) {
+    let mut start = Bound::Unbounded;
+    for (low, high) in gaps {
+        selected.extend(
+            cells
+                .range((start, Bound::Excluded(low.clone())))
+                .map(|(key, _)| key.clone()),
+        );
+        start = Bound::Excluded(high.clone());
+    }
+    selected.extend(
+        cells
+            .range((start, Bound::Unbounded))
+            .map(|(key, _)| key.clone()),
+    );
+}
+
 impl CellStore {
     /// Index checked whole-cell membership in an atomic parameter partition.
     /// Follow persistent cell deltas; unrelated members are not queried at
@@ -1109,6 +1195,7 @@ impl CellStore {
         candidates: &AliasCandidates,
         gap_kept: &[(Address, Address)],
         assumptions: &PureFactContext,
+        authorized: Option<&crate::kernel::MemoryRange>,
     ) -> Option<(Vec<Address>, Vec<RunKey>)> {
         if crate::kernel::reasoning::store_gap::store_gap_skip_disabled()
             || crate::kernel::assumptions::implicit_consulted_premises_capturing()
@@ -1116,42 +1203,57 @@ impl CellStore {
         {
             return None;
         }
-        let (resources, write_base) = assumptions.parameter_store_partition(pointer, bytes)?;
-        let alias_bases = assumptions.parameter_store_alias_bases(&write_base)?;
+        let (resources, alias_bases) = if let Some(range) = authorized {
+            let (resources, base) =
+                assumptions.checked_parameter_store_partition(pointer, bytes, range)?;
+            (resources, BTreeSet::from([base]))
+        } else {
+            let (resources, base) = assumptions.parameter_store_partition(pointer, bytes)?;
+            (resources, assumptions.parameter_store_alias_bases(&base)?)
+        };
         self.prepare_parameter_partition(resources);
         let guard = self.parameter_partition_index.lock().unwrap();
         let index = guard.as_ref().expect("prepared parameter partition");
-        let mut selected = candidates
-            .entries(&index.unknown)
-            .map(|(key, _)| key.clone())
-            .collect::<Vec<_>>();
         let ordinary = candidates.excluding_external_arguments();
         let mut runs = candidates
             .entries(&index.unknown_runs)
             .map(|(key, _)| key.clone())
             .chain(ordinary.entries(&self.runs).map(|(key, _)| key.clone()))
             .collect::<Vec<_>>();
-        for base in alias_bases {
-            if let Some(keys) = index.known_runs.get(&base) {
+        for base in &alias_bases {
+            if let Some(keys) = index.known_runs.get(base) {
                 runs.extend(keys.iter().cloned());
             }
-            let mut start = Bound::Included((base.clone(), Address::null()));
-            for (low, high) in gap_kept {
-                selected.extend(
-                    index
-                        .known
-                        .range((start, Bound::Excluded((base.clone(), low.clone()))))
-                        .map(|((_, key), _)| key.clone()),
-                );
-                start = Bound::Excluded((base.clone(), high.clone()));
+        }
+        if authorized.is_some() {
+            let base = alias_bases.first().expect("one checked owner");
+            let owned = index.known.get(base).cloned().unwrap_or_default();
+            let unknown = index.unknown.clone();
+            drop(guard);
+            let domain = OrderedStoreCells::Partition {
+                owned: owned.clone(),
+                unknown: unknown.clone(),
+            };
+            let selected = self
+                .ordered_store_candidates(pointer, bytes, candidates, assumptions, Some(domain))
+                .unwrap_or_else(|| {
+                    let mut selected = candidates
+                        .entries(&unknown)
+                        .map(|(key, _)| key.clone())
+                        .collect();
+                    collect_cells_outside_gaps(&owned, gap_kept, &mut selected);
+                    selected
+                });
+            return Some((selected, runs));
+        }
+        let mut selected = candidates
+            .entries(&index.unknown)
+            .map(|(key, _)| key.clone())
+            .collect();
+        for base in alias_bases {
+            if let Some(cells) = index.known.get(&base) {
+                collect_cells_outside_gaps(cells, gap_kept, &mut selected);
             }
-            selected.extend(
-                index
-                    .known
-                    .range((start, Bound::Unbounded))
-                    .take_while(|((known_base, _), _)| *known_base == base)
-                    .map(|((_, key), _)| key.clone()),
-            );
         }
         Some((selected, runs))
     }
@@ -1201,15 +1303,10 @@ impl CellStore {
                     if let Some(runs) = index.known_runs.get(&base) {
                         run_changes.extend(runs.iter().cloned());
                     }
-                    for ((_, key), _) in index
-                        .known
-                        .range((
-                            Bound::Included((base.clone(), Address::null())),
-                            Bound::Unbounded,
-                        ))
-                        .take_while(|((root, _), _)| *root == base)
-                    {
-                        changes.insert(key.clone(), self.concrete.contains_key(key));
+                    if let Some(cells) = index.known.get(&base) {
+                        for key in cells.keys() {
+                            changes.insert(key.clone(), self.concrete.contains_key(key));
+                        }
                     }
                 }
                 // Unknown cells need a new membership check after a new
@@ -1244,7 +1341,13 @@ impl CellStore {
         for (key, present) in changes {
             crate::instrumentation::record_deterministic_work(1);
             if let Some(base) = index.bases.get(&key).cloned() {
-                index.known.remove(&(base, key.clone()));
+                let mut cells = index.known.get(&base).expect("indexed cell root").clone();
+                cells.remove(&key);
+                if cells.is_empty() {
+                    index.known.remove(&base);
+                } else {
+                    index.known.insert(base, cells);
+                }
                 index.bases.remove(&key);
             }
             index.unknown.remove(&key);
@@ -1257,7 +1360,9 @@ impl CellStore {
                 &key,
                 crate::kernel::reasoning::cell_access_byte_width(value.native()),
             ) {
-                index.known.insert((base.clone(), key.clone()), ());
+                let mut cells = index.known.get(&base).cloned().unwrap_or_default();
+                cells.insert(key.clone(), ());
+                index.known.insert(base.clone(), cells);
                 index.bases.insert(key, base);
             } else {
                 index.unknown.insert(key, ());
@@ -1571,12 +1676,13 @@ impl CellStore {
         Some(visited)
     }
 
-    pub(in crate::kernel) fn ordered_store_candidates(
+    pub(super) fn ordered_store_candidates(
         &self,
         pointer: &Address,
         bytes: u32,
         candidates: &AliasCandidates,
         assumptions: &PureFactContext,
+        domain: Option<OrderedStoreCells>,
     ) -> Option<Vec<Address>> {
         use crate::kernel::assumptions::variable_chains::array_index;
         if bytes == 0
@@ -1594,7 +1700,7 @@ impl CellStore {
         }
         let span = assumptions.signed_variable_chains.span(variable)?;
         let mut guard = self.ordered_index.lock().unwrap();
-        let mut index = guard.take().filter(|index| {
+        let index = guard.take().filter(|index| {
             index.block == pointer.base
                 && index.base == *base
                 && index.stride == stride
@@ -1603,33 +1709,32 @@ impl CellStore {
                     .chains
                     .shares_sources(&assumptions.signed_variable_chains)
         });
-        let mut changes = Vec::new();
-        if let Some(previous) = &index {
-            for change in previous.cells.diff(&self.concrete) {
-                match change {
-                    super::persistent_map::HashedOrdMapChange::Added(key) => {
-                        changes.push((key.clone(), true))
-                    }
-                    super::persistent_map::HashedOrdMapChange::Removed(key) => {
-                        changes.push((key.clone(), false))
-                    }
-                    super::persistent_map::HashedOrdMapChange::Changed(_) => {}
-                }
+        let domain = domain.unwrap_or_else(|| OrderedStoreCells::All(self.concrete.clone()));
+        let previous_changes = index
+            .as_ref()
+            .and_then(|previous| domain.changes_from(&previous.cells));
+        let (mut index, changes) = match (index, previous_changes) {
+            (Some(mut index), Some(changes)) => {
+                index.cells = domain;
+                (index, changes)
             }
-        } else {
-            changes.extend(self.concrete.keys().cloned().map(|key| (key, true)));
-            index = Some(OrderedIndexCache {
-                cells: self.concrete.clone(),
-                chains: assumptions.signed_variable_chains.clone(),
-                block: pointer.base.clone(),
-                base: base.clone(),
-                stride,
-                root: span.root,
-                known: HashedOrdMap::new(),
-                unknown: HashedOrdMap::new(),
-            });
-        }
-        let mut index = index.unwrap();
+            _ => {
+                let changes = domain.initial_entries();
+                (
+                    OrderedIndexCache {
+                        cells: domain,
+                        chains: assumptions.signed_variable_chains.clone(),
+                        block: pointer.base.clone(),
+                        base: base.clone(),
+                        stride,
+                        root: span.root,
+                        known: HashedOrdMap::new(),
+                        unknown: HashedOrdMap::new(),
+                    },
+                    changes,
+                )
+            }
+        };
         for (key, added) in changes {
             crate::instrumentation::record_deterministic_work(1);
             let rank =
@@ -1652,7 +1757,6 @@ impl CellStore {
                 index.unknown.remove(&key);
             }
         }
-        index.cells = self.concrete.clone();
         let low_distance =
             (crate::kernel::MAX_SCALAR_ACCESS_BYTES as u64).div_ceil(stride as u64) as usize;
         let high_distance = u64::from(bytes).div_ceil(stride as u64) as usize;

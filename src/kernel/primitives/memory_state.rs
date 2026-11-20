@@ -5659,7 +5659,7 @@ impl SymbolicMemory {
     ) -> Self {
         let base = intern_derivation_base(&mut self);
         if let Some((mut prepared, lost_knowledge)) =
-            self.prepare_store_cache(&pointer, 1, assumptions)
+            self.prepare_store_cache(&pointer, 1, assumptions, None)
         {
             if lost_knowledge {
                 prepared.mark_forgotten_from(&base);
@@ -5703,7 +5703,7 @@ impl SymbolicMemory {
         let base = intern_derivation_base(&mut self);
         let context = PureFactContext::new();
         if let Some((mut prepared, lost_knowledge)) =
-            self.prepare_store_cache(destination, bytes, &context)
+            self.prepare_store_cache(destination, bytes, &context, None)
         {
             if lost_knowledge {
                 prepared.mark_forgotten_from(&base);
@@ -6789,7 +6789,7 @@ impl SymbolicMemory {
         value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
-        self.store_with_effective_type(pointer, value.into(), context, None, false)
+        self.store_with_effective_type(pointer, value.into(), context, None, false, None)
     }
 
     /// [`Self::store_with_context`] for a C store through an lvalue of
@@ -6805,7 +6805,7 @@ impl SymbolicMemory {
         context: &PureFactContext,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
-        self.store_with_effective_type(pointer, value.into(), context, Some(class), true)
+        self.store_with_effective_type(pointer, value.into(), context, Some(class), true, None)
     }
 
     /// Apply a program store and its cache invalidation as one transition.
@@ -6815,11 +6815,18 @@ impl SymbolicMemory {
         value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
-        self.store_with_effective_type(pointer, value.into(), context, None, true)
+        self.store_with_effective_type(pointer, value.into(), context, None, true, None)
     }
 
     pub(in crate::kernel) fn store_retained(self, pointer: Address, value: ExecutionValue) -> Self {
-        self.store_with_effective_type(pointer, value.into(), &PureFactContext::new(), None, false)
+        self.store_with_effective_type(
+            pointer,
+            value.into(),
+            &PureFactContext::new(),
+            None,
+            false,
+            None,
+        )
     }
 
     pub(in crate::kernel) fn store_retained_with_context(
@@ -6828,7 +6835,7 @@ impl SymbolicMemory {
         value: ExecutionValue,
         context: &PureFactContext,
     ) -> Self {
-        self.store_with_effective_type(pointer, value.into(), context, None, false)
+        self.store_with_effective_type(pointer, value.into(), context, None, false, None)
     }
 
     pub(in crate::kernel) fn store_retained_classed_with_context(
@@ -6837,8 +6844,16 @@ impl SymbolicMemory {
         value: ExecutionValue,
         context: &PureFactContext,
         class: Option<crate::kernel::effective_type::CAccessClass>,
+        authorized_range: Option<&MemoryRange>,
     ) -> Self {
-        self.store_with_effective_type(pointer, value.into(), context, Some(class), true)
+        self.store_with_effective_type(
+            pointer,
+            value.into(),
+            context,
+            Some(class),
+            true,
+            authorized_range,
+        )
     }
 
     fn store_with_effective_type(
@@ -6848,6 +6863,7 @@ impl SymbolicMemory {
         context: &PureFactContext,
         effective_type: Option<Option<crate::kernel::effective_type::CAccessClass>>,
         invalidate_aliases: bool,
+        authorized_range: Option<&MemoryRange>,
     ) -> Self {
         crate::kernel::debug_assert_widths(
             "a stored value",
@@ -6861,7 +6877,7 @@ impl SymbolicMemory {
             || !self.union_cells.is_empty()
             || !self.heap.initialized.partial_map().is_empty())
             && let Some((mut prepared, lost_knowledge)) =
-                self.prepare_store_cache(&pointer, value.byte_width(), context)
+                self.prepare_store_cache(&pointer, value.byte_width(), context, authorized_range)
         {
             if lost_knowledge {
                 prepared.mark_forgotten_from(&base);
@@ -7778,7 +7794,7 @@ impl SymbolicMemory {
         let mut source = self.clone();
         let base = intern_derivation_base(&mut source);
         let Some((mut memory, lost_knowledge)) =
-            source.prepare_store_cache(pointer, bytes, assumptions)
+            source.prepare_store_cache(pointer, bytes, assumptions, None)
         else {
             return source;
         };
@@ -7802,6 +7818,7 @@ impl SymbolicMemory {
         pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
+        authorized_range: Option<&MemoryRange>,
     ) -> Option<(Self, bool)> {
         let normalized_pointer = Address {
             base: pointer.base.clone(),
@@ -7990,10 +8007,30 @@ impl SymbolicMemory {
                 CachedValueFate::Forgotten
             }
         };
-        let ordered = memory
-            .cells
-            .ordered_store_candidates(&normalized_pointer, bytes, &candidates, assumptions)
-            .map(|cells| (cells, None))
+        let ordered = authorized_range
+            .and_then(|range| {
+                memory.cells.parameter_store_candidates(
+                    &normalized_pointer,
+                    bytes,
+                    &candidates,
+                    &gap_kept,
+                    assumptions,
+                    Some(range),
+                )
+            })
+            .map(|(cells, runs)| (cells, Some(runs)))
+            .or_else(|| {
+                memory
+                    .cells
+                    .ordered_store_candidates(
+                        &normalized_pointer,
+                        bytes,
+                        &candidates,
+                        assumptions,
+                        None,
+                    )
+                    .map(|cells| (cells, None))
+            })
             .or_else(|| {
                 memory
                     .cells
@@ -8003,6 +8040,7 @@ impl SymbolicMemory {
                         &candidates,
                         &gap_kept,
                         assumptions,
+                        None,
                     )
                     .map(|(cells, runs)| (cells, Some(runs)))
             })
