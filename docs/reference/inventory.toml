@@ -1399,6 +1399,10 @@ id = "tactic.fold"
 path = "reference/tactics/index.md#resources-and-transport"
 
 [[item]]
+id = "tactic.release_view"
+path = "reference/tactics/index.md#releasing-a-view"
+
+[[item]]
 id = "tactic.construct"
 path = "reference/tactics/index.md#resources-and-transport"
 
@@ -1454,6 +1458,9 @@ path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.fold-resource"
 path = "reference/tactics/index.md#resources-and-transport"
+[[item]]
+id = "tactic-form.release-view"
+path = "reference/tactics/index.md#releasing-a-view"
 [[item]]
 id = "tactic-form.unfold-slot"
 path = "reference/tactics/index.md#resources-and-transport"
@@ -1544,6 +1551,13 @@ path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.normalize-using"
 path = "reference/tactics/index.md#proposition-reasoning"
+[[item]]
+id = "tactic.order_chain"
+path = "reference/tactics/index.md#signed-order-chains"
+
+[[item]]
+id = "tactic-form.order-chain"
+path = "reference/tactics/index.md#signed-order-chains"
 [[item]]
 id = "tactic-form.intro"
 path = "reference/tactics/index.md#proposition-reasoning"

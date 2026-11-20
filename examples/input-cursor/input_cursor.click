@@ -208,7 +208,7 @@ int32 input_cursor_shared_pipeline(
     ensures right->pos == 0;
     ensures result == data[0];
 } by {
-    step_until(statement(4));
+    step_until(statement(4).entry);
     have separate(memory(*right), memory(left->data[0..left->len])) by {
         solve() using {
             left->len == length;

@@ -5973,7 +5973,7 @@ impl SymbolicMemory {
             element_type,
             first,
             count,
-            source,
+            ProgramPoint::at(&source),
             RunValueMode::Load,
         )
     }
@@ -5999,7 +5999,7 @@ impl SymbolicMemory {
         element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedMemory,
+        source: ProgramPoint,
     ) -> Result<Self, Self> {
         if first >= count {
             return Ok(self);
@@ -6063,7 +6063,7 @@ impl SymbolicMemory {
             element_type,
             0,
             count,
-            source,
+            ProgramPoint::at(&source),
             RunValueMode::Constant(value),
         ))
     }
@@ -6523,12 +6523,12 @@ impl SymbolicMemory {
                             source_base: run.slot_pointer(source_index),
                         },
                     };
-                    captured_runs.push(CellRun::new_with_mode(
+                    captured_runs.push(CellRun::new_at(
                         base.offset_by_bytes(first * element.byte_width()),
                         element.byte_width(),
                         element,
                         length,
-                        run.source().clone(),
+                        run.source_point().clone(),
                         mode,
                         IndexIntervals::default(),
                     ));
@@ -6625,17 +6625,17 @@ impl SymbolicMemory {
         element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedMemory,
+        source: ProgramPoint,
         mode: RunValueMode,
     ) -> Self {
         let mut holes = IndexIntervals::default();
         holes.insert_range(0, first);
-        let probe = CellRun::new_with_mode(
+        let probe = CellRun::new_at(
             base.clone(),
             element_width,
             element_type,
             count,
-            source.clone(),
+            source,
             mode,
             IndexIntervals::default(),
         );
@@ -6735,6 +6735,17 @@ impl SymbolicMemory {
             crate::kernel::cell_run_value(program_type, load)
         };
         self.materialize_named_cell(pointer, value)
+    }
+
+    pub(crate) fn materialize_entry_integer_cell_at(
+        self,
+        pointer: Address,
+        source: &ProgramPoint,
+    ) -> Self {
+        let Some(read) = crate::kernel::eval::observe_entry_integer_cell(source, &pointer) else {
+            return self;
+        };
+        self.materialize_named_cell(pointer, ProgramValue::Int32(read))
     }
 
     /// Cache the canonical value of an already existing cell for a resource
@@ -7712,12 +7723,29 @@ impl SymbolicMemory {
     /// (C11 6.7.9p21 zero-initializes whatever it does not name), or one value
     /// field guaranteed initialized by a checked construction summary. The
     /// cells describe values; this record outlives forgetting those values.
-    pub(in crate::kernel) fn with_initialized_object(
+    pub(in crate::kernel) fn with_initialized_object(self, pointer: &Address, bytes: u32) -> Self {
+        self.record_object_initialization(pointer, bytes, false)
+    }
+
+    /// The checked call has returned four initialized bytes in one local
+    /// cell. Retain its output even if the earlier call initialized it too.
+    pub(in crate::kernel) fn with_initialized_call_word(self, pointer: &Address) -> Self {
+        let word_type = ProgramType::Int32;
+        let width = word_type.byte_width();
+        let call_word = self.blocks.get(&pointer.base).is_some_and(|block| {
+            block.declared_scalar_type == Some(word_type) && block.size().as_const() == Some(width)
+        }) && self.cells.explicitly_stored_value(pointer).is_none()
+            && self.cells.exact_run_slot_type(pointer) == Ok(None);
+        self.record_object_initialization(pointer, width, call_word)
+    }
+
+    fn record_object_initialization(
         mut self,
         pointer: &Address,
         bytes: u32,
+        call_word: bool,
     ) -> Self {
-        if !self.heap.initialized.covers(pointer, bytes) {
+        if call_word || !self.heap.initialized.covers(pointer, bytes) {
             let base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.heap)
                 .initialized
@@ -7728,6 +7756,7 @@ impl SymbolicMemory {
                     base,
                     pointer: pointer.clone(),
                     bytes,
+                    call_word,
                 },
             );
         }

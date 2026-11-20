@@ -67,7 +67,7 @@ int32 read_counter(struct counter *counter) {
     step();
     let { lifetime: mutex_lifetime } = step(pthread_mutex_init, { state: state });
     step();
-    step(keep, {});
+    step(keep);
     unfold(state);
     step();
     fold(state);

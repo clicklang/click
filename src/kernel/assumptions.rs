@@ -3950,6 +3950,12 @@ impl PureFactContext {
                     .without_key(key)
             };
             let bucket = memory_reasoning::parameter_alias_bucket(key);
+            if filed {
+                self.equality_graph
+                    .admitted
+                    .numeric_address_connectivity
+                    .mark_pointer_alias_bucket(&bucket);
+            }
             let endpoints = self
                 .equality_graph
                 .admitted
@@ -4899,6 +4905,10 @@ impl PureFactContext {
         self.equality_graph
             .admitted
             .pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
+        self.equality_graph
+            .admitted
+            .numeric_address_connectivity
+            .clear_pointer_alias_marks();
         self.equality_graph.clear_condition_pointer_facts();
         self.equality_graph.reset_closure();
         self.equality_graph.admitted.algebraic_graph_equalities = Default::default();
@@ -5287,10 +5297,12 @@ impl PureFactContext {
                 MachineOperandView::Legacy(endpoint),
             )
         });
-        self.equality_graph
-            .admitted
-            .numeric_address_connectivity
-            .record([(&left_key, left.as_ref()), (&right_key, right.as_ref())]);
+        let admitted = &mut *self.equality_graph.admitted;
+        let pointer_alias_endpoints = &admitted.pointer_alias_endpoints_by_object;
+        admitted.numeric_address_connectivity.record(
+            [(&left_key, left.as_ref()), (&right_key, right.as_ref())],
+            |bucket| pointer_alias_endpoints.contains_key(bucket),
+        );
         for (key, endpoint, other) in [
             (left_key, left.as_ref(), right.as_ref()),
             (right_key, right.as_ref(), left.as_ref()),
@@ -7432,25 +7444,7 @@ impl PureFactContext {
             Proposition::ConditionIs(condition, value) => {
                 self.knows_condition_or_stated_separation(condition.native_compat(), *value)
             }
-            Proposition::ResourceSeparate { left, right } => {
-                let (Resource::Memory(left_range), Resource::Memory(right_range)) =
-                    (left.as_ref(), right.as_ref())
-                else {
-                    return false;
-                };
-                if self.resource_separation_conflicts_with_equalities(left, right) {
-                    return false;
-                }
-                let Some(source) = self.separated_address_classes.exact_spans(
-                    left_range,
-                    right_range,
-                    &self.equality_graph,
-                ) else {
-                    return false;
-                };
-                record_implicit_consulted_premises(self, &source);
-                true
-            }
+            Proposition::ResourceSeparate { .. } => self.states_memory_separation(proposition),
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::ConditionIs(condition, value) => {
                     self.knows_condition_or_stated_separation(condition.native_compat(), !*value)
@@ -7459,6 +7453,31 @@ impl PureFactContext {
             },
             _ => false,
         }
+    }
+
+    /// Read the stated separation for these exact physical byte spans. This
+    /// proves only separation, without transferring either range's authority.
+    pub(crate) fn states_memory_separation(&self, proposition: &Proposition) -> bool {
+        let Proposition::ResourceSeparate { left, right } = proposition else {
+            return false;
+        };
+        let (Resource::Memory(left_range), Resource::Memory(right_range)) =
+            (left.as_ref(), right.as_ref())
+        else {
+            return false;
+        };
+        if self.resource_separation_conflicts_with_equalities(left, right) {
+            return false;
+        }
+        let Some(source) = self.separated_address_classes.exact_spans(
+            left_range,
+            right_range,
+            &self.equality_graph,
+        ) else {
+            return false;
+        };
+        record_implicit_consulted_premises(self, &source);
+        true
     }
 
     fn knows_condition_or_stated_separation(&self, condition: &ConditionTerm, value: bool) -> bool {

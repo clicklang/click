@@ -2307,7 +2307,7 @@ fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
         int32 spin_then() {
             ensures result == 1;
         } by {
-            step_until(region(3));
+            step_until(region(3).entry);
             step_until(function.exit);
             solve();
         }

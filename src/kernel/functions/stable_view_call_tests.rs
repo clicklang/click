@@ -2883,6 +2883,48 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
 }
 
 #[test]
+fn composite_view_body_check_does_not_try_pointer_aliases() {
+    let p = Address::symbolic(Variable(94_100));
+    let q = Address::symbolic(Variable(94_101));
+    let r = Address::symbolic(Variable(94_102));
+    let s = Address::symbolic(Variable(94_103));
+    let equality = |a: &Address, b: &Address| ConditionTerm::address_equal(a.clone(), b.clone());
+    let clause = |pointer: &Address| {
+        Proposition::Implies(
+            Box::new(Proposition::condition_is(equality(pointer, &r), true)),
+            Box::new(Proposition::condition_is(equality(&r, &s), true)),
+        )
+    };
+    let goal = clause(&p);
+    let facts = PureFactContext::new()
+        .assume_condition(equality(&p, &q), true)
+        .assume_proposition(clause(&q));
+    assert!(facts.exact_pointer_aliases(&p).any(|alias| alias == &q));
+    assert!(composite_view_body_fact_is_established(&facts, &clause(&q)));
+    let mut work = Vec::new();
+    for count in [4, 16, 64] {
+        let mut facts = facts.clone();
+        for i in 0..count {
+            let alias = Address::symbolic(Variable(94_200 + i));
+            facts = facts.assume_condition(equality(&p, &alias), true);
+        }
+        // Preparing the generic stated-fact index is a separate cold cost.
+        // Measure whether looking up the fixed clause walks its aliases.
+        facts.build_stated_proposition_index();
+        let (established, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            composite_view_body_fact_is_established(&facts, &goal)
+        });
+        assert!(!established);
+        work.push(cost);
+        assert!(composite_view_body_fact_is_established(
+            &facts.assume_proposition(goal.clone()),
+            &goal,
+        ));
+    }
+    assert!(work.iter().all(|cost| *cost <= work[0] + 16), "{work:?}");
+}
+
+#[test]
 fn refused_composite_assembly_retains_the_failed_source_clause() {
     let always = SpecProposition::Comparison {
         left: SpecExpression::ProgramExpression(crate::kernel::program_expression::int32_literal(
@@ -3068,7 +3110,7 @@ fn returned_hold_installation_uses_the_selected_owner_and_preserves_other_occurr
     let binding = holds[1].binding.clone();
     let first = holds[0].occurrence;
     let second = holds[1].occurrence;
-    let (branch, bindings) = install_returned_composite_hold(
+    let (branch, bindings) = install_returned_view_hold(
         parent.clone(),
         LoanViewBindings::default(),
         holds[1].clone(),

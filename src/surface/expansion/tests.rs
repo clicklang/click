@@ -444,12 +444,12 @@ fn execute_until_in_proof_if_arms_expands_and_rechecks() {
 verifying "identity.c";
 int32 identity(int32 x) { ensures result == x; } by {
     if x == 0 {
-        step_until(region(0));
-        step_until(assignment(y, 0));
+        step_until(region(0).entry);
+        step_until(assignment(y, 0).entry);
         step(); step_until(function.exit); solve();
     } else {
-        step_until(region(0));
-        step_until(assignment(y, 0));
+        step_until(region(0).entry);
+        step_until(assignment(y, 0).entry);
         step(); step_until(function.exit); solve();
     }
 }
@@ -967,7 +967,8 @@ theorem client(xs: List<int32>, ys: List<int32>) {
     let position = c_tactic_source_position(source, &[], "client.ensures_0", 0).unwrap();
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("smart conditional proof expands");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
     verify_c_sources(&expanded, &[]).expect("emitted conditional evidence rechecks");
     assert!(
         verify_c_sources(

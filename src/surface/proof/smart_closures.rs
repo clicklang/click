@@ -4589,8 +4589,8 @@ fn source_backed_call_requirement_surface(
                     binding.binder().to_string(),
                     crate::surface::lowering::InstanceRename {
                         name: binding.instance().to_string(),
-                        identity: binding.binder_identity(),
-                        target_identity: Some(binding.identity()),
+                        identity: binding.binder_identity().instance(),
+                        target_identity: Some(binding.identity().instance()),
                     },
                 )
             })

@@ -1457,12 +1457,13 @@ pub struct ContractResourceArgument {
 pub struct CallBinderBinding {
     /// The callee's binder name, written on the left of the map entry.
     binder: String,
-    /// The identity the callee's own contract gave that binder.
-    binder_identity: InstanceId,
-    /// The caller's instance name.
+    /// The binder number the callee's own contract gave that binder.
+    binder_identity: crate::kernel::ResourceBinderId,
+    /// The caller's resource name.
     instance: String,
-    /// The caller's instance identity.
-    identity: InstanceId,
+    /// The binder number of the caller's resource; the callee's clause for
+    /// `binder` says whether it names an instance or a mutex authority.
+    identity: crate::kernel::ResourceBinderId,
     /// The resource a produced instance is, from the callee's contract;
     /// `None` for an instance the caller supplies.
     family: Option<String>,
@@ -1482,11 +1483,11 @@ impl CallBinderBinding {
         &self.instance
     }
 
-    pub(crate) fn binder_identity(&self) -> InstanceId {
+    pub(crate) fn binder_identity(&self) -> crate::kernel::ResourceBinderId {
         self.binder_identity
     }
 
-    pub(crate) fn identity(&self) -> InstanceId {
+    pub(crate) fn identity(&self) -> crate::kernel::ResourceBinderId {
         self.identity
     }
 
@@ -1651,14 +1652,10 @@ impl std::fmt::Display for CallBinderTransport {
             }
             write!(f, " }} = ")?;
         }
-        if self.named_contract {
-            let entries = self.map_entries();
-            return write!(f, "step({}, {{ {} }})", self.callee, entries.join(", "));
-        }
-        if self.frontier {
+        if self.named_contract || self.frontier {
             let entries = self.map_entries();
             return if entries.is_empty() {
-                write!(f, "step({}, {{}})", self.callee)
+                write!(f, "step({})", self.callee)
             } else {
                 write!(f, "step({}, {{ {} }})", self.callee, entries.join(", "))
             };
@@ -1671,9 +1668,7 @@ impl std::fmt::Display for CallBinderTransport {
             write!(f, "{}", diagnostics::describe_contract_expression(argument))?;
         }
         write!(f, ")")?;
-        // A call step always prints its map, so it never reads as a
-        // named-contract step. A call that lends no instance keeps its empty
-        // map.
+        // An application with written arguments retains its legacy form.
         let entries = self.map_entries();
         if entries.is_empty() {
             write!(f, ", {{}}")?;
@@ -2056,6 +2051,8 @@ pub struct EnsureClause {
     /// A resource ensure desugared from `owns`: the function returns what it
     /// was lent, so the clause is evaluated at entry, not at exit.
     borrowed: bool,
+    /// Source requirement index (before aggregate expansion) selected by `from`.
+    view_source: Option<usize>,
     /// A resource ensure nested in a contract `if`. The condition is a
     /// pre-state proposition; the clause is present in the post-state only
     /// when that proposition is established at the call boundary.
@@ -2275,7 +2272,9 @@ pub struct IteratedResourceClause {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ResourceInstanceBinding {
     name: String,
-    identity: crate::kernel::InstanceId,
+    /// What the binder names comes from its resource: an instance, or a
+    /// mutex authority for a named mutex live, use or guard clause.
+    identity: crate::kernel::ResourceBinderId,
     children: Vec<String>,
     schema: Option<crate::kernel::ResourceFieldSchema>,
     fields: Option<crate::kernel::ResourceFieldValues>,
@@ -2860,6 +2859,7 @@ fn clone_ensure_clause_iteratively(clause: &EnsureClause) -> EnsureClause {
         },
         proof: clause.proof.clone(),
         borrowed: clause.borrowed,
+        view_source: clause.view_source,
         condition: clause.condition.clone(),
     }
 }
@@ -6083,10 +6083,11 @@ pub enum ProofTactic {
     /// the author wrote keep their source indices; indexing unwraps it.
     Synthetic(Box<ProofTactic>),
     SmartExecute,
-    ExecuteUntil(CodeRegionRef),
+    ExecuteUntil(ExecutionPoint),
     UnfoldProposition(ClickProposition),
     UnfoldFunction(ClickFunctionApplication),
     UnfoldResource(ResourceClause),
+    ReleaseView(ResourceClause),
     /// `let { witness: name, ... } = unfold(resource)` on a declared
     /// resource: the unfold, with each named `let ... where` witness of the
     /// opened body bound to a proof name.
@@ -6150,6 +6151,7 @@ pub enum ProofTactic {
     Known,
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
+    OrderChain(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
     Intro,
     /// `let name = intro()`: introduce a universal goal's variable under a
@@ -6257,6 +6259,7 @@ pub enum SimpleTactic {
     Termination,
     Known,
     Normalize,
+    OrderChain,
     Intro,
     Enumerate,
     Contradiction,
@@ -6264,6 +6267,7 @@ pub enum SimpleTactic {
     FactTransport,
     Instantiate,
     FoldResource,
+    ReleaseView,
     ConstructResource,
     IteratedOwnership,
 }
@@ -6439,6 +6443,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "release-view",
+        syntax: "release_view(range)",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "unfold-slot",
         syntax: "unfold(resource(args)[i])",
         class: "simple",
@@ -6571,6 +6580,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "normalize-using",
         syntax: "normalize() using",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "order-chain",
+        syntax: "order_chain() using",
         class: "simple",
     },
     PublicTacticForm {
@@ -6783,6 +6797,7 @@ impl ProofTactic {
             Self::Normalize | Self::NormalizeUsing(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }
+            Self::OrderChain(_) => TacticClass::Simple(SimpleTactic::OrderChain),
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
             Self::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),
@@ -6801,6 +6816,7 @@ impl ProofTactic {
             Self::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
+            Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
             Self::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
             Self::SmartExecute | Self::ExecuteUntil(_) => {
                 TacticClass::smart(SmartTacticKind::Execute)
@@ -7439,9 +7455,6 @@ pub struct ClickFunctionApplication {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum CodeRegionRef {
     Function,
-    /// The function's exit, written `function.exit`. Accepted only by
-    /// `step_until`, which steps there without splitting.
-    FunctionExit,
     Loop(usize),
     /// The `N`th region `step()` crosses: one lowered statement, in
     /// executable preorder. Each call a C statement makes is its own region.
@@ -7455,9 +7468,6 @@ pub enum CodeRegionRef {
     },
     /// A statement with an explicit scalar memory load, in executable preorder.
     Read(usize),
-    /// The current loop preservation region's checked back edge; with a
-    /// loop, written `loop(i).back_edge()`, it must be that loop's.
-    BackEdge(Option<usize>),
     /// A region written as a chain of regions, each inside the one before
     /// it, such as `statement(2).statement(0)` or `statement(3).call(f, 1)`;
     /// it names the atomic regions it resolves to through the function's
@@ -7501,8 +7511,8 @@ pub enum SourcePathStep {
 
 impl CodeRegionRef {
     /// The C code region this written region names, through the one binding
-    /// of each loop label: the structural clause that declared it. Assignment,
-    /// read and back-edge regions name execution targets, not regions.
+    /// of each loop label: the structural clause that declared it. Assignment and
+    /// read selectors are resolved by the execution layout.
     pub(in crate::surface) fn resolve(
         &self,
         structural_clauses: &StructuralClauses,
@@ -7515,16 +7525,10 @@ impl CodeRegionRef {
                 .labelled_region(label)
                 .copied()
                 .ok_or_else(|| CodeRegionResolutionError::UnknownLabel(label.clone())),
-            CodeRegionRef::BackEdge(_) => Err(CodeRegionResolutionError::ExecutionTargetOnly(
-                "back_edge regions are",
-            )),
             CodeRegionRef::Path(_) => Err(CodeRegionResolutionError::StatementRegionTarget),
             CodeRegionRef::Assignment { .. } | CodeRegionRef::Read(_) => Err(
                 CodeRegionResolutionError::ExecutionTargetOnly("assignment and read regions are"),
             ),
-            CodeRegionRef::FunctionExit => Err(CodeRegionResolutionError::ExecutionTargetOnly(
-                "`function.exit` is",
-            )),
         }
     }
 }
@@ -7608,6 +7612,21 @@ pub enum ProgramPointKind {
     /// the memory just after each argument was copied into its parameter
     /// object. Only `R.parameter(name)` reads at it.
     Parameters,
+}
+
+/// A destination for forward execution. A loop back edge selects the
+/// boundary of the current iteration, with an optional check of its loop.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExecutionPoint {
+    ProgramPoint(ProgramPointRef),
+    BackEdge(Option<usize>),
+}
+
+impl ExecutionPoint {
+    pub const FUNCTION_EXIT: Self = Self::ProgramPoint(ProgramPointRef {
+        region: CodeRegionRef::Function,
+        kind: ProgramPointKind::Exit,
+    });
 }
 
 /// `witness(value, ...)`: instantiate the outermost existential binders

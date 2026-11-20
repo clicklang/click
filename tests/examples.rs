@@ -975,7 +975,7 @@ fn rbtree_erase_general_explicit_closers_preserve_ownership() {
 
 /// The general unlink against a copy of `rb_erase_augmented.c` with one
 /// statement replaced, refused with `refusal`. Each mutation keeps the C's
-/// statement count, so the proof's `step_until(statement(...))` positions
+/// statement count, so the proof's `step_until(statement(...).entry)` positions
 /// still name the same statements and the refusal is the exit that depends
 /// on the replaced statement, not a misaligned frontier.
 fn general_erase_refuses_mutation(before: &str, after: &str, refusal: &str) {

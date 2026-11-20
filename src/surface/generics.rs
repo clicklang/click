@@ -866,6 +866,7 @@ pub(super) fn instantiate_theorem_statement(
                     ensure: ensure.ensure.clone(),
                     proof: SourceProof::Default,
                     borrowed: ensure.borrowed,
+                    view_source: ensure.view_source,
                     condition: ensure.condition.clone(),
                 })
                 .collect(),
@@ -996,6 +997,7 @@ fn instantiate_ensure_clause(
             SourceProof::Default
         },
         borrowed: ensure.borrowed,
+        view_source: ensure.view_source,
         condition: ensure
             .condition()
             .map(|condition| {
@@ -1264,6 +1266,12 @@ fn instantiate_proof_tactic(
                 .collect::<Result<Vec<_>, _>>()?,
         ),
         ProofTactic::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(
+            premises
+                .iter()
+                .map(proposition)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        ProofTactic::OrderChain(premises) => ProofTactic::OrderChain(
             premises
                 .iter()
                 .map(proposition)

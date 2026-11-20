@@ -80,6 +80,7 @@ pub enum ProofStep {
         names: Vec<(String, String)>,
     },
     FoldResource(ResourceClause),
+    ReleaseView(ResourceClause),
     Induct {
         parameter: String,
         hypothesis: String,
@@ -118,6 +119,7 @@ pub enum ProofStep {
     Known,
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
+    OrderChain(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
 
     Intro,
@@ -728,6 +730,7 @@ impl ProofStep {
                 names: names.clone(),
             },
             ProofTactic::FoldResource(resource) => Self::FoldResource(resource.clone()),
+            ProofTactic::ReleaseView(resource) => Self::ReleaseView(resource.clone()),
             ProofTactic::ConstructResource(resource) => Self::ConstructResource(resource.clone()),
             ProofTactic::Induct {
                 parameter,
@@ -779,6 +782,7 @@ impl ProofStep {
             ProofTactic::Known => Self::Known,
             ProofTactic::Normalize => Self::Normalize,
             ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
+            ProofTactic::OrderChain(premises) => Self::OrderChain(premises.clone()),
             ProofTactic::ArithmeticUsing(premises) => Self::ArithmeticUsing(premises.clone()),
 
             ProofTactic::Intro => Self::Intro,
@@ -900,6 +904,7 @@ impl ProofStep {
                 names: names.clone(),
             },
             Self::FoldResource(resource) => ProofTactic::FoldResource(resource.clone()),
+            Self::ReleaseView(resource) => ProofTactic::ReleaseView(resource.clone()),
             Self::ConstructResource(resource) => ProofTactic::ConstructResource(resource.clone()),
             Self::Induct {
                 parameter,
@@ -968,6 +973,7 @@ impl ProofStep {
             Self::Known => ProofTactic::Known,
             Self::Normalize => ProofTactic::Normalize,
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
+            Self::OrderChain(premises) => ProofTactic::OrderChain(premises.clone()),
             Self::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(premises.clone()),
 
             Self::Intro => ProofTactic::Intro,
@@ -1196,6 +1202,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         }
         ProofStep::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
         ProofStep::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
+        ProofStep::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
         ProofStep::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
         ProofStep::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
         ProofStep::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
@@ -1212,6 +1219,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => {
             TacticClass::Simple(SimpleTactic::Normalize)
         }
+        ProofStep::OrderChain(_) => TacticClass::Simple(SimpleTactic::OrderChain),
         ProofStep::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
         ProofStep::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),

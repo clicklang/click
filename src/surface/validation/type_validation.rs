@@ -3278,6 +3278,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Known
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
+            | ProofTactic::OrderChain(_)
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
@@ -3352,6 +3353,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::UnfoldResource(_)
             | ProofTactic::UnfoldWitnesses { .. }
             | ProofTactic::FoldResource(_)
+            | ProofTactic::ReleaseView(_)
             | ProofTactic::ConstructResource(_)
             | ProofTactic::Sorry => {
                 return Err(ClickError::new(format!(
@@ -3382,6 +3384,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         | ProofTactic::UnfoldResource(_)
         | ProofTactic::UnfoldWitnesses { .. } => "unfold",
         ProofTactic::FoldResource(_) => "fold",
+        ProofTactic::ReleaseView(_) => "release_view",
         ProofTactic::ConstructResource(_) => "construct",
         ProofTactic::Induct { .. } => "induct",
         ProofTactic::Match(_) => "match",
@@ -3408,6 +3411,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Known => "known",
         ProofTactic::Normalize => "normalize",
         ProofTactic::NormalizeUsing(_) => "normalize",
+        ProofTactic::OrderChain(_) => "order_chain",
         ProofTactic::ArithmeticUsing(_) => "arithmetic",
         ProofTactic::Intro | ProofTactic::IntroAs(_) | ProofTactic::IntroBinder(_) => "intro",
         ProofTactic::Enumerate => "enumerate",

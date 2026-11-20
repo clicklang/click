@@ -254,6 +254,14 @@ pub(super) fn prove_ensure_resource<'e>(
                 lower_at(&published_state).map_err(|_| error)?
             }
         };
+        crate::kernel::check_produced_view_source(
+            checked_execution.function(),
+            &claim_key,
+            entry_state,
+            &expected,
+            &assumptions,
+        )
+        .map_err(ClickError::new)?;
         if expected.iter().all(|expected| {
             post_state
                 .resources()

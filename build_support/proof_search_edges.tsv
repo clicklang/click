@@ -290,7 +290,7 @@ src/surface/proof/smart_closures.rs	presentation	Proof::unsigned_surface_fact	av
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	disequality_by_refutation	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_unsigned_order_step_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_wide_arithmetic_using	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	driver	4
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	driver	6
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_smart_induction	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::available_rewrite_equality	available_surface_fact	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::available_surface_fact	available_surface_fact_raw	1

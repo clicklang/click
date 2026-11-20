@@ -127,10 +127,12 @@ lending the requested subrange and keeping the remainder usable, from the
 caller's own view by a reborrow, from an owned composite by a composite
 lend, and from a different owned composite or the caller's owned frontier
 when the viewed composite's checked expansion is covered piecewise and its
-facts hold at the call. A fact holds by the exact routes a fold uses: a
-quantified fact the caller states matches the body's up to its binder and the
-registered loads that binder indexes.
+facts hold at the call. A quantified fact the caller states matches the
+body's fact up to its binder and the registered loads that binder indexes.
 
+A composite view's body facts are checked in the form lowered at the call.
+When a check misses a fact stated under another pointer spelling, prove
+the required form with `have` and `rewrite` before the call.
 A refused assembly retains the first missing body fact's written clause and
 its call argument bindings. The diagnostic names that clause even when its
 current-state lowering is just `false`; formal names that differ from their

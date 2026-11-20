@@ -21,7 +21,7 @@ verifying "local_reads.c";
 uint8 read(uint8 value) {
     ensures result == value;
 } by {
-    step_until(statement(5));
+    step_until(statement(5).entry);
     mark written;
     step();
     have *p == value by solve();

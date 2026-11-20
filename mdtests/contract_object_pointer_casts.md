@@ -41,7 +41,7 @@ void sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
     ensures (rb_new as (void *) as (struct sized_node *))->size == old((rb_old as (void *) as (struct sized_node *))->size);
     ensures (rb_old as (void *) as (struct sized_node *))->size == old((rb_old as (void *) as (struct sized_node *))->size);
 } by {
-    step_until(statement(2));
+    step_until(statement(2).entry);
     have contains(memory(new->size), memory((&new->size)[0..1])) by { normalize(); }
     have contains(memory(old->size), memory(old->size)) by { apply(click::separation::contains_refl(memory(old->size))); }
     have separate(memory((&new->size)[0..1]), memory(old->size)) by {

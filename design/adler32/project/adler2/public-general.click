@@ -28,13 +28,13 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
  ensures forall (k: uint64) { k < data.len() implies data[k] == old(data[k]) };
  ensures to_integer(result) == old(adler_spec_checksum_u64(data, data.len(), 1, 0));
 } by {
- step_until(assignment(__rust_mir_4, 0));
+ step_until(assignment(__rust_mir_4, 0).entry);
  have h.a == 1 by solve();
  have h.b == 0 by solve();
  have to_integer((h.a as u32)) == 1 by { rewrite(h.a, 1); normalize(); }
  have to_integer((h.b as u32)) == 0 by { rewrite(h.b, 0); normalize(); }
  mark canonical_seed;
- step_until(assignment(__rust_mir_0, 0));
+ step_until(assignment(__rust_mir_0, 0).entry);
  have forall (k: uint64) { k < data.len() implies data[k] == old(data[k]) } by solve();
  have to_integer(h.a) == old(adler_spec_a_u64(data, data.len(), 1)) by {
   rewrite(1, at(canonical_seed, to_integer((h.a as u32))));

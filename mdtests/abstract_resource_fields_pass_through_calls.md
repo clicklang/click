@@ -44,7 +44,7 @@ int32 caller(int32* sq, int32 scale) {
     ensures sq[0] == old(sq[0]);
     ensures result == sq[0] + scale;
 } by {
-    let { o: q } = step(pack, {});
+    let { o: q } = step(pack);
 }
 extern int32 area(int32* self, int32 scale) {
     owns o: obj(self);

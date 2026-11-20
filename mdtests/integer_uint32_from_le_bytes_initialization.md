@@ -35,7 +35,7 @@ void fill(uint8* bytes) {
 uint32 decode() {
     ensures result == 4293820433u32;
 } by {
-    step_until(statement(3));
+    step_until(statement(3).entry);
     have bytes[0] == 17;
     have bytes[1] == 128;
     have bytes[2] == 238;

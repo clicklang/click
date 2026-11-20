@@ -75,7 +75,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     rewrite((node->__rb_parent_color & 1), color_bit(color));
                     rewrite(color, Color::Black); unfold(color_bit(Color::Black)); normalize();
                 }
-                step_until(region(10));
+                step_until(region(10).entry);
                 have parent == parent_model;
                 have ctx_node_is(up.model, parent) == 1;
                 let { links: incoming, frame: outer_frame } = detach_erase_links(node, parent, root, { before: up });
@@ -183,7 +183,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     rewrite((node->__rb_parent_color & 1), color_bit(color));
                     rewrite(color, Color::Red); unfold(color_bit(Color::Red)); normalize();
                 }
-                step_until(region(10));
+                step_until(region(10).entry);
                 have ctx_node_is(up.model, parent) == 1;
                 let { links: incoming, frame: outer_frame } = detach_erase_links(node, parent, root, { before: up });
                 observe(erase_callbacks(augment));

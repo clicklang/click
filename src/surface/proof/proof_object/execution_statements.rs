@@ -741,16 +741,11 @@ impl<'a> Proof<'a> {
             for binding in transport.binders().iter().chain(transport.produced()) {
                 crate::instrumentation::record_deterministic_work(1);
                 crate::kernel::model_fields::register_instance_spelling(
-                    binding.identity(),
+                    binding.identity().instance(),
                     binding.instance(),
                 );
                 if bindings
-                    // The kernel's binding map is keyed by binder number; it
-                    // also carries named mutex-authority binders.
-                    .insert(
-                        binding.binder_identity().variable(),
-                        binding.identity().variable(),
-                    )
+                    .insert(binding.binder_identity(), binding.identity())
                     .is_some()
                 {
                     return Err(self.step_error(format!(
@@ -1008,10 +1003,7 @@ impl<'a> Proof<'a> {
         for binding in application.binders().iter().chain(application.produced()) {
             crate::instrumentation::record_deterministic_work(1);
             if bindings
-                .insert(
-                    binding.binder_identity().variable(),
-                    binding.identity().variable(),
-                )
+                .insert(binding.binder_identity(), binding.identity())
                 .is_some()
             {
                 return Err(self.step_error(format!(

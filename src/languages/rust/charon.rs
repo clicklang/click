@@ -3532,6 +3532,7 @@ pub(super) fn decode_crate(
         let plumbing = adapter.closure_plumbing(body)?;
         let mut names = BTreeMap::new();
         let mut slice_pairs = BTreeMap::new();
+        let mut anonymous_slice_components = BTreeSet::new();
         let mut parameters = Vec::new();
         let mut locals = Vec::new();
         let mut local_names = BTreeSet::new();
@@ -3613,6 +3614,9 @@ pub(super) fn decode_crate(
                     }
                     reserved.insert(component.clone());
                     local_names.insert(component.clone());
+                    if local.name.is_none() {
+                        anonymous_slice_components.insert(component.clone());
+                    }
                     locals.push(out::Place {
                         name: component.clone(),
                         value_type: Type::ByteSlice { mutable: false },
@@ -3804,6 +3808,12 @@ pub(super) fn decode_crate(
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_slice_payloads(&mut locals, &mut blocks, &temporaries);
+        temporaries::bind_copied_slice_elements(&mut locals, &mut blocks, &temporaries);
+        temporaries::bind_split_slice_results(
+            &mut locals,
+            &mut blocks,
+            &anonymous_slice_components,
+        );
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
         temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
         functions.push(out::Function {
@@ -5140,7 +5150,7 @@ mod tests {
             // body's first byte read is one read later.
             let sidecar = include_str!("../../../design/charon-trial/chunks/chunks.click");
             let sidecar = if duplicate {
-                sidecar.replace("step_until(read(1))", "step_until(read(2))")
+                sidecar.replace("step_until(read(1).entry)", "step_until(read(2).entry)")
             } else {
                 sidecar.to_string()
             };

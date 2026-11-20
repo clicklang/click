@@ -8,6 +8,6 @@ fn copy_source_after_call::consume(target: &mut copy_source_after_call::Words, o
 fn copy_source_after_call::caller(value: u32) -> u32 {
  ensures result == value;
  } by {
- step_until(assignment(__rust_mir_14, 0));
+ step_until(assignment(__rust_mir_14, 0).entry);
  have target.0[0] == value;
 }

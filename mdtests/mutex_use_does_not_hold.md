@@ -25,11 +25,11 @@ void need_guard(struct holder *holder) {
 }
 void inner(struct holder *holder) {
     owns mutex_use(&holder->mu);
-} by { step(need_guard, {}); }
+} by { step(need_guard); }
 void keep(struct holder *holder) {
     owns mutex_use(&holder->mu);
 } by {
-    step(inner, {});
+    step(inner);
     step();
     solve();
 }
@@ -39,7 +39,7 @@ int32 run(struct holder *holder) {
     ensures result == 0;
 } by {
     step();
-    step(keep, {});
+    step(keep);
     step();
     step();
     solve();

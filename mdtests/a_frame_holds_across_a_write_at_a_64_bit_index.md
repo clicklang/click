@@ -39,7 +39,7 @@ int32 set_at(struct S* s, uint64 i, int32 v) {
     ensures s->p[i] == v;
     ensures forall (k: uint64) { k < s->e.v and k != i implies s->p[k] == old(s->p[k]) };
 } by {
-    step_until(statement(1));
+    step_until(statement(1).entry);
     have s->p == old(s->p) by { solve(); }
     have s->e.v == old(s->e.v) by { solve(); }
     have e == s->p + i by { known(); }

@@ -22,7 +22,7 @@ verifying "resize.c";
 int32* resize() {
     produces allocation_result(result);
 } by {
-    step_until(statement(1).call(0));
+    step_until(statement(1).call(0).entry);
     step();
     have at(statement(1).call(0).exit, p == 0) by { known(); }
     step();

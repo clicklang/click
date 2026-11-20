@@ -30,7 +30,7 @@ int32 read_right(int32 value, int32* external) {
     owns wrapped(external);
     ensures result == value;
 } by {
-    step_until(statement(2));
+    step_until(statement(2).entry);
     mark written;
     unfold(wrapped(external));
     unfold(cell(external));

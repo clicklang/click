@@ -45,7 +45,7 @@ uint32 count_nodes(struct node* node) {
         solve();
     } else {
         let { next: child } = unfold(marked_list(node));
-        step_until(statement(1));
+        step_until(statement(1).entry);
         mark before_local;
         step();
         have separate(statement(1).region(0).footprint, memory(node->word)) by {

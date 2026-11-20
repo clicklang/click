@@ -22,7 +22,7 @@ int32 read_terminator(uint8 bytes[], uint64 known_len) {
     requires viewable(bytes[0..known_len + 1u64]);
     views click::c::string::cstr_at(bytes, known_len);
     ensures result == '\0' by {
-        step_until(region(1));
+        step_until(region(1).entry);
         observe(click::c::string::cstr_at(bytes, known_len));
         have viewable(bytes[0..known_len + 1u64]) by { observe(bytes[0..known_len + 1u64]); known(); }
         have forall (k: uint64) { to_integer(k) < to_integer(known_len + 1u64) implies defined(bytes[k]) } by {

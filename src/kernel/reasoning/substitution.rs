@@ -6500,12 +6500,13 @@ fn run_slot_named_by_load_variable(
     from: Variable,
 ) -> Option<u32> {
     if let crate::kernel::primitives::RunValueMode::Copy { source_base } = run.value_mode() {
-        let source_run = crate::kernel::primitives::CellRun::new(
+        let source_run = crate::kernel::primitives::CellRun::new_at(
             source_base.clone(),
             run.element_width(),
             run.element_type(),
             run.count(),
-            run.source().clone(),
+            run.source_point().clone(),
+            crate::kernel::primitives::RunValueMode::Load,
             run.holes().clone(),
         );
         return run_slot_named_by_load_variable(&source_run, from);

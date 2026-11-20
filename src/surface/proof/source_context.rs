@@ -55,6 +55,7 @@ impl SourceContext {
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
                     | ProofTactic::NormalizeUsing(_)
+                    | ProofTactic::OrderChain(_)
                     | ProofTactic::Intro
                     | ProofTactic::IntroAs(_)
                     | ProofTactic::IntroBinder(_)
@@ -78,6 +79,7 @@ impl SourceContext {
                     | ProofTactic::UnfoldResource(_)
                     | ProofTactic::UnfoldWitnesses { .. }
                     | ProofTactic::FoldResource(_)
+                    | ProofTactic::ReleaseView(_)
                     | ProofTactic::ObserveResource(_)
                     | ProofTactic::Iterated(_)
                     | ProofTactic::ApplyFactUsing { .. }
@@ -101,6 +103,7 @@ impl SourceContext {
                     | ProofTactic::Known
                     | ProofTactic::Normalize
                     | ProofTactic::NormalizeUsing(_)
+                    | ProofTactic::OrderChain(_)
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
                     | ProofTactic::Rewrite(_)

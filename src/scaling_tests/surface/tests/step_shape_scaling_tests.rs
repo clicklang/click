@@ -744,7 +744,7 @@ fn band(work: usize) -> usize {
 
 #[test]
 fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
-    let measure = |size, alias_base, frame_owners| {
+    let measure = |size, alias_base, frame_owners, cross_block| {
         let run = run(
             |size| {
                 let mut parameters = "int32* p, int32* other".to_string();
@@ -755,6 +755,12 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
                     frame += &format!("    owns *frame{i};\n");
                 }
                 let mut requirements = String::new();
+                let globals = if cross_block {
+                    requirements += "    requires other == &sentinel;\n";
+                    "int32 sentinel;\n"
+                } else {
+                    ""
+                };
                 for i in 0..size {
                     parameters += &format!(", int32* alias{i}");
                     requirements += &format!(
@@ -762,7 +768,7 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
                     );
                 }
                 let c = format!(
-                    "void caller({parameters}) {{\n    *p = 17;\n    *p = 18;\n    *p = 19;\n    return;\n}}"
+                    "{globals}void caller({parameters}) {{\n    *p = 17;\n    *p = 18;\n    *p = 19;\n    return;\n}}"
                 );
                 let click = format!(
                     "verifying \"hunt.c\";\nvoid caller({parameters}) {{\n    owns *p;\n{frame}{requirements}}} by {{ step(); step(); step(); step(); }}"
@@ -776,19 +782,23 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
     };
     // A 16-alias star already distinguishes the old scan from the indexed
     // check. Keep the larger source probes out of the budgeted gate.
-    for frame_owners in [0, 1, 8] {
+    for (frame_owners, cross_block) in [(0, false), (1, false), (8, false), (8, true)] {
         let samples = [2, 8, 16].map(|size| {
             (
-                measure(size, "p", frame_owners),
-                measure(size, "other", frame_owners),
+                measure(size, "p", frame_owners, cross_block),
+                measure(size, "other", frame_owners, cross_block),
             )
         });
         eprintln!("repeated store work with connected and disconnected aliases: {samples:?}");
-        let baseline = samples[0].0.into_iter().min().unwrap();
+        let connected_baseline = samples[0].0.into_iter().min().unwrap();
+        let disconnected_baseline = samples[0].1.into_iter().min().unwrap();
         for (connected, disconnected) in samples {
             for (connected, disconnected) in connected.into_iter().zip(disconnected) {
-                assert!(connected <= baseline + 16, "{samples:?}");
-                assert!(connected <= disconnected + 16, "{samples:?}");
+                assert!(connected <= connected_baseline + 16, "{samples:?}");
+                assert!(disconnected <= disconnected_baseline + 16, "{samples:?}");
+                if !cross_block {
+                    assert!(connected <= disconnected + 16, "{samples:?}");
+                }
             }
         }
     }
@@ -1251,6 +1261,55 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
     assert!(
         !drifts(&loops),
         "sequential loop clauses drift with the loops before them: {loops:?}"
+    );
+}
+
+/// Later loop clauses reuse the function's parameter index and annotation
+/// metadata even when the signature contains many unrelated pointers.
+#[test]
+fn later_loop_clauses_ignore_unreferenced_parameters() {
+    let work = [4, 16, 48].map(|count| {
+        let result = run(
+            |count| {
+                let mut parameters = "int32* p, int32 n, int32 m".to_owned();
+                for i in 0..count {
+                    parameters += &format!(", int32* unused{i}");
+                }
+                let c = format!(
+                    "void caller({parameters}) {{
+    while (n > 0) {{
+        n = 0;
+    }}
+    while (m > 0) {{
+        m = 0;
+    }}
+    *p = 7;
+    return;
+}}"
+                );
+                let click = format!(
+                    "verifying \"hunt.c\";
+void caller({parameters}) {{
+    owns *p;
+    requires n >= 0;
+    requires m >= 0;
+}} by {{
+    loop {{ decreases n; invariant n >= 0; initialize by known(); maintain by {{ step(); }} }}
+    loop {{ decreases m; invariant m >= 0; initialize by known(); maintain by {{ step(); }} }}
+    step();
+    step();
+}}"
+                );
+                (c, click)
+            },
+            count,
+        );
+        assert_eq!(result.loops.len(), 2);
+        result.loops[1]
+    });
+    assert!(
+        work.iter().max().unwrap() - work.iter().min().unwrap() <= 32,
+        "second loop work with 4/16/48 unrelated parameters: {work:?}"
     );
 }
 

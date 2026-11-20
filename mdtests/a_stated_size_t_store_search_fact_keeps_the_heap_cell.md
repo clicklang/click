@@ -34,7 +34,7 @@ int32 read_first(size_t n) {
         if q == 0 {
             step_until(function.exit);
         } else {
-            step_until(statement(3));
+            step_until(statement(3).entry);
             have ((n - 1u64) as uint64) != 0u64 by solve();
             step_until(function.exit);
         }

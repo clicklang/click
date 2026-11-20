@@ -698,6 +698,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &prefix,
             &format!("{};", application.tactic_spelling()),
         ),
+        ProofTactic::ReleaseView(resource) => line(
+            output,
+            &prefix,
+            &format!("release_view({});", format_resource_target(resource)),
+        ),
         ProofTactic::UnfoldProposition(target) => line(
             output,
             &prefix,
@@ -1163,6 +1168,9 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
         ProofTactic::NormalizeUsing(premises) => {
             write_using_premises(output, "normalize()", premises, indent)
+        }
+        ProofTactic::OrderChain(premises) => {
+            write_using_premises(output, "order_chain()", premises, indent)
         }
         ProofTactic::ArithmeticUsing(premises) => {
             write_using_premises(output, "solve()", premises, indent)

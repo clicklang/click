@@ -14,7 +14,7 @@ void untyped_caller(void* p) {
     produces held: imported_node_token();
     ensures true;
 } by {
-    let { held: held } = step(imported_node, {});
+    let { held: held } = step(imported_node);
 }
 ```
 
