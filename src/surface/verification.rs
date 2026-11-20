@@ -1829,7 +1829,13 @@ impl ProgramVerificationSession {
     ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
         let _kernel_tables = self.ensure_kernel_state_retained()?;
         instrumentation::with_default_tactic_limits(|| {
-            self.verify_at_with_limits(click_source, line, column)
+            let c_sources = self
+                .c_sources
+                .iter()
+                .map(|(name, source)| (name.as_str(), source.as_str()))
+                .collect::<Vec<_>>();
+            let sources = ProgramSourceContext::bundle(&c_sources);
+            self.verify_at_with_context(click_source, &sources, line, column)
         })
     }
 
@@ -1859,54 +1865,7 @@ impl ProgramVerificationSession {
                 ProgramSourceContext::bundle(&c_sources).with_click_project(&project)
             };
             let rewritten_file = resolve_click_project_context(&project, &sources)?;
-            let target = expansion::verification_target_at_file(
-                click_source,
-                &rewritten_file,
-                line,
-                column,
-            )?;
-            let target_exists_in_baseline = match &target {
-                VerificationTarget::Function(name) => {
-                    self.baseline_file
-                        .function_blocks()
-                        .iter()
-                        .any(|function| function.signature().name() == name)
-                        || self
-                            .baseline_file
-                            .tactic_definitions()
-                            .iter()
-                            .any(|tactic| tactic.name() == name)
-                }
-                VerificationTarget::Theorem(name) => self.baseline_file.theorem_is_selected(name),
-                VerificationTarget::Functions(_) => false,
-            };
-            if !target_exists_in_baseline {
-                return Err(ClickError::new(
-                    "rewritten source location resolves to a proof unit absent from the baseline",
-                ));
-            }
-            if changed_outside_proof_unit(&self.baseline_file, rewritten_file.clone(), &target) {
-                return Err(ClickError::new(
-                    "rewritten sidecar changed source outside the selected proof unit",
-                ));
-            }
-            let initial_environment = match &target {
-                VerificationTarget::Function(function_name) => Some(
-                    self.verified_function_environment
-                        .clone()
-                        .without_verified_function_rule(function_name),
-                ),
-                VerificationTarget::Theorem(_) | VerificationTarget::Functions(_) => None,
-            };
-            verify_program_with_context(
-                click_source,
-                &sources,
-                Some(target),
-                initial_environment,
-                None,
-                Some(rewritten_file),
-            )
-            .map(|(verified, _)| verified)
+            self.verify_rewritten_proof(click_source, &sources, rewritten_file, line, column)
         })
     }
 
@@ -1929,82 +1888,37 @@ impl ProgramVerificationSession {
                     "verification session does not contain prepared imports",
                 ));
             };
-            ensure_environment_identity(
-                &self.environment_identity,
-                &sources,
-                super::selected_c_target(click_source)?,
-                super::selected_thread_runtime(click_source)?,
-            )?;
-            let target = verification_target_at_context(click_source, &sources, line, column)?;
-            let target_exists_in_baseline = match &target {
-                VerificationTarget::Function(name) => {
-                    self.baseline_file
-                        .function_blocks()
-                        .iter()
-                        .any(|function| function.signature().name() == name)
-                        || self
-                            .baseline_file
-                            .tactic_definitions()
-                            .iter()
-                            .any(|tactic| tactic.name() == name)
-                }
-                VerificationTarget::Theorem(name) => self
-                    .baseline_file
-                    .theorem_definitions()
-                    .iter()
-                    .any(|theorem| theorem.name() == name),
-                VerificationTarget::Functions(_) => false,
-            };
-            if !target_exists_in_baseline {
-                return Err(ClickError::new(
-                    "rewritten source location resolves to a proof unit absent from the baseline",
-                ));
-            }
-            let rewritten_file = parse_click_file_with_program_sources(click_source, &sources)?;
-            if changed_outside_proof_unit(&self.baseline_file, rewritten_file, &target) {
-                return Err(ClickError::new(
-                    "rewritten sidecar changed source outside the selected proof unit",
-                ));
-            }
-            let initial_environment = match &target {
-                VerificationTarget::Function(function_name) => Some(
-                    self.verified_function_environment
-                        .clone()
-                        .without_verified_function_rule(function_name),
-                ),
-                VerificationTarget::Theorem(_) | VerificationTarget::Functions(_) => None,
-            };
-            verify_program_with_context(
-                click_source,
-                &sources,
-                Some(target),
-                initial_environment,
-                None,
-                None,
-            )
-            .map(|(verified, _)| verified)
+            self.verify_at_with_context(click_source, &sources, line, column)
         })
     }
 
-    fn verify_at_with_limits(
+    fn verify_at_with_context(
         &self,
         click_source: &str,
+        sources: &ProgramSourceContext<'_>,
         line: usize,
         column: usize,
     ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
-        let c_sources = self
-            .c_sources
-            .iter()
-            .map(|(name, source)| (name.as_str(), source.as_str()))
-            .collect::<Vec<_>>();
-        let sources = ProgramSourceContext::bundle(&c_sources);
         ensure_environment_identity(
             &self.environment_identity,
-            &sources,
+            sources,
             super::selected_c_target(click_source)?,
             super::selected_thread_runtime(click_source)?,
         )?;
-        let target = verification_target_at_context(click_source, &sources, line, column)?;
+        let rewritten_file = parse_click_file_with_program_sources(click_source, sources)?;
+        self.verify_rewritten_proof(click_source, sources, rewritten_file, line, column)
+    }
+
+    fn verify_rewritten_proof(
+        &self,
+        click_source: &str,
+        sources: &ProgramSourceContext<'_>,
+        rewritten_file: ClickFile,
+        line: usize,
+        column: usize,
+    ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
+        let target =
+            expansion::verification_target_at_file(click_source, &rewritten_file, line, column)?;
         let target_exists_in_baseline = match &target {
             VerificationTarget::Function(name) => {
                 self.baseline_file
@@ -2017,11 +1931,14 @@ impl ProgramVerificationSession {
                         .iter()
                         .any(|tactic| tactic.name() == name)
             }
-            VerificationTarget::Theorem(name) => self
-                .baseline_file
-                .theorem_definitions()
-                .iter()
-                .any(|theorem| theorem.name() == name),
+            VerificationTarget::Theorem(name) => {
+                self.baseline_file.theorem_is_selected(name)
+                    && self
+                        .baseline_file
+                        .theorem_definitions()
+                        .iter()
+                        .any(|theorem| theorem.name() == name)
+            }
             VerificationTarget::Functions(_) => false,
         };
         if !target_exists_in_baseline {
@@ -2029,8 +1946,7 @@ impl ProgramVerificationSession {
                 "rewritten source location resolves to a proof unit absent from the baseline",
             ));
         }
-        let rewritten_file = parse_click_file_with_program_sources(click_source, &sources)?;
-        if changed_outside_proof_unit(&self.baseline_file, rewritten_file, &target) {
+        if changed_outside_proof_unit(&self.baseline_file, rewritten_file.clone(), &target) {
             return Err(ClickError::new(
                 "rewritten sidecar changed source outside the selected proof unit",
             ));
@@ -2041,16 +1957,15 @@ impl ProgramVerificationSession {
                     .clone()
                     .without_verified_function_rule(function_name),
             ),
-            VerificationTarget::Theorem(_) => None,
-            VerificationTarget::Functions(_) => None,
+            VerificationTarget::Theorem(_) | VerificationTarget::Functions(_) => None,
         };
         verify_program_with_context(
             click_source,
-            &sources,
+            sources,
             Some(target),
             initial_environment,
             None,
-            None,
+            Some(rewritten_file),
         )
         .map(|(verified, _)| verified)
     }

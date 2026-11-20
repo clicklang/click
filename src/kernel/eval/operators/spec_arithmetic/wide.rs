@@ -1,12 +1,16 @@
 //! The supported 128-bit logical operators retain their mathematical source
 //! and domain. Operand equalities cannot replace that source during lowering.
 use super::*;
+use crate::kernel::machine_integer::wide_spec;
 
-fn observe(value: &ProgramValue) -> Option<IntegerTerm> {
-    let ty = match value.program_type() {
-        ProgramType::Bool => MachineIntegerType::UInt8,
-        ty => MachineIntegerType::from_program_type(ty)?,
-    };
+fn operand_type(value: &ProgramValue) -> Option<MachineIntegerType> {
+    match value.program_type() {
+        ProgramType::Bool => Some(MachineIntegerType::UInt8),
+        ty => MachineIntegerType::from_program_type(ty),
+    }
+}
+
+fn observe(value: &ProgramValue, ty: MachineIntegerType) -> Option<IntegerTerm> {
     IntegerTerm::from_machine(
         ty,
         crate::kernel::spec::program_value_bitvector_term(value)?,
@@ -21,79 +25,14 @@ pub(super) fn apply(
     facts: &ExecutionFacts,
     inherited: &[ProofObligation],
 ) -> Option<ExpressionPath> {
-    let destination = match op {
-        MachineBinaryOp::Multiply
-            if (matches!(left, ProgramValue::Int128(_))
-                || matches!(right, ProgramValue::Int128(_)))
-                && !matches!(left, ProgramValue::UInt128(_))
-                && !matches!(right, ProgramValue::UInt128(_)) =>
-        {
-            MachineIntegerType::Int128
-        }
-        MachineBinaryOp::Divide | MachineBinaryOp::Remainder => match (left, right) {
-            (ProgramValue::Int128(_), ProgramValue::Int128(_)) => MachineIntegerType::Int128,
-            (ProgramValue::UInt128(_), ProgramValue::UInt128(_)) => MachineIntegerType::UInt128,
-            _ => return None,
-        },
-        _ => return None,
-    };
-    let left = observe(left)?;
-    let right = observe(right)?;
+    let a = operand_type(left)?;
+    let b = operand_type(right)?;
+    let destination = wide_spec::result_type(op, a, b)?;
+    let left = observe(left, a)?;
+    let right = observe(right, b)?;
+    let (result, obligation) = wide_spec::result_and_domain(op, division, destination, left, right);
     let mut obligations = inherited.to_vec();
-    let mut domain = Vec::new();
-    let mut require = |proposition: Proposition| {
-        if !matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(actual), _)) if (actual == expected)))
-        {
-            domain.push(proposition);
-        }
-    };
-    let result = if op == MachineBinaryOp::Multiply {
-        let product = IntegerTerm::multiply(left, right);
-        let (min, max) = destination.format().bounds();
-        require(Proposition::condition_is(
-            ConditionTerm::integer_greater_equal(product.clone(), IntegerTerm::constant(min)),
-            true,
-        ));
-        require(Proposition::condition_is(
-            ConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max)),
-            true,
-        ));
-        product
-    } else {
-        if division == SpecDivision::CDefined {
-            require(Proposition::condition_is(
-                ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(0)),
-                false,
-            ));
-        }
-        if destination == MachineIntegerType::Int128 {
-            let min =
-                ConditionTerm::integer_equal(left.clone(), IntegerTerm::constant(i128::MIN.into()));
-            let minus_one =
-                ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1));
-            // Either operand excludes MIN / -1. Keep this disjunction scoped
-            // with the other domain debts, never as an assumed path fact.
-            if !matches!(min, ConditionTerm::Constant(false))
-                && !matches!(minus_one, ConditionTerm::Constant(false))
-            {
-                require(Proposition::Or(
-                    Box::new(Proposition::condition_is(min, false)),
-                    Box::new(Proposition::condition_is(minus_one, false)),
-                ));
-            }
-        }
-        if op == MachineBinaryOp::Remainder {
-            IntegerTerm::truncating_remainder(left, right)
-        } else {
-            IntegerTerm::truncating_quotient(left, right)
-        }
-    };
-    if let Some(domain) = Proposition::arithmetic_domain(domain) {
-        obligations.push(
-            ProofObligation::evaluation_domain(domain)
-                .with_context("wide arithmetic expression is defined"),
-        );
-    }
+    obligations.extend(obligation);
     let term = result
         .as_const()
         .and_then(|constant| {
