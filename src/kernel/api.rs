@@ -4071,7 +4071,7 @@ fn install_borrowed_contract_inputs(
         owned_input_ranges
             .iter()
             .find(|owned| {
-                crate::kernel::loans::protected_range_proven_overlapping_ignoring_separation(
+                crate::kernel::primitives::contract_entry_memory_overlap(
                     owned,
                     viewed_range,
                     assumptions,

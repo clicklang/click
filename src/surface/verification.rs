@@ -8054,13 +8054,22 @@ int32 reader(int32 p[], int32 q[]) {
 
     #[test]
     fn root_view_checks_pointer_offset_aliases() {
-        for equality in ["q == p + 1", "p == q - 1", "q == p - 1"] {
+        for (equality, separation) in [
+            ("q == p + 1", ""),
+            ("p == q - 1", ""),
+            ("q == p - 1", ""),
+            (
+                "q == p + 1",
+                "requires separate(memory(p[0..3]), memory(q[0..3]));",
+            ),
+        ] {
             let click = format!(
                 r#"
 verifying "reader.c";
 int32 reader(int32 p[], int32 q[]) {{
     requires {equality};
     requires p[1] == 3;
+    {separation}
     views p[0..3];
     consumes q[0..3];
     ensures result == 3;
