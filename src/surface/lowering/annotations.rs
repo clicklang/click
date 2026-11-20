@@ -7761,8 +7761,7 @@ impl AnnotationLowerer<'_> {
         }
     }
 
-    /// The Rust enum type of the value `expression` names: a C name that
-    /// holds one, or `*r` for a reference `r` to one.
+    /// The enum or library value type named by a program binding or read.
     fn enum_program_value_type(
         &self,
         expression: &ContractExpression,
@@ -7775,18 +7774,21 @@ impl AnnotationLowerer<'_> {
                 crate::kernel::BindingName::Named(name),
             )) => self.enum_program_name_type(name, environment),
             ContractExpression::ProgramExpression(ProgramExpression::Load(pointer)) => {
-                let ProgramExpression::Variable(name) = pointer.as_ref() else {
-                    return None;
-                };
-                match self.program_name_type(name, environment)? {
-                    ProgramType::ParameterPointer(enum_type)
-                        if crate::surface::holds_spec_value(enum_type) =>
-                    {
-                        Some(enum_type)
+                let value_type = match pointer.as_ref() {
+                    ProgramExpression::Variable(name) => {
+                        self.program_name_type(name, environment)?.pointee_type()?
                     }
+                    _ => self.program_expression_array_element_type(pointer, environment)?,
+                };
+                match value_type {
+                    ProgramType::Parameter(ty) if crate::surface::holds_spec_value(ty) => Some(ty),
                     _ => None,
                 }
             }
+            ContractExpression::MemoryLoad {
+                value_type: ProgramType::Parameter(ty),
+                ..
+            } if crate::surface::holds_spec_value(*ty) => Some(*ty),
             ContractExpression::Old(inner) => self.enum_program_value_type(inner, environment),
             // The enum value a call returned.
             ContractExpression::RegionResult(region) => {

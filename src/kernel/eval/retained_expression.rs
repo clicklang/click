@@ -1933,6 +1933,7 @@ mod tests {
                 false,
                 None,
                 None,
+                None,
             );
             let ExpressionOutcome::Value(loaded) = &loaded[0].outcome else {
                 panic!("memory receipt")
@@ -2077,6 +2078,7 @@ mod tests {
             &PureFactContext::new(),
             false,
             false,
+            None,
             None,
             None,
         );

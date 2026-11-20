@@ -1364,9 +1364,15 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
         base: local_i_block.clone(),
         offset: AddressOffset::Constant(0),
     };
+    let entry = verified
+        .specification
+        .state()
+        .program_point()
+        .entry_cell_version(&base, ProgramType::Int32)
+        .expect("the initial array names its function-entry version");
     let initial_memory = memory_with_symbolic_loadable_cells(
         SymbolicMemory::new(),
-        &crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(SymbolicMemory::new())),
+        &entry,
         &std::collections::BTreeMap::from([(
             "p".to_string(),
             ConcreteMemoryRangeSeed {

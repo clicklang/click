@@ -95,6 +95,7 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
         volatile,
         source,
         byte_order,
+        None,
     )
     .into_iter()
     .map(ExecutionValuePath::into_native)
@@ -113,6 +114,7 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
     volatile: bool,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
+    entry_origin: Option<&ProgramPoint>,
 ) -> Vec<ExecutionValuePath> {
     let _assumptions_id_scope = assumptions.enter_id_scope();
     if has_pending_reallocation_for_pointer(memory, &pointer) {
@@ -148,6 +150,7 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
         &mut alias_cache,
         source,
         byte_order,
+        entry_origin,
     );
     if let Some(address) = word_storage {
         for path in &mut paths {
@@ -801,6 +804,7 @@ fn evaluate_memory_load_paths_with_alias_cache(
         alias_cache,
         source,
         byte_order,
+        None,
     )
     .into_iter()
     .map(ExecutionValuePath::into_native)
@@ -820,6 +824,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
     alias_cache: &mut MemoryLoadAliasCache,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
+    entry_origin: Option<&ProgramPoint>,
 ) -> Vec<ExecutionValuePath> {
     let mut distinct_case = None;
     let mut paths = evaluate_retained_memory_load_case(
@@ -835,6 +840,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
         alias_cache,
         source,
         byte_order,
+        entry_origin,
         true,
         &mut distinct_case,
     );
@@ -879,6 +885,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
             alias_cache,
             source,
             byte_order,
+            entry_origin,
             splits,
             &mut distinct_case,
         ));
@@ -918,6 +925,7 @@ fn evaluate_retained_memory_load_case(
     alias_cache: &mut MemoryLoadAliasCache,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
+    entry_origin: Option<&ProgramPoint>,
     splits: bool,
     distinct_case: &mut Option<DistinctLoadCase>,
 ) -> Vec<ExecutionValuePath> {
@@ -1274,6 +1282,14 @@ fn evaluate_retained_memory_load_case(
 
     let prefers_symbolic = assumptions.should_prefer_symbolic_external_loads();
     if allow_symbolic_external_load && (prefers_symbolic || reads_written_state) {
+        if let Some(origin) = entry_origin
+            && let Some(version) = origin.entry_cell_version(&pointer, value_type)
+        {
+            return vec![
+                evaluate_indexed_read(version, origin, pointer, value_type, facts, obligations)
+                    .map_value(Into::into),
+            ];
+        }
         if !prefers_symbolic {
             // Preserve the width at the actual access spelling, as the
             // reduction path did before naming the value at the written state.
@@ -1395,6 +1411,14 @@ fn evaluate_retained_memory_load_case(
     }
 
     if pointer.has_symbolic_block() && allow_symbolic_external_load {
+        if let Some(origin) = entry_origin
+            && let Some(version) = origin.entry_cell_version(&pointer, value_type)
+        {
+            return vec![
+                evaluate_indexed_read(version, origin, pointer, value_type, facts, obligations)
+                    .map_value(Into::into),
+            ];
+        }
         let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
             &memory,
             &pointer,
@@ -9840,6 +9864,7 @@ mod float_memory_handoff_tests {
                     &PureFactContext::new(),
                     false,
                     false,
+                    None,
                     None,
                     None,
                 );
