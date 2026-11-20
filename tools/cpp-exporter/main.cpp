@@ -3317,6 +3317,23 @@ private:
     return true;
   }
 
+  // Capture directly resolved getters as expression observers. Click checks
+  // their read-only contracts before verifying the surrounding call.
+  bool observer_argument(const clang::Expr *argument,
+                         clang::QualType parameter_type) const {
+    const auto *call =
+        llvm::dyn_cast<clang::CXXMemberCallExpr>(argument->IgnoreParens());
+    const auto *method = call == nullptr ? nullptr : call->getMethodDecl();
+    const auto *prototype = method == nullptr ? nullptr :
+        method->getType()->getAs<clang::FunctionProtoType>();
+    return method != nullptr && method->isConst() && !method->isVirtual() &&
+           prototype != nullptr && prototype->isNothrow() &&
+           call->getNumArgs() == 0 && call->isPRValue() &&
+           !call->getType()->isRecordType() &&
+           !parameter_type->isReferenceType() &&
+           context_.hasSameType(call->getType(), parameter_type);
+  }
+
   bool field_scalar_argument(const clang::Expr *expression) const {
     expression = expression->IgnoreParens();
     if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression)) {
@@ -3599,6 +3616,7 @@ private:
     const bool stable_receiver = receiver_name != nullptr &&
         llvm::isa<clang::VarDecl>(receiver_name->getDecl()) &&
         receiver->getType()->isRecordType();
+    bool observe_arguments = false;
     if (allow_nested) {
       unsigned nested_calls = 0;
       for (unsigned index = argument_offset; index < call->getNumArgs();
@@ -3613,12 +3631,28 @@ private:
           ++nested_calls;
       }
       if (nested_calls > 1 || (nested_calls != 0 && has_receiver && !stable_receiver)) {
-        fail(call->getExprLoc(),
-             "nested C++ call arguments require one call and order-independent scalar "
-             "siblings to preserve evaluation order");
-        return std::nullopt;
+        observe_arguments = true;
+        for (unsigned index = argument_offset; index < call->getNumArgs(); ++index) {
+          const auto *argument = call->getArg(index);
+          const auto *defaulted = llvm::dyn_cast<clang::CXXDefaultArgExpr>(argument);
+          const auto parameter = definition->getParamDecl(index - argument_offset)->getType();
+          if (observer_argument(argument, parameter) ||
+              (!parameter->isReferenceType() &&
+               (stable_scalar_argument(argument, caller) ||
+                (defaulted != nullptr && defaulted->getExpr()->getType()->isIntegerType() &&
+                 defaulted->getExpr()->isCXX11ConstantExpr(context_)))))
+            continue;
+          observe_arguments = false;
+          break;
+        }
+        if (!observe_arguments) {
+          fail(call->getExprLoc(),
+               "nested C++ call arguments require one call and order-independent scalar "
+               "siblings to preserve evaluation order");
+          return std::nullopt;
+        }
       }
-      if (nested_calls == 1) {
+      if (nested_calls == 1 && !observe_arguments) {
         bool isolated = false;
         for (unsigned index = argument_offset; index < call->getNumArgs(); ++index) {
           const auto *nested = nested_argument_call(call->getArg(index));
@@ -3656,7 +3690,7 @@ private:
       const auto *source_argument = call->getArg(index + argument_offset);
       const auto *nested = nested_argument_call(source_argument);
       std::optional<Json> argument;
-      if (allow_nested && nested != nullptr &&
+      if (allow_nested && !observe_arguments && nested != nullptr &&
           !is_numeric_limits_max_call(nested)) {
         if ((has_receiver && !stable_receiver) ||
             definition->getParamDecl(index)->getType()->isReferenceType() ||

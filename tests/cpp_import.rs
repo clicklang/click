@@ -10191,6 +10191,72 @@ int64 EvaluateFee(int64 fee, int32 at_size, int32 divisor, bool round_down) {{ r
 }
 
 #[test]
+fn sibling_observer_arguments_require_read_only_contracts_in_throwing_callers() {
+    let project = Project::with_fixture(
+        "observers.cpp",
+        "probe",
+        r#"
+struct Count {
+    unsigned long value;
+    unsigned long size() const noexcept { return value; }
+    unsigned long accept(unsigned long input) const noexcept { return input; }
+};
+struct Reader { Count source; };
+void sink(unsigned long left, unsigned long right) noexcept { return; }
+unsigned long probe(const Reader& reader, const Count& dst, bool fail) {
+    if (fail) { throw 7; }
+    sink(reader.source.size(), dst.size());
+    return reader.source.accept(dst.size());
+}
+"#,
+    );
+    project.write_exception_enabled_compilation_database();
+    project.write_config_with_exception_behavior("probe", "observers.cpp", true, "scalar_int32");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let proof = r#"verifying "observers.cpp";
+uint64 Count::size() const {
+    views this->value;
+    ensures result == this->value;
+}
+uint64 Count::accept(uint64 input) const {
+    ensures result == input;
+}
+void sink(uint64 left, uint64 right) {
+    requires left <= right;
+    ensures true;
+}
+uint64 probe(const Reader& reader, const Count& dst, bool fail) throws int32 {
+    views reader.source.value;
+    views dst.value;
+    requires reader.source.value <= dst.value;
+    ensures not fail;
+    ensures result == dst.value;
+    exceptional ensures fail;
+    exceptional ensures exception == 7;
+}
+"#;
+    check_selected_claim_certificate(&project, &import, proof);
+
+    let sidecar = project.directory.join("observers.click");
+    fs::write(&sidecar, proof).unwrap();
+    for (edited, expected) in [
+        (
+            proof.replace("views this->value;", "owns this->value;"),
+            "requires a read-only contract",
+        ),
+        (
+            proof.replace("Count::size() const {", "Count::size() const diverges {"),
+            "requires a terminating contract",
+        ),
+    ] {
+        let parsed = read_click_project(&sidecar, &edited).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(error.report().contains(expected), "{}", error.report());
+    }
+}
+
+#[test]
 fn nested_calls_reject_sibling_memory_reads_effects_arithmetic_and_other_calls() {
     for cpp in [
         "int mutate(int& x) noexcept { x = 7; return x; } int pair(int a, int b) noexcept { return a; } int relay(int& x) noexcept { return pair(mutate(x), x); }",
@@ -10261,6 +10327,37 @@ fn nested_argument_lowering_scales_with_arity() {
             assert!(
                 work <= previous * 4,
                 "quadrupling arity must not exceed four times the work"
+            );
+        }
+        previous = Some(work);
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: sibling observer argument scaling"]
+fn sibling_observer_argument_lowering_scales_with_arity() {
+    let mut previous = None;
+    for size in [2usize, 8, 32, 128] {
+        let parameters = (0..size)
+            .map(|i| format!("int a{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let arguments = vec!["box.get()"; size].join(", ");
+        let cpp = format!(
+            "struct Box {{ int value; int get() const noexcept {{ return value; }} }}; int sink({parameters}) noexcept {{ return a0; }} int probe(const Box& box) noexcept {{ return sink({arguments}); }}"
+        );
+        let project = Project::with_fixture("arguments.cpp", "probe", &cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let (lowered, work) =
+            click::instrumentation::measure_deterministic_work(|| lower_import(&import));
+        lowered.unwrap();
+        assert!(work >= size, "{size} observer arguments: {work} work");
+        if let Some(previous) = previous {
+            assert!(
+                work <= previous * 4,
+                "{size} observer arguments: {work} work"
             );
         }
         previous = Some(work);

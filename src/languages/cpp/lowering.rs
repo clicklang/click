@@ -2075,16 +2075,16 @@ impl LoweringContext<'_> {
                 returned_member,
                 ..
             } => {
-                if self.unwind_cleanups {
-                    return Err("C++ expression observers currently require the normal-only exception profile".into());
-                }
                 let Some(member) = returned_member else {
-                    return self.normalize_scalar(ScalarInput::Call {
+                    let mut evaluation = self.normalize_scalar(ScalarInput::Call {
                         callee,
                         arguments,
                         value_type: result_type,
                         conversions: &[],
-                    });
+                    })?;
+                    // Call graph validation requires every observer to be noexcept.
+                    evaluation.may_throw = false;
+                    return Ok(evaluation);
                 };
                 let (field_type, offset) = self
                     .records
@@ -2103,7 +2103,7 @@ impl LoweringContext<'_> {
                 (
                     evaluation.prefix,
                     self.lower_qualified_typed_load(pointer, value_type, pointee_constant)?,
-                    evaluation.may_throw,
+                    false,
                 )
             }
             CppExpression::LogicalNot { value, .. } => {

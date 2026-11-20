@@ -837,11 +837,18 @@ callee cannot acquire an alias to the caller's storage. Its field siblings are
 checked and captured before the call; their values agree in every argument
 order, and a throwing call cannot skip a read's authority check. This covers
 `Div(Mul(fee, at_size), size, RoundDown)` with field-backed `fee` and `size`.
-General alias analysis is not provided. Reference reads, dereferences,
-arithmetic, additional calls, and side effects in sibling arguments fail import.
-No unsafe sibling operation can be hidden by selecting an argument order that
-skips it. Resource-bearing exceptional contracts remain outside the proof
-surface slice.
+Reference reads, dereferences, arithmetic and side effects in siblings
+remain outside this ordinary nested-call rule.
+
+An argument list can also contain several direct, nonvirtual
+`const noexcept` getters with no explicit parameters, as in
+`sink(dst.data(), src.data(), dst.size())`. Each getter must have a checked
+read-only, terminating contract. The argument types must match the getter results and
+any other arguments must be stable scalars. The same rule permits a
+projected receiver in a call such as `cursor.remaining.subspan(dst.size())`.
+Click evaluates each getter once in argument order after establishing
+that the evaluations are read-only and nonthrowing. The surrounding
+function may itself throw.
 
 An omitted argument of a supported integer type can come from a direct,
 non-`constexpr`, `noexcept` helper with no arguments, such as `limit()` for

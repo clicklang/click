@@ -4449,9 +4449,9 @@ fn validate_call(
     )
 }
 
-// Returned construction can evaluate composed read-only observers before the
-// constructor runs. All siblings must be value expressions: mixing an ordinary
-// nested call or reference argument would need additional ordering evidence.
+// Observer contracts make their evaluations invariant across sibling reads.
+// Ordinary calls admit direct observers beside stable scalar values and a
+// receiver place. Returned construction also admits composed observer values.
 fn validate_call_in_context(
     callee: &CppFunctionReference,
     arguments: &[CppCallArgument],
@@ -4468,16 +4468,32 @@ fn validate_call_in_context(
             "C++ record temporaries require one nonthrowing statement call full expression".into(),
         );
     }
-    let observer_values = returned_construction && arguments.iter().any(|argument|
+    let observer_values = arguments.iter().any(|argument|
         matches!(argument, CppCallArgument::Value { value } if value.contains_observer()));
     if observer_values
         && arguments
             .iter()
-            .any(|argument| !matches!(argument, CppCallArgument::Value { .. }))
+            .enumerate()
+            .any(|(index, argument)| match argument {
+                CppCallArgument::Value { .. } if returned_construction => false,
+                CppCallArgument::Value { value } => {
+                    !matches!(
+                        value,
+                        CppExpression::ObserverCall {
+                            returned_member: None,
+                            ..
+                        }
+                    ) && !stable_scalar_argument(value, places)
+                }
+                CppCallArgument::Reference { .. } => returned_construction || index != 0,
+                _ => true,
+            })
     {
-        return Err(
-            "C++ returned-constructor expression observers require value-only arguments".into(),
-        );
+        return Err(if returned_construction {
+            "C++ returned-constructor expression observers require value-only arguments".into()
+        } else {
+            "C++ observer arguments require direct observers and stable siblings".into()
+        });
     }
     let nested_calls = arguments
         .iter()
@@ -4986,8 +5002,12 @@ impl CppExpression {
                     }
                 }
                 require_return_value_type(value_type, "expression observer result")?;
-                if matches!(value_type, CppType::Void | CppType::LvalueReference { .. }) {
-                    return Err("C++ expression observers require a scalar value result".into());
+                if callee.through_pointer
+                    || matches!(value_type, CppType::Void | CppType::LvalueReference { .. })
+                {
+                    return Err(
+                        "C++ expression observers require a direct scalar value call".into(),
+                    );
                 }
                 validate_call(callee, arguments, span, places, records, logical_source)
             }
