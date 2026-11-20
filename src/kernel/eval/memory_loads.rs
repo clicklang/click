@@ -4043,7 +4043,7 @@ pub(crate) fn canonical_form_of_load(
 }
 
 /// Name a resource cell using the ordinary typed version when the source
-/// recorded its store. The retained memory remains the source for cell kinds
+/// has recorded a version. The retained memory remains the source for cell kinds
 /// and addresses whose producers do not yet supply an indexed version.
 pub(crate) fn canonical_cell_load(
     source: &ProgramPoint,
@@ -4074,7 +4074,7 @@ pub(in crate::kernel) fn indexed_resource_scalar_read(
 ) -> Option<MachineTerm> {
     MachineIntegerType::from_program_type(ty)?;
     let kind = LoadKind::of_type(ty)?;
-    let point = source.indexed_integer_version(pointer, kind)?;
+    let point = source.ordinary_typed_version(pointer, ty)?;
     Some(MachineTerm::MemoryLoad(
         point,
         Box::new(pointer.clone()),

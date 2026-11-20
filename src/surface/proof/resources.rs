@@ -5567,7 +5567,15 @@ fn materialize_composite_resource_cells_from_state(
     } else {
         ProgramType::Int32
     };
-    if run_type.byte_width() <= element_width {
+    // A sole scalar with a recorded entry version can use the concrete
+    // cell naming path directly.
+    let concrete_entry_cell = start == 0
+        && end == 1
+        && run_type == ProgramType::Int32
+        && naming_point
+            .entry_integer_version(range.base(), crate::kernel::LoadKind::Int32)
+            .is_some();
+    if !concrete_entry_cell && run_type.byte_width() <= element_width {
         match memory.with_named_cell_run(
             range.base().clone(),
             element_width,

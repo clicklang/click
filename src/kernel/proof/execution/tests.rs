@@ -3517,3 +3517,39 @@ fn resource_cell_naming_checks_the_recorded_integer_version_after_forgetting_a_n
     assert_eq!(before.memory(), other.memory());
     assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
 }
+
+#[test]
+fn resource_cell_naming_checks_the_entry_point_without_a_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let before = ExecutionState::new().begin_function_entry_memory();
+    let source = before.program_point();
+    assert!(
+        source
+            .indexed_integer_version(&slot, LoadKind::Int32)
+            .is_none()
+    );
+    let version = source
+        .entry_integer_version(&slot, LoadKind::Int32)
+        .unwrap();
+    let named =
+        before
+            .memory()
+            .clone()
+            .materialize_cell_at(slot.clone(), ProgramType::Int32, &source);
+    assert_eq!(
+        named.known_value(&slot),
+        Some(ProgramValue::Int32(MachineTerm::MemoryLoad(
+            version,
+            Box::new(slot),
+            LoadKind::Int32,
+        ))),
+    );
+    assert!(super::memory_only_adds_named_cells(&before, &named).is_ok());
+    let other = ExecutionState::new().begin_function_entry_memory();
+    assert_eq!(before.memory(), other.memory());
+    assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+}
