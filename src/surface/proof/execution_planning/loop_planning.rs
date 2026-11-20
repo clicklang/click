@@ -421,10 +421,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         &claim_label,
         0,
         &context.pure_facts,
-        ParameterBinding::new(
-            environment.parsed_function.parameters(),
-            environment.arguments,
-        ),
+        environment.parameter_binding(),
         FixedStateFrame::new(
             environment.initial_state,
             &context.state,
@@ -553,10 +550,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                     let owed =
                         crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
                             obligation.proposition(),
-                            ParameterBinding::new(
-                                environment.parsed_function.parameters(),
-                                environment.arguments,
-                            ),
+                            environment.parameter_binding(),
                             &context.state,
                         )
                         .map(|surface| crate::surface::printing::source_click_proposition(&surface))
@@ -731,6 +725,8 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
         source_layout,
         function_entry_state: Some(environment.initial_state.clone()),
         function_source_registry: environment.function_source_registry.clone(),
+        parameter_index: environment.parent_constants.parameter_index.clone(),
+        parameter_naming: environment.parent_constants.parameter_naming.clone(),
         ..ExecutionProofConstants::default()
     };
     record_statement_program_state(
@@ -1081,6 +1077,8 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         source_layout,
         function_entry_state: Some(environment.initial_state.clone()),
         function_source_registry: environment.function_source_registry.clone(),
+        parameter_index: environment.parent_constants.parameter_index.clone(),
+        parameter_naming: environment.parent_constants.parameter_naming.clone(),
         ..ExecutionProofConstants::default()
     };
     let mut surface_propositions = environment.surface_propositions.clone();
@@ -1128,10 +1126,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         && let Ok(lowered) = lower_fixed_state_proposition(
             &loop_condition,
             pure_facts,
-            ParameterBinding::new(
-                environment.parsed_function.parameters(),
-                environment.arguments,
-            ),
+            environment.parameter_binding(),
             FixedStateFrame::new(
                 environment.initial_state,
                 preservation.state(),

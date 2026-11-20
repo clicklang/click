@@ -1457,12 +1457,13 @@ pub struct ContractResourceArgument {
 pub struct CallBinderBinding {
     /// The callee's binder name, written on the left of the map entry.
     binder: String,
-    /// The identity the callee's own contract gave that binder.
-    binder_identity: InstanceId,
-    /// The caller's instance name.
+    /// The binder number the callee's own contract gave that binder.
+    binder_identity: crate::kernel::ResourceBinderId,
+    /// The caller's resource name.
     instance: String,
-    /// The caller's instance identity.
-    identity: InstanceId,
+    /// The binder number of the caller's resource; the callee's clause for
+    /// `binder` says whether it names an instance or a mutex authority.
+    identity: crate::kernel::ResourceBinderId,
     /// The resource a produced instance is, from the callee's contract;
     /// `None` for an instance the caller supplies.
     family: Option<String>,
@@ -1482,11 +1483,11 @@ impl CallBinderBinding {
         &self.instance
     }
 
-    pub(crate) fn binder_identity(&self) -> InstanceId {
+    pub(crate) fn binder_identity(&self) -> crate::kernel::ResourceBinderId {
         self.binder_identity
     }
 
-    pub(crate) fn identity(&self) -> InstanceId {
+    pub(crate) fn identity(&self) -> crate::kernel::ResourceBinderId {
         self.identity
     }
 
@@ -2050,6 +2051,8 @@ pub struct EnsureClause {
     /// A resource ensure desugared from `owns`: the function returns what it
     /// was lent, so the clause is evaluated at entry, not at exit.
     borrowed: bool,
+    /// Source requirement index (before aggregate expansion) selected by `from`.
+    view_source: Option<usize>,
     /// A resource ensure nested in a contract `if`. The condition is a
     /// pre-state proposition; the clause is present in the post-state only
     /// when that proposition is established at the call boundary.
@@ -2269,7 +2272,9 @@ pub struct IteratedResourceClause {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ResourceInstanceBinding {
     name: String,
-    identity: crate::kernel::InstanceId,
+    /// What the binder names comes from its resource: an instance, or a
+    /// mutex authority for a named mutex live, use or guard clause.
+    identity: crate::kernel::ResourceBinderId,
     children: Vec<String>,
     schema: Option<crate::kernel::ResourceFieldSchema>,
     fields: Option<crate::kernel::ResourceFieldValues>,
@@ -2854,6 +2859,7 @@ fn clone_ensure_clause_iteratively(clause: &EnsureClause) -> EnsureClause {
         },
         proof: clause.proof.clone(),
         borrowed: clause.borrowed,
+        view_source: clause.view_source,
         condition: clause.condition.clone(),
     }
 }
@@ -6081,6 +6087,7 @@ pub enum ProofTactic {
     UnfoldProposition(ClickProposition),
     UnfoldFunction(ClickFunctionApplication),
     UnfoldResource(ResourceClause),
+    ReleaseView(ResourceClause),
     /// `let { witness: name, ... } = unfold(resource)` on a declared
     /// resource: the unfold, with each named `let ... where` witness of the
     /// opened body bound to a proof name.
@@ -6260,6 +6267,7 @@ pub enum SimpleTactic {
     FactTransport,
     Instantiate,
     FoldResource,
+    ReleaseView,
     ConstructResource,
     IteratedOwnership,
 }
@@ -6432,6 +6440,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "fold-resource",
         syntax: "fold(resource)",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "release-view",
+        syntax: "release_view(range)",
         class: "simple",
     },
     PublicTacticForm {
@@ -6803,6 +6816,7 @@ impl ProofTactic {
             Self::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
+            Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
             Self::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
             Self::SmartExecute | Self::ExecuteUntil(_) => {
                 TacticClass::smart(SmartTacticKind::Execute)

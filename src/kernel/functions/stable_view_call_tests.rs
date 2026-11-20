@@ -3110,7 +3110,7 @@ fn returned_hold_installation_uses_the_selected_owner_and_preserves_other_occurr
     let binding = holds[1].binding.clone();
     let first = holds[0].occurrence;
     let second = holds[1].occurrence;
-    let (branch, bindings) = install_returned_composite_hold(
+    let (branch, bindings) = install_returned_view_hold(
         parent.clone(),
         LoanViewBindings::default(),
         holds[1].clone(),

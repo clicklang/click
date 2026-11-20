@@ -981,7 +981,7 @@ pub(in crate::surface::proof) struct LoopAnnotationCache {
     pub(in crate::surface::proof) start_facts: Arc<crate::surface::PureFactList>,
     pub(in crate::surface::proof) function_entry_state: Option<ExecutionState>,
     pub(in crate::surface::proof) initial_state: ExecutionState,
-    pub(in crate::surface::proof) arguments: Vec<ProgramExpression>,
+    pub(in crate::surface::proof) arguments: Arc<[ProgramExpression]>,
     /// The frontier clauses bound before the annotated loop's own clause.
     pub(in crate::surface::proof) frontier_clauses: FrontierLoopClauses,
     /// The annotated loop's own clause, bound to it.
@@ -3887,6 +3887,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::UnfoldResource(_)
         | ProofStep::UnfoldWitnesses { .. } => "unfold",
         ProofStep::FoldResource(_) => "fold",
+        ProofStep::ReleaseView(_) => "release_view",
         ProofStep::ConstructResource(_) => "construct",
         ProofStep::ObserveResource(_) | ProofStep::ObserveSavedMemory { .. } => "observe",
         ProofStep::Iterated(tactic) => tactic.name(),

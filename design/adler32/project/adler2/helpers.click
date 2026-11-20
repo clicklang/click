@@ -43,31 +43,30 @@ impl adler2::algo::U32X4 {
         apply(adler_helper_byte_observation(bytes[3]));
         step_until(assignment(__rust_mir_12, 0).entry);
         step();
-        // The array literal uses fresh backing. Restrict the backing's
-        // separation from the input to each checked lane store.
-        have separate(memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4])) by { known(); }
-        have separate(memory(((__rust_mir_2 as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])) by {
+        // The lanes are stored into the result. Restrict its separation
+        // from the input to each checked lane store.
+        have separate(memory((((&result as (void *)) as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])) by {
             apply(separation::separate_restrict(
-                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
-                memory(((__rust_mir_2 as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])
+                memory(result[0..1]), memory(bytes[0..4]),
+                memory((((&result as (void *)) as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])
             ));
         }
-        have separate(memory(((__rust_mir_2 as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])) by {
+        have separate(memory((((&result as (void *)) as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])) by {
             apply(separation::separate_restrict(
-                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
-                memory(((__rust_mir_2 as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])
+                memory(result[0..1]), memory(bytes[0..4]),
+                memory((((&result as (void *)) as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])
             ));
         }
-        have separate(memory(((__rust_mir_2 as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])) by {
+        have separate(memory((((&result as (void *)) as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])) by {
             apply(separation::separate_restrict(
-                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
-                memory(((__rust_mir_2 as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])
+                memory(result[0..1]), memory(bytes[0..4]),
+                memory((((&result as (void *)) as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])
             ));
         }
-        have separate(memory(((__rust_mir_2 as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])) by {
+        have separate(memory((((&result as (void *)) as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])) by {
             apply(separation::separate_restrict(
-                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
-                memory(((__rust_mir_2 as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])
+                memory(result[0..1]), memory(bytes[0..4]),
+                memory((((&result as (void *)) as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])
             ));
         }
         step_until(function.exit);

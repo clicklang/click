@@ -698,6 +698,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &prefix,
             &format!("{};", application.tactic_spelling()),
         ),
+        ProofTactic::ReleaseView(resource) => line(
+            output,
+            &prefix,
+            &format!("release_view({});", format_resource_target(resource)),
+        ),
         ProofTactic::UnfoldProposition(target) => line(
             output,
             &prefix,

@@ -3373,9 +3373,10 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
     let (_, heads) = ResourceContext::new().unchecked_with_facts_and_occurrences([head.clone()]);
     escaping.insert(
         loan,
-        vec![EscapingComposite {
+        vec![EscapingBorrow {
             head: head.clone(),
             occurrence: heads[0].1,
+            root_permission: None,
         }],
     );
     let planned_ledger = plan.ledger.clone();
@@ -4863,11 +4864,15 @@ fn equal_returned_composite_occurrences_keep_independent_holds() {
     let head = composite("returned_cursor", true);
     let (_, inserted) =
         ResourceContext::new().unchecked_with_facts_and_occurrences([head.clone(), head.clone()]);
-    let escaping: BTreeMap<LoanId, Vec<EscapingComposite>> = BTreeMap::from([(
+    let escaping: BTreeMap<LoanId, Vec<EscapingBorrow>> = BTreeMap::from([(
         plan.stable_views()[0].loan,
         inserted
             .into_iter()
-            .map(|(head, occurrence)| EscapingComposite { head, occurrence })
+            .map(|(head, occurrence)| EscapingBorrow {
+                head,
+                occurrence,
+                root_permission: None,
+            })
             .collect(),
     )]);
     let expected = escaping

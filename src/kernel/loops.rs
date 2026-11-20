@@ -514,12 +514,14 @@ fn execute_modeled_pthread_mutex_paths(
             transport.function.as_ref() == contract.function_name
                 && transport.arity == contract.arity
                 && transport.bindings.keys().all(|identity| {
-                    contract
-                        .implemented_binders()
-                        .any(|binder| *identity == Variable(binder.identity))
+                    contract.implemented_binders().any(|binder| {
+                        *identity == ResourceBinderId::from_variable(Variable(binder.identity))
+                    })
                 })
                 && contract.implemented_binders().all(|binder| {
-                    transport.bindings.contains_key(&Variable(binder.identity))
+                    transport
+                        .bindings
+                        .contains_key(&ResourceBinderId::from_variable(Variable(binder.identity)))
                         || (initializing && binder.role == MutexResourceRole::State)
                 })
                 && transport
@@ -602,9 +604,15 @@ fn execute_modeled_pthread_mutex_paths(
                     .binder_by_role(MutexResourceRole::State)
                     .expect("initialization declares its optional state input");
                 let state_identity = selected
-                    .and_then(|transport| transport.bindings.get(&Variable(state_binder.identity)))
+                    .and_then(|transport| {
+                        transport
+                            .bindings
+                            .get(&ResourceBinderId::from_variable(Variable(
+                                state_binder.identity,
+                            )))
+                    })
                     .copied()
-                    .map(InstanceId::from_variable);
+                    .map(ResourceBinderId::instance);
                 let context = if let Some(identity) = state_identity {
                     super::mutexes::MutexContext::new(state.clone())
                         .publish_declared(
@@ -638,9 +646,9 @@ fn execute_modeled_pthread_mutex_paths(
                         .descriptor()
                         .binder_by_role(MutexResourceRole::Lifetime)
                         .expect("initialization declares its lifetime output");
-                    let output = MutexAuthorityId::from_variable(
-                        transport.bindings[&Variable(lifetime.identity)],
-                    );
+                    let output = transport.bindings
+                        [&ResourceBinderId::from_variable(Variable(lifetime.identity))]
+                        .mutex_authority();
                     let live = super::mutexes::live_resource(&next, mutex.address(), false)
                         .expect("successful initialization establishes lifetime authority");
                     next.bind_named_mutex_authority(output, &live)
@@ -673,18 +681,19 @@ fn execute_modeled_pthread_mutex_paths(
                             .descriptor()
                             .binder_by_role(role)
                             .expect("runtime binder role");
-                        transport.bindings[&Variable(binder.identity)]
+                        transport.bindings
+                            [&ResourceBinderId::from_variable(Variable(binder.identity))]
                     })
                 };
                 let usage = state.resources.mutex_use_candidate_at(mutex.address());
                 let access_matches = selected_role(MutexResourceRole::Access)
-                    .map(MutexAuthorityId::from_variable)
+                    .map(ResourceBinderId::mutex_authority)
                     .is_none_or(|identity| {
                         state.resolve_named_mutex_authority(identity) == usage && usage.is_some()
                     });
                 let guard_matches = acquiring
                     || selected_role(MutexResourceRole::Guard)
-                        .map(MutexAuthorityId::from_variable)
+                        .map(ResourceBinderId::mutex_authority)
                         .is_none_or(|identity| {
                             matches!((state.resolve_named_mutex_authority(identity),
                         super::mutexes::guard_resource(state, mutex.address(), false)),
@@ -716,7 +725,7 @@ fn execute_modeled_pthread_mutex_paths(
                         &current,
                         definition,
                         &environment.modeled_mutex_definition_list,
-                        selected_role(MutexResourceRole::State).map(InstanceId::from_variable),
+                        selected_role(MutexResourceRole::State).map(ResourceBinderId::instance),
                         budget,
                     )
                     .map_err(|error| error.into_runtime_error(mutex.address()))
@@ -725,7 +734,7 @@ fn execute_modeled_pthread_mutex_paths(
                             return Ok((next, evidence));
                         }
                         let Some(output) = selected_role(MutexResourceRole::Guard)
-                            .map(MutexAuthorityId::from_variable)
+                            .map(ResourceBinderId::mutex_authority)
                         else {
                             return Ok((next, evidence));
                         };
@@ -785,9 +794,9 @@ fn execute_modeled_pthread_mutex_paths(
                             .descriptor()
                             .binder_by_role(MutexResourceRole::Lifetime)
                             .expect("destruction declares its lifetime input");
-                        MutexAuthorityId::from_variable(
-                            transport.bindings[&Variable(lifetime.identity)],
-                        )
+                        transport.bindings
+                            [&ResourceBinderId::from_variable(Variable(lifetime.identity))]
+                            .mutex_authority()
                     });
                     if selected_live.is_some_and(|identity| {
                         !matches!(

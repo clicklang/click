@@ -1,6 +1,7 @@
 //! Predicate and resource unfold/fold/observation steps.
 
 use super::*;
+use crate::kernel::proof::InstanceUnfoldError;
 use crate::kernel::{IntegerTerm, SharedIntegerTerm};
 
 impl<'a> Proof<'a> {
@@ -316,6 +317,59 @@ impl<'a> Proof<'a> {
         })
     }
 
+    pub(super) fn apply_release_view(
+        &self,
+        resource: &ResourceClause,
+    ) -> Result<CheckedFocusedTransition, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error("release_view requires an execution proof"));
+        };
+        self.require_execution_frontier("release_view")?;
+        let mut execution = self
+            .execution()
+            .cloned()
+            .ok_or_else(|| self.step_error("release_view requires a running state"))?;
+        let facts = self.facts().clone();
+        let ResourceClause::ViewMemory(segment) = resource else {
+            return Err(self.step_error("release_view requires one memory view"));
+        };
+        let mut segment = segment.clone();
+        if let ProgramExpression::Variable(name) = &mut segment.base {
+            *name = execution
+                .core
+                .reached_state()
+                .locals()
+                .resolve_binding(name);
+        }
+        let element_width =
+            crate::surface::lowering::contract_segment_element_width_with_pointer_types(
+                context.parameter_binding().parameters,
+                &segment,
+                None,
+                None,
+            );
+        let selected = crate::kernel::MemorySegment::new(segment.base, segment.start, segment.end)
+            .with_element_width(element_width);
+        let successor = execution
+            .core
+            .record_view_release(&selected, facts.assumptions())
+            .map_err(|error| self.step_error(error))?;
+        execution.core.state = successor.into();
+        let branch = self
+            .focused_branch()
+            .ok_or_else(|| self.step_error("release_view requires an open goal"))?
+            .with_state(BranchState {
+                facts,
+                execution: Some(Arc::new(execution)),
+            });
+        Ok(CheckedFocusedTransition {
+            locals: self.state().locals().clone(),
+            branch: Some(branch),
+            added_facts: Vec::new(),
+            checked_facts: Vec::new(),
+        })
+    }
+
     fn apply_execution_population_authority_exchange(
         &self,
         resource: &ResourceClause,
@@ -505,8 +559,8 @@ impl<'a> Proof<'a> {
                 proposed.push(value);
             }
             let identity = pre_state
-                .owned_resource_instance(binding.identity)
-                .map_or(binding.identity, |instance| instance.identity());
+                .owned_resource_instance(binding.identity.instance())
+                .map_or(binding.identity.instance(), |instance| instance.identity());
             constructed = crate::kernel::ResourceInstance::new_with_resource_arguments(
                 identity,
                 name,
@@ -519,10 +573,10 @@ impl<'a> Proof<'a> {
             &constructed
         } else {
             before
-                .resource_instance_at_path(binding.identity, &binding.children)
+                .resource_instance_at_path(binding.identity.instance(), &binding.children)
                 .or_else(|| {
                     if !unfold && binding.children.is_empty() {
-                        pre_state.owned_resource_instance(binding.identity)
+                        pre_state.owned_resource_instance(binding.identity.instance())
                     } else {
                         None
                     }
@@ -537,7 +591,6 @@ impl<'a> Proof<'a> {
             .function
             .composite_resource_definition(instance.name())
             .ok_or_else(|| self.step_error("resource instance has no registered body"))?;
-        let selected = ResourceFact::own(Resource::Instance(instance.clone()));
         // `let { field: name } = unfold(instance)` names the folded value of a
         // scalar field, as a matched constructor payload names its value. The
         // instance is consumed by this unfold, so the binder is the only
@@ -594,8 +647,7 @@ impl<'a> Proof<'a> {
         } else {
             self.facts().assumptions().clone()
         };
-        let construct_fold = !unfold && outcome.is_none();
-        let (rewrite, produced_facts) = if let Some(goal) = outcome {
+        let (rewrite, facts) = if let Some(goal) = outcome {
             execution
                 .core
                 .rewrite_return_resource_instance_with_children_under(
@@ -607,8 +659,8 @@ impl<'a> Proof<'a> {
                     selected_children.clone(),
                     &assumptions,
                 )
-                .map(|(rewrite, facts)| (rewrite, Some(facts)))
-        } else if construct_fold {
+                .map_err(InstanceUnfoldError::Construction)
+        } else if !unfold {
             execution
                 .core
                 .fold_resource_instance_with_children_under(
@@ -619,20 +671,41 @@ impl<'a> Proof<'a> {
                     selected_children.clone(),
                     &assumptions,
                 )
-                .map(|(rewrite, facts)| (rewrite, Some(facts)))
+                .map_err(InstanceUnfoldError::Construction)
         } else {
-            crate::kernel::rewrite_resource_instance_selecting_children(
-                before,
+            execution.core.unfold_resource_instance_with_children(
+                context.function,
+                context.arguments,
+                self.facts(),
                 instance,
-                definition,
-                context.function.composite_resource_definitions(),
-                &assumptions,
-                unfold,
-                selected_children.as_deref(),
+                selected_children.clone(),
+                |rewrite, facts| {
+                    // Use the opening delta to name exposed cells. Later
+                    // body facts must not rename a cell after publication.
+                    let naming_assumptions = rewrite.naming_facts.iter().cloned().fold(
+                        self.facts().assumptions().clone(),
+                        PureFactContext::assume_proposition,
+                    );
+                    crate::surface::proof::resources::materialize_unfolded_instance_arm_cells(
+                        context.resource_environment,
+                        context.spec_definitions,
+                        context.parameter_binding(),
+                        rewrite.state.clone(),
+                        instance,
+                        facts.assumptions(),
+                        &naming_assumptions,
+                        rewrite.body_active,
+                    )
+                },
             )
-            .map(|rewrite| (rewrite, None))
         }
-        .map_err(|refusal| {
+        .map_err(|error| {
+            let refusal = match error {
+                InstanceUnfoldError::Construction(refusal) => refusal,
+                InstanceUnfoldError::Recording(error) => {
+                    return self.step_error_resource_rewrite(error);
+                }
+            };
             let comparison = if crate::surface::proof_trace::enabled_for(self.claim_label()) {
                 crate::surface::proof_trace::ChildArgumentTrace::from_refusal(
                     &refusal,
@@ -865,7 +938,7 @@ impl<'a> Proof<'a> {
                     .map(|child| (&child.name, child.identity))
                     .chain(body.contains().iter().filter_map(|clause| {
                         if let ResourceClause::Named { binding, .. } = clause {
-                            Some((&binding.name, binding.identity))
+                            Some((&binding.name, binding.identity.instance()))
                         } else {
                             None
                         }
@@ -990,11 +1063,6 @@ impl<'a> Proof<'a> {
         };
         let after = rewrite.state;
         let added = rewrite.semantic_facts;
-        let facts = produced_facts.unwrap_or_else(|| {
-            added.iter().fold(self.facts().clone(), |facts, fact| {
-                facts.with_kernel_checked_fact(fact.clone())
-            })
-        });
         // The kernel producer pairs these checked clauses with the facts it
         // introduced. Consume that result directly; comparing the freshly
         // produced facts again would reject equivalent retained carriers.
@@ -1008,30 +1076,6 @@ impl<'a> Proof<'a> {
                 .record_lowering(&clause.source, &clause.checked.proposition)?;
             execution.presentation.resource_body_clauses.push(clause);
         }
-        // The unfold exposed this arm's cells; name them in the state so
-        // the body's facts and the C's own reads of those cells share one
-        // load identity. See `materialize_unfolded_instance_arm_cells`.
-        //
-        // Use the kernel's exact opening delta for pointer spelling. Later
-        // body facts must not rename a cell after its equation was recorded.
-        let after = if unfold && outcome.is_none() {
-            let naming_assumptions = rewrite.naming_facts.into_iter().fold(
-                self.facts().assumptions().clone(),
-                PureFactContext::assume_proposition,
-            );
-            crate::surface::proof::resources::materialize_unfolded_instance_arm_cells(
-                context.resource_environment,
-                context.spec_definitions,
-                context.parameter_binding(),
-                after,
-                instance,
-                facts.assumptions(),
-                &naming_assumptions,
-                rewrite.body_active,
-            )
-        } else {
-            after
-        };
         let updated_branch = if let Some(goal) = outcome {
             execution.core.state = after.clone().into();
             let mut updated = goal.clone();
@@ -1046,20 +1090,6 @@ impl<'a> Proof<'a> {
                 },
             )
         } else {
-            if !construct_fold {
-                execution
-                    .core
-                    .record_resource_rewrite_with_children(
-                        context.function,
-                        context.arguments,
-                        self.facts(),
-                        &selected,
-                        &after,
-                        &facts,
-                        selected_children,
-                    )
-                    .map_err(|error| self.step_error_resource_rewrite(error))?;
-            }
             execution.core.state = after.into();
             branch.with_state(BranchState {
                 facts,

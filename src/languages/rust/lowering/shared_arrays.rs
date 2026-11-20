@@ -224,25 +224,38 @@ impl Context<'_> {
     }
 
     /// `next` of a slice iterator: the `Option` built in `option`, or, once
-    /// the loop reads only its element, the element's reference assigned to
-    /// `payload`. When the `for` header's test decided whether it yields
+    /// the loop reads only its element, bind the address or copied integer
+    /// to the typed `payload`. When the `for` header's test decided whether it yields
     /// (`taken`), only that arm runs; the arm that does not yield is nothing.
     pub(super) fn shared_array_next(
         &mut self,
         iterator: &str,
         option: Option<&str>,
-        payload: Option<&str>,
+        payload: Option<(&str, &Type)>,
         taken: Option<bool>,
     ) -> Result<ProgramStatement, String> {
         match (option, payload) {
             (Some(option), None) => self.shared_array_next_with(iterator, option, program_skip()),
-            (None, Some(payload)) => {
-                let fields = self.shared_array_iterator(iterator)?.fields.clone();
+            (None, Some((payload, payload_type))) => {
+                let state = self.shared_array_iterator(iterator)?;
+                let fields = state.fields.clone();
+                let element = state.element;
                 if taken == Some(false) {
                     return Ok(program_skip());
                 }
                 use crate::kernel::program_expression::variable;
-                let bind = self.bind_local(payload, variable(fields.pointer.clone()))?;
+                let pointer = variable(fields.pointer.clone());
+                let value = match payload_type {
+                    Type::Reference {
+                        mutable: false,
+                        pointee,
+                    } if scalar_type(pointee)?.to_kernel_type() == element => pointer,
+                    ty if ty.is_integer() && scalar_type(ty)?.to_kernel_type() == element => {
+                        self.load_with_source(pointer, element, None)?
+                    }
+                    _ => return Err("Rust slice iterator payload type mismatch".into()),
+                };
+                let bind = self.bind_local(payload, value)?;
                 let some = program_seq(bind, advance(&fields));
                 Ok(match taken {
                     Some(_) => some,

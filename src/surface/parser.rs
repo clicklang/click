@@ -1026,7 +1026,7 @@ struct Parser {
     /// resource is declared by the parent's matched arm, which may not be
     /// parsed yet, so the recorded family is the parent's and every family
     /// comparison against these instances is left to declaration expansion.
-    child_slot_identities: BTreeSet<InstanceId>,
+    child_slot_identities: BTreeSet<crate::kernel::ResourceBinderId>,
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
@@ -1257,7 +1257,7 @@ struct Parser {
 /// block, recorded so a caller's call step can bind it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct CalleeResourceBinder {
-    pub(in crate::surface) identity: InstanceId,
+    pub(in crate::surface) identity: crate::kernel::ResourceBinderId,
     // None denotes a supplied resource assertion parameter. Its concrete
     // family is checked by the instantiated runtime contract in the kernel.
     pub(in crate::surface) family: Option<String>,
@@ -4092,7 +4092,7 @@ impl Parser {
                 left: ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: binding.name.clone(),
                     resource_name: child.clone(),
-                    identity: binding.identity,
+                    identity: binding.identity.instance(),
                     children: vec![],
                     field: child_field.name.clone(),
                     field_index: 0,
@@ -4847,6 +4847,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: true,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -4892,6 +4893,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: false,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -5289,6 +5291,7 @@ impl Parser {
         let mut contract_lets = Vec::new();
         let mut contract_let_names = BTreeSet::new();
         let mut requires = Vec::new();
+        let mut view_inputs = BTreeMap::new();
         let mut decreases = None;
         let mut constructs = Vec::new();
         let mut ensures = Vec::new();
@@ -5537,6 +5540,7 @@ impl Parser {
                                     ensure: Ensure::Resource(resource),
                                     proof,
                                     borrowed: false,
+                                    view_source: None,
                                     condition: Some(condition.clone()),
                                 },
                                 &contract_lets,
@@ -5631,6 +5635,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: true,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -5644,6 +5649,16 @@ impl Parser {
                         return Err(self.value_binder_refusal(true));
                     }
                     let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                    if self.peek_ident() == Some("as") {
+                        self.position += 1;
+                        if !matches!(resource, ResourceClause::ViewMemory(_)) {
+                            return Err(self.error("a named input view must name one memory range"));
+                        }
+                        let name = self.expect_ident("input view name")?;
+                        if view_inputs.insert(name.clone(), requires.len()).is_some() {
+                            return Err(self.error(format!("duplicate input view name `{name}`")));
+                        }
+                    }
                     self.expect(Token::Semicolon)?;
                     requires.push(
                         apply_contract_lets_to_requirement(
@@ -5679,6 +5694,42 @@ impl Parser {
                 }
                 Some("produces") => {
                     self.position += 1;
+                    if self.peek_ident() == Some("view")
+                        && self.peek_next() == Some(&Token::LParen)
+                        && self.matching_parentheses[self.position + 1]
+                            .is_some_and(|close| matches!(self.tokens.get(close + 1), Some(Token::Ident(keyword)) if keyword == "from"))
+                    {
+                        self.position += 2;
+                        let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                        if matches!(resource, ResourceClause::ViewMemory(_)) {
+                            self.expect(Token::RParen)?;
+                            self.expect_ident_spelling("from")?;
+                            let name = self.expect_ident("input view name")?;
+                            let source = view_inputs.get(&name).copied().ok_or_else(|| {
+                                self.error(format!("unknown input view `{name}`"))
+                            })?;
+                            let proof = self.parse_proof_clause_or_default()?;
+                            ensure_kinds.push(ClaimClauseKind::Produces);
+                            clause_positions.push(clause_start.clone());
+                            ensures.push(
+                                apply_contract_lets_to_ensure_clause(
+                                    EnsureClause {
+                                        proof_bindings: Vec::new(),
+                                        name: None,
+                                        ensure: Ensure::Resource(resource),
+                                        proof,
+                                        borrowed: false,
+                                        view_source: Some(source),
+                                        condition: None,
+                                    },
+                                    &contract_lets,
+                                )
+                                .map_err(|message| self.error(message))?,
+                            );
+                            continue;
+                        }
+                        return Err(self.error("a produced view must name one memory range"));
+                    }
                     let resource = self.parse_function_contract_memory_binding()?;
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
@@ -5700,6 +5751,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: false,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -7769,7 +7821,7 @@ impl Parser {
         {
             let subject = ResourceSubject::Instance {
                 name: name.to_string(),
-                identity: *identity,
+                identity: identity.instance(),
                 at: None,
             };
             self.position += 1;
@@ -8178,13 +8230,10 @@ impl Parser {
                     "`{callee}` produces named resource instance(s) `{names}`; bind them with `let {{ ... }} = {form}`"
                 )));
             }
-            (Some(CallOutputPattern::Single(name)), [(produced_name, declaration)]) if tactic => {
-                produced.push(self.bind_produced_call_instance(
-                    &name,
-                    produced_name,
-                    declaration,
-                    &arguments,
-                )?);
+            (Some(CallOutputPattern::Single(_)), _) if tactic => {
+                return Err(self.error(format!(
+                    "user-defined tactic outputs require named bindings: write `let {{ binder: name }} = {callee}(...)`"
+                )));
             }
             (Some(CallOutputPattern::Single(_)), _) => {
                 return Err(self.error(
@@ -8389,7 +8438,9 @@ impl Parser {
                 let resource = family.map(|family| ResourceClause::Named {
                     binding: ResourceInstanceBinding {
                         name: binder.name().to_string(),
-                        identity: InstanceId::from_variable(Variable(binder.identity)),
+                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(
+                            binder.identity,
+                        )),
                         children: vec![],
                         schema: None,
                         fields: None,
@@ -8412,7 +8463,9 @@ impl Parser {
                 binders.insert(
                     binder.name().to_string(),
                     CalleeResourceBinder {
-                        identity: InstanceId::from_variable(Variable(binder.identity)),
+                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(
+                            binder.identity,
+                        )),
                         family: family.map(str::to_string),
                         resource,
                         parameter_names: vec!["mutex".to_string(), "attributes".to_string()],
@@ -8435,7 +8488,9 @@ impl Parser {
             .insert(
                 "payload".to_string(),
                 CalleeResourceBinder {
-                    identity: InstanceId::from_variable(Variable(ATOMIC_INIT_PAYLOAD_BINDER_ID)),
+                    identity: crate::kernel::ResourceBinderId::from_variable(Variable(
+                        ATOMIC_INIT_PAYLOAD_BINDER_ID,
+                    )),
                     family: None,
                     resource: None,
                     parameter_names: vec!["object".to_string(), "value".to_string()],
@@ -8471,7 +8526,7 @@ impl Parser {
     /// name it: the map gives its value.
     fn value_parameter_callee_binder() -> CalleeResourceBinder {
         CalleeResourceBinder {
-            identity: InstanceId::from_variable(Variable(0)),
+            identity: crate::kernel::ResourceBinderId::from_variable(Variable(0)),
             family: None,
             resource: None,
             parameter_names: Vec::new(),
@@ -8854,6 +8909,7 @@ impl Parser {
                 ensure,
                 proof,
                 borrowed: false,
+                view_source: None,
                 condition: None,
             },
             introduced,
@@ -10128,8 +10184,9 @@ impl Parser {
     /// The refusal for a name that binds no resource instance here: one
     /// whose binding block has ended is refused as out of scope.
     /// A fresh identity for a resource binder this file introduces.
-    fn fresh_resource_identity(&mut self) -> InstanceId {
-        let identity = InstanceId::from_variable(Variable(self.next_resource_identity));
+    fn fresh_resource_identity(&mut self) -> crate::kernel::ResourceBinderId {
+        let identity =
+            crate::kernel::ResourceBinderId::from_variable(Variable(self.next_resource_identity));
         self.next_resource_identity += 1;
         identity
     }
@@ -10341,7 +10398,7 @@ impl Parser {
                 }
                 let identity = self.fresh_resource_identity();
                 self.names.insert(NameKind::ProofBinder, name.clone());
-                result.push((slot, name, identity));
+                result.push((slot, name, identity.instance()));
                 continue;
             }
             let existing = self.names.resource_bindings.get(&name).cloned();
@@ -10392,7 +10449,7 @@ impl Parser {
                     },
                 );
             }
-            result.push((slot, name, identity));
+            result.push((slot, name, identity.instance()));
         }
         Ok(result)
     }
@@ -11411,6 +11468,15 @@ impl Parser {
                 let point = self.parse_execution_point()?;
                 self.expect(Token::RParen)?;
                 ProofTactic::ExecuteUntil(point)
+            }
+            "release_view" => {
+                self.expect(Token::LParen)?;
+                let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                if !matches!(resource, ResourceClause::ViewMemory(_)) {
+                    return Err(self.error("release_view requires one memory view"));
+                }
+                self.expect(Token::RParen)?;
+                ProofTactic::ReleaseView(resource)
             }
             "unfold" => {
                 self.expect(Token::LParen)?;
@@ -15252,7 +15318,7 @@ impl Parser {
                         expression = ContractExpression::ResourceField(ResourceFieldAccess {
                             owner,
                             resource_name,
-                            identity,
+                            identity: identity.instance(),
                             children: vec![],
                             field,
                             field_index: 0,
@@ -16430,7 +16496,7 @@ impl Parser {
                 return Ok(ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: crate::surface::diagnostics::describe_contract_expression(&call),
                     resource_name: name,
-                    identity,
+                    identity: identity.instance(),
                     children: vec![],
                     field: path.join("."),
                     field_index: 0,
@@ -17862,6 +17928,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
         ensure,
         proof,
         borrowed,
+        view_source,
         condition,
     } = clause;
     match ensure {
@@ -17873,6 +17940,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
                 ensure: Ensure::Resource(resource),
                 proof: proof.clone(),
                 borrowed,
+                view_source,
                 condition: condition.clone(),
             })
             .collect(),
@@ -17882,6 +17950,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
             ensure,
             proof,
             borrowed,
+            view_source,
             condition,
         }],
     }
@@ -18635,6 +18704,7 @@ mod tactic_classification_tests {
         ("unfold-function", "unfold(f(x));"),
         ("unfold-resource", "unfold(reference(p));"),
         ("fold-resource", "fold(reference(p));"),
+        ("release-view", "release_view(*p);"),
         ("unfold-slot", "unfold(reference(p)[0]);"),
         ("fold-slot", "fold(reference(p)[0]);"),
         ("fold-iterated-clause", "fold(reference(p)[..]);"),
@@ -18762,7 +18832,7 @@ mod tactic_classification_tests {
                 let cell = BTreeMap::from([(
                     "cell".to_string(),
                     CalleeResourceBinder {
-                        identity: InstanceId::from_variable(Variable(1)),
+                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(1)),
                         family: Some("reference".to_string()),
                         resource: None,
                         parameter_names: Vec::new(),
@@ -18785,7 +18855,7 @@ mod tactic_classification_tests {
                 parser.names.resource_bindings.insert(
                     "c".to_string(),
                     (
-                        InstanceId::from_variable(Variable(2)),
+                        crate::kernel::ResourceBinderId::from_variable(Variable(2)),
                         "reference".to_string(),
                     ),
                 );
@@ -18958,7 +19028,10 @@ mod preserve_syntax_tests {
         let mut parser = Parser::new(source).unwrap();
         parser.names.resource_bindings.insert(
             "r".into(),
-            (InstanceId::from_variable(Variable(123)), "Node".into()),
+            (
+                crate::kernel::ResourceBinderId::from_variable(Variable(123)),
+                "Node".into(),
+            ),
         );
         parser.resource_parameters.insert("R".into(), 0);
         parser

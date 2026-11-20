@@ -2064,8 +2064,10 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn parameter_store_numeric_connectivity(
         &self,
+        base: Option<&Address>,
     ) -> Option<&crate::kernel::equality_graph::NumericAddressConnectivity> {
-        self.equality_graph.parameter_store_numeric_connectivity()
+        self.equality_graph
+            .parameter_store_numeric_connectivity(base)
     }
 
     /// Cross-block equalities are filed under their exact endpoints, so a

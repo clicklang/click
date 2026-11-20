@@ -2682,6 +2682,35 @@ impl ResourceContext {
         Some(self)
     }
 
+    /// A release selects one whole view. An equivalent pointer spelling
+    /// can name it through the same indexed witness used for reads.
+    pub(crate) fn principal_view_for_release(
+        &self,
+        fact: &ResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceOccurrenceId> {
+        crate::instrumentation::record_deterministic_work(1);
+        let occurrence = if let Some(entries) = self.storage.index.exact.get(fact) {
+            if entries.len() != 1 {
+                return None;
+            }
+            self.occurrence(*entries.iter().next()?)
+        } else {
+            let occurrence = self.indexed_view_witness(fact, assumptions)?;
+            let held = self.view_fact_for_occurrence(occurrence)?;
+            if !crate::kernel::resources_directly_match(
+                fact.resource(),
+                held.resource(),
+                assumptions,
+            ) {
+                return None;
+            }
+            occurrence
+        };
+        self.view_occurrence_is_principal(occurrence)
+            .then_some(occurrence)
+    }
+
     pub(crate) fn view_occurrence_is_principal(&self, occurrence: ResourceOccurrenceId) -> bool {
         self.storage
             .entry_by_occurrence

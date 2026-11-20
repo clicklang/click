@@ -3950,6 +3950,12 @@ impl PureFactContext {
                     .without_key(key)
             };
             let bucket = memory_reasoning::parameter_alias_bucket(key);
+            if filed {
+                self.equality_graph
+                    .admitted
+                    .numeric_address_connectivity
+                    .mark_pointer_alias_bucket(&bucket);
+            }
             let endpoints = self
                 .equality_graph
                 .admitted
@@ -4899,6 +4905,10 @@ impl PureFactContext {
         self.equality_graph
             .admitted
             .pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
+        self.equality_graph
+            .admitted
+            .numeric_address_connectivity
+            .clear_pointer_alias_marks();
         self.equality_graph.clear_condition_pointer_facts();
         self.equality_graph.reset_closure();
         self.equality_graph.admitted.algebraic_graph_equalities = Default::default();
@@ -5287,10 +5297,12 @@ impl PureFactContext {
                 MachineOperandView::Legacy(endpoint),
             )
         });
-        self.equality_graph
-            .admitted
-            .numeric_address_connectivity
-            .record([(&left_key, left.as_ref()), (&right_key, right.as_ref())]);
+        let admitted = &mut *self.equality_graph.admitted;
+        let pointer_alias_endpoints = &admitted.pointer_alias_endpoints_by_object;
+        admitted.numeric_address_connectivity.record(
+            [(&left_key, left.as_ref()), (&right_key, right.as_ref())],
+            |bucket| pointer_alias_endpoints.contains_key(bucket),
+        );
         for (key, endpoint, other) in [
             (left_key, left.as_ref(), right.as_ref()),
             (right_key, right.as_ref(), left.as_ref()),

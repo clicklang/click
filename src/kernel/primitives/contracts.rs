@@ -3890,7 +3890,7 @@ impl ExecutionEnvironment {
         self,
         function: &str,
         arity: usize,
-        bindings: BTreeMap<Variable, Variable>,
+        bindings: BTreeMap<ResourceBinderId, ResourceBinderId>,
     ) -> Self {
         self.with_selected_call_binders_and_types(function, arity, bindings, BTreeMap::new())
     }
@@ -3900,7 +3900,7 @@ impl ExecutionEnvironment {
         mut self,
         function: &str,
         arity: usize,
-        bindings: BTreeMap<Variable, Variable>,
+        bindings: BTreeMap<ResourceBinderId, ResourceBinderId>,
         type_arguments: BTreeMap<Variable, crate::kernel::ResourceDescription>,
     ) -> Self {
         self.selected_call_binders = Some(std::sync::Arc::new(CallBinderTransport {

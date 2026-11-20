@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, LoopEffectOrigin, SpecIntegerExpression};
 use crate::kernel::{bits32_constant, constant_u32};
+use std::sync::Arc;
 
 // The lowerers share these two finite bands. Refusing at each ceiling keeps
 // quantifiers, algebraic binders, pointer identities, and spec fold binders
@@ -482,7 +483,7 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
             crate::kernel::model_fields::register_model_field_variable(
                 variable,
                 crate::kernel::model_fields::ModelFieldOrigin {
-                    identity: binding.identity,
+                    identity: binding.identity.instance(),
                     field: std::sync::Arc::from(field.as_str()),
                     field_index,
                     minted_by: crate::kernel::model_fields::ModelMint::ContractEntry,
@@ -503,7 +504,10 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         } else {
             binding.name.clone()
         };
-        crate::kernel::model_fields::register_instance_spelling(binding.identity, &spelling);
+        crate::kernel::model_fields::register_instance_spelling(
+            binding.identity.instance(),
+            &spelling,
+        );
     }
 }
 
@@ -709,9 +713,9 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             spec_definitions,
             entry_state: &entry_state,
             result_type: ProgramType::Int32,
-            entry_values: ProgramValueBindings::new(),
-            aggregate_parameters: BTreeSet::new(),
-            program_parameter_types: BTreeMap::new(),
+            entry_values: Default::default(),
+            aggregate_parameters: Default::default(),
+            program_parameter_types: Default::default(),
             local_type_state: None,
             pointer_element_types: definition
                 .parameters()
@@ -722,11 +726,13 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
                         click_array_element_type(parameter.click_type().interface_type()?)?,
                     ))
                 })
-                .collect(),
+                .collect::<BTreeMap<_, _>>()
+                .into(),
             parameter_pointer_element_widths: click_parameter_pointer_element_widths_with_layouts(
                 definition.parameters(),
                 struct_layouts,
-            ),
+            )
+            .into(),
             quantified_values: BinderMap::new(),
             algebraic_variables: BinderMap::new(),
             algebraic_types: BTreeMap::new(),
@@ -776,9 +782,9 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         spec_definitions,
         entry_state: &entry_state,
         result_type: ProgramType::Int32,
-        entry_values: ProgramValueBindings::new(),
-        aggregate_parameters: BTreeSet::new(),
-        program_parameter_types: BTreeMap::new(),
+        entry_values: Default::default(),
+        aggregate_parameters: Default::default(),
+        program_parameter_types: Default::default(),
         local_type_state: None,
         pointer_element_types: definition
             .parameters()
@@ -789,11 +795,13 @@ pub(in crate::surface) fn lower_composite_resource_condition(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: click_parameter_pointer_element_widths_with_layouts(
             definition.parameters(),
             struct_layouts,
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -864,9 +872,9 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
         spec_definitions,
         entry_state: &entry_state,
         result_type: ProgramType::Int32,
-        entry_values: ProgramValueBindings::new(),
-        aggregate_parameters: BTreeSet::new(),
-        program_parameter_types: BTreeMap::new(),
+        entry_values: Default::default(),
+        aggregate_parameters: Default::default(),
+        program_parameter_types: Default::default(),
         local_type_state: None,
         pointer_element_types: definition
             .parameters()
@@ -877,11 +885,13 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: click_parameter_pointer_element_widths_with_layouts(
             definition.parameters(),
             struct_layouts,
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -1236,6 +1246,13 @@ pub(in crate::surface) fn kernel_loop_replacement_steps() -> usize {
 /// clauses: what the walk saw at each loop, and the contract's lowered
 /// write footprint a loop without a resource clause inherits.
 struct LoopAnnotationShape {
+    // The parameter image and source types belong to the function's checked
+    // entry. A later annotation reads them through the same maps.
+    entry_values: Arc<ProgramValueBindings>,
+    aggregate_parameters: Arc<BTreeSet<String>>,
+    program_parameter_types: Arc<BTreeMap<String, ProgramType>>,
+    pointer_element_types: Arc<BTreeMap<String, ProgramType>>,
+    parameter_pointer_element_widths: Arc<BTreeMap<String, u32>>,
     records: Vec<LoopLoweringRecord>,
     contract_mutable: Vec<MemorySegment>,
     resource_derived_mutable_frame: bool,
@@ -1337,7 +1354,6 @@ pub(in crate::surface) fn annotated_loop_function_extending(
     arguments: &[ProgramExpression],
     spec_definitions: SpecDefinitions<'_>,
     frame_entry: Option<ResourceFrameEntry<'_>>,
-    pointer_element_types: Option<&BTreeMap<String, ProgramType>>,
     loop_index: usize,
 ) -> Result<Option<LoopAnnotation>, ClickError> {
     let shape = &previous.shape;
@@ -1384,43 +1400,12 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         } else {
             parsed_function.return_type().to_kernel_type()
         },
-        entry_values: parameter_values(ParameterBinding::new(
-            parsed_function.parameters(),
-            arguments,
-        ))?,
-        aggregate_parameters: parsed_function
-            .parameters()
-            .iter()
-            .filter(|p| p.is_struct_value())
-            .map(|p| p.name().to_string())
-            .collect(),
-        program_parameter_types: parsed_function
-            .parameters()
-            .iter()
-            .map(|parameter| {
-                (
-                    parameter.name().to_string(),
-                    parameter.interface_type().to_kernel_type(),
-                )
-            })
-            .collect(),
+        entry_values: shape.entry_values.clone(),
+        aggregate_parameters: shape.aggregate_parameters.clone(),
+        program_parameter_types: shape.program_parameter_types.clone(),
+        pointer_element_types: shape.pointer_element_types.clone(),
+        parameter_pointer_element_widths: shape.parameter_pointer_element_widths.clone(),
         local_type_state: None,
-        pointer_element_types: parsed_function
-            .parameters()
-            .iter()
-            .filter_map(|parameter| {
-                if parameter.is_struct_value() {
-                    return Some((parameter.name().to_string(), ProgramType::Int32));
-                }
-                Some((
-                    parameter.name().to_string(),
-                    click_array_element_type(parameter.interface_type())?,
-                ))
-            })
-            .collect(),
-        parameter_pointer_element_widths: parameter_pointer_element_widths(
-            parsed_function.parameters(),
-        ),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -1431,12 +1416,6 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         retained_states: None,
         loop_records: None,
     };
-    match pointer_element_types {
-        Some(types) => lowerer
-            .pointer_element_types
-            .extend(types.iter().map(|(name, element)| (name.clone(), *element))),
-        None => return Ok(None),
-    }
     let lowered = lowerer.lower_statement(loop_statement, parsed_function.control_targets())?;
     let quantifiers_after = lowerer.next_quantifier_variable;
     let bindings_empty_after =
@@ -1916,13 +1895,15 @@ fn annotate_function(
         entry_values: parameter_values(ParameterBinding::new(
             parsed_function.parameters(),
             arguments,
-        ))?,
+        ))?
+        .into(),
         aggregate_parameters: parsed_function
             .parameters()
             .iter()
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
-            .collect(),
+            .collect::<BTreeSet<_>>()
+            .into(),
         program_parameter_types: parsed_function
             .parameters()
             .iter()
@@ -1932,7 +1913,8 @@ fn annotate_function(
                     parameter.interface_type().to_kernel_type(),
                 )
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         local_type_state: None,
         pointer_element_types: parsed_function
             .parameters()
@@ -1946,10 +1928,12 @@ fn annotate_function(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: parameter_pointer_element_widths(
             parsed_function.parameters(),
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -1962,12 +1946,11 @@ fn annotate_function(
     };
     let parsed_kernel_function = parsed_function.to_kernel_function();
     match pointer_element_types {
-        Some(types) => lowerer
-            .pointer_element_types
+        Some(types) => Arc::make_mut(&mut lowerer.pointer_element_types)
             .extend(types.iter().map(|(name, element)| (name.clone(), *element))),
         None => collect_local_pointer_element_types(
             parsed_kernel_function.body(),
-            &mut lowerer.pointer_element_types,
+            Arc::make_mut(&mut lowerer.pointer_element_types),
         ),
     }
     // Loop-level resource declarations are lowered once, before the body, so
@@ -2014,10 +1997,21 @@ fn annotate_function(
         body
     };
     let no_loop_resources = lowerer.loop_resources.is_empty();
-    let recorded = lowerer
+    let shape = lowerer
         .loop_records
         .take()
-        .map(|records| (records, contract_mutable.clone()));
+        .map(|records| LoopAnnotationShape {
+            loops_lower_alone: !natural_control_loop && !prelowered && no_loop_resources,
+            records,
+            contract_mutable: contract_mutable.clone(),
+            resource_derived_mutable_frame,
+            entry_values: lowerer.entry_values,
+            aggregate_parameters: lowerer.aggregate_parameters,
+            program_parameter_types: lowerer.program_parameter_types,
+            pointer_element_types: lowerer.pointer_element_types,
+            parameter_pointer_element_widths: lowerer.parameter_pointer_element_widths,
+            c_loops: std::sync::OnceLock::new(),
+        });
     let source_body = parsed_kernel_function.body().clone();
     let mut function = program_function(
         if parsed_function.return_struct_name().is_some() {
@@ -2181,15 +2175,10 @@ fn annotate_function(
             "by-value aggregate parameter `{parameter}` is modified, but a postcondition reads its current state"
         )));
     }
-    let shape = recorded.map(|(records, contract_mutable)| LoopAnnotationShape {
-        loops_lower_alone: !natural_control_loop
-            && !prelowered
-            && no_loop_resources
-            && count_kernel_loops(function.body()) == records.len(),
-        records,
-        contract_mutable,
-        resource_derived_mutable_frame,
-        c_loops: std::sync::OnceLock::new(),
+    let shape = shape.map(|mut shape| {
+        shape.loops_lower_alone =
+            shape.loops_lower_alone && count_kernel_loops(function.body()) == shape.records.len();
+        shape
     });
     Ok((function, shape))
 }
@@ -2239,12 +2228,13 @@ pub(in crate::surface) fn lower_branch_interface_fact(
         } else {
             parsed_function.return_type().to_kernel_type()
         },
-        entry_values: parameter_values_named(parameter_binding, &names)?,
+        entry_values: parameter_values_named(parameter_binding, &names)?.into(),
         aggregate_parameters: parameters
             .iter()
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
-            .collect(),
+            .collect::<BTreeSet<_>>()
+            .into(),
         program_parameter_types: parameters
             .iter()
             .map(|parameter| {
@@ -2253,7 +2243,8 @@ pub(in crate::surface) fn lower_branch_interface_fact(
                     parameter.interface_type().to_kernel_type(),
                 )
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         local_type_state: Some(current_state),
         pointer_element_types: parameters
             .iter()
@@ -2263,10 +2254,12 @@ pub(in crate::surface) fn lower_branch_interface_fact(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: parameter_pointer_element_widths(
             parameters.iter().copied(),
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -2310,12 +2303,12 @@ fn fixed_state_elaboration<'a>(
         result_type: result
             .map(ProgramValue::program_type)
             .unwrap_or(ProgramType::Int32),
-        entry_values,
-        aggregate_parameters: BTreeSet::new(),
-        program_parameter_types: BTreeMap::new(),
+        entry_values: entry_values.into(),
+        aggregate_parameters: Default::default(),
+        program_parameter_types: Default::default(),
         local_type_state: None,
-        pointer_element_types: array_element_types,
-        parameter_pointer_element_widths,
+        pointer_element_types: array_element_types.into(),
+        parameter_pointer_element_widths: parameter_pointer_element_widths.into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -2778,8 +2771,8 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         spec_definitions,
         entry_state,
         result_type: ProgramType::Int32,
-        entry_values: ProgramValueBindings::new(),
-        aggregate_parameters: BTreeSet::new(),
+        entry_values: Default::default(),
+        aggregate_parameters: Default::default(),
         program_parameter_types: parameters
             .iter()
             .map(|parameter| {
@@ -2788,7 +2781,8 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
                     parameter.interface_type().to_kernel_type(),
                 )
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         local_type_state: None,
         pointer_element_types: parameters
             .iter()
@@ -2798,10 +2792,12 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: parameter_pointer_element_widths(
             parameters.iter().copied(),
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -2853,8 +2849,8 @@ pub(in crate::surface) fn function_contract_summary(
         spec_definitions,
         entry_state: &entry_state,
         result_type: parsed_function.return_type().to_kernel_type(),
-        entry_values: ProgramValueBindings::new(),
-        aggregate_parameters: BTreeSet::new(),
+        entry_values: Default::default(),
+        aggregate_parameters: Default::default(),
         program_parameter_types: parsed_function
             .parameters()
             .iter()
@@ -2864,7 +2860,8 @@ pub(in crate::surface) fn function_contract_summary(
                     parameter.interface_type().to_kernel_type(),
                 )
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         local_type_state: None,
         pointer_element_types: parsed_function
             .parameters()
@@ -2875,10 +2872,12 @@ pub(in crate::surface) fn function_contract_summary(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: parameter_pointer_element_widths(
             parsed_function.parameters(),
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -2998,7 +2997,8 @@ pub(in crate::surface) fn function_contract_summary(
         .iter()
         .filter(|parameter| parameter.is_struct_value())
         .map(|parameter| parameter.name().to_string())
-        .collect();
+        .collect::<BTreeSet<_>>()
+        .into();
     let mut ensures = Vec::new();
     // A postcondition is read in the exit state, where `result` is the
     // contract result.
@@ -3341,7 +3341,7 @@ fn loop_resource_declarations(
         for spec in &mut declaration.specs {
             *spec = spec
                 .clone()
-                .with_captured_entry_parameters(&lowerer.entry_values);
+                .with_captured_entry_parameters(lowerer.entry_values.as_ref());
         }
     }
     Ok(declarations)
@@ -3416,22 +3416,22 @@ struct AnnotationLowerer<'a> {
     spec_definitions: SpecDefinitions<'a>,
     entry_state: &'a ExecutionState,
     result_type: ProgramType,
-    entry_values: ProgramValueBindings,
+    entry_values: Arc<ProgramValueBindings>,
     /// Live declaration types for state-parametric branch facts; values remain symbolic.
     /// Each referenced name uses the state's existing index, without a body/history scan.
     local_type_state: Option<&'a ExecutionState>,
     /// Declared C types of the function's parameters, where a function is
     /// in scope: a clause's range over a `size_t` parameter is a `size_t`
     /// range.
-    program_parameter_types: BTreeMap<String, ProgramType>,
+    program_parameter_types: Arc<BTreeMap<String, ProgramType>>,
     /// Declared pointee types of parameters and encountered automatic locals.
     /// Local names are the frontend's distinct kernel bindings.
-    pointer_element_types: BTreeMap<String, ProgramType>,
-    aggregate_parameters: BTreeSet<String>,
+    pointer_element_types: Arc<BTreeMap<String, ProgramType>>,
+    aggregate_parameters: Arc<BTreeSet<String>>,
     /// Source-side pointee widths which are not representable in the kernel's
     /// nominal `ProgramType` (notably pointers to structs, which use the compatible
     /// `int32*` carrier).  Pointer arithmetic must retain this physical width.
-    parameter_pointer_element_widths: BTreeMap<String, u32>,
+    parameter_pointer_element_widths: Arc<BTreeMap<String, u32>>,
     quantified_values: BinderMap<ProgramValue>,
     algebraic_variables: BinderMap<SpecAlgebraicExpression>,
     algebraic_types: BTreeMap<(String, Vec<AlgebraicValueType>), AlgebraicType>,
@@ -3922,7 +3922,10 @@ impl AnnotationLowerer<'_> {
                     // its element type, as a fixed-state proof reads it.
                     .or_else(|| state.locals().array_object_element_type(&name))
             })
-            .or_else(|| name.metadata_in(&self.pointer_element_types).copied())
+            .or_else(|| {
+                name.metadata_in(self.pointer_element_types.as_ref())
+                    .copied()
+            })
     }
 
     /// Attach the same checked loop clauses to compiler-lowered statements.
@@ -5835,10 +5838,10 @@ impl AnnotationLowerer<'_> {
         if name.unresolved_name().is_none() {
             return name.program_type();
         }
-        name.metadata_in(&self.program_parameter_types)
+        name.metadata_in(self.program_parameter_types.as_ref())
             .copied()
             .or_else(|| {
-                name.metadata_in(&self.entry_values)
+                name.metadata_in(self.entry_values.as_ref())
                     .map(ProgramValue::program_type)
             })
             .or_else(|| {
@@ -7700,10 +7703,10 @@ impl AnnotationLowerer<'_> {
         if name.is_named("result") {
             Some(self.result_type)
         } else {
-            name.metadata_in(&self.program_parameter_types)
+            name.metadata_in(self.program_parameter_types.as_ref())
                 .copied()
                 .or_else(|| {
-                    name.metadata_in(&self.entry_values)
+                    name.metadata_in(self.entry_values.as_ref())
                         .map(ProgramValue::program_type)
                         .or_else(|| {
                             self.local_type_state
@@ -8696,7 +8699,7 @@ impl AnnotationLowerer<'_> {
                 .byte_width());
         }
         if let ProgramExpression::Variable(name) = &segment.base
-            && let Some(width) = name.metadata_in(&self.parameter_pointer_element_widths)
+            && let Some(width) = name.metadata_in(self.parameter_pointer_element_widths.as_ref())
         {
             return Ok(*width);
         }
@@ -10551,7 +10554,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
         if let ProgramExpression::Variable(name) = expression
-            && let Some(width) = name.metadata_in(&self.parameter_pointer_element_widths)
+            && let Some(width) = name.metadata_in(self.parameter_pointer_element_widths.as_ref())
         {
             return Some(*width);
         }
@@ -10592,7 +10595,7 @@ impl AnnotationLowerer<'_> {
                 target_type.pointee_type().map(ProgramType::byte_width)
             }
             ProgramExpression::Variable(name) => name
-                .metadata_in(&self.parameter_pointer_element_widths)
+                .metadata_in(self.parameter_pointer_element_widths.as_ref())
                 .copied()
                 .or_else(|| {
                     name.named_in(&environment.array_refs)

@@ -243,6 +243,11 @@ path = "mdtests/solve_closes_one_goal.md"
 needle = "solve() using {"
 
 [[form]]
+id = "release-view"
+path = "mdtests/explicit_produced_view.md"
+needle = "release_view(*p);"
+
+[[form]]
 id = "unfold-slot"
 path = "mdtests/iterated_ownership_allocate_one.md"
 needle = "unfold(arena_cells(data, occupied, capacity)[index]);"

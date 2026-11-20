@@ -9878,6 +9878,73 @@ fn concrete_viewability_prerequisite_expands_to_known() {
 }
 
 #[test]
+fn literal_constructor_field_disequality_expands_to_known() {
+    let (source, program) = mdtest_sources("mdtests/algebraic_maybe.md");
+    let program = crate::cli::source_refs(&program);
+    let written = "Maybe<int32>::Some(0) != Maybe<int32>::Some(1) by known();";
+    let smart = source.replace(written, &written.replace("known()", "solve()"));
+    assert_ne!(source, smart);
+    let label = "maybe_payloads_compare_structurally.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&smart, &program, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap();
+    let symbolic = source.replace(
+        "maybe_payloads_compare_structurally()",
+        "maybe_payloads_compare_structurally(x: int32)",
+    );
+    assert_ne!(source, symbolic);
+    let symbolic = symbolic.replace(written, &written.replace("::Some(1)", "::Some(x)"));
+    assert!(symbolic.contains("::Some(x) by known();"));
+    let error = without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&symbolic, &program).map_err(|error| error.report())
+    })
+    .expect_err("a symbolic field does not establish disequality");
+    assert!(error.contains("known"), "{error}");
+}
+
+#[test]
+fn strict_literal_remainder_bound_expands_to_known() {
+    let (source, _) = mdtest_sources("mdtests/solve_bounds_an_unsigned_quotient_by_its_operand.md");
+    let label = "remainder_below_divisor.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let claim = expanded
+        .split_once("theorem remainder_below_divisor")
+        .unwrap()
+        .1;
+    let claim = claim.split_once("theorem uint32_shift").unwrap().0;
+    assert!(claim.contains("known();"), "{claim}");
+    assert!(!claim.contains("normalize()"), "{claim}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .unwrap();
+
+    let strict_reading = "theorem mirror(v: uint32) {
+        ensures 4294967295 > to_integer(v % 4294967295u32) by known();
+    }";
+    without_implicit_solve(|| verify_click_theorems(strict_reading)).unwrap();
+
+    let wrong_bound = "theorem wrong_bound(v: uint64) {
+        ensures v % 1000u64 < 999u64 by known();
+    }";
+    let negative_divisor = "theorem negative_divisor(v: int32) {
+        ensures v % -7 < -7 by known();
+    }";
+    for rejected in [wrong_bound, negative_divisor] {
+        let error = without_implicit_solve(|| verify_click_theorems(rejected))
+            .unwrap_err()
+            .report();
+        assert!(error.contains("`known` requires"), "{error}");
+    }
+}
+
+#[test]
 fn selected_mirrored_disequality_expands_to_known() {
     let (source, _) = mdtest_sources("mdtests/int32_disequality_symmetry.md");
     let expanded = expand_c_claim_source_by_label(&source, &[], "swap_disequality.ensures_0")
@@ -25329,4 +25396,20 @@ fn expanded_call_names_the_folded_supplier() {
         })
         .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
     }
+}
+
+#[test]
+fn explicit_produced_view_release_expands_and_reverifies() {
+    let (source, c_sources) = mdtest_sources("mdtests/explicit_produced_view_restores_owner.md");
+    let c_sources = c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &c_sources, "update")
+        .expect("expand the caller's proof");
+    assert!(expanded.contains("release_view("), "{expanded}");
+    without_implicit_solve_for_claim("update.contract", || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("replay the explicit view release");
 }
