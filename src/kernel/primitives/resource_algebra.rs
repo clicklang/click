@@ -8587,17 +8587,14 @@ impl ResourceContext {
     /// deliberately does not do first. The units are those the consumption
     /// already selected by key, merged with the family's own pair rule in
     /// their index order until one merged unit covers `fact`. Memory keeps
-    /// its own supplier composition, and a unit with a loan, support or
-    /// witness keeps its identity.
+    /// its own supplier composition, and a unit with a loan, support,
+    /// projection or witness keeps its identity.
     fn consume_fact_from_merged_units(
         &mut self,
         fact: &ResourceFact,
         assumptions: &PureFactContext,
         candidates: &[ResourceEntryId],
     ) -> bool {
-        if std::env::var_os("CLICK_DBG_MERGE").is_some() {
-            eprintln!("DBG merge entry fact={:?}", fact.owned_quantity_term());
-        }
         if fact.memory_range().is_some()
             || fact
                 .owned_quantity_term()
@@ -8609,33 +8606,11 @@ impl ResourceContext {
         let algebra = resource_family_algebra(fact.family());
         let mut merged: Option<ResourceFact> = None;
         let mut used = Vec::new();
-        let dbg = std::env::var_os("CLICK_DBG_MERGE").is_some();
-        if dbg {
-            eprintln!("DBG merge family={:?} candidates={}", fact.family(), candidates.len());
-        }
         for &entry in candidates {
             crate::instrumentation::record_deterministic_work(1);
             let unit = self.fact(entry);
-            if dbg {
-                let occurrence = self.occurrence(entry);
-                eprintln!(
-                    "DBG   reasons supported_by={:?} projections={} expansions={} loan={:?} witness={}",
-                    self.storage.supported_by.get(&entry),
-                    self.storage.projections_by_support_occurrence.contains_key(&occurrence),
-                    self.storage.expansions_by_support_occurrence.contains_key(&occurrence),
-                    self.loan_dependency(occurrence),
-                    self.structural_witnesses.as_ref().is_some_and(|w| w.contains(occurrence)),
-                );
-                eprintln!(
-                    "DBG   cand eligible={} own={} same={} merged={:?}",
-                    self.delta_normalization_eligible(entry),
-                    unit.is_own(),
-                    unit.resource() == fact.resource(),
-                    merged.as_ref().map(|m| normalize_resource_fact_pair(m, unit, assumptions).is_some())
-                );
-            }
             if used.contains(&entry)
-                || !self.delta_normalization_eligible(entry)
+                || !self.merged_unit_eligible(entry)
                 || !unit.is_own()
                 || unit.resource() != fact.resource()
                 || unit
@@ -8660,6 +8635,16 @@ impl ResourceContext {
                     algebra.consume(&next, fact, assumptions)
             {
                 for entry in &used {
+                    let occurrence = self.occurrence(*entry);
+                    if self
+                        .storage
+                        .expansions_by_support_occurrence
+                        .contains_key(&occurrence)
+                    {
+                        *self = self
+                            .clone()
+                            .without_cached_supported_expansion_for_occurrence(occurrence);
+                    }
                     self.remove_entry(*entry);
                 }
                 for residual in residual {
@@ -8915,6 +8900,24 @@ impl ResourceContext {
         }
         candidates.remove(&entry);
         candidates
+    }
+
+    /// A unit [`Self::consume_fact_from_merged_units`] may merge away: what
+    /// delta normalization accepts, and also a unit whose only extra is a
+    /// cached expansion of its body. That cache is derived again wherever it
+    /// is needed and is dropped with the unit.
+    fn merged_unit_eligible(&self, entry: ResourceEntryId) -> bool {
+        let occurrence = self.occurrence(entry);
+        !self.storage.supported_by.contains_key(&entry)
+            && !self
+                .storage
+                .projections_by_support_occurrence
+                .contains_key(&occurrence)
+            && self.loan_dependency(occurrence).is_none()
+            && !self
+                .structural_witnesses
+                .as_ref()
+                .is_some_and(|witnesses| witnesses.contains(occurrence))
     }
 
     fn delta_normalization_eligible(&self, entry: ResourceEntryId) -> bool {
