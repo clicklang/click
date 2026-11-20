@@ -200,6 +200,15 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                         | CompareRelation::GreaterEqual
                 ));
             }
+            if (matches!(left.as_ref(), MachineTerm::IntegerToMachine { .. })
+                || matches!(right.as_ref(), MachineTerm::IntegerToMachine { .. }))
+                && let Some(value) =
+                    crate::kernel::machine_integer::comparison::literal_native_comparison_value(
+                        condition,
+                    )
+            {
+                return Some(value);
+            }
             if let (Some(left), Some(right)) = (
                 format.constant_from_term(left),
                 format.constant_from_term(right),
@@ -800,6 +809,12 @@ fn integer_affine_difference(
         }
         if let Some(value) = reduced_matches.get(&term.id()) {
             *coefficients.entry(value.id()).or_default() += coefficient;
+            continue;
+        }
+        if let IntegerTerm::Machine(value) = term.as_ref()
+            && let Some(value) = value.literal_conversion_value()
+        {
+            constant += value.to_integer() * coefficient;
             continue;
         }
         match term.as_ref() {

@@ -162,6 +162,15 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     else {
         return None;
     };
+    let conversion_literal = |word: &MachineTerm| {
+        let (destination, value) =
+            crate::kernel::MachineOperandView::Legacy(word).checked_literal_integer_conversion()?;
+        destination.constant_term(value)
+    };
+    let left_literal = conversion_literal(left);
+    let right_literal = conversion_literal(right);
+    let left = left_literal.as_ref().unwrap_or(left);
+    let right = right_literal.as_ref().unwrap_or(right);
     // Wide equality reads no sign and is filed at `int64` whatever its
     // literals' signedness (`ConditionTerm::int64_equal`): compare the bits.
     if *format == MachineIntegerType::Int64
@@ -186,12 +195,7 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     {
         return None;
     }
-    match ConditionTerm::machine_compare(
-        *format,
-        *relation,
-        left.as_ref().clone(),
-        right.as_ref().clone(),
-    ) {
+    match ConditionTerm::machine_compare(*format, *relation, left.clone(), right.clone()) {
         ConditionTerm::Constant(value) => Some(value),
         _ => None,
     }

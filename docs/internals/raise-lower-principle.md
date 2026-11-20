@@ -552,6 +552,10 @@ Integer-congruence payloads retain their syntax; division by zero, signed
 division overflow, and invalid shifts
 remain opaque instead of acquiring an invented value.
 
+Explicit `Integer` conversions such as `to_int32(7)` retain their destination
+and operand in logical lowering. A literal must fit its destination. Checking
+may read the converted value from those two roots without changing the term.
+
 Logical object-pointer reads now retain their version names, including when
 memory stores a complete pointer at the cell. The read's complete stored value
 is related through `EqualityGraph::register_logical_read_values` and the

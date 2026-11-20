@@ -701,6 +701,9 @@ fn collect_integer_constants(
                 }
                 Some(value.clone())
             }
+            IntegerTerm::Machine(value) => value
+                .literal_conversion_value()
+                .map(|value| value.to_integer()),
             IntegerTerm::Negate(child) => match cache.get(&child.id()).and_then(Option::as_ref) {
                 Some(value) => {
                     if crate::instrumentation::deadline_exceeded_with_work(
