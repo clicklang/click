@@ -439,15 +439,6 @@ impl<'a> Proof<'a> {
                 // points and its entry state, so `at(point, ..)`, `old(..)`
                 // and `<call>.result` forms are available.
                 let Some(surface) = next.structural_proposition_candidate(original) else {
-                    if std::env::var_os("CLICK_DEBUG_UNLOWERED").is_some() {
-                        let kind = match next.context.as_ref() {
-                            super::ProofContext::Pure(_) => "pure",
-                            super::ProofContext::FixedState(_) => "fixed",
-                            super::ProofContext::Execution(_) => "execution",
-                        };
-                        let (intro, locals) = next.binder_variable_names();
-                        eprintln!("DEBUG-RAISE {kind} intro={intro:?} locals={locals:?}");
-                    }
                     return (RoundTrip::Unraised, String::new(), String::new());
                 };
                 let raised = crate::surface::printing::source_click_proposition(&surface);
@@ -456,12 +447,7 @@ impl<'a> Proof<'a> {
                         || next.lower_surface_proposition_direct(&surface, "raise-lower audit"),
                     );
                 match lowered {
-                    Err(error) => {
-                        if std::env::var_os("CLICK_DEBUG_UNLOWERED").is_some() {
-                            eprintln!("DEBUG-LOWER {raised} :: {error}");
-                        }
-                        (RoundTrip::Unlowered, raised, String::new())
-                    }
+                    Err(_) => (RoundTrip::Unlowered, raised, String::new()),
                     Ok(lowered) => match audit::classify(original, &lowered) {
                         RoundTrip::Differs => (
                             RoundTrip::Differs,

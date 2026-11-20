@@ -186,31 +186,48 @@ mod tests {
         );
     }
 
-    /// Debug aid: prints the unraised rows of the fixture `DEBUG_FIXTURE`.
+    /// A pointer a pure function returns raises as that call, and a read
+    /// through it as a typed read through the call; a pointer argument of a
+    /// Click call with no proof name raises as the pointer itself; and a
+    /// constant byte span that is not a whole number of words raises over a
+    /// byte view.
     #[test]
-    #[ignore]
-    fn debug_unraised_rows() {
-        let path = std::env::var("DEBUG_FIXTURE").unwrap();
-        let text = std::fs::read_to_string(&path).unwrap();
-        let fixture = crate::cli::parse_mdtest(std::path::Path::new(&path), &text).unwrap();
-        let sources = fixture
-            .c_sources
-            .iter()
-            .map(|(name, source)| (name.as_str(), source.as_str()))
-            .collect::<Vec<_>>();
-        for line in capture(|| {
-            let _ = crate::surface::verify_c_sources(
-                fixture.click_source.as_deref().unwrap(),
-                &sources,
+    fn pure_call_pointers_pointer_arguments_and_byte_spans_round_trip() {
+        for (name, text, original) in [
+            (
+                "resource_child_pure_arguments.md",
+                include_str!("../../../mdtests/resource_child_pure_arguments.md"),
+                "model_pointer(Address::At(p)) == p",
+            ),
+            (
+                "resource_child_pure_arguments_recursive.md",
+                include_str!("../../../mdtests/resource_child_pure_arguments_recursive.md"),
+                "old(*root_pointer(Tree::Leaf(left, 2))) == 2",
+            ),
+            (
+                "const_pointer_parameter_fact_survives_a_step.md",
+                include_str!("../../../mdtests/const_pointer_parameter_fact_survives_a_step.md"),
+                "same(p, p) == 1",
+            ),
+            (
+                "an_ordinary_exit_produces_a_composite_whose_body_facts_hold.md",
+                include_str!(
+                    "../../../mdtests/an_ordinary_exit_produces_a_composite_whose_body_facts_hold.md"
+                ),
+                "viewable(p[0..6])",
+            ),
+        ] {
+            let lines = round_trips(name, text);
+            assert!(
+                lines.contains(&("same".to_string(), original.to_string())),
+                "{name}: {original}: {lines:#?}"
             );
-        }) {
-            let fields = line.split('\t').collect::<Vec<_>>();
-            if fields[0] != "same" && fields[0] != "no-state" {
-                eprintln!(
-                    "DEBUG {} [{}]\t{}\t=> {}\t=> {}",
-                    fields[0], fields[2], fields[6], fields[7], fields[8].trim_end()
-                );
-            }
+            assert!(
+                !lines
+                    .iter()
+                    .any(|(outcome, line)| line == original && outcome != "same"),
+                "{name}: {original}: {lines:#?}"
+            );
         }
     }
 

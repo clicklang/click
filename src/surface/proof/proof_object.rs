@@ -1489,26 +1489,6 @@ fn goal_binder_program_values(
         })
 }
 
-/// The focused goal's algebraic `intro` binders, by binder index.
-fn goal_binder_algebraic_indices(
-    proof: &KernelProofHandle,
-) -> impl Iterator<Item = (&SurfaceBinder, usize)> {
-    proof
-        .state()
-        .open_branches()
-        .get(proof.focused_branch())
-        .and_then(|branch| match &branch.obligation {
-            Obligation::Proposition(goal) => Some(goal.presentation.surface_bindings.iter()),
-            _ => None,
-        })
-        .into_iter()
-        .flatten()
-        .filter_map(|(name, expression)| match expression {
-            ContractExpression::AlgebraicVariable { binder_index, .. } => Some((name, *binder_index)),
-            _ => None,
-        })
-}
-
 impl Proof<'_> {
     /// Retain lexical names without enumerating unrelated proof bindings.
     pub(in crate::surface::proof) fn requirement_binder_name_scope(
@@ -1580,13 +1560,6 @@ impl Proof<'_> {
                 .collect::<BTreeMap<_, _>>()
         };
         let mut intro = named(&mut goal_binder_program_values(&self.state));
-        // An algebraic `intro` binder is held as its binder, not a value.
-        for (name, binder_index) in goal_binder_algebraic_indices(&self.state) {
-            if let Ok(variable) = crate::surface::lowering::algebraic_binder_variable(binder_index)
-            {
-                intro.entry(variable).or_insert_with(|| name.clone());
-            }
-        }
         // An Integer proof local, such as a loop's `iterations` or an
         // `obtain`'s binder, names the variable it holds.
         for (name, value) in self.local_integer_values().iter() {
@@ -3177,17 +3150,12 @@ impl<'a> Proof<'a> {
             .premise_surface_facts()
             .map(synthesis::QualifiedSynthesisScope::enter);
         synthesis::with_structural_goal_synthesis(|| match self.context.as_ref() {
-            ProofContext::Pure(context) => {
-                let (_, binder_names) = self.binder_variable_names();
-                synthesis::with_proof_binder_names(std::sync::Arc::new(binder_names), || {
-                    synthesis::synthesize_surface_proposition_with_names(
-                        goal,
-                        ParameterBinding::new(&[], &[]),
-                        &context.source_state,
-                        &context.source_names,
-                    )
-                })
-            }
+            ProofContext::Pure(context) => synthesis::synthesize_surface_proposition_with_names(
+                goal,
+                ParameterBinding::new(&[], &[]),
+                &context.source_state,
+                &context.source_names,
+            ),
             ProofContext::FixedState(context) => {
                 let _points = synthesis::SynthesisRecordedPointsScope::enter(
                     context.fixed_state.recorded_states,

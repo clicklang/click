@@ -6095,17 +6095,13 @@ fn synthesize_surface_bitvector(
                         )?;
                         Some(element_type.to_kernel_type())
                     });
-                let pointer = synthesize_surface_pointer(
-                    kernel_pointer,
-                    parameter_binding,
-                    state,
-                    bound_variables,
-                );
-                // A pointer with no C spelling, such as a pure call's result
-                // or a call's returned pointer, is spelled as a Click
-                // expression; the read is a typed read through it at the
-                // load's own width.
-                let Some(pointer) = pointer else {
+                // A read through a pointer a pure function returns is a typed
+                // read through that call, at the load's own width.
+                if matches!(
+                    &kernel_pointer.base,
+                    AddressBase::PureFunctionApplication(application)
+                        if !application.name().starts_with('$')
+                ) {
                     let pointer = synthesize_surface_pointer_expression(
                         kernel_pointer,
                         parameter_binding,
@@ -6116,7 +6112,13 @@ fn synthesize_surface_bitvector(
                         pointer,
                         load_kind_value_type(*kind)?,
                     ));
-                };
+                }
+                let pointer = synthesize_surface_pointer(
+                    kernel_pointer,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?;
                 // An unsigned byte read is spelled as one whatever the
                 // pointer's own element type: through a signed plain `char`
                 // pointer it is the byte's one name, not the pointer's read.
@@ -6394,25 +6396,12 @@ fn synthesize_surface_call(
             if !consume_surface_synthesis_work("function-argument") {
                 return None;
             }
-            let raised = raise_call_argument(
+            raise_call_argument(
                 &importer.argument(value),
                 parameter_binding,
                 state,
                 bound_variables,
-            );
-            if raised.is_none() && std::env::var_os("CLICK_DEBUG_UNLOWERED").is_some() {
-                let node = match value {
-                    crate::kernel::PureFunctionArgument::Algebraic(term) => format!("{:?}", term.node),
-                    _ => String::new(),
-                };
-                let binders = SYNTHESIS_BINDER_NAMES
-                    .with(|slot| slot.borrow().as_ref().map(|names| format!("{:?}", names.keys().collect::<Vec<_>>())));
-                eprintln!(
-                    "DEBUG-ARG {name}: node={node} bound={:?} binders={binders:?}",
-                    bound_variables.keys().collect::<Vec<_>>()
-                );
-            }
-            raised
+            )
         })
         .collect::<Option<Vec<_>>>()?;
     Some(SurfaceTerm::Call {
