@@ -1570,44 +1570,33 @@ impl<'a> Proof<'a> {
         binders: &[crate::kernel::LoopBinder],
         structural_measure: Option<&str>,
         composite_resource_definitions: &[CompositeResourceDefinition],
+        prepare_bundle: bool,
     ) -> Result<LoopBoundary, ClickError> {
         if !matches!(self.context.as_ref(), ProofContext::Execution(_)) {
             return Err(self.step_error("loop state join requires an execution proof"));
         }
         self.require_execution_frontier("loop state join")?;
-        let execution = self
-            .execution()
-            .ok_or_else(|| self.step_error("loop state join lost its execution state"))?;
-        if execution.core.frontier.region != ExecutionRegionKind::LoopBody {
-            return Err(self.step_error("loop state join requires a loop-region proof"));
-        }
-        let assumptions = self.back_edge_assumptions(execution);
-        // The back edge binds the loop's names again before anything reads
-        // them: whatever the body called the instance it ends holding, the
-        // binder names it, and a body that ends with no instance at those
-        // arguments fails here by name.
-        let boundary_state = crate::kernel::loop_state_with_loop_binders_rebound(
-            loop_head_state,
-            &execution.core.state,
-            binders,
-            &assumptions,
-        )
-        .map_err(|message| self.step_error(format!("loop state join: {message}")))?;
-        let invariant_obligations = crate::kernel::loop_invariant_obligations_at_back_edge(
-            &boundary_state,
-            loop_entry_state,
-            invariant_checks,
-            head_iterations,
-            &assumptions,
-        )
-        .map_err(|message| self.step_error(format!("loop invariant classification: {message}")))?;
-        let guard_assumptions = invariant_obligations
-            .into_iter()
+        let edge = self
+            .state
+            .prepare_loop_invariant_edge(
+                loop_entry_state,
+                loop_head_state,
+                head_iterations,
+                invariant_checks,
+                binders,
+                prepare_bundle.then_some(composite_resource_definitions),
+            )
+            .map_err(|reason| self.step_error(reason))?;
+        let boundary_state = edge.state();
+        let assumptions = edge.assumptions();
+        let guard_assumptions = edge
+            .obligations()
+            .iter()
             .map(|obligation| obligation.proposition().clone())
             .fold(assumptions.clone(), PureFactContext::assume_proposition);
         let guard = match condition {
             Some(condition) => crate::kernel::classify_loop_condition(
-                &boundary_state,
+                boundary_state,
                 condition,
                 &guard_assumptions,
             )
@@ -1621,11 +1610,11 @@ impl<'a> Proof<'a> {
             && let Some(measure) = structural_measure
             && let Some(failure) = crate::kernel::loop_structural_descent_failure(
                 loop_head_state,
-                &boundary_state,
+                boundary_state,
                 binders,
                 measure,
                 composite_resource_definitions,
-                &assumptions,
+                assumptions,
             )
         {
             return Err(self.step_error(format!("loop state join: {failure}")));
@@ -1638,7 +1627,7 @@ impl<'a> Proof<'a> {
         // sets it aside; the invariant obligations above checked it.
         let head_join = crate::kernel::loop_binder_state_components_match_at_back_edge(
             loop_head_state,
-            &boundary_state,
+            boundary_state,
             binders,
             &guard_assumptions,
             composite_resource_definitions,
@@ -1653,7 +1642,7 @@ impl<'a> Proof<'a> {
             Err(_) => false,
         };
         Ok(LoopBoundary {
-            state: boundary_state,
+            edge,
             guard,
             head_compatible,
         })

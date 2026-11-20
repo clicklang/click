@@ -1432,6 +1432,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     preservation.binders(),
                     structural_measure,
                     environment.function.composite_resource_definitions(),
+                    false,
                 )
                 .map_err(|error| {
                     error.with_context(format!("`{claim_label}` (loop {loop_index} state join)"))
