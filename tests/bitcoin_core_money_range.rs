@@ -5319,6 +5319,47 @@ const BITCOIN_READ32_BODIES: [&str; 4] = [
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: sibling libstdc++ span observers"]
+fn span_observers_supply_three_arguments_to_one_call() {
+    let (root, import) = axiomatic_span_fixture(
+        "span-observer-arguments",
+        r#"#include <span>
+
+unsigned long sink(std::byte* dst, const std::byte* src, unsigned long count) {
+    return count;
+}
+
+unsigned long probe(std::span<std::byte>& dst, const std::span<const std::byte>& src) {
+    return sink(dst.data(), src.data(), dst.size());
+}
+"#,
+        BYTE_SPAN_DEPENDENCIES,
+    );
+    let source = r#"verifying "span-probe.cpp";
+
+uint64 sink(uint8* dst, const uint8* src, uint64 count) {
+    requires dst != src;
+    ensures result == count;
+}
+
+uint64 probe(std::span<std::byte>& dst, const std::span<const std::byte>& src) {
+    views std_span_data(dst);
+    views std_span_size(dst);
+    views std_span_data(src);
+    requires std_span_data(dst) != std_span_data(src);
+    ensures result == std_span_size(dst);
+}
+"#;
+    let sidecar = root.join("span.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    verify_program_prepared_project(&parsed, &import)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned Bitcoin read32 serialization proof"]
 fn pinned_bitcoin_read32_serialization_verifies_offline() {
     let (root, import, source) = pinned_bitcoin_read32_fixture("bitcoin-read32-ordinary");
