@@ -3250,10 +3250,9 @@ pub(super) fn describe_missing_range_end_note(
                     render_resource_diagnostic(fact.resource(), parameter_binding)
                 ));
             } else if resources.view_occurrence_is_principal(occurrence)
-                && let Some(hold) = resources
+                && resources
                     .loan_dependency(occurrence)
-                    .and_then(|binding| binding.hold)
-                && state.loan_view_bindings().hold_occurrence_count(hold) == 1
+                    .is_some_and(|binding| binding.hold.is_some())
             {
                 note.push_str("\n  borrow: use `release_view` to give up this view when it is no longer needed.");
             }

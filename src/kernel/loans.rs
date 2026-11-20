@@ -172,8 +172,8 @@ pub(crate) struct LoanViewBinding {
 }
 
 impl ExecutionState {
-    /// Give up one directly held view and release its exact hold. Remaining
-    /// occurrences on that hold may still read, so they must be dealt with first.
+    /// Give up one directly held view. Its hold stays live until the last
+    /// occurrence that depends on it is removed.
     pub(crate) fn release_produced_view(
         &self,
         view: &ResourceFact,
@@ -195,26 +195,26 @@ impl ExecutionState {
         let hold = binding.hold.ok_or_else(|| {
             "release_view requires a produced view that holds a borrow".to_string()
         })?;
-        if !self
-            .loan_view_bindings()
-            .state
-            .by_hold
-            .get(&hold)
-            .is_some_and(|occurrences| occurrences.len() == 1 && occurrences.contains(&occurrence))
-        {
-            return Err("another resource still shares this view's borrow hold".into());
-        }
         let (Some(ledger), Some(holder)) = (self.loan_ledger(), self.loan_participant()) else {
             return Err("the view has no active borrow".into());
         };
-        let (mut ledger, _) = ledger
-            .release_with_transition(hold, holder)
-            .map_err(|error| error.to_string())?;
         let mut resources = self
             .resources()
             .clone()
             .without_exact_representation_for_occurrence(occurrence)
             .ok_or_else(|| "the produced view is no longer held".to_string())?;
+        if LoanViewBindings::from_state(resources.loan_dependency_state())
+            .hold_occurrence_count(hold)
+            != 0
+        {
+            if ledger.storage.data.holds.get(&hold) != Some(&(binding.scope, holder)) {
+                return Err("the view has no active borrow hold".into());
+            }
+            return Ok(self.clone().with_resource_context(resources));
+        }
+        let (mut ledger, _) = ledger
+            .release_with_transition(hold, holder)
+            .map_err(|error| error.to_string())?;
         if ledger.scope_can_end(binding.scope, holder) {
             let end = ledger
                 .end(binding.scope, holder)
