@@ -2063,6 +2063,10 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
+    fn preserves_algebraic_matches(&self) -> bool {
+        self.algebraic.is_some() || self.integer_exact.is_some() || self.integer_variables.is_some()
+    }
+
     /// Exact Integer congruence over the selected logical DAG. Internal
     /// binder scopes are refused; logical quantifiers are handled by the
     /// equality-rewrite rule before this atomic walker is entered.
@@ -3904,7 +3908,7 @@ impl<'a> TermRewrite<'a> {
                 }
                 // A checked constructor determines the arm without proof search.
                 // Validate the whole match before discarding its other arms.
-                if self.algebraic.is_none()
+                if !self.preserves_algebraic_matches()
                     && matches!(scrutinee.node, AlgebraicTermNode::Constructor { .. })
                     && term.is_well_formed()
                     && let Some(value) =

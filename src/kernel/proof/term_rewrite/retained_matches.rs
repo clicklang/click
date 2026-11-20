@@ -171,7 +171,9 @@ impl TermRewrite<'_> {
                 return None;
             }
         };
-        if self.algebraic.is_some() && matches!(matched.result_type, KernelType::Algebraic(_)) {
+        if self.preserves_algebraic_matches()
+            && matches!(matched.result_type, KernelType::Algebraic(_))
+        {
             return Some(matched.into_term());
         }
         let reduced = self.reduce_retained_match_in(&matched);
