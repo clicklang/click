@@ -214,11 +214,20 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn parameter_store_numeric_connectivity(
         &self,
+        base: Option<&Address>,
     ) -> Option<&super::NumericAddressConnectivity> {
-        // The numeric index does not include exact cross-block pointer edges.
+        // A write can use the numeric projection unless its own component
+        // can reach an exact pointer edge. A cache warm-up names no write.
         let connectivity = &self.admitted.numeric_address_connectivity;
-        (self.admitted.address_base_aliases.is_empty()
-            && !connectivity.has_raw_store_alias_endpoints())
+        (!connectivity.has_raw_store_alias_endpoints()
+            && base.is_none_or(|base| {
+                self.admitted.address_base_aliases.is_empty()
+                    || (!self
+                        .admitted
+                        .pointer_alias_endpoints_by_object
+                        .contains_key(base)
+                        && !connectivity.reaches_pointer_alias(base))
+            }))
         .then_some(connectivity)
     }
 

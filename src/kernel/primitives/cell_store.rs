@@ -1259,7 +1259,7 @@ impl CellStore {
         };
         let connectivity = authorized
             .is_none()
-            .then(|| assumptions.parameter_store_numeric_connectivity())
+            .then(|| assumptions.parameter_store_numeric_connectivity(Some(&base)))
             .flatten();
         let checked_bases = if authorized.is_some() {
             Some(BTreeSet::from([base.clone()]))
@@ -1324,7 +1324,7 @@ impl CellStore {
     ) {
         drop(self.prepare_parameter_partition(
             resources,
-            assumptions.parameter_store_numeric_connectivity(),
+            assumptions.parameter_store_numeric_connectivity(None),
         ));
     }
 
