@@ -3610,6 +3610,8 @@ fn heap_allocation_may_contain_pointer(
     pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
+    #[cfg(test)]
+    HEAP_CONTAINMENT_CHECKS.with(|checks| checks.set(checks.get() + 1));
     if base != pointer && base.base.proven_distinct(&pointer.base) {
         return false;
     }
@@ -3622,6 +3624,11 @@ fn heap_allocation_may_contain_pointer(
     }
 
     external_argument_offset_derives_from(base, pointer)
+}
+
+#[cfg(test)]
+thread_local! {
+    static HEAP_CONTAINMENT_CHECKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Whether `pointer`, in the external argument block, is `base` or an address
@@ -4436,6 +4443,17 @@ impl SymbolicMemory {
     /// Whether no allocation has been freed in this state.
     pub(in crate::kernel) fn heap_has_no_deallocations(&self) -> bool {
         self.heap.deallocated_allocations.is_empty()
+    }
+
+    pub(in crate::kernel) fn shares_heap_deallocations_with(&self, other: &Self) -> bool {
+        self.heap
+            .deallocated_allocations
+            .ptr_eq(&other.heap.deallocated_allocations)
+    }
+
+    #[cfg(test)]
+    pub(in crate::kernel) fn take_heap_containment_checks() -> usize {
+        HEAP_CONTAINMENT_CHECKS.with(|checks| checks.replace(0))
     }
 
     /// The deallocated allocation base that `pointer` provably points into,
@@ -8414,19 +8432,6 @@ impl SymbolicMemory {
         block: &AddressBase,
     ) -> Option<&AllocationSize> {
         self.blocks.get(block).map(MemoryBlock::allocation_size)
-    }
-
-    /// Whether some allocation this state has already freed may contain
-    /// `pointer`. Freed allocations are few, so this scans them directly.
-    pub(in crate::kernel) fn freed_heap_allocation_may_contain(
-        &self,
-        pointer: &Address,
-        assumptions: &PureFactContext,
-    ) -> bool {
-        self.heap
-            .deallocated_allocations
-            .keys()
-            .any(|allocation| heap_allocation_may_contain_pointer(allocation, pointer, assumptions))
     }
 
     pub(in crate::kernel) fn is_loadable_concretely(

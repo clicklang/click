@@ -25,8 +25,9 @@ pub(in crate::kernel) fn memory_range_still_available(
         || range_memory.has_block(&base.base) == current_memory.has_block(&base.base)
             && range_memory.is_ended_local_address(base)
                 == current_memory.is_ended_local_address(base)
-            && range_memory.freed_heap_allocation_may_contain(base, assumptions)
-                == current_memory.freed_heap_allocation_may_contain(base, assumptions)
+            && (range_memory.shares_heap_deallocations_with(current_memory)
+                || range_memory.is_deallocated_heap_address(base, assumptions)
+                    == current_memory.is_deallocated_heap_address(base, assumptions))
 }
 
 #[cfg(test)]
