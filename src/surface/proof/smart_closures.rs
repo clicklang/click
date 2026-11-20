@@ -4058,6 +4058,11 @@ pub(super) fn lowered_states_requirement(
                 lowered,
                 &requirement.proposition,
             ))
+        || (requirement
+            .call_site
+            .as_ref()
+            .is_some_and(|site| site.source_requirement_ordinal.is_some())
+            && quantified_read_definedness_covers(lowered, &requirement.proposition))
     {
         return true;
     }
@@ -4079,6 +4084,54 @@ pub(super) fn lowered_states_requirement(
         }
     }
     false
+}
+
+/// A callee's pointer parameter is already a value. Substituting a caller
+/// argument that loads a pointer into `defined(p[k])` also checks those
+/// argument loads. Proving all the checks proves the callee's read check
+/// under the very same quantifier and guard.
+fn quantified_read_definedness_covers(written: &Proposition, required: &Proposition) -> bool {
+    let Proposition::ForAll { body, .. } = required else {
+        return false;
+    };
+    if !matches!(body.as_ref(), Proposition::Implies(_, read)
+        if matches!(read.as_ref(), Proposition::MemoryReadDefined { .. }))
+    {
+        return false;
+    }
+    let Proposition::ForAll {
+        name,
+        var,
+        sort,
+        body,
+    } = written
+    else {
+        return false;
+    };
+    let Proposition::Implies(guard, checks) = body.as_ref() else {
+        return false;
+    };
+    let mut read = checks.as_ref();
+    while let Proposition::And(argument_load, rest) = read {
+        crate::instrumentation::record_deterministic_work(1);
+        if !matches!(
+            argument_load.as_ref(),
+            Proposition::MemoryReadDefined { .. }
+        ) {
+            return false;
+        }
+        read = rest;
+    }
+    matches!(read, Proposition::MemoryReadDefined { .. })
+        && propositions_are_alpha_equal(
+            &Proposition::ForAll {
+                name: name.clone(),
+                var: *var,
+                sort: sort.clone(),
+                body: Box::new(Proposition::Implies(guard.clone(), Box::new(read.clone()))),
+            },
+            required,
+        )
 }
 
 // The selected source and requirement can use native or retained comparisons.
