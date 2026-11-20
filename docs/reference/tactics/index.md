@@ -4027,7 +4027,8 @@ the tactic itself, for recursion), when:
   resource that the proof holds. The map is left out only when the tactic
   declares no such binder; an instance of the binder's own name is not
   picked up without it.
-- Every `produces` binder is named by the `let { binder: name }` pattern.
+- Every `produces` binder is named by the `let { binder: name }` pattern,
+  including when the tactic produces just one resource.
 - Each `requires`, at the arguments, is an available fact or a condition the
   kernel's condition decision settles (`n == 3` and `n >= 3` both discharge
   `requires t > 0;` at `t = n`). A recursive application also owes its

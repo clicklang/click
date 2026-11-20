@@ -8178,13 +8178,10 @@ impl Parser {
                     "`{callee}` produces named resource instance(s) `{names}`; bind them with `let {{ ... }} = {form}`"
                 )));
             }
-            (Some(CallOutputPattern::Single(name)), [(produced_name, declaration)]) if tactic => {
-                produced.push(self.bind_produced_call_instance(
-                    &name,
-                    produced_name,
-                    declaration,
-                    &arguments,
-                )?);
+            (Some(CallOutputPattern::Single(_)), _) if tactic => {
+                return Err(self.error(format!(
+                    "user-defined tactic outputs require named bindings: write `let {{ binder: name }} = {callee}(...)`"
+                )));
             }
             (Some(CallOutputPattern::Single(_)), _) => {
                 return Err(self.error(
