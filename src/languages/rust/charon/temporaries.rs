@@ -35,6 +35,7 @@ pub(super) fn substitute_pure_values(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
     temporaries: &BTreeSet<String>,
+    constant_initializers: &BTreeSet<String>,
 ) {
     // How each temporary is used: read by an expression, or named by a
     // statement or terminator field, which no substitution can reach.
@@ -199,14 +200,75 @@ pub(super) fn substitute_pure_values(
                 value,
             });
         }
+        if !constant_initializers.is_empty() {
+            fold_constant_remainder_casts(
+                &mut block.statements,
+                &substitutable,
+                constant_initializers,
+                &mut removed,
+            );
+        }
     }
     for block in blocks.iter_mut() {
         block.statements.retain(|statement| match statement {
             S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            S::Assign {
+                target: E::Local { name },
+                ..
+            } => !removed.contains(name),
             _ => true,
         });
     }
     locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// Put a remainder by a checked Rust constant back into the cast that
+/// consumes it. The call to the constant initializer may panic, so it can
+/// cross only storage markers that are already going away.
+fn fold_constant_remainder_casts(
+    statements: &mut [S],
+    substitutable: &impl Fn(&str) -> bool,
+    constant_initializers: &BTreeSet<String>,
+    removed: &mut BTreeSet<String>,
+) {
+    let mut candidate: Option<(&mut String, &mut E)> = None;
+    for statement in statements {
+        if let Some((name, remainder)) = candidate.take() {
+            match statement {
+                S::BeginStorage { local } | S::EndStorage { local } if removed.contains(local) => {
+                    candidate = Some((name, remainder));
+                    continue;
+                }
+                S::Assign {
+                    value: E::Cast { value, .. },
+                    ..
+                } if matches!(value.as_ref(), E::Local { name: read } if read == name) => {
+                    std::mem::swap(remainder, value.as_mut());
+                    removed.insert(name.clone());
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        if let S::Assign {
+            target: E::Local { name },
+            value,
+        } = statement
+            && let E::Binary {
+                operator,
+                left,
+                right,
+                ..
+            } = value
+            && operator == "rem"
+            && matches!(left.as_ref(), E::Local { .. })
+            && matches!(right.as_ref(), E::Call { function, arguments }
+                if arguments.is_empty() && constant_initializers.contains(function))
+            && substitutable(name)
+        {
+            candidate = Some((name, value));
+        }
+    }
 }
 
 /// Builds a boxed record in its allocation. MIR builds `Box::new(R { a, b })`
@@ -2314,7 +2376,7 @@ mod tests {
             terminator,
         }];
         let temporaries = BTreeSet::from(["t1".to_string(), "t2".to_string()]);
-        super::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
+        super::substitute_pure_values(&mut locals, &mut blocks, &temporaries, &BTreeSet::new());
         let names = locals.into_iter().map(|local| local.name).collect();
         (names, blocks.pop().unwrap())
     }
@@ -2345,6 +2407,43 @@ mod tests {
             [S::Assign { value: E::Binary { operator, right, .. }, .. }]
                 if operator == "add" && matches!(right.as_ref(), E::Binary { .. })
         ));
+    }
+
+    #[test]
+    fn a_constant_remainder_moves_into_its_cast_across_removed_storage() {
+        let constant = E::Call {
+            function: "modulus".into(),
+            arguments: vec![],
+        };
+        let remainder = binary("rem", local("a"), constant);
+        let cast = E::Cast {
+            value: Box::new(local("t1")),
+            value_type: Type::U16,
+        };
+        for (marker, folded) in [
+            (S::EndStorage { local: "t2".into() }, true),
+            (S::EndStorage { local: "a".into() }, false),
+            (S::Site { site: 1 }, false),
+        ] {
+            let mut statements = vec![
+                assign("t1", remainder.clone()),
+                marker,
+                assign("x", cast.clone()),
+            ];
+            let mut removed = BTreeSet::from(["t2".into()]);
+            super::fold_constant_remainder_casts(
+                &mut statements,
+                &|name| name == "t1",
+                &BTreeSet::from(["modulus".into()]),
+                &mut removed,
+            );
+            assert_eq!(removed.contains("t1"), folded);
+            assert!(matches!(
+                &statements[2],
+                S::Assign { value: E::Cast { value, .. }, .. }
+                    if matches!(value.as_ref(), E::Binary { operator, .. } if operator == "rem") == folded
+            ));
+        }
     }
 
     #[test]
@@ -2467,7 +2566,7 @@ mod tests {
             terminator_site: None,
         }];
         let temporaries = BTreeSet::from(["t1".to_string()]);
-        super::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
+        super::substitute_pure_values(&mut locals, &mut blocks, &temporaries, &BTreeSet::new());
         assert!(locals.iter().all(|local| local.name != "t1"));
         assert!(blocks[0].statements.is_empty());
         assert!(matches!(

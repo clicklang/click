@@ -3042,6 +3042,7 @@ pub(super) fn decode_crate(
     }
     // A refusal while naming or checking an item names where it is.
     let mut item_location = format!("{source}:1");
+    let mut constant_initializers = BTreeSet::new();
     (|| -> Result<(), String> {
         for (id, f) in krate.fun_decls.iter_indexed() {
             if !f.item_meta.is_local {
@@ -3201,7 +3202,9 @@ pub(super) fn decode_crate(
                 }
                 a::FunSource::VTableShim => continue,
                 a::FunSource::GlobalInitializer(reference) => {
-                    adapter.constant_initializer_name(id, f, reference)?
+                    let name = adapter.constant_initializer_name(id, f, reference)?;
+                    constant_initializers.insert(name.clone());
+                    name
                 }
                 _ => return Err(unsupported("function source")),
             };
@@ -3790,7 +3793,12 @@ pub(super) fn decode_crate(
             .map(|parameter| (parameter.name.clone(), parameter.value_type.clone()))
             .collect();
         temporaries::substitute_literals(&mut locals, &mut blocks, &temporaries, &parameter_types);
-        temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
+        temporaries::substitute_pure_values(
+            &mut locals,
+            &mut blocks,
+            &temporaries,
+            &constant_initializers,
+        );
         temporaries::box_initializers(&mut locals, &mut blocks, &temporaries);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
