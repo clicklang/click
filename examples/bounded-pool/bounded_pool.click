@@ -1,3 +1,5 @@
+import click::integer;
+
 authorized resource pool_slot(pool: struct pool*) {}
 authorized resource pool_object(pool: struct pool*, object: struct object*) { owns *object; }
 resource pool_storage(pool: struct pool*) {
@@ -204,6 +206,12 @@ void pool_shrink(struct pool* pool, int32 amount) {
     open(pool_control(pool)) {
         unfold(amount of pool_slot(pool));
         step();
+        have defined(old(count(pool_slot(pool))) - amount);
+        have to_integer(count(pool_slot(pool))) == to_integer(old(count(pool_slot(pool)))) - to_integer(amount) by {
+            apply(integer::int32_subtract_to_integer(old(count(pool_slot(pool))), amount)) using {
+                defined(old(count(pool_slot(pool))) - amount);
+            };
+        }
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
     step_until(function.exit); unfold(valid_pool(pool));
