@@ -25,6 +25,7 @@ with tempfile.TemporaryDirectory(prefix="click-check-nightly-") as directory:
         executable(scripts / name, "exit 0\n")
     # The copied driver runs this regression too during quality checks.
     (scripts / "test-check-nightly.py").write_text("")
+    (scripts / "test-benchmark-verify.py").write_text("")
     (scripts / "proof-ratio.py").write_text("")
     for name in ["build-cpp-exporter.sh", "build-charon.sh"]:
         executable(scripts / name, 'echo /stub/frontend\n')
