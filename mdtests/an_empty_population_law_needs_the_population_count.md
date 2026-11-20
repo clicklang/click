@@ -19,7 +19,7 @@ verifying "pool.c";
 void caller(struct pool* pool, struct object* object) {
     owns control(pool);
 } by {
-    open(control(pool)) {
+    with(control(pool)) {
         apply(population_member_count_zero(count(item(pool, object))));
     }
     step_until(function.exit);

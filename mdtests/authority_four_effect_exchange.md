@@ -65,7 +65,7 @@ int32 lifecycle() { ensures result == 0 or result == 18; } by {
     have to_integer(count(item(&destination, _))) == 1;
     have to_integer(count(slot(&source))) == 1;
     have to_integer(count(slot(&destination))) == 1;
-    open(item(&destination, p)) { open(item(&source, p + 1)) { step(); step(); } }
+    with(item(&destination, p)) { with(item(&source, p + 1)) { step(); step(); } }
     unfold(item(&destination, p)); unfold(item(&source, p + 1));
     unfold(slot(&source)); unfold(slot(&destination));
     unfold(authority(slot(&source)));

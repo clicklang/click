@@ -47,7 +47,7 @@ int32 replace_cells(struct cell_owner* owner) {
     owns allocated_cells(owner);
     ensures result == 0 implies owner->cap == old(owner->cap);
 } by {
-    open(allocated_cells(owner)) {
+    with(allocated_cells(owner)) {
     }
     unfold(allocated_cells(owner));
 }

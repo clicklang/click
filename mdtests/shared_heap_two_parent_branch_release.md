@@ -159,7 +159,7 @@ int32 parent_read_payload(struct parent* p) {
         },
         ParentLink::Linked(entry_child) => {
             unfold(link);
-            open(child_control(p->kid)) { step_until(function.exit); }
+            with(child_control(p->kid)) { step_until(function.exit); }
             let link = fold(parent(p), { link: ParentLink::Linked(p->kid) });
             solve();
         },

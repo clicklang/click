@@ -29,7 +29,7 @@ void pool_grow(struct pool* pool, int32 amount) {
     requires amount == 1;
     produces amount of pool_slot(pool);
 } by {
-    open(pool_control(pool)) { step(); }
+    with(pool_control(pool)) { step(); }
 }
 ```
 

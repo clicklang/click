@@ -19,7 +19,7 @@ void issue(int32* pool, int32* p) {
     produces member(pool, p);
     ensures to_integer(count(member(pool, _))) == to_integer(old(count(member(pool, _))) + 1);
 } by {
-    open(control(pool)) { fold(member(pool, p)); }
+    with(control(pool)) { fold(member(pool, p)); }
 }
 void duplicate(int32* pool, int32* p) {
     owns control(pool);

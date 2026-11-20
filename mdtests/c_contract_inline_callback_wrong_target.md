@@ -24,7 +24,7 @@ resource callback_table(p: const struct callbacks*) {
 int32 invoke(const struct callbacks* p) {
     views callback_table(p);
     ensures result == 1;
-} by { open(callback_table(p)) { } }
+} by { with(callback_table(p)) { } }
 int32 caller() {
     views table.run;
     ensures result == 1;

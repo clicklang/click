@@ -428,7 +428,7 @@ Resources with bodies add a definitional layer: each folded head owns its body.
 - `fold(resource)` consumes the body's resources and pure facts and produces
   the head.
 - `unfold(resource)` consumes the head and exposes its body.
-- `open(resource) { ... }` exposes the body without consuming the head and
+- `with(resource) { ... }` exposes the body without consuming the head and
   requires the complete body to be restored when the block closes.
 - `observe(resource)` projects one view step without consuming the resource
   fact. It exposes immediate pure facts and viewed immediate contained resource

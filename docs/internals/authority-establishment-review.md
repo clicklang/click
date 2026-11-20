@@ -213,7 +213,7 @@ clause. Population authority uses its own lifetime and registration rules.
 Use `fold(authority(reference(p)))` to establish an empty population and
 `unfold(authority(reference(p)))` to retire one with zero members. These reuse the
 existing tactic syntax and record a dedicated checked certificate event.
-Ordinary `fold(control(p))`, `open(control(p))`, and `unfold(control(p))` now use
+Ordinary `fold(control(p))`, `with(control(p))`, and `unfold(control(p))` now use
 the checked resource-body exchange for the restricted shape above; folding
 cannot establish or duplicate authority.
 
@@ -298,7 +298,7 @@ project mode and proof artifacts carry the semantics choice. Checked source
 `fold`/`unfold` establish and retire authority; direct `fold(R(p))` and
 `unfold(R(p))` create and consume one field-free member, exchanging its private
 owned-memory body. The exchange requires matching owned authority and is
-rechecked by the certificate checker. `open(R(p))` exposes that body while
+rechecked by the certificate checker. `with(R(p))` exposes that body while
 preserving membership, and its close restores the body. Current exact
 `count(R(p))` reads the ledger. A verified
 ordinary helper can borrow and return the same authority and member through

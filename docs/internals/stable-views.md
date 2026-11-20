@@ -339,7 +339,7 @@ keep a cell only when a loan protects it and drop zero-width cells.
 An owner may read directly and observe its composite without lending to
 itself: the observation is a projection recorded against the owner's
 occurrence and disappears with it. A borrowed composite's observations keep
-the loan identity through projection, fold, unfold, `open`, `close`,
+the loan identity through projection, fold, unfold, `with`, `close`,
 normalization, range splitting, and callback-fact extraction. Three outcomes
 stay distinct: a copied value or a state proposition may remain true
 after a loan ends; a claim about the current cell needs checked framing;

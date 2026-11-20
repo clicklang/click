@@ -15,7 +15,7 @@ pub(in crate::surface::proof) enum SourceContext {
     PureGoal,
     /// An execution frontier that has not reached the function exit: the
     /// linear continuation, a focused execution arm, a loop's `maintain`
-    /// body and a linear `open` scope.
+    /// body and a linear `with` scope.
     ExecutionFrontier,
     /// A path that has reached the function exit, where a tactic runs once
     /// per concrete outcome.

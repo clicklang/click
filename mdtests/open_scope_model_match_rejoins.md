@@ -24,7 +24,7 @@ int32 read(int32* p) {
     ensures *(p + 1) == 7;
     ensures result == 7;
 } by {
-    open(table(p + 1)) {
+    with(table(p + 1)) {
         match c.model ensuring { owns c: cell(p); } {
             Pair::First(value) => {
                 unfold(c);
@@ -36,7 +36,7 @@ int32 read(int32* p) {
             },
         }
     }
-    open(table(p + 1)) { }
+    with(table(p + 1)) { }
 }
 ```
 

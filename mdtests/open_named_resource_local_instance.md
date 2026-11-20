@@ -25,7 +25,7 @@ int32 read_local(int32* p) {
     ensures result == 7;
 } by {
     let c = fold(exact_cell(p), { value: 7 }) by { known(); }
-    open(c) { step(); }
+    with(c) { step(); }
     have c.value == 7 by { known(); }
     unfold(c);
     step_until(function.exit);

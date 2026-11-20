@@ -281,7 +281,7 @@ remain unavailable through this route. Focused regressions cover range and
 lifetime rejection, resource presence/quantity, and scaling.
 
 Two proof-driver fixes support this increment: named folds after return inside
-`open` are deferred to the returned state, and exact checked execution retains
+`with` are deferred to the returned state, and exact checked execution retains
 its loop semantics even when no loop was reached. Thus the unreachable
 successor loop does not demand a spurious ranking measure; reachable unranked
 loop summaries still fail termination checks. The replacement-child checks

@@ -31,7 +31,7 @@ verifying "pool_control_call_frames.c";
 int32 pool_used(struct pool* pool) {
     owns control(pool);
 } by {
-    open(control(pool)) { step_until(function.exit); }
+    with(control(pool)) { step_until(function.exit); }
     solve();
 }
 int32 forward(struct pool* pool) {
@@ -39,7 +39,7 @@ int32 forward(struct pool* pool) {
     requires 0 < pool->used;
     ensures defined(pool->used + count(slot(pool)));
 } by {
-    open(control(pool)) {
+    with(control(pool)) {
         have 0 <= pool->used;
         have defined(pool->used + count(slot(pool))) by { known(); }
     }

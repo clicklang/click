@@ -50,7 +50,7 @@ void consume_population(struct owner* owner, int32 amount) {
 
     ensures valid_capacity(owner);
 } by {
-    open(accounting(owner)) {
+    with(accounting(owner)) {
         unfold(valid_capacity(owner));
         step();
         have to_integer(owner->used) == to_integer(old(owner->used)) by { known(); }

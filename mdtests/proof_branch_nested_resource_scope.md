@@ -35,13 +35,13 @@ int32 branch_nested_resource_scope(int32* p, int32 flag) {
             owns bounded_cell(p);
         } {
             true => {
-                open(bounded_cell(p)) {
+                with(bounded_cell(p)) {
                     step();
                     have result >= 0;
                 }
             }
             false => {
-                open(bounded_cell(p)) {
+                with(bounded_cell(p)) {
                     step();
                     have result >= 0;
                 }

@@ -67,7 +67,7 @@ fail for missing read permission
 (`mdtests/rb_augment_callbacks_helper_rejects_changed_cell.md` and
 `mdtests/rb_augment_callbacks_helper_consumes_suite.md`).
 
-Inside an `open(resource)` scope, a named resource fold at function exit uses
+Inside an `with(resource)` scope, a named resource fold at function exit uses
 the returned path's state before the scope closes, just as a fold at function
 exit outside the scope does. A proposed field value must still match
 that returned state (`mdtests/resource_instance_fold_after_return_in_open.md`).
