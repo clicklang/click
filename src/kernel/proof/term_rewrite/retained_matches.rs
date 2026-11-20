@@ -172,7 +172,7 @@ impl TermRewrite<'_> {
             }
         };
         if self.preserves_algebraic_matches()
-            && matches!(matched.result_type, KernelType::Algebraic(_))
+            && matches!(&matched.result_type, KernelType::Algebraic(ty) if !ty.rigid)
         {
             return Some(matched.into_term());
         }

@@ -519,6 +519,46 @@ fn contract_expression_is_sequence(expression: &ContractExpression) -> bool {
 }
 /// Match payloads are lexical values. Keep their declared carrier available
 /// without asking the C-local environment to invent a slot for generated IDs.
+
+fn constructor_arm_environment(
+    scrutinee: &SpecAlgebraicExpression,
+    arms: &[crate::surface::AlgebraicMatchArm],
+    environment: &SpecElaborationContext,
+) -> Option<(usize, SpecElaborationContext)> {
+    let SpecAlgebraicExpressionNode::Constructor { variant, fields } = &scrutinee.node else {
+        return None;
+    };
+    let index = arms.iter().position(|arm| arm.variant == *variant)?;
+    let arm = &arms[index];
+    let mut body_environment = environment.clone();
+    for (binding, field) in arm.bindings.iter().zip(fields.iter()) {
+        match field {
+            SpecAlgebraicValue::Program(field) => {
+                body_environment.integer_values.remove(binding);
+                body_environment.algebraic_values.remove(binding);
+                body_environment
+                    .values
+                    .insert(binding.clone(), field.clone());
+            }
+            SpecAlgebraicValue::Algebraic(field) => {
+                body_environment.values.remove(binding);
+                body_environment.integer_values.remove(binding);
+                body_environment
+                    .algebraic_values
+                    .insert(binding.clone(), field.clone());
+            }
+            SpecAlgebraicValue::Integer(field) => {
+                body_environment.values.remove(binding);
+                body_environment.algebraic_values.remove(binding);
+                body_environment
+                    .integer_values
+                    .insert(binding.clone(), field.clone());
+            }
+        }
+    }
+    Some((index, body_environment))
+}
+
 fn bind_match_program_value(
     environment: &mut SpecElaborationContext,
     binding: &SurfaceBinder,
@@ -7067,40 +7107,22 @@ impl AnnotationLowerer<'_> {
             ),
             ContractExpression::AlgebraicMatch { scrutinee, arms } => {
                 let scrutinee = self.lower_contract_algebraic_to_spec(scrutinee, environment)?;
-                if let SpecAlgebraicExpressionNode::Constructor { variant, fields } =
-                    &scrutinee.node
+                if arms.iter().any(|arm| {
+                    arm.body.generated_binder().is_none()
+                        && !matches!(
+                            &arm.body,
+                            ContractExpression::IntegerLiteral(_)
+                                | ContractExpression::Binding(_)
+                                | ContractExpression::ProgramBinding(_)
+                                | ContractExpression::ProgramExpression(
+                                    ProgramExpression::Variable(_) | ProgramExpression::Value(_)
+                                )
+                        )
+                }) && let Some((selected, environment)) =
+                    constructor_arm_environment(&scrutinee, arms, environment)
                 {
-                    let arm = arms
-                        .iter()
-                        .find(|arm| arm.variant == *variant)
-                        .ok_or_else(|| format!("missing match arm for `{variant}`"))?;
-                    let mut body_environment = environment.clone();
-                    for (binding, field) in arm.bindings.iter().zip(fields.iter()) {
-                        match field {
-                            SpecAlgebraicValue::Program(field) => {
-                                body_environment.integer_values.remove(binding);
-                                body_environment.algebraic_values.remove(binding);
-                                body_environment
-                                    .values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                            SpecAlgebraicValue::Algebraic(field) => {
-                                body_environment.values.remove(binding);
-                                body_environment.integer_values.remove(binding);
-                                body_environment
-                                    .algebraic_values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                            SpecAlgebraicValue::Integer(field) => {
-                                body_environment.values.remove(binding);
-                                body_environment.algebraic_values.remove(binding);
-                                body_environment
-                                    .integer_values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                        }
-                    }
-                    return self.lower_contract_expression_to_spec(&arm.body, &body_environment);
+                    return self
+                        .lower_contract_expression_to_spec(&arms[selected].body, &environment);
                 }
                 let lowered_arms = arms
                     .iter()
@@ -7166,6 +7188,13 @@ impl AnnotationLowerer<'_> {
                         })
                     })
                     .collect::<Result<Vec<_>, String>>()?;
+                if !crate::kernel::scalar_match_has_pure_int32_arms(&lowered_arms)
+                    && let Some((selected, environment)) =
+                        constructor_arm_environment(&scrutinee, arms, environment)
+                {
+                    return self
+                        .lower_contract_expression_to_spec(&arms[selected].body, &environment);
+                }
                 Ok(SpecExpression::AlgebraicMatch {
                     scrutinee: Box::new(scrutinee),
                     arms: lowered_arms,
@@ -8143,6 +8172,13 @@ impl AnnotationLowerer<'_> {
                             .collect(),
                         body: Box::new(body),
                     });
+                }
+                if result_type.as_ref().is_some_and(|ty| ty.rigid)
+                    && let Some((selected, environment)) =
+                        constructor_arm_environment(&scrutinee, arms, environment)
+                {
+                    return self
+                        .lower_contract_algebraic_to_spec(&arms[selected].body, &environment);
                 }
                 Ok(SpecAlgebraicExpression {
                     algebraic_type: result_type

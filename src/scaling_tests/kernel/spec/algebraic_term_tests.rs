@@ -5,6 +5,70 @@
 use super::*;
 
 #[test]
+fn int32_match_comparison_keeps_shared_constructor_payloads() {
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = maybe_type();
+        let mut field =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999763));
+        for _ in 0..size {
+            field = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [field.clone(), field],
+            );
+        }
+        let constructor = crate::kernel::KernelConstructor {
+            algebraic_type: ty,
+            variant: "Some".into(),
+            fields: vec![field],
+        }
+        .into_term();
+        let matched = KernelMatch::new(
+            KernelType::Program(ProgramType::Int32),
+            constructor,
+            vec![
+                KernelMatchArm::import(
+                    &mut KernelTermImport::default(),
+                    "None",
+                    &[],
+                    KernelTermImport::default()
+                        .machine(MachineIntegerType::Int32, &MachineTerm::constant(7)),
+                    &Default::default(),
+                ),
+                KernelMatchArm::import(
+                    &mut KernelTermImport::default(),
+                    "Some",
+                    &[AlgebraicValue::Program(ProgramValue::Int32(
+                        MachineTerm::Variable(Variable(999764)),
+                    ))],
+                    KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999764)),
+                    &Default::default(),
+                ),
+            ],
+        )
+        .unwrap()
+        .into_term();
+        let exports = KernelTermExport::algebraic_export_count();
+        let (goal, work) = crate::instrumentation::measure_deterministic_work(|| {
+            SpecValue::Shared(matched.clone())
+                .comparison_in(ComparisonOperator::Equal, &int32(7).into(), false)
+                .unwrap()
+                .unwrap()
+        });
+        let Proposition::ConditionIs(condition, true) = goal else {
+            panic!("machine equality");
+        };
+        assert!(matches!(
+            condition.root().unwrap().node(),
+            KernelTermNode::BoolCompare { arguments, .. } if arguments[0] == matched
+        ));
+        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+        assert!(work <= 24, "size={size} work={work}");
+    }
+}
+
+#[test]
 fn nested_pure_algebraic_matches_keep_known_constructors() {
     for size in [8, 24, 48] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -43,12 +107,15 @@ fn nested_pure_algebraic_matches_keep_known_constructors() {
         }
         let exports = KernelTermExport::algebraic_export_count();
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut execution = ExecutionBudget::new();
+            let mut budget = SpecEvaluation::logical(&mut execution);
+            budget.retain_known_matches = true;
             evaluate_spec_algebraic_at_state_in(
                 &ExecutionState::new(),
                 &expression,
                 None,
                 &PureFactContext::new(),
-                &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+                &mut budget,
             )
             .unwrap()
         });

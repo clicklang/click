@@ -1352,6 +1352,15 @@ impl<'a> Proof<'a> {
                     application.name
                 ))
             })?;
+        let checked_body = match definition.return_type() {
+            ClickType::Algebraic(_) => select_known_unfold_body(&checked_body)
+                .map_err(|message| self.step_error(message))?,
+            ClickType::Program(ty) if ty.to_kernel_type() == ProgramType::Int32 => {
+                select_known_unfold_body(&checked_body)
+                    .map_err(|message| self.step_error(message))?
+            }
+            _ => checked_body,
+        };
         let checked_body =
             crate::surface::lowering::pure_function_result_value(&definition, checked_body);
         let checked_equality = ClickProposition::Comparison {
@@ -1568,37 +1577,7 @@ impl<'a> Proof<'a> {
                             application.name
                         ))
                     })?;
-                // Keep the retained goal aligned with the constructor-iota
-                // reduction performed by the kernel for this explicit unfold.
-                // Unknown scrutinees remain matches; no pure calls are evaluated.
-                // Walk selected arms by reference, substituting only their
-                // scrutinees and the final body, not the remaining subtree
-                // once per nested match.
-                let mut selected_body = &surface_body;
-                let mut bindings = BTreeMap::new();
-                while let ContractExpression::AlgebraicMatch { scrutinee, arms } = selected_body {
-                    crate::instrumentation::record_deterministic_work(1);
-                    let scrutinee = substitute_contract_expression(scrutinee, &bindings)
-                        .map_err(|message| self.step_error(message))?;
-                    let ContractExpression::AlgebraicConstructor {
-                        algebraic_type,
-                        variant,
-                        arguments,
-                    } = &scrutinee
-                    else {
-                        break;
-                    };
-                    let Some(arm) = arms.iter().find(|arm| {
-                        arm.type_name == algebraic_type.name
-                            && arm.variant == *variant
-                            && arm.bindings.len() == arguments.len()
-                    }) else {
-                        break;
-                    };
-                    bindings.extend(arm.bindings.iter().cloned().zip(arguments.iter().cloned()));
-                    selected_body = &arm.body;
-                }
-                let surface_body = substitute_contract_expression(selected_body, &bindings)
+                let surface_body = select_known_unfold_body(&surface_body)
                     .map_err(|message| self.step_error(message))?;
                 let surface_body =
                     crate::surface::lowering::pure_function_result_value(&definition, surface_body);
@@ -3098,3 +3077,32 @@ fn collect_conjunctive_premises<'a>(
 }
 
 mod search;
+
+/// An explicit unfold selects known constructor arms. Substitute only each
+/// selected scrutinee and the final body so nested matches keep linear work.
+fn select_known_unfold_body(body: &ContractExpression) -> Result<ContractExpression, String> {
+    let mut selected = body;
+    let mut bindings = BTreeMap::new();
+    while let ContractExpression::AlgebraicMatch { scrutinee, arms } = selected {
+        crate::instrumentation::record_deterministic_work(1);
+        let scrutinee = substitute_contract_expression(scrutinee, &bindings)?;
+        let ContractExpression::AlgebraicConstructor {
+            algebraic_type,
+            variant,
+            arguments,
+        } = &scrutinee
+        else {
+            break;
+        };
+        let Some(arm) = arms.iter().find(|arm| {
+            arm.type_name == algebraic_type.name
+                && arm.variant == *variant
+                && arm.bindings.len() == arguments.len()
+        }) else {
+            break;
+        };
+        bindings.extend(arm.bindings.iter().cloned().zip(arguments.iter().cloned()));
+        selected = &arm.body;
+    }
+    substitute_contract_expression(selected, &bindings)
+}

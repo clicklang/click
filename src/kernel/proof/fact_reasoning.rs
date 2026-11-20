@@ -57,6 +57,12 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     if crate::kernel::reasoning::path_facts::solve_builtin_prop(goal) {
         return true;
     }
+    if let Proposition::ConditionIs(condition, expected) = goal
+        && let Some(actual) =
+            computation::known_int32_match_comparison_value(condition.native_compat())
+    {
+        return actual == *expected;
+    }
     if let Proposition::ConditionIs(condition, value) = goal
         && let Some(equal) = computation::machine_affine_equality(
             condition.native_compat(),
