@@ -3940,6 +3940,11 @@ fn c_statement_calls_recording(
                     collect_function_addresses(argument, names);
                 }
             }
+            syntax::CExpression::VariableArguments(arguments) => {
+                for (_, argument) in arguments {
+                    collect_function_addresses(argument, names);
+                }
+            }
             syntax::CExpression::IndirectCall {
                 function,
                 arguments,
@@ -5174,7 +5179,22 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
         .function_blocks()
         .iter()
         .filter(|function| function.is_external())
-        .map(|function| function.signature().name())
+        .map(|function| {
+            let variable_arguments =
+                function
+                    .signature()
+                    .parameters()
+                    .last()
+                    .is_some_and(|parameter| {
+                        matches!(
+                            parameter.click_type,
+                            ClickType::Program(InterfaceType::Parameter(parameter_type))
+                                if parameter_type
+                                    == crate::languages::c::variadic::variable_arguments_type()
+                        )
+                    });
+            (function.signature().name(), variable_arguments)
+        })
         .collect::<Vec<_>>();
     c_frontend::link_c_units(
         &file.verifying_sources,

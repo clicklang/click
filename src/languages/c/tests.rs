@@ -465,7 +465,7 @@ fn goto_slice_rejects_unknown_backward_duplicate_and_unsupported_targets() {
 }
 
 #[test]
-fn imported_variadic_prototype_is_retained_without_becoming_callable() {
+fn imported_variadic_prototype_is_retained_and_refuses_an_unmodeled_variable_argument() {
     let prototype = "# 1 \"include/linux/report.h\" 1\nvoid report(const char *format, ...);\n# 1 \"lib/tu.c\" 2\n";
     let (source, map) = source_map::CSourceMap::decode(&format!(
         "{prototype}int32 keep(int32 x) {{ return x; }}\n"
@@ -484,7 +484,7 @@ fn imported_variadic_prototype_is_retained_without_becoming_callable() {
     assert_eq!(unit.functions.len(), 1);
 
     let (source, map) = source_map::CSourceMap::decode(&format!(
-        "{prototype}void run(void) {{\n    report(\"x\");\n}}\n"
+        "{prototype}void run(void) {{\n    report(\"x\", \"y\");\n}}\n"
     ))
     .expect("line markers should decode");
     let error = match syntax::parse_translation_unit_for_import(
@@ -493,13 +493,13 @@ fn imported_variadic_prototype_is_retained_without_becoming_callable() {
         &map,
         syntax::PromiseAttributes::Accept,
     ) {
-        Ok(_) => panic!("a variadic call has no model"),
+        Ok(_) => panic!("a string variable argument has no model"),
         Err(error) => error,
     };
     let rendered = error.to_string();
     assert!(rendered.contains("lib/tu.c:2"), "{rendered}");
     assert!(
-        rendered.contains("calls to variadic function `report`"),
+        rendered.contains("argument 2 of `report` has type"),
         "{rendered}"
     );
 }

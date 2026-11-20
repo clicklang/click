@@ -48,6 +48,7 @@ how far it is trusted:
 | [`click::integer`](#clickinteger) | `import click::integer;` | specification |
 | [`click::permutation`](#clickpermutation) | `import click::permutation;` | specification |
 | [`click::bytes`](#clickbytes) | `import click::bytes;`, or with `click::c::string` | specification |
+| [`click::c::stdarg`](#clickcstdarg) | `import click::c::stdarg;`, or when a contract declares `...args` | C language interface |
 | [`click::c::stdio`](#clickcstdio) | `import click::c::stdio;`, or with the projected `<stdio.h>` | C library interface |
 | [`click::c::string`](#clickcstring) | `import click::c::string;`, or when the C declares or calls a modeled string function | C library interface and specification |
 | [C++ standard library interfaces](#c-standard-library-interfaces), `library/cpp/` (not a module) | when a C++ import calls one of its functions | C++ library interface |
@@ -4576,6 +4577,29 @@ theorem comparison_zero_when_equal(left: uint8[], right: uint8[], length: uint64
 **Kind:** proved theorem. The declaration above is normative.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) applies the comparison laws. C ordering clients are checked in [`mdtests/memcmp_orders_the_first_differing_byte.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_the_first_differing_byte.md) and [`mdtests/memcmp_orders_after_equal_prefix.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_after_equal_prefix.md).
+
+## `click::c::stdarg`
+
+Source: `library/c/stdarg.click`. A contract that declares `...args` brings
+it in.
+
+### `VarArg`
+
+```click
+spec enum VarArg {
+    Int(int32),
+    UInt(uint32),
+    Long(int64),
+    ULong(uint64),
+}
+```
+
+One variable argument of a C call after the default argument promotions. A
+variadic function's `extern` contract receives a call's variable arguments
+as its last parameter, `...args`, a `List<VarArg>` with the first argument
+first; see [variadic calls](../language/c.md#variadic-calls).
+
+**Verified use:** [`mdtests/a_variadic_contract_reads_its_variable_arguments.md`](https://github.com/clicklang/click/blob/master/mdtests/a_variadic_contract_reads_its_variable_arguments.md).
 
 ## `click::c::stdio`
 

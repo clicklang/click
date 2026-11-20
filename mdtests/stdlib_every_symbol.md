@@ -53,6 +53,11 @@ function are used by
 The stream also appears in
 [`hosted_stdout_stream_follows_file_pointer_alias.md`](hosted_stdout_stream_follows_file_pointer_alias.md).
 
+The `VarArg` datatype, the variable arguments a variadic C call passes, is
+used by
+[`a_variadic_contract_reads_its_variable_arguments.md`](a_variadic_contract_reads_its_variable_arguments.md)
+and [`variable_arguments_are_promoted.md`](variable_arguments_are_promoted.md).
+
 The borrowed C-string resource `cstr_at` is verified in
 [`cstr_at_view_passes_through_a_call.md`](cstr_at_view_passes_through_a_call.md),
 [`cstr_at_opens_and_lends_a_prefix_to_a_copy.md`](cstr_at_opens_and_lends_a_prefix_to_a_copy.md),
