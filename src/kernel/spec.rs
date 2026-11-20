@@ -3175,11 +3175,17 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 &crate::kernel::BindingNames::bindings(&arm.bindings),
             ));
         }
-        let value = match scrutinee_path
-            .value
-            .native_constructor()
-            .map(|value| &value.node)
-        {
+        let integer_fields = arms.iter().all(|arm| {
+            arm.binding_types
+                .iter()
+                .all(|ty| *ty == AlgebraicValueType::Integer)
+        });
+        let constructor = if integer_fields {
+            None
+        } else {
+            scrutinee_path.value.native_constructor()
+        };
+        let value = match constructor.map(|value| &value.node) {
             Some(AlgebraicTermNode::Constructor { variant, fields }) => lowered_arms
                 .iter()
                 .find(|(arm, _)| arm.variant == *variant)
@@ -3187,8 +3193,8 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                     if arm.bindings.len() != fields.len() {
                         return None;
                     }
-                    // Constructor iota keeps the existing selected typed
-                    // checking boundary. Arm storage itself stays common.
+                    // Other field carriers still use the native substitution
+                    // path. Integer-only matches reduce during checking.
                     let bindings = arm.export_bindings(&mut KernelTermExport::default()).ok()?;
                     let body = KernelTermExport::default().integer(body).ok()?;
                     rewrite_integer_match_typed_fields(body.as_ref().clone(), &bindings, fields)
