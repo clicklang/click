@@ -539,8 +539,8 @@ and branch boundaries, mutex writes, and direct and modular construction now
 check retained loan evidence or emit separation obligations. Automatic storage
 retirement and initialization use the object-identity index. Verified calls
 check each bounded write separately and refuse unnamed write effects with a
-live memory loan. The [rbtree insertion wrappers](rbtree-example.md#focused-verification-on-current-master)
-exercise that refusal with a recursive tree and a live callback-table view.
+live memory loan. The [recorded rbtree insertion run](rbtree-example.md#verification-evidence)
+exercised that refusal with a recursive tree and a live callback-table view.
 
 The legacy write guard has only test callers. Its bridge and search helper can
 be restricted to tests. Contract-entry own/view overlap checking still has a

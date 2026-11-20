@@ -15,43 +15,21 @@ The [rbtree examples](../examples/rbtree/) document the delivered sidecars. The
 [implementation chunks](#remaining-work-chunks-1-to-24) record the work by
 dependency.
 
-## Focused verification on current master
+## Verification evidence
 
-A fresh debug CLI built from `d3dbacbb7` ran verification for the selected sidecars
-individually with default limits. The table records the first failure in
-each sidecar or the number of selected proofs that verified.
+[PR #3476](https://github.com/clicklang/click/pull/3476) restored the general
+erase splice and both erase wrappers. Its focused run checked all four unlink
+proofs, the child-link helper, the callbacks, and both wrappers. It also checked
+three link-mutation refusals and the pinned C checksum.
+[PR #3501](https://github.com/clicklang/click/pull/3501) verified all 42 selected
+proofs in the color-repair sidecar at default limits. Its whole-claim cold replay
+still stopped at the packed parent-tag arithmetic proof.
 
-| Sidecar | Result |
-| --- | --- |
-| [Size metadata](../examples/rbtree/rbtree-augmented/rbtree_size_metadata.click) | `split_sized_tree`, line 82. `fold body child has no source name`. |
-| [Augmented child link](../examples/rbtree/rbtree-augmented/rbtree_size_change_child.click) | 1 proof verified. |
-| [Augmented parent rotation](../examples/rbtree/rbtree-augmented/rbtree_size_rotate_set_parents.click) | 2 proofs verified. |
-| [Far-subtree insertion](../examples/rbtree/rbtree-augmented/rbtree_size_insert_context_double_far_rotation.click) | Public wrapper, line 535. The call's write footprint lacks a byte bound while the callback-table view is live. |
-| [Mirrored double-rotation insertion](../examples/rbtree/rbtree-augmented/rbtree_size_insert_mirrored_context_double_rotation.click) | Public wrapper, line 470. Same call-boundary refusal. |
-| [General erase splice](../examples/rbtree/rbtree-erase/rbtree_erase_augmented.click) | `__rb_erase_augmented.contract`, line 552. `solve()` exhausts its smart budget on the initial descent-loop model equality. |
-| [General erase wrapper](../examples/rbtree/rbtree-erase/rbtree_erase_general_wrapper.click) | `rb_erase`, line 59. The proof cannot read the assigned value of local `rebalance` at its current frontier. |
-| [Root-cell diagnostic regression](../mdtests/rb_produces_through_the_root_cell.md) | 1 proof verified. |
-
-The metadata trace holds both `rb_at` children returned by the two recursive
-calls. The written fold supplies them as `left_structure` and
-`right_structure`. Body-fact reconstruction stops when the selected child
-identity has no registered source spelling. The next reduction is a fold
-with an explicitly named child returned by a call.
-
-Both insertion wrappers view `augment->rotate` and transfer ownership of a
-recursive tree to `__rb_insert_augmented`. The per-range call checker added in
-[#3419](https://github.com/clicklang/click/pull/3419) refuses the unnamed part
-of that write footprint while the view is live. This case needs an explicit
-separation argument at the boundary of the transferred resource.
-
-The erase splice goal is `plug(erase_context(c.model), t.model) == rl`. A proof
-repair can start by separating the top-context identity from the equation
-for the selected child's model. The report renders parts of the model as
-`<unnamed ...>`. The run stops before the historical pointer-field
-reproduction.
-
-Directory verification, expansion/replay audits, and the whole pinned-source
-acceptance check are outside this rerun.
+In a focused run at `d3dbacbb7`, the augmented metadata fold could not name one
+of the returned child instances, and two insertion wrappers could not bound a
+recursive call's writes while the callback-table view was live. The
+[full results](https://github.com/clicklang/click/blob/f25b570397/roadmap/rbtree-example.md#focused-verification-on-current-master)
+record the affected sidecars and proof steps.
 
 ## State, 2026-10-09: handoff
 
