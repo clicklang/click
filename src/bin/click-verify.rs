@@ -1939,7 +1939,7 @@ mod tests {
                 requires 0 <= x;
                 ensures 0 <= result;
             } by {
-                let { result: r } = step(child, {});
+                let { result: r } = step(child);
                 have r < 1 by {
                     apply(negative(r)) using { 0 <= r; }
                 }

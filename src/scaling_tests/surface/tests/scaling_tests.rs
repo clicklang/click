@@ -8573,7 +8573,7 @@ fn repeated_retain_project(count: usize) -> (String, String) {
         "{declarations}verifying \"retain.c\";\n\n{retain}void retain_many(struct child* obj) {{\n    requires count(child_ref(obj)) < {};\n    owns child_control(obj);\n    owns child_ref(obj);\n{}}} by {{\n{}    step();\n    solve();\n}}\n",
         2147483647 - count,
         "    produces child_ref(obj);\n".repeat(count),
-        "    step(child_retain, {});\n".repeat(count),
+        "    step(child_retain);\n".repeat(count),
     );
     (c_source, click_source)
 }

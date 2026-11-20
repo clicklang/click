@@ -3450,13 +3450,13 @@ const TERMINAL_BINDINGS_CLICK: &str = r#"
             ensures returned: result == n;
         } by {
             if n >= 0 {
-                let { result: positive } = step(identity, {});
+                let { result: positive } = step(identity);
                 have positive == n;
                 step_until(function.exit);
                 have result == positive;
                 solve();
             } else {
-                let { result: negative } = step(identity, {});
+                let { result: negative } = step(identity);
                 have negative == n;
                 step_until(function.exit);
                 have result == negative;

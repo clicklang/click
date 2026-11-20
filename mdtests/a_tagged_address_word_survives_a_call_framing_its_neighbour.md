@@ -63,7 +63,7 @@ void tag_then_count(struct node *p) {
                     have separate(memory(p->count), memory(p->tag)) by { solve(); }
                     have contains(memory(p->tag), memory(p->tag)) by { normalize(); }
                     mark before_call;
-                    step(set_count, {});
+                    step(set_count);
                     have separate(statement(0).statement(1).footprint, memory(p->tag)) by {
                         apply(click::separation::separate_restrict(memory(p->count), memory(p->tag), statement(0).statement(1).footprint, memory(p->tag))) using {
                             separate(memory(p->count), memory(p->tag));

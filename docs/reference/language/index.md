@@ -3109,7 +3109,7 @@ another live instance. Multiple named outputs use a destructuring pattern:
 
 <!-- verified-example: mdtests/c_call_binder_transport_multiple_produces.md -->
 ```click
-let { first: a, second: b } = step(split_cells, {});
+let { first: a, second: b } = step(split_cells);
 ```
 
 A produced binder that no output pattern introduces is an error.
@@ -3203,7 +3203,7 @@ without changing the call or its resource effects:
 
 <!-- verified-example: mdtests/call_result_in_condition.md -->
 ```click
-let { result: r } = step(classify, { });
+let { result: r } = step(classify);
 ```
 
 This is how a proof refers to a result the C never stores, as in

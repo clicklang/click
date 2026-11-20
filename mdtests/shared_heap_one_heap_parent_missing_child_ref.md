@@ -163,19 +163,19 @@ int32 caller(struct child* kid) {
     step();
     branch {
         true => {
-            step(child_release, {});
+            step(child_release);
             step();
             solve();
         }
         false => {}
     }
-    let { link: link } = step(parent_attach, {});
+    let { link: link } = step(parent_attach);
     have count(child_ref(kid)) == 2;
     have kid->refs == count(child_ref(kid));
-    step(child_release, {});
+    step(child_release);
     have count(child_ref(kid)) == 1;
     have kid->refs == count(child_ref(kid));
-    step(child_release, {});
+    step(child_release);
     step(parent_detach, { link: link });
     step();
     solve();

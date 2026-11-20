@@ -46,7 +46,7 @@ int caller(Square& square, int delta) {
     requires 0 <= square.side and square.side <= 500;
     ensures to_integer(result) == to_integer(old(square.side) + delta + delta);
 } by {
-    let { __object_object: packed } = step(Square__click_pack__Shape, {});
+    let { __object_object: packed } = step(Square__click_pack__Shape);
 }
 ```
 

@@ -1643,14 +1643,10 @@ impl std::fmt::Display for CallBinderTransport {
             }
             write!(f, " }} = ")?;
         }
-        if self.named_contract {
-            let entries = self.map_entries();
-            return write!(f, "step({}, {{ {} }})", self.callee, entries.join(", "));
-        }
-        if self.frontier {
+        if self.named_contract || self.frontier {
             let entries = self.map_entries();
             return if entries.is_empty() {
-                write!(f, "step({}, {{}})", self.callee)
+                write!(f, "step({})", self.callee)
             } else {
                 write!(f, "step({}, {{ {} }})", self.callee, entries.join(", "))
             };
@@ -1663,9 +1659,7 @@ impl std::fmt::Display for CallBinderTransport {
             write!(f, "{}", diagnostics::describe_contract_expression(argument))?;
         }
         write!(f, ")")?;
-        // A call step always prints its map, so it never reads as a
-        // named-contract step. A call that lends no instance keeps its empty
-        // map.
+        // An application with written arguments retains its legacy form.
         let entries = self.map_entries();
         if entries.is_empty() {
             write!(f, ", {{}}")?;

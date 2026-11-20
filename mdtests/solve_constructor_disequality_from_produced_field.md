@@ -82,7 +82,7 @@ int32 adopt(struct child* kid) {
         }
         false => {}
     }
-    let { link: link } = step(parent_attach, {});
+    let { link: link } = step(parent_attach);
     have link.link != ParentLink::Empty by solve();
     step(parent_detach, { link: link });
     step();

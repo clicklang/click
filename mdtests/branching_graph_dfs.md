@@ -258,7 +258,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         }, to);
         known();
     }
-    let { result: left_result } = step(dfs, {});
+    let { result: left_result } = step(dfs);
     have 0 <= to and to < n implies visited[to] == old(visited[to]) by {
         intro();
         have visited[to] == at(after_mark, visited[to]);
@@ -402,7 +402,7 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
         }, cur);
         known();
     }
-    let { result: right_result } = step(dfs, {});
+    let { result: right_result } = step(dfs);
     have 0 <= to and to < n implies visited[to] == old(visited[to]) by {
         intro();
         have visited[to] == at(before_right, visited[to]);

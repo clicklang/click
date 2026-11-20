@@ -1939,9 +1939,9 @@ fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
             views kid->payload;
             ensures result == kid->payload;
         } by {
-            step(put, {});
+            step(put);
             step();
-            step(read, {});
+            step(read);
             have p->kid == kid;
             have observed == kid->payload;
             step_until(function.exit);
@@ -4689,13 +4689,13 @@ fn whole_claim_expansion_keeps_tactics_before_a_nested_match() {
     );
 }
 
-/// A call step that lends no resource instance is written with an empty
-/// binder map, `step(inner, {})`. Expansion reprints the map: printed
-/// without it, the step reads as a named-contract step.
+/// Expansion removes an empty input map from a call step and the
+/// resulting named call still selects the callee.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
-fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
+fn whole_claim_expansion_omits_a_call_steps_empty_input_map() {
     let (click, sources) = mdtest_sources("mdtests/mutex_live_contract.md");
+    let click = click.replace("step(inner);", "step(inner, {});");
     let sources = sources
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
@@ -4711,7 +4711,7 @@ fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
         });
     }
     let expanded = expand_c_claim_source_by_label(&click, &sources, "keep.contract").unwrap();
-    assert!(expanded.contains("step(inner, {});"), "{expanded}");
+    assert!(expanded.contains("step(inner);"), "{expanded}");
 }
 
 #[test]
@@ -4738,7 +4738,7 @@ fn bare_step_call_result_bindings_expand_and_replay() {
 
     let (source, owned_sources) = mdtest_sources("mdtests/call_result_discarded.md");
     let sources = crate::cli::source_refs(&owned_sources);
-    let source = source.replace("step(classify, { })", "step()");
+    let source = source.replace("step(classify)", "step()");
     let error = verify_c_sources(&source, &sources)
         .expect_err("discarding a C call result leaves no value to bind");
     assert!(
@@ -18464,7 +18464,7 @@ fn conditional_call_witness_expansion_keeps_empty_binder_map() {
     )
     .expect("the let-bound call must remain parseable");
     assert!(
-        expanded.contains("let { result: r } = step(child, {});"),
+        expanded.contains("let { result: r } = step(child);"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).expect("the expanded witness proof certifies");
@@ -19042,7 +19042,7 @@ void caller(struct parent* p, struct child* kid) {
     ensures link.link == ParentLink::Linked(kid);
     ensures p->kid == kid;
 } by {
-    let { link: link } = step(attach, {});
+    let { link: link } = step(attach);
     have p->kid == kid by solve();
     step();
     have p->kid == kid by solve();
@@ -21631,7 +21631,7 @@ fn repeated_retains_expand_with_checked_count_bounds() {
         .expect("retain bounds should expand as checked obligation proofs");
     verify_expanded_function_source(source, &expanded, &sources, "retain_many")
         .expect("the expanded retain proof rechecks");
-    for (offset, _) in source.match_indices("step(child_retain, {});") {
+    for (offset, _) in source.match_indices("step(child_retain);") {
         let position = expansion::position_at_offset(source, offset);
         let expanded = expand_c_tactic_source_at(source, &sources, position.line, position.column)
             .expect("each retained call's implicit proof should expand");
@@ -23438,7 +23438,7 @@ test_batches! {
         whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms,
         whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm,
         whole_claim_expansion_keeps_tactics_before_a_nested_match,
-        whole_claim_expansion_keeps_a_call_steps_empty_binder_map,
+        whole_claim_expansion_omits_a_call_steps_empty_input_map,
     ],
     expansion_batch_19: [
         whole_claim_expansion_keeps_a_proof_if_after_execution,

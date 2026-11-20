@@ -870,8 +870,9 @@ binders:
 - A contract that is not established for this pointer fails with `is not
   established for this callback`, even when another pointer has it. Establish
   it with `requires` or `apply`.
-- An unknown name fails with `unknown call contract`.
-- A contract that declares resource binders: use `step(Contract, { ... })`.
+- A name outside the declared contracts must match the call's callee.
+- Supply required input bindings in the map and name produced resources in the
+  `let` pattern.
 - A second call, including one in the same C statement, gets no selection.
   Write another `step(Contract)` for it.
 - `step(Contract(...))` is retired, and `step(A, B)` is a parse error.
@@ -887,19 +888,18 @@ There is no fallback to another contract. Expansion preserves the selection.
 
 ### Calls with binder maps
 
-**Form:** `step(callee, { binder: instance, n: value, ... })`;
-`let { result: name, binder: name, ... } = step(callee, { ... })`
+**Forms:** `step(callee)` and `step(callee, { binder: instance, n: value, ... })`.
+Either can use a `let { result: name, binder: name, ... }` output pattern.
 
 **Specialized.** Write it at a call whose callee declares instance binders,
 to say which owned instance each binder takes; or `let` value parameters, to
 give a value the caller cannot supply by holding an instance, such as the
 length of the string a local array holds; or `produces` binders, to name the
-instances the call creates. The step names the callee's contract, not the
-call: the arguments are the call at the frontier's, so it works for calls
-whose arguments a proof expression cannot write, such as `cond ? "" : " "`.
-The name gives the map its binders, and the produced instances their
-resources, before the step runs. `result: name` in the `let` pattern names
-the C value.
+instances the call creates. A declared named contract takes precedence. Other
+names select the callee, which can be qualified, as in `step(unit::callee)`.
+The C arguments come from the call at the frontier. The optional map supplies
+contract inputs, and the `let` pattern names outputs such as
+`let { result: value, output: instance } = step(callee);`.
 
 **Accepts** a frontier whose next lowered statement calls `callee`, when:
 
@@ -924,8 +924,8 @@ the C value.
 - The `let` pattern names every `produces` binder. A produced instance's
   resource arguments are the call's arguments
   ([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
-- An explicitly named callee without binders takes the empty map `{ }`.
-  This form also names a call result when the proof names the callee
+- Omit the input map when there are no entries. An empty map is equivalent,
+  and expansion uses the shorter spelling. Either form can bind a call result
   ([`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md)).
   `name` must not be a C variable. A proof name may be rebound.
 
@@ -957,7 +957,7 @@ produced instances.
 **Failure, checking, and tools:**
 
 The input map and output pattern are the only sources of bindings; nothing is
-searched or inferred. Expansion reprints both unchanged.
+searched or inferred. Expansion retains the bindings and omits empty maps.
 
 A call publishes the callee's postconditions. It does not search memory history
 to turn symbolic reads in those postconditions into extra constant equalities.
@@ -969,16 +969,16 @@ when it crosses a memory effect. Already-available equalities remain usable by
 
 ### Named contracts with resource bindings
 
-**Form:** `step(Contract, { handle: instance, ... })`; `step(Contract, { binder: instance })`
+**Forms:** `step(Contract)` and `step(Contract, { handle: instance, ... })`.
 
 **Specialized.** Write it to choose a named contract and map its resource
 binders in one call step. Select an established named contract for the current C
 call and map its resource binders. The same `let { result: value, output:
 resource }` pattern binds its C value and produced resources.
 
-The two syntaxes in **Form** are the same form. A handle is a named resource
-clause (`owns model: Ledger();`, `consumes input: Dirty(p);`) of the
-contract.
+A handle is a named resource clause such as `owns model: Ledger();` or
+`consumes input: Dirty(p);`. The map is optional when there are no input
+entries, including when the proof names produced instances in a `let` pattern.
 
 **Accepts** a call frontier with `Contract(f)` established for the called
 pointer or function, with the call's signature, as for `step(Contract)`, when:
@@ -1005,13 +1005,12 @@ resource-free guarantees of other applicable contracts.
 - A contract that is not established for this pointer fails with `is not
   established for this callback with its call signature`. Establish it as for
   `step(Contract)`.
-- A contract with binders written without a map, `step(Contract)`, is refused.
-- A contract without binders: write `step(Contract)`.
+- A contract that requires an input binder still needs that entry in its map.
 
 **Failure, checking, and tools:**
 
 Preconditions and ownership transitions use the existing call checker.
-Expansion reprints the map and pattern unchanged.
+Expansion retains the bindings and omits empty maps.
 
 **Checked examples:** [`named_contract_call_output_bindings.md`](https://github.com/clicklang/click/blob/master/mdtests/named_contract_call_output_bindings.md), [`c_step_contract_resource_count_is_model_local.md`](https://github.com/clicklang/click/blob/master/mdtests/c_step_contract_resource_count_is_model_local.md)
 

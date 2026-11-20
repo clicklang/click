@@ -17,7 +17,7 @@ void local() {
 } by {
     step(); step();
     fold(cell_at(&x));
-    step(observe, {});
+    step(observe);
     step();
     unfold(cell_at(&x));
     fold(cell_at(&x));
@@ -28,7 +28,7 @@ void parameter(int32 x) {
 } by {
     step();
     fold(cell_at(&x));
-    step(observe, {});
+    step(observe);
     step();
     unfold(cell_at(&x));
     fold(cell_at(&x));

@@ -33,7 +33,7 @@ void keep(struct holder *holder) {
     let life = fold(lifetime(holder), { tag: 0 });
     step(wrapped, { life: life });
     unfold(life);
-    step(borrow, {});
+    step(borrow);
     let next = fold(lifetime(holder), { tag: 0 });
     step(wrapped, { life: next });
     unfold(next);

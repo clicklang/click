@@ -48,7 +48,7 @@ void keep(struct counter *counter) {
     owns mutex_guard(&counter->mu);
 } by {
     have held(&counter->mu) by solve();
-    step(inner, {});
+    step(inner);
     have held(&counter->mu) by solve();
     step();
     solve();
@@ -62,7 +62,7 @@ int32 read_counter(struct counter *counter) {
 } by {
     step();
     let { lifetime: mutex_lifetime } = step(pthread_mutex_init, { state: state });
-    step(keep, {});
+    step(keep);
     unfold(state);
     step();
     fold(state);

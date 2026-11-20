@@ -390,7 +390,7 @@ fn produced_call_output_is_a_resource_unfold_target() {
             void caller(int32* q) {
                 ensures q == q;
             } by {
-                let { out: out } = step(make, {});
+                let { out: out } = step(make);
                 unfold(out);
             }
         "#;

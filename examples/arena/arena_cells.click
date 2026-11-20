@@ -3375,7 +3375,7 @@ int32 arena_pipeline(
     step();
     step();
     step();
-    let { outcome: o0 } = step(arena_init, {});
+    let { outcome: o0 } = step(arena_init);
     step();
     if at(region(7).entry, initialized) == at(region(7).entry, 0) {
         step();
