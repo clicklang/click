@@ -1541,13 +1541,6 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.normalize-using"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic.order_chain"
-path = "reference/tactics/index.md#signed-order-chains"
-
-[[item]]
-id = "tactic-form.order-chain"
-path = "reference/tactics/index.md#signed-order-chains"
-[[item]]
 id = "tactic-form.intro"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
@@ -2136,6 +2129,14 @@ path = "reference/library/index.md#integeruint64_less_equal_transitive"
 [[item]]
 id = "library.theorem.integer::int32_nonnegative_predecessor_upper_bound"
 path = "reference/library/index.md#integerint32_nonnegative_predecessor_upper_bound"
+
+[[item]]
+id = "library.theorem.integer::int32_less_than_implies_less_equal"
+path = "reference/library/index.md#integerint32_less_than_implies_less_equal"
+
+[[item]]
+id = "library.theorem.integer::int32_less_than_less_equal_transitive"
+path = "reference/library/index.md#integerint32_less_than_less_equal_transitive"
 
 [[item]]
 id = "library.theorem.integer::int32_less_equal_less_than_transitive"

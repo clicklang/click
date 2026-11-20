@@ -5,6 +5,7 @@ mod integer_composition;
 mod pointer_offsets;
 mod quotient_shifts;
 mod signed_intervals;
+mod signed_order;
 mod specialized;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_term;

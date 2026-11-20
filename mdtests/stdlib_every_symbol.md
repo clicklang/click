@@ -696,6 +696,21 @@ theorem docs_use_int32_nonnegative_predecessor_upper_bound(value: int32, bound: 
     }
 }
 
+theorem docs_use_int32_less_than_implies_less_equal(first: int32, last: int32) {
+    requires first < last;
+    ensures first <= last by {
+        apply(integer::int32_less_than_implies_less_equal(first, last)) using { first < last; };
+    }
+}
+
+theorem docs_use_int32_less_than_less_equal_transitive(first: int32, middle: int32, last: int32) {
+    requires first < middle;
+    requires middle <= last;
+    ensures first < last by {
+        apply(integer::int32_less_than_less_equal_transitive(first, middle, last)) using { first < middle; middle <= last; };
+    }
+}
+
 theorem docs_use_int32_less_equal_less_than_transitive(first: int32, middle: int32, last: int32) {
     requires first <= middle;
     requires middle < last;

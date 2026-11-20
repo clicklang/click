@@ -6180,7 +6180,6 @@ pub enum ProofTactic {
     Known,
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
-    OrderChain(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
     Intro,
     /// `let name = intro()`: introduce a universal goal's variable under a
@@ -6288,7 +6287,6 @@ pub enum SimpleTactic {
     Termination,
     Known,
     Normalize,
-    OrderChain,
     Intro,
     Enumerate,
     Contradiction,
@@ -6606,11 +6604,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "order-chain",
-        syntax: "order_chain() using",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "preserve",
         syntax: "preserve(resource, region)",
         class: "simple",
@@ -6821,7 +6814,6 @@ impl ProofTactic {
             Self::Normalize | Self::NormalizeUsing(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }
-            Self::OrderChain(_) => TacticClass::Simple(SimpleTactic::OrderChain),
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
             Self::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),

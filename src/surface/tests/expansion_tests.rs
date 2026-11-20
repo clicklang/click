@@ -10224,13 +10224,16 @@ fn selected_mirrored_disequality_expands_to_known() {
 }
 
 #[test]
-fn signed_order_chain_checks_a_store_prerequisite_without_search() {
+fn signed_order_theorems_check_a_store_prerequisite_without_search() {
     let (source, program) = mdtest_sources("mdtests/stores_to_ordered_indices_keep_each_other.md");
     let program = crate::cli::source_refs(&program);
     let label = "mark.contract";
     let expanded = expand_c_claim_source_by_label(&source, &program, label)
         .unwrap_or_else(|error| panic!("{}", error.report()));
-    assert!(expanded.contains("order_chain() using"), "{expanded}");
+    assert!(
+        expanded.contains("int32_less_equal_less_than_transitive"),
+        "{expanded}"
+    );
     without_implicit_solve_for_claim(label, || {
         verify_c_sources(&expanded, &program).map_err(|error| error.report())
     })
@@ -10238,29 +10241,53 @@ fn signed_order_chain_checks_a_store_prerequisite_without_search() {
 }
 
 #[test]
-fn signed_order_chain_checks_only_the_listed_available_links() {
-    let template = r#"
-        theorem chain(a: int32, b: int32, c: int32, d: int32) {
-            requires a <= b;
-            requires b < c;
-            requires c <= d;
-            ensures a < d by { order_chain() using { LINKS }; }
+fn signed_store_order_expansion_stays_in_its_branch() {
+    let c_source = r#"
+        void mark(int32 *a, int32 n, int32 i, int32 j, int32 c) {
+            if (c <= 1) {
+                a[i] = 41;
+                c = n;
+                a[j] = 42;
+            }
         }
     "#;
-    for (links, expected) in [
-        ("a <= b; b < c; c <= d;", None),
-        ("a <= b; c <= d;", Some("connected int32 comparisons")),
-        ("a < b; b < c; c <= d;", Some("not exactly available")),
-        ("a <= b; b <= c; c <= d;", Some("strict link")),
-    ] {
-        let result = verify_click_theorems(&template.replace("LINKS", links));
-        if let Some(expected) = expected {
-            let error = result.expect_err("invalid certificate should fail");
-            assert!(error.message().contains(expected), "{}", error.report());
-        } else {
-            result.expect("written links should suffice");
+    let source = r#"
+        verifying "mark.c";
+        void mark(int32 *a, int32 n, int32 i, int32 j, int32 c) {
+            requires 0 <= i;
+            requires 0 <= j;
+            requires i <= j;
+            requires j <= c;
+            requires 2 <= n;
+            owns a[0..n];
+            ensures 1 == 1;
+        } by {
+            branch {
+                true => {
+                    step();
+                    step();
+                    step();
+                }
+                false => {}
+            }
+            step_until(function.exit);
+            solve();
         }
-    }
+    "#;
+    let program = [("mark.c", c_source)];
+    let label = "mark.contract";
+    let expanded = expand_c_claim_source_by_label(source, &program, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let (prefix, arm) = expanded.split_once("true => {").unwrap();
+    assert!(!prefix.contains("int32_less_"), "{expanded}");
+    assert!(
+        arm.contains("int32_less_than_less_equal_transitive"),
+        "{expanded}"
+    );
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]
@@ -10502,7 +10529,10 @@ fn outcome_solve_closes_its_recorded_order_path_by_arithmetic() {
         position.column,
     )
     .expect("the retained outcome theorem path should expand");
-    assert!(expanded.contains("order_chain() using"), "{expanded}");
+    assert!(
+        expanded.contains("int32_less_equal_less_than_transitive"),
+        "{expanded}"
+    );
     assert!(!expanded.contains("normalize()"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[("validate_chain.c", c_source)])
