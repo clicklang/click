@@ -6737,6 +6737,17 @@ impl SymbolicMemory {
         self.materialize_named_cell(pointer, value)
     }
 
+    pub(crate) fn materialize_entry_integer_cell_at(
+        self,
+        pointer: Address,
+        source: &ProgramPoint,
+    ) -> Self {
+        let Some(read) = crate::kernel::eval::observe_entry_integer_cell(source, &pointer) else {
+            return self;
+        };
+        self.materialize_named_cell(pointer, ProgramValue::Int32(read))
+    }
+
     /// Cache the canonical value of an already existing cell for a resource
     /// projection. This is not a C write and cannot establish initialization.
     /// Kernel producers supply the value they observed or proved at this point.

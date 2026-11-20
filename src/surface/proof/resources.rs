@@ -2869,6 +2869,7 @@ fn materialize_composite_resource_memory(
             &contained,
             &lowered,
             parameter_binding.parameters,
+            names_plain_scalar_body_at_entry(composite_body),
         );
         state = state.with_materialized_memory_at_current_point(memory);
     }
@@ -2929,6 +2930,7 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
             &contained,
             &lowered,
             parameter_binding.parameters,
+            names_plain_scalar_body_at_entry(composite_body),
         );
         // This composite-body instantiation path has no fact assumptions yet.
         // Projection/packing paths check composition once assumptions are
@@ -3608,6 +3610,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 &contained,
                 &lowered,
                 parameter_binding.parameters,
+                names_plain_scalar_body_at_entry(composite_body),
             );
             // Keep the program point and unrelated memory-backed views when
             // the proof rewrite gives cells names.
@@ -5467,12 +5470,21 @@ fn instantiate_contract_segment(
     })
 }
 
+fn names_plain_scalar_body_at_entry(body: &CompositeResourceBody) -> bool {
+    body.fields.is_empty()
+        && body.facts().is_empty()
+        && body.condition().is_none()
+        && body.matched.is_none()
+        && matches!(body.contains(), [ResourceClause::OwnMemory(_)])
+}
+
 fn materialize_composite_resource_cells_from_state(
     mut memory: SymbolicMemory,
     naming_point: &crate::kernel::ProgramPoint,
     resource_clause: &ResourceClause,
     lowered: &ResourceFact,
     parameters: &[crate::languages::interface::ImportedParameter],
+    name_at_entry: bool,
 ) -> SymbolicMemory {
     let Some((segment, range)) = (match resource_clause {
         ResourceClause::Conditional { .. } => None,
@@ -5567,22 +5579,31 @@ fn materialize_composite_resource_cells_from_state(
     } else {
         ProgramType::Int32
     };
-    // A sole scalar with a recorded entry version can use the concrete
-    // cell naming path directly.
-    let concrete_entry_cell = start == 0
-        && end == 1
+    let point_named = name_at_entry
+        && start == 0
         && run_type == ProgramType::Int32
+        && element_width == ProgramType::Int32.byte_width()
+        && matches!(&segment.base,
+            ProgramExpression::Value(value) if value.program_type() == ProgramType::Int32Pointer)
         && naming_point
             .entry_integer_version(range.base(), crate::kernel::LoadKind::Int32)
             .is_some();
-    if !concrete_entry_cell && run_type.byte_width() <= element_width {
+    if point_named && end == 1 {
+        return memory.materialize_entry_integer_cell_at(range.base().clone(), naming_point);
+    }
+    if run_type.byte_width() <= element_width {
+        let source = if point_named {
+            naming_point.clone()
+        } else {
+            crate::kernel::ProgramPoint::at(naming_point.shared_memory())
+        };
         match memory.with_named_cell_run(
             range.base().clone(),
             element_width,
             run_type,
             start,
             end,
-            naming_point.clone(),
+            source,
         ) {
             Ok(seeded) => return seeded,
             Err(unchanged) => memory = unchanged,
@@ -6176,6 +6197,7 @@ mod wide_range_reader_tests {
             &ResourceClause::OwnMemory(segment),
             &ResourceFact::own_memory(wide),
             &[],
+            false,
         );
         assert_eq!(result.diagnostic_identity(), memory.diagnostic_identity());
         // The range kind also matters when the shared term representation has
@@ -6199,6 +6221,7 @@ mod wide_range_reader_tests {
             &clause,
             &ResourceFact::own_memory(tagged),
             &[],
+            false,
         );
         assert_eq!(result.diagnostic_identity(), memory.diagnostic_identity());
     }
@@ -6843,6 +6866,7 @@ mod declared_scalar_field_observation_tests {
                         &clause,
                         &fact,
                         &[],
+                        false,
                     )
                 });
                 assert!(matches!(
@@ -6880,6 +6904,7 @@ mod declared_scalar_field_observation_tests {
             &ResourceClause::OwnMemory(segment),
             &ResourceFact::own_memory(MemoryRange::new(base.clone(), 0.into(), 2.into())),
             &[],
+            false,
         );
         let ExpressionOutcome::Value(value) = named.load(&base) else {
             panic!("observed field")
@@ -6924,6 +6949,7 @@ mod declared_scalar_field_observation_tests {
                 &ResourceClause::OwnMemory(segment),
                 &ResourceFact::own_memory(range),
                 &[],
+                false,
             );
             if count > 0 {
                 assert!(matches!(

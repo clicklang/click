@@ -2515,11 +2515,21 @@ impl CellStore {
         &'a self,
         other: &'a Self,
         source: &ProgramPoint,
-    ) -> impl Iterator<Item = HashedOrdMapChange<'a, Address>> + 'a {
-        let checked = self
-            .run_diff(other)
-            .all(|(old, new)| old.is_none() && new.is_some_and(|run| run.names_cells_at(source)));
-        self.diff_cells(other, checked)
+    ) -> Result<impl Iterator<Item = HashedOrdMapChange<'a, Address>> + 'a, &'static str> {
+        let mut checked = true;
+        for (old, new) in self.run_diff(other) {
+            if let (None, Some(run)) = (old, new)
+                && matches!(run.value_mode(), RunValueMode::Load)
+                && run.source_point().read_version_id().is_some()
+            {
+                if !run.names_cells_at(source) {
+                    return Err("added a run without its selected source point");
+                }
+            } else {
+                checked = false;
+            }
+        }
+        Ok(self.diff_cells(other, checked))
     }
 
     fn diff_cells<'a>(

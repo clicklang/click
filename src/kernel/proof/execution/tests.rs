@@ -3535,11 +3535,10 @@ fn resource_cell_naming_checks_the_entry_point_without_a_store() {
     let version = source
         .entry_integer_version(&slot, LoadKind::Int32)
         .unwrap();
-    let named =
-        before
-            .memory()
-            .clone()
-            .materialize_cell_at(slot.clone(), ProgramType::Int32, &source);
+    let named = before
+        .memory()
+        .clone()
+        .materialize_entry_integer_cell_at(slot.clone(), &source);
     assert_eq!(
         named.known_value(&slot),
         Some(ProgramValue::Int32(MachineTerm::MemoryLoad(
@@ -3563,7 +3562,6 @@ fn resource_run_naming_checks_the_source_without_expanding_slots() {
     };
     let before = ExecutionState::new().begin_function_entry_memory();
     let point = before.program_point();
-    let version = point.entry_integer_version(&slot, LoadKind::Int32).unwrap();
     let check = |count| {
         let named = before
             .memory()
@@ -3574,14 +3572,8 @@ fn resource_run_naming_checks_the_source_without_expanding_slots() {
             super::memory_only_adds_named_cells(&before, &named)
         });
         checked.unwrap();
-        assert_eq!(
-            named.known_value(&slot),
-            Some(ProgramValue::Int32(MachineTerm::MemoryLoad(
-                version.clone(),
-                Box::new(slot.clone()),
-                LoadKind::Int32,
-            ))),
-        );
+        let run = named.cells.runs().next().unwrap();
+        assert!(point.names_exact_read(run.source_point()));
         work
     };
 
