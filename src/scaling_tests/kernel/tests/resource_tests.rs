@@ -803,11 +803,14 @@ fn resource_instance_lookup_and_transfer_scale_by_identity() {
             context
         });
         assert!(context.shares_storage_with(&context.clone()));
-        let bindings = std::sync::Arc::new(
-            (1..=size)
-                .map(|id| (Variable(size + id), Variable(id)))
-                .collect(),
-        );
+        let mut bindings = crate::kernel::ResourceBindings::new();
+        for id in 1..=size {
+            bindings.insert_instance(
+                InstanceId::from_variable(Variable(size + id)),
+                InstanceId::from_variable(Variable(id)),
+            );
+        }
+        let bindings = std::sync::Arc::new(bindings);
         let mut state = ExecutionState::new().with_resource_context(context.clone());
         state.resource_bindings = Some(bindings);
         let retained_state = state.clone();

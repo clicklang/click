@@ -4598,15 +4598,13 @@ fn source_backed_call_requirement_surface(
         _ => site
             .resource_arguments
             .iter()
-            // The call site records the kernel's binder-numbered map, which
-            // also carries named mutex-authority binders; only instances
-            // these reads reference are renamed.
-            .map(|(binder, identity, actual)| {
+            // Only instance binders these reads reference are renamed.
+            .filter_map(|(binder, identity, actual)| match (identity, actual) {
                 (
-                    binder,
-                    crate::kernel::InstanceId::from_variable(*identity),
-                    crate::kernel::InstanceId::from_variable(*actual),
-                )
+                    crate::kernel::ResourceBinder::Instance(identity),
+                    crate::kernel::ResourceBinder::Instance(actual),
+                ) => Some((binder, *identity, *actual)),
+                _ => None,
             })
             .filter(|(_, identity, _)| referenced_instances.contains(identity))
             .map(|(binder, identity, actual)| {
