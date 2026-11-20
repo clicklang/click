@@ -5893,6 +5893,40 @@ fn is_recognized_representation_copy_block(
     Ok(standard_library_function_block(name)?.as_ref() == Some(function_block))
 }
 
+/// An exact lowered range names one input clause, or records that multiple
+/// clauses wrote that range. Construct this index from the contract's own
+/// requirements before any call has an execution state.
+struct DirectViewInputs<'a>(BTreeMap<&'a crate::kernel::MemorySegment, Option<usize>>);
+
+impl<'a> DirectViewInputs<'a> {
+    fn new(requirements: &'a [ResourceSpec]) -> Self {
+        let mut inputs = BTreeMap::new();
+        for (index, spec) in requirements.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            if spec.is_view()
+                && spec.guard().is_none()
+                && let Some(segment) = spec.memory_segment()
+            {
+                inputs
+                    .entry(segment)
+                    .and_modify(|source| *source = None)
+                    .or_insert(Some(index));
+            }
+        }
+        Self(inputs)
+    }
+
+    fn lookup(&self, output: &crate::kernel::MemorySegment) -> Option<Option<usize>> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.0.get(output).copied()
+    }
+}
+
+#[cfg(test)]
+mod direct_view_inputs_scaling_tests {
+    include!("../scaling_tests/surface/verification/direct_view_inputs.rs");
+}
+
 pub(in crate::surface) fn function_resource_summary(
     function_block: &FunctionBlock,
     parsed_function: &crate::languages::interface::ImportedFunction,
@@ -5916,7 +5950,7 @@ pub(in crate::surface) fn function_resource_summary(
         .filter(|requirement| matches!(requirement, Requirement::Resource(_)))
         .count();
     let resource_positions = function_block.resource_requirement_positions();
-    let has_produced_views = function_block
+    let has_named_view_sources = function_block
         .ensures()
         .iter()
         .any(|clause| clause.view_source.is_some());
@@ -5937,7 +5971,7 @@ pub(in crate::surface) fn function_resource_summary(
             resource_environment,
             &mut requires,
         )?;
-        if has_produced_views
+        if has_named_view_sources
             && matches!(resource, ResourceClause::ViewMemory(_))
             && requires.len() == first_spec + 1
         {
@@ -5972,6 +6006,18 @@ pub(in crate::surface) fn function_resource_summary(
         }
         resource_clause_index += 1;
     }
+    let direct_view_inputs = function_block
+        .ensures()
+        .iter()
+        .any(|clause| {
+            clause.view_source.is_none()
+                && !clause.borrowed()
+                && matches!(
+                    clause.ensure(),
+                    Ensure::Resource(ResourceClause::ViewMemory(_))
+                )
+        })
+        .then(|| DirectViewInputs::new(&requires));
     let mut ensures = Vec::new();
     let ensure_clause_count = function_block
         .ensures()
@@ -6061,6 +6107,26 @@ pub(in crate::surface) fn function_resource_summary(
                     ClickError::new("the selected input view must lower to one memory range")
                 })?;
                 spec = spec.with_view_source(*input);
+            } else if !ensure.borrowed() && matches!(resource, ResourceClause::ViewMemory(_)) {
+                let input = direct_view_inputs
+                    .as_ref()
+                    .expect("index for abbreviated produced views")
+                    .lookup(spec.memory_segment().expect("produced memory view"));
+                let source = match input {
+                    Some(Some(source)) => source,
+                    result => {
+                        let problem = if result.is_none() {
+                            "has no direct match"
+                        } else {
+                            "matches multiple input views"
+                        };
+                        return Err(ClickError::new(format!(
+                            "produced view `{}` {problem}; name its input with `views ... as name` and write `from name`",
+                            crate::surface::printing::format_resource_target(resource)
+                        )));
+                    }
+                };
+                spec = spec.with_view_source(source);
             }
             if let Some(guard) = &guard {
                 spec = spec.with_guard(guard.clone());

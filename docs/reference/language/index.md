@@ -2784,7 +2784,8 @@ means the function borrows the resource for the call and reads it only.
 returns an owned resource. To produce a memory view, name the input with
 `views *p as source;` and write `produces view(*p) from source;`. The
 input must cover the output, and the output keeps the input borrow active
-until the caller gives it up. See
+until the caller gives it up. You can omit `from` when exactly one input
+view has the same lowered range. See
 [Producing a view](../../concepts/resources.md#producing-a-view).
 `requires` and `ensures` accept pure propositions
 only. `consumes X;` beside `produces X;` for the same `X` is exactly
