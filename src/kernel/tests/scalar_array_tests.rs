@@ -343,7 +343,7 @@ fn compact_scalar_array_initialization_cannot_bypass_an_active_view_borrow() {
     assert!(matches!(
         theorem.proposition(),
         Proposition::ProgramStatementVerifies {
-            outcome: StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_)),
+            outcome: StatementOutcome::RuntimeError(RuntimeError::BorrowRefusal(_)),
             ..
         }
     ));

@@ -1330,7 +1330,7 @@ fn statement_head_names_the_guard_without_the_loop_node() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn borrow_refusal_diagnostic_renders_only_its_selected_subject() {
     use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, MemoryRange};
-    use crate::kernel::{BorrowRefusal, LoanRefusalOperation, LoanRefusalSubject};
+    use crate::kernel::{BorrowRefusal, BorrowRefusalOperation, BorrowRefusalSubject};
 
     let pointer = Address {
         base: AddressBase::Concrete("selected_resource".to_string()),
@@ -1342,11 +1342,11 @@ fn borrow_refusal_diagnostic_renders_only_its_selected_subject() {
         MachineTerm::constant(4),
     ));
     let diagnostic = BorrowRefusal::ActiveDependency.diagnostic_with_subject(
-        LoanRefusalOperation::MemoryAccess,
-        LoanRefusalSubject::for_resource(selected),
+        BorrowRefusalOperation::MemoryAccess,
+        BorrowRefusalSubject::for_resource(selected),
     );
     let rendered = super::diagnostics::describe_runtime_error(
-        &crate::kernel::RuntimeError::LoanRefusal(Box::new(diagnostic)),
+        &crate::kernel::RuntimeError::BorrowRefusal(Box::new(diagnostic)),
         ParameterBinding::default(),
     );
 
@@ -1366,7 +1366,7 @@ fn borrow_refusal_diagnostic_renders_only_its_selected_subject() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn borrow_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
     use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, MemoryRange};
-    use crate::kernel::{BorrowRefusal, LoanRefusalOperation, LoanRefusalSubject};
+    use crate::kernel::{BorrowRefusal, BorrowRefusalOperation, BorrowRefusalSubject};
 
     let range = MemoryRange::new(
         Address {
@@ -1377,11 +1377,11 @@ fn borrow_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
         MachineTerm::constant(3),
     );
     let diagnostic = BorrowRefusal::UnsupportedPartition.diagnostic_with_subject(
-        LoanRefusalOperation::Plan,
-        LoanRefusalSubject::for_range(range),
+        BorrowRefusalOperation::Plan,
+        BorrowRefusalSubject::for_range(range),
     );
     let rendered = super::diagnostics::describe_runtime_error(
-        &crate::kernel::RuntimeError::LoanRefusal(Box::new(diagnostic)),
+        &crate::kernel::RuntimeError::BorrowRefusal(Box::new(diagnostic)),
         ParameterBinding::default(),
     );
 

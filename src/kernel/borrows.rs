@@ -993,12 +993,12 @@ struct BorrowScopeRecord {
     holds: crate::persistent::PersistentSet<BorrowHoldId>,
 }
 
-fn origin_kind(origin: &BorrowOrigin) -> LoanOriginKind {
+fn origin_kind(origin: &BorrowOrigin) -> BorrowOriginKind {
     match origin {
-        BorrowOrigin::Escrowed(_) => LoanOriginKind::LentOwner,
-        BorrowOrigin::Reborrowed => LoanOriginKind::Reborrow,
-        BorrowOrigin::BorrowedContractInput => LoanOriginKind::ContractInputView,
-        BorrowOrigin::LocalStorage(_) => LoanOriginKind::LocalStorage,
+        BorrowOrigin::Escrowed(_) => BorrowOriginKind::LentOwner,
+        BorrowOrigin::Reborrowed => BorrowOriginKind::Reborrow,
+        BorrowOrigin::BorrowedContractInput => BorrowOriginKind::ContractInputView,
+        BorrowOrigin::LocalStorage(_) => BorrowOriginKind::LocalStorage,
     }
 }
 
@@ -1297,7 +1297,7 @@ impl Ord for BorrowLedger {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum LoanRefusalCategory {
+pub enum BorrowRefusalCategory {
     ProvenOverlap,
     SeparationUnproved,
     WrongHolder,
@@ -1313,7 +1313,7 @@ pub enum LoanRefusalCategory {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum LoanRefusalOperation {
+pub enum BorrowRefusalOperation {
     Validate,
     Plan,
     Entry,
@@ -1326,7 +1326,7 @@ pub enum LoanRefusalOperation {
 /// reader knows which declaration to look at: a contract's own `views`
 /// clause, live local storage, an owner lent for a call, or a nested reborrow.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum LoanOriginKind {
+pub enum BorrowOriginKind {
     LocalStorage,
     ContractInputView,
     LentOwner,
@@ -1339,7 +1339,7 @@ pub enum LoanOriginKind {
 /// explain a borrow transition. It never retains a ledger, resource frame, or
 /// transition history.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct LoanRefusalSubject {
+pub struct BorrowRefusalSubject {
     resource: Option<ResourceFact>,
     /// Boxed for the same reason as `conflicting`: a refusal that names a
     /// range and a fact must stay within the bounded payload size.
@@ -1349,14 +1349,14 @@ pub struct LoanRefusalSubject {
     /// supports a contract input view at entry. Boxed so that naming both
     /// sides keeps the diagnostic within its bounded payload size.
     conflicting: Option<Box<ResourceFact>>,
-    origin: Option<LoanOriginKind>,
+    origin: Option<BorrowOriginKind>,
     borrow: Option<(u64, u64)>,
     scope: Option<(u64, u64)>,
     share: Option<(u64, u64)>,
     support: Option<(u64, u64)>,
 }
 
-impl LoanRefusalSubject {
+impl BorrowRefusalSubject {
     fn none() -> Self {
         Self {
             resource: None,
@@ -1377,7 +1377,7 @@ impl LoanRefusalSubject {
         attempted: MemoryRange,
         protected: ResourceFact,
         borrow: BorrowId,
-        origin: LoanOriginKind,
+        origin: BorrowOriginKind,
     ) -> Self {
         Self {
             range: Some(Box::new(attempted)),
@@ -1480,11 +1480,11 @@ impl LoanRefusalSubject {
         self.conflicting.as_deref()
     }
 
-    pub fn origin(&self) -> Option<LoanOriginKind> {
+    pub fn origin(&self) -> Option<BorrowOriginKind> {
         self.origin
     }
 
-    pub fn loan_id(&self) -> Option<(u64, u64)> {
+    pub fn borrow_id(&self) -> Option<(u64, u64)> {
         self.borrow
     }
 
@@ -1502,7 +1502,7 @@ impl LoanRefusalSubject {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum LoanOverlapStatus {
+pub enum BorrowOverlapStatus {
     NotApplicable,
     ProvenOverlap,
     SeparationUnproved,
@@ -1512,30 +1512,30 @@ pub enum LoanOverlapStatus {
 /// deliberately retains at most one selected subject; callers must never
 /// format a ledger or resource frame to explain a refusal.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct LoanRefusalDiagnostic {
+pub struct BorrowRefusalDiagnostic {
     pub(crate) refusal: BorrowRefusal,
-    pub(crate) category: LoanRefusalCategory,
-    pub(crate) operation: LoanRefusalOperation,
-    pub(crate) subject: LoanRefusalSubject,
-    pub(crate) overlap: LoanOverlapStatus,
+    pub(crate) category: BorrowRefusalCategory,
+    pub(crate) operation: BorrowRefusalOperation,
+    pub(crate) subject: BorrowRefusalSubject,
+    pub(crate) overlap: BorrowOverlapStatus,
     pub(crate) source_clause: Option<u32>,
     pub(crate) source_step: Option<u32>,
 }
 
-impl LoanRefusalDiagnostic {
-    pub fn category(&self) -> LoanRefusalCategory {
+impl BorrowRefusalDiagnostic {
+    pub fn category(&self) -> BorrowRefusalCategory {
         self.category
     }
 
-    pub fn operation(&self) -> LoanRefusalOperation {
+    pub fn operation(&self) -> BorrowRefusalOperation {
         self.operation
     }
 
-    pub fn overlap(&self) -> LoanOverlapStatus {
+    pub fn overlap(&self) -> BorrowOverlapStatus {
         self.overlap
     }
 
-    pub fn subject(&self) -> LoanRefusalSubject {
+    pub fn subject(&self) -> BorrowRefusalSubject {
         self.subject.clone()
     }
 
@@ -1609,82 +1609,82 @@ impl std::fmt::Display for BorrowRefusal {
 }
 
 impl BorrowRefusal {
-    pub(crate) fn diagnostic(self, operation: LoanRefusalOperation) -> LoanRefusalDiagnostic {
-        self.diagnostic_with_subject(operation, LoanRefusalSubject::none())
+    pub(crate) fn diagnostic(self, operation: BorrowRefusalOperation) -> BorrowRefusalDiagnostic {
+        self.diagnostic_with_subject(operation, BorrowRefusalSubject::none())
     }
 
     pub(crate) fn diagnostic_with_subject(
         self,
-        operation: LoanRefusalOperation,
-        selected_subject: LoanRefusalSubject,
-    ) -> LoanRefusalDiagnostic {
+        operation: BorrowRefusalOperation,
+        selected_subject: BorrowRefusalSubject,
+    ) -> BorrowRefusalDiagnostic {
         let (category, default_subject, overlap) = match self {
             Self::ActiveDependency => (
-                LoanRefusalCategory::ActiveDependency,
-                LoanRefusalSubject::none(),
-                LoanOverlapStatus::ProvenOverlap,
+                BorrowRefusalCategory::ActiveDependency,
+                BorrowRefusalSubject::none(),
+                BorrowOverlapStatus::ProvenOverlap,
             ),
             Self::UnsupportedPartition => (
-                LoanRefusalCategory::SeparationUnproved,
-                LoanRefusalSubject::none(),
-                LoanOverlapStatus::SeparationUnproved,
+                BorrowRefusalCategory::SeparationUnproved,
+                BorrowRefusalSubject::none(),
+                BorrowOverlapStatus::SeparationUnproved,
             ),
             Self::WrongHolder => (
-                LoanRefusalCategory::WrongHolder,
-                LoanRefusalSubject::none(),
-                LoanOverlapStatus::NotApplicable,
+                BorrowRefusalCategory::WrongHolder,
+                BorrowRefusalSubject::none(),
+                BorrowOverlapStatus::NotApplicable,
             ),
             Self::WrongArena => (
-                LoanRefusalCategory::WrongArena,
-                LoanRefusalSubject::none(),
-                LoanOverlapStatus::NotApplicable,
+                BorrowRefusalCategory::WrongArena,
+                BorrowRefusalSubject::none(),
+                BorrowOverlapStatus::NotApplicable,
             ),
             Self::WrongScope | Self::MissingScope => (
-                LoanRefusalCategory::WrongScope,
-                LoanRefusalSubject::none(),
-                LoanOverlapStatus::NotApplicable,
+                BorrowRefusalCategory::WrongScope,
+                BorrowRefusalSubject::none(),
+                BorrowOverlapStatus::NotApplicable,
             ),
             Self::StalePredecessor => (
-                LoanRefusalCategory::StalePredecessor,
-                LoanRefusalSubject::none(),
-                LoanOverlapStatus::NotApplicable,
+                BorrowRefusalCategory::StalePredecessor,
+                BorrowRefusalSubject::none(),
+                BorrowOverlapStatus::NotApplicable,
             ),
             Self::AlreadyRecovered | Self::ShareStillSplit => (
-                LoanRefusalCategory::Recovery,
-                LoanRefusalSubject::none(),
-                LoanOverlapStatus::NotApplicable,
+                BorrowRefusalCategory::Recovery,
+                BorrowRefusalSubject::none(),
+                BorrowOverlapStatus::NotApplicable,
             ),
             Self::ScopeEnded | Self::ScopeStillActive => (
-                LoanRefusalCategory::Lifetime,
-                LoanRefusalSubject::none(),
-                LoanOverlapStatus::NotApplicable,
+                BorrowRefusalCategory::Lifetime,
+                BorrowRefusalSubject::none(),
+                BorrowOverlapStatus::NotApplicable,
             ),
             Self::UnsupportedResource | Self::IdentitySpaceExhausted => (
-                LoanRefusalCategory::Unsupported,
-                LoanRefusalSubject::none(),
-                LoanOverlapStatus::NotApplicable,
+                BorrowRefusalCategory::Unsupported,
+                BorrowRefusalSubject::none(),
+                BorrowOverlapStatus::NotApplicable,
             ),
             Self::MissingBorrow
             | Self::MissingShare
             | Self::MissingBacking
             | Self::MissingBorrowBinding => (
-                LoanRefusalCategory::Missing,
-                LoanRefusalSubject::none(),
-                LoanOverlapStatus::NotApplicable,
+                BorrowRefusalCategory::Missing,
+                BorrowRefusalSubject::none(),
+                BorrowOverlapStatus::NotApplicable,
             ),
             Self::InvalidEvidence | Self::NotOwnership | Self::NotSiblings => {
                 let category = match operation {
-                    LoanRefusalOperation::Recovery => LoanRefusalCategory::Recovery,
-                    _ => LoanRefusalCategory::InvalidEvidence,
+                    BorrowRefusalOperation::Recovery => BorrowRefusalCategory::Recovery,
+                    _ => BorrowRefusalCategory::InvalidEvidence,
                 };
                 (
                     category,
-                    LoanRefusalSubject::none(),
-                    LoanOverlapStatus::NotApplicable,
+                    BorrowRefusalSubject::none(),
+                    BorrowOverlapStatus::NotApplicable,
                 )
             }
         };
-        LoanRefusalDiagnostic {
+        BorrowRefusalDiagnostic {
             refusal: self,
             category,
             operation,
@@ -1708,12 +1708,12 @@ impl BorrowRefusal {
 
     pub(crate) fn proven_overlap_diagnostic(
         self,
-        operation: LoanRefusalOperation,
-        subject: LoanRefusalSubject,
-    ) -> LoanRefusalDiagnostic {
+        operation: BorrowRefusalOperation,
+        subject: BorrowRefusalSubject,
+    ) -> BorrowRefusalDiagnostic {
         let mut diagnostic = self.diagnostic_with_subject(operation, subject);
-        diagnostic.category = LoanRefusalCategory::ProvenOverlap;
-        diagnostic.overlap = LoanOverlapStatus::ProvenOverlap;
+        diagnostic.category = BorrowRefusalCategory::ProvenOverlap;
+        diagnostic.overlap = BorrowOverlapStatus::ProvenOverlap;
         diagnostic
     }
 }
@@ -2352,13 +2352,13 @@ impl StableViewRecovery {
         boundary.admit(&protected, opaque, resources, assumptions)
     }
 
-    pub(crate) fn diagnostic_subject(&self) -> LoanRefusalSubject {
+    pub(crate) fn diagnostic_subject(&self) -> BorrowRefusalSubject {
         self.transitions
             .last()
             .map(|transition| match &transition.evidence {
                 BorrowTransitionEvidence::OpenExclusiveCall(_)
                 | BorrowTransitionEvidence::ReturnExclusiveCall { .. } => {
-                    LoanRefusalSubject::none()
+                    BorrowRefusalSubject::none()
                 }
                 BorrowTransitionEvidence::Lend {
                     scope,
@@ -2387,47 +2387,47 @@ impl StableViewRecovery {
                     root,
                     support,
                     ..
-                } => LoanRefusalSubject {
+                } => BorrowRefusalSubject {
                     borrow: Some((borrow.arena, borrow.ordinal)),
                     scope: Some((scope.arena, scope.ordinal)),
                     share: Some((root.arena, root.ordinal)),
                     support: Some((support.arena(), support.ordinal())),
-                    ..LoanRefusalSubject::none()
+                    ..BorrowRefusalSubject::none()
                 },
                 BorrowTransitionEvidence::Recover { borrow, .. } => {
-                    LoanRefusalSubject::with_borrow_id(*borrow)
+                    BorrowRefusalSubject::with_borrow_id(*borrow)
                 }
                 BorrowTransitionEvidence::End { scope, .. } => {
-                    LoanRefusalSubject::with_scope_id(*scope)
+                    BorrowRefusalSubject::with_scope_id(*scope)
                 }
                 BorrowTransitionEvidence::Split { share, .. }
                 | BorrowTransitionEvidence::Transfer { share, .. } => {
-                    LoanRefusalSubject::with_share_id(*share)
+                    BorrowRefusalSubject::with_share_id(*share)
                 }
                 BorrowTransitionEvidence::Join { left, .. } => {
-                    LoanRefusalSubject::with_share_id(*left)
+                    BorrowRefusalSubject::with_share_id(*left)
                 }
-                BorrowTransitionEvidence::Hold { binding, .. } => LoanRefusalSubject {
+                BorrowTransitionEvidence::Hold { binding, .. } => BorrowRefusalSubject {
                     borrow: Some((binding.borrow.arena, binding.borrow.ordinal)),
                     scope: Some((binding.scope.arena, binding.scope.ordinal)),
-                    ..LoanRefusalSubject::none()
+                    ..BorrowRefusalSubject::none()
                 },
                 BorrowTransitionEvidence::Release { scope, .. } => {
-                    LoanRefusalSubject::with_scope_id(*scope)
+                    BorrowRefusalSubject::with_scope_id(*scope)
                 }
                 BorrowTransitionEvidence::Reborrow {
                     scope,
                     borrow,
                     root,
                     ..
-                } => LoanRefusalSubject {
+                } => BorrowRefusalSubject {
                     borrow: Some((borrow.arena, borrow.ordinal)),
                     scope: Some((scope.arena, scope.ordinal)),
                     share: Some((root.arena, root.ordinal)),
-                    ..LoanRefusalSubject::none()
+                    ..BorrowRefusalSubject::none()
                 },
             })
-            .unwrap_or_else(LoanRefusalSubject::none)
+            .unwrap_or_else(BorrowRefusalSubject::none)
     }
 }
 
@@ -3003,23 +3003,23 @@ fn composition_conflict(
 impl StableViewPlanError {
     pub(crate) fn borrow_diagnostic(
         &self,
-        operation: LoanRefusalOperation,
-    ) -> Option<LoanRefusalDiagnostic> {
+        operation: BorrowRefusalOperation,
+    ) -> Option<BorrowRefusalDiagnostic> {
         match self {
             Self::UnestablishedOwnedBoundary(_) | Self::UnestablishedLocalSeparation(_) => None,
             Self::Borrow(refusal) => Some(refusal.diagnostic(operation)),
             Self::MissingResource(resource) => {
                 Some(BorrowRefusal::MissingBacking.diagnostic_with_subject(
                     operation,
-                    LoanRefusalSubject::resource(resource.clone()),
+                    BorrowRefusalSubject::resource(resource.clone()),
                 ))
             }
-            Self::ConflictingRequirement(resource) => Some(LoanRefusalDiagnostic {
+            Self::ConflictingRequirement(resource) => Some(BorrowRefusalDiagnostic {
                 refusal: BorrowRefusal::ActiveDependency,
-                category: LoanRefusalCategory::ProvenOverlap,
+                category: BorrowRefusalCategory::ProvenOverlap,
                 operation,
-                subject: LoanRefusalSubject::resource(resource.clone()),
-                overlap: LoanOverlapStatus::ProvenOverlap,
+                subject: BorrowRefusalSubject::resource(resource.clone()),
+                overlap: BorrowOverlapStatus::ProvenOverlap,
                 source_clause: None,
                 source_step: None,
             }),
@@ -4515,8 +4515,8 @@ impl StableViewTransferPlan {
             .recover_stable_views_impl(assumptions, escaping, consumed_holds, false, true)
             .map_err(|error| {
                 error
-                    .borrow_diagnostic(LoanRefusalOperation::Recovery)
-                    .map(|diagnostic| super::RuntimeError::LoanRefusal(Box::new(diagnostic)))
+                    .borrow_diagnostic(BorrowRefusalOperation::Recovery)
+                    .map(|diagnostic| super::RuntimeError::BorrowRefusal(Box::new(diagnostic)))
                     .unwrap_or_else(|| {
                         super::RuntimeError::FunctionContract(
                             "stable-view call recovery refused".into(),
@@ -6598,7 +6598,7 @@ impl BorrowLedger {
         &self,
         block: &AddressBase,
         size: &MachineTerm,
-    ) -> Option<LoanRefusalDiagnostic> {
+    ) -> Option<BorrowRefusalDiagnostic> {
         #[cfg(test)]
         let _fast =
             crate::kernel::search::FastOperationScope::enter("automatic storage retirement");
@@ -6616,8 +6616,8 @@ impl BorrowLedger {
             1,
         );
         Some(BorrowRefusal::ActiveDependency.diagnostic_with_subject(
-            LoanRefusalOperation::MemoryAccess,
-            LoanRefusalSubject::for_memory_conflict(
+            BorrowRefusalOperation::MemoryAccess,
+            BorrowRefusalSubject::for_memory_conflict(
                 attempted,
                 ResourceFact::view_memory(protected.clone()),
                 *borrow,
@@ -6637,19 +6637,19 @@ impl BorrowLedger {
         &self,
         range: &MemoryRange,
         assumptions: &PureFactContext,
-        operation: LoanRefusalOperation,
-    ) -> Option<LoanRefusalDiagnostic> {
+        operation: BorrowRefusalOperation,
+    ) -> Option<BorrowRefusalDiagnostic> {
         let refusal = self
             .permits_memory_access_with_assumptions(range, assumptions)
             .err()?;
         let subject = match self.conflicting_memory_borrow(range, assumptions) {
-            Some((borrow, protected, origin)) => LoanRefusalSubject::for_memory_conflict(
+            Some((borrow, protected, origin)) => BorrowRefusalSubject::for_memory_conflict(
                 range.clone(),
                 ResourceFact::view_memory(protected),
                 borrow,
                 origin,
             ),
-            None => LoanRefusalSubject::for_range(range.clone()),
+            None => BorrowRefusalSubject::for_range(range.clone()),
         };
         Some(refusal.diagnostic_with_subject(operation, subject))
     }
@@ -6661,7 +6661,7 @@ impl BorrowLedger {
         &self,
         range: &MemoryRange,
         assumptions: &PureFactContext,
-    ) -> Option<(BorrowId, MemoryRange, LoanOriginKind)> {
+    ) -> Option<(BorrowId, MemoryRange, BorrowOriginKind)> {
         let described = |borrow: BorrowId, protected: &MemoryRange| {
             let record = self.storage.data.borrows.get(&borrow)?;
             Some((borrow, protected.clone(), origin_kind(&record.origin)))

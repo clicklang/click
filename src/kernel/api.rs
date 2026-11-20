@@ -1,6 +1,6 @@
 use super::borrows::{
-    BorrowBinding, BorrowBindings, BorrowLedger, BorrowRefusal, BorrowedContractInputBacking,
-    LoanRefusalDiagnostic, LoanRefusalOperation, LoanRefusalSubject,
+    BorrowBinding, BorrowBindings, BorrowLedger, BorrowRefusal, BorrowRefusalDiagnostic,
+    BorrowRefusalOperation, BorrowRefusalSubject, BorrowedContractInputBacking,
 };
 pub(crate) use super::functions::admit_declared_entry_resources;
 use super::functions::{
@@ -3891,7 +3891,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, LoanRefusalDiagnostic> {
+) -> Result<ExecutionState, BorrowRefusalDiagnostic> {
     let mut state = state;
     state.preserves_mutex_protocols |=
         crate::kernel::functions::preserves_mutex_protocols(function.contract_interface());
@@ -3907,7 +3907,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
         || state.borrow_bindings().iter().next().is_some()
         || !state.borrow_bindings_are_consistent()
     {
-        return Err(BorrowRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry));
+        return Err(BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry));
     }
     if let Some(rooted) = BORROWED_INPUT_ROOTS.with(|roots| {
         roots
@@ -3949,7 +3949,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
             Some(holder) => holder,
             None => ledger
                 .fresh_participant()
-                .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?,
+                .map_err(|e| e.diagnostic(BorrowRefusalOperation::Entry))?,
         };
         for fact in use_inputs {
             let Resource::MutexUse(identity) = fact.resource() else {
@@ -3959,7 +3959,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
                 .resources()
                 .unique_owned_occurrence_for_fact(&fact)
                 .ok_or_else(|| {
-                    BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry)
+                    BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
                 })?;
             let (next, input) = ledger
                 .borrowed_mutex_use_input_with_protected(
@@ -3968,20 +3968,20 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
                     identity.mutex.clone(),
                     identity.protected.clone(),
                 )
-                .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
+                .map_err(|e| e.diagnostic(BorrowRefusalOperation::Entry))?;
             let bound = next
                 .mutex_use_resource(input.usage, holder)
-                .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
+                .map_err(|e| e.diagnostic(BorrowRefusalOperation::Entry))?;
             rooted.resources = rooted
                 .resources
                 .clone()
                 .without_fact_delaying_normalization(&fact, assumptions)
                 .ok_or_else(|| {
-                    BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry)
+                    BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
                 })?
                 .try_compose_with_facts_delaying_normalization([bound], assumptions)
                 .map_err(|_| {
-                    BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry)
+                    BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
                 })?;
             ledger = next;
         }
@@ -3997,9 +3997,9 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
             );
     }
     rooted = crate::kernel::mutexes::bind_assumed_guard_inputs(rooted, assumptions)
-        .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
+        .map_err(|e| e.diagnostic(BorrowRefusalOperation::Entry))?;
     rooted = crate::kernel::mutexes::bind_assumed_lifetime_inputs(rooted, assumptions)
-        .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
+        .map_err(|e| e.diagnostic(BorrowRefusalOperation::Entry))?;
     // Bind names only after primitive inputs have generative initialization
     // and acquisition identities. A name cannot manufacture its authority.
     if function
@@ -4007,8 +4007,10 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
         .iter()
         .any(|spec| spec.mutex_authority_binding().is_some())
     {
-        let entry = program_function_entry_state(&rooted, function, arguments)
-            .ok_or_else(|| BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+        let entry =
+            program_function_entry_state(&rooted, function, arguments).ok_or_else(|| {
+                BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
+            })?;
         let mut budget = ExecutionBudget::beside_live_state();
         for spec in function.resource_requires() {
             let Some((identity, _)) = spec.mutex_authority_binding() else {
@@ -4021,21 +4023,23 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
                 assumptions,
                 &mut budget,
             )
-            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
-            .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
+            .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))?;
             rooted = rooted
                 .bind_named_mutex_authority(identity, &fact)
                 .map_err(|_| {
-                    BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry)
+                    BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
                 })?;
         }
     }
     if let Some(contract) =
         crate::kernel::mutexes::helper_contracts::classify(function.contract_interface())
-            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
+            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
     {
-        let entry = program_function_entry_state(&rooted, function, arguments)
-            .ok_or_else(|| BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+        let entry =
+            program_function_entry_state(&rooted, function, arguments).ok_or_else(|| {
+                BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
+            })?;
         let mut budget = ExecutionBudget::beside_live_state();
         let mut evaluate = |spec: &ResourceSpec| {
             super::functions::evaluate_function_resource_spec_with_entry(
@@ -4045,8 +4049,8 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
                 assumptions,
                 &mut budget,
             )
-            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
-            .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))
+            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
+            .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))
         };
         let access = evaluate(&contract.access)?;
         let (guard, payload) =
@@ -4074,7 +4078,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
             guard.as_ref(),
             payload,
         )
-        .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?;
+        .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?;
     }
     BORROWED_INPUT_ROOTS.with(|roots| {
         roots
@@ -4089,9 +4093,9 @@ fn install_borrowed_contract_inputs(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, LoanRefusalDiagnostic> {
+) -> Result<ExecutionState, BorrowRefusalDiagnostic> {
     let entry = program_function_entry_state(&state, function, arguments)
-        .ok_or_else(|| BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+        .ok_or_else(|| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))?;
     let mut budget = ExecutionBudget::beside_live_state();
     let (_, checked_inputs) = evaluate_function_resource_context_with_metadata(
         &entry,
@@ -4100,8 +4104,8 @@ fn install_borrowed_contract_inputs(
         &assumptions.clone().assume_entry_clause_spans(),
         &mut budget,
     )
-    .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
-    .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+    .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
+    .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))?;
 
     // The contract's partition is the precondition: an owned clause that
     // provably overlaps a viewed clause, or a viewed composite's direct
@@ -4136,8 +4140,8 @@ fn install_borrowed_contract_inputs(
             })
             .map(|owned| {
                 BorrowRefusal::ActiveDependency.proven_overlap_diagnostic(
-                    LoanRefusalOperation::Entry,
-                    LoanRefusalSubject::for_conflicting_resources(
+                    BorrowRefusalOperation::Entry,
+                    BorrowRefusalSubject::for_conflicting_resources(
                         ResourceFact::view_memory(viewed_range.clone()),
                         ResourceFact::own_memory(owned.clone()),
                     ),
@@ -4167,8 +4171,8 @@ fn install_borrowed_contract_inputs(
             .principal_input_view_occurrence(&input.fact, assumptions)
         else {
             return Err(BorrowRefusal::MissingBorrowBinding.diagnostic_with_subject(
-                LoanRefusalOperation::Entry,
-                LoanRefusalSubject::for_resource(input.fact),
+                BorrowRefusalOperation::Entry,
+                BorrowRefusalSubject::for_resource(input.fact),
             ));
         };
         let viewed = state
@@ -4177,8 +4181,8 @@ fn install_borrowed_contract_inputs(
             .cloned()
             .ok_or_else(|| {
                 BorrowRefusal::MissingBorrowBinding.diagnostic_with_subject(
-                    LoanRefusalOperation::Entry,
-                    LoanRefusalSubject::with_support_id(occurrence),
+                    BorrowRefusalOperation::Entry,
+                    BorrowRefusalSubject::with_support_id(occurrence),
                 )
             })?;
         // Address-backed aggregate parameters and compiler-created local
@@ -4208,8 +4212,8 @@ fn install_borrowed_contract_inputs(
         {
             let owner = owner.clone();
             return Err(BorrowRefusal::ActiveDependency.diagnostic_with_subject(
-                LoanRefusalOperation::Entry,
-                LoanRefusalSubject::for_supported_view(viewed, owner, occurrence),
+                BorrowRefusalOperation::Entry,
+                BorrowRefusalSubject::for_supported_view(viewed, owner, occurrence),
             ));
         }
         selected.entry(occurrence).or_insert(viewed);
@@ -4222,7 +4226,7 @@ fn install_borrowed_contract_inputs(
     let mut ledger = BorrowLedger::new();
     let participant = ledger
         .fresh_participant()
-        .map_err(|error| error.diagnostic(LoanRefusalOperation::Entry))?;
+        .map_err(|error| error.diagnostic(BorrowRefusalOperation::Entry))?;
     let mut bindings = BorrowBindings::default();
     for (occurrence, viewed) in selected {
         let (backing, backing_pieces) = if matches!(viewed.resource(), Resource::Composite { .. }) {
@@ -4262,8 +4266,8 @@ fn install_borrowed_contract_inputs(
             })
             .ok_or_else(|| {
                 BorrowRefusal::UnsupportedResource.diagnostic_with_subject(
-                    LoanRefusalOperation::Entry,
-                    LoanRefusalSubject::with_support_id(occurrence),
+                    BorrowRefusalOperation::Entry,
+                    BorrowRefusalSubject::with_support_id(occurrence),
                 )
             })?;
             (Some(pieces.0), pieces.1)
@@ -4274,14 +4278,14 @@ fn install_borrowed_contract_inputs(
             .borrowed_contract_input(participant, occurrence, viewed.clone(), backing)
             .map_err(|error| {
                 error.diagnostic_with_subject(
-                    LoanRefusalOperation::Entry,
-                    LoanRefusalSubject::with_support_id(occurrence),
+                    BorrowRefusalOperation::Entry,
+                    BorrowRefusalSubject::with_support_id(occurrence),
                 )
             })?;
         ledger = ledger.apply(&opening.transition).map_err(|error| {
             error.diagnostic_with_subject(
-                LoanRefusalOperation::Entry,
-                LoanRefusalSubject::with_support_id(occurrence),
+                BorrowRefusalOperation::Entry,
+                BorrowRefusalSubject::with_support_id(occurrence),
             )
         })?;
         bindings = bindings.with_inserted(
@@ -4321,8 +4325,8 @@ fn install_borrowed_contract_inputs(
                 }
                 _ => {
                     return Err(BorrowRefusal::MissingBorrowBinding.diagnostic_with_subject(
-                        LoanRefusalOperation::Entry,
-                        LoanRefusalSubject::for_resource(piece),
+                        BorrowRefusalOperation::Entry,
+                        BorrowRefusalSubject::for_resource(piece),
                     ));
                 }
             }

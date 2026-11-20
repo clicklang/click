@@ -42,7 +42,7 @@ fn automatic_frame_retirement_checks_its_live_borrows() {
         ),
         function_exit_memory(&caller, &with_active_borrow, &returned, &function),
     ] {
-        assert!(matches!(selected, Err(RuntimeError::LoanRefusal(_))));
+        assert!(matches!(selected, Err(RuntimeError::BorrowRefusal(_))));
     }
     assert_eq!(
         end_function_body_automatic_lifetimes(&with_active_borrow, &function, &memory, None),

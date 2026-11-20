@@ -112,7 +112,7 @@ fn automatic_storage_retirement_uses_the_retained_backing_identity() {
     let refusal = ledger
         .automatic_storage_retirement_refusal(&slot.base, &16u32.into())
         .expect("the symbolic spelling retains the automatic object's identity");
-    assert_eq!(refusal.category(), LoanRefusalCategory::ActiveDependency);
+    assert_eq!(refusal.category(), BorrowRefusalCategory::ActiveDependency);
     assert_eq!(
         refusal.subject().conflicting_resource_fact(),
         Some(&ResourceFact::view_memory(symbolic)),

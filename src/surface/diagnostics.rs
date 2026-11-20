@@ -2026,7 +2026,7 @@ pub(super) fn describe_runtime_error(
             render_resource_fact_diagnostic(piece, parameter_binding),
             render_resource_fact_diagnostic(held, parameter_binding)
         ),
-        crate::kernel::RuntimeError::LoanRefusal(diagnostic) => {
+        crate::kernel::RuntimeError::BorrowRefusal(diagnostic) => {
             describe_borrow_refusal(diagnostic, parameter_binding)
         }
     }
@@ -2104,13 +2104,13 @@ fn describe_returned_borrow(
 /// the refused operation attempted. Both halves are bounded facts from the
 /// refusal subject; nothing here reads the ledger or the resource frame.
 fn describe_borrow_conflict(
-    diagnostic: &crate::kernel::LoanRefusalDiagnostic,
+    diagnostic: &crate::kernel::BorrowRefusalDiagnostic,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let subject = diagnostic.subject();
     let conflicting = subject.conflicting_resource_fact()?;
     let conflicting = render_resource_fact_diagnostic(conflicting, parameter_binding);
-    if diagnostic.operation() == crate::kernel::LoanRefusalOperation::Entry {
+    if diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Entry {
         let viewed = subject.resource_fact()?;
         // This message follows the proof's own sentence about the contract
         // input, so it names the two clauses directly and adds no prefix.
@@ -2124,20 +2124,20 @@ fn describe_borrow_conflict(
     if subject.origin().is_none() {
         let attempted = describe_memory_range(attempted, parameter_binding);
         return match diagnostic.category() {
-            crate::kernel::LoanRefusalCategory::ProvenOverlap => Some(format!(
+            crate::kernel::BorrowRefusalCategory::ProvenOverlap => Some(format!(
                 "the call's write range `{attempted}` overlaps the live view `{conflicting}`"
             )),
-            crate::kernel::LoanRefusalCategory::SeparationUnproved => Some(format!(
+            crate::kernel::BorrowRefusalCategory::SeparationUnproved => Some(format!(
                 "the call's write range `{attempted}` must be proved separate from the live view `{conflicting}`"
             )),
             _ => None,
         };
     }
     let origin = match subject.origin()? {
-        crate::kernel::LoanOriginKind::LocalStorage => "a borrow of local storage",
-        crate::kernel::LoanOriginKind::ContractInputView => "an input `views` clause",
-        crate::kernel::LoanOriginKind::LentOwner => "ownership lent at an earlier call",
-        crate::kernel::LoanOriginKind::Reborrow => "a borrow of an existing view",
+        crate::kernel::BorrowOriginKind::LocalStorage => "a borrow of local storage",
+        crate::kernel::BorrowOriginKind::ContractInputView => "an input `views` clause",
+        crate::kernel::BorrowOriginKind::LentOwner => "ownership lent at an earlier call",
+        crate::kernel::BorrowOriginKind::Reborrow => "a borrow of an existing view",
     };
     Some(format!(
         "the attempted access to `{}` overlaps the live borrow of `{conflicting}` from {origin}",
@@ -2146,17 +2146,17 @@ fn describe_borrow_conflict(
 }
 
 pub(in crate::surface) fn describe_borrow_refusal(
-    diagnostic: &crate::kernel::LoanRefusalDiagnostic,
+    diagnostic: &crate::kernel::BorrowRefusalDiagnostic,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     if let Some(conflict) = describe_borrow_conflict(diagnostic, parameter_binding) {
         return conflict;
     }
-    use crate::kernel::{LoanRefusalCategory, LoanRefusalOperation};
+    use crate::kernel::{BorrowRefusalCategory, BorrowRefusalOperation};
 
     let subject = diagnostic.subject();
-    if diagnostic.category() == LoanRefusalCategory::Missing
-        && diagnostic.operation() == LoanRefusalOperation::Plan
+    if diagnostic.category() == BorrowRefusalCategory::Missing
+        && diagnostic.operation() == BorrowRefusalOperation::Plan
         && let Some(view) = subject
             .resource_fact()
             .filter(|resource| resource.is_view())
@@ -2167,26 +2167,28 @@ pub(in crate::surface) fn describe_borrow_refusal(
         );
     }
     let operation = match diagnostic.operation() {
-        LoanRefusalOperation::Validate => "cannot use this borrow",
-        LoanRefusalOperation::Plan => "cannot prepare the call's borrow",
-        LoanRefusalOperation::Entry => "cannot establish the input borrow",
-        LoanRefusalOperation::Recovery => "cannot recover the borrowed resource",
-        LoanRefusalOperation::Transition => "cannot change this borrow",
-        LoanRefusalOperation::MemoryAccess => "cannot access the borrowed resource",
+        BorrowRefusalOperation::Validate => "cannot use this borrow",
+        BorrowRefusalOperation::Plan => "cannot prepare the call's borrow",
+        BorrowRefusalOperation::Entry => "cannot establish the input borrow",
+        BorrowRefusalOperation::Recovery => "cannot recover the borrowed resource",
+        BorrowRefusalOperation::Transition => "cannot change this borrow",
+        BorrowRefusalOperation::MemoryAccess => "cannot access the borrowed resource",
     };
     let reason = match diagnostic.category() {
-        LoanRefusalCategory::ProvenOverlap => "A required resource overlaps a live borrow",
-        LoanRefusalCategory::SeparationUnproved => "The requested ranges must be proved separate",
-        LoanRefusalCategory::WrongHolder => "This path does not hold the required borrow",
-        LoanRefusalCategory::WrongArena => "The borrow belongs to another proof",
-        LoanRefusalCategory::WrongScope => "The borrow belongs to a different scope",
-        LoanRefusalCategory::ActiveDependency => "A live borrow still depends on this resource",
-        LoanRefusalCategory::StalePredecessor => "The borrow evidence is from an earlier state",
-        LoanRefusalCategory::Recovery => "The borrow cannot be recovered from this state",
-        LoanRefusalCategory::Lifetime => "The required borrow is outside its lifetime",
-        LoanRefusalCategory::Unsupported => "Borrowing this resource shape is unsupported",
-        LoanRefusalCategory::Missing => "The required view or its backing resource is unavailable",
-        LoanRefusalCategory::InvalidEvidence => "The borrow evidence is invalid",
+        BorrowRefusalCategory::ProvenOverlap => "A required resource overlaps a live borrow",
+        BorrowRefusalCategory::SeparationUnproved => "The requested ranges must be proved separate",
+        BorrowRefusalCategory::WrongHolder => "This path does not hold the required borrow",
+        BorrowRefusalCategory::WrongArena => "The borrow belongs to another proof",
+        BorrowRefusalCategory::WrongScope => "The borrow belongs to a different scope",
+        BorrowRefusalCategory::ActiveDependency => "A live borrow still depends on this resource",
+        BorrowRefusalCategory::StalePredecessor => "The borrow evidence is from an earlier state",
+        BorrowRefusalCategory::Recovery => "The borrow cannot be recovered from this state",
+        BorrowRefusalCategory::Lifetime => "The required borrow is outside its lifetime",
+        BorrowRefusalCategory::Unsupported => "Borrowing this resource shape is unsupported",
+        BorrowRefusalCategory::Missing => {
+            "The required view or its backing resource is unavailable"
+        }
+        BorrowRefusalCategory::InvalidEvidence => "The borrow evidence is invalid",
     };
     let selected = subject
         .resource_fact()

@@ -2184,9 +2184,9 @@ fn checked_two_reader_lifecycle_recovers_exact_escrow_once() {
         .expect_err("an ended scope cannot be ended again");
     assert_eq!(
         lifetime
-            .diagnostic(LoanRefusalOperation::Transition)
+            .diagnostic(BorrowRefusalOperation::Transition)
             .category(),
-        LoanRefusalCategory::Lifetime
+        BorrowRefusalCategory::Lifetime
     );
     assert!(!ledger.permits_view(
         owner,
@@ -2204,9 +2204,9 @@ fn checked_two_reader_lifecycle_recovers_exact_escrow_once() {
         .expect_err("a borrow cannot be recovered twice");
     assert_eq!(
         duplicate
-            .diagnostic(LoanRefusalOperation::Recovery)
+            .diagnostic(BorrowRefusalOperation::Recovery)
             .category(),
-        LoanRefusalCategory::Recovery
+        BorrowRefusalCategory::Recovery
     );
 }
 
@@ -2392,9 +2392,9 @@ fn transitions_are_bound_to_their_exact_predecessor() {
         .expect_err("a transition cannot be applied twice");
     assert_eq!(
         stale
-            .diagnostic(LoanRefusalOperation::Transition)
+            .diagnostic(BorrowRefusalOperation::Transition)
             .category(),
-        LoanRefusalCategory::StalePredecessor
+        BorrowRefusalCategory::StalePredecessor
     );
     let unrelated = BorrowLedger::new();
     let stale = unrelated
@@ -2402,9 +2402,9 @@ fn transitions_are_bound_to_their_exact_predecessor() {
         .expect_err("a transition cannot cross ledger histories");
     assert_eq!(
         stale
-            .diagnostic(LoanRefusalOperation::Transition)
+            .diagnostic(BorrowRefusalOperation::Transition)
             .category(),
-        LoanRefusalCategory::StalePredecessor
+        BorrowRefusalCategory::StalePredecessor
     );
 }
 
@@ -2432,9 +2432,9 @@ fn hostile_transition_payload_is_rechecked() {
         .expect_err("tampered participant evidence must be refused");
     assert_eq!(
         invalid
-            .diagnostic(LoanRefusalOperation::Transition)
+            .diagnostic(BorrowRefusalOperation::Transition)
             .category(),
-        LoanRefusalCategory::InvalidEvidence
+        BorrowRefusalCategory::InvalidEvidence
     );
 }
 
@@ -2520,7 +2520,7 @@ fn checked_call_evidence_rejects_stale_or_swapped_recovery() {
         .unwrap();
     let recovery_subject = recovery.diagnostic_subject();
     assert!(
-        recovery_subject.loan_id().is_some()
+        recovery_subject.borrow_id().is_some()
             || recovery_subject.scope_id().is_some()
             || recovery_subject.share_id().is_some()
             || recovery_subject.support_id().is_some()
@@ -2546,9 +2546,9 @@ fn checked_call_evidence_rejects_stale_or_swapped_recovery() {
         .expect_err("reordered recovery must be refused");
     assert_eq!(
         stale_error
-            .diagnostic(LoanRefusalOperation::Recovery)
+            .diagnostic(BorrowRefusalOperation::Recovery)
             .category(),
-        LoanRefusalCategory::StalePredecessor
+        BorrowRefusalCategory::StalePredecessor
     );
 
     let mut truncated = evidence.clone();
@@ -2558,9 +2558,9 @@ fn checked_call_evidence_rejects_stale_or_swapped_recovery() {
         .expect_err("truncated recovery must be refused");
     assert_eq!(
         truncated_error
-            .diagnostic(LoanRefusalOperation::Recovery)
+            .diagnostic(BorrowRefusalOperation::Recovery)
             .category(),
-        LoanRefusalCategory::Recovery
+        BorrowRefusalCategory::Recovery
     );
 
     let unrelated = BorrowLedger::new();
@@ -2569,9 +2569,9 @@ fn checked_call_evidence_rejects_stale_or_swapped_recovery() {
         .expect_err("a cross-call predecessor must be refused");
     assert_eq!(
         unrelated_error
-            .diagnostic(LoanRefusalOperation::Recovery)
+            .diagnostic(BorrowRefusalOperation::Recovery)
             .category(),
-        LoanRefusalCategory::StalePredecessor
+        BorrowRefusalCategory::StalePredecessor
     );
 }
 
@@ -3071,10 +3071,10 @@ fn composite_planner_rejects_hidden_overlap_and_equal_head_ambiguity() {
     .expect_err("a hidden overlapping resource must be refused");
     assert_eq!(
         overlap
-            .borrow_diagnostic(LoanRefusalOperation::Plan)
+            .borrow_diagnostic(BorrowRefusalOperation::Plan)
             .expect("planner refusal diagnostic")
             .category(),
-        LoanRefusalCategory::ProvenOverlap
+        BorrowRefusalCategory::ProvenOverlap
     );
     let duplicate = ResourceContext::new().unchecked_with_facts([head.clone(), head]);
     let duplicate_support = duplicate
@@ -3105,10 +3105,10 @@ fn composite_planner_rejects_hidden_overlap_and_equal_head_ambiguity() {
     .expect_err("duplicate support must be refused");
     assert_eq!(
         duplicate_error
-            .borrow_diagnostic(LoanRefusalOperation::Plan)
+            .borrow_diagnostic(BorrowRefusalOperation::Plan)
             .expect("planner refusal diagnostic")
             .category(),
-        LoanRefusalCategory::Unsupported
+        BorrowRefusalCategory::Unsupported
     );
 }
 
@@ -3167,10 +3167,10 @@ fn composite_planner_rejects_an_owned_requirement_inside_the_viewed_frontier() {
     );
     assert_eq!(
         overlap
-            .borrow_diagnostic(LoanRefusalOperation::Plan)
+            .borrow_diagnostic(BorrowRefusalOperation::Plan)
             .expect("planner refusal diagnostic")
             .category(),
-        LoanRefusalCategory::ProvenOverlap
+        BorrowRefusalCategory::ProvenOverlap
     );
     let disjoint = memory(4, 8, true);
     let plan = plan_with_owned(disjoint.clone())
@@ -3587,9 +3587,9 @@ fn composite_backing_tamper_and_instance_frontier_are_refused() {
         .expect_err("tampered composite backing must be refused");
     assert_eq!(
         unsupported
-            .diagnostic(LoanRefusalOperation::Transition)
+            .diagnostic(BorrowRefusalOperation::Transition)
             .category(),
-        LoanRefusalCategory::Unsupported
+        BorrowRefusalCategory::Unsupported
     );
     let mut opening = ledger
         .lend_composite(
@@ -3616,9 +3616,9 @@ fn composite_backing_tamper_and_instance_frontier_are_refused() {
         .expect_err("tampered occurrence evidence must be refused");
     assert_eq!(
         invalid
-            .diagnostic(LoanRefusalOperation::Transition)
+            .diagnostic(BorrowRefusalOperation::Transition)
             .category(),
-        LoanRefusalCategory::InvalidEvidence
+        BorrowRefusalCategory::InvalidEvidence
     );
 }
 
@@ -4466,10 +4466,10 @@ fn nested_view_reborrow_rejects_wider_child_than_bound_parent() {
     .expect_err("a wider range than the bound view must be refused");
     assert_eq!(
         invalid
-            .borrow_diagnostic(LoanRefusalOperation::Plan)
+            .borrow_diagnostic(BorrowRefusalOperation::Plan)
             .expect("planner refusal diagnostic")
             .category(),
-        LoanRefusalCategory::InvalidEvidence
+        BorrowRefusalCategory::InvalidEvidence
     );
 }
 
@@ -4514,9 +4514,9 @@ fn active_memory_index_returns_only_overlapping_live_borrows() {
         .expect_err("a live borrow must block overlapping memory access");
     assert_eq!(
         blocked
-            .diagnostic(LoanRefusalOperation::MemoryAccess)
+            .diagnostic(BorrowRefusalOperation::MemoryAccess)
             .category(),
-        LoanRefusalCategory::ActiveDependency
+        BorrowRefusalCategory::ActiveDependency
     );
     let returned = ledger.transfer(opening.root_share, reader, owner).unwrap();
     let ledger = ledger.apply(&returned).unwrap();
@@ -4657,10 +4657,10 @@ fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
     );
     assert_eq!(
         ledger
-            .memory_access_refusal(&query, &assumptions, LoanRefusalOperation::MemoryAccess,)
+            .memory_access_refusal(&query, &assumptions, BorrowRefusalOperation::MemoryAccess,)
             .unwrap()
             .category(),
-        LoanRefusalCategory::ActiveDependency
+        BorrowRefusalCategory::ActiveDependency
     );
 }
 
@@ -4743,9 +4743,9 @@ fn ending_nested_memory_borrow_keeps_parent_footprint_indexed() {
         .expect_err("the parent borrow must remain indexed");
     assert_eq!(
         blocked
-            .diagnostic(LoanRefusalOperation::MemoryAccess)
+            .diagnostic(BorrowRefusalOperation::MemoryAccess)
             .category(),
-        LoanRefusalCategory::ActiveDependency
+        BorrowRefusalCategory::ActiveDependency
     );
 
     let parent_end = ledger.end(parent.scope, owner).unwrap();
@@ -4760,37 +4760,40 @@ fn ending_nested_memory_borrow_keeps_parent_footprint_indexed() {
 
 #[test]
 fn refusal_diagnostics_preserve_overlap_and_boundary_categories() {
-    let active = BorrowRefusal::ActiveDependency.diagnostic(LoanRefusalOperation::MemoryAccess);
-    assert_eq!(active.category(), LoanRefusalCategory::ActiveDependency);
-    assert_eq!(active.overlap(), LoanOverlapStatus::ProvenOverlap);
+    let active = BorrowRefusal::ActiveDependency.diagnostic(BorrowRefusalOperation::MemoryAccess);
+    assert_eq!(active.category(), BorrowRefusalCategory::ActiveDependency);
+    assert_eq!(active.overlap(), BorrowOverlapStatus::ProvenOverlap);
 
-    let unsupported = BorrowRefusal::UnsupportedPartition.diagnostic(LoanRefusalOperation::Plan);
+    let unsupported = BorrowRefusal::UnsupportedPartition.diagnostic(BorrowRefusalOperation::Plan);
     assert_eq!(
         unsupported.category(),
-        LoanRefusalCategory::SeparationUnproved
+        BorrowRefusalCategory::SeparationUnproved
     );
-    assert_eq!(unsupported.overlap(), LoanOverlapStatus::SeparationUnproved);
+    assert_eq!(
+        unsupported.overlap(),
+        BorrowOverlapStatus::SeparationUnproved
+    );
 
-    let wrong_holder = BorrowRefusal::WrongHolder.diagnostic(LoanRefusalOperation::Recovery);
-    assert_eq!(wrong_holder.category(), LoanRefusalCategory::WrongHolder);
-    let wrong_scope = BorrowRefusal::WrongScope.diagnostic(LoanRefusalOperation::Transition);
-    assert_eq!(wrong_scope.category(), LoanRefusalCategory::WrongScope);
-    let stale = BorrowRefusal::StalePredecessor.diagnostic(LoanRefusalOperation::Recovery);
-    assert_eq!(stale.category(), LoanRefusalCategory::StalePredecessor);
-    let recovery = BorrowRefusal::AlreadyRecovered.diagnostic(LoanRefusalOperation::Recovery);
-    assert_eq!(recovery.category(), LoanRefusalCategory::Recovery);
-    let lifetime = BorrowRefusal::ScopeEnded.diagnostic(LoanRefusalOperation::Transition);
-    assert_eq!(lifetime.category(), LoanRefusalCategory::Lifetime);
-    let arena = BorrowRefusal::WrongArena.diagnostic(LoanRefusalOperation::Transition);
-    assert_eq!(arena.category(), LoanRefusalCategory::WrongArena);
+    let wrong_holder = BorrowRefusal::WrongHolder.diagnostic(BorrowRefusalOperation::Recovery);
+    assert_eq!(wrong_holder.category(), BorrowRefusalCategory::WrongHolder);
+    let wrong_scope = BorrowRefusal::WrongScope.diagnostic(BorrowRefusalOperation::Transition);
+    assert_eq!(wrong_scope.category(), BorrowRefusalCategory::WrongScope);
+    let stale = BorrowRefusal::StalePredecessor.diagnostic(BorrowRefusalOperation::Recovery);
+    assert_eq!(stale.category(), BorrowRefusalCategory::StalePredecessor);
+    let recovery = BorrowRefusal::AlreadyRecovered.diagnostic(BorrowRefusalOperation::Recovery);
+    assert_eq!(recovery.category(), BorrowRefusalCategory::Recovery);
+    let lifetime = BorrowRefusal::ScopeEnded.diagnostic(BorrowRefusalOperation::Transition);
+    assert_eq!(lifetime.category(), BorrowRefusalCategory::Lifetime);
+    let arena = BorrowRefusal::WrongArena.diagnostic(BorrowRefusalOperation::Transition);
+    assert_eq!(arena.category(), BorrowRefusalCategory::WrongArena);
 }
 
 #[test]
 fn refusal_diagnostic_is_a_small_bounded_payload() {
-    assert!(std::mem::size_of::<LoanRefusalDiagnostic>() <= 512);
-    let subject = LoanRefusalSubject::resource(memory(0, 4, true));
+    assert!(std::mem::size_of::<BorrowRefusalDiagnostic>() <= 512);
+    let subject = BorrowRefusalSubject::resource(memory(0, 4, true));
     let diagnostic = BorrowRefusal::ActiveDependency
-        .diagnostic_with_subject(LoanRefusalOperation::Plan, subject);
+        .diagnostic_with_subject(BorrowRefusalOperation::Plan, subject);
     assert!(diagnostic.subject().resource_fact().is_some());
 }
 
@@ -4847,10 +4850,10 @@ fn indexed_write_witness_keeps_the_least_borrow_across_buckets_and_aliases() {
         let report = ledger.memory_access_refusal(
             range,
             &PureFactContext::new(),
-            LoanRefusalOperation::MemoryAccess,
+            BorrowRefusalOperation::MemoryAccess,
         );
         assert_eq!(
-            report.and_then(|d| d.subject().loan_id()),
+            report.and_then(|d| d.subject().borrow_id()),
             expected.map(|borrow| (borrow.arena, borrow.ordinal))
         );
     }
@@ -4878,10 +4881,10 @@ fn indexed_write_witness_keeps_the_least_borrow_across_buckets_and_aliases() {
     );
     assert_eq!(
         ledger
-            .memory_access_refusal(&query, &facts, LoanRefusalOperation::MemoryAccess)
+            .memory_access_refusal(&query, &facts, BorrowRefusalOperation::MemoryAccess)
             .unwrap()
             .subject()
-            .loan_id(),
+            .borrow_id(),
         first.map(|borrow| (borrow.arena, borrow.ordinal))
     );
     let unknown = parameter_range(991_124, 0, 1, 4);

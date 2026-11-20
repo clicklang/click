@@ -92,7 +92,7 @@ fn thread_recovery_work_depends_on_one_child_not_the_outstanding_registry() {
                 .memory_access_refusal(
                     &range(size - 1, 1, 2),
                     &assumptions,
-                    crate::kernel::LoanRefusalOperation::MemoryAccess,
+                    crate::kernel::BorrowRefusalOperation::MemoryAccess,
                 )
                 .is_some()
         );
