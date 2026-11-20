@@ -1112,6 +1112,17 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         {
             return Ok(self.closed_focused());
         }
+        // An implication whose consequent is an available fact holds
+        // whatever its antecedent: one lookup of the consequent, as a guarded
+        // requirement (`left implies requirement`) needs once its
+        // requirement is known.
+        let consequent_available = |side: &Proposition| {
+            matches!(side, Proposition::Implies(_, consequent)
+                if available(consequent) || facts.contains(consequent))
+        };
+        if consequent_available(proposition) {
+            return Ok(self.closed_focused());
+        }
         // A conjunction or disjunction that is not itself a fact still
         // follows from checked leaves: every conjunct, or one disjunct.
         // Each side uses indexed facts or goal-local computation, without
@@ -1122,6 +1133,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let side_available = |side: &Proposition| {
             compound_available.contains(&std::ptr::from_ref(side))
                 || available(side)
+                || consequent_available(side)
                 || facts.contains(side)
                 || super::fact_reasoning::order_claim_forms(side)
                     .iter()

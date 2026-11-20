@@ -43,10 +43,6 @@ uint64 read_terminator(uint8 bytes[]) {
                 forall (k: uint64) { to_integer(k) < to_integer(len + 1u64) implies defined(bytes[k]) }
         } by {
             witness(n);
-            have n < 18446744073709551615u64 implies to_integer(n + 1u64) <= 9223372036854775807u64 by {
-                intro();
-                known();
-            }
             known();
         }
     }
