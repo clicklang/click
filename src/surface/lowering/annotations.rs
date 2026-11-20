@@ -10533,6 +10533,12 @@ impl AnnotationLowerer<'_> {
     ) -> Option<ProgramType> {
         match expression {
             ContractExpression::MemoryLoad { value_type, .. } => value_type.pointee_type(),
+            ContractExpression::ResourceField(access) => access
+                .click_type
+                .as_ref()?
+                .interface_type()?
+                .pointee_type()
+                .map(InterfaceType::to_kernel_type),
             ContractExpression::CUnary { operand, lowered } => match lowered {
                 ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
                 ProgramExpression::PointerOffsetBytes { .. } => {

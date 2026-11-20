@@ -1171,10 +1171,14 @@ private:
     if (trivial_record_value && !remember_record(by_value_record)) {
       return std::nullopt;
     }
-    const clang::TypedefNameDecl *source_alias =
-        direct_source_alias(parameter->getTypeSourceInfo());
-    auto value_type = lower_type(parameter->getType(), parameter->getLocation(),
-                                 source_alias);
+    // An assumed system interface uses Clang's canonical signature. Its
+    // private aliases do not become declarations in the verified program.
+    const bool axiomatic = opaque != nullptr && is_axiom(opaque);
+    const clang::QualType type = axiomatic
+        ? parameter->getType().getCanonicalType() : parameter->getType();
+    const clang::TypedefNameDecl *source_alias = axiomatic
+        ? nullptr : direct_source_alias(parameter->getTypeSourceInfo());
+    auto value_type = lower_type(type, parameter->getLocation(), source_alias);
     if (!value_type) {
       return std::nullopt;
     }

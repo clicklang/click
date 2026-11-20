@@ -200,6 +200,12 @@ const CONCRETE_LIBRARY_FUNCTIONS: &[(&str, &str, &[&str], &str)] = &[
         &["std", "vector<unsigned char>", "data"],
         VECTOR_LIBRARY,
     ),
+    (
+        "std::vector<unsigned char>::operator[]",
+        "const unsigned char &(unsigned long) const noexcept",
+        &["std", "vector<unsigned char>", "operator[]"],
+        VECTOR_LIBRARY,
+    ),
 ];
 
 /// The exact standard signatures that the Click library maps to templates: each instance's qualified name and canonical signature as Clang

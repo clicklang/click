@@ -1468,8 +1468,8 @@ by-value operations, and automatic storage require a modeled layout.
 
 The catalog can select this boundary for a complete system class as well. An
 existing `const std::vector<unsigned char>&` can call `size()`, `empty()`,
-and `data()` under Click contracts that read a `vector_state` resource
-keyed by the receiver. The
+`data()`, and bounded `operator[]` under Click contracts that read a
+`vector_state` resource keyed by the receiver. The
 [vector reference](../library/index.md#stdvectorunsigned-char) shows how
 a caller supplies backing bytes when it passes a span to a reader.
 The importer retains the class and method identities from Clang. The artifact
