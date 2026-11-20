@@ -5,20 +5,11 @@ use click::project::{FILE_NAME, Project};
 const USAGE: &str = "usage: click capture [<project-dir> | <source>... | <sidecar.click>]\n\nRecords compiler output under .click/captures/. With no paths, captures the current project.";
 
 pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
-    let arguments = arguments.into_iter().collect::<Vec<_>>();
-    if matches!(arguments.as_slice(), [argument] if argument == "-h" || argument == "--help") {
+    let Some(paths) = parse_arguments(arguments)? else {
         println!("{USAGE}");
         return Ok(());
-    }
-    let explicit_paths = arguments.first().is_some_and(|arg| arg == "--");
-    let paths = &arguments[usize::from(explicit_paths)..];
-    if paths
-        .iter()
-        .any(|path| path.is_empty() || (!explicit_paths && path.starts_with('-')))
-    {
-        return Err(USAGE.into());
-    }
-    match paths {
+    };
+    match paths.as_slice() {
         [] => find_project(Path::new("."))?.lock(),
         [path] if Path::new(path).is_dir() => find_project(Path::new(path))?.lock(),
         [path]
@@ -45,6 +36,31 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
             project.capture_sources(&paths)
         }
     }
+}
+
+fn parse_arguments(
+    arguments: impl IntoIterator<Item = String>,
+) -> Result<Option<Vec<String>>, String> {
+    let mut arguments = arguments.into_iter().peekable();
+    if matches!(arguments.peek().map(String::as_str), Some("-h" | "--help")) {
+        return if arguments.nth(1).is_none() {
+            Ok(None)
+        } else {
+            Err(USAGE.into())
+        };
+    }
+    let explicit_paths = arguments.peek().is_some_and(|argument| argument == "--");
+    if explicit_paths {
+        arguments.next();
+    }
+    let paths = arguments.collect::<Vec<_>>();
+    if paths
+        .iter()
+        .any(|path| path.is_empty() || (!explicit_paths && path.starts_with('-')))
+    {
+        return Err(USAGE.into());
+    }
+    Ok(Some(paths))
 }
 
 fn find_project(directory: &Path) -> Result<Project, String> {
