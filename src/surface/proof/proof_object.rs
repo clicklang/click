@@ -482,7 +482,7 @@ enum ProofScopeStructure {
     Open {
         resource: ResourceClause,
         source_index: usize,
-        preserve_exposed_body: bool,
+        restoration: OpenResourceRestoration,
     },
 }
 

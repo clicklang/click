@@ -21231,6 +21231,26 @@ int32 f(int32* p, int32 x, int32 y) {
         .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
+#[test]
+fn named_open_replays_its_closing_facts_on_both_returns() {
+    let (source, sources) = mdtest_sources("mdtests/open_named_resource.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "set_and_read").unwrap();
+    assert!(expanded.contains("open(c) {"), "{expanded}");
+    assert_eq!(
+        expanded
+            .matches("have load<int32>(p) > 0 or load<int32>(p) < -1")
+            .count(),
+        2,
+        "{expanded}"
+    );
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 /// `expanded` with its first step's obligation proofs removed:
 /// `step() by { ... }` or `step() { requires ... }` becomes `step();`.
 fn without_first_step_obligation_proofs(expanded: &str) -> String {

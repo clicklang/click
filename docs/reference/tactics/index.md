@@ -3330,7 +3330,11 @@ arm. Profiling reports the descendant tactics.
 **Specialized.** Write it to work inside one layer of a composite resource and
 have it folded back automatically at the end of the block. Temporarily replace a
 held composite resource with one body layer, check the nested proof, then fold
-it at scope exit. A model `match` inside the block uses the ordinary checked
+it at scope exit. For an ordinary named instance, `open(c) { ... }` selects
+the same instance as `unfold(c)`. The closing fold restores that instance's
+identity and field values from the start of the block. Use the family call
+form for unnamed resources, including population members and viewed resources.
+A model `match` inside the block uses the ordinary checked
 constructor arms and joins: terminal arms each restore the resource at return;
 an `ensuring` interface can rejoin before the block closes.
 
@@ -3341,11 +3345,13 @@ body fact the closing fold leaves open is proved by the implicit closer, which
 expansion writes as `have` steps at the end of the block. To supply a closing
 proof by hand, put the `have` there yourself, after any execution that
 establishes the fact. This also works when the block reaches function exit.
+Expansion can write `fold(c)` after the closing facts in a returning arm so
+the remaining outcome proof sees the restored instance.
 A trailing `by` after the block is refused.
 
 **Checked examples:** [`resource_population_open.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_population_open.md), [`open_scope_model_match_terminal.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_terminal.md), [`open_scope_model_match_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejoins.md), [`open_scope_model_match_rejects_bad_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejects_bad_arm.md)
 
-**Checked closing examples:** [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md)
+**Checked closing examples:** [`open_named_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource.md), [`open_named_resource_requires_restoration.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource_requires_restoration.md), [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md)
 
 ### Existential witnesses
 

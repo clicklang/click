@@ -417,11 +417,12 @@ impl<'a> Proof<'a> {
         })
     }
 
-    fn apply_instance_rewrite(
+    pub(super) fn apply_instance_rewrite(
         &self,
         binding: &ResourceInstanceBinding,
         resource: &ResourceClause,
         unfold: bool,
+        saved_instance: Option<&crate::kernel::ResourceInstance>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         if let ResourceClause::Named { resource, .. } = resource
             && let ResourceClause::Declared { name, .. } = resource.as_ref()
@@ -469,7 +470,9 @@ impl<'a> Proof<'a> {
             outcome.map_or(&*execution.core.state, |goal| &*goal.data.core.state);
         let pre_state = context.old_reference_state(&execution.core.frontier, before);
         let constructed;
-        let instance = if let Some(fields) = &binding.fold_fields {
+        let instance = if let Some(instance) = saved_instance {
+            instance
+        } else if let Some(fields) = &binding.fold_fields {
             if unfold || !binding.children.is_empty() {
                 return Err(self.step_error("explicit fields require a fold construction"));
             }
@@ -1101,6 +1104,54 @@ impl<'a> Proof<'a> {
             branch: Some(updated_branch),
             added_facts: added.clone(),
             checked_facts: added,
+        })
+    }
+
+    /// Close an ordinary named scope using the instance selected at its entry.
+    pub(in crate::surface::proof) fn restore_open_instance(
+        &self,
+        resource: &ResourceClause,
+        instance: &crate::kernel::ResourceInstance,
+    ) -> Result<Self, ClickError> {
+        let ResourceClause::Named { binding, .. } = resource else {
+            unreachable!("a named scope retains its written resource binding")
+        };
+        let transition = self.apply_instance_rewrite(binding, resource, false, Some(instance))?;
+        Ok(Self {
+            state: self.publish_checked_transition(transition)?,
+            ..self.clone()
+        })
+    }
+
+    pub(in crate::surface::proof) fn outcome_holds_open_instance(
+        &self,
+        instance: &crate::kernel::ResourceInstance,
+    ) -> Result<bool, ClickError> {
+        let outcome = self
+            .focused_outcome_data()
+            .ok_or_else(|| self.step_error("named resource scope lost its returning outcome"))?;
+        Ok(outcome
+            .core
+            .state
+            .resources()
+            .owned_instance(instance.identity())
+            == Some(instance))
+    }
+
+    /// Retain the explicit fold written at a returning scope arm's close.
+    pub(in crate::surface::proof) fn apply_explicit_open_instance_fold(
+        &self,
+        resource: &ResourceClause,
+        instance: &crate::kernel::ResourceInstance,
+    ) -> Result<Self, ClickError> {
+        let restored = self.restore_open_instance(resource, instance)?;
+        Ok(Self {
+            node: ProofNode::step_child(
+                &self.node,
+                self.focused_branch_id(),
+                Arc::new(ProofStep::FoldResource(resource.clone())),
+            ),
+            ..restored
         })
     }
 
@@ -2511,7 +2562,7 @@ impl<'a> Proof<'a> {
             );
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, true);
+            return self.apply_instance_rewrite(binding, resource, true, None);
         }
         if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
             return self.apply_execution_population_authority_exchange(resource, false);
@@ -2656,7 +2707,7 @@ impl<'a> Proof<'a> {
             );
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, false);
+            return self.apply_instance_rewrite(binding, resource, false, None);
         }
         if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
             return self.apply_execution_population_authority_exchange(resource, true);
@@ -2749,7 +2800,7 @@ impl<'a> Proof<'a> {
             ));
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, true);
+            return self.apply_instance_rewrite(binding, resource, true, None);
         }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome resource `unfold` requires an execution proof"));
@@ -2836,7 +2887,7 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("resource fold after function outcome is unavailable"));
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, false);
+            return self.apply_instance_rewrite(binding, resource, false, None);
         }
         if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
             return Err(self.step_error(
@@ -2855,13 +2906,22 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn close_outcome_resource_scope(
         &self,
         resource: &ResourceClause,
-        preserve_exposed_body: bool,
+        restoration: &OpenResourceRestoration,
         contract_resources_established: bool,
     ) -> Result<Self, ClickError> {
+        let OpenResourceRestoration::Declared {
+            preserve_exposed_body,
+        } = restoration
+        else {
+            let OpenResourceRestoration::Named(instance) = restoration else {
+                unreachable!()
+            };
+            return self.restore_open_instance(resource, instance);
+        };
         let transition = self.apply_outcome_resource_fold_with_closure(
             resource,
             ResourceBodyClosure::CloseOpen {
-                preserve_exposed_body,
+                preserve_exposed_body: *preserve_exposed_body,
             },
             !contract_resources_established,
         )?;

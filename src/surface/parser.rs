@@ -8825,6 +8825,12 @@ impl Parser {
         }))
     }
 
+    fn starts_named_resource_target(&self) -> bool {
+        self.peek_ident()
+            .is_some_and(|name| self.names.resource_targets.contains_key(name))
+            && self.peek_next() != Some(&Token::LParen)
+    }
+
     fn parse_owned_resource_target(&mut self) -> Result<ResourceClause, ClickError> {
         if let Some(mut target) = self
             .peek_ident()
@@ -11101,7 +11107,11 @@ impl Parser {
         }
         if name == "open" {
             self.expect(Token::LParen)?;
-            let resource = self.parse_declared_resource_call()?;
+            let resource = if self.starts_named_resource_target() {
+                self.parse_owned_resource_target()?
+            } else {
+                self.parse_declared_resource_call()?
+            };
             self.expect(Token::RParen)?;
             let tactics = self.parse_possibly_empty_tactic_block()?;
             if self.peek_ident() == Some("by") {
@@ -11578,10 +11588,7 @@ impl Parser {
                 // instance shares its name; the instance is unfolded bare.
                 let tactic = if quantified
                     || self.peek_ident() == Some("authority")
-                    || (self
-                        .peek_ident()
-                        .is_some_and(|name| self.names.resource_targets.contains_key(name))
-                        && self.peek_next() != Some(&Token::LParen))
+                    || self.starts_named_resource_target()
                 {
                     ProofTactic::UnfoldResource(self.parse_owned_resource_target()?)
                 } else if self.peek_ident().is_some_and(|name| {
