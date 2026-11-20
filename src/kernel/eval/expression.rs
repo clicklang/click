@@ -3567,6 +3567,28 @@ fn read_retained_lvalue_paths_without_ranges(
                         }]);
                     }
                 }
+                if SpecificationReadScope::is_active()
+                    && has_read_resource
+                    && lvalue.value_type == ProgramType::Int32
+                    && pointer.base == AddressBase::ExternalArgument
+                {
+                    let point = state.program_point();
+                    if let Some(entry) = point.entry_integer_version(pointer, LoadKind::Int32) {
+                        // The checked read has authority and the path leaves
+                        // the caller's entry cell unchanged.
+                        return Ok(vec![
+                            super::memory_loads::evaluate_indexed_read(
+                                entry,
+                                &point,
+                                pointer.clone(),
+                                lvalue.value_type,
+                                facts,
+                                obligations,
+                            )
+                            .map_value(Into::into),
+                        ]);
+                    }
+                }
                 let mut paths = evaluate_retained_memory_load_paths(
                     &state.memory,
                     pointer.clone(),

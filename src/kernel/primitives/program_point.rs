@@ -1165,8 +1165,8 @@ impl ProgramPoint {
     /// Read applications use the execution version when known. Legacy views
     /// retain their existing read identity across pure memory materialization.
     pub(in crate::kernel) fn congruence_read_key(&self) -> ReadKey {
-        // Fold instantiation can still produce a bare read of the empty
-        // entry view. Share its comparison key while retaining the point.
+        // Legacy producers can still emit a bare read of the entry view.
+        // Share its comparison key while retaining the point on the read.
         if self.is_entry_read() {
             return ReadKey::Memory(self.memory.read_identity());
         }
@@ -1249,14 +1249,19 @@ impl ProgramPoint {
     /// store supplies a value. Use the recorded disjoint suffix only when
     /// it reaches a verified function-entry view.
     pub(crate) fn entry_integer_version(&self, pointer: &Address, kind: LoadKind) -> Option<Self> {
-        let direct_parameter = matches!(pointer.offset, AddressOffset::Constant(0))
-            || matches!(&pointer.offset, AddressOffset::Int32Scaled { value, byte_width: 4 }
-                if value.operand_view().variable().is_some());
-        if kind != LoadKind::Int32
-            || pointer.base != AddressBase::ExternalArgument
-            || !direct_parameter
-        {
+        if kind != LoadKind::Int32 || pointer.base != AddressBase::ExternalArgument {
             return None;
+        }
+        // A struct field can add a constant byte displacement to its
+        // parameter's symbolic base. Keep the same bounded address family.
+        let (origin, displacement) = read_displacement(&pointer.offset)?;
+        match origin {
+            None if displacement == 0 => {}
+            Some(AddressOffset::Int32Scaled {
+                value,
+                byte_width: 4,
+            }) if value.operand_view().variable().is_some() => {}
+            _ => return None,
         }
         let mut entry = self.parameter_read_start(&pointer.base);
         let node = entry.path.0.as_ref()?;

@@ -4042,13 +4042,13 @@ pub(crate) fn canonical_form_of_load(
     canonical_scalar_read(&MachineTerm::memory_read(memory, pointer, kind))
 }
 
-/// Name a resource cell using the indexed defining store when available.
+/// Name a resource cell by its indexed store or entry point when available.
 pub(crate) fn canonical_cell_load(
     source: &ProgramPoint,
     pointer: &Address,
     ty: ProgramType,
 ) -> MachineTerm {
-    if let Some(read) = indexed_resource_scalar_read(source, pointer, ty) {
+    if let Some(read) = expected_point_named_cell_read(source, pointer, ty) {
         record_indexed_cell_read(source, &read);
         return read;
     }
@@ -4077,7 +4077,10 @@ pub(in crate::kernel) fn expected_point_named_cell_read(
     ty: ProgramType,
 ) -> Option<MachineTerm> {
     indexed_resource_scalar_read(source, pointer, ty).or_else(|| {
-        let kind = LoadKind::of_type(ty)?;
+        if ty != ProgramType::Int32 {
+            return None;
+        }
+        let kind = LoadKind::Int32;
         let point = source.entry_integer_version(pointer, kind)?;
         Some(MachineTerm::MemoryLoad(
             point,
