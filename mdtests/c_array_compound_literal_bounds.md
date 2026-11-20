@@ -12,5 +12,5 @@ int32 answer() { ensures result == 0; }
 ```
 
 ```expect
-fail: viewable(((byte_offset("example.c"::answer.local(0).storage(implicit), 12)) as (uint8 *))[0..4])
+fail: viewable(((byte_offset("example.c"::answer.compound_literal(0).storage(implicit), 12)) as (uint8 *))[0..4])
 ```

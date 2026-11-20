@@ -24,7 +24,7 @@ fn compound_literal_block_cleanup_uses_only_its_new_objects() {
                     .compound_literal_declarations
                     .last_mut()
                     .unwrap()
-                    .push(CStatement::DeclareStructValue {
+                    .record(CStatement::DeclareStructValue {
                         name: BindingName::from(format!("literal_{index}")).into(),
                         layout: layout.clone(),
                         site: CSite::NONE,

@@ -15794,12 +15794,19 @@ impl Parser {
             self.position = start;
             return Ok(None);
         }
-        let parameter = match (self.peek(), self.peek_next()) {
-            (Some(Token::Dot), Some(Token::Ident(selector))) if selector == "local" => false,
+        let (parameter, compound_literal) = match (self.peek(), self.peek_next()) {
+            (Some(Token::Dot), Some(Token::Ident(selector))) if selector == "local" => {
+                (false, false)
+            }
             (Some(Token::Dot), Some(Token::Ident(selector)))
                 if selector == "parameter" && path.is_empty() =>
             {
-                true
+                (true, false)
+            }
+            (Some(Token::Dot), Some(Token::Ident(selector)))
+                if selector == "compound_literal" && path.is_empty() =>
+            {
+                (false, true)
             }
             _ => {
                 self.position = start;
@@ -15832,15 +15839,31 @@ impl Parser {
                 .clone()
         };
         let id = if path.is_empty() {
-            let ordinal = u32::try_from(self.expect_index("declaration ordinal")?)
-                .map_err(|_| self.error("declaration ordinal exceeds u32"))?;
+            let ordinal_kind = if compound_literal {
+                "compound literal ordinal"
+            } else {
+                "declaration ordinal"
+            };
+            let ordinal = u32::try_from(self.expect_index(ordinal_kind)?)
+                .map_err(|_| self.error(format!("{ordinal_kind} exceeds u32")))?;
             let owner = crate::kernel::LocalFunctionId::new(source, function);
-            let query = crate::kernel::LocalBindingId::new(owner, parameter, ordinal, None);
+            let query = if compound_literal {
+                crate::kernel::LocalBindingId::compound_literal(owner, ordinal)
+            } else {
+                crate::kernel::LocalBindingId::new(owner, parameter, ordinal, None)
+            };
             self.local_bindings
                 .declarations
                 .get_key_value(&query)
                 .map(|(id, _)| id.clone())
-                .ok_or_else(|| self.error(format!("unknown C declaration `{query}`")))?
+                .ok_or_else(|| {
+                    let kind = if compound_literal {
+                        "compound literal"
+                    } else {
+                        "declaration"
+                    };
+                    self.error(format!("unknown C {kind} `{query}`"))
+                })?
         } else {
             let name = self.expect_ident("local declaration name")?;
             self.local_bindings
