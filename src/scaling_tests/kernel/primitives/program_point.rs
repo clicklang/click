@@ -495,3 +495,73 @@ fn opaque_call_word_versions_follow_checked_local_effects() {
     );
     assert_ne!(new_version, version);
 }
+
+#[test]
+fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
+    use crate::kernel::IntegerTerm;
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let cell = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let local = slot();
+    let declared = entry
+        .clone()
+        .with_memory(entry.memory().clone().with_block(local.base.clone(), 4));
+    let accumulator = Variable(38_231);
+    let item = Variable(38_232);
+    let symbolic_cell = Address {
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(item), 4),
+        ..cell.clone()
+    };
+    let read = |source: &ProgramPoint, address: &Address| {
+        let point = source
+            .entry_integer_version(address, LoadKind::Int32)
+            .unwrap();
+        MachineTerm::MemoryLoad(point, Box::new(address.clone()), LoadKind::Int32)
+    };
+    let observation = |term| IntegerTerm::from_machine(MachineIntegerType::Int32, term).unwrap();
+    let expected = read(&entry.program_point(), &cell);
+    let expected_integer = observation(expected.clone());
+    let mut samples = Vec::new();
+    for count in [4, 16, 64, 256] {
+        let mut state = declared.clone();
+        for value in 0..count {
+            state = state.clone().with_memory(state.memory().clone().store(
+                local.clone(),
+                ProgramValue::Int32(MachineTerm::constant(value)),
+            ));
+        }
+        let body = read(&state.program_point(), &symbolic_cell);
+        let integer_body = observation(body.clone());
+        let ((native, integer), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let zero = MachineTerm::constant(0);
+            let native = crate::kernel::reasoning::order_reasoning::instantiate_range_fold_step(
+                &body,
+                accumulator,
+                &zero,
+                item,
+                &zero,
+            );
+            let integer = crate::kernel::reasoning::instantiate_integer_range_fold_step(
+                &integer_body,
+                accumulator,
+                &IntegerTerm::constant_i64(0),
+                item,
+                &IntegerTerm::constant_i64(0),
+                Some(MachineIntegerType::Int32),
+            )
+            .unwrap();
+            (native, integer)
+        });
+        assert_eq!(native, expected);
+        assert_eq!(integer, expected_integer);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work <= samples[0] + 8),
+        "{samples:?}"
+    );
+}

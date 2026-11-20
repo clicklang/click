@@ -6748,6 +6748,14 @@ impl<'a> TermRewrite<'a> {
                 if rewritten == **pointer {
                     return v.clone();
                 }
+                if let Some(entry) = memory.entry_version_after_rewrite(&rewritten, *kind) {
+                    return crate::kernel::eval::scalar_read_for_exact_cell_at(
+                        &entry,
+                        &rewritten,
+                        *kind,
+                        kind.byte_width(),
+                    );
+                }
                 // A changed bound index, like a changed pointer, must read
                 // its new cell in the producer state. A projected version
                 // only describes the original address.

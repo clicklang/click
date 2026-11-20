@@ -6173,9 +6173,21 @@ pub(crate) fn substitute_bitvector_variable(
                 .collect(),
         },
         MachineTerm::MemoryLoad(memory, pointer, kind) => {
+            let rewritten_pointer = substitute_bitvector_variable_in_pointer(pointer, from, to);
+            if let Some(entry) = memory.entry_version_after_rewrite(&rewritten_pointer, *kind) {
+                if rewritten_pointer == **pointer {
+                    return term.clone();
+                }
+                // The selected entry is empty, so only the address changes.
+                return crate::kernel::eval::scalar_read_for_exact_cell_at(
+                    &entry,
+                    &rewritten_pointer,
+                    *kind,
+                    kind.byte_width(),
+                );
+            }
             let rewritten_memory =
                 substitute_bitvector_variable_in_shared_memory(memory.shared_memory(), from, to);
-            let rewritten_pointer = substitute_bitvector_variable_in_pointer(pointer, from, to);
             if rewritten_memory == *memory.shared_memory() && rewritten_pointer == **pointer {
                 return term.clone();
             }
