@@ -11059,7 +11059,7 @@ fn execution_resource_fold_is_recorded_once_and_checks() {
     let expanded = expand_c_claim_source(
         click_source,
         &[("preserve.c", c_source)],
-        "maintain",
+        "preserve",
         ContractProofClaim::Grouped,
     )
     .expect("the grouped resource proof should expand");
