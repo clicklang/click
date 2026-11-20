@@ -25,7 +25,7 @@ impl ClaimScope {
     pub(super) fn enter(label: &str) -> Self {
         let selected = SELECTION.with(|selection| {
             selection.borrow().as_ref().is_some_and(|selection| {
-                if selection.label == label {
+                if crate::languages::claim_label_matches(label, &selection.label) {
                     selection.visited.set(true);
                     true
                 } else {

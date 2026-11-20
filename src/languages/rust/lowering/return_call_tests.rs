@@ -195,6 +195,43 @@ fn caller(value: bool) -> bool {{ ensures result == {expected}; }}
     }
 }
 
+/// A claim selected by its Rust path is the one the checker enters under
+/// its importer name, so checking it with the implicit closer off visits it.
+#[test]
+fn a_claim_selected_by_its_rust_path_is_checked_without_the_closer() {
+    use crate::languages::rust::names::path_name;
+    use crate::surface::without_implicit_solve_for_claim;
+
+    let mut export = fixture("value");
+    let identity = path_name(&["quad", "identity"]);
+    export.functions[0].name = identity.clone();
+    export.functions[1].name = path_name(&["quad", "caller"]);
+    export.functions[1].body = vec![S::Return {
+        value: Some(E::Call {
+            function: identity,
+            arguments: vec![E::Local {
+                name: "value".into(),
+            }],
+        }),
+    }];
+    let prepared = super::super::import::prepared_for_test(export).unwrap();
+    let source = r#"verifying "returns.rs";
+fn quad::identity(value: i32) -> i32 { ensures result == value; }
+fn quad::caller(value: i32) -> i32 { ensures result == value; } by {
+    step_until(function.exit);
+}
+"#;
+    let claim = "quad::caller.contract";
+    let expanded = expand_program_prepared_claim_source_by_label(source, &prepared, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve_for_claim(claim, || {
+        ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
 fn local(name: &str) -> Value {
     json!({"kind":"local", "name":name})
 }
