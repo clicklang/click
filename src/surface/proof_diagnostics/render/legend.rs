@@ -405,7 +405,7 @@ impl MemoryStateLabels {
                 let shared = crate::kernel::intern_memory_ref(memory);
                 let Some(edge) = shared.derivation() else {
                     return format!(
-                        "{point}INTERNAL ERROR: state constructor did not record its origin"
+                        "{point}INTERNAL ERROR: state constructor did not record its origin (report this as a bug and include this trace)"
                     );
                 };
                 edge

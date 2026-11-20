@@ -1552,7 +1552,10 @@ fn implicit_solve_sites_in_source(
             })
             .map_err(|error| format!("failed to start implicit-solve discovery: {error}"))?
             .join()
-            .map_err(|_| "implicit-solve discovery thread panicked".to_string())?
+            .map_err(|_| format!(
+                "implicit-solve discovery thread panicked for `{}` (report this as a bug and include the `click audit` command)",
+                canonical_path.display()
+            ))?
     });
     let claims = match discovered {
         Ok((claims, _)) => claims,
@@ -2102,8 +2105,10 @@ fn audit_claim_rewrite(
     // Runtime discovery can observe an implicit tail after an already
     // complete explicit script. Its unchanged expansion is a fixed point;
     // it still has to pass the smart-site and cold, no-implicit-solve checks.
-    let expanded_click_source = rewritten_click_source(&worker.source, &expanded)
-        .map_err(|error| format!("expanded proof container did not parse: {error}"))?;
+    let expanded_click_source =
+        rewritten_click_source(&worker.source, &expanded).map_err(|error| {
+            format!("expanded proof container did not parse (report this as a bug): {error}")
+        })?;
     claim_source_position_for_source(&worker.source, &expanded_click_source, &site.claim)?;
 
     // The fixed point: an expanded claim holds simple tactics only. Every
@@ -2160,7 +2165,11 @@ fn audit_claim_rewrite(
         );
         let expanded_cost = expanded_check
             .join()
-            .map_err(|_| "cold rewritten verification thread panicked".to_string())?;
+            .map_err(|_| format!(
+                "cold rewritten verification thread panicked for `{}` in `{}` (report this as a bug and include the `click audit` command)",
+                site.claim,
+                site.click_path.display()
+            ))?;
         Ok::<_, String>((original_cost?, expanded_cost?))
     })?;
     if let Some(regression) =
@@ -2366,8 +2375,10 @@ fn audit_site_rewrite(
     if expanded == original {
         return Err("expansion returned the original sidecar unchanged".to_string());
     }
-    let expanded_click_source = rewritten_click_source(&worker.source, &expanded)
-        .map_err(|error| format!("expanded proof container did not parse: {error}"))?;
+    let expanded_click_source =
+        rewritten_click_source(&worker.source, &expanded).map_err(|error| {
+            format!("expanded proof container did not parse (report this as a bug): {error}")
+        })?;
     // The rewritten claim must still be found: expansion can insert or
     // remove lines at the selected tactic, so later checks resolve the proof
     // unit by claim rather than by its now-stale source coordinate.
@@ -2513,8 +2524,10 @@ fn verify_rewrite_in_session(
     limits: &AuditLimits,
     deadline: Instant,
 ) -> Result<PhaseCost, String> {
-    let click_source = rewritten_click_source(&worker.source, rewritten_container)
-        .map_err(|error| format!("expanded proof container did not parse: {error}"))?;
+    let click_source =
+        rewritten_click_source(&worker.source, rewritten_container).map_err(|error| {
+            format!("expanded proof container did not parse (report this as a bug): {error}")
+        })?;
     let position = claim_source_position_for_source(&worker.source, &click_source, claim)?;
     worker.verify(
         &click_source,

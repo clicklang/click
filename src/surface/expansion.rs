@@ -1361,14 +1361,23 @@ fn unparseable_expansion_error_for_file(
     parse_error: ClickError,
     file: Option<&ClickFile>,
 ) -> ClickError {
+    if parse_error.kind() == super::ClickErrorKind::Limit {
+        return parse_error;
+    }
+    let fragment: String = replacement.chars().take(400).collect();
+    let generated = format!("Generated fragment starts with {fragment:?}");
     if replacement.contains(super::printing::UNRAISED_CONJUNCT) {
-        return ClickError::new("the expansion could not raise a checked `all` arm label");
+        return ClickError::new(format!(
+            "the expansion could not raise a checked `all` arm label (report this as a bug)\n{generated}"
+        ));
     }
     if !UNRAISABLE_POINTER_FORMS
         .iter()
         .any(|form| replacement.contains(form))
     {
-        return parse_error.with_context("the expansion did not parse as Click");
+        return parse_error.with_prefix(format!(
+            "the expansion did not parse as Click (report this as a bug)\n{generated}\n"
+        ));
     }
     let witnesses = file
         .map(|file| {
@@ -1395,7 +1404,7 @@ fn unparseable_expansion_error_for_file(
         several => format!("one of the witnesses {}", several.join(", ")),
     };
     ClickError::new(format!(
-        "the expansion needs a name for {named}, which has no surface spelling"
+        "the expansion needs a name for {named}, which has no surface spelling (report this as a bug)\n{generated}"
     ))
 }
 
