@@ -15461,6 +15461,7 @@ fn loop_exit_eligibility_comes_from_the_guard_not_an_ownership_failure() {
             &[],
             None,
             &[],
+            false,
         );
         if consumed && may_continue {
             assert!(

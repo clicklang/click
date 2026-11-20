@@ -6536,7 +6536,7 @@ pub(crate) struct ExecutionProofCore {
     pub(crate) has_structured_branch_history: bool,
 }
 
-#[cfg_attr(test, derive(Clone))]
+#[derive(Clone)]
 pub(crate) struct CheckedLoopInvariantLowerings {
     pub(super) body: Option<super::object::CheckedInvariantBody>,
     pub(super) retained_state: SharedValue<ExecutionState>,
@@ -6547,6 +6547,18 @@ pub(crate) struct CheckedLoopInvariantLowerings {
     pub(super) ranking_measures: Vec<crate::kernel::RankingComponent>,
     pub(super) facts: super::PureFactStore,
     pub(super) effects: crate::kernel::ExecutionFacts,
+}
+
+impl CheckedLoopInvariantLowerings {
+    pub(super) fn matches_context(
+        &self,
+        core: &ExecutionProofCore,
+        facts: &super::PureFactStore,
+    ) -> bool {
+        self.retained_state.shares_storage_with(&core.state)
+            && self.facts.shares_premises_with(facts)
+            && self.effects.shares_storage_with(&core.effect_facts)
+    }
 }
 
 #[cfg(test)]

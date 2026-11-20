@@ -1539,6 +1539,8 @@ fn implicit_solve_sites_in_source(
                                 if tactic.tactic_name
                                     == click::instrumentation::IMPLICIT_SOLVE_TACTIC
                                     || tactic.tactic_name
+                                        == click::instrumentation::IMPLICIT_LOOP_CLOSER_TACTIC
+                                    || tactic.tactic_name
                                         == click::instrumentation::IMPLICIT_TAIL_TACTIC =>
                             {
                                 Some(tactic.claim)

@@ -6,6 +6,73 @@
 use super::*;
 
 #[test]
+fn loop_back_edge_prepares_written_invariants_once_and_closes_by_exact_facts() {
+    use crate::instrumentation::{IMPLICIT_LOOP_CLOSER_TACTIC, VerificationEvent, collect};
+
+    let c_source = "int once(int i, int x) { while (i != 0) i = 0; return i; }";
+    let proof = r#"
+verifying "once.c";
+int32 once(int32 i, int32 x) {
+    requires i >= 0;
+    ensures result == 0;
+} by {
+    loop {
+        decreases i;
+        invariant i >= 0;
+        initialize by { known(); }
+        maintain by {
+            step();
+            have i >= 0 by { normalize(); }
+        }
+    }
+    step();
+    known();
+}
+"#;
+    let work = [2, 16, 64].map(|size| {
+        let ambient = (1..=size)
+            .map(|value| format!("    requires x != {value};\n"))
+            .collect::<String>();
+        let proof = proof.replace("    ensures", &format!("{ambient}    ensures"));
+        let (verified, events) =
+            collect(|| crate::surface::verify_c_sources(&proof, &[("once.c", c_source)]));
+        verified.unwrap();
+        let back_edge = events
+            .iter()
+            .skip_while(|event| {
+                !matches!(event, VerificationEvent::TacticStarted(tactic)
+                    if tactic.tactic_name == IMPLICIT_LOOP_CLOSER_TACTIC && tactic.claim == "once.contract")
+            })
+            .take_while(|event| {
+                !matches!(event, VerificationEvent::TacticFinished { tactic, .. }
+                    if tactic.tactic_name == IMPLICIT_LOOP_CLOSER_TACTIC)
+            });
+        let operations = back_edge
+            .filter_map(|event| match event {
+                VerificationEvent::OperationFinished { name, work, .. } => {
+                    Some((name.as_str(), *work))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for name in [
+            "invariant bundle: rebind resources",
+            "invariant obligations: lower declaration",
+            "close invariants: exact facts",
+        ] {
+            assert_eq!(
+                operations.iter().filter(|(label, _)| *label == name).count(),
+                1,
+                "{name} at {size}: {operations:?}"
+            );
+        }
+        assert!(!operations.iter().any(|(name, _)| *name == "close invariants: member planning"));
+        operations.iter().find(|(name, _)| *name == "close invariants: exact facts").unwrap().1
+    });
+    assert_eq!(work, [work[0]; 3]);
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: growing generated loop-bundle expansion and checked work"]
 fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {

@@ -89,7 +89,9 @@ cost can dominate a project. It is a reporting threshold, not a verification
 budget. A smart-budget row can cover a mixed proof container whose nested
 smart tactics are individually selectable but whose whole body is not. Its
 recommendation uses `--claim PATH:LINE:COLUMN` to expand the enclosing claim.
-An implicit loop closer is anchored at its loop and recommends claim expansion.
+For an implicit loop closer with a written member proof, that command
+selects the owning `maintain` phase and writes the proof in the arm that
+needed it. An exact-fact closer checks the available facts directly.
 
 An incomplete or failing target never receives an expansion recommendation.
 Profile a non-verifying target only when a timeout or unexpected slowness is
