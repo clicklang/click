@@ -181,12 +181,26 @@ const SPAN_STATE_CONTRACTS: &str =
     include_str!("../../../library/cpp/span_state_contracts.interface.click");
 
 /// Resolved declarations whose contracts are written at their exact types.
-const CONCRETE_LIBRARY_FUNCTIONS: &[(&str, &str, &[&str], &str)] = &[(
-    "std::vector<unsigned char>::size",
-    "unsigned long (void) const noexcept",
-    &["std", "vector<unsigned char>", "size"],
-    VECTOR_LIBRARY,
-)];
+const CONCRETE_LIBRARY_FUNCTIONS: &[(&str, &str, &[&str], &str)] = &[
+    (
+        "std::vector<unsigned char>::size",
+        "unsigned long (void) const noexcept",
+        &["std", "vector<unsigned char>", "size"],
+        VECTOR_LIBRARY,
+    ),
+    (
+        "std::vector<unsigned char>::empty",
+        "_Bool (void) const noexcept",
+        &["std", "vector<unsigned char>", "empty"],
+        VECTOR_LIBRARY,
+    ),
+    (
+        "std::vector<unsigned char>::data",
+        "const unsigned char *(void) const noexcept",
+        &["std", "vector<unsigned char>", "data"],
+        VECTOR_LIBRARY,
+    ),
+];
 
 /// The exact standard signatures that the Click library maps to templates: each instance's qualified name and canonical signature as Clang
 /// spells them, the library template's path, and its file. An axiom
