@@ -336,10 +336,7 @@ pub(in crate::kernel) fn evaluate_indexed_read(
             obligations,
         };
     }
-    let stored = version
-        .indexed_integer_store_bits()
-        .expect("an indexed integer version comes from a direct store")
-        .clone();
+    let stored = version.indexed_integer_store_bits().cloned();
     let kind = LoadKind::of_type(value_type).expect("indexed integer read");
     let format = MachineIntegerType::from_program_type(value_type).expect("indexed integer read");
     read_observations::record_at(
@@ -364,25 +361,27 @@ pub(in crate::kernel) fn evaluate_indexed_read(
         _ => unreachable!("indexed integer read"),
     };
     // Retain the read and publish its exact store equation separately.
-    let equation = match value_type {
-        ProgramType::Int128 => wide_integer_comparison_condition(
-            ComparisonOperator::Equal,
-            &value,
-            &ProgramValue::Int128(stored),
-        )
-        .expect("typed signed 128-bit store"),
-        ProgramType::UInt128 => wide_integer_comparison_condition(
-            ComparisonOperator::Equal,
-            &value,
-            &ProgramValue::UInt128(stored),
-        )
-        .expect("typed unsigned 128-bit store"),
-        _ => ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored),
-    };
-    facts.push(ExecutionPureFact {
-        logical_read_equation: true,
-        ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
-    });
+    if let Some(stored) = stored {
+        let equation = match value_type {
+            ProgramType::Int128 => wide_integer_comparison_condition(
+                ComparisonOperator::Equal,
+                &value,
+                &ProgramValue::Int128(stored),
+            )
+            .expect("typed signed 128-bit store"),
+            ProgramType::UInt128 => wide_integer_comparison_condition(
+                ComparisonOperator::Equal,
+                &value,
+                &ProgramValue::UInt128(stored),
+            )
+            .expect("typed unsigned 128-bit store"),
+            _ => ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored),
+        };
+        facts.push(ExecutionPureFact {
+            logical_read_equation: true,
+            ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
+        });
+    }
     ExpressionPath {
         outcome: ExpressionOutcome::Value(value),
         facts,
@@ -5170,6 +5169,9 @@ pub(crate) fn comparison_identity_of_exact_read(
 ) -> MachineTerm {
     match point.indexed_integer_version(pointer, kind) {
         Some(version) => MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind),
+        None if let Some(entry) = point.entry_integer_version(pointer, kind) => {
+            MachineTerm::memory_read(entry.shared_memory().clone(), pointer.clone(), kind)
+        }
         None => canonical_form_of_load(point.shared_memory().clone(), pointer.clone(), kind),
     }
 }
@@ -5179,8 +5181,20 @@ pub(crate) fn comparison_identity_of_exact_read(
 /// publication are separate operations. Until exact-state lowering migrates,
 /// callers still retain the selected identity as their read term.
 pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
-    if matches!(bits, MachineTerm::MemoryLoad(point, _, _) if point.read_version_id().is_some()) {
-        return bits.clone();
+    if let MachineTerm::MemoryLoad(point, pointer, kind) = bits
+        && point.read_version_id().is_some()
+    {
+        // The retained term names the entry point. Legacy producers of
+        // the same cell compare with its empty view without projecting it.
+        return if point.is_entry_read() {
+            MachineTerm::memory_read(
+                point.shared_memory().clone(),
+                pointer.as_ref().clone(),
+                *kind,
+            )
+        } else {
+            bits.clone()
+        };
     }
     let Some(descriptor) = ScalarReadDescriptor::from_term(bits) else {
         return bits.clone();
