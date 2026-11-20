@@ -554,9 +554,11 @@ fn conservative_execution_variable_bound(
     bound
 }
 
-/// The upper bound used by a modular call to decide whether it needs the
-/// exact reservations of a caller supplied alongside its execution budget.
-pub(in crate::kernel) fn caller_state_variable_bound(state: &ExecutionState) -> Option<Variable> {
+/// The highest execution identity reachable from the state. Persistent local,
+/// memory and resource roots reuse the bounds of their unchanged subtrees.
+pub(in crate::kernel) fn execution_state_variable_bound(
+    state: &ExecutionState,
+) -> Option<Variable> {
     let destination = state
         .aggregate_destination
         .as_ref()
@@ -570,7 +572,13 @@ pub(in crate::kernel) fn caller_state_variable_bound(state: &ExecutionState) -> 
     let memory = crate::kernel::primitives::interned_storage_of(&state.memory)
         .unwrap_or_else(|| intern_memory_ref(&state.memory));
     let memory = memory_execution_variable_bound(&memory, WholeCount::Uncharged);
+    let body_field_view = state.body_field_view.as_deref().and_then(|view| {
+        conservative_execution_variable_bound(|variables| {
+            collect_instance_bitvector_variables(view, variables);
+        })
+    });
     destination
+        .max(body_field_view)
         .max(locals)
         .max(memory)
         .max(resource_context_variable_bound(&state.resources))
@@ -587,15 +595,25 @@ fn resource_fact_variable_bound(fact: &ResourceFact) -> Option<Variable> {
     })
 }
 
-pub(in crate::kernel) fn collect_call_caller_state_variables(
+pub(in crate::kernel) fn collect_execution_state_reservations(
     state: &ExecutionState,
+    next_candidate: u64,
+    reserved_through: Option<Variable>,
     variables: &mut BTreeSet<Variable>,
 ) {
+    // Continuing executions normally allocate above every live identity. A
+    // supplied state can have sparse identities above the counter, so preserve
+    // exact membership when the bound cannot rule out a collision.
+    let bound = execution_state_variable_bound(state);
+    if !bound.is_some_and(|bound| bound.0 >= next_candidate && Some(bound) > reserved_through) {
+        return;
+    }
     crate::instrumentation::record_deterministic_work(
         state.locals.bindings.len()
             + memory_entry_count(&state.memory)
             + state.resources.fact_count()
-            + state.instance_field_scope.fact_count(),
+            + state.instance_field_scope.fact_count()
+            + usize::from(state.body_field_view.is_some()),
     );
     collect_execution_state_bitvector_variables(state, variables);
 }
@@ -1791,7 +1809,7 @@ pub(in crate::kernel) fn collect_execution_state_bitvector_variables(
     collect_resource_context_bitvector_variables(&state.resources, variables);
     collect_resource_context_bitvector_variables(&state.instance_field_scope, variables);
     if let Some(view) = &state.body_field_view {
-        collect_resource_bitvector_variables(&Resource::Instance(view.as_ref().clone()), variables);
+        collect_instance_bitvector_variables(view, variables);
     }
 }
 
@@ -1818,6 +1836,31 @@ pub(in crate::kernel) fn collect_resource_fact_bitvector_variables(
     #[cfg(test)]
     COLLECTED_RESOURCE_FACTS.with(|count| count.set(count.get() + 1));
     collect_resource_bitvector_variables(resource.resource(), variables);
+}
+
+fn collect_instance_bitvector_variables(
+    instance: &ResourceInstance,
+    variables: &mut BTreeSet<Variable>,
+) {
+    for value in instance.arguments.iter() {
+        collect_algebraic_value_bitvector_variables(value, variables);
+    }
+    for index in 0..instance.fields.len() {
+        if let Some(value) = instance.fields.retained_program(index) {
+            collect_expression_value_bitvector_variables(value, variables);
+        } else {
+            collect_algebraic_value_bitvector_variables(
+                instance.fields.get(index).expect("field index"),
+                variables,
+            );
+        }
+    }
+    crate::kernel::ResourceReference::visit_captured_values(
+        instance.resource_arguments(),
+        |value| {
+            collect_algebraic_value_bitvector_variables(value, variables);
+        },
+    );
 }
 
 pub(in crate::kernel) fn collect_resource_bitvector_variables(
@@ -1861,27 +1904,7 @@ pub(in crate::kernel) fn collect_resource_bitvector_variables(
                 collect_expression_value_bitvector_variables(value.value(), variables);
             }
         }
-        Resource::Instance(instance) => {
-            for value in instance.arguments.iter() {
-                collect_algebraic_value_bitvector_variables(value, variables);
-            }
-            for index in 0..instance.fields.len() {
-                if let Some(value) = instance.fields.retained_program(index) {
-                    collect_expression_value_bitvector_variables(value, variables);
-                } else {
-                    collect_algebraic_value_bitvector_variables(
-                        instance.fields.get(index).expect("field index"),
-                        variables,
-                    );
-                }
-            }
-            crate::kernel::ResourceReference::visit_captured_values(
-                instance.resource_arguments(),
-                |value| {
-                    collect_algebraic_value_bitvector_variables(value, variables);
-                },
-            );
-        }
+        Resource::Instance(instance) => collect_instance_bitvector_variables(instance, variables),
         Resource::Memory(range) => collect_memory_range_bitvector_variables(range, variables),
         Resource::Iterated(iterated) => {
             for pointer in iterated.pointers() {

@@ -365,3 +365,106 @@ fn const_array_construction_scales_with_written_elements_and_keeps_omitted_cells
         "const-array declaration work (bounds, unrelated, written): {small:?}, {unrelated:?}, {written:?}"
     );
 }
+
+#[test]
+fn loop_freshness_ignores_unrelated_live_state() {
+    use crate::instrumentation::{VerificationEvent, collect};
+    use crate::kernel::program_expression::{int32_literal, less_than, variable};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let condition = less_than(variable("i"), int32_literal(1));
+    let body = program_assign("i", int32_literal(1));
+    let statement = program_while_with_invariant_checks(
+        condition.clone(),
+        Vec::new(),
+        Vec::new(),
+        body.clone(),
+    );
+    let assumptions = PureFactContext::new();
+    let base = ExecutionBudget::KERNEL_VARIABLE_BASE;
+
+    for grow_owners in [false, true] {
+        for size in [4, 16, 64, 128] {
+            let mut state = ExecutionState::new().with_local("i", int32(0));
+            if grow_owners {
+                state = state.with_resource_context(ResourceContext::new().unchecked_with_facts(
+                    (0..size).map(|index| {
+                        ResourceFact::own(Resource::Memory(MemoryRange::new(
+                            Address::symbolic(Variable(base + index)),
+                            0u32.into(),
+                            1u32.into(),
+                        )))
+                    }),
+                ));
+            } else {
+                for index in 0..size {
+                    state = state.with_local(
+                        format!("unrelated_{index}"),
+                        int32(MachineTerm::Variable(Variable(base + index))),
+                    );
+                }
+            }
+            state.prepare_execution_variable_reservations();
+            // Change a single binding after warming the roots, as ordinary
+            // execution does between loop checks.
+            state = state.with_local("i", int32(1));
+            let ((head, (exit, rule)), events) = collect(|| {
+                let head = crate::kernel::api::loop_phase_preservation_contexts(
+                    &state,
+                    Some(&condition),
+                    &[],
+                    &[],
+                    &[],
+                    &[],
+                    &body,
+                    &assumptions,
+                    size,
+                )
+                .expect("preservation context");
+                let mut budget = ExecutionBudget::continuing_from(head[0].next_kernel_variable());
+                let exit =
+                    crate::kernel::api::prove_symbolic_loop_exit_with_proven_phases_using_budget(
+                        state,
+                        statement.clone(),
+                        assumptions.clone(),
+                        ExecutionEnvironment::new(),
+                        true,
+                        true,
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                        None,
+                        None,
+                        &mut budget,
+                    );
+                (head, exit)
+            });
+            assert_eq!(
+                head[0].iterations(),
+                &IntegerTerm::var(Variable(base + size))
+            );
+            assert!(!exit.paths().is_empty());
+            assert!(rule.is_some());
+            let reservations = events
+                .iter()
+                .filter_map(|event| match event {
+                    VerificationEvent::OperationFinished { name, work, .. }
+                        if name == "loop entry state reservation"
+                            || name == "statement state reservation" =>
+                    {
+                        Some((name.as_str(), *work))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            eprintln!("loop reservation owners={grow_owners} size={size}: {reservations:?}");
+            assert_eq!(
+                reservations,
+                [
+                    ("loop entry state reservation", 1),
+                    ("statement state reservation", 0)
+                ]
+            );
+        }
+    }
+}

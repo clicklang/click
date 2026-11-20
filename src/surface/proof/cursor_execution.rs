@@ -958,7 +958,7 @@ pub(super) fn next_top_level_statement_from_frontier_position(
                     })?;
                 (execution_start_state, current_state)
             };
-            current_state.prepare_modular_call_reservations();
+            current_state.prepare_execution_variable_reservations();
             let (statement, remaining) =
                 split_next_source_operation(function.body()).map_err(|message| {
                     ClickError::new(format!(
