@@ -1410,6 +1410,29 @@ fn unsigned_widening_special_certificates_expand_and_recheck() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: machine fold expansion and cold replay took 2.1s"]
+fn unchanged_machine_fold_expands_to_known() {
+    let (source, _) = mdtest_sources("mdtests/lambda_folds.md");
+    let label = "lambda_fold_carriers.ensures_2";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_click_theorems(&expanded).map_err(|error| error.report())
+    })
+    .unwrap();
+
+    let source = "theorem keep(lo: int32, hi: int32, seed: int32) {
+        ensures to_integer((lo..hi).fold(seed, |acc: int32, item: int32| -> int32 { acc }))
+            == to_integer(seed) by known();
+    }";
+    without_implicit_solve(|| verify_click_theorems(source)).unwrap();
+    let changed = source.replace("{ acc }", "{ item }");
+    assert!(without_implicit_solve(|| verify_click_theorems(&changed)).is_err());
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: three selected interval exclusions expand and replay in 3.7s"]
 fn selected_interval_exclusion_expands_and_rechecks() {
     let (source, _) = mdtest_sources("mdtests/integer_bound_exclusion.md");

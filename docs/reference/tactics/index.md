@@ -1655,6 +1655,10 @@ and symbolic matches are opaque operands; their identical occurrences may
 cancel, but this check never unfolds a call or resolves a read. It does not
 invoke the general atomic prover.
 
+A machine-valued range fold whose step returns its accumulator equals its
+initial value. This check reads only the accumulator binding and the initial
+value.
+
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
 visits only the immediate fields and uses their literal values.

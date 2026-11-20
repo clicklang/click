@@ -87,10 +87,16 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
             }
         }
         Proposition::Equal(Term::Integer(left), Term::Integer(right)) => {
-            integer_affine_comparison(&ConditionTerm::IntegerEqual(
-                left.native_compat().clone().into(),
-                right.native_compat().clone().into(),
-            ))
+            let left = left.native_compat();
+            let right = right.native_compat();
+            if unchanged_integer_folds_equal(left, right) {
+                Some(true)
+            } else {
+                integer_affine_comparison(&ConditionTerm::IntegerEqual(
+                    left.clone().into(),
+                    right.clone().into(),
+                ))
+            }
         }
         // A concrete span is a single bounds lookup in the goal's memory.
         // A loaded or symbolic base needs its own proof of the address.
@@ -133,6 +139,43 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
     };
     value == Some(expected)
         || (expected && super::super::arithmetic_special::intrinsic_pointer_alignment(goal))
+}
+
+/// A machine fold whose body is its own accumulator retains the initial
+/// value for every range. Neither the endpoints nor any facts are inspected.
+fn unchanged_fold_initial(operand: MachineOperandView<'_>) -> Option<MachineOperandView<'_>> {
+    let (accumulator, _, [_, _, initial, body]) = operand.fold()?;
+    (body.variable() == Some(&accumulator)).then_some(initial)
+}
+
+fn unchanged_fold_observation(value: &IntegerTerm) -> Option<IntegerTerm> {
+    let IntegerTerm::Machine(value) = value else {
+        return None;
+    };
+    if value.ty() != MachineIntegerType::Int32 {
+        return None;
+    }
+    unchanged_fold_initial(value.operand_view())?.observe(value.ty())
+}
+
+fn unchanged_integer_folds_equal(left: &IntegerTerm, right: &IntegerTerm) -> bool {
+    let a = unchanged_fold_observation(left);
+    let b = unchanged_fold_observation(right);
+    (a.is_some() || b.is_some()) && a.as_ref().unwrap_or(left) == b.as_ref().unwrap_or(right)
+}
+
+fn unchanged_machine_folds_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
+    let left = MachineOperandView::Legacy(left);
+    let right = MachineOperandView::Legacy(right);
+    let a = unchanged_fold_initial(left);
+    let b = unchanged_fold_initial(right);
+    if a.is_none() && b.is_none() {
+        return false;
+    }
+    a.unwrap_or(left)
+        .observe(MachineIntegerType::Int32)
+        .zip(b.unwrap_or(right).observe(MachineIntegerType::Int32))
+        .is_some_and(|(left, right)| left == right)
 }
 
 /// These exact block kinds use the structural separation rule without
@@ -250,6 +293,13 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                         | ConditionTerm::IntegerGreaterEqual(..)
                 ));
             }
+            if matches!(
+                condition,
+                ConditionTerm::IntegerEqual(..) | ConditionTerm::IntegerNotEqual(..)
+            ) && unchanged_integer_folds_equal(left, right)
+            {
+                return Some(matches!(condition, ConditionTerm::IntegerEqual(..)));
+            }
             super::super::integer_arithmetic::literal_integer_comparison_value(condition)
                 .or_else(|| integer_affine_comparison(condition))
                 .or_else(|| integer_operation_bound_comparison(condition))
@@ -260,6 +310,12 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             left,
             right,
         } => {
+            if *format == MachineIntegerType::Int32
+                && *relation == CompareRelation::Equal
+                && unchanged_machine_folds_equal(left, right)
+            {
+                return Some(true);
+            }
             if let Some(answer) = known_int32_match_comparison_value(condition) {
                 return Some(answer);
             }
