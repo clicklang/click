@@ -944,6 +944,62 @@ fn signed_quotient_sign_known_work_ignores_context_growth() {
 }
 
 #[test]
+fn unchanged_machine_fold_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineIntegerType};
+    let _session = crate::kernel::VerificationSession::enter();
+    let seed = MachineTerm::Variable(Variable(984_001));
+    let end = MachineTerm::Variable(Variable(984_002));
+    let accumulator = Variable(984_003);
+    let item = Variable(984_004);
+    let comparison = |relation, left, right| {
+        Proposition::condition_is(
+            ConditionTerm::machine_compare(MachineIntegerType::Int32, relation, left, right),
+            true,
+        )
+    };
+    let measurements = [8, 32, 64].map(|size| {
+        let facts = (0..size)
+            .flat_map(|index| {
+                [
+                    comparison(
+                        CompareRelation::LessEqual,
+                        end.clone(),
+                        MachineTerm::Variable(Variable(985_000 + index)),
+                    ),
+                    Proposition::Predicate {
+                        name: format!("unrelated_{index}"),
+                        arguments: vec![],
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactStore::from_ordered(&facts);
+        [accumulator, item].map(|body| {
+            let fold = MachineTerm::RangeFold {
+                start: Box::new(MachineTerm::constant(0)),
+                end: Box::new(end.clone()),
+                initial: Box::new(seed.clone()),
+                accumulator,
+                item,
+                body: Box::new(MachineTerm::Variable(body)),
+            };
+            let goal = comparison(CompareRelation::Equal, fold, seed.clone());
+            let proof = known_computation_proof(goal, facts.clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), body == accumulator);
+            work
+        })
+    });
+    for work in measurements {
+        for (sample, baseline) in work.into_iter().zip(measurements[0]) {
+            assert!(sample <= baseline + 16, "{measurements:?}");
+        }
+    }
+}
+
+#[test]
 fn known_computation_work_is_linear_in_shared_integer_terms() {
     use crate::kernel::{ConditionTerm, IntegerTerm};
     let mut costs = Vec::new();

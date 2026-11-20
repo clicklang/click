@@ -4485,7 +4485,9 @@ not have a recoverable C source place:
 Typed loads select memory from the surrounding clause independently of the
 point the pointer value was read at. `load<int32>(old(p))` reads current memory through
 the entry-state pointer, while `old(load<int32>(p))` reads entry-state memory.
-Both require the corresponding read permission and initialized storage.
+A read in a specification, through `load<T>` or a C place such as `*p`, needs
+no read permission and no initialized storage: it denotes the value that memory
+holds and grants nothing. Reading the same memory in C code needs both.
 
 `address(pointer)` is the `uint64` integer representation of an object pointer
 under the LP64 profile. It is the spec form of the C cast
