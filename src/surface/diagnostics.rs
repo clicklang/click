@@ -2061,6 +2061,9 @@ fn describe_returned_borrow(
     };
     let prefix = format!("cannot produce `{output}` as a borrow");
     match &refusal.reason {
+        ReturnedBorrowReason::ExplicitSourceRequired => format!(
+            "the produced borrowing composite `{output}` needs an explicit borrow source declared with `from`"
+        ),
         ReturnedBorrowReason::UnevaluableSource => {
             format!("{prefix}. The input view named by `from` could not be evaluated at entry.")
         }

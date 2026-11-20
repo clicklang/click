@@ -753,7 +753,7 @@ fn disjoint_memory_view_clustering_has_linear_overlap_work() {
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [16_usize, 32, 64, 128] {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let callee = ledger.fresh_participant().unwrap();
         let caller_resources =
@@ -791,7 +791,7 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
     let mut chain_samples = Vec::new();
     let mut equal_start_samples = Vec::new();
     for size in [4_usize, 8, 16, 32] {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let callee = ledger.fresh_participant().unwrap();
         let mut caller_resources = ResourceContext::new();
@@ -911,7 +911,7 @@ fn loan_certificate_recheck_scales_with_explicit_transition_delta() {
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [4_usize, 8, 16, 32] {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let callee = ledger.fresh_participant().unwrap();
         let caller_resources =
@@ -1726,7 +1726,7 @@ fn releasing_one_produced_view_ignores_unrelated_resources() {
             vec![EscapingBorrow {
                 head: view.clone(),
                 occurrence,
-                root_permission: Some(view.clone()),
+                root_permission: view.clone(),
             }],
         )]);
         let recovery = plan
@@ -1782,7 +1782,7 @@ fn consuming_a_borrowing_composite_ignores_unrelated_resources() {
             vec![EscapingBorrow {
                 head,
                 occurrence: occurrences[0].1,
-                root_permission: Some(view),
+                root_permission: view,
             }],
         )]);
         let recovery = plan
@@ -1845,7 +1845,7 @@ fn folding_a_held_view_ignores_equal_owner_observations() {
             vec![EscapingBorrow {
                 head: view.clone(),
                 occurrence,
-                root_permission: Some(view.clone()),
+                root_permission: view.clone(),
             }],
         )]);
         let recovery = plan

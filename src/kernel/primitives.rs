@@ -8040,6 +8040,7 @@ pub struct ReturnedBorrowRefusal {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ReturnedBorrowReason {
+    ExplicitSourceRequired,
     UnevaluableSource,
     InactiveSource,
     UnrecoverableSource(ResourceFact),
@@ -10686,7 +10687,7 @@ pub struct ExecutionState {
     pub(super) resources: ResourceContext,
     /// Active stable-view authority. `None` is the canonical empty ledger so
     /// independently constructed states retain ordinary structural equality.
-    pub(super) loan_ledger: Option<super::loans::LoanLedger>,
+    pub(super) loan_ledger: Option<super::loans::BorrowLedger>,
     /// Holder identity for the authority carried by this state. Keeping it
     /// beside the immutable ledger lets nested candidate calls reuse the
     /// caller's participant when lending a view.

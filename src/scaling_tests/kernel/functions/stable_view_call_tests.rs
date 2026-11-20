@@ -160,7 +160,7 @@ fn preparing_a_reserved_fold_leaves_unrelated_caller_heads_unmaterialized() {
 fn verified_call_loan_requirement_building_does_not_visit_live_loans() {
     let effects = [MemoryRange::new(pointer(), 0u32.into(), 1u32.into())];
     let samples = [4, 16, 64].map(|count| {
-        let mut ledger = LoanLedger::new();
+        let mut ledger = BorrowLedger::new();
         let lender = ledger.fresh_participant().unwrap();
         let reader = ledger.fresh_participant().unwrap();
         for i in 0..count {

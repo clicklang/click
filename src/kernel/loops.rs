@@ -8925,7 +8925,7 @@ fn checked_owned_entry_footprint(resources: &ResourceContext) -> Option<Vec<Memo
 
 /// Retain separation from the entry ledger for each checked write range.
 fn loop_head_loan_requirements(
-    ledger: &super::loans::LoanLedger,
+    ledger: &super::loans::BorrowLedger,
     ranges: Option<&[MemoryRange]>,
 ) -> Result<Vec<ProofObligation>, &'static str> {
     let Some(ranges) =
@@ -8942,7 +8942,7 @@ fn loop_head_loan_requirements(
 }
 
 fn loop_loan_separation(
-    ledger: &super::loans::LoanLedger,
+    ledger: &super::loans::BorrowLedger,
     range: &MemoryRange,
     context: &'static str,
 ) -> Option<ProofObligation> {

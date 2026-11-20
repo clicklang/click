@@ -55,9 +55,9 @@ int32 input_cursor_init(
     requires 0 <= length;
     requires separate(memory(*owner), memory(data[0..length]));
     consumes *owner;
-    views readable_input(data, length);
+    views readable_input(data, length) as input;
 
-    produces input_cursor(owner);
+    produces input_cursor(owner) from input;
     ensures result == 0;
     ensures owner->pos == 0;
     ensures owner->len == length;
@@ -69,8 +69,8 @@ int32 caller(struct input_cursor* owner, int32 data[], int32 length) {
     requires 0 <= length;
     requires separate(memory(*owner), memory(data[0..length]));
     consumes *owner;
-    views readable_input(data, length);
-    produces input_cursor(owner);
+    views readable_input(data, length) as input;
+    produces input_cursor(owner) from input;
     ensures result == 0;
     ensures owner->data == data;
     ensures owner->len == length;

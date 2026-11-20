@@ -3,7 +3,7 @@ use super::*;
 use crate::kernel::LoanViewBinding;
 use crate::kernel::binary_node;
 use crate::kernel::int32_constant;
-use crate::kernel::loans::{LoanLedger, LoanViewBindings};
+use crate::kernel::loans::{BorrowLedger, LoanViewBindings};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// A fold publishes read authority for the cells it consumed, attached to
@@ -3113,7 +3113,7 @@ fn a_loan_bound_view_beside_an_owner_is_not_absorbed_by_normalization() {
     let context = ResourceContext::new().unchecked_with_facts([owner.clone(), borrowed.clone()]);
     let borrowed_occurrence = context.occurrences_for_fact(&borrowed)[0];
     let support_occurrence = context.owned_occurrences_for_fact(&owner)[0];
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let lender = ledger.fresh_participant().unwrap();
     let reader = ledger.fresh_participant().unwrap();
     let opening = ledger
@@ -5073,7 +5073,7 @@ fn v11_fresh_view_children_use_exact_occurrences_and_preserve_duplicates() {
     let inserted_child = inserted[0].1;
     assert_ne!(existing_child, inserted_child);
 
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let reader = ledger.fresh_participant().unwrap();
     let opening = ledger
@@ -5112,7 +5112,7 @@ fn v11_duplicate_bound_and_unbound_views_are_not_authority_candidates() {
     let occurrences = context.occurrences_for_fact(&child);
     assert_eq!(occurrences.len(), 2);
     let support_occurrence = context.owned_occurrences_for_fact(&support)[0];
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let reader = ledger.fresh_participant().unwrap();
     let opening = ledger
@@ -5147,7 +5147,7 @@ fn context_with_one_loan_dependency(view_the_support: bool) -> ResourceContext {
     let context = ResourceContext::new().unchecked_with_facts([support.clone(), child.clone()]);
     let child_occurrence = context.occurrences_for_fact(&child)[0];
     let support_occurrence = context.owned_occurrences_for_fact(&support)[0];
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let reader = ledger.fresh_participant().unwrap();
     let opening = ledger
@@ -5296,7 +5296,7 @@ fn v11_composite_expansion_emits_a_destination_beside_an_equal_ambient_child() {
     ]);
     let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
     let parent_occurrence = resources.occurrences_for_fact(&parent)[0];
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let reader = ledger.fresh_participant().unwrap();
     let opening = ledger
@@ -5350,7 +5350,7 @@ fn v11_tampered_cstate_mirror_is_rejected_and_stale_sidecar_is_dropped() {
     let resources = ResourceContext::new().unchecked_with_facts([support.clone(), child.clone()]);
     let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
     let child_occurrence = resources.occurrences_for_fact(&child)[0];
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let reader = ledger.fresh_participant().unwrap();
     let opening = ledger

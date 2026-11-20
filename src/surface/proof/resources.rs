@@ -5806,7 +5806,7 @@ void child_release(struct child* obj) {
         support: crate::kernel::ResourceOccurrenceId,
         viewed: ResourceFact,
     ) -> crate::kernel::LoanViewBinding {
-        let ledger = crate::kernel::LoanLedger::new();
+        let ledger = crate::kernel::BorrowLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let reader = ledger.fresh_participant().unwrap();
         let escrow = ResourceFact::own_token("v11_surface_support".into(), Vec::new());
@@ -5947,7 +5947,7 @@ void child_release(struct child* obj) {
         let view = ResourceFact::view_memory(range);
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
         let support = support_resources.owned_occurrences_for_fact(&own)[0];
-        let ledger = crate::kernel::LoanLedger::new();
+        let ledger = crate::kernel::BorrowLedger::new();
         let lender = ledger.fresh_participant().unwrap();
         let opening = ledger.lend(lender, lender, support, own).unwrap();
         let ledger = ledger.apply(&opening.transition).unwrap();
@@ -6049,7 +6049,7 @@ void child_release(struct child* obj) {
         let view = ResourceFact::view_memory(range.clone());
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
         let support = support_resources.owned_occurrences_for_fact(&own)[0];
-        let ledger = crate::kernel::LoanLedger::new();
+        let ledger = crate::kernel::BorrowLedger::new();
         let lender = ledger.fresh_participant().unwrap();
         let reader = ledger.fresh_participant().unwrap();
         let opening = ledger.lend(lender, lender, support, own.clone()).unwrap();

@@ -3475,7 +3475,7 @@ fn loan_preserving_havoc_keeps_cell(
     pointer: &Address,
     byte_width: u32,
     preserved_blocks: &dyn BlockMembership,
-    ledger: Option<&crate::kernel::loans::LoanLedger>,
+    ledger: Option<&crate::kernel::loans::BorrowLedger>,
 ) -> bool {
     preserved_blocks.contains_block(&pointer.base)
         || ledger.is_some_and(|ledger| {
@@ -3498,7 +3498,7 @@ fn loan_preserving_havoc_keeps_cell(
 fn loan_preserving_havoc_keeps_run(
     run: &CellRun,
     preserved_blocks: &dyn BlockMembership,
-    ledger: Option<&crate::kernel::loans::LoanLedger>,
+    ledger: Option<&crate::kernel::loans::BorrowLedger>,
 ) -> (SlotSet, crate::kernel::primitives::RuleAnswer) {
     let exact = crate::kernel::primitives::RuleAnswer::Exact;
     if preserved_blocks.contains_block(&run.base().base) {
@@ -4895,7 +4895,7 @@ impl SymbolicMemory {
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
     ) -> Self {
         self.loop_memory_havoc(
             variable,
@@ -4912,7 +4912,7 @@ impl SymbolicMemory {
         variable: Variable,
         locals: &LocalEnvironment,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
         kept_by_function: Option<CallKeptRanges>,
     ) -> Self {
         // The loop head has already abstracted every directly assigned
@@ -4941,7 +4941,7 @@ impl SymbolicMemory {
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
         kept_by_function: Option<CallKeptRanges>,
     ) -> Self {
         self.loop_memory_havoc(
@@ -4959,7 +4959,7 @@ impl SymbolicMemory {
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
         kept_by_function: Option<CallKeptRanges>,
         scope: ForgetScope<'_>,
     ) -> Self {
@@ -5023,7 +5023,7 @@ impl SymbolicMemory {
         &mut self,
         scope: ForgetScope<'_>,
         preserved_blocks: &dyn BlockMembership,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
         agreeing: &[&SymbolicMemory],
     ) {
         let union_widths = union_overlay_widths(self);
@@ -5130,7 +5130,7 @@ impl SymbolicMemory {
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         sibling_memories: &[&SymbolicMemory],
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
     ) -> Result<Self, String> {
         let mut incoming = std::iter::once(&self)
             .chain(sibling_memories.iter().copied())
@@ -10737,12 +10737,12 @@ impl ExecutionState {
         );
         self
     }
-    pub(crate) fn loan_ledger(&self) -> Option<&crate::kernel::loans::LoanLedger> {
+    pub(crate) fn loan_ledger(&self) -> Option<&crate::kernel::loans::BorrowLedger> {
         self.loan_ledger.as_ref()
     }
     pub(crate) fn with_loan_ledger(
         mut self,
-        ledger: Option<crate::kernel::loans::LoanLedger>,
+        ledger: Option<crate::kernel::loans::BorrowLedger>,
     ) -> Self {
         self.loan_ledger = ledger;
         self

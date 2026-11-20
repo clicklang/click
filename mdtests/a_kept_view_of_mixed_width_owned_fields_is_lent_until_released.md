@@ -21,8 +21,8 @@ verifying "lend.c";
 resource Whole(p: struct S*) { owns *p; }
 resource Lent(p: struct S*) { views *p; }
 extern void lend(const struct S* p) {
-    views *p;
-    produces Lent(p);
+    views *p as input;
+    produces Lent(p) from input;
 }
 extern void unlend(const struct S* p) {
     consumes Lent(p);

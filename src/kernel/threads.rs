@@ -20,7 +20,7 @@ use std::sync::Arc;
 use crate::persistent::PersistentMap;
 
 use super::functions::suspend_verified_worker;
-use super::loans::{LoanLedger, LoanViewBinding, LoanViewBindings, StableViewTransferPlan};
+use super::loans::{BorrowLedger, LoanViewBinding, LoanViewBindings, StableViewTransferPlan};
 use super::{
     Address, AddressBase, ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact,
     ExecutionResult, ExecutionState, MachineTerm, MemoryRange, ProgramValue, Proposition,
@@ -145,7 +145,7 @@ pub(super) enum PendingThreadMemoryDelta {
 /// stores; selecting an outcome never restores a captured parent state.
 struct PendingCreateAuthority {
     resources: ResourceContext,
-    loan_ledger: Option<LoanLedger>,
+    loan_ledger: Option<BorrowLedger>,
     loan_view_bindings: LoanViewBindings,
     thread_ledger: Option<ThreadLedger>,
     mutex_ledger: Option<super::mutexes::MutexLedger>,
@@ -497,8 +497,8 @@ struct ThreadLedgerStorage {
 /// unrelated ledger history.
 #[derive(Clone)]
 struct ThreadLoanTrace {
-    origin: LoanLedger,
-    current: LoanLedger,
+    origin: BorrowLedger,
+    current: BorrowLedger,
     participant: super::loans::LoanParticipantId,
 }
 
@@ -590,8 +590,8 @@ impl ThreadLedger {
     #[cfg(test)]
     pub(super) fn witnesses_loan_recovery(
         &self,
-        origin: &LoanLedger,
-        current: &LoanLedger,
+        origin: &BorrowLedger,
+        current: &BorrowLedger,
         participant: super::loans::LoanParticipantId,
     ) -> bool {
         self.storage.rights.is_empty()
@@ -606,8 +606,8 @@ impl ThreadLedger {
 
     fn advanced_loan_trace(
         &self,
-        before: &LoanLedger,
-        after: &LoanLedger,
+        before: &BorrowLedger,
+        after: &BorrowLedger,
         participant: super::loans::LoanParticipantId,
     ) -> Option<ThreadLoanTrace> {
         match self.storage.loan_trace.as_ref() {
@@ -631,8 +631,8 @@ impl ThreadLedger {
         &self,
         handle: ThreadHandle,
         right: CompletionRight,
-        before: &LoanLedger,
-        after: &LoanLedger,
+        before: &BorrowLedger,
+        after: &BorrowLedger,
         participant: super::loans::LoanParticipantId,
     ) -> Self {
         let mut local_views = self.storage.local_views.clone();
@@ -663,8 +663,8 @@ impl ThreadLedger {
     fn without_right(
         &self,
         handle: ThreadHandle,
-        before: &LoanLedger,
-        after: &LoanLedger,
+        before: &BorrowLedger,
+        after: &BorrowLedger,
         participant: super::loans::LoanParticipantId,
         local_updates: &BTreeMap<ResourceFact, Option<LoanViewBinding>>,
     ) -> Self {
@@ -989,7 +989,7 @@ impl ThreadContext {
         }
         match (parent.loan_ledger(), parent.loan_participant()) {
             (None, None) => {
-                let ledger = LoanLedger::new();
+                let ledger = BorrowLedger::new();
                 let participant = ledger.fresh_participant().map_err(|_| {
                     RuntimeError::FunctionContract("invalid parent participant".to_string())
                 })?;

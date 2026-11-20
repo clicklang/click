@@ -25,13 +25,13 @@ resource second_reader(p: int32*) {
 }
 
 extern void pack(int32* p) {
-    views p[0..1];
-    produces first_reader(p);
+    views p[0..1] as input;
+    produces first_reader(p) from input;
 }
 
 extern void repack(int32* p) {
-    consumes first_reader(p);
-    produces second_reader(p);
+    consumes first_reader(p) as input;
+    produces second_reader(p) from input;
 }
 
 extern void drop(int32* p) {

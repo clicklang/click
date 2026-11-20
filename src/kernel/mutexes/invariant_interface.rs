@@ -501,7 +501,7 @@ mod tests {
         let (published, payload) = published();
         let protocols = published.state.mutex_ledger.as_ref().unwrap();
         let owner = protocols.live_resource(&address()).unwrap();
-        let loans = LoanLedger::new();
+        let loans = BorrowLedger::new();
         let caller = loans.fresh_participant().unwrap();
         let helper = loans.fresh_participant().unwrap();
         let nested = loans.fresh_participant().unwrap();
@@ -586,7 +586,7 @@ mod tests {
         let (replacement, _) = published();
         let first_protocols = first.state.mutex_ledger.as_ref().unwrap();
         let owner = first_protocols.live_resource(&address()).unwrap();
-        let loans = LoanLedger::new();
+        let loans = BorrowLedger::new();
         let caller = loans.fresh_participant().unwrap();
         let helper = loans.fresh_participant().unwrap();
         let mut transfer = MutexUseCallTransfer::prepare(

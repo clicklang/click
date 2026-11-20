@@ -168,7 +168,7 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
 
 #[test]
 fn exit_cell_separation_shares_the_active_loan_footprint() {
-    use crate::kernel::loans::LoanLedger;
+    use crate::kernel::loans::BorrowLedger;
 
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address::symbolic(Variable(927_000));
@@ -177,7 +177,7 @@ fn exit_cell_separation_shares_the_active_loan_footprint() {
     let memory = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
     let mut samples = Vec::new();
     for count in [4u64, 16, 64, 256] {
-        let mut ledger = LoanLedger::new();
+        let mut ledger = BorrowLedger::new();
         let holder = ledger.fresh_participant().unwrap();
         for index in 0..count {
             // Include overlap with the changed cell. Construction must retain

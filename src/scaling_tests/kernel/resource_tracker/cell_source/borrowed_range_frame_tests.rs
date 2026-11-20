@@ -30,7 +30,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         let bare = partition.clone();
         let view = ResourceFact::view_memory(descriptor.clone());
         let support = partition.occurrences_for_fact(&view)[0];
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let holder = ledger.fresh_participant().unwrap();
         let opening = ledger
             .borrowed_contract_input(holder, support, view.clone(), None)

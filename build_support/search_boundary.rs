@@ -136,15 +136,13 @@ impl Boundary<'_> {
             && name == "normalized")
             || (self.path == "src/kernel/functions.rs"
                 && self.function == "recover_candidate_stable_view_resources"
-                && matches!(name, "permitted_descriptions" | "view_occurrences_for_fact"))
-            || (self.path == "src/kernel/functions/return_loan_backing.rs"
-                && self.function == "select"
                 && matches!(
                     name,
                     "permitted_descriptions"
-                        | "stable_views"
+                        | "view_occurrences_for_fact"
+                        | "canonical_pointer"
                         | "exact_pointer_aliases"
-                        | "transferred_holds"
+                        | "pointer_alias_class"
                 ))
         {
             self.errors.push(format!("{}: {} must consume selected return evidence without ownership rediscovery ({name})", self.path, self.function));

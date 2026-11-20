@@ -21,7 +21,7 @@ fn view(index: usize, end: u32) -> CheckedResourceFact {
 }
 
 fn plan() -> StableViewTransferPlan {
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     plan_stable_view_transfer(
         &ResourceContext::new(),
         &[],
@@ -70,7 +70,7 @@ fn local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow() {
 }
 
 fn lend_memory(
-    ledger: &LoanLedger,
+    ledger: &BorrowLedger,
     lender: LoanParticipantId,
     borrower: LoanParticipantId,
     range: MemoryRange,
@@ -91,7 +91,7 @@ fn automatic_storage_retirement_uses_the_retained_backing_identity() {
     let bound = MachineTerm::Variable(Variable(91));
     let symbolic = MemoryRange::new(Address::symbolic(Variable(90)), 0u32.into(), bound.clone())
         .with_provenance(Arc::new(slot.clone()));
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let lender = ledger.fresh_participant().unwrap();
     let borrower = ledger.fresh_participant().unwrap();
     let empty = lend_memory(
@@ -155,7 +155,7 @@ fn local_loan_admission_distinguishes_overlap_from_missing_separation() {
     let memory = SymbolicMemory::new().with_block(range.base().base.clone(), 4);
     let backing = LocalViewBacking::check(&memory, &requirement.fact, &PureFactContext::new())
         .expect("one live local cell");
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let lender = ledger.fresh_participant().unwrap();
     let borrower = ledger.fresh_participant().unwrap();
     let opening = lend_memory(&ledger, lender, borrower, range.clone());

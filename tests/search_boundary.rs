@@ -1601,12 +1601,12 @@ fn constructed_returns_and_selected_backings_cannot_restore_discovery() {
             "fn recover_candidate_stable_view_resources(c:C) { c.permitted_descriptions(loan); }",
         ),
         (
-            "src/kernel/functions/return_loan_backing.rs",
-            "fn select(c:C) { c.stable_views(); }",
+            "src/kernel/functions.rs",
+            "fn recover_candidate_stable_view_resources(c:C) { c.canonical_pointer(p); }",
         ),
         (
-            "src/kernel/functions/return_loan_backing.rs",
-            "fn select(c:C) { c.exact_pointer_aliases(p); }",
+            "src/kernel/functions.rs",
+            "fn recover_candidate_stable_view_resources(c:C) { c.exact_pointer_aliases(p); }",
         ),
         (
             "src/kernel/functions.rs",

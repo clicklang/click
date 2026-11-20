@@ -889,11 +889,8 @@ fn a_borrowed_composites_post_footprint_cannot_overlap_a_transferred_cell() {
         .with_memory(memory.store(field, ProgramValue::pointer(cell)))
         .with_resource_context(ResourceContext::new_with_equalities(&facts));
     let transfers = ConsumedCellReturns {
-        frontier: None,
         direct: BTreeMap::from([(1, selected)]),
-        children: BTreeMap::new(),
-        borrowed: BTreeMap::new(),
-        constructed: BTreeMap::new(),
+        ..ConsumedCellReturns::default()
     };
     let result = evaluate_contract_return_resources(
         &ResourceContext::new_with_equalities(&facts),
@@ -1240,7 +1237,7 @@ fn flat_composite_return_carries_its_body_through_frontier_and_projection() {
     );
     let mut views = Vec::new();
     for projection in projected {
-        assert_eq!(projection.frontier.len(), 3);
+        assert_eq!(bodies.get(projection.source).unwrap().frontier.len(), 3);
         let (next, inserted) = destination
             .unchecked_with_supported_facts_from_occurrence_with_memory_and_occurrences(
                 projection.destination,
@@ -1388,8 +1385,12 @@ fn sealed_return_dispatch_retains_opaque_identity_and_projection_needs_no_defini
         &destination,
     );
     assert_eq!(projected[0].expansion, vec![head]);
-    assert!(projected[0].frontier.is_empty());
     assert!(projected[0].viewed_children.as_slice().is_empty());
+    let forwarded = projected[0].backed_pieces(ReturnedBorrowSource::Forwarded(source));
+    assert_eq!(forwarded.len(), 1);
+    assert_eq!(forwarded[0].source, ReturnedBorrowSource::Forwarded(source));
+    assert!(forwarded[0].viewed.is_none());
+    assert_eq!(forwarded[0].destination, transfers[0].destination);
 }
 
 #[test]
@@ -2089,7 +2090,7 @@ fn selected_view_expansion_fixture_with_cells(
         "selected_view".into(),
         vec![ProgramValue::pointer(pointer.clone())],
     );
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let caller = ledger.fresh_participant().unwrap();
     let callee = ledger.fresh_participant().unwrap();
     let input = CheckedResourceFact {
@@ -2206,7 +2207,7 @@ pub(in crate::kernel::functions) fn returned_hold_fixture_with_ledger(
 ) -> (
     ResourceContext,
     Vec<crate::kernel::loans::EscapedHold>,
-    LoanLedger,
+    BorrowLedger,
     crate::kernel::loans::LoanParticipantId,
 ) {
     let facts = PureFactContext::new();
@@ -2221,7 +2222,7 @@ pub(in crate::kernel::functions) fn returned_hold_fixture_with_ledger(
         selected_mutex_source: None,
         mutex_storage: None,
     };
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let caller = ledger.fresh_participant().unwrap();
     let callee = ledger.fresh_participant().unwrap();
     let plan = crate::kernel::loans::plan_stable_view_transfer(
@@ -2243,7 +2244,7 @@ pub(in crate::kernel::functions) fn returned_hold_fixture_with_ledger(
             .map(|(head, occurrence)| crate::kernel::loans::EscapingBorrow {
                 head,
                 occurrence,
-                root_permission: None,
+                root_permission: plan.stable_views()[0].requirement.fact.clone(),
             })
             .collect(),
     )]);
@@ -2335,21 +2336,14 @@ fn packaged_views_keep_normalized_descriptions_and_the_raw_source_group() {
         &facts,
         &destination,
     );
-    let pieces = projected[0].constructed_borrowing_pieces();
-    assert_eq!(pieces.len(), 1);
-    assert_eq!(
-        pieces[0].piece,
-        ResourceFact::view_memory(MemoryRange::new(pointer, 0u32.into(), 2u32.into()))
-    );
-    assert_eq!(
-        pieces[0].sources.as_ref(),
-        &body
-            .viewed_children
-            .iter()
-            .map(|(_, source)| *source)
-            .collect::<Vec<_>>()
-    );
-    assert_eq!(pieces[0].support.occurrence, transfers[0].destination);
+    let source = ReturnedBorrowSource::Input(0);
+    let pieces = projected[0].backed_pieces(source);
+    assert_eq!(pieces.len(), 2);
+    for (piece, (fact, occurrence)) in pieces.iter().zip(&body.viewed_children) {
+        assert_eq!(piece.viewed.as_ref(), Some(&(fact.clone(), *occurrence)));
+        assert_eq!(piece.source, source);
+        assert_eq!(piece.destination, transfers[0].destination);
+    }
 }
 
 #[test]
@@ -2405,7 +2399,7 @@ fn escrow_boundary_checks_body_frontiers_against_released_inherited_holds() {
 #[test]
 fn escrow_recovery_uses_the_lend_time_frontier_of_a_folded_owner() {
     use crate::kernel::loans::{
-        CompositeLoanBacking, LoanLedger, LoanViewBindings,
+        BorrowLedger, CompositeLoanBacking, LoanViewBindings,
         plan_stable_view_transfer_with_bindings_and_composites,
     };
     let _session = crate::kernel::VerificationSession::enter();
@@ -2418,7 +2412,7 @@ fn escrow_recovery_uses_the_lend_time_frontier_of_a_folded_owner() {
     let head = ResourceFact::own_composite("protected".into(), vec![]);
     let caller = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(head.clone());
     let source = caller.unique_owned_occurrence_for_fact(&head).unwrap().0;
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let lender = ledger.fresh_participant().unwrap();
     let borrower = ledger.fresh_participant().unwrap();
     let request = CheckedResourceFact {

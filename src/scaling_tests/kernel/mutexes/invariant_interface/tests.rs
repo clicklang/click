@@ -62,7 +62,7 @@ fn use_interface_call_binding_scales_independently_of_resource_frame() {
         }
         let protocols = context.state.mutex_ledger.as_ref().unwrap();
         let owner = protocols.live_resource(&address()).unwrap();
-        let loans = LoanLedger::new();
+        let loans = BorrowLedger::new();
         let caller = loans.fresh_participant().unwrap();
         let helper = loans.fresh_participant().unwrap();
         let ((returned, work), persistent) = crate::persistent::measure_persistent_work(|| {

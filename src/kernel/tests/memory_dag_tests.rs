@@ -1412,7 +1412,7 @@ fn loan_preserving_havoc_uses_the_full_cell_footprint() {
         .unique_owned_occurrence_for_fact(&fact)
         .expect("memory backing")
         .0;
-    let ledger = crate::kernel::loans::LoanLedger::new();
+    let ledger = crate::kernel::loans::BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner identity");
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
@@ -1448,7 +1448,7 @@ fn loan_havoc_may_forget_a_run_crossing_the_interval_index_boundary() {
         .unique_owned_occurrence_for_fact(&fact)
         .unwrap()
         .0;
-    let ledger = crate::kernel::loans::LoanLedger::new();
+    let ledger = crate::kernel::loans::BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let reader = ledger.fresh_participant().unwrap();
     let opening = ledger.lend(owner, reader, support, fact.clone()).unwrap();

@@ -72,7 +72,7 @@ fn arm_holding_a_view(name: &str) -> (ExecutionState, crate::kernel::loans::Loan
         .unchecked_with_facts([support_fact.clone(), viewed.clone()]);
     let support = resources.owned_occurrences_for_fact(&support_fact)[0];
     let occurrence = resources.occurrences_for_fact(&viewed)[0];
-    let ledger = crate::kernel::loans::LoanLedger::new();
+    let ledger = crate::kernel::loans::BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner identity");
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger

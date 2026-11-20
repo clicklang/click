@@ -14,7 +14,7 @@ fn holding_a_scope_mints_a_distinct_ledger_identity() {
         MachineTerm::constant(8),
     ));
     let context = ResourceContext::new().unchecked_with_fact(fact.clone());
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner identity");
     let reader = ledger.fresh_participant().expect("reader identity");
     let (support, _) = context
