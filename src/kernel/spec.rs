@@ -3487,13 +3487,11 @@ fn lower_spec_algebraic_comparison_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
-    if super::functions::spec_algebraic_expression_is_obligation_free(left)
+    if (algebraic_match_reconstructs(left, right) || algebraic_match_reconstructs(right, left))
+        && super::functions::spec_algebraic_expression_is_obligation_free(left)
         && super::functions::spec_algebraic_expression_is_obligation_free(right)
         && super::functions::spec_algebraic_expression_is_state_independent(left)
         && super::functions::spec_algebraic_expression_is_state_independent(right)
-        && (left == right
-            || algebraic_match_reconstructs(left, right)
-            || algebraic_match_reconstructs(right, left))
     {
         return Ok(vec![SpecPropositionPath {
             introductions: Vec::new(),
@@ -3527,15 +3525,10 @@ fn lower_spec_algebraic_comparison_at_state_in(
             ) else {
                 continue;
             };
-            // State-dependent projections must be resolved (and their ownership
-            // checked) before reflexivity can close a symbolic application.
-            let left = algebraic_output(left_path.value.root().clone());
-            let right = algebraic_output(right_path.value.into_kernel());
-            let equality = if evaluated_algebraic_operands_equal(&left, &right) {
-                Proposition::condition_is(ConditionTerm::Constant(true), true)
-            } else {
-                Proposition::Equal(left, right)
-            };
+            let equality = Proposition::Equal(
+                algebraic_output(left_path.value.root().clone()),
+                algebraic_output(right_path.value.into_kernel()),
+            );
             paths.push(SpecPropositionPath {
                 introductions: if equal {
                     Vec::new()
@@ -4325,30 +4318,6 @@ fn spec_algebraic_result_match_arms_are_well_formed(
                         arm.binding_types == variant.fields && arm.bindings_are_well_formed()
                     })
         })
-}
-
-// Different evaluated algebraic node forms have different native syntax.
-// For the same form, keep the existing native equality contract, including
-// cases where equal values carry different producer metadata.
-fn evaluated_algebraic_operands_equal(left: &Term, right: &Term) -> bool {
-    let (Term::Algebraic(left), Term::Algebraic(right)) = (left, right) else {
-        unreachable!("evaluated algebraic operands")
-    };
-    let (a, b) = (
-        left.root().expect("evaluated root"),
-        right.root().expect("evaluated root"),
-    );
-    match (a.node(), b.node()) {
-        (KernelTermNode::Legacy(_), _) | (_, KernelTermNode::Legacy(_)) => left == right,
-        (KernelTermNode::Variable(a), KernelTermNode::Variable(b)) => a == b,
-        (KernelTermNode::Constructor(a), KernelTermNode::Constructor(b))
-            if a.variant != b.variant =>
-        {
-            false
-        }
-        (a, b) if std::mem::discriminant(a) != std::mem::discriminant(b) => false,
-        _ => left == right,
-    }
 }
 
 /// Store evaluated operands and newly produced arm witnesses in their common form.

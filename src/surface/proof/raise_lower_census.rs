@@ -266,6 +266,37 @@ mod tests {
     }
 
     #[test]
+    fn reflexive_algebraic_comparisons_raise_the_same_after_lowering_and_rewrite() {
+        let fixture = include_str!("../../../mdtests/reflexive_algebraic_comparisons.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        for (case, kind) in [
+            ("equal", "equal:algebraic"),
+            ("not_equal", "not/not/equal:algebraic"),
+        ] {
+            let written =
+                format!("raised\tgoal\t{kind}\twritten_{case}.ensures_0\tintro()\twritten\t");
+            let rewritten =
+                format!("raised\tgoal\t{kind}\trewritten_{case}.ensures_0\trewrite\twritten\t");
+            let raised = |prefix: &str| {
+                lines
+                    .iter()
+                    .find_map(|line| line.strip_prefix(prefix))
+                    .unwrap_or_else(|| panic!("missing {prefix:?}: {lines:#?}"))
+            };
+            assert_eq!(raised(&written), raised(&rewritten));
+        }
+    }
+
+    #[test]
     fn algebraic_match_arm_values_name_unfold_facts() {
         let source = r#"
 verifying "keep.c";
