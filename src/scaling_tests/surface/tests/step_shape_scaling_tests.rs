@@ -906,12 +906,18 @@ fn checked_indexed_store_skips_a_separately_owned_array() {
             let sample = run(
                 |size| {
                     let signature = "void caller(int32* a, int32* b, int32 length, int32 i, int32 j)";
-                    let order = if ordered { "    requires i < j;\n" } else { "" };
+                    let (bound, order) = if ordered {
+                        ("length", "    requires i < j;\n")
+                    } else {
+                        // An upper bound that is another variable would rank
+                        // `i` even without a second order premise.
+                        ("32", "")
+                    };
                     let filled = lines(size, |index| format!("    a[{index}] = {index};"));
                     let c = format!("{signature} {{\n{filled}\n    b[i] = 1;\n    b[i] = 2;\n    b[i] = 3;\n    return;\n}}");
                     let proof = steps(size + 4);
                     let click = format!(
-                        "verifying \"hunt.c\";\n{signature} {{\n    owns a[0..{size}];\n    owns b[0..length];\n    requires 0 <= i;\n    requires i < length;\n{order}}} by {{\n{proof}\n}}"
+                        "verifying \"hunt.c\";\n{signature} {{\n    owns a[0..{size}];\n    owns b[0..{bound}];\n    requires 0 <= i;\n    requires i < {bound};\n{order}}} by {{\n{proof}\n}}"
                     );
                     (c, click)
                 },
