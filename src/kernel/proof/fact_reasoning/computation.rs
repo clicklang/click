@@ -300,6 +300,13 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             {
                 return Some(matches!(condition, ConditionTerm::IntegerEqual(..)));
             }
+            if matches!(
+                condition,
+                ConditionTerm::IntegerEqual(..) | ConditionTerm::IntegerNotEqual(..)
+            ) && let Some(equal) = conditional_int32_equality(left, right)
+            {
+                return Some(equal == matches!(condition, ConditionTerm::IntegerEqual(..)));
+            }
             super::super::integer_arithmetic::literal_integer_comparison_value(condition)
                 .or_else(|| integer_affine_comparison(condition))
                 .or_else(|| integer_operation_bound_comparison(condition))
@@ -315,6 +322,16 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                 && unchanged_machine_folds_equal(left, right)
             {
                 return Some(true);
+            }
+            let a = MachineOperandView::Legacy(left);
+            let b = MachineOperandView::Legacy(right);
+            if *format == MachineIntegerType::Int32
+                && *relation == CompareRelation::Equal
+                && (a.conditional_view().is_some() || b.conditional_view().is_some())
+                && let (Some(a), Some(b)) = (a.observe(*format), b.observe(*format))
+                && let Some(equal) = conditional_int32_equality(&a, &b)
+            {
+                return Some(equal);
             }
             if let Some(answer) = known_int32_match_comparison_value(condition) {
                 return Some(answer);
@@ -437,6 +454,73 @@ pub(super) fn known_int32_match_comparison_value(condition: &ConditionTerm) -> O
         CompareRelation::GreaterThan => ordering.is_gt(),
         CompareRelation::GreaterEqual => !ordering.is_lt(),
     })
+}
+
+/// Evaluate only a chain of selected machine arms. Constructor rewriting
+/// already substitutes the fields, so each guard is checked in its written
+/// form without resolving reads, variable aliases, or calls.
+fn conditional_int32_observation(value: &IntegerTerm) -> Option<IntegerTerm> {
+    let IntegerTerm::Machine(value) = value else {
+        return None;
+    };
+    if value.ty() != MachineIntegerType::Int32 {
+        return None;
+    }
+    let mut operand = value.operand_view();
+    let (mut guard, mut arms) = operand.conditional_view()?;
+    loop {
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return None;
+        }
+        operand = arms[usize::from(!int32_conditional_guard(guard)?)];
+        let Some(next) = operand.conditional_view() else {
+            return operand.observe(MachineIntegerType::Int32);
+        };
+        (guard, arms) = next;
+    }
+}
+
+fn int32_conditional_guard(guard: BooleanOperandView<'_>) -> Option<bool> {
+    if let Some(ConditionTerm::Constant(value)) = guard.native_leaf() {
+        return Some(*value);
+    }
+    if let BooleanOperandView::Shared(root) = guard
+        && let KernelTermNode::BoolLiteral(value) = root.node()
+    {
+        return Some(*value);
+    }
+    let (MachineIntegerType::Int32, CompareRelation::Equal, [left, right]) = guard.comparison()?
+    else {
+        return None;
+    };
+    match (left, right) {
+        (MachineOperandView::Shared(a), MachineOperandView::Shared(b)) if a == b => Some(true),
+        (MachineOperandView::Legacy(a), MachineOperandView::Legacy(b)) if std::ptr::eq(a, b) => {
+            Some(true)
+        }
+        _ if left
+            .variable()
+            .is_some_and(|var| right.variable() == Some(var)) =>
+        {
+            Some(true)
+        }
+        _ => Some(left.literal()?.as_const()? == right.literal()?.as_const()?),
+    }
+}
+
+fn conditional_int32_equality(left: &IntegerTerm, right: &IntegerTerm) -> Option<bool> {
+    let a = conditional_int32_observation(left);
+    let b = conditional_int32_observation(right);
+    if a.is_none() && b.is_none() {
+        return None;
+    }
+    let a = a.as_ref().unwrap_or(left);
+    let b = b.as_ref().unwrap_or(right);
+    if a == b {
+        Some(true)
+    } else {
+        Some(a.as_const()? == b.as_const()?)
+    }
 }
 
 fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<bool> {
