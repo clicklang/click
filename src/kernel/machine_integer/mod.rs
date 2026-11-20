@@ -38,6 +38,7 @@ pub(crate) mod identity;
 pub(crate) mod modular;
 pub(crate) mod range;
 pub(crate) mod representation;
+pub(in crate::kernel) mod wide_spec;
 
 #[cfg(test)]
 mod matrix_tests;
