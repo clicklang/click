@@ -4756,6 +4756,9 @@ fn prove_program_condition_fact_transport_with_assumptions(
 ) -> Option<Theorem> {
     #[cfg(test)]
     crate::kernel::search::record_discovery("condition fact transport");
+    if crate::instrumentation::replay_forbids_discovery("condition fact transport") {
+        return None;
+    }
     // Per-arm returns, no shared conclusion local: this function sits in
     // transport recursion, and a by-value `Proposition` local overflows the
     // expansion stack.

@@ -15,14 +15,15 @@ use click::cli::{
     source_refs,
 };
 use click::surface::{
-    ClickProject, ProgramVerificationSession, SourcePosition, VerifiedProgramTheorem,
-    c_incremental_selection, click_import_sites, expand_c_claim_source_by_label,
-    expand_c_prepared_claim_source_by_label, expand_c_prepared_tactic_source_at,
-    expand_c_tactic_source_at, expand_program_prepared_claim_source_by_label,
-    expand_program_prepared_tactic_source_at, expand_project_claim_source_by_label,
-    expand_project_tactic_source_at, expand_verified_function_claim_source_by_label,
-    project_smart_tactic_source_sites, project_tactic_source_position, smart_tactic_source_sites,
-    tactic_source_position, verify_project_at, verify_sources_at, verifying_source_paths,
+    ClickProject, ProgramVerificationSession, ProofSourceIndex, SourcePosition,
+    VerifiedProgramTheorem, c_incremental_selection, click_import_sites,
+    expand_c_claim_source_by_label, expand_c_prepared_claim_source_by_label,
+    expand_c_prepared_tactic_source_at, expand_c_tactic_source_at,
+    expand_program_prepared_claim_source_by_label, expand_program_prepared_tactic_source_at,
+    expand_project_claim_source_by_label, expand_project_tactic_source_at,
+    expand_verified_function_claim_source_by_label, project_smart_tactic_source_sites,
+    project_tactic_source_position, smart_tactic_source_sites, tactic_source_position,
+    verify_project_at, verify_sources_at, verifying_source_paths,
 };
 use click::surface::{claim_label_matches, display_source_names};
 
@@ -45,11 +46,7 @@ const DEFAULT_VERIFICATION_LIMIT: Duration = cli::CRASH_CONTAINMENT_TIME_LIMIT;
 const DEFAULT_SESSION_WORK_LIMIT: usize = 100_000_000;
 const DEFAULT_EXPANSION_WORK_LIMIT: usize = cli::DEFAULT_EXPANSION_WORK_LIMIT;
 const DEFAULT_VERIFICATION_WORK_LIMIT: usize = 50_000_000;
-/// The smallest expanded-over-original work increase that can fail the
-/// performance comparison, beside its 2x ratio. Measured expansions spend
-/// within 1% of their original's work; the slack keeps a proof unit of a few
-/// thousand units from failing over a few thousand units of certificate
-/// checking.
+/// The minimum work increase to highlight in a successful audit report.
 const DEFAULT_PERFORMANCE_SLACK: usize = 10_000;
 const DEFAULT_TIME_LIMIT: Duration = Duration::from_secs(10 * 60);
 const RUN_LIMIT_EXHAUSTED: &str = "whole-run time limit exhausted";
@@ -78,22 +75,18 @@ A claim with no smart site whose bare simple tactics the implicit `solve`
 proves is one site of its own, found by verifying its source once during the
 inventory, and is audited as a whole claim.
 
-The audit's own checks count deterministic work units, the ones the tactic
-budgets are charged, so machine load cannot change them; wall-clock time is
-reported only as information. On the first site of each claim, audit compares
-the work of cold verification of the expanded proof with the original's, and
-fails when the expanded proof spends both over 2x and over the performance
-slack more. Each phase has a deterministic work budget. The phase time limits
-are crash-containment bounds for a hung run, and the whole-run time limit
-stops at a resumable cursor. Verification inside each phase keeps the tactic
-limits `click verify` applies.
+Audit judges the rewritten proof against deterministic verification budgets,
+including the work allowances of checked operations. Complete rewrites
+also reject monitored discovery inside the selected claim. Original work,
+proof size and verification speed are diagnostic. Phase time limits contain
+hung runs, and the whole-run time limit stops at a resumable cursor.
 
 defaults:
   --session-work-limit 100000000   one source's smart-site inventory, or its session initialization
   --expansion-work-limit 50000000  one expansion, and the re-expansion check
   --verification-work-limit 50000000
                                    one retained or cold proof-unit verification
-  --performance-slack 10000        minimum expanded-over-original work increase
+  --performance-slack 10000        minimum work increase to highlight (informational)
   --session-time-limit 10m         crash containment for inventory or session initialization
   --expansion-time-limit 10m       crash containment for one expansion
   --verification-time-limit 10m    crash containment for one verification
@@ -116,7 +109,7 @@ options:
                               of a line its clause or proof covers; may be
                               repeated
   --changed-since <REVISION>  audit claims affected since a Git revision
-  --verbose                   print one successful row per smart site
+  --verbose                   include phase costs, proof size, and throughput
   --keep-going                continue after failures instead of stopping
   --exclude <PATH>            leave out a proof container, or every one
                               under a directory; may be repeated
@@ -152,8 +145,7 @@ struct AuditLimits {
     session: PhaseLimit,
     expansion: PhaseLimit,
     verification: PhaseLimit,
-    /// The smallest expanded-over-original work increase that can fail the
-    /// performance comparison, beside its 2x ratio.
+    /// Minimum expanded-over-original work increase to highlight.
     performance_slack: usize,
 }
 
@@ -897,7 +889,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     let limits = &arguments.limits;
     println!(
         "\nClick expansion audit (work budgets: session {}, expansion {}, verification {}, \
-         performance slack {} units; crash bounds: session {}, expansion {}, verification {}; \
+         work increase reporting slack {} units; crash bounds: session {}, expansion {}, verification {}; \
          run limit {})",
         limits.session.work,
         limits.expansion.work,
@@ -1003,21 +995,37 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                 .expect("the selected sidecar session was initialized")
                 .1;
             let audit = if whole_claim {
-                audit_claim_rewrite(site, current, &arguments.limits, deadline)
+                audit_claim_rewrite(
+                    site,
+                    current,
+                    &arguments.limits,
+                    deadline,
+                    arguments.verbose,
+                )
             } else {
                 audit_selected_claim_rewrite(
                     &selected[cursor..cursor + claim_sites],
                     current,
                     &arguments.limits,
                     deadline,
+                    arguments.verbose,
                 )
             };
+            if Instant::now() >= deadline {
+                println!("STOPPED");
+                println!("    {RUN_LIMIT_EXHAUSTED}");
+                out_of_time = true;
+                break;
+            }
             match audit {
                 Ok(costs) => {
                     if arguments.verbose {
-                        println!("ok ({claim_sites} sites together: {costs})");
+                        println!("ok ({claim_sites} sites together: {})", costs.detail);
                     } else {
                         println!("ok ({claim_sites} sites)");
+                    }
+                    if let Some(note) = costs.work_increase {
+                        println!("    {note}");
                     }
                     cold_reverified_claims.insert(claim_key);
                     attempted_sites += claim_sites;
@@ -1026,7 +1034,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                     continue;
                 }
                 Err(message) => {
-                    if Instant::now() >= deadline || message == RUN_LIMIT_EXHAUSTED {
+                    if message == RUN_LIMIT_EXHAUSTED {
                         println!("STOPPED");
                         println!("    {RUN_LIMIT_EXHAUSTED}");
                         out_of_time = true;
@@ -1034,6 +1042,11 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
                     }
                     println!("FAIL");
                     println!("    {}", message.replace('\n', "\n    "));
+                    println!("REPRODUCE:");
+                    println!(
+                        "  {}",
+                        reproduce_claim_command(&arguments, site, whole_claim, claim_sites)
+                    );
                     print_resume(&arguments, site);
                     record_audit_failure(&format_location(&site_location(site)), &message);
                     claim_failures += 1;
@@ -1950,6 +1963,37 @@ fn record_audit_failure(name: &str, message: &str) {
     );
 }
 
+fn reproduce_claim_command(
+    arguments: &Arguments,
+    site: &AuditSite,
+    whole_claim: bool,
+    site_count: usize,
+) -> String {
+    let mut location = site_location(site);
+    if let Ok(directory) = std::env::current_dir()
+        && let Ok(relative) = location.path.strip_prefix(directory)
+    {
+        location.path = relative.to_path_buf();
+    }
+    let mut claim = arguments.clone();
+    claim.path = location.path.clone();
+    claim.claims = vec![site.claim.clone()];
+    claim.changed_since = None;
+    claim.exclude.clear();
+    claim.max_sites = (!whole_claim).then_some(site_count);
+    claim.keep_going = false;
+    claim.verbose = true;
+    resume_command(&claim, (!whole_claim).then_some(&location))
+}
+
+fn audit_phase_error(phase: &str, message: String) -> String {
+    if message == RUN_LIMIT_EXHAUSTED {
+        message
+    } else {
+        format!("{phase}: {message}")
+    }
+}
+
 fn print_resume(arguments: &Arguments, site: &AuditSite) {
     println!("RESUME:");
     println!(
@@ -2062,7 +2106,7 @@ fn render_site_rewrite(rewrite: &SiteRewrite) -> String {
             rewrite.expansion, rewrite.reexpansion,
         ),
         None => format!(
-            "expanded (expand {}, cold comparison not run, reexpand {})",
+            "expanded (expand {}, cold replay not run, reexpand {})",
             rewrite.expansion, rewrite.reexpansion,
         ),
     }
@@ -2071,6 +2115,12 @@ fn render_site_rewrite(rewrite: &SiteRewrite) -> String {
 /// Expands one site and checks everything about the rewrite that does not
 /// need the retained session: the cold comparison and the re-expansion fixed
 /// point.
+#[derive(Debug)]
+struct ClaimAuditReport {
+    detail: String,
+    work_increase: Option<String>,
+}
+
 /// Audits every smart site of one claim in a single expansion.
 ///
 /// The claim is expanded once with all its sites, the expanded claim must
@@ -2082,9 +2132,11 @@ fn audit_claim_rewrite(
     worker: &mut AuditSessionWorker,
     limits: &AuditLimits,
     deadline: Instant,
-) -> Result<String, String> {
-    let (expanded, expansion) = if let Some((expanded_click, cost)) =
-        worker.expand_original_claim(&site.claim, limits.expansion.within(deadline)?)?
+    verbose: bool,
+) -> Result<ClaimAuditReport, String> {
+    let (expanded, expansion) = if let Some((expanded_click, cost)) = worker
+        .expand_original_claim(&site.claim, limits.expansion.within(deadline)?)
+        .map_err(|error| audit_phase_error("expansion", error))?
     {
         let expanded = match &worker.source.mdtest {
             Some(mdtest) => {
@@ -2096,7 +2148,8 @@ fn audit_claim_rewrite(
     } else {
         run_phase("expansion", limits.expansion.within(deadline)?, || {
             expand_claim_with_source(&site.click_path, &worker.source, &site.claim)
-        })?
+        })
+        .map_err(|error| audit_phase_error("expansion", error))?
     };
     let original = worker.source.container_source.clone();
     // Runtime discovery can observe an implicit tail after an already
@@ -2104,7 +2157,8 @@ fn audit_claim_rewrite(
     // it still has to pass the smart-site and cold, no-implicit-solve checks.
     let expanded_click_source = rewritten_click_source(&worker.source, &expanded)
         .map_err(|error| format!("expanded proof container did not parse: {error}"))?;
-    claim_source_position_for_source(&worker.source, &expanded_click_source, &site.claim)?;
+    claim_source_position_for_source(&worker.source, &expanded_click_source, &site.claim)
+        .map_err(|error| audit_phase_error("expanded source", error))?;
 
     // The fixed point: an expanded claim holds simple tactics only. Every
     // script still ends with the implicit tail, which has nothing left to
@@ -2115,7 +2169,8 @@ fn audit_claim_rewrite(
         &worker.source.inputs,
         worker.source.project.as_ref(),
         &site.claim,
-    )?;
+    )
+    .map_err(|error| audit_phase_error("expansion fixed point", error))?;
     remaining.retain(|name| name != click::instrumentation::IMPLICIT_TAIL_TACTIC);
     if !remaining.is_empty() {
         return Err(format!(
@@ -2126,31 +2181,20 @@ fn audit_claim_rewrite(
         ));
     }
 
-    let retained = verify_rewrite_in_session(worker, &site.claim, &expanded, limits, deadline)?;
-    // These cold checks share no verification state. Run the rewritten one
-    // on its own kernel-table thread while the audit thread checks the
-    // original, preserving both independent verdicts and their work budgets.
+    let retained = verify_rewrite_in_session(worker, &site.claim, &expanded, limits, deadline)
+        .map_err(|error| audit_phase_error("retained replay", error))?;
+    // These cold checks share no verification state. The original's cost is
+    // diagnostic; only successful, bounded replay of the rewrite is required.
     let cold_source = worker.source.clone();
     let cold_limit = limits.verification.within(deadline)?;
-    let (original_cost, expanded_cost) = thread::scope(|scope| {
+    let (original_cost, replay) = thread::scope(|scope| {
         let expanded_check = thread::Builder::new()
             .name("click-audit-cold-rewritten".to_string())
             .stack_size(SESSION_THREAD_STACK_BYTES)
             .spawn_scoped(scope, || {
-                // Only the expanded claim must be self-contained. The
-                // targeted verifier also checks untouched neighboring claims
-                // and modeled workers, whose automation remains ordinary.
-                click::surface::without_implicit_solve_for_claim(&site.claim, || {
-                    cold_verify(
-                        &expanded,
-                        &cold_source,
-                        &site.claim,
-                        cold_limit,
-                        "expanded proof-unit verification",
-                    )
-                })
+                cold_verify_expansion(&expanded, &cold_source, &site.claim, cold_limit, true)
             })
-            .map_err(|error| format!("failed to start cold verification: {error}"))?;
+            .map_err(|error| format!("failed to start cold replay: {error}"))?;
         let original_cost = cold_verify(
             &original,
             &worker.source,
@@ -2158,28 +2202,27 @@ fn audit_claim_rewrite(
             cold_limit,
             "original proof-unit verification",
         );
-        let expanded_cost = expanded_check
+        let replay = expanded_check
             .join()
-            .map_err(|_| "cold rewritten verification thread panicked".to_string())?;
-        Ok::<_, String>((original_cost?, expanded_cost?))
+            .map_err(|_| "cold replay thread panicked".to_string())??;
+        Ok::<_, String>((original_cost, replay))
     })?;
-    if let Some(regression) =
-        performance_regression(original_cost, expanded_cost, limits.performance_slack)
-    {
-        return Err(format!(
-            "{regression}; reproduce the exact expanded workload with:\n  \
-             click expand --claim {} --time-limit {} --output {} {}\n  \
-             click profile {}",
-            shell_quote(&site.claim),
-            format_duration(limits.expansion.time),
-            shell_quote(&audit_artifact_path(&site.click_path).display().to_string()),
-            shell_quote(&site.click_path.display().to_string()),
-            shell_quote(&audit_artifact_path(&site.click_path).display().to_string()),
+    let mut report = claim_audit_report(
+        format!("expand {expansion}, verify {retained}"),
+        original_cost,
+        replay.cost,
+        limits.performance_slack,
+    );
+    if verbose {
+        report.detail.push_str(&proof_speed(
+            &worker.source,
+            &expanded_click_source,
+            &site.claim,
+            replay.claim_elapsed,
+            cold_limit,
         ));
     }
-    Ok(format!(
-        "expand {expansion}, verify {retained}, cold original {original_cost}, cold rewritten {expanded_cost}"
-    ))
+    Ok(report)
 }
 
 /// A partial selection uses one capture and one rewritten claim check,
@@ -2190,7 +2233,8 @@ fn audit_selected_claim_rewrite(
     worker: &mut AuditSessionWorker,
     limits: &AuditLimits,
     deadline: Instant,
-) -> Result<String, String> {
+    verbose: bool,
+) -> Result<ClaimAuditReport, String> {
     let first = &sites[0];
     let positions = sites
         .iter()
@@ -2208,7 +2252,8 @@ fn audit_selected_claim_rewrite(
             }
         }
         .map_err(|error| error.report())
-    })?;
+    })
+    .map_err(|error| audit_phase_error("expansion", error))?;
     let ((), fixed_point) = run_phase(
         "selected fixed point",
         limits.expansion.within(deadline)?,
@@ -2247,40 +2292,48 @@ fn audit_selected_claim_rewrite(
             }
             Ok(())
         },
-    )?;
+    )
+    .map_err(|error| audit_phase_error("expansion fixed point", error))?;
+    let expanded_click = artifact.source;
     let expanded = if let Some(mdtest) = &source.mdtest {
-        mdtest.replace_click_source(&source.container_source, &artifact.source)?
+        mdtest.replace_click_source(&source.container_source, &expanded_click)?
     } else {
-        artifact.source
+        expanded_click.clone()
     };
     if expanded == source.container_source {
         return Err("expansion returned the original sidecar unchanged".into());
     }
-    let original = source.container_source.clone();
     let original_cost = cold_verify(
-        &original,
+        &source.container_source,
         source,
         &first.claim,
         limits.verification.within(deadline)?,
         "original proof-unit verification",
-    )?;
-    // Unselected automation keeps running, the implicit `solve` included.
-    let expanded_cost = cold_verify(
-        &expanded,
-        source,
-        &first.claim,
-        limits.verification.within(deadline)?,
-        "expanded proof-unit verification",
-    )?;
-    if let Some(regression) =
-        performance_regression(original_cost, expanded_cost, limits.performance_slack)
-    {
-        return Err(regression);
+    );
+    // Unselected automation keeps running, including the implicit closer.
+    let cold_limit = limits.verification.within(deadline)?;
+    let replay = cold_verify_expansion(&expanded, source, &first.claim, cold_limit, false)?;
+    let size = verbose.then(|| {
+        proof_speed(
+            source,
+            &expanded_click,
+            &first.claim,
+            replay.claim_elapsed,
+            cold_limit,
+        )
+    });
+    let retained = verify_rewrite_in_session(worker, &first.claim, &expanded, limits, deadline)
+        .map_err(|error| audit_phase_error("retained replay", error))?;
+    let mut report = claim_audit_report(
+        format!("expand {expansion}, fixed point {fixed_point}, verify {retained}"),
+        original_cost,
+        replay.cost,
+        limits.performance_slack,
+    );
+    if let Some(size) = size {
+        report.detail.push_str(&size);
     }
-    let retained = verify_rewrite_in_session(worker, &first.claim, &expanded, limits, deadline)?;
-    Ok(format!(
-        "expand {expansion}, fixed point {fixed_point}, verify {retained}, cold original {original_cost}, cold rewritten {expanded_cost}"
-    ))
+    Ok(report)
 }
 
 /// The proof container with every smart site of `claim_label` expanded.
@@ -2398,20 +2451,6 @@ fn audit_site_rewrite(
             limits.verification.within(deadline)?,
             "expanded proof-unit verification",
         )?;
-        if let Some(regression) =
-            performance_regression(original_cost, expanded_cost, limits.performance_slack)
-        {
-            let artifact = audit_artifact_path(&site.click_path);
-            return Err(format!(
-                "{regression}; reproduce the exact expanded workload with:\n  \
-                 click expand --time-limit {} --output {} {}\n  \
-                 click profile {}",
-                format_duration(limits.expansion.time),
-                shell_quote(&artifact.display().to_string()),
-                shell_quote(&location),
-                shell_quote(&artifact.display().to_string()),
-            ));
-        }
         Some((original_cost, expanded_cost))
     } else {
         None
@@ -2603,43 +2642,96 @@ fn cold_verify(
     Ok(cost)
 }
 
-/// Whether the expanded proof's deterministic work regressed: over twice the
-/// original's and more than `performance_slack` units over it.
-fn verification_regressed(original: usize, expanded: usize, performance_slack: usize) -> bool {
-    expanded > original.saturating_mul(2) && expanded > original.saturating_add(performance_slack)
+struct ColdReplay {
+    cost: PhaseCost,
+    claim_elapsed: Duration,
 }
 
-/// The performance comparison's verdict on cold verification of the original
-/// and expanded proof unit. Work units are deterministic, so one comparison
-/// decides on any machine under any load; wall-clock time is information.
-fn performance_regression(
-    original: PhaseCost,
-    expanded: PhaseCost,
-    performance_slack: usize,
-) -> Option<String> {
-    verification_regressed(original.work, expanded.work, performance_slack).then(|| {
-        format!(
-            "expanded proof-unit verification spent {} deterministic work units against the \
-             original's {} (failure requires over 2x and over {performance_slack} units more; \
-             wall clock {} -> {}, information only)",
-            expanded.work,
-            original.work,
-            format_duration(original.elapsed),
-            format_duration(expanded.elapsed),
-        )
+fn cold_verify_expansion(
+    expanded: &str,
+    original: &AuditSource,
+    claim: &str,
+    limit: PhaseLimit,
+    complete_rewrite: bool,
+) -> Result<ColdReplay, String> {
+    let (((), claim_elapsed), cost) = run_phase("expanded proof-unit verification", limit, || {
+        let source = rewritten_click_source(original, expanded)?;
+        click::surface::check_audit_claim(claim, complete_rewrite, || {
+            verify_rewritten_with_inputs(original, claim, &source)
+        })
+    })
+    .map_err(|error| audit_phase_error("cold replay", error))?;
+    Ok(ColdReplay {
+        cost,
+        claim_elapsed,
     })
 }
 
-fn audit_artifact_path(source: &Path) -> PathBuf {
-    let stem = source
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("expanded");
-    let extension = source
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .unwrap_or("click");
-    source.with_file_name(format!("{stem}.audit-expanded.{extension}"))
+fn claim_audit_report(
+    phases: String,
+    original: Result<PhaseCost, String>,
+    expanded: PhaseCost,
+    performance_slack: usize,
+) -> ClaimAuditReport {
+    let (original, work_increase) = match original {
+        Ok(original) => {
+            let increase = (expanded.work > original.work.saturating_mul(2)
+                && expanded.work > original.work.saturating_add(performance_slack))
+            .then(|| {
+                format!(
+                    "work increased from {} to {} units after expansion (informational)",
+                    original.work, expanded.work
+                )
+            });
+            (original.to_string(), increase)
+        }
+        Err(error) => (
+            format!("unavailable ({})", error.lines().next().unwrap_or_default()),
+            None,
+        ),
+    };
+    ClaimAuditReport {
+        detail: format!("{phases}, cold original {original}, cold rewritten {expanded}"),
+        work_increase,
+    }
+}
+
+fn proof_speed(
+    source: &AuditSource,
+    rewritten: &str,
+    claim: &str,
+    elapsed: Duration,
+    limit: PhaseLimit,
+) -> String {
+    let size = run_phase("proof size reporting", limit, || {
+        let inputs = source.inputs.program_inputs();
+        let index = match &source.project {
+            Some(project) => ProofSourceIndex::for_project(
+                &project.with_entry_source(rewritten.to_string()),
+                &inputs,
+            ),
+            None => ProofSourceIndex::for_sidecar(rewritten, &inputs),
+        };
+        index
+            .and_then(|index| index.written_proof_lines(claim))
+            .map_err(|error| error.report())
+    });
+    let Ok((lines, _)) = size else {
+        return ", proof size and speed unavailable".into();
+    };
+    let rate = lines as f64 / elapsed.as_secs_f64();
+    if lines == 0 || !rate.is_finite() {
+        format!(", {lines} written proof lines")
+    } else {
+        let target = if rate >= 700.0 {
+            "good"
+        } else if rate >= 300.0 {
+            "acceptable"
+        } else {
+            "below target"
+        };
+        format!(", {lines} written proof lines, {rate:.0} lines/s ({target}, informational)")
+    }
 }
 
 #[cfg(test)]

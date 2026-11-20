@@ -234,6 +234,26 @@ impl ProofSourceIndex {
             .collect())
     }
 
+    /// Counts lines with written tokens in the selected claim's tactics,
+    /// including operands and nested bodies, and excluding comments and blanks.
+    pub fn written_proof_lines(&self, claim: &str) -> Result<usize, ClickError> {
+        let (file, tokens) = self.proof_tokens()?;
+        let mut lines = BTreeSet::new();
+        for offset in tactic_source_offsets(file, claim, &tokens)? {
+            let Some(&start) = self.by_offset.get(&offset) else {
+                continue;
+            };
+            if let Some(tactic) = self.tactics.get(&start) {
+                for index in start..=tactic.end {
+                    if !self.tokens[index].span.is_empty() {
+                        lines.insert(self.positions[index].line);
+                    }
+                }
+            }
+        }
+        Ok(lines.len())
+    }
+
     /// The expansion sites in the same source used for position lookups.
     pub fn smart_tactic_sites(
         &self,

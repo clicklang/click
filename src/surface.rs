@@ -160,7 +160,7 @@ pub use verification::{
     verify_project_with_summary, verify_sources_at, verify_standard_library, with_allow_sorry,
 };
 mod proof_trace;
-pub use proof::{without_implicit_solve, without_implicit_solve_for_claim};
+pub use proof::{check_audit_claim, without_implicit_solve, without_implicit_solve_for_claim};
 pub use proof_trace::with_proof_trace;
 
 /// Render one accepted checked path while `with_proof_trace` is active.

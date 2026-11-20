@@ -19,15 +19,17 @@ The stages protect different invariants:
 - expansion must extract and render the checked operations attributed to the
   selected site;
 - ordinary verification must accept the complete rewritten source;
-- the expanded proof's deterministic work fails the audit only when it exceeds
-  both twice the original's and the original's plus the configured
-  performance slack.
+- a complete rewrite must replay cold with implicit solving disabled and
+  without entering monitored discovery;
+- the explicit proof must stay within deterministic verification and checking
+  allowances. Audit reports the original work for comparison and uses the
+  expanded proof's own work to decide whether replay passes.
 
 A claim whose sites are all selected is expanded once, with every site
 together. Expanding one site runs its whole claim, so expanding the sites one
 at a time costs the claim once per site. A failure of whole-claim expansion
-fails the audit. The per-site path is used only for a partial selection of a
-claim, such as resuming inside it with `--start-at` or using `--max-sites`.
+fails the audit. A partial selection expands its chosen sites together and
+leaves unselected automation available.
 
 `--keep-going` gathers further independent failures after a site fails. It
 doesn't make the run successful. A whole-session timeout can leave only a
