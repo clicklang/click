@@ -22229,6 +22229,28 @@ fn early_return_expansion_keeps_resource_call_outputs_in_scope() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: two retained-let coefficient identities expand and cold-replay in 0.9s"]
+fn integer_let_coefficients_expand_without_normalize() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/an_untyped_let_of_an_integer_has_the_integer_type.md");
+    let sources = crate::cli::source_refs(&c_sources);
+    for label in ["chain.ensures_1", "nested_chain.ensures_0"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        assert!(
+            expanded.contains("apply(click::integer::"),
+            "{label}\n{expanded}"
+        );
+        assert!(!expanded.contains("normalize()"), "{label}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{label}\n{error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies the original C-valued contract let"]
 fn integer_arithmetic_contract_let_expansion_preserves_the_integer_body() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
