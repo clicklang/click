@@ -3427,15 +3427,12 @@ fn execute_verified_function_applications_with_suspension(
         "verified call variable collection",
         || {
             let mut existing_variables = BTreeSet::new();
-            let caller_bound = caller_state_variable_bound(caller_state);
-            // Usual callers continue above everything they issued. For a
-            // supplied state with live identities above the mark, retain
-            // exact membership so a free identity below its bound stays usable.
-            if caller_bound.is_some_and(|bound| {
-                bound.0 >= budget.next_kernel_variable && Some(bound) > fact_bound
-            }) {
-                collect_call_caller_state_variables(caller_state, &mut existing_variables);
-            }
+            collect_execution_state_reservations(
+                caller_state,
+                budget.next_kernel_variable,
+                fact_bound,
+                &mut existing_variables,
+            );
             for application in applications {
                 collect_program_function_contract_interface_bitvector_variables(
                     application.interface,
