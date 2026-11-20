@@ -251,14 +251,10 @@ fn preserve_field(
             crate::kernel::ResourceFieldValue::Algebraic(a),
             crate::kernel::ResourceFieldValue::Algebraic(b),
         ) if a.algebraic_type == b.algebraic_type => {
-            return Some(if a == b {
-                Proposition::condition_is(ConditionTerm::Constant(true), true)
-            } else {
-                Proposition::Equal(
-                    Term::Algebraic(a.clone().into()),
-                    Term::Algebraic(b.clone().into()),
-                )
-            });
+            return Some(Proposition::Equal(
+                Term::Algebraic(a.clone().into()),
+                Term::Algebraic(b.clone().into()),
+            ));
         }
         (
             crate::kernel::ResourceFieldValue::Integer(a),

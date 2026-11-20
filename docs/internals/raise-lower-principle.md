@@ -620,6 +620,10 @@ constructors) reconstruct the same instance when lowered. Name selection must
 include variables inside opaque call arguments and both goal binders and
 proof-local witnesses, respecting `intro` shadowing.
 Algebraic equality inside a Boolean expression raises as an ordinary comparison.
+Reflexive algebraic proposition comparisons keep both operands through
+lowering. Checking decides their truth after any operand obligations are met.
+A comparison also keeps a match that rebuilds its scrutinee. Checking verifies
+that each arm reconstructs its constructor from its own fields in order.
 Match-arm algebraic bindings retain their source names for premise synthesis,
 including list tails and C type-parameter values stored in constructors. These
 names are selected from existing proof bindings; no equality search reconstructs
