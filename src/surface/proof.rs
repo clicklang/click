@@ -1648,6 +1648,9 @@ fn source_tactic_width(tactic: &ProofTactic) -> usize {
                 .initialize_proof()
                 .map_or(0, proof_source_tactic_count)
                 + clause.preserve_proof().map_or(0, proof_source_tactic_count)
+                + clause
+                    .otherwise_proof()
+                    .map_or(0, proof_source_tactic_count)
         }
         _ => 1,
     }

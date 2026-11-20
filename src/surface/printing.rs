@@ -1077,6 +1077,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 write_proof(output, proof, indent + 1);
                 output.push('\n');
             }
+            if let Some(tactics) = loop_clause.otherwise_proof().and_then(SourceProof::tactics) {
+                line(output, &body_prefix, "otherwise {");
+                write_tactics(output, tactics, indent + 2);
+                line(output, &body_prefix, "}");
+            }
             line(output, &prefix, "}");
         }
         ProofTactic::ObserveSavedMemory { base, start, end } => line(

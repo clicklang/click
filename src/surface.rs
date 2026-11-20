@@ -2100,6 +2100,7 @@ impl std::fmt::Debug for StructuralClause {
             .field("resources", &data.resources)
             .field("initialize_proof", &data.initialize_proof)
             .field("preserve_proof", &data.preserve_proof)
+            .field("otherwise_proof", &data.otherwise_proof)
             .finish()
     }
 }
@@ -2126,6 +2127,7 @@ pub struct StructuralClauseData {
     resources: Vec<ResourceClause>,
     initialize_proof: Option<SourceProof>,
     preserve_proof: Option<SourceProof>,
+    otherwise_proof: Option<SourceProof>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -6751,6 +6753,7 @@ impl ProofTactic {
                 .initialize_proof()
                 .into_iter()
                 .chain(clause.preserve_proof())
+                .chain(clause.otherwise_proof())
                 .map(|proof| Continuing(Source(proof)))
                 .collect(),
             _ => Vec::new(),
@@ -10149,6 +10152,10 @@ impl StructuralClause {
 
     pub fn preserve_proof(&self) -> Option<&SourceProof> {
         self.preserve_proof.as_ref()
+    }
+
+    pub fn otherwise_proof(&self) -> Option<&SourceProof> {
+        self.otherwise_proof.as_ref()
     }
 
     fn bound_to_loop(&self, loop_index: usize) -> Self {

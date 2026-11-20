@@ -797,7 +797,19 @@ closure as one `have <member> by { ... }` per member at the end of the
 `close_invariants` tactic is rejected by the parser
 ([`close_invariants_is_retired.md`](https://github.com/clicklang/click/blob/master/mdtests/close_invariants_is_retired.md)).
 
-Inside the loop's clauses and phases, `iterations` is the mathematical
+An optional `otherwise { ... }` block checks `have` statements at the
+loop's false-guard exit. The block has no implicit goal. It sees the state
+and facts on that exit, including the loop invariants available there.
+Short-circuit guard paths join before the block. A false first test runs the
+block before any iteration, a post-tested loop runs it after the body, and
+a `break` exits through `maintain`. The checked facts from the block
+contribute to the ordinary loop-exit join.
+
+**Checked examples:** [Proving a fact on the false-guard exit](https://github.com/clicklang/click/blob/master/mdtests/loop_otherwise.md)
+and [A break skips the block](https://github.com/clicklang/click/blob/master/mdtests/loop_otherwise_does_not_run_on_break.md).
+
+Inside the loop's clauses and its `initialize` and `maintain` phases,
+`iterations` is the mathematical
 `Integer` count of passes completed: `0` when `initialize` checks the
 invariants, a fresh `K` with `0 <= K` at the head, and `K + 1` where a pass's
 back edge, a `continue` included, checks them again. A `break` leaves during a

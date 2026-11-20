@@ -1602,6 +1602,7 @@ pub(in crate::kernel) fn abstract_loop_paths(
         &[],
         &[],
         &[],
+        None,
         execution_context.semantics,
         false,
         budget,
@@ -2081,6 +2082,7 @@ pub(super) fn execute_program_loop_exit_paths_with_proven_phases(
     final_exit_candidates: &[LoopFinalExitCandidate],
     early_exits: &[LoopEarlyExit],
     return_exits: &[LoopReturnExit],
+    otherwise: Option<&mut LoopOtherwiseProof<'_>>,
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
@@ -2093,6 +2095,7 @@ pub(super) fn execute_program_loop_exit_paths_with_proven_phases(
         final_exit_candidates,
         early_exits,
         return_exits,
+        otherwise,
         execution_context.semantics,
         initialization_proven,
         budget,
@@ -4336,6 +4339,7 @@ fn execute_program_loop_exit_paths(
     final_exit_candidates: &[LoopFinalExitCandidate],
     early_exits: &[LoopEarlyExit],
     return_exits: &[LoopReturnExit],
+    otherwise: Option<&mut LoopOtherwiseProof<'_>>,
     execution_semantics: ExecutionSemantics,
     initialization_proven: bool,
     budget: &mut ExecutionBudget,
@@ -4596,20 +4600,27 @@ fn execute_program_loop_exit_paths(
     // invariant and no measure, and they join the guard-false exit below
     // rather than exporting a second successor the enclosing frontier would
     // have to choose between.
-    let early_exit_entries = early_exits
-        .iter()
-        .chain(body_early_exits.iter())
-        .map(|exit| {
-            (
-                head.restored_exit_state(exit.state(), assumptions),
-                exit.pure_facts().certified_facts(),
-                loop_check_obligations.clone(),
-                exit.loan_evidence().clone(),
-                exit.fact_context().cloned(),
-            )
-        })
-        .chain(candidate_exit_entries)
-        .collect::<Vec<_>>();
+    let mut early_exit_entries = Vec::new();
+    let mut otherwise_exits = Vec::new();
+    for exit in early_exits.iter().chain(body_early_exits.iter()) {
+        let entry = (
+            head.restored_exit_state(exit.state(), assumptions),
+            exit.pure_facts().certified_facts(),
+            loop_check_obligations.clone(),
+            exit.loan_evidence().clone(),
+            exit.fact_context().cloned(),
+        );
+        if otherwise.is_some() && exit.guard_false() {
+            otherwise_exits.push(entry);
+        } else {
+            early_exit_entries.push(entry);
+        }
+    }
+    if otherwise.is_some() {
+        otherwise_exits.extend(candidate_exit_entries);
+    } else {
+        early_exit_entries.extend(candidate_exit_entries);
+    }
     if initial_may_exit {
         for (invariant_facts, invariant_obligations, invariant_propositions) in invariant_contexts {
             let condition_contexts = assume_loop_entry_truthiness(
@@ -4675,9 +4686,12 @@ fn execute_program_loop_exit_paths(
                 .into_iter()
                 .map(|(facts, obligations, loan_evidence)| {
                     (top_state.clone(), facts, obligations, loan_evidence, None)
-                })
-                .chain(early_exit_entries.iter().cloned())
-                .collect::<Vec<_>>();
+                });
+            if otherwise.is_some() {
+                otherwise_exits.extend(exits);
+                continue;
+            }
+            let exits = exits.chain(early_exit_entries.iter().cloned()).collect();
             if let Some(path) = join_loop_exits(
                 &head,
                 body,
@@ -4691,19 +4705,75 @@ fn execute_program_loop_exit_paths(
                 paths.push(path);
             }
         }
-    } else if let Some(path) = join_loop_exits(
-        &head,
-        body,
-        &Default::default(),
-        &binders,
-        early_exit_entries,
-        assumptions,
-        variables,
-        budget,
-    ) {
+    } else if otherwise.is_none()
+        && let Some(path) = join_loop_exits(
+            &head,
+            body,
+            &Default::default(),
+            &binders,
+            std::mem::take(&mut early_exit_entries),
+            assumptions,
+            variables,
+            budget,
+        )
+    {
         // A guard that cannot be false, `while (true)`, has no guard-false
         // exit: the successor is the join of the `break` exits alone.
         paths.push(path);
+    }
+    if let Some(prove) = otherwise {
+        // An otherwise block has one entry, even when different operands of
+        // a short-circuit guard can make it false. Keep breaks out of this
+        // frontier and join them only after checking the block.
+        let false_exit = if otherwise_exits.len() <= 1 {
+            otherwise_exits.pop()
+        } else {
+            join_loop_exits(
+                &head,
+                body,
+                &Default::default(),
+                &binders,
+                otherwise_exits,
+                assumptions,
+                variables,
+                budget,
+            )
+            .map(|path| {
+                let StatementOutcome::Normal(state) = path.outcome else {
+                    unreachable!("the loop-exit join produces a normal outcome");
+                };
+                (
+                    *state,
+                    path.facts,
+                    path.obligations,
+                    path.loan_evidence,
+                    None,
+                )
+            })
+        };
+        if let Some((state, mut facts, mut obligations, evidence, _)) = false_exit {
+            if let Some(proven) = prove(&head.entry, &state, &facts) {
+                facts.extend(proven);
+            } else {
+                obligations.push(
+                    ProofObligation::verification_condition(false_equals_true_proposition())
+                        .with_context("loop otherwise proof failed"),
+                );
+            }
+            early_exit_entries.insert(0, (state, facts, obligations, evidence, None));
+        }
+        if let Some(path) = join_loop_exits(
+            &head,
+            body,
+            &Default::default(),
+            &binders,
+            early_exit_entries,
+            assumptions,
+            variables,
+            budget,
+        ) {
+            paths.push(path);
+        }
     }
     // Several checked edges to one label have one successor. Preserve
     // their disjunction and abstract differing states by the same checked

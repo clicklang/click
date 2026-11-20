@@ -1174,6 +1174,7 @@ fn step_certificate_rejects_a_loop_step_with_an_unplanned_phase() {
             ProofCertificate::from_steps(vec![ProofStep::Normalize])
                 .expect("a simple step is a certificate"),
         )),
+        otherwise_proof: None,
         preserve_proof: Some(Box::new(
             ProofCertificate::from_steps(vec![ProofStep::Known])
                 .expect("a simple step is a certificate"),
