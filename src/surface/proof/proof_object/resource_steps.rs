@@ -559,8 +559,8 @@ impl<'a> Proof<'a> {
                 proposed.push(value);
             }
             let identity = pre_state
-                .owned_resource_instance(binding.identity.instance())
-                .map_or(binding.identity.instance(), |instance| instance.identity());
+                .owned_resource_instance(binding.instance()?)
+                .map_or(binding.instance()?, |instance| instance.identity());
             constructed = crate::kernel::ResourceInstance::new_with_resource_arguments(
                 identity,
                 name,
@@ -573,10 +573,10 @@ impl<'a> Proof<'a> {
             &constructed
         } else {
             before
-                .resource_instance_at_path(binding.identity.instance(), &binding.children)
+                .resource_instance_at_path(binding.instance()?, &binding.children)
                 .or_else(|| {
                     if !unfold && binding.children.is_empty() {
-                        pre_state.owned_resource_instance(binding.identity.instance())
+                        pre_state.owned_resource_instance(binding.identity.instance()?)
                     } else {
                         None
                     }
@@ -938,7 +938,7 @@ impl<'a> Proof<'a> {
                     .map(|child| (&child.name, child.identity))
                     .chain(body.contains().iter().filter_map(|clause| {
                         if let ResourceClause::Named { binding, .. } = clause {
-                            Some((&binding.name, binding.identity.instance()))
+                            Some((&binding.name, binding.identity.instance()?))
                         } else {
                             None
                         }

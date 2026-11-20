@@ -6722,21 +6722,16 @@ fn resource_clause_to_resource_spec_with_metadata(
                 retained_state,
                 pointer_element_types,
             )?;
-            if matches!(
-                inner.term(),
-                crate::kernel::ResourceTerm::MutexGuard { .. }
-                    | crate::kernel::ResourceTerm::MutexLive { .. }
-                    | crate::kernel::ResourceTerm::MutexUse { .. }
-            ) {
-                return inner
-                    .with_mutex_authority_binding(
-                        binding.identity.mutex_authority(),
-                        binding.name.clone(),
-                    )
-                    .map_err(|error| ClickError::new(error.to_string()));
-            }
+            let identity = match binding.identity {
+                crate::kernel::ResourceBinder::MutexAuthority(identity) => {
+                    return inner
+                        .with_mutex_authority_binding(identity, binding.name.clone())
+                        .map_err(|error| ClickError::new(error.to_string()));
+                }
+                crate::kernel::ResourceBinder::Instance(identity) => identity,
+            };
             ResourceSpec::instance(
-                binding.identity.instance(),
+                identity,
                 binding.name.clone(),
                 binding.schema.clone().ok_or_else(|| {
                     ClickError::new("resource binding has no checked field schema")
@@ -7036,6 +7031,10 @@ fn resource_clause_to_resource_spec_with_metadata(
                 )
                 .map_err(|error| ClickError::new(error.to_string()));
             }
+            let resource_arguments = resource_arguments
+                .iter()
+                .map(ResourceInstanceBinding::instance)
+                .collect::<Result<Vec<_>, _>>()?;
             ResourceSpec::declared_with_argument_states(
                 match kind {
                     ResourceKind::Composite => ResourceFamily::Composite,
@@ -7049,14 +7048,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 role,
                 retained_state,
             )
-            .map(|spec| {
-                spec.with_resource_arguments(
-                    resource_arguments
-                        .iter()
-                        .map(|reference| reference.identity.instance())
-                        .collect(),
-                )
-            })
+            .map(|spec| spec.with_resource_arguments(resource_arguments))
             .map_err(|error| ClickError::new(error.to_string()))
         }
     }
@@ -7088,7 +7080,10 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
             )?),
         }),
         ResourceClause::Named { binding, resource } => Ok(ResourceClause::Named {
-            binding: match substitutions.instance_rename(&binding.name, binding.identity.instance())
+            binding: match binding
+                .identity
+                .instance()
+                .and_then(|identity| substitutions.instance_rename(&binding.name, identity))
             {
                 Some(name) => ResourceInstanceBinding {
                     name,
@@ -7144,7 +7139,10 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
             resource_arguments: resource_arguments
                 .iter()
                 .map(|binding| {
-                    match substitutions.instance_rename(&binding.name, binding.identity.instance())
+                    match binding
+                        .identity
+                        .instance()
+                        .and_then(|identity| substitutions.instance_rename(&binding.name, identity))
                     {
                         Some(name) => ResourceInstanceBinding {
                             name,

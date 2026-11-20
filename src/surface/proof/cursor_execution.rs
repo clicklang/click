@@ -187,7 +187,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
                     let schema = binding.schema.as_ref().expect("checked just above");
                     let (fields, next) = crate::kernel::interface_join_instance_fields(
                         schema,
-                        binding.identity.instance(),
+                        binding.instance()?,
                         join_kernel_variable_mark,
                     )
                     .ok_or_else(|| {

@@ -4584,15 +4584,17 @@ fn source_backed_call_requirement_surface(
         ProofStep::StepCall(transport) => transport
             .binders()
             .iter()
-            .map(|binding| {
-                (
+            // Only instance binders are renamed; a mutex authority has no
+            // instance reads.
+            .filter_map(|binding| {
+                Some((
                     binding.binder().to_string(),
                     crate::surface::lowering::InstanceRename {
                         name: binding.instance().to_string(),
-                        identity: binding.binder_identity().instance(),
-                        target_identity: Some(binding.identity().instance()),
+                        identity: binding.binder_identity().instance()?,
+                        target_identity: Some(binding.identity().instance()?),
                     },
-                )
+                ))
             })
             .collect::<BTreeMap<_, _>>(),
         _ => site
