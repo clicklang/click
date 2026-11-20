@@ -4042,32 +4042,21 @@ pub(crate) fn canonical_form_of_load(
     canonical_scalar_read(&MachineTerm::memory_read(memory, pointer, kind))
 }
 
-/// Name a resource cell using the ordinary typed version when the source
-/// recorded its store. The retained memory remains the source for cell kinds
-/// and addresses whose producers do not yet supply an indexed version.
+/// Name a resource cell using the indexed defining store when available.
 pub(crate) fn canonical_cell_load(
     source: &ProgramPoint,
     pointer: &Address,
     ty: ProgramType,
 ) -> MachineTerm {
     if let Some(read) = indexed_resource_scalar_read(source, pointer, ty) {
-        let MachineTerm::MemoryLoad(version, _, kind) = &read else {
-            unreachable!("indexed resource read")
-        };
-        read_observations::record_at(
-            version,
-            pointer,
-            *kind,
-            source.shared_memory(),
-            ty.byte_width(),
-        );
+        record_indexed_cell_read(source, &read);
         return read;
     }
     let kind = LoadKind::of_type(ty).expect("scalar cell read kind");
     canonical_form_of_load(source.shared_memory().clone(), pointer.clone(), kind)
 }
 
-pub(in crate::kernel) fn indexed_resource_scalar_read(
+fn indexed_resource_scalar_read(
     source: &ProgramPoint,
     pointer: &Address,
     ty: ProgramType,
@@ -4080,6 +4069,46 @@ pub(in crate::kernel) fn indexed_resource_scalar_read(
         Box::new(pointer.clone()),
         kind,
     ))
+}
+
+pub(in crate::kernel) fn expected_point_named_cell_read(
+    source: &ProgramPoint,
+    pointer: &Address,
+    ty: ProgramType,
+) -> Option<MachineTerm> {
+    indexed_resource_scalar_read(source, pointer, ty).or_else(|| {
+        let kind = LoadKind::of_type(ty)?;
+        let point = source.entry_integer_version(pointer, kind)?;
+        Some(MachineTerm::MemoryLoad(
+            point,
+            Box::new(pointer.clone()),
+            kind,
+        ))
+    })
+}
+
+pub(in crate::kernel) fn observe_entry_integer_cell(
+    source: &ProgramPoint,
+    pointer: &Address,
+) -> Option<MachineTerm> {
+    let kind = LoadKind::Int32;
+    let point = source.entry_integer_version(pointer, kind)?;
+    let read = MachineTerm::MemoryLoad(point, Box::new(pointer.clone()), kind);
+    record_indexed_cell_read(source, &read);
+    Some(read)
+}
+
+fn record_indexed_cell_read(source: &ProgramPoint, read: &MachineTerm) {
+    let MachineTerm::MemoryLoad(version, pointer, kind) = read else {
+        unreachable!("indexed resource read")
+    };
+    read_observations::record_at(
+        version,
+        pointer,
+        *kind,
+        source.shared_memory(),
+        kind.byte_width(),
+    );
 }
 
 /// The test-only audit of the creation-time invariant (see

@@ -1124,7 +1124,7 @@ fn memory_only_adds_named_cells(
     }
     let source = before_state.program_point();
     let base = source.shared_memory();
-    for change in before.cells.diff(&after.cells) {
+    for change in before.cells.diff_after_naming(&after.cells, &source)? {
         let crate::kernel::HashedOrdMapChange::Added(pointer) = change else {
             return Err("removed or rewrote an existing cell".into());
         };
@@ -1149,7 +1149,7 @@ fn memory_only_adds_named_cells(
             crate::kernel::spec::program_value_bitvector_term(&value)
             && point.read_version_id().is_some()
         {
-            let expected = crate::kernel::eval::indexed_resource_scalar_read(
+            let expected = crate::kernel::eval::expected_point_named_cell_read(
                 &source,
                 pointer,
                 value.program_type(),
