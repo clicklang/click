@@ -3555,15 +3555,9 @@ fn array_version_work_curve(
         .collect()
 }
 
-/// The two steps a whole-array fact learned to cross scale like the store it
-/// always crossed: linear in the number of steps, not quadratic.
-///
-/// A declaration and a call are the interesting shapes because the walk crosses
-/// them with different evidence -- one object proven distinct for a
-/// declaration, a whole checked write set for a call -- and because a call's
-/// arrival at a fresh state per step is exactly the shape that goes
-/// quadratic when the version walk cannot reuse the answer it computed one
-/// state ago.
+/// Repeated array references use indexed versions across two kinds of
+/// disjoint effects: declarations for a parameter array and checked call
+/// footprints for a static array.
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
@@ -3578,11 +3572,11 @@ fn an_array_fact_carried_across_declarations_and_calls_scales_linearly() {
         ),
     );
     assert_near_linear_scaling(
-        "array-ref block version walk across calls",
+        "array-ref static block version across calls",
         &array_version_work_curve(
             "array-fact-across-calls",
             "keep_h.c",
-            "operation `array-ref block version walk`",
+            "operation `array-ref static block version`",
             array_fact_across_calls,
         ),
     );

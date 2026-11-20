@@ -523,3 +523,46 @@ fn a_path_version_costs_the_points_after_the_cells_last_store() {
         "naming grew with the path before the store: {samples:?}"
     );
 }
+
+#[test]
+fn cold_static_array_versions_ignore_disjoint_call_history() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let written = block("global:written");
+    let ranges = [MemoryRange::new(
+        at(written.clone(), 0),
+        0u32.into(),
+        4u32.into(),
+    )];
+    let facts = PureFactContext::new();
+
+    for size in [4, 16, 64, 128] {
+        let mut memory = SymbolicMemory::new().with_block(written.clone(), 4);
+        let mut arrays = Vec::new();
+        for index in 0..size {
+            let array = block(&format!("global:array_{index}"));
+            memory = memory.with_block(array.clone(), 4);
+            arrays.push((array, point(&memory).shared_memory().arena_id()));
+        }
+        for index in 0..size {
+            let identity = Variable(100_000 + size as u64 * 128 + index as u64);
+            memory = memory.with_storage_memory_havoc(identity, &ranges, &facts);
+        }
+        let current = point(&memory);
+        assert_eq!(
+            last_same_version_point(TrackedResource::Block(&written), &current),
+            Some(current.clone())
+        );
+
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (array, expected) in &arrays {
+                let (version, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    last_same_version_point(TrackedResource::Block(array), &current)
+                        .expect("static array version")
+                });
+                assert_eq!(version.shared_memory().arena_id(), *expected);
+                assert_eq!(work, 1, "cold lookup after {size} disjoint calls");
+            }
+        });
+        assert_eq!(work, size, "one cold lookup for each of {size} arrays");
+    }
+}

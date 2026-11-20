@@ -1852,3 +1852,50 @@ fn contract_offset_reads_keep_order_and_distinct_versions() {
         ],
     );
 }
+
+#[test]
+fn static_array_version_stops_at_an_aliasing_write_before_disjoint_calls() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let array = block("global:g");
+    let alias = Address::symbolic(Variable(935_100));
+    let barrier = entry_memory().store(alias, one());
+    let after = barrier.clone().with_storage_memory_havoc(
+        Variable(935_101),
+        &[MemoryRange::new(
+            at(block("global:h"), 0),
+            0u32.into(),
+            4u32.into(),
+        )],
+        &PureFactContext::new(),
+    );
+    assert_eq!(
+        last_same_version_point(TrackedResource::Block(&array), &point(&after)),
+        Some(point(&barrier))
+    );
+}
+
+#[test]
+fn static_array_version_uses_derivations_attached_after_a_suffix_was_recorded() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let array = block("global:g");
+    let entry = SymbolicMemory::new().with_block(array.clone(), 4);
+    let sibling = block("global:h");
+    let mut pending = entry.clone();
+    std::sync::Arc::make_mut(&mut pending.blocks).insert(sibling.clone(), MemoryBlock::new(4));
+    let root = intern_memory(pending.clone());
+    let after = pending.clone().store(at(sibling.clone(), 0), one());
+    let current = point(&after);
+    let query = || last_same_version_point(TrackedResource::Block(&array), &current);
+    assert!(root.derivation().is_none());
+    assert_eq!(query(), Some(point(&pending)));
+
+    record_memory_derivation(
+        &mut pending,
+        MemoryDerivation::BlockDeclared {
+            base: intern_memory(entry.clone()),
+            block: sibling,
+        },
+    );
+    assert!(root.derivation().is_some());
+    assert_eq!(query(), Some(point(&entry)));
+}
