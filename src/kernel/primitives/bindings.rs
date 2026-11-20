@@ -302,10 +302,6 @@ impl LocalBindingId {
         )
     }
 
-    pub(crate) fn is_chunk_iterator_field(&self) -> bool {
-        matches!(self.0.kind, LocalBindingKind::ChunkIterator(_))
-    }
-
     pub(crate) fn is_iterator_option_field(&self) -> bool {
         matches!(self.0.kind, LocalBindingKind::IteratorOption(_))
     }
