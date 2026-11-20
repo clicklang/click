@@ -175,7 +175,9 @@ execution keeps both paths, and the proof has to handle both — see
 
 ## Old values
 
-`old(expr)` means the value of `expr` in the function-entry state:
+`old(expr)` means the value of `expr` in the function-entry state. It is one of
+the [special forms](../reference/language/index.md#special-forms), built-in
+syntax that changes how its argument is read:
 
 <!-- verified-example: mdtests/opaque_call_old_entry_state.md -->
 ```click

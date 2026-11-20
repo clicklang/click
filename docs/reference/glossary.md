@@ -698,11 +698,6 @@ held composite resource while leaving the composite folded. A derived resource
 view records which owned resource supports it, so consuming that support also
 removes the projection.
 
-### `old`
-
-`old(e)` is `at(function.entry, e)`: `e` when the path was at the function's
-  entry point, rather than at the current point.
-
 ### Opaque
 
 Hidden behind a checked interface. An opaque function call uses the callee's
@@ -1215,8 +1210,62 @@ A concrete term supplied to prove an existential proposition. The `witness`
 
 ## Special forms
 
+A **special form** is built-in syntax that looks like an application but
+changes how its argument is read or lowered, so it can't be written as a
+Click function. Click has four:
+
+| Form | Kind | Written where | Effect on its argument |
+|---|---|---|---|
+| [`old(e)`](#old) | point selector | term | read at the function's entry |
+| [`at(x, e)`](#at) | point selector | term, proposition or resource | read at point `x` |
+| [`exact(e)`](#exact) | point selector | term | outermost read named at the point in scope, not its version point |
+| [`defined(e)`](#defined) | definedness | proposition | asks whether evaluating `e` is defined, not what it is |
+
+A **point selector** picks the point that names a read; in term position its
+result is a value that nests like any other term. `defined` doesn't move the read: it is a
+proposition, and it lowers its C expression keeping native address checks
+that ordinary lowering may drop. A read a point selector names at an
+earlier point is a **historical read**.
+
+Other built-in syntax that isn't an ordinary function names a value rather
+than changing how an argument is read, so it isn't a special form: `result`,
+`program::name`, `count(...)`, and region values such as `R.result` and
+`R.parameter(v)`. Nor are propositions such as `viewable(...)` and
+`separate(...)`, whose arguments are read at the surrounding point as usual.
+
+See [special forms](language/index.md#special-forms) in the language
+reference.
+
 ### `at`
 
 `at(x, e)` is `e` when the proof path was at point `x`, such as
 `region(2).entry` or a proof mark, rather than at the current point. A path reaches each point at
-most once, so the form has one meaning.
+most once, so the form has one meaning. In a proposition position,
+`at(x, P)` states the whole proposition `P` at `x`. See
+[`at(...)`](language/index.md#at).
+
+### `defined`
+
+`defined(e)` is the proposition that evaluating the C expression `e` reaches a
+value rather than undefined behavior: the [definedness](#definedness) of `e`.
+It is a proposition, not a term, so it can't appear inside arithmetic. Its
+argument is lowered with C's own evaluation rules, keeping native address
+checks that ordinary lowering may drop, and `old`, `at`, folds, lets, and
+Click function calls inside it are refused. See the
+[requirements](language/index.md#requirements) reference.
+
+### `exact`
+
+`exact(e)` is the outermost read in `e` named at the point in scope itself,
+rather than at the read's [version point](#version-point). It denotes the same
+value as the ordinary read; the two are different kernel terms that the
+assumption-free load equality relates. Reads that compute the place's address
+stay ordinary. Combine it with the other point selectors, as in
+`old(exact(p[i]))`, to fix which point names the read. See
+[`exact(...)`](language/index.md#exact).
+
+### `old`
+
+`old(e)` is `at(function.entry, e)`: `e` when the path was at the function's
+entry point, rather than at the current point. See
+[`old(...)`](language/index.md#old).

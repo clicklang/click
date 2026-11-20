@@ -1797,10 +1797,11 @@ such as a composite resource `fact`. The axiom
 `separation::viewable_restrict(A, B)` derives `viewable(B)` from explicit
 `viewable(A)` and `contains(A, B)` premises.
 
-`defined(expression)` is a pure proposition stating that evaluating the C
-expression reaches a value rather than undefined behavior. Click elaborates it
-with the kernel's C expression semantics, so signed overflow, division, shifts,
-and memory-load obligations share the same rules as execution. It accepts C
+`defined(expression)` is a [special form](#special-forms): a pure proposition
+stating that evaluating the C expression reaches a value rather than undefined
+behavior. Click elaborates it with the kernel's C expression semantics, so
+signed overflow, division, shifts, and memory-load obligations share the same
+rules as execution. It accepts C
 expression fragments; `old`, `at`, folds, lets, and Click function calls
 inside `defined(...)` are refused.
 
@@ -3710,11 +3711,30 @@ ensures found: (lo..hi).any(|k| { p[k] == result }) by {
 }
 ```
 
+## Special forms
+
+`old`, `at`, `exact` and `defined` are the four special forms: built-in syntax
+that looks like an application but changes how its argument is read or
+lowered, so none of them can be written as a Click function. The first three
+are point selectors, which pick the point that names a read and produce a
+value; `defined` is a proposition about whether evaluating its argument is
+defined.
+
+| Form | Kind | Written where | Reference |
+|---|---|---|---|
+| `old(e)` | point selector | term | [`old(...)`](#old) |
+| `at(point, e)` | point selector | term, proposition or resource | [`at(...)`](#at) |
+| `exact(place)` | point selector | term | [`exact(...)`](#exact) |
+| `defined(e)` | definedness | proposition | [requirements](#requirements) |
+
+See [special forms](../glossary.md#special-forms) in the glossary for what
+falls outside the set.
+
 ## `old(...)`
 
-`old(expression)` evaluates a contract expression in the function-entry state.
-It is sugar for `at(function.entry, expression)`.
-It is mainly used in postconditions and invariants:
+`old(expression)` is a [special form](#special-forms) that evaluates a
+contract expression in the function-entry state. It is sugar for
+`at(function.entry, expression)`. It is mainly used in postconditions and invariants:
 
 <!-- verified-example: mdtests/proposition_connectives_quantifiers_and_old.md -->
 ```click
@@ -3927,10 +3947,11 @@ pointer to a callee local is rejected.
 
 ## `at(...)`
 
-`at(point, expression)` evaluates a contract expression as it was when the
-proof path was at that point. In a proposition position, `at(point,
-proposition)` evaluates the complete proposition there. A proof path reaches
-each point at most once, so the point fixes the meaning:
+`at(point, expression)` is a [special form](#special-forms) that evaluates a
+contract expression as it was when the proof path was at that point. In a
+proposition position, `at(point, proposition)` evaluates the complete
+proposition there. A proof path reaches each point at most once, so the point
+fixes the meaning:
 
 ```text
 at(function.entry, x)
@@ -4174,12 +4195,12 @@ to rewind execution or enter an unselected branch.
 
 ## `exact(...)`
 
-`exact(place)` is the read of `place` named by the state in scope itself,
-with no version walk (`design/exact-reads.md`). An ordinary read `p[i]` names
-the cell's version point, the state the assumption-free version walk selects
-for the cell: after a store to another object it is still the read named by
-the earlier state ([a read names its version
-point](../../internals/raise-lower-principle.md#a-read-names-its-version-point)).
+`exact(place)` is a [special form](#special-forms): the read of `place` named
+by the state in scope itself, with no version walk (`design/exact-reads.md`).
+An ordinary read `p[i]` names the cell's version point, the state the
+assumption-free version walk selects for the cell: after a store to another
+object it is still the read named by the earlier state ([a read names its
+version point](../../internals/raise-lower-principle.md#a-read-names-its-version-point)).
 `exact(p[i])` is the read of the same cell named by the current state. Both
 denote the same value; they are different kernel terms for it, and the
 assumption-free load equality relates them.
