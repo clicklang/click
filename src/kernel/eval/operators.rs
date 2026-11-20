@@ -2064,6 +2064,78 @@ fn pointer_has_object_provenance_evidence(
             })
 }
 
+/// Whether two pointers' known bounds put them in the same array object, as
+/// pointer subtraction requires (C 6.5.6p9).
+enum SameArray {
+    Holds,
+    Refuted,
+    /// The same array exactly when every one of these conditions holds.
+    When(Vec<ConditionTerm>),
+}
+
+/// Two pointers whose bounds are both known designate the same array exactly
+/// when those bounds are the same: the same member subobject (start and
+/// width), or both the whole object. When either side's bounds are not known
+/// (a pointer from a parameter or loaded from memory), its array is the
+/// object the same-object check already compares.
+fn pointer_subtraction_same_array(left: &Pointer, right: &Pointer) -> SameArray {
+    if !left.bounds_are_known() || !right.bounds_are_known() {
+        return SameArray::Holds;
+    }
+    match (left.bounds(), right.bounds()) {
+        (None, None) => SameArray::Holds,
+        (Some(left), Some(right)) => {
+            if left.width.as_const().is_some()
+                && right.width.as_const().is_some()
+                && left.width != right.width
+            {
+                return SameArray::Refuted;
+            }
+            if left.start == right.start && left.width == right.width {
+                return SameArray::Holds;
+            }
+            if left.width != right.width {
+                // Symbolic widths that are not the same term: the bounds are
+                // the same subobject only if both parts agree.
+                return SameArray::When(vec![
+                    ConditionTerm::address_equal(left.start.clone(), right.start.clone()),
+                    ConditionTerm::equal(left.width.clone(), right.width.clone()),
+                ]);
+            }
+            SameArray::When(vec![ConditionTerm::address_equal(
+                left.start.clone(),
+                right.start.clone(),
+            )])
+        }
+        // A member subobject and a whole object are different arrays.
+        _ => SameArray::Refuted,
+    }
+}
+
+/// [`apply_pointer_provenance_guard`] for each condition in turn: the path
+/// continues where all hold, and each one's failure is undefined behavior.
+fn apply_pointer_provenance_guards(
+    mut conditions: Vec<ConditionTerm>,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
+) -> Vec<ExpressionPath> {
+    let Some(condition) = conditions.pop() else {
+        return apply(facts, obligations);
+    };
+    apply_pointer_provenance_guard(
+        condition,
+        true,
+        facts,
+        obligations,
+        assumptions,
+        move |facts, obligations| {
+            apply_pointer_provenance_guards(conditions, facts, obligations, assumptions, apply)
+        },
+    )
+}
+
 fn apply_pointer_provenance_guard(
     condition: ConditionTerm,
     expected: bool,
@@ -2489,6 +2561,23 @@ pub(in crate::kernel) fn apply_program_subtract(
             else {
                 return vec![program_type_mismatch_expression_path(facts, obligations)];
             };
+            // C 6.5.6p9: both pointers point into the same array object. The
+            // same-object check below compares whole objects; an array that is
+            // a member of one is narrower, and a pointer formed from a member
+            // carries that member as its known bounds.
+            let same_array = match pointer_subtraction_same_array(&left, &right) {
+                SameArray::Holds => None,
+                SameArray::Refuted => {
+                    return vec![ExpressionPath {
+                        outcome: ExpressionOutcome::UndefinedBehavior(
+                            UndefinedBehavior::PointerArithmetic,
+                        ),
+                        facts,
+                        obligations,
+                    }];
+                }
+                SameArray::When(conditions) => Some(conditions),
+            };
             apply_same_object_pointer_operation(
                 state,
                 left.into_pointer(),
@@ -2497,17 +2586,27 @@ pub(in crate::kernel) fn apply_program_subtract(
                 obligations,
                 assumptions,
                 move |left, right, facts, obligations| {
-                    let Some((left, right)) = pointer_element_indices(&left, &right, byte_width)
-                    else {
-                        return vec![ExpressionPath {
-                            outcome: ExpressionOutcome::RuntimeError(
-                                RuntimeError::IndeterminatePointeeType,
-                            ),
-                            facts,
-                            obligations,
-                        }];
+                    let subtract = move |facts, obligations| {
+                        let Some((left, right)) =
+                            pointer_element_indices(&left, &right, byte_width)
+                        else {
+                            return vec![ExpressionPath {
+                                outcome: ExpressionOutcome::RuntimeError(
+                                    RuntimeError::IndeterminatePointeeType,
+                                ),
+                                facts,
+                                obligations,
+                            }];
+                        };
+                        apply_program_int32_subtract(left, right, facts, obligations, assumptions)
                     };
-                    apply_program_int32_subtract(left, right, facts, obligations, assumptions)
+                    apply_pointer_provenance_guards(
+                        same_array.unwrap_or_default(),
+                        facts,
+                        obligations,
+                        assumptions,
+                        subtract,
+                    )
                 },
             )
         }
