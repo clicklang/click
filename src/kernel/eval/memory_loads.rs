@@ -5188,7 +5188,10 @@ pub(crate) fn comparison_identity_of_exact_read(
     pointer: &Address,
     kind: LoadKind,
 ) -> MachineTerm {
-    match point.indexed_integer_version(pointer, kind) {
+    match point
+        .indexed_integer_version(pointer, kind)
+        .or_else(|| point.call_output_integer_version(pointer, kind))
+    {
         Some(version) => MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind),
         None if let Some(entry) = point.entry_integer_version(pointer, kind) => {
             MachineTerm::memory_read(entry.shared_memory().clone(), pointer.clone(), kind)

@@ -9959,6 +9959,9 @@ pub enum MemoryDerivation {
         base: SharedMemory,
         pointer: Address,
         bytes: u32,
+        /// A checked call output supplies this complete word even when
+        /// there is no known value to put in the cell.
+        call_word: bool,
     },
     /// `base` with some cached cell values forgotten at one program point:
     /// the write path narrows the cell map before storing
