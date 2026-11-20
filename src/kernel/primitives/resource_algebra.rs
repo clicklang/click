@@ -8595,6 +8595,9 @@ impl ResourceContext {
         assumptions: &PureFactContext,
         candidates: &[ResourceEntryId],
     ) -> bool {
+        if std::env::var_os("CLICK_DBG_MERGE").is_some() {
+            eprintln!("DBG merge entry fact={:?}", fact.owned_quantity_term());
+        }
         if fact.memory_range().is_some()
             || fact
                 .owned_quantity_term()
@@ -8606,9 +8609,22 @@ impl ResourceContext {
         let algebra = resource_family_algebra(fact.family());
         let mut merged: Option<ResourceFact> = None;
         let mut used = Vec::new();
+        let dbg = std::env::var_os("CLICK_DBG_MERGE").is_some();
+        if dbg {
+            eprintln!("DBG merge family={:?} candidates={}", fact.family(), candidates.len());
+        }
         for &entry in candidates {
             crate::instrumentation::record_deterministic_work(1);
             let unit = self.fact(entry);
+            if dbg {
+                eprintln!(
+                    "DBG   cand eligible={} own={} same={} merged={:?}",
+                    self.delta_normalization_eligible(entry),
+                    unit.is_own(),
+                    unit.resource() == fact.resource(),
+                    merged.as_ref().map(|m| normalize_resource_fact_pair(m, unit, assumptions).is_some())
+                );
+            }
             if used.contains(&entry)
                 || !self.delta_normalization_eligible(entry)
                 || !unit.is_own()
