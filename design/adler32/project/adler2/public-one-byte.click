@@ -25,7 +25,7 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
  ensures to_integer(result) == old(adler_spec_checksum_u64(data, 1u64, 1, 0));
  ensures data[0] == old(data[0]);
 } by {
- step_until(assignment(__rust_mir_0, 0).entry);
+ step_until(statement(2).call(0).entry);
  have to_integer(h.a) == old(adler_spec_a_u64(data, 1u64, 1));
  have to_integer(h.b) == old(adler_spec_b_u64(data, 1u64, 1, 0));
  have 65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, 1u64, 1, 0)) by {
@@ -35,9 +35,9 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
   solve();
  }
  step();
- have to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
- have to_integer(__rust_mir_0) == old(adler_spec_checksum_u64(data, 1u64, 1, 0)) by solve() using {
-   to_integer(__rust_mir_0) == 65536 * to_integer(h.b) + to_integer(h.a);
+ have to_integer(statement(2).call(0).result) == 65536 * to_integer(h.b) + to_integer(h.a);
+ have to_integer(statement(2).call(0).result) == old(adler_spec_checksum_u64(data, 1u64, 1, 0)) by solve() using {
+   to_integer(statement(2).call(0).result) == 65536 * to_integer(h.b) + to_integer(h.a);
    65536 * to_integer(h.b) + to_integer(h.a) == old(adler_spec_checksum_u64(data, 1u64, 1, 0));
   };
 }
