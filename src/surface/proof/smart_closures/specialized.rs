@@ -144,9 +144,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 return proof.driver().apply_step(ProofStep::Known).map(Some);
             }
-            if let Some(closed) =
-                attempt::candidate_outcome(Self::try_bounded_cast_identity_using(proof, &premises))?
-                    .flatten()
+            if let Some(closed) = attempt::candidate_outcome(
+                Self::try_bounded_observation_identity_using(proof, &premises),
+            )?
+            .flatten()
             {
                 return Ok(Some(closed));
             }
