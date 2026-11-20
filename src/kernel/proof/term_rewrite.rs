@@ -1292,22 +1292,32 @@ fn collect_retained_offset_carriers(
     variables: &mut CarrierVariables,
 ) {
     offset.visit_root_while(|node| {
-        if !variables.visit() {
-            return false;
-        }
-        match node {
-            KernelAddressOffset::Variable(variable) => {
-                variables.program_values.insert(*variable);
-                collect_registered_load_carriers(*variable, variables);
-            }
-            node => {
-                if let Some(index) = node.index() {
-                    collect_machine_carriers(&SharedAddressOffset::exact_index(index), variables);
-                }
-            }
-        }
-        !variables.exhausted()
+        collect_offset_node_carriers(node, variables, |index, variables| {
+            collect_machine_carriers(&SharedAddressOffset::exact_index(index), variables);
+        })
     });
+}
+
+fn collect_offset_node_carriers(
+    node: &KernelAddressOffset,
+    variables: &mut CarrierVariables,
+    collect_index: impl FnOnce(&KernelTerm, &mut CarrierVariables),
+) -> bool {
+    if !variables.visit() {
+        return false;
+    }
+    match node {
+        KernelAddressOffset::Variable(variable) => {
+            variables.program_values.insert(*variable);
+            collect_registered_load_carriers(*variable, variables);
+        }
+        node => {
+            if let Some(index) = node.index() {
+                collect_index(index, variables);
+            }
+        }
+    }
+    !variables.exhausted()
 }
 
 fn collect_sequence_carriers(term: &SequenceTerm, variables: &mut CarrierVariables) {
@@ -5524,7 +5534,18 @@ impl<'a> TermRewrite<'a> {
         else {
             return self.offset(offset.native_compat()).into();
         };
-        let result = source.try_map_root(|original, node| {
+        match self.rewrite_retained_offset(source) {
+            Ok(root) if root == *source => offset.clone(),
+            Ok(root) => StoredPointerOffset::from_rewritten_root(root),
+            Err(()) => exhausted_offset().into(),
+        }
+    }
+
+    fn rewrite_retained_offset(
+        &mut self,
+        source: &SharedAddressOffset,
+    ) -> Result<SharedAddressOffset, ()> {
+        let root = source.try_map_root(|original, node| {
             if self.checked_work_exhausted() {
                 return Err(());
             }
@@ -5568,14 +5589,8 @@ impl<'a> TermRewrite<'a> {
                 }
                 _ => original.clone(),
             })
-        });
-        match result {
-            Ok(root) if !self.checked_work_exhausted() && root == *source => offset.clone(),
-            Ok(root) if !self.checked_work_exhausted() => {
-                StoredPointerOffset::from_rewritten_root(root)
-            }
-            _ => exhausted_offset().into(),
-        }
+        })?;
+        (!self.checked_work_exhausted()).then_some(root).ok_or(())
     }
 
     fn offset(&mut self, v: &AddressOffset) -> AddressOffset {
