@@ -1692,6 +1692,11 @@ Shared native comparison guards retain their operand DAGs; other shared
 compound guards require explicit logical steps rather than exporting a guard
 tree. Missing guards and unsupported forms are refused.
 
+Nested `int32` conditionals can compute their selected value when each
+selected guard is a constant, a reflexive equality, or an equality of
+literals. This also applies to the conditionals left by a checked
+constructor rewrite.
+
 A conjunction goal closes when every conjunct does, and a disjunction goal
 when one disjunct does, using available facts or these computations recursively.
 A negated conjunction closes when direct computation refutes one conjunct.

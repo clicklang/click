@@ -18537,6 +18537,26 @@ fn local_job_views_expand_and_reverify_without_ownership_annotations() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: constructor rewrite expansion and cold replay took 0.6s"]
+fn constructor_match_after_checked_rewrite_expands_to_known() {
+    let (source, _) = mdtest_sources("mdtests/solve_true_list_position.md");
+    let label = "right_position.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
+    assert!(expanded.contains("rewrite(xs,"), "{expanded}");
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_click_theorems(&expanded).map_err(|error| error.report())
+    })
+    .unwrap();
+
+    let wrong_field = source.replace("Cons(second, tail)", "Cons(first, tail)");
+    assert_ne!(source, wrong_field);
+    assert!(verify_click_theorems(&wrong_field).is_err());
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: two-hop loop frame verification, expansion and cold replay"]
 fn two_hop_loop_frame_expands_and_cold_replays() {
     let (source, sources) =
