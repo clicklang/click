@@ -1163,7 +1163,7 @@ private:
            "the supported C++ parameter must be a by-value bool or "
            "signed/unsigned "
            "32/64/128-bit integer or unsigned char, a native element "
-           "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, a native element or void pointer (possibly const pointee), or a "
+           "reference (int, unsigned int, unsigned char or std::byte, possibly const), a const signed-64 reference, a native element pointer or void pointer (possibly const pointee), or a "
            "mutable or const simple-record reference parameter, a trivially copied simple-record value, "
            "a mutable pointer to a simple record, or a pointer to a noexcept function");
       return std::nullopt;

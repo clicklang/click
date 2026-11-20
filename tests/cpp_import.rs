@@ -20463,7 +20463,6 @@ fn unlocked_copy(example: &str, name: &str) -> PathBuf {
     let copy = scratch_copy(name);
     copy_tree(&Path::new(env!("CARGO_MANIFEST_DIR")).join(example), &copy);
     fs::remove_dir_all(copy.join(".click")).unwrap();
-    fs::remove_file(copy.join(click::project::LOCK_NAME)).unwrap();
     copy
 }
 
