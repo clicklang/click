@@ -638,7 +638,9 @@ fn execute_modeled_pthread_mutex_paths(
                         .descriptor()
                         .binder_by_role(MutexResourceRole::Lifetime)
                         .expect("initialization declares its lifetime output");
-                    let output = transport.bindings[&Variable(lifetime.identity)];
+                    let output = MutexAuthorityId::from_variable(
+                        transport.bindings[&Variable(lifetime.identity)],
+                    );
                     let live = super::mutexes::live_resource(&next, mutex.address(), false)
                         .expect("successful initialization establishes lifetime authority");
                     next.bind_named_mutex_authority(output, &live)
@@ -675,16 +677,19 @@ fn execute_modeled_pthread_mutex_paths(
                     })
                 };
                 let usage = state.resources.mutex_use_candidate_at(mutex.address());
-                let access_matches =
-                    selected_role(MutexResourceRole::Access).is_none_or(|identity| {
+                let access_matches = selected_role(MutexResourceRole::Access)
+                    .map(MutexAuthorityId::from_variable)
+                    .is_none_or(|identity| {
                         state.resolve_named_mutex_authority(identity) == usage && usage.is_some()
                     });
                 let guard_matches = acquiring
-                    || selected_role(MutexResourceRole::Guard).is_none_or(|identity| {
-                        matches!((state.resolve_named_mutex_authority(identity),
+                    || selected_role(MutexResourceRole::Guard)
+                        .map(MutexAuthorityId::from_variable)
+                        .is_none_or(|identity| {
+                            matches!((state.resolve_named_mutex_authority(identity),
                         super::mutexes::guard_resource(state, mutex.address(), false)),
                         (Some(actual), Some(expected)) if actual == &expected)
-                    });
+                        });
                 if !access_matches {
                     Err(RuntimeError::MissingMutexUse {
                         mutex: mutex.address().clone(),
@@ -719,7 +724,9 @@ fn execute_modeled_pthread_mutex_paths(
                         if !acquiring {
                             return Ok((next, evidence));
                         }
-                        let Some(output) = selected_role(MutexResourceRole::Guard) else {
+                        let Some(output) = selected_role(MutexResourceRole::Guard)
+                            .map(MutexAuthorityId::from_variable)
+                        else {
                             return Ok((next, evidence));
                         };
                         let guard = super::mutexes::guard_resource(&next, mutex.address(), false)
@@ -778,7 +785,9 @@ fn execute_modeled_pthread_mutex_paths(
                             .descriptor()
                             .binder_by_role(MutexResourceRole::Lifetime)
                             .expect("destruction declares its lifetime input");
-                        transport.bindings[&Variable(lifetime.identity)]
+                        MutexAuthorityId::from_variable(
+                            transport.bindings[&Variable(lifetime.identity)],
+                        )
                     });
                     if selected_live.is_some_and(|identity| {
                         !matches!(

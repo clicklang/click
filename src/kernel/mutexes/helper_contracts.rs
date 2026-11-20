@@ -666,6 +666,7 @@ pub(in crate::kernel) fn apply_call_effect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kernel::MutexAuthorityId;
     use crate::kernel::{
         ExecutionBudget, FunctionOutcome, ProgramExpression, ProgramFunction, ProgramType,
         ProgramValue, ResourceAccessMode, ResourceContext, ResourceQuantity, ResourceStateSource,
@@ -703,7 +704,7 @@ mod tests {
         )
         .unwrap()
         .with_mutex_authority_binding(
-            Variable(if guard { 854 } else { 853 }),
+            MutexAuthorityId::from_variable(Variable(if guard { 854 } else { 853 })),
             if guard { "guard" } else { "access" }.into(),
         )
         .unwrap()
