@@ -35,6 +35,10 @@ uint8 fill_byte_tail(uint8 p[], int32 n) {
         decreases n - i;
         invariant i >= 1 and i <= n;
         invariant first_byte(p) == old(first_byte(p));
+        otherwise {
+            have first_byte(p) == p[0] by { unfold(first_byte(p)); known(); }
+            have p[0] == old(first_byte(p)) by solve();
+        }
     }
     step();
     solve();
