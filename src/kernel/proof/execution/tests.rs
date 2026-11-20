@@ -1357,6 +1357,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
             None,
             Some(observation),
             &[],
+            None,
         )
     };
     let checked = check(&facts, observation.clone()).unwrap();
