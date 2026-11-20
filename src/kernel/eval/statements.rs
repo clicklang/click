@@ -1215,12 +1215,21 @@ fn write_program_lvalue_paths_for_initialization(
             // can use a different, proven-equal address spelling without
             // re-running store resolution at the subsequent read.
             if let ProgramValue::Pointer(stored) = &written_value {
-                facts.push(ExecutionPureFact::logical_read_equation(
+                let point = state.program_point();
+                let value_type = stored.program_type();
+                let read = if let Some(version) =
+                    point.indexed_typed_version(&written_pointer, value_type)
+                {
+                    Pointer::from_point_read(version, value_type, &written_pointer)
+                } else {
+                    Pointer::new(
+                        Address::canonical_read(point.shared_memory(), &written_pointer),
+                        value_type,
+                    )
+                };
+                facts.push(ExecutionPureFact::logical_pointer_value_equation(
                     stored.clone(),
-                    Address::canonical_read(
-                        &crate::kernel::intern_memory_ref(state.memory()),
-                        &written_pointer,
-                    ),
+                    read,
                 ));
             }
             refresh_scalar_local_after_memory_store(
@@ -3251,10 +3260,18 @@ fn execute_program_heap_free_paths(
             )
             .expect("validated live heap base should free");
         for (address, value_type) in pointer_frames {
-            let ProgramValue::Pointer(before) =
-                before_free.symbolic_pointer_version_load(&address, value_type)
-            else {
-                unreachable!("a pointer version read has pointer type");
+            let before = if let Some(version) = state
+                .program_point()
+                .indexed_typed_version(&address, value_type)
+            {
+                Pointer::from_point_read(version, value_type, &address)
+            } else {
+                let ProgramValue::Pointer(read) =
+                    before_free.symbolic_pointer_version_load(&address, value_type)
+                else {
+                    unreachable!("a pointer version read has pointer type");
+                };
+                read
             };
             let ProgramValue::Pointer(after) =
                 memory.symbolic_pointer_version_load(&address, value_type)
