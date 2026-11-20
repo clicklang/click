@@ -11947,6 +11947,13 @@ impl InstanceId {
     pub const fn variable(self) -> Variable {
         self.0
     }
+
+    /// Whether an execution created this instance
+    /// ([`ExecutionBudget::allocate_instance_identity`]) rather than a
+    /// binder the surface named.
+    pub fn created_by_execution(self) -> bool {
+        self.0.0 >= ExecutionBudget::KERNEL_VARIABLE_BASE
+    }
 }
 
 /// The proof name of one exact mutex authority occurrence (a live, use or

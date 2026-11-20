@@ -2850,9 +2850,9 @@ fn selected_call_binder_application(
                 continue;
             }
             let fresh = budget
-                .allocate_kernel_variable()
+                .allocate_instance_identity()
                 .map_err(|_| "a produced instance could not be named")?;
-            inferred.insert_instance(identity, InstanceId::from_variable(fresh));
+            inferred.insert_instance(identity, fresh);
         }
     }
     let bindings = match (written, inferred.is_empty()) {
@@ -2921,8 +2921,7 @@ pub(crate) fn exit_with_unheld_produced_binders_adopted(
             .into_iter()
             .filter(|instance| {
                 !binders.contains(&instance.identity())
-                    && instance.identity().variable().0
-                        >= crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
+                    && instance.identity().created_by_execution()
             })
             .collect::<Vec<_>>()[..]
         else {

@@ -1545,10 +1545,10 @@ fn collect_spec_bound_identities(
             N::Expression(SpecExpression::ProgramExpression(expression)) => {
                 collect_program_expression_bound_identities(expression, variables, integer_seen);
             }
-            N::Expression(SpecExpression::ResourceField { projection, .. })
-            | N::Integer(SpecIntegerExpression::ResourceField(projection)) => {
-                variables.insert(projection.identity.variable());
-            }
+            // A projection names its instance, an identity of another sort
+            // than the values this set reserves.
+            N::Expression(SpecExpression::ResourceField { .. })
+            | N::Integer(SpecIntegerExpression::ResourceField(_)) => {}
             N::Integer(SpecIntegerExpression::Term(term)) => {
                 collect_integer_bound_identities(term, variables, integer_seen);
             }
@@ -2065,9 +2065,9 @@ fn collect_execution_environment_variables_uncached(
             collect_ranking_component_variables(component, variables);
         }
         // A structural anchor holds the entry instance whose model later call
-        // steps compare against, so its names are reserved like a measure's.
+        // steps compare against, so the values it holds are reserved like a
+        // measure's. Its identity is an instance's, not a value's.
         if let Some(entry) = anchor.structural_entry() {
-            variables.insert(entry.identity.variable());
             for value in entry.arguments.iter() {
                 collect_algebraic_value_bitvector_variables(value, variables);
             }

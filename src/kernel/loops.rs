@@ -6440,7 +6440,7 @@ pub(super) fn prepare_loop_top_state(
     let mut direct_mutexes = Vec::new();
     for spec in resource_specs {
         if spec.guard().is_some() && matches!(spec.term(), ResourceTerm::MutexGuard { .. }) {
-            let identity = InstanceId::from_variable(variables.next_in(budget)?);
+            let identity = budget.allocate_instance_identity()?;
             match super::mutexes::prepare_direct_loop_guard(
                 &entry_state,
                 &top_state,
