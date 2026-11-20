@@ -2445,24 +2445,6 @@ fn synthesize_surface_bool(
             state,
             bound_variables,
         ),
-        ConditionTerm::AlgebraicEqual(left, right) => {
-            proposition_bool_value(ClickProposition::Comparison {
-                left: synthesize_surface_algebraic(
-                    left,
-                    parameter_binding,
-                    state,
-                    bound_variables,
-                )?,
-                operator: ComparisonOperator::Equal,
-                right: synthesize_surface_algebraic(
-                    right,
-                    parameter_binding,
-                    state,
-                    bound_variables,
-                )?,
-            })
-            .ok()
-        }
         ConditionTerm::BoolEqual(left, right) => {
             proposition_bool_value(ClickProposition::Comparison {
                 left: operand(left)?,
@@ -2898,6 +2880,17 @@ fn synthesize_surface_atomic_proposition(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
+    if let ConditionTerm::AlgebraicEqual(left, right) = condition.native_compat() {
+        return Some(ClickProposition::Comparison {
+            left: synthesize_surface_algebraic(left, parameter_binding, state, bound_variables)?,
+            operator: if *value {
+                ComparisonOperator::Equal
+            } else {
+                ComparisonOperator::NotEqual
+            },
+            right: synthesize_surface_algebraic(right, parameter_binding, state, bound_variables)?,
+        });
+    }
     if let Some((format, operator, [left, right])) = condition.operand_view().float_comparison()
         && left.literal_bits().is_some()
         && right.literal_bits().is_some()
