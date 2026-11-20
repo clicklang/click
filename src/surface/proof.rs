@@ -28,6 +28,8 @@ pub(in crate::surface) use fixed_state_proofs::{
 mod cursor_execution;
 mod execution_planning;
 pub(in crate::surface) use execution_planning::probe_open_obligations;
+#[cfg(all(test, not(feature = "fast-gate")))]
+pub(in crate::surface) use execution_planning::test_with_scoped_loop_exit_facts;
 pub(in crate::surface) mod fact_reasoning;
 pub(in crate::surface) mod fixed_state_proofs;
 mod implicit_solve_scope;

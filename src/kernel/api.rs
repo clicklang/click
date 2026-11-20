@@ -5189,6 +5189,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
         early_exits,
         return_exits,
         None,
+        None,
         &mut budget,
     )
 }
@@ -5197,6 +5198,10 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
 /// that frontier's checked facts and returns the facts its proof added.
 pub(crate) type LoopOtherwiseProof<'a> =
     dyn FnMut(&ExecutionState, &ExecutionState, &ExecutionFacts) -> Option<ExecutionFacts> + 'a;
+
+/// Marks the checked common facts that the enclosing proof can name, in
+/// producer order. The join can only retain facts the exits already proved.
+pub(crate) type LoopExitFactScope<'a> = dyn Fn(&ExecutionState, &ExecutionFacts) -> Vec<bool> + 'a;
 
 pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     state: ExecutionState,
@@ -5209,6 +5214,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     early_exits: Vec<LoopEarlyExit>,
     return_exits: Vec<LoopReturnExit>,
     otherwise: Option<&mut LoopOtherwiseProof<'_>>,
+    exit_fact_scope: Option<&LoopExitFactScope<'_>>,
     budget: &mut ExecutionBudget,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
     let crate::kernel::StatementProofInput {
@@ -5238,6 +5244,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
         &early_exits,
         &return_exits,
         otherwise,
+        exit_fact_scope,
         budget,
         &mut variables,
     );
