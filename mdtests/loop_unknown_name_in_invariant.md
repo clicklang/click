@@ -10,7 +10,7 @@ int32 lp(int32 n) {
  requires n >= 0;
  ensures result == n;
 } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  loop {
   decreases n - i;
   invariant bogus <= n;

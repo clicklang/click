@@ -11,7 +11,7 @@ impl Iterator for Countdown {
 fn count(n: u32) -> u32 {
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.n;
         invariant to_integer(passes) + to_integer(iter.n) == to_integer(n);
@@ -20,7 +20,7 @@ fn count(n: u32) -> u32 {
                 mark iteration;
                 have iter.n != 0u32;
                 have passes <= 4294967294u32;
-                step_until(back_edge());
+                step_until(loop.back_edge);
                 have to_integer(iter.n) == to_integer(at(iteration, iter.n)) - 1;
             } else {
                 have iter.n == 0u32;
@@ -35,7 +35,7 @@ fn count(n: u32) -> u32 {
 fn last(n: u32) -> u32 {
     ensures result == 0u32;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.n;
         invariant (iter.n == n and last == 0u32) or last == iter.n;
@@ -43,7 +43,7 @@ fn last(n: u32) -> u32 {
             if 0u32 < iter.n {
                 mark iteration;
                 have iter.n != 0u32;
-                step_until(back_edge());
+                step_until(loop.back_edge);
                 have to_integer(iter.n) == to_integer(at(iteration, iter.n)) - 1;
             } else {
                 have iter.n == 0u32;

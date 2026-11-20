@@ -45,7 +45,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         known();
     }
     mark before_call;
-    let { result: r } = step(child, {});
+    let { result: r } = step(child);
     have defined(at(before_call, a[i]));
     have exists (path: Path) {
         pick(at(before_call, a[i]), path) == r

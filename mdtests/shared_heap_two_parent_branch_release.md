@@ -204,11 +204,11 @@ void caller(struct parent* first, struct parent* second, struct child* kid) {
     owns child_control(kid);
     owns child_ref(kid);
 } by {
-    let { link: first_link } = step(parent_attach, {});
+    let { link: first_link } = step(parent_attach);
     have to_integer(count(child_ref(kid))) == 2 by solve();
-    let { link: second_link } = step(parent_attach, {});
+    let { link: second_link } = step(parent_attach);
     have count(child_ref(kid)) == 3 by solve();
-    step(child_release, {});
+    step(child_release);
     have to_integer(count(child_ref(kid))) == 2 by solve();
     let { out: first_out } = step(parent_detach, { link: first_link });
     step();

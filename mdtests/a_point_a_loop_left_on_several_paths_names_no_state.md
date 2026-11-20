@@ -35,7 +35,7 @@ unsigned count(int n) {
     requires n >= 0;
     ensures true;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases 6 - to_integer(c);
         invariant c <= 5u32;

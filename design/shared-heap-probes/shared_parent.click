@@ -203,9 +203,9 @@ int32 run_first_destroyed(int32 payload) {
     step();
     step();
     branch { true => { step(); step(); step(); solve(); } false => {} }
-    let { link: first_link } = step(parent_attach, {});
-    let { link: second_link } = step(parent_attach, {});
-    step(child_release, {});
+    let { link: first_link } = step(parent_attach);
+    let { link: second_link } = step(parent_attach);
+    step(child_release);
     have first->kid == kid;
     have kid->payload == payload;
     open(child_control(kid)) {
@@ -281,9 +281,9 @@ int32 run_second_destroyed(int32 payload) {
     step();
     step();
     branch { true => { step(); step(); step(); solve(); } false => {} }
-    let { link: first_link } = step(parent_attach, {});
-    let { link: second_link } = step(parent_attach, {});
-    step(child_release, {});
+    let { link: first_link } = step(parent_attach);
+    let { link: second_link } = step(parent_attach);
+    step(child_release);
     have second->kid == kid;
     have kid->payload == payload;
     open(child_control(kid)) {

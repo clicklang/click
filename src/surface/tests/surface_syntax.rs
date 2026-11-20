@@ -3870,7 +3870,7 @@ fn an_invariant_label_names_it_in_a_failure() {
     let sidecar = |invariant: &str| {
         format!(
             "verifying \"count.c\"; int32 count(int32 n) {{ requires 0 <= n; ensures result == result; }} by {{ \
-             step_until(loop(0)); loop {{ decreases n - i; invariant {invariant} i <= n - 1; \
+             step_until(loop(0).entry); loop {{ decreases n - i; invariant {invariant} i <= n - 1; \
              }} step_until(function.exit); solve(); }}"
         )
     };

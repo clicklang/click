@@ -461,7 +461,7 @@ uint64 spell(const uint8* b, uint64 n) {
     views b[0u64..n];
     ensures result < 4u64;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases vl;
         views b[0u64..n];
@@ -1256,7 +1256,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
     requires cur < 2;
     ensures result == 1;
 } by {
-    let { result: r } = step(child, { });
+    let { result: r } = step(child);
     have r != 0 by { solve(); }
     have defined(a[cur]) by { solve(); }
     have exists (z: int32) { z == a[cur] } by {
@@ -1389,7 +1389,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     ensures result == result;
 } by {
     mark before_call;
-    let { result: r } = step(child, {});
+    let { result: r } = step(child);
     have defined(at(before_call, a[i])) by { solve(); }
     have exists (path: Path) {
         pick(at(before_call, a[i]), path) == at(before_call, a[i])

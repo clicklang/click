@@ -7901,81 +7901,25 @@ impl Parser {
         ))
     }
 
-    /// A `step(` argument that opens the chunk-5 call form: an identifier, a
-    /// parenthesized argument list, and a comma introducing the binder map.
-    /// The closing parenthesis comes from the precomputed nesting table, so
-    /// the decision costs one lookup rather than a scan.
-    /// Whether `step(Name, { ... })` follows: a contract or function name, a
-    /// C++ or Rust path `a::b` and a Rust instance's type arguments `<u32>`
-    /// included, then the comma before the map.
-    fn named_step_follows(&self) -> bool {
-        let mut at = self.position;
-        if !matches!(self.tokens.get(at), Some(Token::Ident(_))) {
-            return false;
-        }
-        at += 1;
-        while self.tokens.get(at) == Some(&Token::ColonColon)
-            && matches!(self.tokens.get(at + 1), Some(Token::Ident(_)))
+    fn parse_named_call_step(
+        &mut self,
+        output: Option<CallOutputPattern>,
+    ) -> Result<ProofTactic, ClickError> {
+        let call = self.parse_call_binder_transport(output, false)?;
+        if call.is_named_contract()
+            && call.binders.is_empty()
+            && call.produced.is_empty()
+            && call.type_arguments.is_empty()
+            && call.value_arguments.is_empty()
+            && call.result.is_none()
         {
-            at += 2;
+            return Ok(ProofTactic::StepContract(call.callee.into()));
         }
-        if self.tokens.get(at) == Some(&Token::LessThan) {
-            while !matches!(self.tokens.get(at), Some(Token::GreaterThan) | None) {
-                at += 1;
-            }
-            at += 1;
-        }
-        self.tokens.get(at) == Some(&Token::Comma)
+        Ok(ProofTactic::StepCall(call))
     }
 
-    fn call_binder_transport_follows(&self) -> bool {
-        if !matches!(self.peek(), Some(Token::Ident(_))) {
-            return false;
-        }
-        let open = if self.verifies_rust() {
-            // A Rust callee's path, `a::b::f`, and a generic function
-            // instance's type arguments, `<u32>`.
-            let mut at = self.position + 1;
-            while self.tokens.get(at) == Some(&Token::ColonColon)
-                && matches!(self.tokens.get(at + 1), Some(Token::Ident(_)))
-            {
-                at += 2;
-            }
-            if self.tokens.get(at) == Some(&Token::LessThan) {
-                at += 1;
-                while matches!(self.tokens.get(at), Some(Token::Ident(_)))
-                    && matches!(self.tokens.get(at + 1), Some(Token::Comma))
-                {
-                    at += 2;
-                }
-                if !matches!(self.tokens.get(at), Some(Token::Ident(_)))
-                    || self.tokens.get(at + 1) != Some(&Token::GreaterThan)
-                {
-                    return false;
-                }
-                at += 2;
-            }
-            at
-        } else if self.peek_next() == Some(&Token::ColonColon) {
-            if !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_))) {
-                return false;
-            }
-            self.position + 3
-        } else {
-            self.position + 1
-        };
-        if self.tokens.get(open) != Some(&Token::LParen) {
-            return false;
-        }
-        let Some(close) = self.matching_parentheses.get(open).cloned().flatten() else {
-            return false;
-        };
-        self.tokens.get(close + 1) == Some(&Token::Comma)
-    }
-
-    /// `callee(arguments), { binder: instance, ... }`, positioned after the
-    /// opening parenthesis of `step(`. Produced instances are named by the
-    /// surrounding `let` output pattern.
+    /// Parse a selected call with an optional input map, or a user tactic
+    /// application. The surrounding `let` pattern introduces outputs.
     fn parse_call_binder_transport(
         &mut self,
         output: Option<CallOutputPattern>,
@@ -7996,40 +7940,41 @@ impl Parser {
             callee.push_str("::");
             callee.push_str(&self.expect_ident("C function name")?);
         }
-        // The binder map is the last argument in both forms, as a fold's
-        // field map is: a call step writes `step(callee, { ... })` and a
-        // tactic application writes `name(..., { ... })`, where the map is
-        // optional when the tactic supplies no binder.
         let form = if tactic { "name(...)" } else { "step(...)" };
-        // `step(Name, { ... })` names a named contract or a C function by
-        // its contract; the call's arguments come from the call at the
-        // frontier, which the step is checked against when it runs.
-        let name_only = !tactic && self.peek() == Some(&Token::Comma);
-        let named_contract = name_only && self.contract_resource_binders.contains_key(&callee);
-        let named_function = name_only && !named_contract;
-        if !tactic && !name_only {
-            return Err(self.error(format!(
-                "`step({callee}(...), {{ ... }})` is retired: write `step({callee}, {{ ... }})`; the call's arguments come from the call at the frontier"
-            )));
-        }
-        if !name_only {
-            self.expect(Token::LParen)?;
+        // Select the declared named contract when present. Otherwise the name
+        // must match the call at the frontier, which supplies the arguments.
+        let named_contract = !tactic && self.contract_resource_binders.contains_key(&callee);
+        let named_function = !tactic && !named_contract;
+        if !tactic && self.peek() == Some(&Token::LParen) {
+            let followed_by_map = self.matching_parentheses[self.position]
+                .is_some_and(|close| self.tokens.get(close + 1) == Some(&Token::Comma));
+            return Err(self.error(if followed_by_map {
+                format!(
+                    "`step({callee}(...), {{ ... }})` is retired: write `step({callee}, {{ ... }})`; the call's arguments come from the call at the frontier"
+                )
+            } else {
+                format!(
+                    "`step({callee}(...))` is retired; select a named contract with `step({callee})`, or `step({callee}, {{ handle: instance }})` when its body declares resource handles"
+                )
+            }));
         }
         let mut arguments = Vec::new();
-        let mut has_map = !tactic;
-        while !name_only && self.peek() != Some(&Token::RParen) {
-            if self.peek() == Some(&Token::LBrace) {
-                has_map = true;
-                break;
+        let mut has_map = !tactic && self.peek() == Some(&Token::Comma);
+        if tactic {
+            self.expect(Token::LParen)?;
+            while self.peek() != Some(&Token::RParen) {
+                if self.peek() == Some(&Token::LBrace) {
+                    has_map = true;
+                    break;
+                }
+                arguments.push(self.parse_contract_expression()?);
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
             }
-            arguments.push(self.parse_contract_expression()?);
-            if self.peek() != Some(&Token::Comma) {
-                break;
-            }
+        } else if has_map {
             self.position += 1;
-        }
-        if !tactic {
-            self.expect(Token::Comma)?;
         }
         let mut declared = if named_contract {
             &self.contract_resource_binders
@@ -8161,12 +8106,17 @@ impl Parser {
         if callee == "pthread_mutex_init" && !bound.contains("state") {
             declared.remove("state");
         }
-        if let Some((missing, _)) = declared.iter().find(|(name, entry)| {
-            matches!(
-                entry.kind,
-                CalleeResourceBinderKind::Supplied | CalleeResourceBinderKind::Type
-            ) && !bound.contains(*name)
-        }) {
+        // An unbound named-contract step uses the ordinary contract checker,
+        // which can give a combined input-map and output-pattern hint.
+        let plain_contract_step = named_contract && output.is_none() && bound.is_empty();
+        if !plain_contract_step
+            && let Some((missing, _)) = declared.iter().find(|(name, entry)| {
+                matches!(
+                    entry.kind,
+                    CalleeResourceBinderKind::Supplied | CalleeResourceBinderKind::Type
+                ) && !bound.contains(*name)
+            })
+        {
             return Err(self.error(format!("call map omits `{callee}` binder `{missing}`")));
         }
         // Instantiate the runtime's ordinary state output from the resource
@@ -8217,6 +8167,7 @@ impl Parser {
         let mut produced = Vec::new();
         match (output, produced_declarations.as_slice()) {
             (None, []) => {}
+            (None, _) if plain_contract_step => {}
             (None, _) => {
                 let names = produced_declarations
                     .iter()
@@ -10589,14 +10540,9 @@ impl Parser {
                     "`step({ ... })` is retired: name the function or contract the map fills in, `step(callee, { ... })`",
                 ));
             }
-            if !self.call_binder_transport_follows() && !self.named_step_follows() {
-                return Err(self.error(
-                            "a call output binding requires a binder map: `let { result: name } = step(callee, { binder: instance })`",
-                        ));
-            }
-            let transport = self.parse_call_binder_transport(Some(output), false)?;
+            let step = self.parse_named_call_step(Some(output))?;
             self.expect(Token::RParen)?;
-            return self.parse_step_proof(ProofTactic::StepCall(transport));
+            return self.parse_step_proof(step);
         }
         if let Some(name) = self.peek_ident()
             && self.tactic_names.contains(name)
@@ -11451,51 +11397,8 @@ impl Parser {
                     return Err(self.error(
                     "`step({ ... })` is retired: name the function or contract the map fills in, `step(callee, { ... })`",
                 ));
-                } else if self.call_binder_transport_follows() || self.named_step_follows() {
-                    ProofTactic::StepCall(self.parse_call_binder_transport(None, false)?)
                 } else {
-                    let name = self.expect_ident("call contract name")?;
-                    if self.peek() == Some(&Token::LParen) {
-                        return Err(self.error(format!(
-                            "`step({name}(...))` is retired; select a named contract with \
-                             `step({name})`, or `step({name}, {{ handle: instance }})` \
-                             when its body declares resource handles"
-                        )));
-                    }
-                    let mut arguments = Vec::new();
-                    if self.peek() == Some(&Token::Comma) {
-                        self.position += 1;
-                        if self.peek() != Some(&Token::LBrace) {
-                            return Err(self.error(format!(
-                                "`step({name}, ...)` selects one contract; after the comma it \
-                                 takes a handle map, `{{ handle: instance }}`"
-                            )));
-                        }
-                        self.position += 1;
-                        while self.peek() != Some(&Token::RBrace) {
-                            let handle = self.expect_ident("contract resource handle")?;
-                            self.expect(Token::Colon)?;
-                            let name = self.expect_ident("resource instance")?;
-                            let (identity, resource_name) = self
-                                .names
-                                .resource_bindings
-                                .get(&name)
-                                .cloned()
-                                .ok_or_else(|| self.unknown_instance(&name, "resource instance"))?;
-                            arguments.push(ContractResourceArgument {
-                                handle,
-                                name,
-                                resource_name,
-                                identity,
-                            });
-                            if self.peek() != Some(&Token::Comma) {
-                                break;
-                            }
-                            self.position += 1;
-                        }
-                        self.expect(Token::RBrace)?;
-                    }
-                    ProofTactic::StepContract(ContractApplication { name, arguments })
+                    self.parse_named_call_step(None)?
                 };
                 self.expect(Token::RParen)?;
                 return self.parse_step_proof(step);
@@ -11505,17 +11408,9 @@ impl Parser {
             }
             "step_until" => {
                 self.expect(Token::LParen)?;
-                let region_ref = if self.peek_ident() == Some("function")
-                    && self.peek_next() == Some(&Token::Dot)
-                    && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(kind)) if kind == "exit")
-                {
-                    self.position += 3;
-                    CodeRegionRef::FunctionExit
-                } else {
-                    self.parse_code_region_ref()?
-                };
+                let point = self.parse_execution_point()?;
                 self.expect(Token::RParen)?;
-                ProofTactic::ExecuteUntil(region_ref)
+                ProofTactic::ExecuteUntil(point)
             }
             "unfold" => {
                 self.expect(Token::LParen)?;
@@ -12538,13 +12433,6 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let index = self.expect_index("loop index")?;
                 self.expect(Token::RParen)?;
-                if self.chained_region_follows(&["back_edge"]) {
-                    self.expect(Token::Dot)?;
-                    self.expect_ident("back_edge")?;
-                    self.expect(Token::LParen)?;
-                    self.expect(Token::RParen)?;
-                    return Ok(CodeRegionRef::BackEdge(Some(index)));
-                }
                 if self.source_path_step_follows() {
                     return self.parse_source_path(vec![SourcePathStep::Loop(index)]);
                 }
@@ -12565,11 +12453,6 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 self.parse_source_path(vec![SourcePathStep::Statement(index)])
             }
-            Some(Token::Ident(kind)) if kind == "back_edge" && self.peek() == Some(&Token::LParen) => {
-                self.expect(Token::LParen)?;
-                self.expect(Token::RParen)?;
-                Ok(CodeRegionRef::BackEdge(None))
-            }
             Some(Token::Ident(kind)) if kind == "read" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
                 let occurrence = self.expect_index("read occurrence")?;
@@ -12586,10 +12469,10 @@ impl Parser {
             }
             Some(Token::Ident(label)) => Ok(CodeRegionRef::Label(label)),
             Some(token) => Err(self.error(format!(
-                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got {token}"
+                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, or label, got {token}"
             ))),
             None => Err(self.error(
-                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got end of input",
+                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, or label, got end of input",
             )),
         }
     }
@@ -17147,6 +17030,44 @@ impl Parser {
 
     fn parse_program_point_ref(&mut self) -> Result<ProgramPointRef, ClickError> {
         let region = self.parse_code_region_ref()?;
+        self.parse_program_point_after_region(region)
+    }
+
+    fn parse_execution_point(&mut self) -> Result<ExecutionPoint, ClickError> {
+        // Bare `loop` in this spelling means the active iteration.
+        if self.peek_ident() == Some("loop")
+            && self.peek_next() == Some(&Token::Dot)
+            && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(name)) if name == "back_edge")
+        {
+            self.position += 3;
+            return Ok(ExecutionPoint::BackEdge(None));
+        }
+        let region = self.parse_code_region_ref()?;
+        if let CodeRegionRef::Loop(index) = &region
+            && self.peek() == Some(&Token::Dot)
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "back_edge")
+        {
+            self.position += 2;
+            return Ok(ExecutionPoint::BackEdge(Some(*index)));
+        }
+        if self.peek() == Some(&Token::RParen) {
+            return Err(self.error("`step_until` requires an explicit program point, such as `loop(0).entry` or `function.exit`"));
+        }
+        let point = self.parse_program_point_after_region(region)?;
+        if point.kind != ProgramPointKind::Entry
+            && !(point.region == CodeRegionRef::Function && point.kind == ProgramPointKind::Exit)
+        {
+            return Err(self.error(
+                "`step_until` supports entry points, `function.exit`, and loop back edges",
+            ));
+        }
+        Ok(ExecutionPoint::ProgramPoint(point))
+    }
+
+    fn parse_program_point_after_region(
+        &mut self,
+        region: CodeRegionRef,
+    ) -> Result<ProgramPointRef, ClickError> {
         self.expect(Token::Dot)?;
         let kind = match self.expect_ident("program point kind")?.as_str() {
             "entry" => ProgramPointKind::Entry,
@@ -18696,7 +18617,7 @@ mod tactic_classification_tests {
         ("mark", "mark name;"),
         ("step", "step();"),
         ("step-result", "let { result: value } = step();"),
-        ("step-contract", "step(Contract);"),
+        ("step-contract", "step(Plain);"),
         ("step-contract-application", "step(Contract, { cell: c });"),
         ("step-call", "step(f, { cell: c });"),
         (
@@ -18709,7 +18630,7 @@ mod tactic_classification_tests {
             "step() { requires x == 1 by { normalize(); }; }",
         ),
         ("user-tactic", "name(x, { cell: c });"),
-        ("step-until", "step_until(label);"),
+        ("step-until", "step_until(label.entry);"),
         ("unfold-predicate", "unfold(predicate(x));"),
         ("unfold-function", "unfold(f(x));"),
         ("unfold-resource", "unfold(reference(p));"),
@@ -18857,6 +18778,10 @@ mod tactic_classification_tests {
                 parser
                     .contract_resource_binders
                     .insert("Contract".to_string(), cell);
+                parser
+                    .contract_resource_binders
+                    .entry("Plain".into())
+                    .or_default();
                 parser.names.resource_bindings.insert(
                     "c".to_string(),
                     (

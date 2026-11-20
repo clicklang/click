@@ -30,7 +30,7 @@ fn vec_values::append(v: &mut Vec<u32>, x: u32) {
 fn vec_values::pushed_len(x: u32) -> usize {
     ensures result == 1u64;
 } by {
-    step_until(call(1));
+    step_until(call(1).entry);
     have v == call(0).result;
     have click::rust::vec::len(call(0).result) == 0u64;
     step_until(function.exit);

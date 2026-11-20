@@ -4722,7 +4722,10 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
     );
     let Some((until, _)) = crate::kernel::search::ProofSearch::try_execute_until_descendant(
         &(root),
-        &CodeRegionRef::Region(1),
+        &ExecutionPoint::ProgramPoint(ProgramPointRef {
+            region: CodeRegionRef::Region(1),
+            kind: ProgramPointKind::Entry,
+        }),
     )
     .expect("execute_until should use the checked smart step route") else {
         panic!("execute_until should advance to its target");
@@ -4980,7 +4983,10 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
     );
     let Some((at_call, _)) = crate::kernel::search::ProofSearch::try_execute_until_descendant(
         &(root),
-        &CodeRegionRef::Region(1),
+        &ExecutionPoint::ProgramPoint(ProgramPointRef {
+            region: CodeRegionRef::Region(1),
+            kind: ProgramPointKind::Entry,
+        }),
     )
     .expect("declaration should advance to the need call") else {
         panic!("execution should reach the call frontier");

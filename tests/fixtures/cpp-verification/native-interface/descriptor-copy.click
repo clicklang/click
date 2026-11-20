@@ -13,7 +13,7 @@ int32 probe(struct View& input) {
  ensures input.data == old(input.data);
  ensures input.data[0] == 9;
 } by {
-    step_until(call(change, 0));
+    step_until(call(change, 0).entry);
     step();
     have input.size == old(input.size) by { known(); }
     have input.data == old(input.data) by { known(); }

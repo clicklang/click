@@ -72,7 +72,7 @@ int caller(int scale) {
     step();
     fold(Whole(sq));
     unfold(Whole(sq));
-    let { __object_object: packed } = step(Square__click_pack_const__Square, {});
+    let { __object_object: packed } = step(Square__click_pack_const__Square);
 }
 ```
 

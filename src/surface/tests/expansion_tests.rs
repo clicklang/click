@@ -266,7 +266,7 @@ fn explicit_frame_refusal_replays_without_transport() {
     let mut expanded = source;
     for prefix_step in [
         "have to_integer(s + 1) <= to_integer(e);",
-        "step_until(statement(2));",
+        "step_until(statement(2).entry);",
     ] {
         let at = expansion::position_at_offset(&expanded, expanded.find(prefix_step).unwrap());
         expanded = expand_c_tactic_source_at(&expanded, &sources, at.line, at.column)
@@ -1939,9 +1939,9 @@ fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
             views kid->payload;
             ensures result == kid->payload;
         } by {
-            step(put, {});
+            step(put);
             step();
-            step(read, {});
+            step(read);
             have p->kid == kid;
             have observed == kid->payload;
             step_until(function.exit);
@@ -4689,13 +4689,13 @@ fn whole_claim_expansion_keeps_tactics_before_a_nested_match() {
     );
 }
 
-/// A call step that lends no resource instance is written with an empty
-/// binder map, `step(inner, {})`. Expansion reprints the map: printed
-/// without it, the step reads as a named-contract step.
+/// Expansion removes an empty input map from a call step and the
+/// resulting named call still selects the callee.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
-fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
+fn whole_claim_expansion_omits_a_call_steps_empty_input_map() {
     let (click, sources) = mdtest_sources("mdtests/mutex_live_contract.md");
+    let click = click.replace("step(inner);", "step(inner, {});");
     let sources = sources
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
@@ -4711,7 +4711,7 @@ fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
         });
     }
     let expanded = expand_c_claim_source_by_label(&click, &sources, "keep.contract").unwrap();
-    assert!(expanded.contains("step(inner, {});"), "{expanded}");
+    assert!(expanded.contains("step(inner);"), "{expanded}");
 }
 
 #[test]
@@ -4738,7 +4738,7 @@ fn bare_step_call_result_bindings_expand_and_replay() {
 
     let (source, owned_sources) = mdtest_sources("mdtests/call_result_discarded.md");
     let sources = crate::cli::source_refs(&owned_sources);
-    let source = source.replace("step(classify, { })", "step()");
+    let source = source.replace("step(classify)", "step()");
     let error = verify_c_sources(&source, &sources)
         .expect_err("discarding a C call result leaves no value to bind");
     assert!(
@@ -5814,7 +5814,7 @@ fn selected_post_execution_solve_keeps_the_surviving_execution_branch() {
                 ensures result != tail implies result->value == value;
                 ensures result != tail implies result->next == tail;
             } by {
-                step_until(statement(1));
+                step_until(statement(1).entry);
                 if node == 0 {
                     step_until(function.exit);
                     solve();
@@ -6911,7 +6911,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
                 ensures result == expected;
             } by {
                 observe(equal_cell(data, expected));
-                step_until(statement(2));
+                step_until(statement(2).entry);
                 apply(int32_equality_transitive(observed, data[0], expected));
                 step_until(function.exit);
                 solve();
@@ -11604,7 +11604,7 @@ fn linear_execute_until_inside_open_stops_on_checked_frontier() {
             ensures result == x;
         } by {
             open(marker(x)) {
-                step_until(region(2));
+                step_until(region(2).entry);
                 step();
             }
             step();
@@ -12743,7 +12743,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             have selected >= 0 by {
                 apply(positive_is_nonnegative(selected));
             }
-            step_until(region(5));
+            step_until(region(5).entry);
             step();
             solve();
         }
@@ -16061,7 +16061,7 @@ fn source_expander_recalls_a_fact_at_a_recorded_statement_entry() {
                 ensures result == 1;
             } by {
                 observe(one(p));
-                step_until(region(2));
+                step_until(region(2).entry);
                 have at(region(1).entry, p[0]) == 1 by solve();
                 step_until(function.exit);
                 solve();
@@ -16163,7 +16163,7 @@ fn source_expander_derives_separation_from_call_postconditions() {
                 views data[0..length];
                 ensures result == 0;
             } by {
-                step_until(region(2));
+                step_until(region(2).entry);
                 have separate(
                     memory(*right),
                     memory(left->data[0..left->len])
@@ -18571,7 +18571,7 @@ fn conditional_call_witness_expansion_keeps_empty_binder_map() {
     )
     .expect("the let-bound call must remain parseable");
     assert!(
-        expanded.contains("let { result: r } = step(child, {});"),
+        expanded.contains("let { result: r } = step(child);"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).expect("the expanded witness proof certifies");
@@ -19149,7 +19149,7 @@ void caller(struct parent* p, struct child* kid) {
     ensures link.link == ParentLink::Linked(kid);
     ensures p->kid == kid;
 } by {
-    let { link: link } = step(attach, {});
+    let { link: link } = step(attach);
     have p->kid == kid by solve();
     step();
     have p->kid == kid by solve();
@@ -21738,7 +21738,7 @@ fn repeated_retains_expand_with_checked_count_bounds() {
         .expect("retain bounds should expand as checked obligation proofs");
     verify_expanded_function_source(source, &expanded, &sources, "retain_many")
         .expect("the expanded retain proof rechecks");
-    for (offset, _) in source.match_indices("step(child_retain, {});") {
+    for (offset, _) in source.match_indices("step(child_retain);") {
         let position = expansion::position_at_offset(source, offset);
         let expanded = expand_c_tactic_source_at(source, &sources, position.line, position.column)
             .expect("each retained call's implicit proof should expand");
@@ -22683,6 +22683,56 @@ void stamp(int* p, int* q) {
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
+#[test]
+fn composite_view_assembly_requires_the_rewritten_body_fact() {
+    let c = r#"
+void read_tagged(int *cell, int *p);
+void caller(int *cell, int *p, int *q) { read_tagged(cell, p); }
+"#;
+    let source = r#"verifying "tagged.c";
+function tag(p: int32*) -> int32 {
+    if p == 0 { 1 } else { 7 }
+}
+resource tagged(cell: int32*, formal: int32*) {
+    owns *cell;
+    fact forall (k: int32) { k == 1 implies tag(formal) == 7 };
+}
+extern void read_tagged(int32* cell, int32* p) { views tagged(cell, p); }
+void caller(int32* cell, int32* p, int32* q) {
+    owns *cell;
+    requires p == q;
+    requires forall (k: int32) { k == 1 implies tag(q) == 7 };
+} by {
+    have forall (k: int32) { k == 1 implies tag(p) == 7 } by { rewrite(p, q); solve(); }
+    step();
+    step();
+}
+"#;
+    let sources = [("tagged.c", c)];
+    let missing = source.replace(
+        "    have forall (k: int32) { k == 1 implies tag(p) == 7 } by { rewrite(p, q); solve(); }\n",
+        "",
+    );
+    let refusal = verify_c_sources(&missing, &sources)
+        .expect_err("the call must check the body fact in its own spelling")
+        .concise_report();
+    assert!(
+        refusal.contains("missing pure fact")
+            && refusal.contains("`forall (k: int32) { k == 1 implies tag(formal) == 7 }`"),
+        "{refusal}"
+    );
+    assert!(refusal.contains("formal = p"), "{refusal}");
+
+    let label = "caller.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("rewrite(p, q)"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 /// Expand one function's proof and replay it with that claim's implicit
 /// search off. `claim` is the label of the expanded claim.
 fn store_index_separation_replays(fixture: &str, function: &str, claim: &str) {
@@ -23561,7 +23611,7 @@ test_batches! {
         whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms,
         whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm,
         whole_claim_expansion_keeps_tactics_before_a_nested_match,
-        whole_claim_expansion_keeps_a_call_steps_empty_binder_map,
+        whole_claim_expansion_omits_a_call_steps_empty_input_map,
     ],
     expansion_batch_19: [
         whole_claim_expansion_keeps_a_proof_if_after_execution,
@@ -24725,7 +24775,7 @@ fn bit_field_pointer_and_value_capture_expand_and_replay() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let source = format!(
-        "{source}\nby {{ step_until(statement(2)); have p != 0; step_until(function.exit); solve(); }}"
+        "{source}\nby {{ step_until(statement(2).entry); have p != 0; step_until(function.exit); solve(); }}"
     );
     let claim = "answer.contract";
     let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
@@ -24758,7 +24808,7 @@ fn bit_field_declarations_keep_later_local_ordinals() {
     let click = r#"
         verifying "fields.c";
         int32 answer() { ensures result == 1; } by {
-            step_until(statement(3));
+            step_until(statement(3).entry);
             have answer.local(4) == 1;
             step_until(function.exit);
             solve();
@@ -24777,7 +24827,7 @@ fn bit_field_record_storage_expands_and_replays() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let source = format!(
-        "{source}\nby {{ step_until(statement(3)); have &source != 0; step_until(function.exit); solve(); }}"
+        "{source}\nby {{ step_until(statement(3).entry); have &source != 0; step_until(function.exit); solve(); }}"
     );
     let claim = "answer.contract";
     let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
@@ -24826,9 +24876,9 @@ fn row_pointer_source_binding_expands_and_replays() {
         .collect::<Vec<_>>();
     let source = format!(
         "{source}\nby {{
-            step_until(statement(4));
+            step_until(statement(4).entry);
             have row != 0;
-            step_until(statement(5));
+            step_until(statement(5).entry);
             have next != 0;
             step_until(function.exit);
             solve();
@@ -24860,7 +24910,7 @@ fn row_pointer_declaration_keeps_later_local_ordinals() {
     let click = r#"
         verifying "matrix.c";
         int32 select_rows() { ensures result == 21; } by {
-            step_until(statement(3));
+            step_until(statement(3).entry);
             have select_rows.local(3) == 21;
             step_until(function.exit);
             solve();

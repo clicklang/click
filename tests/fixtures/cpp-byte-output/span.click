@@ -22,7 +22,7 @@ void fill(std::span<std::byte> dst) {
 uint32 probe() {
     ensures result == 305419896u32;
 } by {
-    step_until(call(fill, 0));
+    step_until(call(fill, 0).entry);
     have std_span_size(dst) == 4u64 by { solve(); }
     step();
     have std_span_data(dst) == ((&obj) as (uint8*)) by { known(); }

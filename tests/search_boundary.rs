@@ -245,6 +245,26 @@ fn checked_view_queries_cannot_restore_alias_enumeration() {
 }
 
 #[test]
+fn composite_view_checks_cannot_use_owned_body_alias_discovery() {
+    for function in [
+        "composite_definition_facts_hold",
+        "composite_view_body_fact_is_established",
+    ] {
+        for call in [
+            "c.exact_pointer_aliases(&p)",
+            "c.exact_uint64_equalities(&n)",
+            "resource_body_fact_is_established(c, goal)",
+        ] {
+            let source = format!("fn {function}(c: C) {{ {call}; }}");
+            assert!(
+                boundary::check_source("src/kernel/functions.rs", &source).is_err(),
+                "{source}"
+            );
+        }
+    }
+}
+
+#[test]
 fn checked_conditions_cannot_restore_alias_enumeration() {
     for (path, function) in [
         (

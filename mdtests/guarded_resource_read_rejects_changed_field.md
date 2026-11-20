@@ -33,7 +33,7 @@ int32 f(struct cell* root) {
     ensures result == old(child.number);
     ensures child.number == old(child.number);
     ensures root->value == old(child.number);
-} by { unfold(child); step_until(statement(3));
+} by { unfold(child); step_until(statement(3).entry);
     have separate(memory(selected->value), memory(root->base.left)) by { solve(); }
     have contains(memory(selected->value), memory((&selected->value)[0..1])) by { normalize(); }
     have contains(memory(root->base.left), memory(root->base.left)) by { apply(click::separation::contains_refl(memory(root->base.left))); }

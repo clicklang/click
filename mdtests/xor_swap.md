@@ -21,7 +21,7 @@ int32 xor_swap(int32 x, int32 y) {
     ensures result == old(y)
         and at(region(3).entry, x) == old(y)
         and at(region(3).entry, y) == old(x) by {
-        step_until(region(3));
+        step_until(region(3).entry);
         have x == x by {
             normalize();
         }
