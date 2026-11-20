@@ -19,6 +19,7 @@ pub(in crate::kernel) struct NumericAddressConnectivity {
     owner_forest: NumericAddressForest,
     next_id: u64,
     has_variable_endpoint: bool,
+    pointer_alias_roots: PersistentSet<u64>,
 }
 
 /// The paths through the numeric union forest use only numeric IDs. Keeping
@@ -31,7 +32,11 @@ struct NumericAddressForest {
 }
 
 impl NumericAddressConnectivity {
-    pub(in crate::kernel) fn record(&mut self, endpoints: [(&Key, &MachineTerm); 2]) {
+    pub(in crate::kernel) fn record(
+        &mut self,
+        endpoints: [(&Key, &MachineTerm); 2],
+        has_pointer_alias: impl Fn(&Address) -> bool,
+    ) {
         let [left, right] = endpoints.map(|(key, term)| {
             self.has_variable_endpoint |= key.operand_view().variable().is_some();
             let operand = Self::node(&mut self.operands, &mut self.next_id, key);
@@ -43,11 +48,57 @@ impl NumericAddressConnectivity {
                     &mut self.other_objects
                 };
                 let object = Self::node(objects, &mut self.next_id, &bucket);
-                self.owner_forest.components.join(&operand, &object);
+                self.join(operand, object);
+                if has_pointer_alias(&bucket) {
+                    self.mark_pointer_alias_node(object);
+                }
             }
             operand
         });
-        self.owner_forest.components.join(&left, &right);
+        self.join(left, right);
+    }
+
+    fn join(&mut self, left: u64, right: u64) {
+        if let Some((root, absorbed)) = self.owner_forest.components.join(&left, &right)
+            && self.pointer_alias_roots.contains(&absorbed)
+        {
+            self.pointer_alias_roots = self
+                .pointer_alias_roots
+                .without_value(&absorbed)
+                .with_value(root);
+        }
+    }
+
+    // The marks track which numeric components can reach an exact pointer
+    // equality. An exact edge does not join numeric components or affect
+    // the separate byte-overlap checks that read numeric connectivity.
+    pub(in crate::kernel) fn mark_pointer_alias_bucket(&mut self, bucket: &Address) {
+        if let Some(&node) = self.object_node(bucket) {
+            self.mark_pointer_alias_node(node);
+        }
+    }
+
+    fn mark_pointer_alias_node(&mut self, node: u64) {
+        let root = *self.owner_forest.components.root(&node);
+        self.pointer_alias_roots = self.pointer_alias_roots.with_value(root);
+    }
+
+    pub(in crate::kernel) fn clear_pointer_alias_marks(&mut self) {
+        self.pointer_alias_roots = Default::default();
+    }
+
+    pub(super) fn reaches_pointer_alias(&self, bucket: &Address) -> bool {
+        self.object_node(bucket).is_some_and(|node| {
+            self.pointer_alias_roots
+                .contains(self.owner_forest.components.root(node))
+        })
+    }
+
+    fn object_node(&self, bucket: &Address) -> Option<&u64> {
+        self.owner_forest
+            .objects
+            .get(bucket)
+            .or_else(|| self.other_objects.get(bucket))
     }
 
     fn can_be_owner(bucket: &Address) -> bool {
@@ -80,13 +131,7 @@ impl NumericAddressConnectivity {
 
     pub(in crate::kernel) fn connected(&self, left: &Address, right: &Address) -> bool {
         use crate::kernel::assumptions::parameter_alias_bucket;
-        let node = |address| {
-            let bucket = parameter_alias_bucket(address);
-            self.owner_forest
-                .objects
-                .get(&bucket)
-                .or_else(|| self.other_objects.get(&bucket))
-        };
+        let node = |address| self.object_node(&parameter_alias_bucket(address));
         let Some(left) = node(left) else {
             return false;
         };
