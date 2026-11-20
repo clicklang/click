@@ -360,6 +360,34 @@ impl From<AddressOffset> for StoredPointerOffset {
 }
 
 impl StoredPointerOffset {
+    pub(in crate::kernel) fn from_rewritten_root(root: SharedAddressOffset) -> Self {
+        let mut indices = Vec::new();
+        if !root.visit_root_while(|node| {
+            if let Some(index) = node.index() {
+                let index = SharedAddressOffset::exact_index(index);
+                if index.shared_operand().is_none() {
+                    return false;
+                }
+                indices.push(index);
+            }
+            true
+        }) {
+            // A rewrite can introduce an exact opaque index. Keep that result
+            // in the same native storage as a written offset with such an index.
+            return Self::from(KernelAddressOffset::export(&root).expect("rewritten offset"));
+        }
+        Self(Arc::new(PointerOffsetStorage::Shared {
+            root,
+            _index_identities: indices,
+            native: OnceLock::new(),
+        }))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_cached_native_offset(&self) -> bool {
+        matches!(&*self.0, PointerOffsetStorage::Shared { native, .. } if native.get().is_some())
+    }
+
     pub(in crate::kernel) fn from_written(written: &AddressOffset) -> Self {
         Self(Arc::new(Self::retain(written).unwrap_or_else(|| {
             PointerOffsetStorage::Native(written.clone())
