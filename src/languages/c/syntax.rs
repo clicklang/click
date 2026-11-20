@@ -15815,69 +15815,89 @@ impl Parser {
         destination: CExpression,
         value: CExpression,
     ) -> Result<(Vec<CStatement>, CExpression, CExpression), CSyntaxError> {
-        if let CExpression::Load(source, loaded_type) = value {
-            if let Some(mut checks) = self.postfix_byte_copy_checks(&destination, &source) {
-                let (destination_prefix, destination) = self.lower_expression_calls(destination)?;
-                let (source_prefix, source) = self.lower_expression_calls(*source)?;
-                checks.extend(destination_prefix);
-                checks.extend(source_prefix);
-                return Ok((
-                    checks,
-                    destination,
-                    CExpression::Load(Box::new(source), loaded_type),
-                ));
+        let Some(mut checks) = self.postfix_byte_copy_checks(&destination, &value) else {
+            return self.lower_expression_pair(destination, value);
+        };
+        let (destination_prefix, destination) = self.lower_expression_calls(destination)?;
+        let (source_prefix, value) = match value {
+            CExpression::Load(source, loaded_type) => {
+                // The assertions already establish separation for the updated address.
+                let (prefix, source) = self.lower_expression_calls(*source)?;
+                (prefix, CExpression::Load(Box::new(source), loaded_type))
             }
-            return self.lower_expression_pair(destination, CExpression::Load(source, loaded_type));
-        }
-        self.lower_expression_pair(destination, value)
+            value => self.lower_expression_calls(value)?,
+        };
+        checks.extend(destination_prefix);
+        checks.extend(source_prefix);
+        Ok((checks, destination, value))
     }
 
-    /// C sequences the final store after both operand values, but the cursor
-    /// updates are unsequenced relative to the other operand and to that
-    /// store. Once the byte accesses are shown disjoint from the cursor
-    /// objects, the two updates can run first, retaining their old values.
+    fn postfix_byte_cursor(expression: &CExpression) -> Option<&BindingName> {
+        match expression {
+            CExpression::ScalarUpdate {
+                name: name @ BindingName::Local(_),
+                prefix: false,
+                volatile_access: false,
+                interface_type: InterfaceType::UInt8Pointer,
+                ..
+            } => Some(name),
+            _ => None,
+        }
+    }
+
+    /// C sequences the final store after both operand values. The cursor
+    /// updates can run first if the byte accesses are disjoint from those
+    /// cursor objects and the accesses still use the original addresses.
     fn postfix_byte_copy_checks(
         &mut self,
         destination: &CExpression,
-        source: &CExpression,
+        value: &CExpression,
     ) -> Option<Vec<CStatement>> {
-        let (
-            CExpression::ScalarUpdate {
-                name: destination,
-                prefix: false,
-                volatile_access: false,
-                interface_type: InterfaceType::UInt8Pointer,
-                ..
-            },
-            CExpression::ScalarUpdate {
-                name: source,
-                prefix: false,
-                volatile_access: false,
-                interface_type: InterfaceType::UInt8Pointer,
-                ..
-            },
-        ) = (destination, source)
-        else {
-            return None;
+        let destination = Self::postfix_byte_cursor(destination)?;
+        let (source, source_address, source_update) = match value {
+            CExpression::Load(pointer, _) => {
+                let source = Self::postfix_byte_cursor(pointer)?;
+                (source, CExpression::Variable(source.clone()), Some(source))
+            }
+            CExpression::Index(base, index, _)
+                if matches!(
+                    index.as_ref(),
+                    CExpression::Int32Literal(_)
+                        | CExpression::UInt32Literal(_)
+                        | CExpression::Int64Literal(_)
+                        | CExpression::UInt64Literal(_)
+                ) =>
+            {
+                let CExpression::Variable(source @ BindingName::Local(_)) = base.as_ref() else {
+                    return None;
+                };
+                if self.variable_types.get(source) != Some(&InterfaceType::UInt8Pointer)
+                    || self.volatile_locals.contains(source)
+                {
+                    return None;
+                }
+                (source, CExpression::Add(base.clone(), index.clone()), None)
+            }
+            _ => return None,
         };
-        let cursors = [destination, source];
-        if destination == source
-            || cursors
-                .iter()
-                .any(|name| !matches!(name, BindingName::Local(_)))
-        {
+        if destination == source {
             return None;
         }
 
+        let cursors = std::iter::once(destination).chain(source_update);
         let is_parameter =
             |name: &BindingName| name.local_id().is_some_and(LocalBindingId::is_parameter);
         if cursors
-            .iter()
-            .any(|name| is_parameter(name) && self.address_taken_variables.contains(*name))
+            .clone()
+            .any(|name| is_parameter(name) && self.address_taken_variables.contains(name))
         {
             return None;
         }
 
+        let accesses = [
+            (destination, CExpression::Variable(destination.clone())),
+            (source, source_address),
+        ];
         let width = self.abi.size_and_alignment(InterfaceType::UInt8Pointer).0;
         let mut checks = Vec::new();
         for cursor in cursors {
@@ -15897,13 +15917,13 @@ impl Parser {
                 pointee_constant: false,
                 explicit_qualification: false,
             };
-            for access in cursors {
+            for (access, accessed_address) in &accesses {
                 // An unsigned char can access any byte of the cursor itself.
                 // Test the whole pointer representation, including nonzero offsets.
                 let condition = (0..width)
                     .map(|bytes| {
                         CExpression::NotEqual(
-                            Box::new(CExpression::Variable(access.clone())),
+                            Box::new(accessed_address.clone()),
                             Box::new(CExpression::PointerOffsetBytes {
                                 pointer: Box::new(address.clone()),
                                 bytes,
