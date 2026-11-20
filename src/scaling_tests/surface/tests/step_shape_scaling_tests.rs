@@ -900,6 +900,44 @@ fn ordered_index_stores_cost_the_same_at_every_position() {
 }
 
 #[test]
+fn checked_indexed_store_skips_a_separately_owned_array() {
+    let work = [2, 8, 16].map(|size| {
+        [false, true].map(|ordered| {
+            let sample = run(
+                |size| {
+                    let signature = "void caller(int32* a, int32* b, int32 length, int32 i, int32 j)";
+                    let (bound, order) = if ordered {
+                        ("length", "    requires i < j;\n")
+                    } else {
+                        // An upper bound that is another variable would rank
+                        // `i` even without a second order premise.
+                        ("32", "")
+                    };
+                    let filled = lines(size, |index| format!("    a[{index}] = {index};"));
+                    let c = format!("{signature} {{\n{filled}\n    b[i] = 1;\n    b[i] = 2;\n    b[i] = 3;\n    return;\n}}");
+                    let proof = steps(size + 4);
+                    let click = format!(
+                        "verifying \"hunt.c\";\n{signature} {{\n    owns a[0..{size}];\n    owns b[0..{bound}];\n    requires 0 <= i;\n    requires i < {bound};\n{order}}} by {{\n{proof}\n}}"
+                    );
+                    (c, click)
+                },
+                size,
+            );
+            let stores = sample.statement_steps("indexed store beside a separate owner");
+            [stores[size + 1].1, stores[size + 2].1]
+        })
+    });
+    eprintln!("warmed indexed stores at 2/8/16 separate cells: {work:?}");
+    for (baseline, largest) in work[0]
+        .into_iter()
+        .flatten()
+        .zip(work[2].into_iter().flatten())
+    {
+        assert!(largest <= baseline + 32, "{work:?}");
+    }
+}
+
+#[test]
 fn pointer_field_links_cost_the_same_at_every_position() {
     assert_no_drift("deep_chain", deep_chain, 12);
 }
