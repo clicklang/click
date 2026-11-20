@@ -4760,15 +4760,16 @@ fn substitute_integer_pure_term_with_walker(
 }
 
 fn integer_atomic_term_supported(term: &Term) -> bool {
-    matches!(
-        term,
-        Term::Integer(_)
-            | Term::Bitvector32(_)
-            | Term::ProgramValue(_)
-            | Term::Algebraic(_)
-            | Term::Condition(_)
-            | Term::PointerOffset(_)
-    )
+    matches!(term, Term::Sequence(sequence) if matches!(sequence.element_type, Some(ProgramType::Int32) | None))
+        || matches!(
+            term,
+            Term::Integer(_)
+                | Term::Bitvector32(_)
+                | Term::ProgramValue(_)
+                | Term::Algebraic(_)
+                | Term::Condition(_)
+                | Term::PointerOffset(_)
+        )
 }
 
 fn substitute_integer_pure_term(

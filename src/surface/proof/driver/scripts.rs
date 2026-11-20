@@ -376,7 +376,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 .run_addressed_linear_script(&arm.tactics, &sites, &mut None, unfinished)?
                 .map(|done| (done, Some(Arc::new(arm.proposition.clone())))));
         }
-        if !matches!(goal, Proposition::And(..)) {
+        if !proof.has_conjunctive_goal() {
             return Err(proof.step_error(if at_root {
                 "`all` requires a conjunction goal"
             } else {

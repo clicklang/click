@@ -7,7 +7,7 @@ use super::reasoning::{
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
     signed_bitvector_constant, signed_i64_bitvector_constant,
 };
-use super::{ExecutionFacts, StoredExecutionValue, StoredMemoryValue};
+use super::{ExecutionFacts, ExecutionValue, StoredExecutionValue, StoredMemoryValue};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -5631,6 +5631,34 @@ pub enum SpecProposition {
 pub struct SequenceTerm {
     pub element_type: Option<ProgramType>,
     pub node: std::sync::Arc<SequenceTermNode>,
+}
+
+impl SequenceTerm {
+    pub(crate) fn map_program_values(
+        &self,
+        map: &mut impl FnMut(&ExecutionValue) -> ExecutionValue,
+    ) -> Self {
+        let node = match self.node.as_ref() {
+            SequenceTermNode::Literal(values) => {
+                SequenceTermNode::Literal(SequenceValues::from_values((0..values.len()).map(
+                    |index| match values.retained_value_ref(index) {
+                        Some(value) => map(value),
+                        None => map(&ExecutionValue::Native(
+                            values.get(index).expect("sequence element").clone(),
+                        )),
+                    },
+                )))
+            }
+            SequenceTermNode::Concat(left, right) => SequenceTermNode::Concat(
+                left.map_program_values(map),
+                right.map_program_values(map),
+            ),
+        };
+        Self {
+            element_type: self.element_type,
+            node: std::sync::Arc::new(node),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

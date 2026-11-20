@@ -148,7 +148,9 @@ impl<'a> Proof<'a> {
         let Some(surface) = self.surface_goal() else {
             return Ok(self.bundle_member_surface_children());
         };
-        let Some(Proposition::And(left, right)) = self.goal() else {
+        let goal = self.goal();
+        let sequence = goal.and_then(crate::kernel::int32_sequence_equality_view);
+        let Some(Proposition::And(left, right)) = sequence.as_ref().or(goal) else {
             return Err(
                 self.step_error("`all` presentation correspondence requires a kernel conjunction")
             );
@@ -423,6 +425,16 @@ impl<'a> Proof<'a> {
         ];
         children[matches[0]].surface = Some(surface.clone());
         Ok(children)
+    }
+
+    pub(in crate::surface::proof) fn has_conjunctive_goal(&self) -> bool {
+        self.goal().is_some_and(|goal| {
+            matches!(goal, Proposition::And(..))
+                || matches!(
+                    crate::kernel::int32_sequence_equality_view(goal),
+                    Some(Proposition::And(..))
+                )
+        })
     }
 
     fn checked_whole_surface_child(

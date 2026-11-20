@@ -7431,7 +7431,13 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 .join(", ")
         ),
         ContractExpression::SequenceConcat(left, right) => {
-            describe_binary_contract_expression(left, "++", right)
+            let left = describe_contract_expression(left);
+            let right_text = describe_contract_expression(right);
+            if matches!(right.as_ref(), ContractExpression::SequenceConcat(..)) {
+                format!("{left} ++ ({right_text})")
+            } else {
+                format!("{left} ++ {right_text}")
+            }
         }
         ContractExpression::QualifiedC { name, .. } => name.clone(),
         ContractExpression::MemoryLoad {

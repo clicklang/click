@@ -26,6 +26,7 @@ fn evaluated_sequence_handoffs_keep_growing_dags_without_exports() {
                 &expression,
                 &PureFactContext::new(),
                 &mut SpecEvaluation::logical(&mut execution),
+                false,
             )
             .unwrap();
             assert_eq!(paths.len(), 1);
@@ -40,5 +41,44 @@ fn evaluated_sequence_handoffs_keep_growing_dags_without_exports() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(!root.has_cached_native_argument());
         assert_eq!(work, *baseline.get_or_insert(work), "size={size}");
+    }
+}
+#[test]
+fn pure_sequence_lowering_and_checking_scale_with_selected_elements() {
+    let mut previous = None;
+    for size in [8, 32, 128] {
+        let _session = VerificationSession::enter();
+        let elements = SpecSequenceExpression::Literal(vec![SpecExpression::Value(int32(7)); size]);
+        let proposition = SpecProposition::SequenceComparison {
+            left: SpecSequenceExpression::Concat(
+                Box::new(SpecSequenceExpression::Literal(vec![])),
+                Box::new(elements.clone()),
+            ),
+            equal: true,
+            right: elements,
+        };
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut fuel = ExecutionBudget::default();
+            let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
+                SpecScope::new(&ExecutionState::new(), None, &NO_ALGEBRAIC_BINDINGS),
+                &proposition,
+                &PureFactContext::new(),
+                &mut SpecEvaluation::logical(&mut fuel),
+            )
+            .unwrap();
+            let proposition = paths.pop().unwrap().proposition;
+            let Proposition::Equal(Term::Sequence(left), Term::Sequence(_)) = &proposition else {
+                panic!("retained sequence equality")
+            };
+            assert!(matches!(left.node.as_ref(), SequenceTermNode::Concat(..)));
+            assert_eq!(int32_sequence_equalities(&proposition).unwrap().len(), size);
+        });
+        if let Some(previous) = previous {
+            assert!(
+                work <= 5 * previous,
+                "size={size}, work={work}, previous={previous}"
+            );
+        }
+        previous = Some(work);
     }
 }

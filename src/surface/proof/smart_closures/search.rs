@@ -1148,7 +1148,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known));
         }
-        if matches!(search_input.goal(), Some(Proposition::And(_, _))) {
+        if search_input.has_conjunctive_goal() {
             let Some((split_proof, split, ids)) =
                 attempt::candidate_outcome(search_input.split_focused_both())?
             else {
@@ -6621,7 +6621,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )? {
             return Ok(Some(proof));
         }
-        if matches!(goal, Proposition::And(_, _)) {
+        if search_input.has_conjunctive_goal() {
             // The split owns the checked Surface-to-kernel correspondence.
             // In particular, a lowered existential body may be a conjunction
             // whose written Surface spelling is only the body; do not gate
@@ -10657,7 +10657,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
             }
         }
-        if matches!(search_input.goal(), Some(Proposition::And(..)))
+        if search_input.has_conjunctive_goal()
             && !matches!(search_input.surface_goal(), Some(ClickProposition::And(..)))
             && !search_input.goal().is_some_and(|goal| {
                 crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
