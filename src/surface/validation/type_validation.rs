@@ -3354,7 +3354,6 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::UnfoldWitnesses { .. }
             | ProofTactic::FoldResource(_)
             | ProofTactic::ReleaseView(_)
-            | ProofTactic::ConstructResource(_)
             | ProofTactic::Sorry => {
                 return Err(ClickError::new(format!(
                     "tactic `{}` is not available in the pure proof for theorem `{theorem_name}`",
@@ -3385,7 +3384,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         | ProofTactic::UnfoldWitnesses { .. } => "unfold",
         ProofTactic::FoldResource(_) => "fold",
         ProofTactic::ReleaseView(_) => "release_view",
-        ProofTactic::ConstructResource(_) => "construct",
         ProofTactic::Induct { .. } => "induct",
         ProofTactic::Match(_) => "match",
         ProofTactic::ApplyInduction { .. } => "apply",

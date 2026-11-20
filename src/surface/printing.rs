@@ -826,11 +826,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 }
             ),
         ),
-        ProofTactic::ConstructResource(resource) => line(
-            output,
-            &prefix,
-            &format!("construct({});", format_resource_target(resource)),
-        ),
         ProofTactic::Induct {
             parameter,
             hypothesis,

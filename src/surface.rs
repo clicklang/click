@@ -228,7 +228,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "call",
     "cases",
     "close_invariants",
-    "construct",
     "constructs",
     "consumes",
     "contains",
@@ -6138,7 +6137,6 @@ pub enum ProofTactic {
     },
     /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
-    ConstructResource(ResourceClause),
     Witness(ProofWitness),
     LetSatisfy(ProofLetSatisfy),
     Choose(ProofChoice),
@@ -6268,7 +6266,6 @@ pub enum SimpleTactic {
     Instantiate,
     FoldResource,
     ReleaseView,
-    ConstructResource,
     IteratedOwnership,
 }
 
@@ -6465,11 +6462,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "unfold-iterated-clause",
         syntax: "unfold(resource(args)[..])",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "construct-resource",
-        syntax: "construct(resource)",
         class: "simple",
     },
     PublicTacticForm {
@@ -6817,7 +6809,6 @@ impl ProofTactic {
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
-            Self::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
             Self::SmartExecute | Self::ExecuteUntil(_) => {
                 TacticClass::smart(SmartTacticKind::Execute)
             }

@@ -121,9 +121,9 @@ when the default misses or when a proof must not search.
   lowered, it prints their checked identities and memory legend without
   running more proof checks.
 - **Case splits: `if`, `cases`, `match`, `branch`.** `if P` splits on any
-  proposition; `cases` uses a disjunction that is already a fact; `match`
-  splits on constructors; `branch` follows a C `if`. Tactics written after a
-  proof `if`, `cases` or `match` are checked once, never once per arm: the arms rejoin,
+  proposition. `cases` checks that its written alternatives cover the path.
+  `match` splits on constructors and `branch` follows a C `if`. Tactics written
+  after a proof `if`, `cases` or `match` are checked once: the arms rejoin,
   keeping the facts every arm proved, or the split is refused. An arm that
   reaches function exit is a finished path, like each `return` of the C: the
   implicit closer that ends the proof closes its remaining goals on that
@@ -3272,18 +3272,17 @@ recurses into smart descendants, and profiling reports them.
 
 **Form:** `cases { A => { ... } B => { ... } }`
 
-**Specialized.** Write it to use a disjunction that is already a fact, when its
-arms are not `P` and `not P`; otherwise use `if`. Eliminate an exact available
-disjunction: each arm receives exactly its own disjunct. Use `if P` to split on
-a proposition you choose, which needs no premise because `P or not P` always
-holds.
+**Specialized.** Write one arm per alternative, with at least two arms. Click
+checks that their disjunction holds before assuming any arm. The disjunction
+groups left to right as `or` parses (`A or B or C` is `(A or B) or C`).
+If it is already available, Click uses it directly. Otherwise the ordinary
+obligation solver tries to prove it. For example, `x == 0 or x == y` and
+`y == 1` suffice for arms `x == 0` and `x == 1`. Use `if P` to split on
+a proposition you choose, since `P or not P` always holds.
 
-There is one arm per disjunct, any number from two, and the disjunction of the
-arms grouped left to right as `or` parses (`A or B or C` is `(A or B) or C`)
-must be available. Proving a focused proposition, every arm proves it. At an
-execution frontier `cases` is a case split like a proof `if`, and follows the
-same rule: with tactics written after it, its arms rejoin with the facts every
-arm proved, or the `cases` is refused
+Each arm assumes its own disjunct. When proving a focused proposition,
+every arm proves it. At an execution frontier, `cases` joins like a proof `if`.
+If tactics follow it, the arms must rejoin with the facts every arm proved
 (`mdtests/cases_arms_rejoin_with_the_facts_every_arm_proved.md`,
 `mdtests/cases_arms_that_do_not_rejoin_are_refused.md`); an arm that reaches
 function exit finishes its own path
@@ -3295,19 +3294,19 @@ next iteration, the same proposition in every arm
 (`mdtests/a_preserve_cases_rejoin_keeps_only_the_facts_every_arm_proved.md`,
 `mdtests/a_preserve_cases_arm_keeps_a_fact_every_arm_proves.md`). At function exit it splits the path there as a
 proof `if` does: when the path's facts decide a disjunct only that arm runs;
-otherwise the path splits into one case per arm, which needs the disjunction as
-an exact fact on the path (`mdtests/cases_after_execution_splits_each_outcome_path.md`,
-`mdtests/cases_after_execution_takes_the_decided_arm.md`), and tactics written
+otherwise Click establishes the same exhaustiveness obligation and splits the
+path into one case per arm (`mdtests/cases_after_execution_splits_each_outcome_path.md`,
+`mdtests/cases_after_execution_takes_the_decided_arm.md`). Tactics written
 after a `cases` that forks are refused
 (`mdtests/cases_after_execution_that_would_fork_is_refused.md`).
 
 **Failure, checking, and tools:**
 
-An unavailable disjunction or unfinished arm fails; this never substitutes `not
-A` for `B` or implicitly branches C. Click checks both proof branches, expansion
-recurses, and profiling reports descendants.
+An unproved exhaustiveness obligation or unfinished arm fails. Expansion
+retains any proof of the disjunction as a preceding `have` and expands each
+arm. Profiling reports the descendant tactics.
 
-**Checked examples:** [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`cases_in_have_before_and_after_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_in_have_before_and_after_execute.md), [`cases_at_a_frontier_finishes_each_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_at_a_frontier_finishes_each_arm.md), [`cases_arms_rejoin_with_the_facts_every_arm_proved.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_arms_rejoin_with_the_facts_every_arm_proved.md), [`cases_at_a_frontier_requires_its_disjunction.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_at_a_frontier_requires_its_disjunction.md), [`cases_after_execution_splits_each_outcome_path.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_after_execution_splits_each_outcome_path.md), [`cases_after_execution_requires_its_disjunction.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_after_execution_requires_its_disjunction.md)
+**Checked examples:** [`cases_proves_equivalent_alternatives.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_proves_equivalent_alternatives.md), [`logical_tactics.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/tactic_tests/logical_tactics.rs), [`cases_in_have_before_and_after_execute.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_in_have_before_and_after_execute.md), [`cases_at_a_frontier_finishes_each_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_at_a_frontier_finishes_each_arm.md), [`cases_arms_rejoin_with_the_facts_every_arm_proved.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_arms_rejoin_with_the_facts_every_arm_proved.md), [`cases_at_a_frontier_requires_its_disjunction.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_at_a_frontier_requires_its_disjunction.md), [`cases_after_execution_splits_each_outcome_path.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_after_execution_splits_each_outcome_path.md), [`cases_after_execution_requires_its_disjunction.md`](https://github.com/clicklang/click/blob/master/mdtests/cases_after_execution_requires_its_disjunction.md)
 
 ### Scoped resource opening
 
@@ -3469,11 +3468,10 @@ mathematical product.
 | `transport(P, Q) using { R; ... }` | simple | Expansion output | Carry a fact using explicit frame evidence. | [Reference](#transport-with-selected-premises) |
 | `unfold(predicate(args))` | simple | Core | Open one selected predicate application. | [Reference](#unfolding-predicates) |
 | `unfold(resource(args))` | simple | Core | Open an owned resource instance. | [Reference](#unfolding-resources) |
-| `fold(resource)` | simple | Core | Assemble a resource from its body and children. | [Reference](#folding-resources) |
+| `fold(resource)` | simple | Core | Assemble a composite or create an ordinary token at return. | [Reference](#folding-resources) |
 | `release_view(range)` | simple | Specialized | Give up one directly held produced view. | [Reference](#releasing-a-view) |
 | `fold(...) by { ... }` | control | Expansion output | Supply a proof for one fold obligation. | [Reference](#folding-with-one-obligation) |
 | `fold(...) { requires P by ...; }` | control | Expansion output | Supply proofs for selected fold obligations. | [Reference](#folding-with-several-obligations) |
-| `construct(resource)` | simple | Specialized | Create an abstract token authorized by a `constructs` clause. | [Reference](#constructing-resources) |
 | `unfold(resource(args)[i])` | simple | Specialized | Expose one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
 | `fold(resource(args)[i])` | simple | Specialized | Restore one guarded ownership slot. | [Reference](#indexed-resource-unfolding-and-folding) |
 | `fold(resource(args)[..])` | simple | Specialized | Form the whole iterated clause from its covering range. | [Reference](#whole-clause-resource-unfolding-and-folding) |
@@ -3803,7 +3801,9 @@ the current C frontier without advancing it. See
 **Core.** Check the current pure body facts without searching the proof context,
 consume the contained resource facts, and produce the named composite resource.
 Pure facts remain available. Folding a definition whose body views memory makes
-the head hold that borrow open until the head is unfolded or consumed.
+the head hold that borrow open until the head is unfolded or consumed. At a
+function outcome, `fold` also [creates an ordinary abstract
+token](#folding-abstract-tokens) with a matching `constructs` clause.
 
 For an `authorized` family it creates one member and requires that family's
 owned `authority(...)`; `fold(authority(R(..)))` establishes an empty
@@ -3846,8 +3846,6 @@ described below, which is smart: its miss is not a `fold` bug.
   `have ... by { ... }` first, or prove it at the fold with `fold(...) by` or
   `fold(...) { requires P by ...; }`.
 - An undecided guard or arm: establish the guard or its negation first.
-- An abstract resource (no body): a contract's `constructs` clause and
-  `construct(resource)` create a token.
 - Inside `have ... by { ... }` or another fixed-state proposition proof: fold
   at the frontier before the `have`.
 
@@ -3906,44 +3904,24 @@ and prints its body's checked steps.
 
 **Checked examples:** [`fold_requires_proves_each_open_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_requires_proves_each_open_body_fact.md)
 
-### Constructing resources
+### Folding abstract tokens
 
-**Form:** `construct(resource)`
+At a function outcome, `fold(token(args))` creates one owned token of an
+ordinary `abstract resource` family. It consumes no input resource. The
+function must have a `constructs` clause that denotes the same token at
+that outcome, and the proof must not already hold an identical token.
+Arguments that evaluate to the same terms qualify. For example,
+`fold(tok(n))` matches `constructs tok(result);` on a path that returns `n`.
 
-**Specialized.** At a function outcome, create exactly one owned abstract token
-named by a `constructs` clause without consuming an input resource. Ordinary
-proof closing supplies a directly produced token at a normal return if it is
-missing and a `constructs` clause authorizes it. Expansion writes out the checked
-`construct` step. Write the tactic explicitly when another step needs the token,
-for example to fold a composite resource.
+Proof closing supplies a missing token directly owed by an active
+`produces` clause at normal return. Expansion records the checked
+`fold(token(args))`. Write that step explicitly when another tactic needs
+the token, for example before folding a composite that owns it.
 
-**Accepts**, at a function outcome (after the last `step()` or `step_until(function.exit)`),
-an owned `abstract resource` token declared without `authorized`, when:
-
-- One of the function's `constructs` clauses, evaluated at that outcome,
-  denotes the same token: the same family and the same argument terms.
-  Arguments that evaluate to the same term qualify, so `construct(tok(n))`
-  matches `constructs tok(result);` on a path that returns `n`.
-- No identical token is already held.
-
-It adds the token; nothing is consumed.
-
-**Outside it**, with what to write instead:
-
-- Before the outcome: step to the exit first with `step()` or `step_until(function.exit)`.
-- A composite resource (one with a body): `fold` it from its body.
-- A member of an `authorized` family: `fold` it with the family's authority.
-- A token whose arguments are equal to a clause's only by arithmetic, such as
-  `tok(1 + n)` for `constructs tok(n + 1);`: write the arguments as the clause
-  does.
-- A token no `constructs` clause names: add the clause to the contract.
-
-**Failure, checking, and tools:**
-
-A non-token, composite, duplicate, unauthorized, or pre-execution construction
-fails, as does construction of an `authorized` family, whose members only `fold`
-creates. Click checks the exact zero-source resource transition in the kernel;
-expansion preserves the checked step, and profiling charges one simple leaf.
+A member of an `authorized` family uses its family's population authority
+before function exit. For an ordinary token, a missing or mismatched
+`constructs` clause, duplicate token, or attempt before the outcome fails.
+An ordinary token fold has no body obligations.
 
 **Checked examples:** [`contract_tests.rs`](https://github.com/clicklang/click/blob/master/src/surface/tests/contract_tests.rs), [`authority_ordinary_token_construction.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_ordinary_token_construction.md), [`authority_authorized_token_construction_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_authorized_token_construction_rejected.md)
 

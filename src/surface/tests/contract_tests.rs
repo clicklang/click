@@ -647,7 +647,7 @@ fn abstract_resource_construction_adds_one_authorized_token() {
                 constructs open_fd(result);
                 produces open_fd(result) by {
                     step_until(function.exit);
-                    construct(open_fd(result));
+                    fold(open_fd(result));
                 }
             }
         "#;
@@ -672,7 +672,7 @@ fn abstract_resource_construction_requires_function_authorization() {
             int32 fake_open() {
                 produces open_fd(result) by {
                     step_until(function.exit);
-                    construct(open_fd(result));
+                    fold(open_fd(result));
                 }
             }
         "#;
@@ -702,7 +702,7 @@ fn closing_constructs_only_a_missing_authorized_output_token() {
     let verified = verify_c_sources(source, &inputs).unwrap();
     let expanded = expand_checked_grouped_claim(source, &verified, "identity").unwrap();
     assert_eq!(
-        expanded.matches("construct(token(result));").count(),
+        expanded.matches("fold(token(result));").count(),
         1,
         "{expanded}"
     );
@@ -719,7 +719,7 @@ fn closing_constructs_only_a_missing_authorized_output_token() {
         let expanded =
             expand_checked_function_claim(&individual, &verified, "identity.produces_0").unwrap();
         assert_eq!(
-            expanded.matches("construct(token(result));").count(),
+            expanded.matches("fold(token(result));").count(),
             1,
             "{expanded}"
         );
@@ -732,7 +732,7 @@ fn closing_constructs_only_a_missing_authorized_output_token() {
     );
     let verified = verify_c_sources(&held, &inputs).unwrap();
     let expanded = expand_checked_grouped_claim(&held, &verified, "identity").unwrap();
-    assert!(!expanded.contains("construct("), "{expanded}");
+    assert!(!expanded.contains("fold("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &inputs)).unwrap();
 
     for authorization in ["", "constructs token(7);"] {

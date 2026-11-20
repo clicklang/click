@@ -106,7 +106,6 @@ pub enum ProofStep {
     },
     /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
-    ConstructResource(ResourceClause),
     Witness(ProofWitness),
     LetSatisfy(ProofLetSatisfy),
     Choose(ProofChoice),
@@ -731,7 +730,6 @@ impl ProofStep {
             },
             ProofTactic::FoldResource(resource) => Self::FoldResource(resource.clone()),
             ProofTactic::ReleaseView(resource) => Self::ReleaseView(resource.clone()),
-            ProofTactic::ConstructResource(resource) => Self::ConstructResource(resource.clone()),
             ProofTactic::Induct {
                 parameter,
                 hypothesis,
@@ -905,7 +903,6 @@ impl ProofStep {
             },
             Self::FoldResource(resource) => ProofTactic::FoldResource(resource.clone()),
             Self::ReleaseView(resource) => ProofTactic::ReleaseView(resource.clone()),
-            Self::ConstructResource(resource) => ProofTactic::ConstructResource(resource.clone()),
             Self::Induct {
                 parameter,
                 hypothesis,
@@ -1203,7 +1200,6 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),
         ProofStep::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
         ProofStep::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
-        ProofStep::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
         ProofStep::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
         ProofStep::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
         ProofStep::ApplyFactUsing { .. } | ProofStep::ApplyTheoremUsing { .. } => {

@@ -2008,7 +2008,7 @@ The function-level clause `constructs open_fd(result);` authorizes creating
 one owned abstract token without consuming an input resource. At a normal
 return, Click can automatically construct a missing token directly owed by
 `produces open_fd(result);` when the two clauses denote the same token.
-Write `construct(open_fd(result));` to create an intermediate token, for
+Write `fold(open_fd(result));` to create an intermediate token, for
 example before folding it into a composite resource.
 
 An abstract resource may declare fields, and nothing else:
@@ -3261,11 +3261,10 @@ gate checks each declaration below against that source.
 
 The seven resources are declared as
 [abstract resources](#read-and-write-resources), so none has a Click body
-and none grants memory access by itself. Unlike a file's own abstract
-resource, which only contracts and `construct` move, each one is created,
-consumed, transferred and counted by the kernel rules described under its
-entry: mutex operations, atomic publication, population folds, and heap
-allocation.
+and none grants memory access by itself. The kernel rules described under
+each entry govern how it is created, consumed, transferred, and counted.
+Those rules cover mutex operations, atomic publication, population folds,
+and heap allocation.
 
 ### Mutex acquisition authority
 
