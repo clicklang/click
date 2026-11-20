@@ -4175,7 +4175,7 @@ fn execute_verified_function_applications_with_suspension(
         match initialize_produced_memory(
             &entry_resource_state,
             &output_resource_state,
-            interface,
+            application,
             &mut post_state,
             &effective_assumptions,
             &mut facts,
@@ -13011,12 +13011,14 @@ fn prepare_contract_resource_transfer_unexplained(
 fn initialize_produced_memory(
     entry_state: &ExecutionState,
     output_resource_state: &ExecutionState,
-    interface: &FunctionContractInterface,
+    application: FunctionContractApplication<'_>,
     post_state: &mut ExecutionState,
     assumptions: &PureFactContext,
     facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(), RuntimeError>> {
+    let interface = application.interface;
+    let opaque_output = application.evidence.is_none() && application.representation_copy.is_none();
     let mut memory = post_state.memory().clone();
     let mut word_outputs = Vec::new();
     for resource in interface.resource_ensures() {
@@ -13095,6 +13097,13 @@ fn initialize_produced_memory(
                             memory.with_initialized_object(&start.offset_by_bytes(offset), length);
                     }
                 }
+            }
+            None if opaque_output
+                && byte_span == ProgramType::Int32.byte_width()
+                && range.element_width() == byte_span
+                && ProgramPoint::supports_local_call_word(&start) =>
+            {
+                memory = memory.with_initialized_call_word(&start);
             }
             None => memory = memory.with_initialized_object(&start, byte_span),
         }

@@ -3195,6 +3195,57 @@ fn add_retained_local_range_facts(
     }
 }
 
+/// A successful C access supplies the value. The call output receipt
+/// gives the same read a proof name, including reads through a local binding.
+fn record_call_output_read(
+    state: &ExecutionState,
+    lvalue: &LValue,
+    pointer: &Address,
+    outcome: &ExpressionOutcome<ExecutionValue>,
+    facts: &mut ExecutionFacts,
+) {
+    if lvalue.value_type != ProgramType::Int32
+        || lvalue.is_volatile()
+        || SpecificationAccessScope::is_active()
+        || !ProgramPoint::supports_local_call_word(pointer)
+    {
+        return;
+    }
+    let ExpressionOutcome::Value(value) = outcome else {
+        return;
+    };
+    let Some(version) = state
+        .program_point()
+        .call_output_integer_version(pointer, LoadKind::Int32)
+    else {
+        return;
+    };
+    let value = value.native();
+    let ProgramValue::Int32(bits) = value.numeric_value() else {
+        return;
+    };
+    let read = scalar_read_for_exact_cell_at(
+        &version,
+        pointer,
+        LoadKind::Int32,
+        ProgramType::Int32.byte_width(),
+    );
+    if bits != &read {
+        facts.push(ExecutionPureFact {
+            logical_read_equation: true,
+            ..ExecutionPureFact::certified(Proposition::condition_is(
+                ConditionTerm::machine_compare(
+                    MachineIntegerType::Int32,
+                    CompareRelation::Equal,
+                    read,
+                    bits.clone(),
+                ),
+                true,
+            ))
+        });
+    }
+}
+
 fn read_retained_lvalue_paths_without_ranges(
     state: &ExecutionState,
     outcome: LValueOutcome,
@@ -3347,6 +3398,9 @@ fn read_retained_lvalue_paths_without_ranges(
                     )),
                 };
                 let mut facts = facts;
+                if let Some(pointer) = state.locals.slot(name) {
+                    record_call_output_read(state, &lvalue, pointer, &outcome, &mut facts);
+                }
                 if lvalue.is_volatile()
                     && !SpecificationAccessScope::is_active()
                     && let ExpressionOutcome::Value(value) = &outcome
@@ -3526,6 +3580,15 @@ fn read_retained_lvalue_paths_without_ranges(
                     source,
                     budget.program_byte_order(),
                 );
+                for path in &mut paths {
+                    record_call_output_read(
+                        state,
+                        &lvalue,
+                        pointer,
+                        &path.outcome,
+                        &mut path.facts,
+                    );
+                }
                 if let Some(mask) = bit_field_mask {
                     for path in &mut paths {
                         if let ExpressionOutcome::Value(value) = &mut path.outcome

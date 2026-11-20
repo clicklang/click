@@ -211,14 +211,14 @@ impl PartialEq for PointReadObject {
 struct PointReadWrite {
     end: i64,
     version: Weak<PointNode>,
-    store: Arc<MemoryDerivation>,
+    source: Arc<MemoryDerivation>,
 }
 
 impl PartialEq for PointReadWrite {
     fn eq(&self, other: &Self) -> bool {
         self.end == other.end
             && Weak::ptr_eq(&self.version, &other.version)
-            && Arc::ptr_eq(&self.store, &other.store)
+            && Arc::ptr_eq(&self.source, &other.source)
     }
 }
 
@@ -687,11 +687,24 @@ fn record_point_read_effect(
     match step.as_ref() {
         MemoryDerivation::Store { pointer, .. }
         | MemoryDerivation::RepresentationWrite { pointer, .. }
-            if read_bucket(&pointer.base).is_some() =>
-        {
+        | MemoryDerivation::ObjectInitializationRecorded {
+            pointer,
+            call_word: true,
+            ..
+        } if read_bucket(&pointer.base).is_some() => {
             let bucket = read_bucket(&pointer.base).expect("indexed write bucket");
-            let (_, width) = step.single_write().expect("single checked write");
-            let width = i64::from(width);
+            let call_word = matches!(
+                step.as_ref(),
+                MemoryDerivation::ObjectInitializationRecorded {
+                    call_word: true,
+                    ..
+                }
+            );
+            let width = if call_word {
+                i64::from(ProgramType::Int32.byte_width())
+            } else {
+                i64::from(step.single_write().expect("single checked write").1)
+            };
             let Some((anchor, start)) = read_displacement(&pointer.offset) else {
                 index.blocks.remove(bucket);
                 return;
@@ -716,7 +729,8 @@ fn record_point_read_effect(
                 });
             clear_overlapping_cells(&mut block.cells, start, end);
             if record_writes
-                && (integer_store_bits(step).is_some()
+                && (call_word
+                    || integer_store_bits(step).is_some()
                     || matches!(step.as_ref(), MemoryDerivation::Store { value, .. }
                         if matches!(value.native(), ProgramValue::Bool(_) | ProgramValue::Pointer(_))))
             {
@@ -725,7 +739,7 @@ fn record_point_read_effect(
                     PointReadWrite {
                         end,
                         version: version.clone(),
-                        store: step.clone(),
+                        source: step.clone(),
                     },
                 );
             }
@@ -875,6 +889,7 @@ enum ReadSelection {
     Legacy,
     Exact,
     Entry,
+    CallOutput,
     IndexedWrite(Arc<MemoryDerivation>),
 }
 
@@ -1188,10 +1203,34 @@ impl ProgramPoint {
     ) -> Option<Self> {
         self.indexed_typed_version(pointer, value_type).or_else(|| {
             if value_type == ProgramType::Int32 {
-                self.entry_integer_version(pointer, LoadKind::Int32)
+                self.call_output_integer_version(pointer, LoadKind::Int32)
+                    .or_else(|| self.entry_integer_version(pointer, LoadKind::Int32))
             } else {
                 None
             }
+        })
+    }
+
+    pub(in crate::kernel) fn supports_local_call_word(pointer: &Address) -> bool {
+        indexed_local(&pointer.base) && pointer.offset == AddressOffset::Constant(0)
+    }
+
+    pub(in crate::kernel) fn call_output_integer_version(
+        &self,
+        pointer: &Address,
+        kind: LoadKind,
+    ) -> Option<Self> {
+        if kind != LoadKind::Int32 || !Self::supports_local_call_word(pointer) {
+            return None;
+        }
+        self.indexed_version(pointer, kind.byte_width(), |effect| {
+            matches!(
+                effect,
+                MemoryDerivation::ObjectInitializationRecorded {
+                    call_word: true,
+                    ..
+                }
+            )
         })
     }
 
@@ -1234,7 +1273,7 @@ impl ProgramPoint {
         &self,
         pointer: &Address,
         bytes: u32,
-        matches_store: impl FnOnce(&MemoryDerivation) -> bool,
+        matches_source: impl FnOnce(&MemoryDerivation) -> bool,
     ) -> Option<Self> {
         let bucket = read_bucket(&pointer.base)?;
         let node = self.path.0.as_ref()?;
@@ -1248,14 +1287,24 @@ impl ProgramPoint {
             return None;
         }
         let write = block.cells.get(&start)?;
-        if write.end != end || !matches_store(&write.store) {
+        if write.end != end || !matches_source(&write.source) {
             return None;
         }
         let version = write.version.upgrade()?;
         Some(Self {
             memory: version.memory.clone(),
             path: PathLink(Some(version), IndexedView::Recorded),
-            read: ReadSelection::IndexedWrite(write.store.clone()),
+            read: if matches!(
+                write.source.as_ref(),
+                MemoryDerivation::ObjectInitializationRecorded {
+                    call_word: true,
+                    ..
+                }
+            ) {
+                ReadSelection::CallOutput
+            } else {
+                ReadSelection::IndexedWrite(write.source.clone())
+            },
         })
     }
 
