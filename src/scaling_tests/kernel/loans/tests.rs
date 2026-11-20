@@ -1757,6 +1757,73 @@ fn releasing_one_produced_view_ignores_unrelated_resources() {
 }
 
 #[test]
+fn releasing_one_produced_view_ignores_other_pieces_sharing_its_hold() {
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let owner = memory(0, size, true);
+        let whole = memory(0, size, false);
+        let (ledger, caller, callee) = participants();
+        let plan = plan_stable_view_transfer(
+            &ResourceContext::new().unchecked_with_fact(owner.clone()),
+            &[checked(whole.clone())],
+            &assumptions,
+            &ledger,
+            caller,
+            callee,
+        )
+        .unwrap();
+        let view = memory(0, 1, false);
+        let (mut resources, pieces) = ResourceContext::new().unchecked_with_facts_and_occurrences(
+            (0..size).map(|start| memory(start, start + 1, false)),
+        );
+        let escaping = BTreeMap::from([(
+            plan.stable_views()[0].loan,
+            vec![EscapingBorrow {
+                head: view.clone(),
+                occurrence: pieces[0].1,
+                root_permission: whole,
+            }],
+        )]);
+        let recovery = plan
+            .recover_stable_views(&assumptions, &escaping, &[])
+            .unwrap();
+        for (viewed, occurrence) in pieces {
+            resources = resources.with_loan_dependency(
+                occurrence,
+                LoanViewBinding {
+                    viewed,
+                    ..recovery.escaped_holds[0].binding.clone()
+                },
+            );
+        }
+        let state = ExecutionState::new()
+            .with_resource_context(resources)
+            .with_loan_participant(Some(caller))
+            .with_loan_ledger(Some(recovery.ledger));
+        let (released, work) = crate::instrumentation::measure_deterministic_work(|| {
+            state.release_produced_view(&view, &assumptions)
+        });
+        let released = released.unwrap();
+        assert!(!released.resources().contains_exact_representation(&view));
+        assert!(
+            released
+                .resources()
+                .contains_exact_representation(&memory(1, 2, false))
+        );
+        assert!(!released.resources().contains_exact_representation(&owner));
+        assert_eq!(released.loan_ledger(), state.loan_ledger());
+        assert!(state.resources().contains_exact_representation(&view));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
 fn consuming_a_borrowing_composite_ignores_unrelated_resources() {
     let mut samples = Vec::new();
     for size in [4, 16, 64, 256] {

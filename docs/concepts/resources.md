@@ -363,9 +363,10 @@ range can justify coverage once you name the source with `from`. An output
 with zero or multiple direct matches requires that explicit source.
 
 In a caller's proof, `release_view(*p);` gives up the exact held memory view
-when `p` points to that cell. The last hold releases the borrow and restores
-any ownership the caller lent. A borrowed input of the caller still has its
-own lifetime. Releasing the view is a proof step with no C operation.
+when `p` points to that cell. Other views sharing its hold remain usable.
+The hold ends when its last view is gone. Once all holds end, the borrow can
+restore the ownership the caller lent. A borrowed input of the caller still
+has its own lifetime. Releasing the view is a proof step with no C operation.
 
 ## Abstract resources
 
