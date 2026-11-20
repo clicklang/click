@@ -32,7 +32,12 @@ fn charon_split_at_preserves_both_shared_slices_and_original_proofs() {
                 _ => None,
             })
             .unwrap();
-        assert_ne!(split.0, split.1);
+        assert_eq!((split.0.as_str(), split.1.as_str()), ("left", "right"));
+        assert!(
+            mir.locals.iter().all(|p| !p.name.contains("_slice_")),
+            "{} retained split tuple storage",
+            f.name
+        );
         for name in [split.0, split.1] {
             assert!(
                 mir.locals.iter().any(

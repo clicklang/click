@@ -1522,6 +1522,176 @@ pub(super) fn bind_copied_slice_elements(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
+/// Bind the two parts of a split directly when the only use of each
+/// anonymous component is a copy to its destination in the same source
+/// statement. Keep the tuple storage when either component also escapes.
+pub(super) fn bind_split_slice_results(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    anonymous_components: &BTreeSet<String>,
+) {
+    if anonymous_components.is_empty() {
+        return;
+    }
+    let slices: BTreeSet<_> = locals
+        .iter()
+        .filter(|local| local.value_type == (Type::ByteSlice { mutable: false }))
+        .map(|local| local.name.as_str())
+        .collect();
+    let mut reads = BTreeMap::new();
+    let mut named = BTreeSet::new();
+    let mut splits = BTreeMap::<String, usize>::new();
+    let mut predecessors = vec![0; blocks.len()];
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            if let S::SliceSplit {
+                slice,
+                midpoint,
+                left,
+                right,
+            } = statement
+            {
+                expression_uses(slice, &mut reads, &mut named);
+                expression_uses(midpoint, &mut reads, &mut named);
+                for output in [left, right] {
+                    *splits.entry(output.clone()).or_default() += 1;
+                }
+            } else {
+                statement_uses(statement, &mut reads, &mut named);
+                if let S::Assign {
+                    target: E::Local { name },
+                    ..
+                } = statement
+                {
+                    named.insert(name.clone());
+                }
+            }
+        }
+        // Count other writes and uses separately from the split's outputs.
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if let Some(destination) = call_destination(&block.terminator) {
+            named.insert(destination.clone());
+        }
+        for successor in successors(&block.terminator) {
+            if let Some(count) = predecessors.get_mut(successor) {
+                *count += 1;
+            }
+        }
+    }
+    let mut removed = BTreeSet::new();
+    for index in 0..blocks.len() {
+        let T::Goto { target } = blocks[index].terminator else {
+            continue;
+        };
+        if target == 0 || predecessors.get(target) != Some(&1) {
+            continue;
+        }
+        let Ok([definition, consumer]) = blocks.get_disjoint_mut([index, target]) else {
+            continue;
+        };
+        let Some(site) = definition.terminator_site else {
+            continue;
+        };
+        let definition_site =
+            definition
+                .statements
+                .iter()
+                .rev()
+                .find_map(|statement| match statement {
+                    S::Site { site } => Some(*site),
+                    _ => None,
+                });
+        if definition_site != Some(site)
+            || !matches!(consumer.statements.first(), Some(S::Site { site: entry }) if *entry == site)
+        {
+            continue;
+        }
+        let Some(S::SliceSplit { left, right, .. }) = definition.statements.last() else {
+            continue;
+        };
+        if left == right
+            || [left, right].into_iter().any(|output| {
+                !anonymous_components.contains(output)
+                    || reads.get(output) != Some(&1)
+                    || splits.get(output) != Some(&1)
+                    || named.contains(output)
+            })
+        {
+            continue;
+        }
+        let mut effects = consumer
+            .statements
+            .iter()
+            .enumerate()
+            .filter(|(_, statement)| {
+                !matches!(statement, S::Site { site: next } if *next == site)
+                    && !matches!(statement, S::BeginStorage { .. })
+            });
+        let mut take_copy = |output: &str| {
+            let (
+                position,
+                S::Assign {
+                    target: E::Local { name: destination },
+                    value: E::Local { name: source },
+                },
+            ) = effects.next()?
+            else {
+                return None;
+            };
+            (source == output
+                && slices.contains(destination.as_str())
+                && !anonymous_components.contains(destination))
+            .then_some((position, destination.clone()))
+        };
+        let (Some((first, left_destination)), Some((last, right_destination))) =
+            (take_copy(left), take_copy(right))
+        else {
+            continue;
+        };
+        if left_destination == right_destination
+            || consumer.statements[..last].iter().any(|statement| {
+                matches!(statement, S::BeginStorage { local }
+                    if local != &left_destination && local != &right_destination)
+            })
+        {
+            continue;
+        }
+        removed.extend([left.clone(), right.clone()]);
+        let mut starts = Vec::new();
+        let mut position = 0;
+        consumer.statements.retain(|statement| {
+            let keep = if position == first || position == last {
+                false
+            } else if position < last && matches!(statement, S::BeginStorage { .. }) {
+                starts.push(statement.clone());
+                false
+            } else {
+                true
+            };
+            position += 1;
+            keep
+        });
+        let Some(S::SliceSplit { left, right, .. }) = definition.statements.last_mut() else {
+            unreachable!("split remains the last statement");
+        };
+        *left = left_destination;
+        *right = right_destination;
+        let before_split = definition.statements.len() - 1;
+        definition
+            .statements
+            .splice(before_split..before_split, starts);
+    }
+    if !removed.is_empty() {
+        for block in blocks {
+            block.statements.retain(|statement| {
+                !matches!(statement, S::BeginStorage { local } | S::EndStorage { local }
+                    if removed.contains(local))
+            });
+        }
+        locals.retain(|local| !removed.contains(&local.name));
+    }
+}
+
 /// Starts the storage of the locals the taken `next` ending block `next`
 /// now binds there, rather than in the `Some` arm `arm` that bound them: a
 /// binding's storage starts before its first write. Only the arm's leading
@@ -3095,6 +3265,77 @@ mod tests {
     }
 
     #[test]
+    fn split_bindings_keep_storage_with_another_read_or_entry() {
+        for (another_read, another_entry) in [(false, false), (true, false), (false, true)] {
+            let mut locals = ["t1", "t2", "left", "right"]
+                .map(|name| Place {
+                    value_type: Type::ByteSlice { mutable: false },
+                    ..place(name)
+                })
+                .to_vec();
+            let mut blocks = vec![
+                MirBlock {
+                    terminator_site: Some(1),
+                    ..block(
+                        vec![
+                            S::Site { site: 1 },
+                            S::SliceSplit {
+                                slice: local("bytes"),
+                                midpoint: E::UsizeInteger { value: 1 },
+                                left: "t1".into(),
+                                right: "t2".into(),
+                            },
+                        ],
+                        T::Goto { target: 1 },
+                    )
+                },
+                block(
+                    vec![
+                        S::Site { site: 1 },
+                        assign("left", local("t1")),
+                        S::BeginStorage {
+                            local: "right".into(),
+                        },
+                        assign("right", local("t2")),
+                        S::EndStorage { local: "t2".into() },
+                    ],
+                    if another_read {
+                        T::ReturnValue { value: local("t1") }
+                    } else {
+                        T::Return
+                    },
+                ),
+            ];
+            if another_entry {
+                blocks.push(block(Vec::new(), T::Goto { target: 1 }));
+            }
+
+            super::bind_split_slice_results(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into(), "t2".into()]),
+            );
+
+            if another_read || another_entry {
+                assert_eq!(locals.len(), 4);
+                assert!(matches!(
+                    blocks[0].statements.last(),
+                    Some(S::SliceSplit { left, right, .. }) if left == "t1" && right == "t2"
+                ));
+            } else {
+                assert_eq!(locals.len(), 2);
+                assert!(matches!(
+                    blocks[0].statements.as_slice(),
+                    [S::Site { .. }, S::BeginStorage { local }, S::SliceSplit {
+                        left, right, ..
+                    }] if left == "left" && right == "right" && local == "right"
+                ));
+                assert!(matches!(blocks[1].statements.as_slice(), [S::Site { .. }]));
+            }
+        }
+    }
+
+    #[test]
     fn copied_slice_payload_binds_a_written_local_at_the_yield() {
         let iterator = Place {
             value_type: Type::SharedArrayIterator {
@@ -3141,7 +3382,7 @@ mod tests {
                         assign("value", load.clone()),
                         S::EndStorage { local: "t1".into() },
                     ],
-                    T::Return { value: None },
+                    T::Return,
                 ),
             ];
             if used_again {
