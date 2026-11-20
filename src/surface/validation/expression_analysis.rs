@@ -1161,19 +1161,6 @@ pub(super) fn validate_well_founded_click_recursion(
                 "recursive pure function `{name}` requires `decreases <parameter>`"
             )));
         }
-        if recursive_functions.contains(name)
-            && matches!(measure, Some(ClickRecursionMeasure::Int32 { .. }))
-            && (!matches!(
-                definition.return_type(),
-                ClickType::Program(InterfaceType::Int32 | InterfaceType::Bool)
-            ) || definition.parameters().iter().any(|parameter| {
-                parameter.click_type() != &ClickType::Program(InterfaceType::Int32)
-            }))
-        {
-            return Err(ClickError::new(format!(
-                "recursive pure function `{name}` currently supports only int32 parameters and an int32 or bool result"
-            )));
-        }
         if let Some(measure) = measure {
             measures.insert((*name).to_string(), measure);
         }
