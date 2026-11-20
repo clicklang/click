@@ -4844,6 +4844,7 @@ fn caller_parameter_through_identity_cast(
     parameters: &[crate::languages::interface::ImportedParameter],
     state: &crate::kernel::ExecutionState,
 ) -> Option<usize> {
+    let argument = without_repeated_cast(argument);
     let (name, cast_type, cast_struct) = match argument {
         ProgramExpression::Variable(name) => (name, None, None),
         ProgramExpression::Cast {
@@ -4896,6 +4897,37 @@ fn caller_parameter_through_identity_cast(
         }
         _ => Some(slot),
     }
+}
+
+/// `argument` without the inner casts a cast to the same pointer type
+/// repeats: a Rust reborrow, `&mut *self`, views its operand's cast again,
+/// and `(p as T) as T` is `p as T`.
+fn without_repeated_cast(argument: &ProgramExpression) -> &ProgramExpression {
+    let mut current = argument;
+    while let ProgramExpression::Cast {
+        expression,
+        target_type,
+        pointee_struct,
+        pointee_volatile,
+        pointee_constant,
+        ..
+    } = current
+        && let ProgramExpression::Cast {
+            target_type: inner_type,
+            pointee_struct: inner_struct,
+            pointee_volatile: inner_volatile,
+            pointee_constant: inner_constant,
+            ..
+        } = expression.as_ref()
+        && target_type.is_pointer()
+        && target_type == inner_type
+        && pointee_struct == inner_struct
+        && pointee_volatile == inner_volatile
+        && pointee_constant == inner_constant
+    {
+        current = expression;
+    }
+    current
 }
 
 /// Whether a fact the last step checked is the focused goal under another
