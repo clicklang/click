@@ -186,7 +186,7 @@ function add(left: Nat, right: Nat) -> Nat
 theorem add_left_identity(n: Nat) {
     ensures nat::add(Nat::Zero, n) == n by {
         unfold(nat::add(Nat::Zero, n));
-        normalize();
+        known();
     }
 }
 ```
@@ -199,7 +199,7 @@ theorem add_left_identity(n: Nat) {
 theorem add_succ_left(n: Nat, m: Nat) {
     ensures nat::add(Nat::Succ(n), m) == Nat::Succ(nat::add(n, m)) by {
         unfold(nat::add(Nat::Succ(n), m));
-        normalize();
+        known();
     }
 }
 ```
@@ -220,7 +220,7 @@ theorem to_integer_add(n: Nat, m: Nat) {
                 unfold(nat::add(Nat::Zero, m));
                 apply(nat::to_integer_zero());
                 rewrite(to_integer(Nat::Zero), 0);
-                normalize();
+                known();
             }
             Nat::Succ(previous) => {
                 unfold(nat::add(Nat::Succ(previous), m));
@@ -230,7 +230,7 @@ theorem to_integer_add(n: Nat, m: Nat) {
                 rewrite(to_integer(Nat::Succ(nat::add(previous, m))), to_integer(nat::add(previous, m)) + 1);
                 rewrite(to_integer(nat::add(previous, m)), to_integer(previous) + to_integer(m));
                 rewrite(to_integer(Nat::Succ(previous)), to_integer(previous) + 1);
-                normalize();
+                known();
             }
         }
     }
@@ -246,13 +246,13 @@ theorem add_right_identity(n: Nat) {
         match n {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, Nat::Zero));
-                normalize();
+                known();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
                 unfold(nat::add(Nat::Succ(previous), Nat::Zero));
                 rewrite(nat::add(previous, Nat::Zero), previous);
-                normalize();
+                known();
             }
         }
     }
@@ -271,14 +271,14 @@ theorem add_succ_right(n: Nat, m: Nat) {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, Nat::Succ(m)));
                 unfold(nat::add(Nat::Zero, m));
-                normalize();
+                known();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
                 unfold(nat::add(Nat::Succ(previous), Nat::Succ(m)));
                 unfold(nat::add(Nat::Succ(previous), m));
                 rewrite(nat::add(previous, Nat::Succ(m)), Nat::Succ(nat::add(previous, m)));
-                normalize();
+                known();
             }
         }
     }
@@ -297,7 +297,7 @@ theorem add_associative(a: Nat, b: Nat, c: Nat) {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, b));
                 unfold(nat::add(Nat::Zero, nat::add(b, c)));
-                normalize();
+                known();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
@@ -308,7 +308,7 @@ theorem add_associative(a: Nat, b: Nat, c: Nat) {
                 apply(nat::add_succ_left(previous, nat::add(b, c)));
                 rewrite(nat::add(Nat::Succ(previous), nat::add(b, c)), Nat::Succ(nat::add(previous, nat::add(b, c))));
                 rewrite(nat::add(nat::add(previous, b), c), nat::add(previous, nat::add(b, c)));
-                normalize();
+                known();
             }
         }
     }
@@ -328,7 +328,7 @@ theorem add_commutative(a: Nat, b: Nat) {
                 unfold(nat::add(Nat::Zero, b));
                 apply(nat::add_right_identity(b));
                 rewrite(nat::add(b, Nat::Zero), b);
-                normalize();
+                known();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
@@ -336,7 +336,7 @@ theorem add_commutative(a: Nat, b: Nat) {
                 apply(nat::add_succ_right(b, previous));
                 rewrite(nat::add(b, Nat::Succ(previous)), Nat::Succ(nat::add(b, previous)));
                 rewrite(nat::add(previous, b), nat::add(b, previous));
-                normalize();
+                known();
             }
         }
     }
@@ -409,7 +409,7 @@ including nested lists. Comparisons of unknown algebraic values stay symbolic.
 theorem append_left_identity<T>(xs: List<T>) {
     ensures list::append(List<T>::Nil, xs) == xs by {
         unfold(list::append(List<T>::Nil, xs));
-        normalize();
+        known();
     }
 }
 ```
@@ -425,13 +425,13 @@ theorem append_right_identity<T>(xs: List<T>) {
         match xs {
             List::Nil => {
                 unfold(list::append(List<T>::Nil, List<T>::Nil));
-                normalize();
+                known();
             }
             List::Cons(head, tail) => {
                 apply(ih(tail));
                 unfold(list::append(List<T>::Cons(head, tail), List<T>::Nil));
                 rewrite(list::append(tail, List<T>::Nil), tail);
-                normalize();
+                known();
             }
         }
     }
@@ -447,7 +447,7 @@ theorem append_cons<T>(head: T, tail: List<T>, ys: List<T>) {
     ensures list::append(List<T>::Cons(head, tail), ys)
         == List<T>::Cons(head, list::append(tail, ys)) by {
         unfold(list::append(List<T>::Cons(head, tail), ys));
-        normalize();
+        known();
     }
 }
 ```
@@ -491,7 +491,7 @@ theorem append_associative<T>(xs: List<T>, ys: List<T>, zs: List<T>) {
 theorem contains_nil<T>(value: T) {
     ensures list::contains(List<T>::Nil, value) == false by {
         unfold(list::contains(List<T>::Nil, value));
-        normalize();
+        known();
     }
 }
 ```
@@ -505,7 +505,7 @@ theorem contains_cons<T>(head: T, tail: List<T>, value: T) {
     ensures list::contains(List<T>::Cons(head, tail), value)
         == if head == value { true } else { list::contains(tail, value) } by {
         unfold(list::contains(List<T>::Cons(head, tail), value));
-        normalize();
+        known();
     }
 }
 ```
@@ -534,14 +534,14 @@ theorem contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
                     rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value), if head == value { true } else { list::contains(list::append(tail, ys), value) });
                     apply(list::contains_cons(head, tail, value));
                     rewrite(list::contains(List<T>::Cons(head, tail), value), if head == value { true } else { list::contains(tail, value) });
-                    normalize() using { head == value; };
+                    solve() using { head == value; };
                 } else {
                     apply(list::contains_cons(head, list::append(tail, ys), value));
                     rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value), if head == value { true } else { list::contains(list::append(tail, ys), value) });
                     apply(list::contains_cons(head, tail, value));
                     rewrite(list::contains(List<T>::Cons(head, tail), value), if head == value { true } else { list::contains(tail, value) });
                     rewrite(list::contains(list::append(tail, ys), value), if list::contains(tail, value) { true } else { list::contains(ys, value) });
-                    normalize() using { not(head == value); };
+                    solve() using { not(head == value); };
                 }
             }
         }
@@ -582,7 +582,7 @@ theorem length_nil<T>(xs: List<T>) {
     ensures list::length(xs) == Nat::Zero by {
         rewrite(xs, List<T>::Nil);
         unfold(list::length(List<T>::Nil));
-        normalize();
+        known();
     }
 }
 ```
@@ -595,7 +595,7 @@ theorem length_nil<T>(xs: List<T>) {
 theorem length_cons<T>(head: T, tail: List<T>) {
     ensures list::length(List<T>::Cons(head, tail)) == Nat::Succ(list::length(tail)) by {
         unfold(list::length(List<T>::Cons(head, tail)));
-        normalize();
+        known();
     }
 }
 ```
@@ -626,7 +626,7 @@ theorem length_append<T>(xs: List<T>, ys: List<T>) {
                 apply(nat::add_succ_left(list::length(tail), list::length(ys)));
                 rewrite(nat::add(Nat::Succ(list::length(tail)), list::length(ys)), Nat::Succ(nat::add(list::length(tail), list::length(ys))));
                 rewrite(list::length(list::append(tail, ys)), nat::add(list::length(tail), list::length(ys)));
-                normalize();
+                known();
             }
         }
     }
@@ -928,24 +928,6 @@ axiom round_down_le(value: Integer, bound: Integer, divisor: Integer, remainder:
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
 ### Order, definedness and conversion lemmas
-
-### `integer::int32_positive_is_nonnegative`
-
-```click
-theorem int32_positive_is_nonnegative(value: int32) {
-    requires 0 < value;
-
-    ensures 0 <= value by {
-        normalize() using { 0 < value; };
-    }
-}
-```
-
-**Meaning:** Given its listed requirements, proves `0 <= value`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `integer::int32_add_defined_by_integer_bounds`
 
@@ -2728,93 +2710,12 @@ theorem int32_less_equal_and_not_less_than_implies_equal(left: int32, right: int
     requires not (left < right);
 
     ensures left == right by {
-        have to_integer((left as int32)) == to_integer((right as int32)) by {
-            have ((-1 * to_integer((right as int32))) + to_integer((left as int32))) <= 0 by {
-                have to_integer((left as int32)) <= to_integer((right as int32)) by {
-                    normalize() using {
-                        left <= right;
-                    };
-                }
-                have ((-1 * to_integer((right as int32))) + to_integer((left as int32))) == (to_integer((left as int32)) - to_integer((right as int32))) by {
-                    normalize();
-                }
-                apply(integer::le_difference(to_integer((left as int32)), to_integer((right as int32)), ((-1 * to_integer((right as int32))) + to_integer((left as int32))))) using {
-                    to_integer((left as int32)) <= to_integer((right as int32));
-                    ((-1 * to_integer((right as int32))) + to_integer((left as int32))) ==
-                        (to_integer((left as int32)) - to_integer((right as int32)));
-                };
-            }
-            have (to_integer((right as int32)) + (-1 * to_integer((left as int32)))) <= 0 by {
-                have to_integer((right as int32)) <= to_integer((left as int32)) by {
-                    normalize() using {
-                        not left < right;
-                    };
-                }
-                have (to_integer((right as int32)) + (-1 * to_integer((left as int32)))) == (to_integer((right as int32)) - to_integer((left as int32))) by {
-                    normalize();
-                }
-                apply(integer::le_difference(to_integer((right as int32)), to_integer((left as int32)), (to_integer((right as int32)) + (-1 * to_integer((left as int32)))))) using {
-                    to_integer((right as int32)) <= to_integer((left as int32));
-                    (to_integer((right as int32)) + (-1 * to_integer((left as int32)))) ==
-                        (to_integer((right as int32)) - to_integer((left as int32)));
-                };
-            }
-            have ((-1 * to_integer((right as int32))) + to_integer((left as int32))) == 0 by {
-                have ((-1 * to_integer((right as int32))) + to_integer((left as int32))) <= ((-1 * to_integer((right as int32))) + to_integer((left as int32))) by {
-                    normalize();
-                }
-                have (to_integer((right as int32)) + (-1 * to_integer((left as int32))) + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))) <= (0 + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))) by {
-                    apply(integer::add_le((to_integer((right as int32)) + (-1 * to_integer((left as int32)))), 0, ((-1 * to_integer((right as int32))) + to_integer((left as int32))), ((-1 * to_integer((right as int32))) + to_integer((left as int32))))) using {
-                        (to_integer((right as int32)) + (-1 * to_integer((left as int32)))) <= 0;
-                        ((-1 * to_integer((right as int32))) + to_integer((left as int32))) <= ((-1 *
-                            to_integer((right as int32))) + to_integer((left as int32)));
-                    };
-                }
-                have 0 <= ((-1 * to_integer((right as int32))) + to_integer((left as int32))) by {
-                    have 0 == (to_integer((right as int32)) + (-1 * to_integer((left as int32))) + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))) by {
-                        normalize();
-                    }
-                    have ((-1 * to_integer((right as int32))) + to_integer((left as int32))) == (0 + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute((to_integer((right as int32)) + (-1 * to_integer((left as int32))) + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))), (0 + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))), 0, ((-1 * to_integer((right as int32))) + to_integer((left as int32))))) using {
-                        (to_integer((right as int32)) + (-1 * to_integer((left as int32))) + ((-1 *
-                            to_integer((right as int32))) + to_integer((left as int32)))) <= (0 + ((-1 *
-                            to_integer((right as int32))) + to_integer((left as int32))));
-                        0 == (to_integer((right as int32)) + (-1 * to_integer((left as int32))) + ((-1 *
-                            to_integer((right as int32))) + to_integer((left as int32))));
-                        ((-1 * to_integer((right as int32))) + to_integer((left as int32))) == (0 + ((-1
-                            * to_integer((right as int32))) + to_integer((left as int32))));
-                    };
-                }
-                apply(integer::le_antisymmetric(((-1 * to_integer((right as int32))) + to_integer((left as int32))), 0)) using {
-                    ((-1 * to_integer((right as int32))) + to_integer((left as int32))) <= 0;
-                    0 <= ((-1 * to_integer((right as int32))) + to_integer((left as int32)));
-                };
-            }
-            have ((-1 * to_integer((right as int32))) + to_integer((left as int32)) + to_integer((right as int32))) == (0 + to_integer((right as int32))) by {
-                apply(integer::equal_add(((-1 * to_integer((right as int32))) + to_integer((left as int32))), 0, to_integer((right as int32)), to_integer((right as int32)))) using {
-                    ((-1 * to_integer((right as int32))) + to_integer((left as int32))) == 0;
-                    to_integer((right as int32)) == to_integer((right as int32));
-                };
-            }
-            have to_integer((left as int32)) == ((-1 * to_integer((right as int32))) + to_integer((left as int32)) + to_integer((right as int32))) by {
-                normalize();
-            }
-            have to_integer((right as int32)) == (0 + to_integer((right as int32))) by {
-                normalize();
-            }
-            apply(integer::equal_substitute(((-1 * to_integer((right as int32))) + to_integer((left as int32)) + to_integer((right as int32))), (0 + to_integer((right as int32))), to_integer((left as int32)), to_integer((right as int32)))) using {
-                ((-1 * to_integer((right as int32))) + to_integer((left as int32)) + to_integer((right
-                    as int32))) == (0 + to_integer((right as int32)));
-                to_integer((left as int32)) == ((-1 * to_integer((right as int32))) + to_integer((left
-                    as int32)) + to_integer((right as int32)));
-                to_integer((right as int32)) == (0 + to_integer((right as int32)));
-            };
-        }
-        normalize() using {
-            to_integer((left as int32)) == to_integer((right as int32));
+        have to_integer(right) <= to_integer(left) by known();
+        apply(integer::le_antisymmetric(to_integer(left), to_integer(right))) using {
+            to_integer(left) <= to_integer(right);
+            to_integer(right) <= to_integer(left);
         };
+        known();
     }
 }
 ```
@@ -2833,125 +2734,11 @@ theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int
     requires left != right;
 
     ensures left < right by {
-        have to_integer(((left as int32) as int32)) < to_integer(((right as int32) as int32)) by {
-            have not not to_integer(((left as int32) as int32)) < to_integer(((right as int32) as int32)) by {
-                intro();
-                have ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))) <= 0 by {
-                    have to_integer(((right as int32) as int32)) <= to_integer(((left as int32) as int32)) by {
-                        normalize() using {
-                            not to_integer(((left as int32) as int32)) < to_integer(((right as int32) as
-                                int32));
-                        };
-                    }
-                    have ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))) == (to_integer(((right as int32) as int32)) - to_integer(((left as int32) as int32))) by {
-                        normalize();
-                    }
-                    apply(click::integer::le_difference(to_integer(((right as int32) as int32)), to_integer(((left as int32) as int32)), ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))))) using {
-                        to_integer(((right as int32) as int32)) <= to_integer(((left as int32) as
-                            int32));
-                        ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as
-                            int32))) == (to_integer(((right as int32) as int32)) - to_integer(((left as
-                            int32) as int32)));
-                    };
-                }
-                have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))) <= 0 by {
-                    have to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as int32) as int32) as int32)) by {
-                        normalize() using {
-                            ((left as int32) as int32) <= ((right as int32) as int32);
-                        };
-                    }
-                    have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))) == (to_integer((((left as int32) as int32) as int32)) - to_integer((((right as int32) as int32) as int32))) by {
-                        normalize();
-                    }
-                    apply(click::integer::le_difference(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)), (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))))) using {
-                        to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as
-                            int32) as int32) as int32));
-                        (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as
-                            int32)))) == (to_integer((((left as int32) as int32) as int32)) -
-                            to_integer((((right as int32) as int32) as int32)));
-                    };
-                }
-                have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1) <= 0 by {
-                    have to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as int32) as int32) as int32)) by {
-                        have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))) == (to_integer((((left as int32) as int32) as int32)) - to_integer((((right as int32) as int32) as int32))) by {
-                            normalize();
-                        }
-                        apply(click::integer::difference_le(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)), (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))))) using {
-                            (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32)
-                                as int32)))) <= 0;
-                            (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32)
-                                as int32)))) == (to_integer((((left as int32) as int32) as int32)) -
-                                to_integer((((right as int32) as int32) as int32)));
-                        };
-                    }
-                    have to_integer((((left as int32) as int32) as int32)) != to_integer((((right as int32) as int32) as int32)) by {
-                        normalize() using {
-                            ((left as int32) as int32) != ((right as int32) as int32);
-                        };
-                    }
-                    have to_integer((((left as int32) as int32) as int32)) < to_integer((((right as int32) as int32) as int32)) by {
-                        apply(click::integer::le_ne_lt(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)))) using {
-                            to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as
-                                int32) as int32) as int32));
-                            to_integer((((left as int32) as int32) as int32)) != to_integer((((right as
-                                int32) as int32) as int32));
-                        };
-                    }
-                    have (to_integer((((left as int32) as int32) as int32)) + 1) <= to_integer((((right as int32) as int32) as int32)) by {
-                        apply(click::integer::lt_step_le(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)))) using {
-                            to_integer((((left as int32) as int32) as int32)) < to_integer((((right as
-                                int32) as int32) as int32));
-                        };
-                    }
-                    have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1) == ((to_integer((((left as int32) as int32) as int32)) + 1) - to_integer((((right as int32) as int32) as int32))) by {
-                        normalize();
-                    }
-                    apply(click::integer::le_difference((to_integer((((left as int32) as int32) as int32)) + 1), to_integer((((right as int32) as int32) as int32)), (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1))) using {
-                        (to_integer((((left as int32) as int32) as int32)) + 1) <= to_integer((((right
-                            as int32) as int32) as int32));
-                        (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as
-                            int32))) + 1) == ((to_integer((((left as int32) as int32) as int32)) + 1) -
-                            to_integer((((right as int32) as int32) as int32)));
-                    };
-                }
-                have (let integer_constant: Integer = 1; integer_constant) <= 0 by {
-                    have ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1)) <= (0 + 0) by {
-                        apply(click::integer::add_le(((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))), 0, (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1), 0)) using {
-                            ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as
-                                int32) as int32))) <= 0;
-                            (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32)
-                                as int32))) + 1) <= 0;
-                        };
-                    }
-                    have (let integer_constant: Integer = 1; integer_constant) == ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1)) by {
-                        normalize();
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(click::integer::le_substitute(((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1)), (0 + 0), (let integer_constant: Integer = 1; integer_constant), 0)) using {
-                        ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as
-                            int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right
-                            as int32) as int32))) + 1)) <= (0 + 0);
-                        (let integer_constant: Integer = 1; integer_constant) == ((-1 *
-                            to_integer(((left as int32) as int32))) + to_integer(((right as int32) as
-                            int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right
-                            as int32) as int32))) + 1));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                contradiction((let integer_constant: Integer = 1; integer_constant) <= 0);
-            }
-            normalize() using {
-                not not to_integer(((left as int32) as int32)) < to_integer(((right as int32) as
-                    int32));
-            };
-        }
-        have left < right by {
-            normalize() using {
-                to_integer(((left as int32) as int32)) < to_integer(((right as int32) as int32));
-            };
-        }
+        have to_integer(left) != to_integer(right) by known();
+        apply(integer::le_ne_lt(to_integer(left), to_integer(right))) using {
+            to_integer(left) <= to_integer(right);
+            to_integer(left) != to_integer(right);
+        };
         known();
     }
 }
@@ -3969,6 +3756,25 @@ theorem product_upper_bound(x: Integer, y: Integer, lo_x: Integer, hi_x: Integer
     }
 }
 ```
+
+### `integer::int32_positive_is_nonnegative`
+
+```click
+theorem int32_positive_is_nonnegative(value: int32) {
+    requires 0 < value;
+
+    ensures 0 <= value by {
+        apply(integer::lt_le(0, to_integer(value))) using { 0 < to_integer(value); };
+        known();
+    }
+}
+```
+
+**Meaning:** Given its listed requirements, proves `0 <= value`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `integer::add_right_order`
 
