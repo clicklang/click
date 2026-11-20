@@ -74,7 +74,7 @@ fn pointer_calls_keep_sorts_order_states_and_noninjectivity() {
         .clone()
         .store(p.clone(), ProgramValue::Int32(word(32)));
     let array = |memory: &SymbolicMemory, pointer, element_type| PureFunctionArgument::ArrayRef {
-        memory: memory.clone(),
+        point: crate::kernel::ProgramPoint::of_memory(memory),
         pointer: ProgramValue::Pointer(Pointer::new(pointer, ProgramType::Int32Pointer)),
         element_type,
     };

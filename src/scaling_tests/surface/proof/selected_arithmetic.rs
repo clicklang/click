@@ -290,7 +290,7 @@ fn rewrite_history_keys_share_call_carriers_and_keep_state_authority() {
             let application = SharedPureApplication::intern(
                 "read_length".into(),
                 vec![PureFunctionArgument::ArrayRef {
-                    memory,
+                    point: crate::kernel::ProgramPoint::of_memory(&memory),
                     pointer: ProgramValue::Pointer(Pointer::new(
                         pointer.clone(),
                         ProgramType::Int32Pointer,

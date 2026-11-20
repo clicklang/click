@@ -2019,7 +2019,7 @@ fn function_array_synthesis_requires_the_exact_named_state() {
         .clone()
         .with_memory(SymbolicMemory::new().with_block("other", 4));
     let values = [crate::kernel::PureFunctionArgument::ArrayRef {
-        memory: entry.memory().clone(),
+        point: crate::kernel::ProgramPoint::of_memory(entry.memory()),
         pointer,
         element_type: ProgramType::Int32,
     }];
@@ -2051,7 +2051,7 @@ fn function_array_synthesis_requires_the_exact_named_state() {
     // An unresolved historical pointer re-enters entry-state synthesis. The
     // entry slot must be free for that nested scope to clear and restore it.
     let unnamed = [crate::kernel::PureFunctionArgument::ArrayRef {
-        memory: entry.memory().clone(),
+        point: crate::kernel::ProgramPoint::of_memory(entry.memory()),
         pointer: ProgramValue::pointer(Address::symbolic(Variable(9_830_001))),
         element_type: ProgramType::Int32,
     }];
@@ -2088,7 +2088,7 @@ fn function_array_argument_keeps_its_recorded_memory_after_other_writes() {
         .clone()
         .with_memory(historical.memory().clone().with_block("later-write", 4));
     let values = [crate::kernel::PureFunctionArgument::ArrayRef {
-        memory: historical.memory().clone(),
+        point: crate::kernel::ProgramPoint::of_memory(historical.memory()),
         pointer,
         element_type: ProgramType::Int32,
     }];
@@ -5286,11 +5286,11 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
                         Some(common(pointer))
                     }
                     PureFunctionArgument::ArrayRef {
-                        memory,
+                        point: memory,
                         pointer: ProgramValue::Pointer(pointer),
                         element_type,
                     } => Some(KernelTerm::shared_array_reference(
-                        crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
+                        memory.clone(),
                         common(pointer),
                         *element_type,
                     )),
@@ -9308,4 +9308,65 @@ fn literal_integer_conversions_round_trip_after_exact_rewrite() {
         );
         assert_eq!(fixture.lower(&text), *expected, "{text}");
     }
+}
+
+#[test]
+fn an_abstract_local_read_raises_at_its_defining_point() {
+    use crate::kernel::{
+        AggregateDeclarationKind, AggregateLayout, AlgebraicTerm, AlgebraicTermNode,
+        KernelTermImport, TypeParameterName,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = TypeParameterName::intern("AbstractLocalRaise");
+    let declare = crate::kernel::prove_execution_statement_execution(
+        ExecutionState::new(),
+        crate::kernel::ProgramStatement::DeclareAggregate {
+            name: "item".into(),
+            layout: AggregateLayout::holding_value(ProgramType::Parameter(ty)),
+            kind: AggregateDeclarationKind::Local,
+            declared_class: None,
+        },
+    )
+    .unwrap();
+    let Proposition::ProgramStatementVerifies {
+        outcome: crate::kernel::StatementOutcome::Normal(state),
+        ..
+    } = declare.proposition()
+    else {
+        panic!("declared local object");
+    };
+    let (_, pointer) = state.locals().held_value_local("item").unwrap();
+    let store = |state: &ExecutionState, variable| {
+        state.clone().with_memory(state.memory().clone().store(
+            pointer.clone(),
+            ProgramValue::Parameter(Box::new(AlgebraicTerm {
+                algebraic_type: ty.algebraic_type(),
+                node: AlgebraicTermNode::Variable(Variable(variable)),
+            })),
+        ))
+    };
+    let earlier = store(state, 1008301);
+    let current = store(&earlier, 1008302);
+    let ProgramValue::Parameter(value) = earlier.held_local_value("item").unwrap() else {
+        panic!("abstract local");
+    };
+    let root = KernelTermImport::default().algebraic(&value);
+    let raise = |state: &ExecutionState| {
+        raise_kernel_term(&root, ParameterBinding::default(), state, &BTreeMap::new())
+    };
+    let variable = SurfaceTerm::ProgramExpression(ProgramExpression::Variable("item".into()));
+    assert_eq!(raise(&earlier), Some(variable.clone()));
+    assert_eq!(raise(&current), None);
+
+    let selector = ProgramPointSelector::Mark("before_write".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), earlier);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    assert_eq!(
+        raise(&current),
+        Some(SurfaceTerm::At {
+            selector,
+            expression: Box::new(variable)
+        })
+    );
 }

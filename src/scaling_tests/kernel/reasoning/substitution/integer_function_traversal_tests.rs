@@ -67,7 +67,7 @@ fn public_integer_substitution_keeps_array_ref_states_opaque() {
                     vec![
                         PureFunctionArgument::Integer(IntegerTerm::var(source).into()),
                         PureFunctionArgument::ArrayRef {
-                            memory,
+                            point: crate::kernel::ProgramPoint::of_memory(&memory),
                             pointer: pointer.clone(),
                             element_type: ProgramType::UInt8,
                         },
@@ -87,13 +87,13 @@ fn public_integer_substitution_keeps_array_ref_states_opaque() {
         };
         let [
             PureFunctionArgument::Integer(integer),
-            PureFunctionArgument::ArrayRef { memory, .. },
+            PureFunctionArgument::ArrayRef { point: memory, .. },
         ] = application.arguments()
         else {
             panic!("expected Integer and ArrayRef arguments")
         };
         assert!(matches!(integer.as_ref(), IntegerTerm::Constant(_)));
-        memory.clone()
+        memory.memory().clone()
     };
     // Construct the selected term before measuring its substitution. Pin
     // a constant ceiling across state sizes rather than exact equality

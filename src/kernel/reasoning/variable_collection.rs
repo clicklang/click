@@ -875,9 +875,11 @@ fn collect_algebraic_term_bitvector_variables(
                         collect_integer_variables(value, variables)
                     }
                     PureFunctionArgument::ArrayRef {
-                        memory, pointer, ..
+                        point: memory,
+                        pointer,
+                        ..
                     } => {
-                        collect_memory_bitvector_variables(memory, variables);
+                        collect_memory_bitvector_variables(memory.memory(), variables);
                         collect_program_value_bitvector_variables(pointer, variables);
                     }
                 }
@@ -3112,9 +3114,11 @@ fn collect_integer_variables_seen(
                         collect_algebraic_term_bitvector_variables(value, variables)
                     }
                     PureFunctionArgument::ArrayRef {
-                        memory, pointer, ..
+                        point: memory,
+                        pointer,
+                        ..
                     } => {
-                        collect_memory_bitvector_variables(memory, variables);
+                        collect_memory_bitvector_variables(memory.memory(), variables);
                         collect_program_value_bitvector_variables(pointer, variables);
                     }
                 }

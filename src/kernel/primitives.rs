@@ -4959,10 +4959,18 @@ impl AlgebraicTermNode {
             &pointer,
             ABSTRACT_VALUE_WIDTH,
         );
+        Self::parameter_load_at(ProgramPoint::at(&memory), pointer, parameter)
+    }
+
+    pub(crate) fn parameter_load_at(
+        point: ProgramPoint,
+        pointer: Address,
+        parameter: TypeParameterName,
+    ) -> ProgramValue {
         ProgramValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: Self::MemoryLoad {
-                point: crate::kernel::ProgramPoint::at(&memory),
+                point,
                 pointer: Box::new(pointer),
             },
         }))
@@ -4990,7 +4998,7 @@ pub enum PureFunctionArgument {
     Integer(SharedIntegerTerm),
     Algebraic(AlgebraicTerm),
     ArrayRef {
-        memory: SymbolicMemory,
+        point: ProgramPoint,
         pointer: ProgramValue,
         element_type: ProgramType,
     },

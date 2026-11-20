@@ -1971,7 +1971,7 @@ impl Renderer<'_> {
             // rendered `count(a) < count(a)`: a reader could not tell the two
             // sides apart, and a true goal read as a false one.
             PureFunctionArgument::ArrayRef {
-                memory,
+                point: memory,
                 pointer,
                 element_type,
             } => {
@@ -1983,7 +1983,7 @@ impl Renderer<'_> {
                 } else {
                     self.push("array-ref(");
                 }
-                self.memory(memory);
+                self.memory(memory.memory());
                 self.push(", ");
                 self.cvalue(pointer);
                 self.push(")");

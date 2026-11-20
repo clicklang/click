@@ -2631,7 +2631,7 @@ impl Printer<'_> {
             PureFunctionArgument::Integer(value) => self.integer(value, depth + 1),
             PureFunctionArgument::Algebraic(value) => self.algebraic(value, depth + 1),
             PureFunctionArgument::ArrayRef {
-                memory,
+                point: memory,
                 pointer: crate::kernel::ProgramValue::Pointer(pointer),
                 element_type,
             } => {
@@ -2641,7 +2641,7 @@ impl Printer<'_> {
                     {
                         return None;
                     }
-                    let (point, naming) = self.labels.source_memory_context(memory)?;
+                    let (point, naming) = self.labels.source_memory_context(memory.memory())?;
                     let (point, naming) = (point.to_owned(), naming.clone());
                     let name = self.exact_pointer_value(pointer, &naming)?;
                     return Some(atom(if point == "current" {
@@ -2650,7 +2650,7 @@ impl Printer<'_> {
                         format!("at({point}, {name})")
                     }));
                 }
-                self.place_read_in(memory, |printer| {
+                self.place_read_in(memory.memory(), |printer| {
                     printer.pointer(pointer.address(), depth + 1)
                 })
             }

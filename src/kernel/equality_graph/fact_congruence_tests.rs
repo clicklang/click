@@ -46,7 +46,7 @@ fn pointer(name: &str) -> Address {
 }
 fn array(memory: &SymbolicMemory, p: Address, element_type: ProgramType) -> PureFunctionArgument {
     PureFunctionArgument::ArrayRef {
-        memory: memory.clone(),
+        point: crate::kernel::ProgramPoint::of_memory(memory),
         pointer: ProgramValue::Pointer(Pointer::new(p, ProgramType::Int32Pointer)),
         element_type,
     }

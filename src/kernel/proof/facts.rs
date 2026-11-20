@@ -3459,12 +3459,12 @@ fn bitvector_equality_atom_key(term: &MachineTerm) -> Option<BitvectorEqualityAt
                         value.hash(&mut hasher);
                     }
                     PureFunctionArgument::ArrayRef {
-                        memory,
+                        point: memory,
                         pointer,
                         element_type,
                     } => {
                         2u8.hash(&mut hasher);
-                        intern_memory_ref(memory).arena_id().hash(&mut hasher);
+                        memory.read_key().hash(&mut hasher);
                         pointer.hash(&mut hasher);
                         element_type.hash(&mut hasher);
                     }

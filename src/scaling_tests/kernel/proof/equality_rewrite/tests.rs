@@ -628,7 +628,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
                 name: "observes".into(),
                 arguments: vec![
                     PureFunctionArgument::ArrayRef {
-                        memory: memory.clone(),
+                        point: crate::kernel::ProgramPoint::of_memory(&memory),
                         pointer: ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer),
                         element_type: ProgramType::Int32,
                     };
@@ -776,7 +776,7 @@ fn rewrite_integer_application_endpoint_keeps_byte_state_and_ignores_its_content
             );
         }
         let array = PureFunctionArgument::ArrayRef {
-            memory,
+            point: crate::kernel::ProgramPoint::of_memory(&memory),
             pointer: ProgramValue::typed_pointer(
                 Address::symbolic(Variable(48)),
                 ProgramType::UInt8Pointer,

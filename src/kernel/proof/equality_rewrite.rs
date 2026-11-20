@@ -1547,11 +1547,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
                                 PureFunctionArgument::Integer(value.clone())
                             }
                             PureFunctionArgument::ArrayRef {
-                                memory,
+                                point,
                                 pointer,
                                 element_type,
                             } => PureFunctionArgument::ArrayRef {
-                                memory: memory.clone(),
+                                point: point.clone(),
                                 pointer: rewrite_program_value(
                                     pointer,
                                     rewrite_term,

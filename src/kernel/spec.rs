@@ -8473,7 +8473,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                     || !path.value.program_type().is_pointer()
                 {
                     SpecCallArgument::Native(PureFunctionArgument::ArrayRef {
-                        memory: version.memory().clone(),
+                        point: version.clone(),
                         pointer: path.value.into_native(),
                         element_type: *element_type,
                     })
@@ -8495,19 +8495,27 @@ fn evaluate_spec_pure_function_argument_paths_in(
     }
 }
 
-/// The state an array argument at `pointer` names, given the state it was
-/// evaluated at.
-///
-/// See [`crate::kernel::resource_tracker`] for
-/// what the epoch guarantees and which derivation edges it crosses. An
-/// argument that is not a pointer at all keeps the live state, which is
-/// always sound and merely as fragile as before; so does a block the walk
-/// cannot separate from anything, because it then crosses no edge.
+/// Name an external array by its verified entry point when the recorded
+/// suffix preserves external storage. Other arrays still use the existing
+/// block version selector.
 fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> ProgramPoint {
     let ProgramValue::Pointer(pointer) = pointer else {
         return source.clone();
     };
     let block = &pointer.address().base;
+    let entry = crate::instrumentation::measure_operation(
+        "kernel",
+        "canonical form",
+        "array-ref entry version",
+        || {
+            let entry = source.entry_array_version(block)?;
+            crate::instrumentation::record_deterministic_work(1);
+            Some(entry)
+        },
+    );
+    if let Some(entry) = entry {
+        return entry;
+    }
     let start = source.parameter_read_start(block);
     let version = crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Block(block),

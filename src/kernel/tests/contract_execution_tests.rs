@@ -4412,7 +4412,7 @@ fn path_exists_at_program_point(
                     name: "walk".into(),
                     arguments: vec![
                         PureFunctionArgument::ArrayRef {
-                            memory,
+                            point: crate::kernel::ProgramPoint::of_memory(&memory),
                             pointer: ProgramValue::pointer(Address {
                                 base: "graph".into(),
                                 offset: AddressOffset::Constant(0),

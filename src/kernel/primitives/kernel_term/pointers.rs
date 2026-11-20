@@ -280,7 +280,7 @@ impl KernelTerm {
         {
             return Some(self.0.argument_leaf.get_or_init(|| {
                 Box::new(PureFunctionArgument::ArrayRef {
-                    memory: point.memory().clone(),
+                    point: point.clone(),
                     pointer: pointer.pointer_native().expect("array pointer").clone(),
                     element_type: *element_type,
                 })

@@ -1236,12 +1236,12 @@ impl KernelTermImport {
                 }
             },
             PureFunctionArgument::ArrayRef {
-                memory,
+                point,
                 pointer,
                 element_type,
             } => match pointer {
                 ProgramValue::Pointer(pointer) => KernelTerm::shared_array_reference(
-                    ProgramPoint::of_memory(memory),
+                    point.clone(),
                     KernelTerm::shared_pointer_value(SharedPointer::import(pointer)),
                     *element_type,
                 ),

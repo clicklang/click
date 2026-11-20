@@ -17,7 +17,7 @@ use crate::kernel::{bits32_constant, int64_constant, uint64_constant};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ArgumentTag {
     Value(ProgramType),
-    Array((u32, u32), ProgramType),
+    Array(crate::kernel::program_point::ReadKey, ProgramType),
     Algebraic,
     ProvenanceRead((u32, u32)),
     PointerBoundsRead((u32, u32)),
@@ -828,40 +828,46 @@ impl TermClasses {
                         } => {
                             let head = self.intern_node(Node::AlgebraicMemoryRead(
                                 ty.clone(),
-                                memory.shared_memory().read_identity(),
+                                memory.congruence_read_key(),
                             ));
                             let address = self.numeric_address(pointer);
                             let node = Node::Apply(head, address);
                             let read = self.intern_node(node.clone());
-                            // A projection's selected-cell equation is producer
-                            // metadata. Consult its exact key, without walking
-                            // the memory history or choosing a term from facts.
-                            if let Some(source) =
-                                crate::kernel::prelude::canonical_load_projection_source(
+                            if memory.read_version_id().is_none() {
+                                // A projection's selected-cell equation is producer
+                                // metadata. Consult its exact key, without walking
+                                // the memory history or choosing a term from facts.
+                                if let Some(source) =
+                                    crate::kernel::prelude::canonical_load_projection_source(
+                                        memory.shared_memory(),
+                                        pointer,
+                                    )
+                                {
+                                    let source_head = self.intern_node(Node::AlgebraicMemoryRead(
+                                        ty.clone(),
+                                        crate::kernel::program_point::ReadKey::Memory(
+                                            source.read_identity(),
+                                        ),
+                                    ));
+                                    let source_read =
+                                        self.intern_node(Node::Apply(source_head, address));
+                                    self.close(vec![(read, source_read)]);
+                                }
+                                if let Some(origin) = crate::kernel::prelude::value_load_origin(
                                     memory.shared_memory(),
                                     pointer,
-                                )
-                            {
-                                let source_head = self.intern_node(Node::AlgebraicMemoryRead(
-                                    ty.clone(),
-                                    source.read_identity(),
-                                ));
-                                let source_read =
-                                    self.intern_node(Node::Apply(source_head, address));
-                                self.close(vec![(read, source_read)]);
-                            }
-                            if let Some(origin) = crate::kernel::prelude::value_load_origin(
-                                memory.shared_memory(),
-                                pointer,
-                                crate::kernel::ABSTRACT_VALUE_WIDTH,
-                            ) {
-                                let origin_head = self.intern_node(Node::AlgebraicMemoryRead(
-                                    ty,
-                                    origin.read_identity(),
-                                ));
-                                let origin_read =
-                                    self.intern_node(Node::Apply(origin_head, address));
-                                self.close(vec![(read, origin_read)]);
+                                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                ) {
+                                    let origin_head = self.intern_node(Node::AlgebraicMemoryRead(
+                                        ty,
+                                        crate::kernel::program_point::ReadKey::Memory(
+                                            origin.read_identity(),
+                                        ),
+                                    ));
+                                    let origin_read =
+                                        self.intern_node(Node::Apply(origin_head, address));
+                                    self.close(vec![(read, origin_read)]);
+                                }
                             }
                             node
                         }
@@ -1257,12 +1263,12 @@ impl TermClasses {
                             pending.push(Work::Integer(term));
                         }
                         A::ArrayRef {
-                            memory,
+                            point,
                             pointer,
                             element_type,
                         } => {
                             pending.push(Work::Wrap(ArgumentTag::Array(
-                                crate::kernel::intern_memory(memory.clone()).read_identity(),
+                                point.congruence_read_key(),
                                 *element_type,
                             )));
                             pending.push(Work::Value(pointer));

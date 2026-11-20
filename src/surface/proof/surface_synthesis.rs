@@ -706,6 +706,32 @@ fn recorded_point_of_load(
     })
 }
 
+/// An indexed algebraic load names the value held by a local at its
+/// defining write. Check the local's read before offering its spelling.
+fn synthesize_point_held_value(
+    ty: &crate::kernel::AlgebraicType,
+    point: &crate::kernel::ProgramPoint,
+    pointer: &Address,
+    state: &ExecutionState,
+) -> Option<SurfaceTerm> {
+    let raise = |selected: &ExecutionState| {
+        let name = selected.locals().name_for_slot(pointer)?;
+        let ProgramValue::Parameter(held) = selected.held_local_value(name)? else {
+            return None;
+        };
+        let crate::kernel::AlgebraicTermNode::MemoryLoad {
+            point: held_point,
+            pointer: held_pointer,
+        } = &held.node
+        else {
+            return None;
+        };
+        (&held.algebraic_type == ty && held_point == point && held_pointer.as_ref() == pointer)
+            .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
+    };
+    raise(state).or_else(|| synthesize_at_program_point(point, state, raise))
+}
+
 /// The name of the local that keeps `term` in its object at `pointer`, in
 /// `state`: a borrowed Rust enum local `o` read there is spelled `o`. The
 /// local's name reads its object at the point it was last written
@@ -3956,6 +3982,9 @@ fn raise_algebraic_read(
         return None;
     };
     let (point, address) = read.parts();
+    if point.read_version_id().is_some() {
+        return synthesize_point_held_value(ty, point, &address.export().ok()?, state);
+    }
     let memory = point.shared_memory();
     let same_address = |pointer: &Address| address.syntax_equal(&SharedAddress::import(pointer));
     if let Some((parameter, _)) = parameter_binding
@@ -4474,8 +4503,12 @@ fn raise_kernel_term_dispatch(
             let raise = |selected: &ExecutionState| {
                 raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
             };
-            synthesize_at_program_point(point, state, raise)
-                .or_else(|| synthesize_at_memory(point.shared_memory(), state, raise))?
+            if point.read_version_id().is_some() {
+                synthesize_at_program_point(point, state, raise)?
+            } else {
+                synthesize_at_program_point(point, state, raise)
+                    .or_else(|| synthesize_at_memory(point.shared_memory(), state, raise))?
+            }
         }
 
         Node::PointerRead { value, .. }
@@ -6463,21 +6496,24 @@ fn synthesize_legacy_call_argument(
             synthesize_surface_algebraic(value, parameter_binding, state, bound_variables)?
         }
         crate::kernel::PureFunctionArgument::ArrayRef {
-            memory,
+            point,
             pointer: ProgramValue::Pointer(pointer),
             ..
-        } => synthesize_at_memory(
-            &crate::kernel::intern_memory_ref(memory),
-            state,
-            |selected| {
+        } => {
+            let raise = |selected: &ExecutionState| {
                 synthesize_surface_pointer_expression(
                     pointer,
                     parameter_binding,
                     selected,
                     bound_variables,
                 )
-            },
-        )?,
+            };
+            if point.read_version_id().is_some() {
+                synthesize_at_program_point(point, state, raise)?
+            } else {
+                synthesize_at_memory(point.shared_memory(), state, raise)?
+            }
+        }
         _ => return None,
     })
 }
@@ -8230,6 +8266,11 @@ fn synthesize_surface_algebraic(
             })
         }
 
+        crate::kernel::AlgebraicTermNode::MemoryLoad { point, pointer }
+            if point.read_version_id().is_some() =>
+        {
+            synthesize_point_held_value(&term.algebraic_type, point, pointer, state)
+        }
         // The value a reference parameter refers to is spelled `*r`.
         crate::kernel::AlgebraicTermNode::MemoryLoad { pointer, .. } => parameter_binding
             .parameters
