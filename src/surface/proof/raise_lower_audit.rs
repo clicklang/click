@@ -231,6 +231,31 @@ mod tests {
         }
     }
 
+    /// A read through a pointer a call returned raises as a read through
+    /// that call's result, at the read's own state, whether at the result
+    /// or displaced from it.
+    #[test]
+    fn reads_through_a_call_result_round_trip() {
+        for (name, text, original) in [
+            (
+                "a_call_result_is_spelled_by_its_call.md",
+                include_str!("../../../mdtests/a_call_result_is_spelled_by_its_call.md"),
+                "old(*statement(0).call(make, 0).result) == 7",
+            ),
+            (
+                "undeclared_aggregate_call_has_a_separate_copy.md",
+                include_str!("../../../mdtests/undeclared_aggregate_call_has_a_separate_copy.md"),
+                "old(*&statement(0).call(make_pair, 0).result[4]) == 4",
+            ),
+        ] {
+            let lines = round_trips(name, text);
+            assert!(
+                lines.contains(&("same".to_string(), original.to_string())),
+                "{name}: {original}: {lines:#?}"
+            );
+        }
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();

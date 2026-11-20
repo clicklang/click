@@ -6118,7 +6118,27 @@ fn synthesize_surface_bitvector(
                     parameter_binding,
                     state,
                     bound_variables,
-                )?;
+                );
+                // A read through a pointer a call returned, at or displaced
+                // from the result, is a typed read through that call's
+                // result, when it reads exactly the memory being spelled.
+                let Some(pointer) = pointer else {
+                    // A caller's argument is not the call's: a call that
+                    // returns its argument names an address it did not make.
+                    if kernel_pointer.base == AddressBase::ExternalArgument {
+                        return None;
+                    }
+                    let value_type = load_kind_value_type(*kind)?;
+                    // The read's memory selects `old(..)`, `at(point, ..)` or
+                    // the current state; the call's result names the pointer
+                    // in that state.
+                    return synthesize_at_memory(memory.shared_memory(), state, |selected| {
+                        Some(synthesize_memory_load(
+                            call_result_pointer_expression(kernel_pointer, selected)?,
+                            value_type,
+                        ))
+                    });
+                };
                 // An unsigned byte read is spelled as one whatever the
                 // pointer's own element type: through a signed plain `char`
                 // pointer it is the byte's one name, not the pointer's read.
@@ -7124,6 +7144,27 @@ fn synthesize_struct_field_load(
 ) -> Option<ContractExpression> {
     synthesize_parameter_field_load(pointer, value_type, parameter_binding)
         .or_else(|| synthesize_local_field_load(pointer, value_type, parameter_binding, state))
+}
+
+/// The call result naming `pointer`, or an address displaced from one: the
+/// result a call returned into `state`, or one the proof's recorded points
+/// name.
+fn call_result_pointer_expression(
+    pointer: &Address,
+    state: &ExecutionState,
+) -> Option<ContractExpression> {
+    state_call_result(
+        state,
+        |value| matches!(value, ProgramValue::Pointer(held) if held.address() == pointer),
+    )
+    .or_else(|| {
+        SYNTHESIS_RECORDED_POINTS.with(|points| {
+            points
+                .borrow()
+                .as_ref()?
+                .call_result_address_expression(pointer)
+        })
+    })
 }
 
 /// The program type a load of `kind` reads.
