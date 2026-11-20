@@ -15647,8 +15647,10 @@ impl Parser {
     /// Whether a `<region>.result` starts here: a `statement(...)` or
     /// `region(N)` region followed by `.result`. Read ahead only.
     fn looks_like_region_result(&mut self) -> bool {
-        if !matches!(self.peek_ident(), Some("statement" | "region" | "call"))
-            || self.peek_next() != Some(&Token::LParen)
+        if !matches!(
+            self.peek_ident(),
+            Some("statement" | "region" | "call" | "loop")
+        ) || self.peek_next() != Some(&Token::LParen)
         {
             return false;
         }
