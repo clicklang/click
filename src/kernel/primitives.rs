@@ -13561,7 +13561,8 @@ pub enum Term {
     Algebraic(StoredAlgebraicTerm),
     // Outcomes carry ExecutionState. Keep them out of Term's inline size so cloning
     // a deep pure proposition does not spend stack on unused C variants.
-    Memory(SymbolicMemory),
+    /// The source point of the following pointer in a predicate array argument.
+    ArrayReadPoint(ProgramPoint),
     ExecutionState(Box<ExecutionState>),
 }
 

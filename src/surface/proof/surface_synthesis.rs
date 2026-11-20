@@ -2595,16 +2595,9 @@ fn synthesize_surface_atomic_proposition(
             right: sequence(right, parameter_binding, state, bound_variables)?,
         });
     }
-    // A declared predicate call starts with its hidden logical resource-state
-    // state. Its source call does not write that argument. Each array-ref
-    // argument then lowers to a (memory, pointer) term pair and each value
-    // argument to a single value term, so the remaining kernel argument list
-    // reads back unambiguously: a `SymbolicMemory` term always opens an array-ref
-    // pair. The state the pair names is not written here — the current
-    // memory needs no form, and every caller re-lowers the candidate and
-    // compares it to the kernel fact, so a candidate built against the wrong
-    // state is rejected by that round trip rather than by a guess made
-    // here.
+    // The hidden resource-state argument has no written spelling. A
+    // predicate's array source point is followed by its pointer, so each
+    // argument can be raised at its own recorded point.
     if let Proposition::Predicate {
         name,
         arguments: kernel_arguments,
@@ -2620,7 +2613,7 @@ fn synthesize_surface_atomic_proposition(
         ));
         while index < kernel_arguments.len() {
             match &kernel_arguments[index] {
-                Term::Memory(memory) => {
+                Term::ArrayReadPoint(point) => {
                     let Some(term_source_0 @ Term::ProgramValue(_)) =
                         kernel_arguments.get(index + 1)
                     else {
@@ -2631,8 +2624,8 @@ fn synthesize_surface_atomic_proposition(
                     else {
                         return None;
                     };
-                    call_arguments.push(synthesize_at_memory(
-                        &crate::kernel::intern_memory_ref(memory),
+                    call_arguments.push(synthesize_at_array_read_point(
+                        point,
                         state,
                         |selected| {
                             synthesize_surface_pointer_expression(
@@ -4503,12 +4496,7 @@ fn raise_kernel_term_dispatch(
             let raise = |selected: &ExecutionState| {
                 raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
             };
-            if point.read_version_id().is_some() {
-                synthesize_at_program_point(point, state, raise)?
-            } else {
-                synthesize_at_program_point(point, state, raise)
-                    .or_else(|| synthesize_at_memory(point.shared_memory(), state, raise))?
-            }
+            synthesize_at_array_read_point(point, state, raise)?
         }
 
         Node::PointerRead { value, .. }
@@ -6425,6 +6413,19 @@ fn synthesize_at_program_point(
         selector,
         expression: Box::new(raise(&recorded)?),
     })
+}
+
+fn synthesize_at_array_read_point(
+    point: &crate::kernel::ProgramPoint,
+    state: &ExecutionState,
+    raise: impl Fn(&ExecutionState) -> Option<SurfaceTerm>,
+) -> Option<SurfaceTerm> {
+    if point.read_version_id().is_some() {
+        synthesize_at_program_point(point, state, raise)
+    } else {
+        synthesize_at_program_point(point, state, &raise)
+            .or_else(|| synthesize_at_memory(point.shared_memory(), state, raise))
+    }
 }
 
 /// A state-bearing argument selects its memory by identity. An intermediate

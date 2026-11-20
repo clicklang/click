@@ -1833,7 +1833,7 @@ impl Renderer<'_> {
             Term::Integer(i) => self.integer(i.native_compat()),
             Term::PointerOffset(o) => self.offset(o.native_compat(), 0),
             Term::ProgramValue(v) => self.cvalue(v.native_compat()),
-            Term::Memory(m) => self.memory(m),
+            Term::ArrayReadPoint(point) => self.memory(point.memory()),
             Term::ExecutionState(s) => self.state(s),
             Term::Sequence(_) => self.push("sequence(<bounded opaque value>)"),
             Term::Algebraic(value) => self.algebraic(value.native_compat()),

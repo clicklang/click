@@ -76,7 +76,7 @@ pub(super) fn kind(proposition: &Proposition) -> String {
                 Term::Sequence(_) => "sequence",
                 Term::ProgramValue(_) => "c-value",
                 Term::PointerOffset(_) => "pointer-offset",
-                Term::Memory(_) => "memory",
+                Term::ArrayReadPoint(_) => "array-read-point",
                 Term::ExecutionState(_) => "state",
                 _ => "outcome",
             }

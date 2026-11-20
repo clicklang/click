@@ -92,7 +92,9 @@ Indexed abstract reads of a directly written local use its typed store in
 equality and raising. Native and shared array arguments carry the same source
 point. External arrays can use function entry after disjoint local
 declarations, stores and checked calls whose write set is one range in an automatic
-object.
+object. Declared predicates also retain that entry version for external
+`int32` array arguments, including when unfolding their bodies or raising
+a predicate fact.
 
 The remaining memory-state paths have production callers:
 
@@ -101,7 +103,7 @@ The remaining memory-state paths have production callers:
 | Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for generic parameter cells. `canonical_scalar_read` and the congruence key still bridge the scalar entry version to the empty view used by fold instantiation. |
 | Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` still construct memory-state observations for bare memory producers and unsupported indexed types or addresses. |
 | Preservation | `array_ref_argument_point` uses the block version walk outside the indexed suffix, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
-| Raising | `synthesize_at_memory` still raises shared array arguments that carry a bare memory view. Legacy scalar and abstract reads use `RecordedStates::point_reading_load`. |
+| Raising | `synthesize_at_memory` still raises function and predicate array arguments that carry a bare memory view. Legacy scalar and abstract reads use `RecordedStates::point_reading_load`. |
 
 Give symbolic addresses a separate slice. A loaded or opaque symbolic pointer
 can refer to the same storage as a write. Producers need checked evidence

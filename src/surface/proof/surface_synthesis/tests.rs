@@ -9370,3 +9370,67 @@ fn an_abstract_local_read_raises_at_its_defining_point() {
         })
     );
 }
+
+#[test]
+fn declared_predicate_array_raises_and_lowers_its_entry_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let entry = ExecutionState::new()
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer),
+        )
+        .begin_function_entry_memory();
+    let post = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .store(address, ProgramValue::Int32(MachineTerm::constant(9))),
+    );
+    let file = crate::surface::parse(
+        "predicate first_is(p: int32[], value: int32) { p[0] == value }
+         theorem probe(p: int32*) { requires first_is(old(p), 7); ensures true; }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("predicate premise");
+    };
+    let points = RecordedStates::new();
+    let predicates = PredicateEnvironment::new(file.predicate_definitions());
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let lower = |surface: &ClickProposition| {
+        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+            surface,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
+            FixedStateFrame::new(&entry, &post, None, &points),
+            SpecDefinitions::new(&predicates, &functions),
+            FixedStateLoweringOptions::default(),
+        )
+        .map(|(proposition, _, _, _)| proposition)
+    };
+    let original = lower(written).unwrap();
+    let Proposition::Predicate { arguments, .. } = &original else {
+        panic!("declared predicate");
+    };
+    assert!(matches!(
+        arguments.get(1),
+        Some(Term::ArrayReadPoint(point))
+            if point.read_version_id() == entry.observation_point_id()
+    ));
+    let raised = synthesize_surface_proposition_at_entry_and_post(
+        &original,
+        ParameterBinding::default(),
+        &entry,
+        &post,
+    )
+    .expect("the indexed array argument has a spelling");
+    assert!(
+        matches!(&raised, ClickProposition::PredicateCall { arguments, .. }
+        if matches!(arguments.first(), Some(ContractExpression::Old(_))))
+    );
+    assert_eq!(lower(&raised), Ok(original));
+}
