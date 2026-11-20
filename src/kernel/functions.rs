@@ -16892,6 +16892,12 @@ fn consume_returned_resource_unit(
     {
         return Some(remaining);
     }
+    if std::env::var_os("CLICK_DBG_SLOT").is_some() {
+        eprintln!("DBG required={required:?}");
+        for fact in available.facts() {
+            eprintln!("DBG   held={fact:?}");
+        }
+    }
     let ResourceFact::Own(Resource::Composite { name, .. }, quantity) = required else {
         return None;
     };
