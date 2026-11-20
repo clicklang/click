@@ -1559,6 +1559,9 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
             collect_pointer_offset_carriers(value.native_compat(), variables)
         }
         Term::Algebraic(value) => collect_algebraic_carriers(value.native_compat(), variables),
+        Term::Sequence(value) if matches!(value.element_type, Some(ProgramType::Int32) | None) => {
+            collect_sequence_carriers(value, variables)
+        }
         _ => {}
     }
 }
@@ -3762,6 +3765,17 @@ impl<'a> TermRewrite<'a> {
             Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
             Term::Condition(v) => Term::Condition(self.condition(v.native_compat()).into()),
             Term::PointerOffset(v) => Term::PointerOffset(self.contract_offset(v)),
+            Term::Sequence(v) if matches!(v.element_type, Some(ProgramType::Int32) | None) => {
+                Term::Sequence(v.map_program_values(&mut |value| {
+                    match value {
+                        ExecutionValue::Shared(root) => self
+                            .shared_machine_operand(root)
+                            .map(ExecutionValue::Shared)
+                            .unwrap_or_else(|| value.clone()),
+                        ExecutionValue::Native(value) => ExecutionValue::Native(self.value(value)),
+                    }
+                }))
+            }
             _ => term.clone(),
         };
         if self.checked_work_exhausted() {

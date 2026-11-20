@@ -3171,6 +3171,39 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
 }
 
 #[test]
+fn pure_sequence_equality_round_trips_empty_and_nested_concatenation() {
+    let literal = |value| {
+        ContractExpression::SequenceLiteral(vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Value(int32(value)),
+        )])
+    };
+    let empty = ContractExpression::SequenceLiteral(vec![]);
+    let concat = |left, right| ContractExpression::SequenceConcat(Box::new(left), Box::new(right));
+    let written = ClickProposition::Comparison {
+        left: concat(empty.clone(), concat(literal(1), literal(2))),
+        operator: ComparisonOperator::Equal,
+        right: concat(concat(literal(1), literal(2)), empty),
+    };
+    let state = ExecutionState::new();
+    let lowered = relower_written_proposition(&written, &state).unwrap();
+    assert!(matches!(
+        lowered,
+        Proposition::Equal(Term::Sequence(_), Term::Sequence(_))
+    ));
+    let raised =
+        synthesize_surface_proposition(&lowered, ParameterBinding::default(), &state).unwrap();
+    assert_eq!(raised, written);
+    assert_eq!(
+        relower_written_proposition(&raised, &state).unwrap(),
+        lowered
+    );
+    assert_eq!(
+        crate::surface::printing::source_click_proposition(&raised),
+        "[] ++ ([1] ++ [2]) == [1] ++ [2] ++ []",
+    );
+}
+
+#[test]
 fn synthesized_uint32_cast_preserves_its_state() {
     let selector = ProgramPointSelector::Mark("before".into());
     let expression = synthesize_uint32_operand(ContractExpression::At {

@@ -435,6 +435,41 @@ mod tests {
     }
 
     #[test]
+    fn pure_sequence_comparison_raises_with_its_concatenation() {
+        let fixture =
+            include_str!("../../../mdtests/pure_sequence_equality_keeps_concatenation.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        let raised = |claim: &str, tactic: &str| {
+            let prefix =
+                format!("raised\tgoal\tequal:sequence\t{claim}.ensures_0\t{tactic}\twritten\t");
+            lines
+                .iter()
+                .find_map(|line| line.strip_prefix(&prefix))
+                .unwrap_or_else(|| panic!("missing {prefix:?}: {lines:#?}"))
+        };
+        assert!(
+            raised("keeps_concatenation", "intro()").contains("[] ++ [a] ++ [b] == [a, b] ++ []")
+        );
+        assert!(raised("keeps_rewritten_concatenation", "rewrite").contains("[b] ++ [] == [b]"));
+
+        let wrong = source.replacen("[a, b] ++ []", "[b, a] ++ []", 1);
+        let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
+        assert!(
+            error.to_string().contains("goal did not normalize to true"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn algebraic_match_arm_values_name_unfold_facts() {
         let source = r#"
 verifying "keep.c";

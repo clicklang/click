@@ -99,6 +99,7 @@ fn evaluated_sequence_keeps_the_existing_program_producer() {
         &expression,
         &PureFactContext::new(),
         &mut SpecEvaluation::logical(&mut execution),
+        false,
     )
     .unwrap();
     assert_eq!(paths.len(), 1);

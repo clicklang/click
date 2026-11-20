@@ -647,6 +647,12 @@ A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
 not consult facts or change the Boolean term inside a larger expression.
 
+Pure finite `int32` sequence comparisons preserve both operands, including
+concatenation with an empty sequence. The checker compares corresponding
+elements in order and distinguishes different lengths. Admitting a sequence
+equality also publishes its element equalities through the existing fact
+propagation path.
+
 Arithmetic domains raise as ordinary comparisons and conjunctions, including
 the negation of a range conjunction on an overflowing execution branch.
 `defined(expression)` denotes the full evaluation domain, including operand
