@@ -595,6 +595,7 @@ impl crate::kernel::proof::PropositionSource for LoopExitFacts {
 pub(crate) struct LoopFinalExitCandidate {
     state: ExecutionState,
     jump_target: Option<ControlTargetId>,
+    guard_points_index: Option<usize>,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: LoopExitFacts,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
@@ -608,6 +609,7 @@ impl LoopFinalExitCandidate {
         Self {
             state,
             jump_target: None,
+            guard_points_index: None,
             pure_facts: LoopExitFacts::Retained(Arc::new(facts.clone())),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
@@ -619,6 +621,7 @@ impl LoopFinalExitCandidate {
         Self {
             state,
             jump_target: None,
+            guard_points_index: None,
             pure_facts: pure_facts.into(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
@@ -631,6 +634,15 @@ impl LoopFinalExitCandidate {
 
     pub(crate) fn jump_target(&self) -> Option<ControlTargetId> {
         self.jump_target
+    }
+
+    pub(crate) fn with_guard_points_index(mut self, index: Option<usize>) -> Self {
+        self.guard_points_index = index;
+        self
+    }
+
+    pub(crate) fn guard_points_index(&self) -> Option<usize> {
+        self.guard_points_index
     }
 
     pub(crate) fn with_loan_evidence(
@@ -664,6 +676,7 @@ impl LoopFinalExitCandidate {
 pub(crate) struct LoopEarlyExit {
     state: ExecutionState,
     guard_false: bool,
+    guard_points_index: Option<usize>,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: LoopExitFacts,
     loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
@@ -673,6 +686,7 @@ impl PartialEq for LoopEarlyExit {
     fn eq(&self, other: &Self) -> bool {
         self.state == other.state
             && self.guard_false == other.guard_false
+            && self.guard_points_index == other.guard_points_index
             && self.pure_facts == other.pure_facts
             && self.loan_evidence == other.loan_evidence
     }
@@ -685,6 +699,7 @@ impl LoopEarlyExit {
         Self {
             state,
             guard_false: false,
+            guard_points_index: None,
             pure_facts: pure_facts.into(),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
@@ -698,6 +713,7 @@ impl LoopEarlyExit {
         Self {
             state,
             guard_false: false,
+            guard_points_index: None,
             pure_facts: LoopExitFacts::Retained(Arc::new(facts.clone())),
             loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
         }
@@ -717,6 +733,15 @@ impl LoopEarlyExit {
             LoopExitFacts::Retained(facts) => Some(facts.assumptions()),
             LoopExitFacts::Explicit(_) => None,
         }
+    }
+
+    pub(crate) fn with_guard_points_index(mut self, index: Option<usize>) -> Self {
+        self.guard_points_index = index;
+        self
+    }
+
+    pub(crate) fn guard_points_index(&self) -> Option<usize> {
+        self.guard_points_index
     }
 
     pub(crate) fn with_loan_evidence(
@@ -5157,9 +5182,15 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
 }
 
 /// Checks an explicit proof at the false-guard frontier. The caller gets
-/// that frontier's checked facts and returns the facts its proof added.
-pub(crate) type LoopOtherwiseProof<'a> =
-    dyn FnMut(&ExecutionState, &ExecutionState, &ExecutionFacts) -> Option<ExecutionFacts> + 'a;
+/// that frontier's checked facts and the caller's record index for a unique
+/// checked false-guard path, if available. It returns the facts its proof added.
+pub(crate) type LoopOtherwiseProof<'a> = dyn FnMut(
+        &ExecutionState,
+        &ExecutionState,
+        &ExecutionFacts,
+        Option<usize>,
+    ) -> Option<ExecutionFacts>
+    + 'a;
 
 /// Checks the source interface for a loop join. The mask selects checked
 /// common facts in producer order. Written exports are checked in every

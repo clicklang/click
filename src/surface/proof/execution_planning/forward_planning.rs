@@ -162,11 +162,17 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             let mut early_exits_by_context = Vec::with_capacity(contexts.len());
             let mut return_exits_by_context = Vec::with_capacity(contexts.len());
             let mut exit_points_by_context = Vec::with_capacity(contexts.len());
+            let mut guard_points_by_context = Vec::with_capacity(contexts.len());
+            let has_otherwise = loop_clause
+                .and_then(StructuralClause::otherwise_proof)
+                .and_then(SourceProof::tactics)
+                .is_some_and(|tactics| !tactics.is_empty());
             for context in &contexts {
                 let mut final_exit_candidates = Vec::new();
                 let mut early_exits = Vec::new();
                 let mut return_exits = Vec::new();
                 let mut exit_points = Vec::new();
+                let mut guard_points = Vec::new();
                 let assumptions = assumptions_from_propositions(&context.pure_facts);
                 if let Some((clause, proof)) = initialization_proof {
                     let initialization = verify_loop_initialization_pure_proof(
@@ -304,6 +310,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             body,
                             update.as_ref(),
                             test,
+                            has_otherwise.then_some(&mut guard_points),
                             environment,
                         )
                         .map_err(|error| {
@@ -390,6 +397,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     .or_default()
                     .extend(exit_points.iter().cloned());
                 exit_points_by_context.push(exit_points);
+                guard_points_by_context.push(guard_points);
             }
             let source = environment.frontier_loop_source;
             if initialization_proof.is_some() {
@@ -477,6 +485,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 Some(&early_exits_by_context),
                 Some(&return_exits_by_context),
                 Some(&exit_points_by_context),
+                Some(&guard_points_by_context),
             )
         }
         ProgramStatement::Return(_) => {
@@ -553,6 +562,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 None,
                 None,
                 None,
+                None,
             )?;
             bypassed.extend(advanced);
             Ok(bypassed)
@@ -622,6 +632,7 @@ fn advance_execution_proof_statement(
     loop_early_exits: Option<&[Vec<LoopEarlyExit>]>,
     loop_return_exits: Option<&[Vec<LoopReturnExit>]>,
     loop_exit_points: Option<&[Vec<RecordedRegionPoints>]>,
+    guard_points_by_context: Option<&[Vec<RecordedRegionPoints>]>,
 ) -> Result<Vec<PlanningExecutionContext>, ClickError> {
     let input = opening.cloned().unwrap_or_else(|| statement.into());
     let mut advanced = Vec::new();
@@ -677,35 +688,39 @@ fn advance_execution_proof_statement(
         });
         let mut otherwise_error = None;
         let mut otherwise_certificate = None;
-        let mut prove_otherwise =
-            |loop_entry: &ExecutionState,
-             exit_state: &ExecutionState,
-             facts: &crate::kernel::ExecutionFacts| {
-                let (index, tactics) = otherwise.expect("only installed for an otherwise block");
-                match verify_loop_otherwise(
-                    expansion_capture.as_deref_mut(),
-                    index,
-                    tactics,
-                    loop_entry,
-                    exit_state,
-                    facts,
-                    &context,
-                    environment,
-                ) {
-                    Ok((facts, certificate)) => {
-                        otherwise_certificate = Some(certificate);
-                        Some(facts)
-                    }
-                    Err(error) => {
-                        otherwise_error = Some(locate_loop_phase_error(
-                            environment,
-                            error,
-                            LoopPhasePlace::Script("otherwise"),
-                        ));
-                        None
-                    }
+        let mut prove_otherwise = |loop_entry: &ExecutionState,
+                                   exit_state: &ExecutionState,
+                                   facts: &crate::kernel::ExecutionFacts,
+                                   points_index: Option<usize>| {
+            let guard_points = points_index.map(|index| {
+                &guard_points_by_context.expect("checked guard point records")[context_index][index]
+            });
+            let (index, tactics) = otherwise.expect("only installed for an otherwise block");
+            match verify_loop_otherwise(
+                expansion_capture.as_deref_mut(),
+                index,
+                tactics,
+                loop_entry,
+                exit_state,
+                facts,
+                guard_points,
+                &context,
+                environment,
+            ) {
+                Ok((facts, certificate)) => {
+                    otherwise_certificate = Some(certificate);
+                    Some(facts)
                 }
-            };
+                Err(error) => {
+                    otherwise_error = Some(locate_loop_phase_error(
+                        environment,
+                        error,
+                        LoopPhasePlace::Script("otherwise"),
+                    ));
+                    None
+                }
+            }
+        };
         let scope_exit_facts =
             |state: &ExecutionState,
              iterations: &crate::kernel::IntegerTerm,

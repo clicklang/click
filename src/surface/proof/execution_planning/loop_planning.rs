@@ -915,6 +915,7 @@ pub(in crate::surface::proof) fn verify_loop_otherwise(
     loop_entry: &ExecutionState,
     exit_state: &ExecutionState,
     exit_facts: &crate::kernel::ExecutionFacts,
+    guard_points: Option<&RecordedRegionPoints>,
     context: &PlanningExecutionContext,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<(crate::kernel::ExecutionFacts, ProofCertificate), ClickError> {
@@ -927,6 +928,9 @@ pub(in crate::surface::proof) fn verify_loop_otherwise(
         ProgramPointKind::Entry,
         loop_entry.clone(),
     );
+    if let Some(points) = guard_points {
+        recorded_states.record_region_points(points);
+    }
     let mut available = context.pure_facts.clone();
     available.extend(exit_facts.iter().map(|fact| fact.proposition().clone()));
     let mut phase = Proof::for_fixed_state_frontier_of_list(
@@ -1277,6 +1281,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     body: &ProgramStatement,
     update: Option<&Arc<ProgramStatement>>,
     test: Option<&crate::kernel::LoopTestRegion>,
+    mut guard_points: Option<&mut Vec<RecordedRegionPoints>>,
     environment: &ExecutionProofEnvironment<'_>,
 ) -> Result<LoopPreservationProofResult, ClickError> {
     // A `cases` that rejoins its arms is noted for the rest of this proof's
@@ -1919,12 +1924,24 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 final_exit_candidates.push(exit);
             }
         } else if is_early_exit {
-            exit_points.push(
-                context_execution
-                    .presentation
-                    .recorded_states
-                    .recorded_since(&pass_start),
+            let points = context_execution
+                .presentation
+                .recorded_states
+                .recorded_since(&pass_start);
+            let guard_false = matches!(
+                context_frontier.loop_control,
+                crate::kernel::proof::LoopControlExit::TestFalse
             );
+            let points_index = if guard_false {
+                guard_points.as_deref_mut().map(|records| {
+                    let index = records.len();
+                    records.push(points.clone());
+                    index
+                })
+            } else {
+                None
+            };
+            exit_points.push(points);
             // The exit is this path's own state and the facts it retained
             // there. The loop rule joins it with every other exit into the
             // single successor, so nothing about this path is dropped and
@@ -1934,10 +1951,8 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 &assumptions_from_propositions(checked.facts()),
             );
             let exit = LoopEarlyExit::from_store(state, checked.facts())
-                .with_guard_false(matches!(
-                    context_frontier.loop_control,
-                    crate::kernel::proof::LoopControlExit::TestFalse
-                ))
+                .with_guard_false(guard_false)
+                .with_guard_points_index(points_index)
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             if seen_early_exits.is_new(exit.state(), exit.pure_facts(), &early_exits, &exit) {
                 early_exits.push(exit);
@@ -1953,7 +1968,18 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             let join_assumptions = checked.back_edge_assumptions(&checked_execution);
             let (state, exit_facts) =
                 preservation.restored_exit(exit_state, checked.facts(), &join_assumptions);
+            let points_index = guard_points.as_deref_mut().map(|records| {
+                let index = records.len();
+                records.push(
+                    context_execution
+                        .presentation
+                        .recorded_states
+                        .recorded_since(&pass_start),
+                );
+                index
+            });
             let candidate = LoopFinalExitCandidate::from_store(state, &exit_facts)
+                .with_guard_points_index(points_index)
                 .with_loan_evidence(checked_execution.core.loan_evidence().clone());
             if seen_final_exits.is_new(
                 candidate.state(),
