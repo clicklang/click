@@ -9999,28 +9999,37 @@ fn evaluate_spec_range_fold_body_path_in(
         (Some(start), Some(end)) => (end as i32) <= (start as i32),
         _ => same_bound(),
     };
-    if empty && state_independent() {
-        // Lower the callback in its binder scope for proof display and rewriting.
-        // With no iterations, only evaluation of the bounds and seed owes facts
-        // or obligations. A body with no single retained value uses the usual
-        // fold evaluator below.
+    let short = endpoints.0.zip(endpoints.1).is_some_and(|(start, end)| {
+        KernelFold::is_short_nonempty_int32_range(start as i32, end as i32)
+    });
+    let mut retained = None;
+    if (empty || short) && state_independent() {
+        // The scoped callback supplies the written term. Only the concrete
+        // iterations below supply its execution facts and obligations.
         let body_scope = symbolic_int32_fold_scope(scope, accumulator, item);
-        let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        let body_paths = match evaluate_spec_expression_paths_with_algebraic_bindings_in(
             body_scope.as_scope(),
             body,
             &PureFactContext::new(),
             budget,
-        )?;
-        if body_paths.len() == 1
-            && let Some(value) = symbolic_spec_range_fold_value(
+        ) {
+            Ok(paths) => paths,
+            Err(ExecutionLimit::Paths | ExecutionLimit::DisjunctionRightUndefined) if short => {
+                Vec::new()
+            }
+            Err(limit) => return Err(limit),
+        };
+        if let [body_path] = body_paths.as_slice() {
+            retained = symbolic_spec_range_fold_value(
                 start.clone(),
                 end.clone(),
                 initial.clone(),
                 accumulator,
                 item,
-                body_paths.pop().unwrap().value,
-            )
-        {
+                body_path.value.clone(),
+            );
+        }
+        if empty && let Some(value) = retained.take() {
             return Ok(Some(SpecExpressionPath {
                 value,
                 facts,
@@ -10068,7 +10077,7 @@ fn evaluate_spec_range_fold_body_path_in(
                 obligations = next_obligations;
             }
             Ok(Some(SpecExpressionPath {
-                value,
+                value: retained.unwrap_or(value),
                 facts,
                 obligations,
             }))

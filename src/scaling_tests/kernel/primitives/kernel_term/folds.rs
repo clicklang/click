@@ -173,3 +173,63 @@ fn empty_machine_fold_check_skips_growing_callback() {
         }
     }
 }
+
+#[test]
+fn short_machine_fold_check_visits_shared_callback_once_per_step() {
+    use crate::kernel::MachineOperandView;
+
+    for unrelated in [0, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let ty = KernelType::Program(ProgramType::Int32);
+        let _unrelated = (0..unrelated)
+            .map(|index| KernelTerm::variable(ty.clone(), Variable(990_000 + index)))
+            .collect::<Vec<_>>();
+        let literal = |bits| {
+            KernelTerm::retained_machine_operand(
+                format,
+                MachineOperandView::Legacy(&MachineTerm::constant(bits)),
+            )
+        };
+        let start = literal(0);
+        let initial = literal(0);
+        for size in [16, 64, 256] {
+            let accumulator = Variable(981_100);
+            let item = Variable(981_101);
+            let mut body = KernelTerm::variable(ty.clone(), accumulator);
+            for _ in 0..size {
+                body = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [body.clone(), body],
+                );
+            }
+            let fold = |end| {
+                KernelFold::new(
+                    KernelFoldIndex::Int32,
+                    accumulator,
+                    item,
+                    [start.clone(), literal(end), initial.clone(), body.clone()],
+                )
+                .unwrap()
+            };
+            let short = fold(2);
+            let long = fold(i32::MAX as u32);
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                short.short_machine_reading()
+            });
+            assert_eq!(result, Some(initial.clone()));
+            assert!(
+                work <= 250 * size,
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+            let (result, work) =
+                crate::instrumentation::measure_deterministic_work(|| long.short_machine_reading());
+            assert!(result.is_none());
+            assert!(
+                work <= 16,
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+        }
+    }
+}

@@ -1,7 +1,7 @@
 //! Goal-local computation for a simple proof leaf.
 //!
 //! The `computes_leaf` entry point receives no fact context. Reads, calls,
-//! folds with possible iterations, and symbolic matches remain opaque;
+//! folds with unknown or long ranges, and symbolic matches remain opaque;
 //! it has no memory resolution, unfolding, or atomic-prover fallback. Legacy
 //! normalization shares arithmetic below but supplies its own atom key.
 
@@ -892,19 +892,15 @@ enum AffineLeaf {
     Fold(u64),
 }
 
-/// Read the seed through consecutive empty machine folds. Their callbacks
-/// are outside the affine walk and are never read.
-fn observe_empty_int32_fold(value: &SharedMachineIntegerTerm) -> Option<SharedIntegerTerm> {
-    if value.ty() != MachineIntegerType::Int32 {
-        return None;
-    }
-    let root = value.shared_operand()?;
-    let KernelTermNode::Fold(fold) = root.node() else {
-        return None;
-    };
-    let initial = fold.empty_int32_initial()?;
+/// Reduce selected short folds in an exact machine observation. The memo
+/// is local to one affine comparison and shared across its observation roots.
+fn observe_short_machine_folds(
+    value: &SharedMachineIntegerTerm,
+    reads: &mut std::collections::HashMap<u64, KernelTerm>,
+) -> Option<SharedIntegerTerm> {
+    let reduced = KernelFold::reduce_short_in(value, reads)?;
     Some(
-        MachineOperandView::Shared(initial)
+        MachineOperandView::Shared(&reduced)
             .observe(value.ty())?
             .into(),
     )
@@ -924,6 +920,7 @@ fn integer_affine_difference(
     let mut seen = std::collections::HashSet::new();
     let mut stack = vec![(left.clone(), false), (right.clone(), false)];
     let mut reduced_operands = std::collections::HashMap::new();
+    let mut fold_reads = std::collections::HashMap::new();
     while let Some((term, expanded)) = stack.pop() {
         crate::instrumentation::record_deterministic_work(1);
         if expanded {
@@ -941,7 +938,7 @@ fn integer_affine_difference(
             }
             IntegerTerm::Negate(value) => stack.push((value.clone(), false)),
             IntegerTerm::Machine(value) => {
-                if let Some(value) = observe_empty_int32_fold(value) {
+                if let Some(value) = observe_short_machine_folds(value, &mut fold_reads) {
                     stack.push((value.clone(), false));
                     reduced_operands.insert(term.id(), value);
                 }

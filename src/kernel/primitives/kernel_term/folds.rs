@@ -76,23 +76,72 @@ impl KernelFold {
         empty.then_some(initial)
     }
 
-    /// Existing machine fold evaluation, used only by checking. Construction
-    /// and lowering keep a symbolic fold unchanged.
-    pub(crate) fn simplify_machine(&self) -> Option<KernelTerm> {
-        use crate::kernel::proof::term_rewrite::TermRewrite;
-        let [start, end, initial, body] = &self.arguments;
+    pub(crate) fn is_short_nonempty_int32_range(start: i32, end: i32) -> bool {
+        matches!(i64::from(end) - i64::from(start), 1 | 2)
+    }
+
+    /// A goal-local reading with a fixed iteration cap.
+    pub(crate) fn short_machine_reading(&self) -> Option<KernelTerm> {
         if let Some(initial) = self.empty_int32_initial() {
             return Some(initial.clone());
         }
-        let constant = |root| {
-            MachineOperandView::Shared(root)
-                .literal()?
-                .as_const()
-                .map(|bits| i64::from(bits as i32))
-        };
-        let (Some(start), Some(end)) = (constant(start), constant(end)) else {
+        if self.index != KernelFoldIndex::Int32 || self.result_type() != &self.index.ty() {
+            return None;
+        }
+        let (start, end) = self.literal_machine_bounds()?;
+        if !Self::is_short_nonempty_int32_range(start, end) {
+            return None;
+        }
+        self.evaluate_literal_machine_range(start, end)
+    }
+
+    /// Checking view of short folds beneath an explicitly selected machine
+    /// operand. Larger and symbolic folds stay opaque, including their bodies.
+    pub(in crate::kernel) fn reduce_short_in(
+        value: &SharedMachineIntegerTerm,
+        reads: &mut std::collections::HashMap<u64, KernelTerm>,
+    ) -> Option<KernelTerm> {
+        let root = value.shared_operand()?;
+        if !root.has_machine_folds() {
+            return None;
+        }
+        let reduced = crate::kernel::memory_history::map_shared_machine_substitution_with_cache(
+            value,
+            |leaf| Some(leaf.clone()),
+            crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node,
+            |node| node.has_machine_folds() && !matches!(node.node(), KernelTermNode::Fold(_)),
+            |node| {
+                Ok(match node.node() {
+                    KernelTermNode::Fold(fold) => fold.short_machine_reading(),
+                    _ => None,
+                })
+            },
+            reads,
+        )?;
+        let reduced = reduced.shared_operand()?;
+        (reduced != root).then(|| reduced.clone())
+    }
+
+    fn literal_machine_bounds(&self) -> Option<(i32, i32)> {
+        let bound = |root| Some(MachineOperandView::Shared(root).literal()?.as_const()? as i32);
+        Some((bound(&self.arguments[0])?, bound(&self.arguments[1])?))
+    }
+
+    /// Existing machine fold evaluation, used only by checking. Construction
+    /// and lowering keep a symbolic fold unchanged.
+    pub(crate) fn simplify_machine(&self) -> Option<KernelTerm> {
+        if let Some(initial) = self.empty_int32_initial() {
+            return Some(initial.clone());
+        }
+        let Some((start, end)) = self.literal_machine_bounds() else {
             return Some(self.clone().into_term());
         };
+        self.evaluate_literal_machine_range(start, end)
+    }
+
+    fn evaluate_literal_machine_range(&self, start: i32, end: i32) -> Option<KernelTerm> {
+        use crate::kernel::proof::term_rewrite::TermRewrite;
+        let [_, _, initial, body] = &self.arguments;
         let mut value = initial.clone();
         for index in start..end {
             crate::instrumentation::record_deterministic_work(1);
