@@ -1301,6 +1301,31 @@ impl Context<'_> {
         )
     }
 
+    fn load_with_source(
+        &mut self,
+        pointer: ProgramExpression,
+        value_type: ProgramType,
+        reference_access: Option<ReferenceAccessSourceId>,
+    ) -> Result<ProgramExpression, String> {
+        let occurrence = self.next_load;
+        self.next_load = self
+            .next_load
+            .checked_add(1)
+            .ok_or("Rust load identity exhausted")?;
+        Ok(crate::kernel::program_expression::typed_load_with_source(
+            pointer,
+            value_type,
+            Some(LoadSourceId {
+                owner: LoadSourceOwnerId {
+                    source_unit: self.source.into(),
+                    function: self.function.into(),
+                },
+                occurrence,
+                reference_access: reference_access.map(std::sync::Arc::new),
+            }),
+        ))
+    }
+
     fn reference_source(
         &self,
         expr: &E,
@@ -2707,25 +2732,9 @@ impl Context<'_> {
                     return Err("array fields must be borrowed or indexed; owned field copies are unsupported".into());
                 }
                 let pointer = self.address(e)?;
-                let occurrence = self.next_load;
-                self.next_load = self
-                    .next_load
-                    .checked_add(1)
-                    .ok_or("Rust load identity exhausted")?;
-                Ok(crate::kernel::program_expression::typed_load_with_source(
-                    pointer,
-                    self.place_type(e)?,
-                    Some(LoadSourceId {
-                        owner: LoadSourceOwnerId {
-                            source_unit: self.source.into(),
-                            function: self.function.into(),
-                        },
-                        occurrence,
-                        reference_access: self
-                            .reference_source(e, ReferenceAccessKind::Read)
-                            .map(std::sync::Arc::new),
-                    }),
-                ))
+                let value_type = self.place_type(e)?;
+                let access = self.reference_source(e, ReferenceAccessKind::Read);
+                self.load_with_source(pointer, value_type, access)
             }
             E::Binary {
                 operator,
