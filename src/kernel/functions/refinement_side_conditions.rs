@@ -207,6 +207,7 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecProposition::FloatClassification { .. }
             | SpecProposition::Truth(_)
             | SpecProposition::Defined(_)
+            | SpecProposition::OperationDefined(_)
             | SpecProposition::And(..)
             | SpecProposition::Or(..)
             | SpecProposition::Implies(..)
@@ -314,6 +315,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecProposition::FloatClassification { .. }
             | SpecProposition::Truth(_)
             | SpecProposition::Defined(_)
+            | SpecProposition::OperationDefined(_)
             | SpecProposition::And(..)
             | SpecProposition::Or(..)
             | SpecProposition::Implies(..)

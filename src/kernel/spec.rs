@@ -12,6 +12,7 @@ mod shared_machine;
 pub(in crate::kernel) use shared_machine::{
     bitwise_tag_equation, execution_narrow_binary, execution_rust_shift,
 };
+mod operation_defined;
 pub(in crate::kernel) mod walk;
 
 type EvaluatedSpecResource = (Resource, ExecutionFacts, Vec<ProofObligation>);
@@ -2090,55 +2091,64 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         SpecProposition::Defined(expression) => {
             let mut checked = SpecEvaluation::checked(budget);
             checked.program_definedness = true;
-            // Definedness is decided from no facts, except that a contract
-            // entry's own requirement keeps assuming what its caller checked
-            // about opaque pointer bounds.
-            let context = if assumptions.should_assume_entry_clause_spans() {
-                PureFactContext::new().assume_entry_clause_spans()
-            } else {
-                PureFactContext::new()
-            };
+            let context = definedness_context(assumptions);
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,
                 expression,
                 &context,
                 &mut checked,
             )?;
-            let mut normal_paths = paths.into_iter().map(|path| {
-                proposition_and_all(
-                    path.facts
-                        .into_iter()
-                        // Certified consequences (including read equations and
-                        // ledger bounds) describe the value; they are not
-                        // additional conditions for evaluating it.
-                        .filter(|fact| !fact.is_certified())
-                        .filter_map(|fact| {
-                            drop_verified_load_definition_conjuncts(fact.proposition().clone())
-                        })
-                        .chain(path.obligations.into_iter().filter_map(|obligation| {
-                            drop_verified_load_definition_conjuncts(
-                                obligation.proposition().clone(),
-                            )
-                        }))
-                        .collect(),
-                )
-            });
-            let proposition = normal_paths.next().map_or_else(
-                || Proposition::condition_is(ConditionTerm::Constant(false), true),
-                |first| {
-                    normal_paths.fold(first, |left, right| {
-                        Proposition::Or(Box::new(left), Box::new(right))
-                    })
-                },
-            );
             Ok(vec![SpecPropositionPath {
                 introductions: Vec::new(),
-                proposition,
+                proposition: definedness_claim(paths),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
         }
+        SpecProposition::OperationDefined(expression) => {
+            operation_defined::lower(scope, expression, assumptions, budget)
+        }
     }
+}
+
+/// Definedness is decided from no facts, except that a contract entry's own
+/// requirement keeps assuming what its caller checked about opaque pointer
+/// bounds.
+fn definedness_context(assumptions: &PureFactContext) -> PureFactContext {
+    if assumptions.should_assume_entry_clause_spans() {
+        PureFactContext::new().assume_entry_clause_spans()
+    } else {
+        PureFactContext::new()
+    }
+}
+
+/// The condition under which an evaluation reaches a value: on some path,
+/// every condition the path owes or selects. Certified consequences
+/// (including read equations and ledger bounds) describe the value; they are
+/// not additional conditions for evaluating it.
+fn definedness_claim(paths: Vec<SpecExpressionPath>) -> Proposition {
+    let mut normal_paths = paths.into_iter().map(|path| {
+        proposition_and_all(
+            path.facts
+                .into_iter()
+                .filter(|fact| !fact.is_certified())
+                .filter_map(|fact| {
+                    drop_verified_load_definition_conjuncts(fact.proposition().clone())
+                })
+                .chain(path.obligations.into_iter().filter_map(|obligation| {
+                    drop_verified_load_definition_conjuncts(obligation.proposition().clone())
+                }))
+                .collect(),
+        )
+    });
+    normal_paths.next().map_or_else(
+        || Proposition::condition_is(ConditionTerm::Constant(false), true),
+        |first| {
+            normal_paths.fold(first, |left, right| {
+                Proposition::Or(Box::new(left), Box::new(right))
+            })
+        },
+    )
 }
 
 /// Combines alternative evaluation paths without moving an existential across

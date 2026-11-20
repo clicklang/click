@@ -25602,4 +25602,3 @@ fn explicit_produced_view_release_expands_and_reverifies() {
     })
     .expect("replay the explicit view release");
 }
-

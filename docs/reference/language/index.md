@@ -1800,12 +1800,24 @@ such as a composite resource `fact`. The axiom
 `viewable(A)` and `contains(A, B)` premises.
 
 `defined(expression)` is a [special form](#special-forms): a pure proposition
-stating that evaluating the C expression reaches a value rather than undefined
-behavior. Click elaborates it with the kernel's C expression semantics, so
-signed overflow, division, shifts, and memory-load obligations share the same
-rules as execution. It accepts C
-expression fragments; `old`, `at`, folds, lets, and Click function calls
-inside `defined(...)` are refused.
+stating that the expression's root operation reaches a value rather than
+undefined behavior, with its operands taken as values. Click elaborates the
+operation with the kernel's C expression semantics, so signed overflow,
+division, shifts, and memory-load conditions share the same rules as execution.
+An operand's own domain is not part of the claim: it is owed wherever the
+expression is written, as for any term. So `defined(a + b + c)` claims that
+adding `c` to the value of `a + b` is defined and owes `a + b`'s domain
+(`mdtests/defined_owes_its_operands_domains.md`); both domains are
+`defined(a + b) and defined(a + b + c)`, which also serves as a guard, since
+the right side of `and` is read only where its left side holds
+(`mdtests/defined_claims_its_root_operation_with_operands_as_values.md`).
+
+A form without a single root operation reads through to one. `let` binds its
+value, whose domain is owed, and claims its body's operation. A cast to its
+operand's own type claims the operand's operation; any other conversion is the
+operation. `if c { x } else { y }` claims
+`(c implies defined(x)) and (not c implies defined(y))`. A form with no
+operand expressions, such as a variable or a literal, is defined.
 
 For two object pointers, `defined(right - left)` includes both the
 `same_object(right, left)` provenance condition and the requirement that their
@@ -3658,17 +3670,24 @@ exists (k: int32) { 0 <= k and k < n and p[k] == x }
 Do not use C logical operators such as `&&`, `||`, or `!` in Click
 propositions. Those remain C-fragment syntax.
 
-The right side of `implies` is read only where its left side holds, and the
-right side of `or` only where its left side fails, so a right side's
-definedness is owed only there: `s >= 64u64 or (1u64 << s) == 2u64` owes
+The right side of `implies` and of `and` is read only where its left side
+holds, as C's `&&` evaluates it, and the right side of `or` only where its left
+side fails, so a right side's definedness is owed only there, as
+`left implies requirement` for `implies` and `and`: `s >= 64u64 or (1u64 << s) == 2u64` owes
 nothing for the shift, and lowers as written whatever the facts say.
 A right side that is undefined wherever it is read, such as
 `s < 64u64 or (1u64 << s) == 2u64`, is refused
 (`mdtests/false_disjunction_requires_defined_right_requirement.md`). A
 literally true left side, as in `64u64 >= 64u64 or (1u64 << 64u64) == 2u64`,
 lowers to the left side alone
-(`mdtests/true_disjunction_skips_undefined_right_requirement.md`). Both
-sides of `and` are read.
+(`mdtests/true_disjunction_skips_undefined_right_requirement.md`).
+`s < 64u64 and (1u64 << s) >= 1u64` owes nothing for the shift
+(`mdtests/a_conjunction_reads_its_right_side_only_where_its_left_holds.md`),
+and `s >= 64u64 and (1u64 << s) == 2u64` is refused
+(`mdtests/a_true_left_conjunct_cannot_hide_an_undefined_right_side.md`). Such a
+guarded requirement is established where its left side establishes it, so
+`requires x > 0 implies y / x > 1` owes nothing
+(`mdtests/an_implication_owes_its_consequents_domain_only_where_its_antecedent_holds.md`).
 
 A comparison binds looser than every expression operator, which differs from C
 for `&`, `^` and `|`. Parenthesize a comparison operand whose outermost

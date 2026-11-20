@@ -5623,8 +5623,15 @@ pub enum SpecProposition {
         end: SpecExpression,
         element_width: u32,
     },
-    /// Lowered from the `defined(...)` special form.
+    /// The whole evaluation domain of an expression: every operation in it
+    /// is defined. Kernel producers state this for a term they evaluate;
+    /// it lowers to the conjunction of each operation's domain.
     Defined(SpecExpression),
+    /// Lowered from the `defined(...)` special form: the domain of the
+    /// expression's root operation, with its operands taken as values. An
+    /// operand's own domain is an ordinary obligation of the term, not part
+    /// of the claim (`kernel::spec::operation_defined`).
+    OperationDefined(SpecExpression),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

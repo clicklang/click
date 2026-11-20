@@ -655,8 +655,14 @@ propagation path.
 
 Arithmetic domains raise as ordinary comparisons and conjunctions, including
 the negation of a range conjunction on an overflowing execution branch.
-`defined(expression)` denotes the full evaluation domain, including operand
-domains. It does not stand for a single overflow component of division or shift.
+`defined(expression)` denotes its root operation's domain with its operands
+taken as values (`kernel::spec::operation_defined`): the same kernel
+conditions the whole expression's evaluation owes for that operation, so each
+per-operation domain raises as `defined(l op r)` and lowers back to itself.
+It does not stand for a single overflow component of division or shift. The
+kernel's own `SpecProposition::Defined`, which its producers state for a term
+they evaluate, is the whole evaluation domain: the conjunction of each
+operation's domain, each of which raises on its own.
 `mdtests/arithmetic_definedness_is_one_ordinary_domain.md` checks the ordinary
 bounds in both directions for signed 32/64-bit arithmetic.
 
