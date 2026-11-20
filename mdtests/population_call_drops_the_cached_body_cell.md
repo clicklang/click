@@ -41,7 +41,7 @@ struct object* object_retain(struct object* obj) {
     produces object_ref(obj);
     ensures result == obj;
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         step();
         fold(object_ref(obj));
         step_until(function.exit);
@@ -55,7 +55,7 @@ int32 caller(struct object* obj) {
     produces object_ref(obj);
     ensures result == 12345;
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         step();
         step();
     }

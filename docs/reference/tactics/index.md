@@ -145,7 +145,7 @@ not the resource, it first folds it, as a written `fold(R(...))` after the C
 would; a fold that does not check leaves the path as it was
 (`mdtests/an_omitted_proof_folds_the_resource_its_contract_produces.md`). A proof
 script that ends with a claim still open closes it the same way, so a script
-needs no final closer and no final step to function exit. The body of an `open` scope is
+needs no final closer and no final step to function exit. The body of a `with` scope is
 the exception: the scope closes where its body ends, before the tail runs, so
 a body that must reach the function's return steps there itself with
 `step_until(function.exit)`. On a stated fact,
@@ -1142,7 +1142,7 @@ step is still checked.
 | `have P by { ... }` | control | Core | Prove and retain a named or unnamed fact. | [Reference](#intermediate-facts) |
 | `if P [ensuring { ... } then] { ... } else { ... }` | control | Core | Split a proof on a chosen proposition. | [Reference](#proposition-branches) |
 | `cases { A => { ... } B => { ... } }` | control | Specialized | Prove a written collection of cases. | [Reference](#explicit-cases) |
-| `open(resource) { ... }` | control | Specialized | Unfold a resource for a nested proof. | [Reference](#scoped-resource-opening) |
+| `with(resource) { ... }` | control | Specialized | Expose a resource body and restore it at scope exit. | [Reference](#scoped-resource-opening) |
 | `witness(value, ...);` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
 | `let name = obtain(exists (k: Type) { P });` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
 
@@ -3325,12 +3325,12 @@ arm. Profiling reports the descendant tactics.
 
 ### Scoped resource opening
 
-**Form:** `open(resource) { ... }`
+**Form:** `with(resource) { ... }`
 
 **Specialized.** Write it to work inside one layer of a composite resource and
 have it folded back automatically at the end of the block. Temporarily replace a
 held composite resource with one body layer, check the nested proof, then fold
-it at scope exit. For an ordinary named instance, `open(c) { ... }` selects
+it at scope exit. For an ordinary named instance, `with(c) { ... }` selects
 the same instance as `unfold(c)`. The closing fold restores that instance's
 identity and field values from the start of the block. Use the family call
 form for unnamed resources, including population members and viewed resources.

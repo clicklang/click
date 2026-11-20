@@ -86,7 +86,7 @@ uint64 copy_prefix(char* dst, const char* src, uint64 n, uint64 k) {
     ensures result == k;
     ensures (src as (uint8 *))[n] == '\0';
 } by {
-    open(cstr_at(src, n)) {
+    with(cstr_at(src, n)) {
     }
 }
 ```

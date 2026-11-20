@@ -84,7 +84,7 @@ pub(super) struct Proof<'a> {
     state: KernelProofHandle,
     node: Arc<ProofNode>,
     /// Diagnostic addressing for the step being checked: which source tactic,
-    /// and inside which `have`/`open` blocks. This never affects checking.
+    /// and inside which `have`/`with` blocks. This never affects checking.
     site: ProofStepSite,
 }
 
@@ -3576,7 +3576,7 @@ impl<'a> Proof<'a> {
     }
 
     /// Names the failing step by where the user wrote it: the source tactic
-    /// occurrence, then each enclosing `have`/`open` block's own position.
+    /// occurrence, then each enclosing `have`/`with` block's own position.
     /// When no driver attributed a source position (a planner-generated or
     /// searched script), it names the failing step's place in the checked
     /// lineage of the current block instead. The proof-tree depth is never
@@ -3871,7 +3871,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::TransportUsing { .. } => "transport",
         ProofStep::Instantiate { .. } => "instantiate",
         ProofStep::Have { .. } => "have",
-        ProofStep::Open { .. } => "open",
+        ProofStep::Open { .. } => "with",
         ProofStep::If { .. } => "if",
         ProofStep::Cases { .. } => "cases",
         ProofStep::Branch { .. } => "branch",

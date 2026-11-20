@@ -920,7 +920,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             line(
                 output,
                 &prefix,
-                &format!("open({}) {{", format_resource_call(&open.resource)),
+                &format!("with({}) {{", format_resource_call(&open.resource)),
             );
             write_tactics(output, &open.tactics, indent + 1);
             line(output, &prefix, "}");

@@ -1,6 +1,6 @@
 # An owner of a C string opens its body
 
-`open(R(a)) { ... }` exposes one body layer of a held instance and folds it
+`with(R(a)) { ... }` exposes one body layer of a held instance and folds it
 back when the block ends. An owned `cstr_at` publishes a view of its own
 bytes while it is held folded; that view borrows nothing, so its body facts
 read the owner's memory, as they do after `unfold`. The same proof with
@@ -23,7 +23,7 @@ uint64 outer(uint8* src, uint64 n) {
     requires 0u64 < n;
     ensures result == 0u64;
 } by {
-    open(cstr_at(src, n)) {
+    with(cstr_at(src, n)) {
     }
 }
 ```

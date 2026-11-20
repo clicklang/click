@@ -10,7 +10,7 @@ read after that havoc, and the contract carried by that field must survive it.
 It does, because the helper requires
 `separate(memory(*augment), memory(*parent))`: the table is
 provably outside the written range, its cells are retained across the call, and
-the load resolves to the same value the `open` named. `mdtests/rb_augment_callbacks_helper_owns_without_separate.md` checks that
+the load resolves to the same value the `with` named. `mdtests/rb_augment_callbacks_helper_owns_without_separate.md` checks that
 the opened table’s checked borrow partition now supplies this separation even
 without the written requirement.
 
@@ -94,7 +94,7 @@ void erase_augmented(struct node* node, struct node* parent,
     ensures parent->left == old(parent->left);
     ensures parent->right == old(parent->right);
 } by {
-    open(callback_suite(augment)) {
+    with(callback_suite(augment)) {
     }
 }
 ```

@@ -3390,7 +3390,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::ApplyInductionUsing { .. } => "apply",
         ProofTactic::ApplyTheorem(_) | ProofTactic::ApplyTheoremUsing { .. } => "apply",
         ProofTactic::Have(_) => "have",
-        ProofTactic::Open(_) => "open",
+        ProofTactic::Open(_) => "with",
         ProofTactic::If(_) => "if",
         ProofTactic::Cases(_) => "cases",
         ProofTactic::Both(_) | ProofTactic::All(_) => "all",

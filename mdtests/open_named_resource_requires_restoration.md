@@ -19,7 +19,7 @@ void set(int32* p) {
     owns c: cell(p);
     requires c.value == 7;
 } by {
-    open(c) { step_until(function.exit); }
+    with(c) { step_until(function.exit); }
 }
 ```
 

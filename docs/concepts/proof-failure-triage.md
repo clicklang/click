@@ -308,7 +308,7 @@ A failing proof step names where it was written:
 `click expand` and `click profile` address it, so the same number selects the
 tactic for expansion. Each further segment descends into a block the user
 wrote: `have body tactic 2` is the second tactic of that `have`'s `by { ... }`
-block, and `open body tactic 2` is the second tactic of an `open` body. Inside
+block, and `with body tactic 2` is the second tactic of a `with` body. Inside
 a block, the arms of a proof `if`, `cases`, or `all` are blocks of their own:
 `else arm tactic 1` is the first tactic of the `if`'s `else` arm (`then`,
 `else`, `left`, and `right` name the arms), so a tactic written after the
@@ -373,7 +373,7 @@ Do not leave the only reproduction inside a large example or an uncommitted
 worktree. If reduction changes the source pattern that caused the failure, it
 is not yet an adequate regression.
 
-An explicit `apply(...)` inside `open(...)` reports an unavailable theorem
+An explicit `apply(...)` inside `with(...)` reports an unavailable theorem
 premise through the same checker used outside the scope. A `have f by solve()`
 that cannot establish its fact reports `Requires f`; neither refusal means
 that resource scopes themselves are unsupported.

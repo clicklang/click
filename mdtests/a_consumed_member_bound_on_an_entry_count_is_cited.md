@@ -42,7 +42,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
     produces pool_object(pool, object);
     ensures pool->checked_out == old(pool->checked_out) + 1;
 } by {
-    open(pool_control(pool)) {
+    with(pool_control(pool)) {
         have count(pool_slot(pool)) >= 1;
         have defined(count(pool_object(pool, _)) + 1);
         have defined(pool->checked_out + 1);

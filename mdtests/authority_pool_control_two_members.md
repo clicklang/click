@@ -81,7 +81,7 @@ void checkout(struct pool* pool, struct payload* p) {
     ensures pool->checked_out == old(pool->checked_out) + 1;
     ensures pool->capacity == old(pool->capacity);
 } by {
-    open(control(pool)) {
+    with(control(pool)) {
         have 1 <= to_integer(count(slot(pool))) by {
             known();
         }
@@ -184,7 +184,7 @@ void give_back(struct pool* pool, struct payload* p) {
     ensures valid_pool(pool);
     ensures p->value == old(p->value);
 } by {
-    open(control(pool)) {
+    with(control(pool)) {
         have 1 <= to_integer(count(item(pool, _))) by {
             known();
         }
@@ -365,11 +365,11 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
         known();
     }
     step();
-    open(item(pool, first)) {
+    with(item(pool, first)) {
         step();
         have first->value == 11;
     }
-    open(item(pool, second)) {
+    with(item(pool, second)) {
         step();
         have first->value == 11;
         have second->value == 22;

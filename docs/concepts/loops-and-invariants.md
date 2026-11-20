@@ -1166,7 +1166,7 @@ is non-executing because its point is already the first loop entry.
 
 A preservation script is the ordinary execution grammar: `step()` and the
 other linear execution tactics, `have`, the resource operations, a proof-level
-`if`, a proof `match` on a model, an `open` scope, and `branch` on the C `if`
+`if`, a proof `match` on a model, a `with` scope, and `branch` on the C `if`
 at the frontier. The two conditional forms differ in where their arms go. A
 proof `if` and a proof `match` never join: each arm runs its own complete
 iteration to the loop rule, so each closes the invariants and satisfies the

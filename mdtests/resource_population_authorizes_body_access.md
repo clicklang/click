@@ -1,7 +1,7 @@
 # Resource populations authorize their owned bodies during C execution
 
 An opaque call may exchange a raw object for a declared wrapper resource. A
-scoped `open` exposes that same ownership to the following C store, and a
+scoped `with` exposes that same ownership to the following C store, and a
 second opaque call can consume the closed wrapper and return the raw object.
 
 ```c filename=resource_population_wrap.c
@@ -59,7 +59,7 @@ void write_through_wrapper(struct object* obj) {
     owns *obj;
 } by {
     step();
-    open(wrapper(obj)) {
+    with(wrapper(obj)) {
         step();
     }
     step();

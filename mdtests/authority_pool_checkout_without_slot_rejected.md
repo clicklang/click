@@ -46,7 +46,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
     ensures pool->capacity == old(pool->capacity);
     ensures valid_pool(pool);
 } by {
-    open(pool_control(pool)) {
+    with(pool_control(pool)) {
         have 1 <= count(pool_slot(pool)) by solve();
     }
     step_until(function.exit); unfold(valid_pool(pool)); solve();

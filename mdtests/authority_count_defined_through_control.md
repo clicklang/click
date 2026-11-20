@@ -18,7 +18,7 @@ void inspect(struct pool* pool) {
     owns control(pool);
     requires defined(pool->checked_out + 1);
 } by {
-    open(control(pool)) {
+    with(control(pool)) {
         have pool->checked_out >= 0 by {
             solve() using { 0 <= pool->checked_out; };
         }

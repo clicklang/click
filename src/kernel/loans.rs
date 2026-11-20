@@ -5678,7 +5678,7 @@ impl LoanLedger {
     ///
     /// `evidence` is the kernel's own one-level expansion of `parent`, built
     /// at the expansion boundary by the checked `unfold`, `observe`, or
-    /// `open` that calls this. The ledger re-checks both premises of the
+    /// `with` scope that calls this. The ledger re-checks both premises of the
     /// transition rather than delegating them to its caller (D2 law 10): the
     /// evidence must describe the very parent the loan permits, and the
     /// child must be one the expansion contains.

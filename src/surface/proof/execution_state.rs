@@ -1877,7 +1877,7 @@ pub(super) fn post_execution_tactic_timing(
         }
         PostExecutionTactic::Leaf(tactic) => (tactic_name(tactic), "simple"),
         PostExecutionTactic::FoldProved(_) => ("fold", "control"),
-        PostExecutionTactic::CloseOpen { .. } => ("open", "control"),
+        PostExecutionTactic::CloseOpen { .. } => ("with", "control"),
         PostExecutionTactic::If { .. } => ("if", "control"),
         PostExecutionTactic::CallOutcomes { .. } => ("outcomes", "control"),
         PostExecutionTactic::Match { .. } => ("match", "control"),

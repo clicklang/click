@@ -31,7 +31,7 @@ void take_two(struct child* obj) {
     let k: int32 = 2;
     consumes k of child_ref(obj);
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         unfold(2 of child_ref(obj));
         step();
     }

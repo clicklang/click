@@ -316,7 +316,7 @@ fn dynamic_body_fact_dependency(
         {
             let Some(candidate) = state.resources().loan_dependency(occurrence) else {
                 // A view the instance being opened publishes over its own
-                // bytes (an owned `cstr_at` held folded across `open`)
+                // bytes (an owned `cstr_at` held folded across `with`)
                 // borrows nothing: its authority is that live owner, so the
                 // read is a read of owned memory, as after `unfold`. A view
                 // with an exact support edge to plain owned memory likewise
@@ -2522,7 +2522,7 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
                 .is_some()
         })
     {
-        // `open` retains the folded head for contract accounting while
+        // `with` retains the folded head for contract accounting while
         // exposing the unique owned body. Until that body is closed, do
         // not re-project its invariant at a newer memory/count state.
         return Ok((memory, ResourceContext::new(), false));
@@ -3500,7 +3500,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     let already_unfolded = folded_resources.is_none();
     if already_unfolded && access == ResourceBodyAccess::Open {
         return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `open({})` Requires {} {}",
+            "`{claim_label}` tactic {tactic_index}: `with({})` Requires {} {}",
             describe_resource_clause(resource),
             if abstract_resource.is_view() {
                 "views"
@@ -3689,7 +3689,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         None
     };
 
-    // An owned instance `open` keeps folded: the one owner whose own views
+    // An owned instance `with` keeps folded: the one owner whose own views
     // may support its body facts without a loan.
     let opened_owner = (access == ResourceBodyAccess::Open && !opening_view)
         .then(|| {
@@ -4075,7 +4075,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             ))
         })?;
         let mut closing_view = false;
-        // The owned instance an `open` kept folded; its own views support
+        // The owned instance a `with` kept folded; its own views support
         // the body facts this closing fold re-checks.
         let mut opened_owner = None;
         let mut authority_closing_fact_state = None;
@@ -4144,7 +4144,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 // Exact execution can retain this folded owner alongside
                 // observations of its body. Refolding checks those same
                 // observations under their existing owner, just as closing
-                // `open` does; unrelated unbound views still need a loan.
+                // `with` does; unrelated unbound views still need a loan.
                 if let [occurrence] = state
                     .resources()
                     .owned_occurrences_for_fact(&population)
@@ -4246,7 +4246,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                     )
                     .map_err(|message| {
                         ClickError::new(format!(
-                            "`{claim_label}` path {path_index}: closing `open({})` {message}",
+                            "`{claim_label}` path {path_index}: closing `with({})` {message}",
                             describe_resource_clause(resource)
                         ))
                     })?;
@@ -4257,7 +4257,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 .any(proposition_contains_resource_count)
             {
                 return Err(ClickError::new(format!(
-                    "`{claim_label}` path {path_index}: closing `open({})` requires its resource population to remain active",
+                    "`{claim_label}` path {path_index}: closing `with({})` requires its resource population to remain active",
                     describe_resource_clause(resource)
                 )));
             }
@@ -4669,7 +4669,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 }
             }
             if preserve_exposed_body {
-                // This body belonged to the active population before `open`.
+                // This body belonged to the active population before `with`.
                 // The scope used it in place, so closing must leave that one
                 // authoritative representation intact.
                 continue;
@@ -4715,7 +4715,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                         format!("`fold({})`", describe_resource_clause(resource))
                     }
                     ResourceBodyClosure::CloseOpen { .. } => {
-                        format!("closing `open({})`", describe_resource_clause(resource))
+                        format!("closing `with({})`", describe_resource_clause(resource))
                     }
                 };
                 return Err(ClickError::new(format!(

@@ -49,7 +49,7 @@ int32 lifecycle() { ensures result == 0 or result == 2; } by {
     have count(slot(&pool, _)) == 1;
     have count(slot(&pool, p)) == 0;
     have count(slot(&pool, p + 1)) == 1;
-    open(slot(&pool, p + 1)) { step(); step(); }
+    with(slot(&pool, p + 1)) { step(); step(); }
     unfold(slot(&pool, p + 1));
     unfold(authority(slot(&pool, _)));
 }

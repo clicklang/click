@@ -1,7 +1,7 @@
 # Closing an invariant-bearing population requires restoring its fact
 
 The active population body is authoritative, not an excuse to retain a stale
-fact after mutation. Closing `open` fails when the body invariant is false at
+fact after mutation. Closing `with` fails when the body invariant is false at
 the new C-memory state.
 
 ```c filename=invariant_population_restore_wrap.c
@@ -48,7 +48,7 @@ void break_wrapper_invariant(struct object* obj) {
     owns *obj;
 } by {
     step();
-    open(wrapper(obj)) {
+    with(wrapper(obj)) {
         step();
     }
 }

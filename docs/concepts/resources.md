@@ -606,7 +606,7 @@ int32 update(int32* pool, int32* p) {
 }
 ```
 
-`open(slot(pool, p)) { ... }` exposes that member's memory and requires the
+`with(slot(pool, p)) { ... }` exposes that member's memory and requires the
 same body to be restored on close. Neither step changes membership. The
 helper needs the member, while its caller can retain authority and other
 members. Two members can own disjoint cells of the same allocation, and
@@ -746,8 +746,8 @@ that cell. Ordinary helpers express these transfers with `consumes` and
 `produces`, including nested calls. Their count changes concern the outer
 member only.
 
-`open(slot(pool, p))` temporarily exposes the cell. Inside that block,
-`open(cell(pool, p))` exposes its memory for C access. Both scopes must restore
+`with(slot(pool, p))` temporarily exposes the cell. Inside that block,
+`with(cell(pool, p))` exposes its memory for C access. Both scopes must restore
 their owned contents, and neither requires population authority. Missing or
 mismatched children cannot establish the outer member; its child cannot also
 be returned as independent ownership while retained inside the folded member.
@@ -1128,7 +1128,7 @@ return something weaker
 the folded head in escrow and protects the direct memory children the
 definition names; a contained composite becomes a read-only description under
 the same borrow. Reading further down is projection: `unfold`, `observe`, and
-`open` of a borrowed composite add the child to the borrow's permitted
+`with` of a borrowed composite add the child to the borrow's permitted
 descriptions after the kernel rechecks that the definition contains it. A
 projection exposes nothing owned, so the depth a proof reaches costs nothing in
 authority.

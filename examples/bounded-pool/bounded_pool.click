@@ -98,7 +98,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
     ensures valid_pool(pool);
     ensures object->value == old(object->value);
 } by {
-    open(pool_control(pool)) {
+    with(pool_control(pool)) {
         have defined(count(pool_object(pool, _)) + 1);
         have defined(pool->checked_out + 1);
         unfold(pool_slot(pool));
@@ -124,7 +124,7 @@ void pool_return(struct pool* pool, struct object* object) {
     ensures valid_pool(pool);
     ensures object->value == old(object->value);
 } by {
-    open(pool_control(pool)) {
+    with(pool_control(pool)) {
         have defined(count(pool_slot(pool)) + 1);
         unfold(pool_object(pool, object));
         step();
@@ -154,8 +154,8 @@ void pool_pipeline(struct pool* pool, struct object* first, struct object* secon
     step();
     have defined(count(pool_object(pool, _)) + 1);
     step();
-    open(pool_object(pool, first)) { step(); have first->value == 11; }
-    open(pool_object(pool, second)) { step(); have first->value == 11; have second->value == 22; }
+    with(pool_object(pool, first)) { step(); have first->value == 11; }
+    with(pool_object(pool, second)) { step(); have first->value == 11; have second->value == 22; }
     step();
     have first->value == 11;
     have second->value == 22;
@@ -201,7 +201,7 @@ void pool_shrink(struct pool* pool, int32 amount) {
     ensures count(pool_object(pool, _)) == old(count(pool_object(pool, _)));
     ensures valid_pool(pool);
 } by {
-    open(pool_control(pool)) {
+    with(pool_control(pool)) {
         unfold(amount of pool_slot(pool));
         step();
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
@@ -239,7 +239,7 @@ void pool_grow(struct pool* pool, int32 amount) {
     ensures count(pool_object(pool, _)) == old(count(pool_object(pool, _)));
     ensures valid_pool(pool);
 } by {
-    open(pool_control(pool)) {
+    with(pool_control(pool)) {
         have defined(count(pool_slot(pool)) + amount);
         have defined(pool->capacity) by { normalize(); }
         have defined(pool->capacity + amount);
@@ -272,8 +272,8 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
     ensures valid_pool(source);
     ensures valid_pool(destination);
 } by {
-    open(pool_control(source)) {
-        open(pool_control(destination)) {
+    with(pool_control(source)) {
+        with(pool_control(destination)) {
             have defined(count(pool_slot(source)) + 1);
             have defined(count(pool_object(destination, _)) + 1);
             have defined(destination->checked_out + 1);
@@ -341,14 +341,14 @@ void pool_transfer_pipeline(struct pool* source, struct pool* destination, struc
     ensures count(pool_slot(destination)) == 0;
     ensures object->value == old(object->value);
 } by {
-    open(pool_storage(source)) {
-        open(pool_storage(destination)) {
+    with(pool_storage(source)) {
+        with(pool_storage(destination)) {
         }
     }
     step();
-    open(pool_control(source)) { step(); }
+    with(pool_control(source)) { step(); }
     have defined(count(pool_object(source, _)) + 1);
-    open(pool_control(destination)) { step(); }
+    with(pool_control(destination)) { step(); }
     have defined(count(pool_object(destination, _)) + 1);
     apply(population_member_count_zero(count(pool_object(destination, object))));
     step();

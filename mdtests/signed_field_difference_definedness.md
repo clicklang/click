@@ -14,7 +14,7 @@ int32 span_length(struct span* span) {
     views span_bounds(span);
     ensures to_integer(result) == to_integer(span->end - span->start);
 } by {
-    open(span_bounds(span)) {
+    with(span_bounds(span)) {
         have defined(span->end - span->start);
         step();
         solve();

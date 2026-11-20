@@ -6253,7 +6253,7 @@ instance with the bytes it no longer covers. The bytes determine `len`, so
 `fold(cstr_at(p, m))` at any other length fails. An owner lends its instance
 to a callee that views it, and a caller that owns the bytes and holds the
 facts but no instance has the call assemble the view; the caller keeps its
-bytes. `open(cstr_at(p, len)) { ... }` exposes the body and the facts. A
+bytes. `with(cstr_at(p, len)) { ... }` exposes the body and the facts. A
 `char`, `signed char`, or `unsigned char` pointer may be passed for `p`, as
 for the C-string predicates; a signed character pointer is read through its
 byte view `p as (uint8 *)`.

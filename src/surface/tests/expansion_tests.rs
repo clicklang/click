@@ -5443,7 +5443,7 @@ fn return_population_count_is_not_an_assumed_invariant() {
         "step_until(function.exit); solve();",
         "unfold(reference(obj)); step_until(function.exit); solve();",
         "unfold(reference(obj)); step_until(function.exit); fold(reference(obj)); solve();",
-        "open(reference(obj)) { step_until(function.exit); } solve();",
+        "with(reference(obj)) { step_until(function.exit); } solve();",
     ] {
         let source = format!(
             r#"
@@ -5994,7 +5994,7 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
 
                 ensures result == 0 or result == 1;
             } by {
-                open(allocated_cell(owner)) {
+                with(allocated_cell(owner)) {
                 }
                 step_until(function.exit);
                 solve();
@@ -11345,7 +11345,7 @@ fn linear_execution_open_retains_one_checked_scope_and_checks() {
             owns marker(x);
             ensures result == x;
         } by {
-            open(marker(x)) {
+            with(marker(x)) {
                 step();
             }
             step();
@@ -11405,7 +11405,7 @@ fn linear_execution_open_retains_checked_prefix_on_one_proof() {
             ensures result == x + y;
         } by {
             step();
-            open(marker(x)) {
+            with(marker(x)) {
                 step();
             }
             solve();
@@ -11453,7 +11453,7 @@ fn linear_execute_inside_open_retains_checked_statement_steps() {
             owns marker(x);
             ensures result == x;
         } by {
-            open(marker(x)) {
+            with(marker(x)) {
                 step_until(function.exit);
             }
             solve();
@@ -11677,7 +11677,7 @@ fn quantified_contract_resource_open_stays_on_one_proof() {
             owns amount of marker(x);
             ensures result == x;
         } by {
-            open(marker(x)) {
+            with(marker(x)) {
                 step_until(function.exit);
             }
             solve();
@@ -11712,7 +11712,7 @@ fn quantified_contract_resource_open_stays_on_one_proof() {
     verify_c_sources(&rewritten, &sources)
         .expect("the serialized quantified resource scope should independently reverify");
 
-    let corrupted = rewritten.replacen("open(marker(x))", "open(marker(x + 1))", 1);
+    let corrupted = rewritten.replacen("with(marker(x))", "with(marker(x + 1))", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the checked resource selection"
@@ -11747,7 +11747,7 @@ fn linear_execute_until_inside_open_stops_on_checked_frontier() {
             owns marker(x);
             ensures result == x;
         } by {
-            open(marker(x)) {
+            with(marker(x)) {
                 step_until(region(2).entry);
                 step();
             }
@@ -11809,7 +11809,7 @@ fn linear_open_have_retains_the_selected_theorem_application() {
             owns marker(x);
             ensures result == x;
         } by {
-            open(marker(x)) {
+            with(marker(x)) {
                 have x == x by {
                     apply(int32_reflexive(x));
                 }
@@ -11875,8 +11875,8 @@ fn nested_composite_resource_scopes_stay_on_one_proof() {
             owns wrapped_cell(p);
             ensures result == old(p[0]);
         } by {
-            open(wrapped_cell(p)) {
-                open(cell(p)) {
+            with(wrapped_cell(p)) {
+                with(cell(p)) {
                     step_until(function.exit);
                 }
             }
@@ -11918,7 +11918,7 @@ fn nested_composite_resource_scopes_stay_on_one_proof() {
     verify_c_sources(&rewritten, &sources)
         .expect("the serialized nested scopes should independently reverify");
 
-    let corrupted = rewritten.replacen("open(cell(p))", "open(cell(p + 1))", 1);
+    let corrupted = rewritten.replacen("with(cell(p))", "with(cell(p + 1))", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the nested resource selection"
@@ -11929,7 +11929,7 @@ fn nested_composite_resource_scopes_stay_on_one_proof() {
     assert!(
         error
             .message()
-            .contains("`open(cell((p + 1)))` Requires owns cell((p + 1))"),
+            .contains("`with(cell((p + 1)))` Requires owns cell((p + 1))"),
         "the nested checked resource entry should reject the tamper directly: {error:?}"
     );
 }
@@ -11958,7 +11958,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
             owns ordered(lower, upper);
             ensures lower <= upper;
         } by {
-            open(ordered(lower, upper)) {
+            with(ordered(lower, upper)) {
                 apply(ordered_is_less_equal(lower, upper));
                 step();
             }
@@ -12020,7 +12020,7 @@ fn linear_open_expands_known_transport_to_known() {
             owns first_is_seven(p);
             ensures result == 7;
         } by {
-            open(first_is_seven(p)) {
+            with(first_is_seven(p)) {
                 step();
                 transport(old(p[0]) == 7, p[0] == 7);
                 step();
@@ -12095,7 +12095,7 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
                 owns cell(p);
             } {
                 true => {
-                    open(cell(p)) {
+                    with(cell(p)) {
                         step();
                         have value == old(p[0]) or value == 0 by {
                             have value == old(p[0]) by { normalize(); }
@@ -12143,7 +12143,7 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
     verify_c_sources(&rewritten, &sources)
         .expect("the serialized branch-arm scope should independently reverify");
 
-    let corrupted = rewritten.replacen("open(cell(p))", "open(cell(p + 1))", 1);
+    let corrupted = rewritten.replacen("with(cell(p))", "with(cell(p + 1))", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the branch-arm resource selection"
@@ -12154,7 +12154,7 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
     assert!(
         error
             .message()
-            .contains("`open(cell((p + 1)))` Requires owns cell((p + 1))"),
+            .contains("`with(cell((p + 1)))` Requires owns cell((p + 1))"),
         "the checked branch-arm resource entry should reject the tamper directly: {error:?}"
     );
 }
@@ -12194,15 +12194,15 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
             owns wrapped_cell(p, flag);
             ensures result == old(p[0]) or result == 0;
         } by {
-            open(wrapped_cell(p, flag)) {
-                open(cell(p)) {
+            with(wrapped_cell(p, flag)) {
+                with(cell(p)) {
                     step();
                     branch ensuring {
                         fact value == old(p[0]) or value == 0;
                         views p[0..1];
                     } {
                         true => {
-                            open(marker(flag)) {
+                            with(marker(flag)) {
                                 step();
                                 have value == old(p[0]) or value == 0 by {
                                     have value == old(p[0]) by { normalize(); }
@@ -12261,7 +12261,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
         .expect("the serialized nested branch-arm scope should independently reverify");
 
     // This arm has flag != 0, so marker(0) is distinct without risking overflow.
-    let corrupted = rewritten.replacen("open(marker(flag))", "open(marker(0))", 1);
+    let corrupted = rewritten.replacen("with(marker(flag))", "with(marker(0))", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the nested branch-arm resource selection"
@@ -12272,7 +12272,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
     assert!(
         error
             .message()
-            .contains("`open(marker(0))` Requires owns marker(0)"),
+            .contains("`with(marker(0))` Requires owns marker(0)"),
         "the checked nested branch-arm entry should reject the tamper directly: {error:?}"
     );
 }
@@ -13804,7 +13804,7 @@ fn open_scope_retains_its_checked_branch_interface() {
             owns marker(x);
             ensures result >= 0;
         } by {
-            open(marker(x)) {
+            with(marker(x)) {
                 branch ensuring {
                     fact x >= 0;
                 } {
@@ -13875,7 +13875,7 @@ fn open_scope_retains_its_checked_execution_branch() {
             owns marker(x);
             ensures result == x;
         } by {
-            open(marker(x)) {
+            with(marker(x)) {
                 branch {
                     true => {
                     }
@@ -13946,7 +13946,7 @@ fn open_scope_retains_a_decided_execution_branch_and_its_continuation() {
             owns marker(x);
             ensures result == 1;
         } by {
-            open(marker(x)) {
+            with(marker(x)) {
                 branch { true => { step(); } false => { step(); } }
                 step();
             }
@@ -17571,7 +17571,7 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
 }
 
 /// The source shape behind `arena_region_length` in `examples/arena`: the
-/// function returns inside an `open(...)` body and the scope's closer runs
+/// function returns inside an `with(...)` body and the scope's closer runs
 /// after that return.
 const OPEN_SCOPE_RETURN_C: &str = r#"
 struct span {
@@ -17597,7 +17597,7 @@ int32 span_length(struct span* span) {
 
     ensures to_integer(result) == to_integer(span->end - span->start);
 } by {
-    open(span_bounds(span)) {
+    with(span_bounds(span)) {
         have defined(span->end - span->start);
         step();
         solve();
@@ -17638,7 +17638,7 @@ fn smart_closer_after_a_return_inside_an_open_scope_expands_and_reverifies() {
 }
 
 /// `object_retain_many` from `examples/refcount`, whose proof folds the
-/// produced references inside an `open(...)` body and closes the produced
+/// produced references inside an `with(...)` body and closes the produced
 /// resource claim with a grouped `solve`.
 const PRODUCED_RESOURCE_C: &str = r#"
 struct object {
@@ -17669,7 +17669,7 @@ void object_retain_many(struct object* obj, int32 amount) {
     produces amount of reference(obj);
     ensures defined(obj->refs);
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         step();
         fold(amount of reference(obj));
     }
@@ -21165,7 +21165,7 @@ void set(int32* p, int32* q, int32 x) {
     owns cell(p);
     owns q[0..1];
 } by {
-    open(cell(p)) { step(); }
+    with(cell(p)) { step(); }
     step_until(function.exit);
     solve();
 }
@@ -21173,7 +21173,7 @@ void set(int32* p, int32* q, int32 x) {
     let c_sources = [("set.c", c_source)];
     let expanded = expand_function_proof_source(click_source, &c_sources, "set")
         .expect("the bare open should expand");
-    let start = expanded.find("open(cell(p)) {").expect("the expanded open");
+    let start = expanded.find("with(cell(p)) {").expect("the expanded open");
     let have = start
         + expanded[start..].find("        have ").unwrap_or_else(|| {
             panic!("the closing fact should be proved inside the open block: {expanded}")
@@ -21214,7 +21214,7 @@ int32 f(int32* p, int32 x, int32 y) {
     owns cell(p);
     ensures result > 0;
 } by {
-    open(cell(p)) {
+    with(cell(p)) {
         branch { true => { step_until(function.exit); } false => { step_until(function.exit); } }
     }
     solve();
@@ -21239,7 +21239,7 @@ fn named_open_replays_its_closing_facts_on_both_returns() {
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_function_proof_source(&source, &sources, "set_and_read").unwrap();
-    assert!(expanded.contains("open(c) {"), "{expanded}");
+    assert!(expanded.contains("with(c) {"), "{expanded}");
     assert_eq!(
         expanded
             .matches("have load<int32>(p) > 0 or load<int32>(p) < -1")
@@ -21717,7 +21717,7 @@ fn terminal_model_match_in_open_keeps_expanded_outcome_steps_in_its_arms() {
     verify_c_sources(&expanded, &sources)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
     let open = expanded
-        .find("open(table")
+        .find("with(table")
         .expect("the resource scope is retained");
     let first = expanded[open..].find("Pair::First(value) =>").unwrap() + open;
     let second = expanded[first..].find("Pair::Second(value) =>").unwrap() + first;
@@ -21746,7 +21746,7 @@ fn rejoined_model_match_in_open_expands_without_moving_the_continuation_inside()
     let expanded = expand_c_claim_source_by_label(&click, &sources, "read.contract").unwrap();
     verify_c_sources(&expanded, &sources)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
-    assert_eq!(expanded.matches("open(table").count(), 2, "{expanded}");
+    assert_eq!(expanded.matches("with(table").count(), 2, "{expanded}");
     assert!(
         expanded.contains("ensuring"),
         "the nonterminal match must retain its interface: {expanded}"
@@ -23515,11 +23515,11 @@ void set(int32* p, int32* q, int32 x) {
     owns cell(p);
     owns cell(q);
 } by {
-    open(cell(p)) {
+    with(cell(p)) {
         step();
-        open(cell(q)) { step(); }
+        with(cell(q)) { step(); }
     }
-    open(cell(q)) { step(); }
+    with(cell(q)) { step(); }
     step_until(function.exit);
     solve();
 }
@@ -23532,8 +23532,8 @@ void set(int32* p, int32* q, int32 x) {
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
         .expect("nested closing obligations retain explicit proofs");
     let invalid = source.replace(
-        "open(cell(q)) { step(); }",
-        "open(cell(q)) { step(); have q[0] < -1 by { known(); } }",
+        "with(cell(q)) { step(); }",
+        "with(cell(q)) { step(); have q[0] < -1 by { known(); } }",
     );
     assert!(
         verify_c_sources(&invalid, &sources).is_err(),

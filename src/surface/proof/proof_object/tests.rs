@@ -10305,7 +10305,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
                 owns marker(x);
                 ensures returns_x: result == x;
             } by {
-                open(marker(x)) { step(); }
+                with(marker(x)) { step(); }
                 step();
             }
         "#,

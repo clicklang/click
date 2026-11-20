@@ -45,8 +45,8 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
     have count(slot(&pool, _)) == 2;
     have count(slot(&pool, p)) == 1;
     have count(slot(&pool, p + 1)) == 1;
-    open(slot(&pool, p)) {
-        open(slot(&pool, p + 1)) { step(); step(); }
+    with(slot(&pool, p)) {
+        with(slot(&pool, p + 1)) { step(); step(); }
     }
     unfold(slot(&pool, p));
     unfold(slot(&pool, p + 1));
