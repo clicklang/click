@@ -1196,6 +1196,7 @@ fn modular_call_reservation_ignores_unrelated_caller_state() {
                 })
                 .collect::<Vec<_>>();
             assert_eq!(calls.len(), 3);
+            assert!(calls[0] <= 5 * count + 16, "{calls:?}");
             calls
         });
         eprintln!("call reservation work at 4/16/64, owned={with_owners}: {samples:?}");

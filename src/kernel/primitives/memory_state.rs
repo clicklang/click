@@ -10702,6 +10702,12 @@ impl ExecutionState {
         );
     }
 
+    /// Summarize the installed inputs while establishing an execution entry.
+    /// Later calls need only the bindings and resources changed from it.
+    pub(crate) fn prepare_modular_call_reservations(&self) {
+        crate::kernel::reasoning::caller_state_variable_bound(self);
+    }
+
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {
         // ResourceContext owns the canonical persistent dependency root. The
         // ExecutionState field is only a shared mirror, so replacing a context does

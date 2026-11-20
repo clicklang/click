@@ -138,9 +138,12 @@ impl<K, V, T: Copy + Ord> PersistentMapMaxMemo<K, V, T> {
         if let Some((_, maximum)) = self.nodes.get(&key) {
             return *maximum;
         }
-        crate::instrumentation::record_deterministic_work(1);
+        // Tree maintenance is indexed work. Charge the deterministic
+        // collection counter when a binding's payload is actually read.
+        record_persistent_work(1);
         let value_key = Arc::as_ptr(&node.value) as usize;
         let (_, value) = self.values.entry(value_key).or_insert_with(|| {
+            crate::instrumentation::record_deterministic_work(1);
             let maximum = (self.value_max)(&node.value);
             (Arc::downgrade(&node.value), maximum)
         });
