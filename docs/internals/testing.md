@@ -2144,6 +2144,19 @@ Rust unit tests are appropriate when the behavior is lower-level than a sidecar
 can express clearly, such as parser details, kernel term simplification, or
 specific reasoning helpers.
 
+### Testing scoped loop-exit facts
+
+Set `CLICK_SCOPED_LOOP_EXIT_FACTS=1` when running `click verify`, `click expand`,
+or a focused mdtest run to exercise the experimental loop join. On the
+loop continuation, it keeps only facts established on every incoming exit
+and expressible in the enclosing proof. It compares checked facts in terms
+of the joined state's values. The `otherwise` block still sees the
+false-guard context it proves in.
+
+```sh
+CLICK_SCOPED_LOOP_EXIT_FACTS=1 click verify mdtests/loop_otherwise.md
+```
+
 ## Test selection
 
 When adding a feature, prefer this order:

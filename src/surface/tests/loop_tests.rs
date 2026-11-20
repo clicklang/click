@@ -1,5 +1,122 @@
 use super::*;
 
+#[cfg(not(feature = "fast-gate"))]
+const SCOPED_LOOP_MODEL_CLICK: &str = r#"verifying "program.c";
+spec enum Walk { Active, Done }
+function pending(w: Walk) -> int32 { match w { Walk::Active => 1, Walk::Done => 0, } }
+resource ghost(id: int32) { field model: Walk; }
+tactic stop() {
+    consumes dirty: ghost(0);
+    produces done: ghost(0);
+    ensures pending(done.model) == 0;
+} by {
+    unfold(dirty);
+    let done = fold(ghost(0), { model: Walk::Done });
+    have pending(done.model) == 0 by {
+        rewrite(done.model, Walk::Done); unfold(pending(Walk::Done)); normalize();
+    }
+}
+void walk(int32 n) {
+    owns state: ghost(0);
+    requires n >= 0;
+    requires state.model == Walk::Active;
+    ensures n == 0 or pending(state.model) == 0;
+} by {
+    loop {
+        owns state: ghost(0);
+        decreases n;
+        invariant n >= 0;
+        invariant state.model == Walk::Active;
+        initialize by solve();
+        maintain by {
+            let { done: intermediate } = stop({ dirty: state });
+            let { done: state } = stop({ dirty: intermediate });
+            have n <= 0 or pending(state.model) == 0 by known();
+            step();
+        }
+        otherwise {
+            have n <= 0 or pending(state.model) == 0 by known();
+        }
+    }
+    step();
+    have n <= 0 or pending(state.model) == 0 by known();
+    solve();
+}
+"#;
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: checks the opt-in loop join through the proof driver"]
+fn scoped_loop_facts_keep_the_proof_both_exits_established() {
+    let c = "void walk(int n) { while (n > 0) { break; } }";
+    super::super::proof::test_with_scoped_loop_exit_facts(|| {
+        verify_c_sources(SCOPED_LOOP_MODEL_CLICK, &[("program.c", c)]).unwrap();
+    });
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: compares the proof diagnostics of both loop join modes"]
+fn scoped_loop_facts_hide_an_intermediate_model_on_a_single_exit() {
+    let c = "void walk(int n) { while (1) { break; } }";
+    let source = SCOPED_LOOP_MODEL_CLICK.replace(
+        "    step();\n    have n <= 0 or pending(state.model) == 0 by known();",
+        "    step();\n    have pending(state.model) == 1 by solve();",
+    );
+    let failed = || {
+        with_proof_trace("walk", || {
+            verify_c_sources(&source, &[("program.c", c)])
+                .expect_err("the reachable break has no pending work")
+                .trace_context_report()
+                .expect("the failed check retains an exact premise list")
+                .split_once("available premises at the failed check")
+                .expect("the failure records the loop's exported premises")
+                .1
+                .split("checks observed")
+                .next()
+                .unwrap()
+                .to_owned()
+        })
+    };
+    let legacy = failed();
+    let scoped = super::super::proof::test_with_scoped_loop_exit_facts(failed);
+    assert!(legacy.contains("pending(value "), "{legacy}");
+    assert!(!scoped.contains("pending(value "), "{scoped}");
+    assert!(scoped.contains("pending(state.model:Walk), 0"), "{scoped}");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: compares short-circuit proofs with and without an otherwise export"]
+fn scoped_loop_facts_keep_a_guard_disjunction_only_when_proved() {
+    let c = "void walk(int n, int m) { while (n > 0 && m > 0) { n = 0; } }";
+    let source = r#"verifying "program.c";
+        void walk(int32 n, int32 m) {
+            requires n >= 0;
+            ensures true;
+        } by {
+            loop {
+                invariant n >= 0;
+                decreases n;
+                otherwise { have n <= 0 or m <= 0 by known(); }
+            }
+            have n <= 0 or m <= 0 by known();
+        }
+    "#;
+    let without_export = source.replace("otherwise { have n <= 0 or m <= 0 by known(); }", "");
+    super::super::proof::test_with_scoped_loop_exit_facts(|| {
+        verify_c_sources(source, &[("program.c", c)]).unwrap();
+        let error = verify_c_sources(&without_export, &[("program.c", c)]).unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("missing exact fact: n <= 0 or m <= 0"),
+            "{}",
+            error.message()
+        );
+    });
+}
+
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
 fn separately_declared_guarded_invariants_close_at_the_back_edge() {

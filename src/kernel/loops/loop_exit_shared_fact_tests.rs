@@ -42,10 +42,12 @@ fn merged_exit_equations_are_available_without_historical_guards() {
             vec![ExecutionPureFact::new(fact(1, guard))].into(),
             Vec::new(),
             crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            false,
         )
     };
     let expected = Proposition::Or(Box::new(fact(100, 7)), Box::new(fact(100, 9)));
-    let (facts, _, _) = join_loop_exit_paths(vec![make(7, 0), make(9, 1)]).unwrap();
+    let (facts, _, _) =
+        join_loop_exit_paths(vec![make(7, 0), make(9, 1)], LoopExitFactsMode::Legacy).unwrap();
     assert!(facts.iter().any(|fact| fact.proposition() == &expected));
     assert!(
         !facts
@@ -57,18 +59,67 @@ fn merged_exit_equations_are_available_without_historical_guards() {
             .iter()
             .any(|entry| entry.proposition() == &fact(100, 9))
     );
+    let (guard_proof_facts, _, _) =
+        join_loop_exit_paths(vec![make(7, 0), make(9, 1)], LoopExitFactsMode::Otherwise).unwrap();
+    assert!(
+        guard_proof_facts
+            .iter()
+            .any(|entry| { entry.proposition() == &expected && !entry.is_public() })
+    );
     // An exit with no equation cannot be silently omitted from the join.
     let unknown = LoopExitFacts::unabstracted(
         vec![ExecutionPureFact::new(fact(1, 2))].into(),
         Vec::new(),
         crate::kernel::loans::empty_checked_loan_evidence_sequence(),
     );
-    let (facts, _, _) = join_loop_exit_paths(vec![make(7, 0), unknown]).unwrap();
+    let (facts, _, _) =
+        join_loop_exit_paths(vec![make(7, 0), unknown], LoopExitFactsMode::Legacy).unwrap();
     assert!(!facts.iter().any(|entry| entry.proposition() == &expected));
     assert!(
         !facts
             .iter()
             .any(|entry| entry.proposition() == &fact(100, 7))
+    );
+}
+
+#[test]
+fn scoped_join_matches_a_stated_fact_with_a_restatement() {
+    let mut first = exit(vec![fact(10, 7)]);
+    first.stated = vec![ExecutionPureFact::new(fact(1, 7))].into();
+    let mut second = exit(vec![fact(20, 7)]);
+    second.stated = vec![ExecutionPureFact::new(fact(10, 7))].into();
+    let (facts, _, _) =
+        join_loop_exit_paths(vec![first, second], LoopExitFactsMode::Common).unwrap();
+    assert_eq!(
+        facts
+            .iter()
+            .map(ExecutionPureFact::proposition)
+            .collect::<Vec<_>>(),
+        vec![&fact(10, 7)]
+    );
+}
+
+#[test]
+fn scoped_join_ignores_the_names_of_quantified_witnesses() {
+    let quantified = |name: &str, variable: u64| Proposition::Exists {
+        name: name.to_owned(),
+        var: Variable(variable),
+        sort: Sort::ProgramInt32,
+        body: Box::new(fact(variable, 7)),
+    };
+    let first = quantified("first", 10);
+    let second = quantified("second", 20);
+    let (facts, _, _) = join_loop_exit_paths(
+        vec![exit(vec![first.clone()]), exit(vec![second])],
+        LoopExitFactsMode::Common,
+    )
+    .unwrap();
+    assert_eq!(
+        facts
+            .iter()
+            .map(ExecutionPureFact::proposition)
+            .collect::<Vec<_>>(),
+        vec![&first]
     );
 }
 
@@ -211,6 +262,7 @@ fn algebraic_exit_pins_drop_private_aliases_but_keep_constructors() {
         Vec::new().into(),
         Vec::new(),
         crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        false,
     );
     assert!(alias_exit.successor_equations.is_empty());
     assert!(alias_exit.disjunct.is_empty());
@@ -229,6 +281,7 @@ fn algebraic_exit_pins_drop_private_aliases_but_keep_constructors() {
         Vec::new().into(),
         Vec::new(),
         crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        false,
     );
     assert_eq!(shared_exit.successor_equations, vec![expected_shared]);
 
@@ -248,6 +301,7 @@ fn algebraic_exit_pins_drop_private_aliases_but_keep_constructors() {
         Vec::new().into(),
         Vec::new(),
         crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        false,
     );
     assert_eq!(concrete_exit.successor_equations, expected);
     assert_eq!(concrete_exit.disjunct, expected);

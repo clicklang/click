@@ -454,7 +454,9 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             ProofTactic::UnfoldFunction(application) => phase
                 .driver()
                 .apply_step(ProofStep::UnfoldFunction(application.clone()))?,
-            ProofTactic::Have(have) => check_loop_phase_have(&phase, have, "initialization")?,
+            ProofTactic::Have(have) => {
+                check_loop_phase_have(&phase, have, "initialization", false)?.0
+            }
             _ => unreachable!("only unfold and have steps are phase helpers"),
         };
         if let Some(site) = initialize_site
@@ -612,9 +614,14 @@ fn check_loop_phase_have<'a>(
     phase: &Proof<'a>,
     have: &ProofHave,
     phase_name: &str,
-) -> Result<Proof<'a>, ClickError> {
+    record_conclusion: bool,
+) -> Result<(Proof<'a>, Option<Proposition>), ClickError> {
     let scope = phase.driver().open_have(have.proposition.clone())?;
-    check_loop_phase_goal(&scope, &have.checking_proof(), None, phase_name)?.join()
+    let conclusion = record_conclusion
+        .then(|| scope.body().goal().cloned())
+        .flatten();
+    let proof = check_loop_phase_goal(&scope, &have.checking_proof(), None, phase_name)?.join()?;
+    Ok((proof, conclusion))
 }
 
 /// Source execution and smart planning share the checked scope. An explicit
@@ -681,6 +688,110 @@ impl CheckedLoopInitialization {
     }
 }
 
+// This switch lets proof migration measure the new export boundary while
+// production proofs still use the legacy loop rule.
+pub(super) fn scoped_loop_exit_facts_enabled() -> bool {
+    #[cfg(all(test, not(feature = "fast-gate")))]
+    if SCOPED_LOOP_EXIT_FACTS.with(std::cell::Cell::get) {
+        return true;
+    }
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var_os("CLICK_SCOPED_LOOP_EXIT_FACTS").is_some_and(|value| value == "1")
+    })
+}
+
+#[cfg(all(test, not(feature = "fast-gate")))]
+thread_local! {
+    static SCOPED_LOOP_EXIT_FACTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(all(test, not(feature = "fast-gate")))]
+pub(in crate::surface) fn with_scoped_loop_exit_facts<T>(run: impl FnOnce() -> T) -> T {
+    struct Reset(bool);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            SCOPED_LOOP_EXIT_FACTS.set(self.0);
+        }
+    }
+    let _reset = Reset(SCOPED_LOOP_EXIT_FACTS.replace(true));
+    run()
+}
+
+/// Check the experimental export interface against the actual outer scope.
+/// Exit-private proof locals and historical points are absent from this frame.
+/// Only a spelling that lowers back to the checked proposition is eligible.
+pub(super) fn scoped_loop_exit_facts(
+    loop_index: usize,
+    state: &ExecutionState,
+    facts: &crate::kernel::ExecutionFacts,
+    context: &PlanningExecutionContext,
+    environment: &ExecutionProofEnvironment<'_>,
+) -> Vec<bool> {
+    use crate::surface::proof::raise_lower_audit::{self, RoundTrip};
+
+    let mut recorded_states = context.recorded_states.clone();
+    for (kind, state) in [
+        (ProgramPointKind::Entry, &context.state),
+        (ProgramPointKind::Exit, state),
+    ] {
+        record_code_region_program_state(
+            &mut recorded_states,
+            environment.function_block,
+            CodeRegion::Loop(loop_index),
+            kind,
+            state.clone(),
+        );
+    }
+    let outer = Proof::for_fixed_state_frontier_of_list(
+        &environment.frontier_loop_source.claim_label,
+        0,
+        &context.pure_facts,
+        environment.parameter_binding(),
+        FixedStateFrame::new(environment.initial_state, state, None, &recorded_states),
+        &context.surface_propositions,
+        environment.spec_definitions,
+        environment.theorem_environment,
+        &[],
+    )
+    .with_surface_local_scope(&phase_proof_scope(environment));
+    facts
+        .iter()
+        .map(|fact| {
+            let proposition = fact.proposition();
+            if crate::kernel::proof::term_rewrite::proposition_pointer_terms(proposition)
+                .iter()
+                .any(|address| {
+                    matches!(address.base, AddressBase::AutomaticLocal { .. })
+                        && [&context.state, state].into_iter().all(|visible| {
+                            visible
+                                .locals()
+                                .name_for_slot(&Address {
+                                    base: address.base.clone(),
+                                    offset: AddressOffset::Constant(0),
+                                })
+                                .is_none()
+                        })
+                })
+            {
+                return false;
+            }
+            let Some(spelling) = outer.structural_proposition_candidate(proposition) else {
+                return false;
+            };
+            let lowered = without_open_obligation_probe(|| {
+                outer.lower_surface_proposition_direct(&spelling, "loop exit fact")
+            });
+            lowered.is_ok_and(|lowered| {
+                matches!(
+                    raise_lower_audit::classify(proposition, &lowered),
+                    RoundTrip::Same | RoundTrip::Polarity
+                )
+            })
+        })
+        .collect()
+}
+
 pub(in crate::surface::proof) fn verify_loop_otherwise(
     mut expansion_capture: Option<&mut ExpansionCapture>,
     loop_index: usize,
@@ -725,6 +836,8 @@ pub(in crate::surface::proof) fn verify_loop_otherwise(
             .and_then(|capture| capture.nested_for_site(source.proof_site.as_ref())),
     );
     let initial_facts = phase.facts().clone();
+    let scoped_exits = scoped_loop_exit_facts_enabled();
+    let mut explicit_facts = Vec::new();
     let mut index = source
         .otherwise_source_index
         .unwrap_or(source.loop_source_index);
@@ -734,7 +847,9 @@ pub(in crate::surface::proof) fn verify_loop_otherwise(
         };
         phase = phase.at_source_tactic(index);
         let checkpoint = phase.checkpoint();
-        phase = check_loop_phase_have(&phase, have, "otherwise")?;
+        let (next, conclusion) = check_loop_phase_have(&phase, have, "otherwise", scoped_exits)?;
+        phase = next;
+        explicit_facts.extend(conclusion);
         if let Some(site) = source.proof_site.as_ref()
             && capture_selects_source(expansion_capture.as_deref(), site, index)
         {
@@ -747,10 +862,14 @@ pub(in crate::surface::proof) fn verify_loop_otherwise(
         }
         index += source_tactic_count(std::slice::from_ref(tactic));
     }
-    let facts = phase
-        .facts()
-        .introduced_since(&initial_facts)
-        .expect("checked have extends the phase facts");
+    let facts = if scoped_exits {
+        explicit_facts
+    } else {
+        phase
+            .facts()
+            .introduced_since(&initial_facts)
+            .expect("checked have extends the phase facts")
+    };
     Ok((
         facts.into_iter().map(ExecutionPureFact::new).collect(),
         phase.certificate(),
