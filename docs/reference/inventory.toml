@@ -3595,19 +3595,19 @@ id = "cli.docs.command"
 path = "reference/cli/docs.md#click-docs-command"
 
 [[item]]
-id = "cli.import.command"
-path = "reference/cli/capture.md#click-import"
+id = "cli.capture.command"
+path = "reference/cli/capture.md#click-capture"
 
 [[item]]
-id = "cli.import.--help"
+id = "cli.capture.--help"
 path = "reference/cli/capture.md#options-and-exit-status"
 
 [[item]]
-id = "cli.import.-h"
+id = "cli.capture.-h"
 path = "reference/cli/capture.md#options-and-exit-status"
 
 [[item]]
-id = "cli.import.--"
+id = "cli.capture.--"
 path = "reference/cli/capture.md#options-and-exit-status"
 
 [[item]]
