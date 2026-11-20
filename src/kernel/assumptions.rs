@@ -10323,6 +10323,19 @@ impl ProofObligation {
                 Proposition::And(left, right) => {
                     established(assumptions, left) && established(assumptions, right)
                 }
+                // A guarded requirement, owed only where its guard holds (the
+                // right side of `and`, `or` or `implies`), is established
+                // where the guard establishes it: check the requirement in
+                // the persistent extension that assumes the guard.
+                Proposition::Implies(guard, requirement) => established(
+                    &assumptions
+                        .clone()
+                        .assume_proposition(guard.as_ref().clone()),
+                    requirement,
+                ),
+                Proposition::Or(left, right) => {
+                    established(assumptions, left) || established(assumptions, right)
+                }
                 Proposition::ForAll { .. } | Proposition::Exists { .. } => false,
                 _ => assumptions.proves_atomic_without_search(goal),
             }

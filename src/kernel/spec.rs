@@ -1137,40 +1137,81 @@ fn lower_spec_conjunction_left_spine_in(
     for right in right_operands.into_iter().rev() {
         let mut combined = Vec::new();
         for left_path in paths {
-            let right_assumptions = assumptions_with_path_context(
-                assumptions,
-                &left_path.facts,
-                &left_path.obligations,
-            );
-            for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
+            lower_guarded_conjunct_in(
                 scope,
+                &left_path,
                 right,
-                &right_assumptions,
+                assumptions,
                 budget,
-            )? {
-                if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
-                    &left_path.facts,
-                    &left_path.obligations,
-                    &right_path.facts,
-                    &right_path.obligations,
-                    assumptions,
-                    &right_assumptions,
-                ) {
-                    combined.push(SpecPropositionPath {
-                        introductions: Vec::new(),
-                        proposition: Proposition::And(
-                            Box::new(left_path.proposition.clone()),
-                            Box::new(right_path.proposition),
-                        ),
-                        facts,
-                        obligations,
-                    });
-                }
-            }
+                &mut combined,
+            )?;
         }
         paths = combined;
     }
     Ok(Some(paths))
+}
+
+/// Lowers the right operand of `and` where its left operand holds, as C's
+/// `&&` evaluates it: the right side is read under the left proposition, and
+/// each of its obligations is owed only there (`left implies obligation`),
+/// exactly as `implies` guards its consequent. The left proposition only
+/// discharges or refuses a right obligation; it never changes the right term.
+fn lower_guarded_conjunct_in(
+    scope: SpecScope<'_>,
+    left_path: &SpecPropositionPath,
+    right: &SpecProposition,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+    paths: &mut Vec<SpecPropositionPath>,
+) -> ExecutionResult<()> {
+    let right_assumptions =
+        assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations)
+            .assume_proposition(left_path.proposition.clone());
+    for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
+        scope,
+        right,
+        &right_assumptions,
+        budget,
+    )? {
+        let guarded_right_obligations =
+            guard_right_obligations(&left_path.proposition, right_path.obligations);
+        if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
+            &left_path.facts,
+            &left_path.obligations,
+            &right_path.facts,
+            &guarded_right_obligations,
+            assumptions,
+            &right_assumptions,
+        ) {
+            paths.push(SpecPropositionPath {
+                introductions: Vec::new(),
+                proposition: Proposition::And(
+                    Box::new(left_path.proposition.clone()),
+                    Box::new(right_path.proposition),
+                ),
+                facts,
+                obligations,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The obligations of a right operand read only where `left` holds, owed
+/// as `left implies obligation`.
+fn guard_right_obligations(
+    left: &Proposition,
+    right_obligations: Vec<ProofObligation>,
+) -> Vec<ProofObligation> {
+    right_obligations
+        .into_iter()
+        .map(|obligation| {
+            let antecedent = left.clone();
+            obligation.map_proposition(|proposition| {
+                Proposition::Implies(Box::new(antecedent), Box::new(proposition))
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone)]
@@ -1580,38 +1621,14 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 assumptions,
                 budget,
             )? {
-                let right_assumptions = assumptions_with_path_context(
-                    assumptions,
-                    &left_path.facts,
-                    &left_path.obligations,
-                );
-                for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
+                lower_guarded_conjunct_in(
                     scope,
+                    &left_path,
                     right,
-                    &right_assumptions,
+                    assumptions,
                     budget,
-                )? {
-                    if let Some((facts, obligations)) =
-                        merge_execution_pure_facts_and_obligations_under(
-                            &left_path.facts,
-                            &left_path.obligations,
-                            &right_path.facts,
-                            &right_path.obligations,
-                            assumptions,
-                            &right_assumptions,
-                        )
-                    {
-                        paths.push(SpecPropositionPath {
-                            introductions: Vec::new(),
-                            proposition: Proposition::And(
-                                Box::new(left_path.proposition.clone()),
-                                Box::new(right_path.proposition),
-                            ),
-                            facts,
-                            obligations,
-                        });
-                    }
-                }
+                    &mut paths,
+                )?;
             }
             Ok(paths)
         }
@@ -1669,17 +1686,8 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     &right_assumptions,
                     budget,
                 )? {
-                    let guarded_right_obligations = right_path
-                        .obligations
-                        .iter()
-                        .cloned()
-                        .map(|obligation| {
-                            let antecedent = left_path.proposition.clone();
-                            obligation.map_proposition(|proposition| {
-                                Proposition::Implies(Box::new(antecedent), Box::new(proposition))
-                            })
-                        })
-                        .collect::<Vec<_>>();
+                    let guarded_right_obligations =
+                        guard_right_obligations(&left_path.proposition, right_path.obligations);
                     if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                         &left_path.facts,
                         &left_path.obligations,
