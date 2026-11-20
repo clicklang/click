@@ -114,6 +114,7 @@ pub(crate) enum CheckedExecutionEvent {
     ProofCaseJoin(Box<CheckedProofCaseJoin>),
     ResourceObservation(Box<CheckedResourceObservation>),
     AutomaticLifetimeEnd(Box<CheckedAutomaticLifetimeEnd>),
+    ViewRelease(Box<CheckedViewRelease>),
     ResourceRewrite(Box<CheckedResourceRewrite>),
     ReturnProposition(Box<CheckedReturnProposition>),
     PopulationAuthorityRewrite(Box<CheckedPopulationAuthorityRewrite>),
@@ -167,6 +168,9 @@ impl ExecutionEvidence {
                     };
                     self.presented = None;
                 }
+            }
+            CheckedExecutionEvent::ViewRelease(release) => {
+                self.retained = Some(Arc::new(release.after_state.clone()));
             }
             CheckedExecutionEvent::AutomaticLifetimeEnd(end) => {
                 self.retained = Some(Arc::new(end.after_state.clone()));
@@ -2650,6 +2654,25 @@ impl CheckedAutomaticLifetimeEnd {
             return None;
         }
         Some(self.after_state.clone())
+    }
+}
+
+/// State transition constructed by giving up a selected, held memory view.
+#[derive(Clone)]
+pub(crate) struct CheckedViewRelease {
+    before_state: ExecutionState,
+    after_state: ExecutionState,
+}
+
+impl CheckedViewRelease {
+    pub(crate) fn before_state(&self) -> &ExecutionState {
+        &self.before_state
+    }
+
+    fn advance_checked(&self, state: &ExecutionState) -> Option<&ExecutionState> {
+        (state.memory.same_storage_roots(&self.before_state.memory)
+            && state.shares_non_memory_storage_with(&self.before_state))
+        .then_some(&self.after_state)
     }
 }
 
@@ -6754,6 +6777,7 @@ fn collect_retained_call_events<'e>(
             | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::ProofCase(_)
             | CheckedExecutionEvent::ResourceObservation(_)
+            | CheckedExecutionEvent::ViewRelease(_)
             | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::ReturnProposition(_)
             | CheckedExecutionEvent::ResourceRewrite(_)
@@ -7243,6 +7267,10 @@ fn check_evidence_events(
                 state = rewrite.after_state.clone();
                 continue;
             }
+            CheckedExecutionEvent::ViewRelease(release) => {
+                state = release.advance_checked(&state)?.clone();
+                continue;
+            }
             CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) => {
                 state = rewrite.after_state.clone();
                 continue;
@@ -7352,6 +7380,7 @@ fn check_evidence_events(
             | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
             | CheckedExecutionEvent::PopulationMemberRewrite(_)
             | CheckedExecutionEvent::IteratedStep(_)
+            | CheckedExecutionEvent::ViewRelease(_)
             | CheckedExecutionEvent::TacticApplication(_) => {
                 unreachable!("handled before source advance")
             }
@@ -7664,6 +7693,12 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                         .advance_checked(state)
                         .ok_or("population authority rewrite failed certificate check")?
                         .clone();
+                }
+            }
+            CheckedExecutionEvent::ViewRelease(_) => {
+                fallthrough = None;
+                if completed.is_some() {
+                    return Err("release_view must precede function exit");
                 }
             }
             CheckedExecutionEvent::PopulationMemberRewrite(_) => {
@@ -8014,6 +8049,7 @@ fn events_use_the_function_definitions<E: std::borrow::Borrow<CheckedExecutionEv
                         .all(|events| check(function, events, checked_entries))
             }
             CheckedExecutionEvent::LoopEntry { .. }
+            | CheckedExecutionEvent::ViewRelease(_)
             | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::IteratedStep(_)
             | CheckedExecutionEvent::Statement(_)
@@ -8142,6 +8178,7 @@ fn validate_checked_event_shapes_after<'e>(
                 continue;
             }
             CheckedExecutionEvent::LoopEntry { .. }
+            | CheckedExecutionEvent::ViewRelease(_)
             | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::ResourceObservation(_)
             | CheckedExecutionEvent::ReturnProposition(_)
@@ -10426,6 +10463,43 @@ impl ExecutionProofCore {
         }
         self.execution_evidence = traces.into();
         Ok(())
+    }
+
+    pub(crate) fn record_view_release(
+        &mut self,
+        segment: &crate::kernel::MemorySegment,
+        assumptions: &PureFactContext,
+    ) -> Result<ExecutionState, String> {
+        if self.evidence_completed || self.frontier.is_at_function_entry() {
+            return Err("release_view requires an active function body".into());
+        }
+        let before_state = self.reached_state().clone();
+        let segment = crate::kernel::loops::evaluate_loop_effect_segment(
+            &before_state,
+            segment,
+            assumptions,
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .map_err(|error| {
+            format!(
+                "release_view could not evaluate its operand: {}",
+                error.describe()
+            )
+        })?
+        .map_err(|error| format!("release_view could not evaluate its operand: {error}"))?;
+        let view = ResourceFact::view_memory(segment.into_range());
+        let after_state = before_state.release_produced_view(&view, assumptions)?;
+        let release = CheckedViewRelease {
+            before_state,
+            after_state: after_state.clone(),
+        };
+        self.evidence_state = Some(after_state.clone());
+        for trace in self.execution_evidence.iter_mut() {
+            trace.push(CheckedExecutionEvent::ViewRelease(Box::new(
+                release.clone(),
+            )));
+        }
+        Ok(after_state)
     }
 
     pub(crate) fn record_automatic_lifetime_end(

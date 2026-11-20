@@ -2693,6 +2693,7 @@ fn verify_program_in_context(
             }),
             proof: SourceProof::Tactic(SmartTactic::ImplicitTail),
             borrowed: false,
+            view_source: None,
             condition: None,
         };
         let mut claims = function_claims(&function_block);
@@ -5914,8 +5915,13 @@ pub(in crate::surface) fn function_resource_summary(
         .filter(|requirement| matches!(requirement, Requirement::Resource(_)))
         .count();
     let resource_positions = function_block.resource_requirement_positions();
+    let has_produced_views = function_block
+        .ensures()
+        .iter()
+        .any(|clause| clause.view_source.is_some());
+    let mut view_inputs = BTreeMap::new();
     let mut resource_clause_index = 0;
-    for requirement in function_block.requires() {
+    for (index, requirement) in function_block.requires().iter().enumerate() {
         let Requirement::Resource(resource) = requirement else {
             continue;
         };
@@ -5930,6 +5936,17 @@ pub(in crate::surface) fn function_resource_summary(
             resource_environment,
             &mut requires,
         )?;
+        if has_produced_views
+            && matches!(resource, ResourceClause::ViewMemory(_))
+            && requires.len() == first_spec + 1
+        {
+            let source = function_block
+                .requirement_source_clauses
+                .get(index)
+                .copied()
+                .unwrap_or(index);
+            view_inputs.insert(source, first_spec);
+        }
         let borrowed_index = borrowed_resources
             .iter()
             .enumerate()
@@ -6037,6 +6054,12 @@ pub(in crate::surface) fn function_resource_summary(
             // state explicit in the normalized descriptor.
             if ensure.borrowed() && spec.is_instance() {
                 spec = spec.with_state_source(ResourceStateSource::Post);
+            }
+            if let Some(source) = ensure.view_source {
+                let input = view_inputs.get(&source).ok_or_else(|| {
+                    ClickError::new("the selected input view must lower to one memory range")
+                })?;
+                spec = spec.with_view_source(*input);
             }
             if let Some(guard) = &guard {
                 spec = spec.with_guard(guard.clone());
