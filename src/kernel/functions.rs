@@ -2791,11 +2791,7 @@ fn selected_call_binder_application(
             let Some(binder) = resource.binding_identity() else {
                 continue;
             };
-            let number = match binder {
-                ResourceBinder::Instance(identity) => identity.variable(),
-                ResourceBinder::MutexAuthority(identity) => identity.variable(),
-            };
-            if let Some(actual) = written.get(&number) {
+            if let Some(actual) = written.get(&binder.written()) {
                 bindings.insert_written(binder, *actual);
             }
         }

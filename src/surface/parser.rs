@@ -1026,7 +1026,7 @@ struct Parser {
     /// resource is declared by the parent's matched arm, which may not be
     /// parsed yet, so the recorded family is the parent's and every family
     /// comparison against these instances is left to declaration expansion.
-    child_slot_identities: BTreeSet<InstanceId>,
+    child_slot_identities: BTreeSet<crate::kernel::ResourceBinderId>,
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
@@ -1257,7 +1257,7 @@ struct Parser {
 /// block, recorded so a caller's call step can bind it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct CalleeResourceBinder {
-    pub(in crate::surface) identity: InstanceId,
+    pub(in crate::surface) identity: crate::kernel::ResourceBinderId,
     // None denotes a supplied resource assertion parameter. Its concrete
     // family is checked by the instantiated runtime contract in the kernel.
     pub(in crate::surface) family: Option<String>,
@@ -4092,7 +4092,7 @@ impl Parser {
                 left: ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: binding.name.clone(),
                     resource_name: child.clone(),
-                    identity: binding.identity,
+                    identity: binding.identity.instance(),
                     children: vec![],
                     field: child_field.name.clone(),
                     field_index: 0,
@@ -7821,7 +7821,7 @@ impl Parser {
         {
             let subject = ResourceSubject::Instance {
                 name: name.to_string(),
-                identity: *identity,
+                identity: identity.instance(),
                 at: None,
             };
             self.position += 1;
@@ -8438,7 +8438,9 @@ impl Parser {
                 let resource = family.map(|family| ResourceClause::Named {
                     binding: ResourceInstanceBinding {
                         name: binder.name().to_string(),
-                        identity: InstanceId::from_variable(Variable(binder.identity)),
+                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(
+                            binder.identity,
+                        )),
                         children: vec![],
                         schema: None,
                         fields: None,
@@ -8461,7 +8463,9 @@ impl Parser {
                 binders.insert(
                     binder.name().to_string(),
                     CalleeResourceBinder {
-                        identity: InstanceId::from_variable(Variable(binder.identity)),
+                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(
+                            binder.identity,
+                        )),
                         family: family.map(str::to_string),
                         resource,
                         parameter_names: vec!["mutex".to_string(), "attributes".to_string()],
@@ -8484,7 +8488,9 @@ impl Parser {
             .insert(
                 "payload".to_string(),
                 CalleeResourceBinder {
-                    identity: InstanceId::from_variable(Variable(ATOMIC_INIT_PAYLOAD_BINDER_ID)),
+                    identity: crate::kernel::ResourceBinderId::from_variable(Variable(
+                        ATOMIC_INIT_PAYLOAD_BINDER_ID,
+                    )),
                     family: None,
                     resource: None,
                     parameter_names: vec!["object".to_string(), "value".to_string()],
@@ -8520,7 +8526,7 @@ impl Parser {
     /// name it: the map gives its value.
     fn value_parameter_callee_binder() -> CalleeResourceBinder {
         CalleeResourceBinder {
-            identity: InstanceId::from_variable(Variable(0)),
+            identity: crate::kernel::ResourceBinderId::from_variable(Variable(0)),
             family: None,
             resource: None,
             parameter_names: Vec::new(),
@@ -10178,8 +10184,9 @@ impl Parser {
     /// The refusal for a name that binds no resource instance here: one
     /// whose binding block has ended is refused as out of scope.
     /// A fresh identity for a resource binder this file introduces.
-    fn fresh_resource_identity(&mut self) -> InstanceId {
-        let identity = InstanceId::from_variable(Variable(self.next_resource_identity));
+    fn fresh_resource_identity(&mut self) -> crate::kernel::ResourceBinderId {
+        let identity =
+            crate::kernel::ResourceBinderId::from_variable(Variable(self.next_resource_identity));
         self.next_resource_identity += 1;
         identity
     }
@@ -10391,7 +10398,7 @@ impl Parser {
                 }
                 let identity = self.fresh_resource_identity();
                 self.names.insert(NameKind::ProofBinder, name.clone());
-                result.push((slot, name, identity));
+                result.push((slot, name, identity.instance()));
                 continue;
             }
             let existing = self.names.resource_bindings.get(&name).cloned();
@@ -10442,7 +10449,7 @@ impl Parser {
                     },
                 );
             }
-            result.push((slot, name, identity));
+            result.push((slot, name, identity.instance()));
         }
         Ok(result)
     }
@@ -15311,7 +15318,7 @@ impl Parser {
                         expression = ContractExpression::ResourceField(ResourceFieldAccess {
                             owner,
                             resource_name,
-                            identity,
+                            identity: identity.instance(),
                             children: vec![],
                             field,
                             field_index: 0,
@@ -16489,7 +16496,7 @@ impl Parser {
                 return Ok(ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: crate::surface::diagnostics::describe_contract_expression(&call),
                     resource_name: name,
-                    identity,
+                    identity: identity.instance(),
                     children: vec![],
                     field: path.join("."),
                     field_index: 0,
@@ -18825,7 +18832,7 @@ mod tactic_classification_tests {
                 let cell = BTreeMap::from([(
                     "cell".to_string(),
                     CalleeResourceBinder {
-                        identity: InstanceId::from_variable(Variable(1)),
+                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(1)),
                         family: Some("reference".to_string()),
                         resource: None,
                         parameter_names: Vec::new(),
@@ -18848,7 +18855,7 @@ mod tactic_classification_tests {
                 parser.names.resource_bindings.insert(
                     "c".to_string(),
                     (
-                        InstanceId::from_variable(Variable(2)),
+                        crate::kernel::ResourceBinderId::from_variable(Variable(2)),
                         "reference".to_string(),
                     ),
                 );
@@ -19021,7 +19028,10 @@ mod preserve_syntax_tests {
         let mut parser = Parser::new(source).unwrap();
         parser.names.resource_bindings.insert(
             "r".into(),
-            (InstanceId::from_variable(Variable(123)), "Node".into()),
+            (
+                crate::kernel::ResourceBinderId::from_variable(Variable(123)),
+                "Node".into(),
+            ),
         );
         parser.resource_parameters.insert("R".into(), 0);
         parser

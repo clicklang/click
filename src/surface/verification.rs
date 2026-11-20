@@ -6643,13 +6643,13 @@ fn resource_clause_to_resource_spec_with_metadata(
             ) {
                 return inner
                     .with_mutex_authority_binding(
-                        crate::kernel::MutexAuthorityId::from_variable(binding.identity.variable()),
+                        binding.identity.mutex_authority(),
                         binding.name.clone(),
                     )
                     .map_err(|error| ClickError::new(error.to_string()));
             }
             ResourceSpec::instance(
-                binding.identity,
+                binding.identity.instance(),
                 binding.name.clone(),
                 binding.schema.clone().ok_or_else(|| {
                     ClickError::new("resource binding has no checked field schema")
@@ -6966,7 +6966,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 spec.with_resource_arguments(
                     resource_arguments
                         .iter()
-                        .map(|reference| reference.identity)
+                        .map(|reference| reference.identity.instance())
                         .collect(),
                 )
             })
@@ -7001,7 +7001,8 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
             )?),
         }),
         ResourceClause::Named { binding, resource } => Ok(ResourceClause::Named {
-            binding: match substitutions.instance_rename(&binding.name, binding.identity) {
+            binding: match substitutions.instance_rename(&binding.name, binding.identity.instance())
+            {
                 Some(name) => ResourceInstanceBinding {
                     name,
                     ..binding.clone()
@@ -7056,7 +7057,8 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
             resource_arguments: resource_arguments
                 .iter()
                 .map(|binding| {
-                    match substitutions.instance_rename(&binding.name, binding.identity) {
+                    match substitutions.instance_rename(&binding.name, binding.identity.instance())
+                    {
                         Some(name) => ResourceInstanceBinding {
                             name,
                             ..binding.clone()
