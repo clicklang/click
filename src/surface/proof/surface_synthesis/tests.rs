@@ -9351,8 +9351,9 @@ fn an_abstract_local_read_raises_at_its_defining_point() {
         panic!("abstract local");
     };
     let root = KernelTermImport::default().algebraic(&value);
-    let raise =
-        |state| raise_kernel_term(&root, ParameterBinding::default(), state, &BTreeMap::new());
+    let raise = |state: &ExecutionState| {
+        raise_kernel_term(&root, ParameterBinding::default(), state, &BTreeMap::new())
+    };
     let variable = SurfaceTerm::ProgramExpression(ProgramExpression::Variable("item".into()));
     assert_eq!(raise(&earlier), Some(variable.clone()));
     assert_eq!(raise(&current), None);
