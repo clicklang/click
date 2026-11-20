@@ -203,6 +203,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
         false,
         None,
         None,
+        None,
     );
     assert_eq!(paths.len(), 1);
     let ExpressionOutcome::Value(value) = &paths[0].outcome else {
