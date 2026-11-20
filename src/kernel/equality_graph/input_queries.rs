@@ -196,6 +196,32 @@ impl EqualityGraph {
 }
 
 impl EqualityGraph {
+    pub(in crate::kernel) fn has_parameter_store_alias_sources(&self, pointer: &Address) -> bool {
+        let bucket = parameter_alias_bucket(pointer);
+        self.admitted
+            .wide_pointer_alias_endpoints_by_object
+            .contains_key(&bucket)
+            || self
+                .admitted
+                .pointer_alias_endpoints_by_object
+                .contains_key(&bucket)
+            || parameter_partition_variable(&bucket).is_some_and(|variable| {
+                self.exact_uint64_equalities(&MachineTerm::Variable(*variable))
+                    .next()
+                    .is_some()
+            })
+    }
+
+    pub(in crate::kernel) fn parameter_store_numeric_connectivity(
+        &self,
+    ) -> Option<&super::NumericAddressConnectivity> {
+        // The numeric index does not include exact cross-block pointer edges.
+        let connectivity = &self.admitted.numeric_address_connectivity;
+        (self.admitted.address_base_aliases.is_empty()
+            && !connectivity.has_raw_store_alias_endpoints())
+        .then_some(connectivity)
+    }
+
     pub(in crate::kernel) fn parameter_store_alias_bases(
         &self,
         base: &Address,

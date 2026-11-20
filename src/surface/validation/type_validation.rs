@@ -957,6 +957,7 @@ fn contains_scoped_expression_shape(
         }
         ContractExpression::Field { base, .. }
         | ContractExpression::CUnary { operand: base, .. }
+        | ContractExpression::MemoryLoad { pointer: base, .. }
         | ContractExpression::Negate(base)
         | ContractExpression::Old(base)
         | ContractExpression::Exact(base)
@@ -3992,6 +3993,8 @@ pub(super) fn infer_contract_expression_type(
                 "sequence values are only valid as operands of `==` or `!=` in {context}"
             )))
         }
+        ContractExpression::MemoryLoad { value_type, .. } => Ok((*value_type != ProgramType::Void)
+            .then(|| generics::interface_type_from_program_type(*value_type))),
         ContractExpression::QualifiedC {
             lowered: expression,
             ..
@@ -5340,7 +5343,9 @@ fn validate_contract_expression_calls(
         }
 
         ContractExpression::IntegerLiteral(_) => Ok(()),
-        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::MemoryLoad { pointer: inner, .. }
+        | ContractExpression::Negate(inner) => {
             validate_contract_expression_calls(inner, click_functions, context)
         }
         ContractExpression::ResourceField(_)

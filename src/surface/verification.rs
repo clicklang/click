@@ -3940,6 +3940,11 @@ fn c_statement_calls_recording(
                     collect_function_addresses(argument, names);
                 }
             }
+            syntax::CExpression::VariableArguments(arguments) => {
+                for (_, argument) in arguments {
+                    collect_function_addresses(argument, names);
+                }
+            }
             syntax::CExpression::IndirectCall {
                 function,
                 arguments,
@@ -5174,7 +5179,22 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
         .function_blocks()
         .iter()
         .filter(|function| function.is_external())
-        .map(|function| function.signature().name())
+        .map(|function| {
+            let variable_arguments =
+                function
+                    .signature()
+                    .parameters()
+                    .last()
+                    .is_some_and(|parameter| {
+                        matches!(
+                            parameter.click_type,
+                            ClickType::Program(InterfaceType::Parameter(parameter_type))
+                                if parameter_type
+                                    == crate::languages::c::variadic::variable_arguments_type()
+                        )
+                    });
+            (function.signature().name(), variable_arguments)
+        })
         .collect::<Vec<_>>();
     c_frontend::link_c_units(
         &file.verifying_sources,
@@ -6240,6 +6260,15 @@ pub(in crate::surface) fn composite_resource_definitions(
                     parameter.struct_name().map(str::to_string),
                 )
             })
+            .chain(definition.fields().iter().filter_map(|field| {
+                field.click_type().interface_type().map(|interface_type| {
+                    crate::languages::interface::ImportedParameter::new(
+                        interface_type,
+                        field.name().to_string(),
+                        None,
+                    )
+                })
+            }))
             .collect::<Vec<_>>();
         let contains = body
             .contains()
@@ -6675,7 +6704,10 @@ fn resource_clause_to_resource_spec_with_metadata(
                     | crate::kernel::ResourceTerm::MutexUse { .. }
             ) {
                 return inner
-                    .with_mutex_authority_binding(binding.identity.variable(), binding.name.clone())
+                    .with_mutex_authority_binding(
+                        crate::kernel::MutexAuthorityId::from_variable(binding.identity.variable()),
+                        binding.name.clone(),
+                    )
                     .map_err(|error| ClickError::new(error.to_string()));
             }
             ResourceSpec::instance(
@@ -8051,13 +8083,22 @@ int32 reader(int32 p[], int32 q[]) {
 
     #[test]
     fn root_view_checks_pointer_offset_aliases() {
-        for equality in ["q == p + 1", "p == q - 1", "q == p - 1"] {
+        for (equality, separation) in [
+            ("q == p + 1", ""),
+            ("p == q - 1", ""),
+            ("q == p - 1", ""),
+            (
+                "q == p + 1",
+                "requires separate(memory(p[0..3]), memory(q[0..3]));",
+            ),
+        ] {
             let click = format!(
                 r#"
 verifying "reader.c";
 int32 reader(int32 p[], int32 q[]) {{
     requires {equality};
     requires p[1] == 3;
+    {separation}
     views p[0..3];
     consumes q[0..3];
     ensures result == 3;

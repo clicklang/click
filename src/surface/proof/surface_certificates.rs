@@ -5285,7 +5285,9 @@ pub(super) fn contract_expression_mentions_program_local(
         }
 
         ContractExpression::IntegerLiteral(_) => false,
-        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::MemoryLoad { pointer: inner, .. }
+        | ContractExpression::Negate(inner) => {
             contract_expression_mentions_program_local(inner, parameter_names)
         }
         ContractExpression::ResourceField(_) => false,

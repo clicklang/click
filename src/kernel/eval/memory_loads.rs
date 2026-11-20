@@ -336,10 +336,7 @@ pub(in crate::kernel) fn evaluate_indexed_read(
             obligations,
         };
     }
-    let stored = version
-        .indexed_integer_store_bits()
-        .expect("an indexed integer version comes from a direct store")
-        .clone();
+    let stored = version.indexed_integer_store_bits().cloned();
     let kind = LoadKind::of_type(value_type).expect("indexed integer read");
     let format = MachineIntegerType::from_program_type(value_type).expect("indexed integer read");
     read_observations::record_at(
@@ -364,25 +361,27 @@ pub(in crate::kernel) fn evaluate_indexed_read(
         _ => unreachable!("indexed integer read"),
     };
     // Retain the read and publish its exact store equation separately.
-    let equation = match value_type {
-        ProgramType::Int128 => wide_integer_comparison_condition(
-            ComparisonOperator::Equal,
-            &value,
-            &ProgramValue::Int128(stored),
-        )
-        .expect("typed signed 128-bit store"),
-        ProgramType::UInt128 => wide_integer_comparison_condition(
-            ComparisonOperator::Equal,
-            &value,
-            &ProgramValue::UInt128(stored),
-        )
-        .expect("typed unsigned 128-bit store"),
-        _ => ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored),
-    };
-    facts.push(ExecutionPureFact {
-        logical_read_equation: true,
-        ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
-    });
+    if let Some(stored) = stored {
+        let equation = match value_type {
+            ProgramType::Int128 => wide_integer_comparison_condition(
+                ComparisonOperator::Equal,
+                &value,
+                &ProgramValue::Int128(stored),
+            )
+            .expect("typed signed 128-bit store"),
+            ProgramType::UInt128 => wide_integer_comparison_condition(
+                ComparisonOperator::Equal,
+                &value,
+                &ProgramValue::UInt128(stored),
+            )
+            .expect("typed unsigned 128-bit store"),
+            _ => ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored),
+        };
+        facts.push(ExecutionPureFact {
+            logical_read_equation: true,
+            ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
+        });
+    }
     ExpressionPath {
         outcome: ExpressionOutcome::Value(value),
         facts,
@@ -1899,6 +1898,24 @@ fn cell_value_recorded_on_path(
         .map(|converted| retained_cell_conversion(&value, converted))
 }
 
+/// The state whose read of the whole pointer cell at `pointer` `memory`
+/// still holds: both four-byte halves are held as that state's reads of
+/// them. A held lower half alone says nothing about the upper four bytes,
+/// so it never names the pointer. This reads only the two cells' contents.
+fn held_pointer_cell_state(
+    memory: &SymbolicMemory,
+    pointer: &Address,
+    lower_state: &SharedMemory,
+) -> Option<SharedMemory> {
+    let upper = pointer.offset_by_bytes(4);
+    let ProgramValue::Int32(MachineTerm::MemoryLoad(state, address, LoadKind::Int32)) =
+        memory.known_value(&upper)?
+    else {
+        return None;
+    };
+    (state.shared_memory() == lower_state && *address == upper).then(|| lower_state.clone())
+}
+
 /// Reinterprets a cached scalar read as a pointer while retaining its selected
 /// descriptor. Complete-pointer frame evidence remains separate from the
 /// numeric prefix. Only the legacy volatile route still allocates a name.
@@ -1913,6 +1930,11 @@ fn canonicalized_pointer_value_from_int_cell(
     purpose: LoadPurpose,
 ) -> Option<ProgramValue> {
     value_type.pointee_type()?;
+    // `prefix_read`: the state and cell the cached prefix reads. A pointer
+    // covers the whole eight-byte cell, so it is never named by the prefix's
+    // own version, which a four-byte walk may select across a write to the
+    // cell's upper bytes (`held_pointer_cell_state`).
+    let mut prefix_read = None;
     let (fresh, defining_load) = match value {
         ProgramValue::Int8(bits @ MachineTerm::MemoryLoad(..)) => {
             return Some(ProgramValue::Int8(canonical_scalar_read(bits)));
@@ -1925,6 +1947,9 @@ fn canonicalized_pointer_value_from_int_cell(
                 let fresh = load_variable_for_term(bits)?.0;
                 (Some(fresh), registered_load_term_for_variable(&fresh))
             } else {
+                if let MachineTerm::MemoryLoad(state, address, _) = bits {
+                    prefix_read = Some((state.shared_memory().clone(), address.as_ref().clone()));
+                }
                 (None, Some(canonical_scalar_read(bits)))
             }
         }
@@ -1961,6 +1986,12 @@ fn canonicalized_pointer_value_from_int_cell(
             &crate::kernel::intern_memory_ref(memory).unchanged_bytes_source(),
             pointer,
         )
+    } else if let Some((state, _)) = prefix_read.as_ref().filter(|(_, cell)| cell == pointer) {
+        // The whole cell's read: the prefix's state when the memory still
+        // holds both halves as that state's reads, else this memory.
+        let from = held_pointer_cell_state(memory, pointer, state)
+            .unwrap_or_else(|| crate::kernel::intern_memory_ref(memory));
+        Address::canonical_read(&from, pointer)
     } else {
         Address::loaded(defining_load.as_ref()?).expect("selected pointer read")
     };
@@ -2010,7 +2041,21 @@ fn canonicalized_pointer_value_from_int_cell(
                 || purpose == LoadPurpose::Program && SpecificationReadScope::is_active())
             && let MachineTerm::MemoryLoad(memory, address, _) = &load
         {
-            assumptions.register_pointer_read(&loaded, memory.shared_memory(), address);
+            // The read is registered at the state that names it.
+            match loaded.as_loaded_value() {
+                Some(read)
+                    if prefix_read
+                        .as_ref()
+                        .is_some_and(|(_, cell)| cell == pointer) =>
+                {
+                    assumptions.register_pointer_read(
+                        &loaded,
+                        &read.defining_memory,
+                        &read.defining_address,
+                    )
+                }
+                _ => assumptions.register_pointer_read(&loaded, memory.shared_memory(), address),
+            }
         }
         // Volatile observations retain their legacy opaque value until their
         // event representation migrates. Ordinary descriptors need no equation.
@@ -5124,6 +5169,9 @@ pub(crate) fn comparison_identity_of_exact_read(
 ) -> MachineTerm {
     match point.indexed_integer_version(pointer, kind) {
         Some(version) => MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind),
+        None if let Some(entry) = point.entry_integer_version(pointer, kind) => {
+            MachineTerm::memory_read(entry.shared_memory().clone(), pointer.clone(), kind)
+        }
         None => canonical_form_of_load(point.shared_memory().clone(), pointer.clone(), kind),
     }
 }
@@ -5133,8 +5181,20 @@ pub(crate) fn comparison_identity_of_exact_read(
 /// publication are separate operations. Until exact-state lowering migrates,
 /// callers still retain the selected identity as their read term.
 pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
-    if matches!(bits, MachineTerm::MemoryLoad(point, _, _) if point.read_version_id().is_some()) {
-        return bits.clone();
+    if let MachineTerm::MemoryLoad(point, pointer, kind) = bits
+        && point.read_version_id().is_some()
+    {
+        // The retained term names the entry point. Legacy producers of
+        // the same cell compare with its empty view without projecting it.
+        return if point.is_entry_read() {
+            MachineTerm::memory_read(
+                point.shared_memory().clone(),
+                pointer.as_ref().clone(),
+                *kind,
+            )
+        } else {
+            bits.clone()
+        };
     }
     let Some(descriptor) = ScalarReadDescriptor::from_term(bits) else {
         return bits.clone();
@@ -7884,6 +7944,54 @@ mod tests {
         let changed = read(&overwritten, &field);
         assert!(changed.bounds().is_none());
         assert!(!context.pointer_provenance_match(&changed, &stored));
+    }
+
+    #[test]
+    fn a_pointer_read_through_a_cached_prefix_changes_with_its_upper_half() {
+        // A pointer is the whole eight-byte cell. When only its lower four
+        // bytes are cached, a store to the upper four bytes changes the
+        // pointer, so the read after the store is not the read before it.
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Address {
+            base: "global:prefix-pointer".into(),
+            offset: AddressOffset::Constant(0),
+        };
+        let memory = SymbolicMemory::new()
+            .materialize_symbolic_cell(field.clone(), ProgramType::Int32)
+            .materialize_symbolic_cell(field.clone().offset_by_bytes(4), ProgramType::Int32);
+        let context = PureFactContext::new();
+        let read = |memory: &SymbolicMemory| {
+            let prefix = memory.known_value(&field).expect("cached prefix");
+            let ProgramValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
+                memory,
+                &field,
+                &prefix,
+                ProgramType::Int32Pointer,
+                &mut ExecutionFacts::new(),
+                &context,
+                None,
+                LoadPurpose::Program,
+            )
+            .unwrap() else {
+                panic!("pointer read")
+            };
+            value
+        };
+        let before = read(&memory);
+        let overwritten = memory.store(
+            field.clone().offset_by_bytes(4),
+            ProgramValue::UInt32(0u32.into()),
+        );
+        assert!(
+            overwritten.known_value(&field).is_some(),
+            "the lower half stays cached"
+        );
+        let after = read(&overwritten);
+        assert_ne!(
+            after.address(),
+            before.address(),
+            "the read after the upper-half store is a different pointer"
+        );
     }
 
     #[test]

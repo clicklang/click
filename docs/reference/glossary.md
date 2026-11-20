@@ -126,9 +126,11 @@ while checking signed overflow and other C definedness conditions separately.
 ### Borrow
 
 Scoped read-only use of a resource without taking ownership. A callee's `views`
-requirement borrows from the caller's owned or viewed resource for the duration
-of the call. The lender's authority is suspended while the borrow is active and
-recovered at the return, and no new persistent view is created.
+requirement borrows from a resource the caller owns or views. Any lent write
+permission is suspended while the borrow is active. The borrow usually ends
+at return. A returned resource, such as a cursor into the caller's buffer, can
+keep the borrow active and delay recovery of the lent permission. See
+[Borrowing a composite](../concepts/resources.md#borrowing-a-composite).
 
 ### Bounded search
 

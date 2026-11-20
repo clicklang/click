@@ -483,15 +483,15 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 &bundle.binders,
                 bundle.structural_measure.as_deref(),
                 context.function.composite_resource_definitions(),
+                true,
             )?)
         } else {
             None
         };
-        let ranking_measures = boundary
-            .or(replay_boundary.as_ref())
-            .map_or(bundle.ranking_measures.as_slice(), |boundary| {
-                boundary.required_ranking_measures(&bundle.ranking_measures)
-            });
+        let boundary = boundary.or(replay_boundary.as_ref());
+        let ranking_measures = boundary.map_or(bundle.ranking_measures.as_slice(), |boundary| {
+            boundary.required_ranking_measures(&bundle.ranking_measures)
+        });
         let closure_context = if ranking_measures.len() == bundle.ranking_measures.len() {
             driver_proof.context.clone()
         } else {
@@ -537,19 +537,30 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             "close invariants",
             "close invariants: prepare checked bundle",
         );
+        let standalone_edge;
+        let edge = if let Some(boundary) = boundary {
+            boundary.prepared_edge()
+        } else {
+            standalone_edge = driver_proof
+                .state
+                .prepare_loop_invariant_edge(
+                    &bundle.loop_entry_state,
+                    &bundle.iteration_entry_state,
+                    bundle.iterations.as_ref().ok_or_else(|| {
+                        driver_proof.step_error("loop invariant bundle lost its pass count")
+                    })?,
+                    &bundle.checks,
+                    &bundle.binders,
+                    Some(context.function.composite_resource_definitions()),
+                )
+                .map_err(|error| driver_proof.step_error(error))?;
+            &standalone_edge
+        };
         let (state, scope) = driver_proof
             .state
-            .open_invariant_body(
-                &bundle.loop_entry_state,
-                &bundle.iteration_entry_state,
-                bundle
-                    .iterations
-                    .as_ref()
-                    .ok_or_else(|| driver_proof.step_error("loop invariant bundle lost its pass count"))?,
-                &bundle.checks,
+            .open_prepared_invariant_body(
+                edge,
                 &bundle.ranking_measures,
-                &bundle.binders,
-                context.function.composite_resource_definitions(),
                 |goal, introductions| {
                     let both_children = if introductions.len() == 2
                         && bundle.checks.len() == 2
@@ -746,21 +757,27 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
-        let mut scope = attempt::search_scope("loop invariant bundle closure");
         check_verification_deadline()?;
         let Some(goal) = driver_proof.goal() else {
             return Ok(None);
         };
         // Expanded preservation proofs already publish their invariant facts.
-        // Use that evidence before spelling members and rebuilding their
-        // nested proofs. The kernel checks exact availability (including
-        // conjunction leaves); a miss continues with bounded planning below.
-        if let Some(closed) =
-            attempt::candidate_outcome(driver_proof.driver().apply_step(ProofStep::Known))?
-        {
-            scope.succeed();
+        // Check exact availability, including conjunction leaves, before
+        // opening the planner's search scope or spelling individual members.
+        if let Some(closed) = crate::instrumentation::measure_operation(
+            "surface",
+            "close invariants",
+            "close invariants: exact facts",
+            || attempt::candidate_outcome(driver_proof.driver().apply_step(ProofStep::Known)),
+        )? {
             return Ok(Some(closed));
         }
+        let _planning = crate::instrumentation::OperationTiming::new(
+            "surface",
+            "close invariants",
+            "close invariants: member planning",
+        );
+        let mut scope = attempt::search_scope("loop invariant bundle closure");
         // The generated invariant bundle can have no Surface form. Its
         // conjunction and implication structure is nevertheless checked by
         // the kernel, so descend that structure directly and retain the
@@ -1021,6 +1038,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             binders,
             structural_measure,
             composite_resource_definitions,
+            true,
         )?;
         if !matches!(driver_proof.context.as_ref(), ProofContext::Execution(_)) {
             return Err(

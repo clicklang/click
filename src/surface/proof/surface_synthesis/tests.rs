@@ -488,6 +488,72 @@ fn definedness_round_trips_at_distinct_points_after_unfold_names_a_cell() {
 }
 
 #[test]
+fn ordinary_entry_cell_read_round_trips_after_overwrite() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(981_302)), 4),
+    };
+    let entry = ExecutionState::new()
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
+        )
+        .begin_function_entry_memory();
+    let post = entry.clone().with_memory(entry.memory().clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(7)),
+    ));
+    let parsed =
+        crate::surface::parse("theorem probe(p: int32*) { requires old(*p) < 6; ensures true; }")
+            .unwrap();
+    let Requirement::Proposition(written) = &parsed.theorem_definitions()[0].requires()[0] else {
+        panic!("expected a proposition");
+    };
+    let points = RecordedStates::new();
+    let original = relower_written_proposition_with_states(written, &entry, &post, &points)
+        .expect("the historical read lowers");
+    let read = MachineTerm::MemoryLoad(
+        entry
+            .program_point()
+            .ordinary_typed_version(&pointer, ProgramType::Int32)
+            .expect("the read has an entry version"),
+        Box::new(pointer),
+        crate::kernel::LoadKind::Int32,
+    );
+    let Proposition::ConditionIs(condition, true) = &original else {
+        panic!("expected the read comparison");
+    };
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
+        condition.native_compat(),
+    )
+    .unwrap();
+    assert_eq!(
+        crate::kernel::KernelTerm::retained_machine_operand(
+            view.format,
+            view.operands[0].operand_view(),
+        ),
+        crate::kernel::KernelTerm::retained_machine_operand(
+            view.format,
+            crate::kernel::MachineOperandView::Legacy(&read),
+        ),
+    );
+    let raised = synthesize_surface_proposition_at_entry_and_post(
+        &original,
+        ParameterBinding::default(),
+        &entry,
+        &post,
+    )
+    .expect("the entry version has a spelling");
+    let spelling = crate::surface::printing::source_click_proposition(&raised);
+    assert!(spelling.contains("old("), "{spelling}");
+    assert_eq!(
+        relower_written_proposition_with_states(&raised, &entry, &post, &points),
+        Ok(original),
+    );
+}
+
+#[test]
 fn old_read_shortcut_identifies_points_instead_of_equal_snapshots() {
     let _session = crate::kernel::VerificationSession::enter();
     let entry = ExecutionState::new().with_memory(SymbolicMemory::new());
@@ -9204,4 +9270,42 @@ fn integer_match_on_written_constructor_round_trips() {
         crate::kernel::proof::propositions_are_alpha_equal(&lower(proposition), &original),
         "{text}"
     );
+}
+
+#[test]
+fn literal_integer_conversions_round_trip_after_exact_rewrite() {
+    use crate::kernel::proof::PureFactStore;
+    let fixture = ConditionalRoundTrip::new(MachineIntegerType::Int32, "int32");
+    for (conversion, literal, incremented) in [
+        ("to_int32", "7", "8"),
+        ("to_uint32", "4294967295", "4294967296"),
+        ("to_uint64", "18446744073709551615", "18446744073709551616"),
+    ] {
+        let input = "to_integer(y) + 1";
+        let equality = fixture.lower(&format!("{input} == {literal}"));
+        let original = fixture.lower(&format!(
+            "to_integer({conversion}({input})) + 1 == {incremented}"
+        ));
+        let proof = PureFactStore::from_ordered(std::slice::from_ref(&equality))
+            .check_equality_rewrite(&original, &equality)
+            .unwrap();
+        let expected = proof.proposition();
+        let written = format!("to_integer({conversion}({literal})) + 1 == {incremented}");
+        assert_eq!(fixture.lower(&written), *expected, "{written}");
+        assert!(
+            crate::kernel::proof::fact_reasoning::computes_leaf(expected),
+            "{written}"
+        );
+        let raised =
+            synthesize_surface_proposition(expected, ParameterBinding::default(), &fixture.state)
+                .unwrap();
+        let text = crate::surface::printing::source_click_proposition(&raised);
+        assert!(text.contains(conversion), "{text}");
+        assert_eq!(
+            relower_written_proposition(&raised, &fixture.state).unwrap(),
+            *expected,
+            "{text}"
+        );
+        assert_eq!(fixture.lower(&text), *expected, "{text}");
+    }
 }

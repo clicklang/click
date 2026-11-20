@@ -138,9 +138,10 @@ fn written_operands_inner(
             }
             written_operands_inner(input, input.local_binding(name)?, aliases)
         }
-        ContractExpression::CUnary { operand, .. } => {
-            written_operands_inner(input, operand, aliases)
-        }
+        ContractExpression::CUnary { operand, .. }
+        | ContractExpression::MemoryLoad {
+            pointer: operand, ..
+        } => written_operands_inner(input, operand, aliases),
         ContractExpression::ShiftLeft(left, right)
         | ContractExpression::ShiftRight(left, right)
         | ContractExpression::BitwiseAnd(left, right) => {

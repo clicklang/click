@@ -8092,6 +8092,12 @@ pub enum RuntimeError {
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
     FunctionContract(String),
+    /// A verified call may write memory for which it has no checked byte bound.
+    UnboundedWriteWithLiveView {
+        callee: String,
+        effect_source: Option<Box<ResourceFact>>,
+        protected: Option<Box<MemoryRange>>,
+    },
     /// A resource clause's value could not be evaluated for want of a value
     /// it reads: a cell, field or argument the state does not yet hold.
     /// Another clause's authority may supply it, so a contract's resource
@@ -9730,7 +9736,7 @@ pub(crate) struct CallRequirementSite {
     /// Original indirect invocation, distinct from the selected concrete target.
     pub(crate) source_callee: Option<std::sync::Arc<str>>,
     pub(crate) value_arguments: std::sync::Arc<[(String, ProgramValue)]>,
-    pub(crate) resource_arguments: std::sync::Arc<[(String, Variable, Variable)]>,
+    pub(crate) resource_arguments: std::sync::Arc<[(String, ResourceBinder, ResourceBinder)]>,
     pub(crate) interface: std::sync::Arc<str>,
     pub(crate) candidate_ordinal: usize,
     pub(crate) source_arguments: std::sync::Arc<Vec<ProgramExpression>>,
@@ -10637,7 +10643,7 @@ pub struct ExecutionState {
     /// This is not ownership and is never populated by unfolding a resource.
     pub(super) instance_field_scope: ResourceContext,
     /// Call-local formal identities; the ledger retains actual caller identities.
-    pub(super) resource_bindings: Option<std::sync::Arc<BTreeMap<Variable, Variable>>>,
+    pub(super) resource_bindings: Option<std::sync::Arc<ResourceBindings>>,
     pub(super) locals: LocalEnvironment,
     pub(super) memory: SymbolicMemory,
     /// The point this state's path has reached; not part of equality
@@ -11930,18 +11936,131 @@ impl InstanceId {
     }
 }
 
-/// The instance a binder names in a resource binding map. A binding map is
-/// keyed by binder number because it also carries named mutex-authority
-/// binders (see [`ResourceSpec::binding_identity`]); this is the one place an
-/// instance binder is looked up in it.
-pub(crate) fn bound_instance(
-    bindings: &BTreeMap<Variable, Variable>,
-    binder: InstanceId,
-) -> Option<InstanceId> {
-    bindings
-        .get(&binder.variable())
-        .copied()
-        .map(InstanceId::from_variable)
+/// The proof name of one exact mutex authority occurrence (a live, use or
+/// guard authority bound by a named resource clause). It is an alias in a
+/// state's named-authority table, never a resource instance or a value.
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct MutexAuthorityId(Variable);
+
+/// Prints as the number it is carried as, like [`InstanceId`].
+impl std::fmt::Debug for MutexAuthorityId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl MutexAuthorityId {
+    /// A mutex authority name from the binder number it is carried as.
+    pub const fn from_variable(variable: Variable) -> Self {
+        Self(variable)
+    }
+
+    /// The binder number, for call binding maps still keyed by it.
+    pub const fn variable(self) -> Variable {
+        self.0
+    }
+}
+
+/// A callee's resource binder: an exclusive instance binder or a named
+/// mutex authority binder. Which one a binder is comes from the clause that
+/// declares it ([`ResourceSpec::binding_identity`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum ResourceBinder {
+    Instance(InstanceId),
+    MutexAuthority(MutexAuthorityId),
+}
+
+/// The checked binding of a callee's resource binders to the caller's
+/// resources at one call or rewrite. Each binder maps to a caller resource
+/// of its own sort.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ResourceBindings {
+    instances: BTreeMap<InstanceId, InstanceId>,
+    mutex_authorities: BTreeMap<MutexAuthorityId, MutexAuthorityId>,
+}
+
+impl ResourceBindings {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The caller instance an instance binder names.
+    pub fn instance(&self, binder: InstanceId) -> Option<InstanceId> {
+        self.instances.get(&binder).copied()
+    }
+
+    /// The caller authority a mutex authority binder names.
+    pub fn mutex_authority(&self, binder: MutexAuthorityId) -> Option<MutexAuthorityId> {
+        self.mutex_authorities.get(&binder).copied()
+    }
+
+    /// The caller resource a binder names, of the binder's sort.
+    pub fn get(&self, binder: ResourceBinder) -> Option<ResourceBinder> {
+        match binder {
+            ResourceBinder::Instance(binder) => self.instance(binder).map(ResourceBinder::Instance),
+            ResourceBinder::MutexAuthority(binder) => self
+                .mutex_authority(binder)
+                .map(ResourceBinder::MutexAuthority),
+        }
+    }
+
+    pub fn contains(&self, binder: ResourceBinder) -> bool {
+        self.get(binder).is_some()
+    }
+
+    /// Binds an instance binder; returns the caller instance it already named.
+    pub fn insert_instance(
+        &mut self,
+        binder: InstanceId,
+        actual: InstanceId,
+    ) -> Option<InstanceId> {
+        self.instances.insert(binder, actual)
+    }
+
+    /// Binds a mutex authority binder; returns the authority it already named.
+    pub fn insert_mutex_authority(
+        &mut self,
+        binder: MutexAuthorityId,
+        actual: MutexAuthorityId,
+    ) -> Option<MutexAuthorityId> {
+        self.mutex_authorities.insert(binder, actual)
+    }
+
+    /// Binds `binder` to the caller resource a proof's map wrote by its
+    /// binder number, read in the binder's sort. Returns whether the binder
+    /// was already bound.
+    pub fn insert_written(&mut self, binder: ResourceBinder, written: Variable) -> bool {
+        match binder {
+            ResourceBinder::Instance(binder) => self
+                .insert_instance(binder, InstanceId::from_variable(written))
+                .is_some(),
+            ResourceBinder::MutexAuthority(binder) => self
+                .insert_mutex_authority(binder, MutexAuthorityId::from_variable(written))
+                .is_some(),
+        }
+    }
+
+    /// Adds every binding of `other`, replacing this map's binding of the
+    /// same binder.
+    pub fn extend(&mut self, other: &Self) {
+        self.instances.extend(&other.instances);
+        self.mutex_authorities.extend(&other.mutex_authorities);
+    }
+
+    /// The caller instances bound, in binder order.
+    pub fn instances(&self) -> impl Iterator<Item = (InstanceId, InstanceId)> + '_ {
+        self.instances
+            .iter()
+            .map(|(binder, actual)| (*binder, *actual))
+    }
+
+    pub fn len(&self) -> usize {
+        self.instances.len() + self.mutex_authorities.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.instances.is_empty() && self.mutex_authorities.is_empty()
+    }
 }
 
 /// A proof-only, exclusive resource instance. Identity is independent of its
@@ -12411,7 +12530,7 @@ pub struct ResourceSpec {
     term: ResourceTerm,
     /// A proof binder for one raw mutex authority. This does not change the
     /// resource family or turn the authority into a composite instance.
-    mutex_authority_binding: Option<Arc<(Variable, String)>>,
+    mutex_authority_binding: Option<Arc<(MutexAuthorityId, String)>>,
     access: ResourceAccessMode,
     quantity: ResourceQuantity,
     quantity_state_source: ResourceStateSource,
@@ -12795,7 +12914,7 @@ impl ResourceSpec {
 
     pub fn with_mutex_authority_binding(
         mut self,
-        identity: Variable,
+        identity: MutexAuthorityId,
         binder: String,
     ) -> Result<Self, ResourceSpecError> {
         if !matches!(
@@ -12815,7 +12934,7 @@ impl ResourceSpec {
         Ok(self)
     }
 
-    pub fn mutex_authority_binding(&self) -> Option<(Variable, &str)> {
+    pub fn mutex_authority_binding(&self) -> Option<(MutexAuthorityId, &str)> {
         self.mutex_authority_binding
             .as_ref()
             .map(|entry| (entry.0, entry.1.as_str()))
@@ -12832,10 +12951,13 @@ impl ResourceSpec {
             .or_else(|| self.mutex_authority_binding().map(|(_, name)| name))
     }
 
-    pub fn binding_identity(&self) -> Option<Variable> {
+    pub fn binding_identity(&self) -> Option<ResourceBinder> {
         self.instance_identity()
-            .map(InstanceId::variable)
-            .or_else(|| self.mutex_authority_binding().map(|(identity, _)| identity))
+            .map(ResourceBinder::Instance)
+            .or_else(|| {
+                self.mutex_authority_binding()
+                    .map(|(identity, _)| ResourceBinder::MutexAuthority(identity))
+            })
     }
 
     pub fn access(&self) -> ResourceAccessMode {
@@ -13164,15 +13286,23 @@ mod named_mutex_authority_spec_tests {
             let unnamed = authority(term);
             let named = unnamed
                 .clone()
-                .with_mutex_authority_binding(Variable(9), "guard".into())
+                .with_mutex_authority_binding(
+                    MutexAuthorityId::from_variable(Variable(9)),
+                    "guard".into(),
+                )
                 .unwrap();
             assert_eq!(named.term(), unnamed.term());
             assert_eq!(named.family(), unnamed.family());
-            assert_eq!(named.binding_identity(), Some(Variable(9)));
+            assert_eq!(
+                named.binding_identity(),
+                Some(ResourceBinder::MutexAuthority(
+                    MutexAuthorityId::from_variable(Variable(9))
+                ))
+            );
             assert_eq!(named.instance_identity(), None);
             assert_eq!(
                 named.mutex_authority_binding(),
-                Some((Variable(9), "guard"))
+                Some((MutexAuthorityId::from_variable(Variable(9)), "guard"))
             );
             assert_ne!(named, unnamed);
             assert_ne!(named.cmp(&unnamed), std::cmp::Ordering::Equal);
@@ -13182,11 +13312,14 @@ mod named_mutex_authority_spec_tests {
                     .with_role(ResourceTransferRole::Consume)
                     .with_state_source(ResourceStateSource::Entry)
                     .mutex_authority_binding(),
-                Some((Variable(9), "guard"))
+                Some((MutexAuthorityId::from_variable(Variable(9)), "guard"))
             );
             assert!(
                 named
-                    .with_mutex_authority_binding(Variable(10), "another".into())
+                    .with_mutex_authority_binding(
+                        MutexAuthorityId::from_variable(Variable(10)),
+                        "another".into()
+                    )
                     .is_err()
             );
         }
@@ -13197,14 +13330,20 @@ mod named_mutex_authority_spec_tests {
         let token = ResourceSpec::token(ResourceAccessMode::Own, "token".into(), vec![], vec![]);
         assert!(
             token
-                .with_mutex_authority_binding(Variable(1), "token".into())
+                .with_mutex_authority_binding(
+                    MutexAuthorityId::from_variable(Variable(1)),
+                    "token".into()
+                )
                 .is_err()
         );
         let composite =
             ResourceSpec::composite(ResourceAccessMode::Own, "state".into(), vec![], vec![]);
         assert!(
             composite
-                .with_mutex_authority_binding(Variable(1), "state".into())
+                .with_mutex_authority_binding(
+                    MutexAuthorityId::from_variable(Variable(1)),
+                    "state".into()
+                )
                 .is_err()
         );
         let mutex = Box::new(ProgramExpression::Value(ProgramValue::pointer(
@@ -15245,6 +15384,8 @@ pub struct ProofObligation {
     pub(super) assertion_failure: bool,
     /// This condition must be established before applying the statement.
     pub(super) statement_entry_required: bool,
+    /// Diagnostic metadata only. The proposition itself carries both ranges.
+    pub(super) live_view_write: bool,
     /// Source identity for a required call precondition, when this
     /// obligation was emitted while applying a selected callee contract.
     /// This is planning metadata only and is excluded from obligation

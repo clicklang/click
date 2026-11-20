@@ -369,6 +369,7 @@ fn algebraic_proposition_handoffs_keep_growing_scrutinees_without_export() {
             node: SpecAlgebraicExpressionNode::Variable(Variable(998_310)),
         };
         let exports = KernelTermExport::algebraic_export_count();
+        let assumptions = PureFactContext::new();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut execution = ExecutionBudget::new();
             let paths = lower_spec_algebraic_comparison_at_state_in(
@@ -376,7 +377,7 @@ fn algebraic_proposition_handoffs_keep_growing_scrutinees_without_export() {
                 &left,
                 true,
                 &right,
-                &PureFactContext::new(),
+                &assumptions,
                 &mut SpecEvaluation::logical(&mut execution),
             )
             .unwrap();
@@ -390,6 +391,28 @@ fn algebraic_proposition_handoffs_keep_growing_scrutinees_without_export() {
             };
             assert_eq!(left.root(), Some(&shared));
             assert_eq!(right.root(), Some(&plain));
+
+            let shared_operand = SpecAlgebraicExpression {
+                algebraic_type: ty.clone(),
+                node: SpecAlgebraicExpressionNode::Binding("adt".into()),
+            };
+            let mut execution = ExecutionBudget::new();
+            let paths = lower_spec_algebraic_comparison_at_state_in(
+                scope,
+                &shared_operand,
+                true,
+                &shared_operand,
+                &assumptions,
+                &mut SpecEvaluation::logical(&mut execution),
+            )
+            .unwrap();
+            let [path] = paths.as_slice() else {
+                panic!("one reflexive equality path")
+            };
+            assert!(matches!(path.proposition, Proposition::Equal(..)));
+            assert!(crate::kernel::proof::fact_reasoning::computes_leaf(
+                &path.proposition
+            ));
 
             let mut execution = ExecutionBudget::new();
             let cases = algebraic_case_paths_in(

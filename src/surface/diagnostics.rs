@@ -14,6 +14,9 @@ use crate::surface::proof_diagnostics::render::{
 pub(in crate::surface) fn describe_proof_obligation_context(
     obligation: &ProofObligation,
 ) -> Option<String> {
+    if let Some(context) = describe_live_view_write_context(obligation) {
+        return Some(context);
+    }
     if let Some(source) = obligation.call_requirement_site()
         && let Some(ordinal) = source.source_requirement_ordinal
     {
@@ -24,6 +27,19 @@ pub(in crate::surface) fn describe_proof_obligation_context(
         ));
     }
     obligation.context().map(str::to_owned)
+}
+
+fn describe_live_view_write_context(obligation: &ProofObligation) -> Option<String> {
+    let overlap = obligation.live_view_write_overlap()?;
+    let operation = obligation.call_requirement_site().map_or_else(
+        || "this write".to_owned(),
+        |source| format!("the write by `{}`", source.callee),
+    );
+    Some(if overlap {
+        format!("{operation} overlaps a live view")
+    } else {
+        format!("prove {operation} is separate from the live views")
+    })
 }
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::SharedMemory;
@@ -1916,7 +1932,9 @@ pub(super) fn describe_runtime_error(
             let mut labels = MemoryStateLabels::naming(parameter_binding);
             let mut message = "call cannot finish with unresolved proof obligations:".to_string();
             for obligation in pending.iter() {
-                if let Some(context) = obligation.context() {
+                if let Some(context) = describe_live_view_write_context(obligation)
+                    .or_else(|| obligation.context().map(str::to_owned))
+                {
                     message.push_str(&format!("\n  context: {context}"));
                 }
                 if let Some(source) = obligation.call_requirement_site() {
@@ -1929,6 +1947,18 @@ pub(super) fn describe_runtime_error(
             }
             message.push_str(&labels.trace_legend());
             message
+        }
+        crate::kernel::RuntimeError::UnboundedWriteWithLiveView { callee, effect_source, protected } => {
+            let callee = super::proof::callback_source_name(callee).unwrap_or_else(|| callee.clone());
+            let effect = effect_source.as_deref().map_or_else(
+                || "a write effect".to_owned(),
+                |source| format!("a write effect through `{}`", render_resource_diagnostic(source.resource(), parameter_binding)),
+            );
+            let view = protected.as_deref().map_or_else(
+                || "a memory view".to_owned(),
+                |range| format!("the view `{}`", describe_memory_range(range, parameter_binding)),
+            );
+            format!("call to `{callee}` has no checked byte bound for {effect} while {view} is live")
         }
         crate::kernel::RuntimeError::FunctionContract(message)
         | crate::kernel::RuntimeError::UnsuppliedResourceValue(message) => {
@@ -2035,6 +2065,18 @@ fn describe_loan_conflict(
         ));
     }
     let attempted = subject.memory_range()?;
+    if subject.origin().is_none() {
+        let attempted = describe_memory_range(attempted, parameter_binding);
+        return match diagnostic.category() {
+            crate::kernel::LoanRefusalCategory::ProvenOverlap => Some(format!(
+                "the call's write range `{attempted}` overlaps the live view `{conflicting}`"
+            )),
+            crate::kernel::LoanRefusalCategory::SeparationUnproved => Some(format!(
+                "the call's write range `{attempted}` must be proved separate from the live view `{conflicting}`"
+            )),
+            _ => None,
+        };
+    }
     let origin = match subject.origin()? {
         crate::kernel::LoanOriginKind::LocalStorage => "a view of local storage",
         crate::kernel::LoanOriginKind::ContractInputView => "a contract input view",
@@ -7359,6 +7401,16 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             describe_binary_contract_expression(left, "++", right)
         }
         ContractExpression::QualifiedC { name, .. } => name.clone(),
+        ContractExpression::MemoryLoad {
+            pointer,
+            value_type,
+            volatile,
+            pointee_constant,
+        } => format!(
+            "load<{}>({})",
+            typed_load_type_argument(*value_type, *volatile, *pointee_constant),
+            describe_contract_expression(pointer)
+        ),
         ContractExpression::CUnary { operand, lowered } => {
             let operand = describe_contract_expression(operand);
             match lowered {

@@ -7545,7 +7545,7 @@ fn a_cached_parameter_partition_does_not_hide_aliases_or_wide_cells() {
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::ResourceComposition(resources.clone()));
     let memory = SymbolicMemory::new().store(q.clone(), int32(5));
-    memory.prepare_parameter_store_partition(&resources);
+    memory.prepare_parameter_store_partition(&resources, &assumptions);
     assert_eq!(
         memory
             .without_possible_aliasing_cells(&p, 4, &assumptions)
@@ -7610,6 +7610,48 @@ fn a_cached_parameter_partition_does_not_hide_aliases_or_wide_cells() {
     );
 }
 
+#[test]
+fn a_checked_parameter_partition_refuses_an_indexed_address_alias() {
+    let p = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(991_011)),
+    };
+    let q = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(991_012)),
+    };
+    let index = MachineTerm::Variable(Variable(991_013));
+    let write = p.offset_by_elements(index, 4);
+    let fact = own_memory_fact(p, 0, 4);
+    let range = fact.memory_own_range().unwrap().clone();
+    let owner = ResourceContext::new()
+        .unchecked_with_fact(fact)
+        .unchecked_with_fact(own_memory_fact(q.clone(), 0, 4));
+    let context = PureFactContext::new().with_store_owner(Some(owner));
+    assert!(
+        context
+            .checked_parameter_store_partition(&write, 4, &range)
+            .is_some()
+    );
+    let aliased = context.clone().assume_condition(
+        ConditionTerm::uint64_equal(
+            MachineTerm::integer_address(write.clone()),
+            MachineTerm::integer_address(q),
+        ),
+        true,
+    );
+    assert!(
+        aliased
+            .checked_parameter_store_partition(&write, 4, &range)
+            .is_none()
+    );
+    assert!(
+        context
+            .checked_parameter_store_partition(&write, 8, &range)
+            .is_none()
+    );
+}
+
 /// Cross-block and full-width address copies can equate interior fields even
 /// when no direct equality names the parameter bases. The object index must
 /// bring the other object's cells back onto the ordinary store ladder.
@@ -7628,7 +7670,7 @@ fn a_parameter_partition_follows_transitive_interior_address_aliases() {
     let original = PureFactContext::new()
         .assume_proposition(Proposition::ResourceComposition(resources.clone()));
     let memory = SymbolicMemory::new().store(q.clone(), int32(5));
-    memory.prepare_parameter_store_partition(&resources);
+    memory.prepare_parameter_store_partition(&resources, &original);
     let write = p.offset_by_bytes(8);
     for alias in [
         original
@@ -7663,6 +7705,46 @@ fn a_parameter_partition_follows_transitive_interior_address_aliases() {
             !memory
                 .without_possible_aliasing_cells(&write, 4, &alias)
                 .has_known_cell_at(&q)
+        );
+    }
+}
+
+/// Reuse the same cache while the fact snapshots join and split an existing
+/// pair of components. The bridge changes links but introduces no objects.
+#[test]
+fn a_parameter_partition_updates_populated_components_across_forks() {
+    let parameter = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+    };
+    let p = parameter(991_021);
+    let q = parameter(991_022);
+    let write = p.offset_by_bytes(8);
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(own_memory_fact(p.clone(), 0, 4))
+        .unchecked_with_fact(own_memory_fact(q.clone(), 0, 4));
+    let equal = |left: &Address, right: &Address| {
+        let word = |address: &Address| {
+            MachineTerm::IntegerAddress(
+                Box::new(address.clone()),
+                crate::kernel::AddressObjectClass::NONE,
+            )
+        };
+        ConditionTerm::uint64_equal(word(left), word(right))
+    };
+    let separate = PureFactContext::new()
+        .assume_proposition(Proposition::ResourceComposition(resources.clone()))
+        .assume_condition(equal(&write, &Address::symbolic(Variable(991_023))), true)
+        .assume_condition(equal(&q, &Address::symbolic(Variable(991_024))), true);
+    let joined = separate.clone().assume_condition(equal(&write, &q), true);
+    let memory = SymbolicMemory::new().store(q.clone(), int32(5));
+    memory.prepare_parameter_store_partition(&resources, &separate);
+    for (facts, retained) in [(&separate, true), (&joined, false), (&separate, true)] {
+        assert_eq!(
+            memory
+                .without_possible_aliasing_cells(&write, 4, facts)
+                .has_known_cell_at(&q),
+            retained
         );
     }
 }

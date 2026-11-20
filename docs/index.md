@@ -17,6 +17,9 @@ one file.
 For short answers about setup, guarantees, supported languages, proof failures,
 and contributions, read the [frequently asked questions](faq.md).
 
+Use the [project setup skill](https://github.com/clicklang/click/blob/master/.agents/skills/project-setup/SKILL.md)
+when starting with an existing codebase and a function to verify.
+
 ## Reading order
 
 To verify a function today, read in this order:

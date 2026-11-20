@@ -22548,6 +22548,22 @@ void stamp(int* p, int* q) {
 "#;
     let sources = [("restrict.c", c)];
     let label = "stamp.contract";
+    let missing_separation = source.replace(
+        "have separate(memory(p[1]), memory(q[0..1])) by { solve(); }\n            step();",
+        "step();",
+    );
+    let report = without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&missing_separation, &sources).map_err(|error| error.concise_report())
+    })
+    .expect_err("the store needs separation from the view");
+    assert!(
+        report.contains("prove this write is separate from the live views"),
+        "{report}"
+    );
+    assert!(
+        report.contains("goal: separate(memory(p[1]), memory(q[0]))"),
+        "{report}"
+    );
     let expanded = expand_c_claim_source_by_label(source, &sources, label)
         .unwrap_or_else(|error| panic!("{}", error.report()));
     assert!(

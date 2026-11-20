@@ -1345,12 +1345,14 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 // The implicit bundle closer plans a default `solve` body.
                 // Its premise selection is smart work even when the first
                 // checked member happens to close by `known()`.
-                (
-                    tactics.len(),
-                    source.loop_source_index,
-                    crate::instrumentation::IMPLICIT_SOLVE_TACTIC,
-                    "smart",
-                )
+                let (at, name) = match source.preserve_source_index {
+                    Some(at) => (at, crate::instrumentation::IMPLICIT_LOOP_CLOSER_TACTIC),
+                    None => (
+                        source.loop_source_index,
+                        crate::instrumentation::IMPLICIT_SOLVE_TACTIC,
+                    ),
+                };
+                (tactics.len(), at, name, "smart")
             };
         let _timing = crate::instrumentation::enabled().then(|| {
             if crate::instrumentation::starts_enabled() {
@@ -1432,6 +1434,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     preservation.binders(),
                     structural_measure,
                     environment.function.composite_resource_definitions(),
+                    false,
                 )
                 .map_err(|error| {
                     error.with_context(format!("`{claim_label}` (loop {loop_index} state join)"))
@@ -1653,6 +1656,14 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 .to_proof_tactics()
                 .to_vec()
         };
+        if closer_name == crate::instrumentation::IMPLICIT_LOOP_CLOSER_TACTIC
+            && !closer_tactics.is_empty()
+            && crate::instrumentation::enabled()
+        {
+            crate::instrumentation::emit(
+                crate::instrumentation::VerificationEvent::LoopCloserProof,
+            );
+        }
         let omitted_frontier_preservation = environment
             .frontier_loop_source
             .preserve_source_index

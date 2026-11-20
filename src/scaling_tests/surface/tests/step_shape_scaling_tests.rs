@@ -744,10 +744,16 @@ fn band(work: usize) -> usize {
 
 #[test]
 fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
-    let measure = |size, alias_base| {
+    let measure = |size, alias_base, frame_owners| {
         let run = run(
             |size| {
                 let mut parameters = "int32* p, int32* other".to_string();
+                // Each initialized ownership clause seeds a cached cell.
+                let mut frame = String::new();
+                for i in 0..frame_owners {
+                    parameters += &format!(", int32* frame{i}");
+                    frame += &format!("    owns *frame{i};\n");
+                }
                 let mut requirements = String::new();
                 for i in 0..size {
                     parameters += &format!(", int32* alias{i}");
@@ -759,7 +765,7 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
                     "void caller({parameters}) {{\n    *p = 17;\n    *p = 18;\n    *p = 19;\n    return;\n}}"
                 );
                 let click = format!(
-                    "verifying \"hunt.c\";\nvoid caller({parameters}) {{\n    owns *p;\n{requirements}}} by {{ step(); step(); step(); step(); }}"
+                    "verifying \"hunt.c\";\nvoid caller({parameters}) {{\n    owns *p;\n{frame}{requirements}}} by {{ step(); step(); step(); step(); }}"
                 );
                 (c, click)
             },
@@ -770,13 +776,20 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
     };
     // A 16-alias star already distinguishes the old scan from the indexed
     // check. Keep the larger source probes out of the budgeted gate.
-    let samples = [2, 8, 16].map(|size| (measure(size, "p"), measure(size, "other")));
-    eprintln!("repeated store work with connected and disconnected aliases: {samples:?}");
-    let baseline = samples[0].0.into_iter().min().unwrap();
-    for (connected, disconnected) in samples {
-        for (connected, disconnected) in connected.into_iter().zip(disconnected) {
-            assert!(connected <= baseline + 16, "{samples:?}");
-            assert!(connected <= disconnected + 16, "{samples:?}");
+    for frame_owners in [0, 1, 8] {
+        let samples = [2, 8, 16].map(|size| {
+            (
+                measure(size, "p", frame_owners),
+                measure(size, "other", frame_owners),
+            )
+        });
+        eprintln!("repeated store work with connected and disconnected aliases: {samples:?}");
+        let baseline = samples[0].0.into_iter().min().unwrap();
+        for (connected, disconnected) in samples {
+            for (connected, disconnected) in connected.into_iter().zip(disconnected) {
+                assert!(connected <= baseline + 16, "{samples:?}");
+                assert!(connected <= disconnected + 16, "{samples:?}");
+            }
         }
     }
 }
@@ -897,6 +910,44 @@ fn ordered_index_stores_cost_the_same_at_every_position() {
     // and then holds: a bounded window, run past so the steady-rise rule
     // sees it level.
     assert_no_drift("order_chain", order_chain, 48);
+}
+
+#[test]
+fn checked_indexed_store_skips_a_separately_owned_array() {
+    let work = [2, 8, 16].map(|size| {
+        [false, true].map(|ordered| {
+            let sample = run(
+                |size| {
+                    let signature = "void caller(int32* a, int32* b, int32 length, int32 i, int32 j)";
+                    let (bound, order) = if ordered {
+                        ("length", "    requires i < j;\n")
+                    } else {
+                        // An upper bound that is another variable would rank
+                        // `i` even without a second order premise.
+                        ("32", "")
+                    };
+                    let filled = lines(size, |index| format!("    a[{index}] = {index};"));
+                    let c = format!("{signature} {{\n{filled}\n    b[i] = 1;\n    b[i] = 2;\n    b[i] = 3;\n    return;\n}}");
+                    let proof = steps(size + 4);
+                    let click = format!(
+                        "verifying \"hunt.c\";\n{signature} {{\n    owns a[0..{size}];\n    owns b[0..{bound}];\n    requires 0 <= i;\n    requires i < {bound};\n{order}}} by {{\n{proof}\n}}"
+                    );
+                    (c, click)
+                },
+                size,
+            );
+            let stores = sample.statement_steps("indexed store beside a separate owner");
+            [stores[size + 1].1, stores[size + 2].1]
+        })
+    });
+    eprintln!("warmed indexed stores at 2/8/16 separate cells: {work:?}");
+    for (baseline, largest) in work[0]
+        .into_iter()
+        .flatten()
+        .zip(work[2].into_iter().flatten())
+    {
+        assert!(largest <= baseline + 32, "{work:?}");
+    }
 }
 
 #[test]

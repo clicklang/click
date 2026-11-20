@@ -29,7 +29,7 @@ failures print a diagnostic to standard error and exit with status 1.
   explicit proof and verifies the complete rewritten source.
 - [`click docs`](docs.md) prints the documentation compiled into the binary.
 - [`click audit`](audit.md) checks the expansion boundary across many sites.
-- [`click import`](capture.md) prepares explicitly configured compiler inputs.
+- [`click capture`](capture.md) prepares explicitly configured compiler inputs.
 - [Version manager commands](versions.md): `click upgrade` and
   `click version add|use|default|list|remove` install released versions and
   select the version the `click` launcher runs.

@@ -1039,7 +1039,7 @@ pub(super) fn state_with_refinement_instances(
         return Some(state.clone());
     }
     let mut state = state.clone();
-    let mut names = BTreeMap::new();
+    let mut names = ResourceBindings::new();
     let mut facts = Vec::with_capacity(bindings.len());
     for binding in bindings {
         let declared = match side {
@@ -1050,7 +1050,7 @@ pub(super) fn state_with_refinement_instances(
             RefinementPhase::Entry => &binding.entry,
             RefinementPhase::Post => &binding.post,
         };
-        names.insert(declared.variable(), instance.identity().variable());
+        names.insert_instance(declared, instance.identity());
         facts.push(ResourceFact::own(Resource::Instance(instance.clone())));
     }
     state.resource_bindings = Some(std::sync::Arc::new(names));

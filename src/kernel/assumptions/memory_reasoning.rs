@@ -2030,6 +2030,44 @@ impl PureFactContext {
         })
     }
 
+    /// Reuse the live owner already checked by the C store. This route needs
+    /// a direct parameter spelling and the same whole element checked there.
+    pub(in crate::kernel) fn checked_parameter_store_partition(
+        &self,
+        write: &Address,
+        bytes: u32,
+        authorized: &MemoryRange,
+    ) -> Option<(&ResourceContext, Address)> {
+        let AddressOffset::Add(anchor, displacement) = &write.offset else {
+            return None;
+        };
+        let owner = authorized.base();
+        if displacement.as_const().is_some()
+            || bytes != authorized.element_width()
+            || write.base != owner.base
+            || **anchor != owner.offset
+            || self
+                .equality_graph
+                .offset_has_source_dependencies(&write.offset)
+            || self.equality_graph.has_parameter_store_alias_sources(write)
+        {
+            return None;
+        }
+        let base = parameter_partition_root(owner)?;
+        if self.equality_graph.has_parameter_store_alias_sources(&base) {
+            return None;
+        }
+        let resources = self.store_owners()?.first()?;
+        let (_, member) = resources.unique_owned_memory_member_with_base(owner)?;
+        (member == authorized).then_some((resources, base))
+    }
+
+    pub(in crate::kernel) fn parameter_store_numeric_connectivity(
+        &self,
+    ) -> Option<&crate::kernel::equality_graph::NumericAddressConnectivity> {
+        self.equality_graph.parameter_store_numeric_connectivity()
+    }
+
     /// Cross-block equalities are filed under their exact endpoints, so a
     /// parameter follows only its own aliases rather than the shared external
     /// block's entire class. Same-block and scalar alias premises fall back.

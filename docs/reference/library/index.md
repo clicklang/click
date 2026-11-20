@@ -48,6 +48,7 @@ how far it is trusted:
 | [`click::integer`](#clickinteger) | `import click::integer;` | specification |
 | [`click::permutation`](#clickpermutation) | `import click::permutation;` | specification |
 | [`click::bytes`](#clickbytes) | `import click::bytes;`, or with `click::c::string` | specification |
+| [`click::c::stdarg`](#clickcstdarg) | `import click::c::stdarg;`, or when a contract declares `...args` | C language interface |
 | [`click::c::stdio`](#clickcstdio) | `import click::c::stdio;`, or with the projected `<stdio.h>` | C library interface |
 | [`click::c::string`](#clickcstring) | `import click::c::string;`, or when the C declares or calls a modeled string function | C library interface and specification |
 | [C++ standard library interfaces](#c-standard-library-interfaces), `library/cpp/` (not a module) | when a C++ import calls one of its functions | C++ library interface |
@@ -186,7 +187,7 @@ function add(left: Nat, right: Nat) -> Nat
 theorem add_left_identity(n: Nat) {
     ensures nat::add(Nat::Zero, n) == n by {
         unfold(nat::add(Nat::Zero, n));
-        normalize();
+        known();
     }
 }
 ```
@@ -199,7 +200,7 @@ theorem add_left_identity(n: Nat) {
 theorem add_succ_left(n: Nat, m: Nat) {
     ensures nat::add(Nat::Succ(n), m) == Nat::Succ(nat::add(n, m)) by {
         unfold(nat::add(Nat::Succ(n), m));
-        normalize();
+        known();
     }
 }
 ```
@@ -220,7 +221,7 @@ theorem to_integer_add(n: Nat, m: Nat) {
                 unfold(nat::add(Nat::Zero, m));
                 apply(nat::to_integer_zero());
                 rewrite(to_integer(Nat::Zero), 0);
-                normalize();
+                known();
             }
             Nat::Succ(previous) => {
                 unfold(nat::add(Nat::Succ(previous), m));
@@ -230,7 +231,7 @@ theorem to_integer_add(n: Nat, m: Nat) {
                 rewrite(to_integer(Nat::Succ(nat::add(previous, m))), to_integer(nat::add(previous, m)) + 1);
                 rewrite(to_integer(nat::add(previous, m)), to_integer(previous) + to_integer(m));
                 rewrite(to_integer(Nat::Succ(previous)), to_integer(previous) + 1);
-                normalize();
+                known();
             }
         }
     }
@@ -246,13 +247,13 @@ theorem add_right_identity(n: Nat) {
         match n {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, Nat::Zero));
-                normalize();
+                known();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
                 unfold(nat::add(Nat::Succ(previous), Nat::Zero));
                 rewrite(nat::add(previous, Nat::Zero), previous);
-                normalize();
+                known();
             }
         }
     }
@@ -271,14 +272,14 @@ theorem add_succ_right(n: Nat, m: Nat) {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, Nat::Succ(m)));
                 unfold(nat::add(Nat::Zero, m));
-                normalize();
+                known();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
                 unfold(nat::add(Nat::Succ(previous), Nat::Succ(m)));
                 unfold(nat::add(Nat::Succ(previous), m));
                 rewrite(nat::add(previous, Nat::Succ(m)), Nat::Succ(nat::add(previous, m)));
-                normalize();
+                known();
             }
         }
     }
@@ -297,7 +298,7 @@ theorem add_associative(a: Nat, b: Nat, c: Nat) {
             Nat::Zero => {
                 unfold(nat::add(Nat::Zero, b));
                 unfold(nat::add(Nat::Zero, nat::add(b, c)));
-                normalize();
+                known();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
@@ -308,7 +309,7 @@ theorem add_associative(a: Nat, b: Nat, c: Nat) {
                 apply(nat::add_succ_left(previous, nat::add(b, c)));
                 rewrite(nat::add(Nat::Succ(previous), nat::add(b, c)), Nat::Succ(nat::add(previous, nat::add(b, c))));
                 rewrite(nat::add(nat::add(previous, b), c), nat::add(previous, nat::add(b, c)));
-                normalize();
+                known();
             }
         }
     }
@@ -328,7 +329,7 @@ theorem add_commutative(a: Nat, b: Nat) {
                 unfold(nat::add(Nat::Zero, b));
                 apply(nat::add_right_identity(b));
                 rewrite(nat::add(b, Nat::Zero), b);
-                normalize();
+                known();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
@@ -336,7 +337,7 @@ theorem add_commutative(a: Nat, b: Nat) {
                 apply(nat::add_succ_right(b, previous));
                 rewrite(nat::add(b, Nat::Succ(previous)), Nat::Succ(nat::add(b, previous)));
                 rewrite(nat::add(previous, b), nat::add(b, previous));
-                normalize();
+                known();
             }
         }
     }
@@ -409,7 +410,7 @@ including nested lists. Comparisons of unknown algebraic values stay symbolic.
 theorem append_left_identity<T>(xs: List<T>) {
     ensures list::append(List<T>::Nil, xs) == xs by {
         unfold(list::append(List<T>::Nil, xs));
-        normalize();
+        known();
     }
 }
 ```
@@ -425,13 +426,13 @@ theorem append_right_identity<T>(xs: List<T>) {
         match xs {
             List::Nil => {
                 unfold(list::append(List<T>::Nil, List<T>::Nil));
-                normalize();
+                known();
             }
             List::Cons(head, tail) => {
                 apply(ih(tail));
                 unfold(list::append(List<T>::Cons(head, tail), List<T>::Nil));
                 rewrite(list::append(tail, List<T>::Nil), tail);
-                normalize();
+                known();
             }
         }
     }
@@ -447,7 +448,7 @@ theorem append_cons<T>(head: T, tail: List<T>, ys: List<T>) {
     ensures list::append(List<T>::Cons(head, tail), ys)
         == List<T>::Cons(head, list::append(tail, ys)) by {
         unfold(list::append(List<T>::Cons(head, tail), ys));
-        normalize();
+        known();
     }
 }
 ```
@@ -491,7 +492,7 @@ theorem append_associative<T>(xs: List<T>, ys: List<T>, zs: List<T>) {
 theorem contains_nil<T>(value: T) {
     ensures list::contains(List<T>::Nil, value) == false by {
         unfold(list::contains(List<T>::Nil, value));
-        normalize();
+        known();
     }
 }
 ```
@@ -505,7 +506,7 @@ theorem contains_cons<T>(head: T, tail: List<T>, value: T) {
     ensures list::contains(List<T>::Cons(head, tail), value)
         == if head == value { true } else { list::contains(tail, value) } by {
         unfold(list::contains(List<T>::Cons(head, tail), value));
-        normalize();
+        known();
     }
 }
 ```
@@ -541,7 +542,7 @@ theorem contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
                     apply(list::contains_cons(head, tail, value));
                     rewrite(list::contains(List<T>::Cons(head, tail), value), if head == value { true } else { list::contains(tail, value) });
                     rewrite(list::contains(list::append(tail, ys), value), if list::contains(tail, value) { true } else { list::contains(ys, value) });
-                    normalize() using { not(head == value); };
+                    solve() using { not(head == value); };
                 }
             }
         }
@@ -582,7 +583,7 @@ theorem length_nil<T>(xs: List<T>) {
     ensures list::length(xs) == Nat::Zero by {
         rewrite(xs, List<T>::Nil);
         unfold(list::length(List<T>::Nil));
-        normalize();
+        known();
     }
 }
 ```
@@ -595,7 +596,7 @@ theorem length_nil<T>(xs: List<T>) {
 theorem length_cons<T>(head: T, tail: List<T>) {
     ensures list::length(List<T>::Cons(head, tail)) == Nat::Succ(list::length(tail)) by {
         unfold(list::length(List<T>::Cons(head, tail)));
-        normalize();
+        known();
     }
 }
 ```
@@ -626,7 +627,7 @@ theorem length_append<T>(xs: List<T>, ys: List<T>) {
                 apply(nat::add_succ_left(list::length(tail), list::length(ys)));
                 rewrite(nat::add(Nat::Succ(list::length(tail)), list::length(ys)), Nat::Succ(nat::add(list::length(tail), list::length(ys))));
                 rewrite(list::length(list::append(tail, ys)), nat::add(list::length(tail), list::length(ys)));
-                normalize();
+                known();
             }
         }
     }
@@ -929,24 +930,6 @@ axiom round_down_le(value: Integer, bound: Integer, divisor: Integer, remainder:
 
 ### Order, definedness and conversion lemmas
 
-### `integer::int32_positive_is_nonnegative`
-
-```click
-theorem int32_positive_is_nonnegative(value: int32) {
-    requires 0 < value;
-
-    ensures 0 <= value by {
-        normalize() using { 0 < value; };
-    }
-}
-```
-
-**Meaning:** Given its listed requirements, proves `0 <= value`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
 ### `integer::int32_add_defined_by_integer_bounds`
 
 ```click
@@ -1122,91 +1105,34 @@ Unsigned multiplication agrees with Integer multiplication under the native no-o
 theorem uint32_multiply_guard_by_integer_bound(left: uint32, right: uint32) {
     requires to_integer(left) * to_integer(right) <= 4294967295;
     ensures right == 0u32 or left <= 4294967295u32 / right by {
-        if right == 0u32 {
-            known();
-        } else {
-            have right != 0u32 by {
-                normalize() using {
-                    not right == 0u32;
+        if right != 0u32 {
+            have to_integer(right) != 0 by known();
+            have 0 <= to_integer(right) by known();
+            have 0 < to_integer(right) by {
+                apply(integer::le_ne_lt(0, to_integer(right))) using {
+                    0 <= to_integer(right);
+                    0 != to_integer(right);
                 };
             }
-            have 1 <= to_integer(right) by {
-                have 1 <= to_integer(right) by {
-                    have ((-1 * to_integer(right)) + 1) <= 0 by {
-                        have (-1 * to_integer(right)) <= 0 by {
-                            have 0 <= to_integer(right) by {
-                                normalize();
-                            }
-                            have (-1 * to_integer(right)) == (0 - to_integer(right)) by {
-                                normalize();
-                            }
-                            apply(integer::le_difference(0, to_integer(right), (-1 * to_integer(right)))) using {
-                                0 <= to_integer(right);
-                                (-1 * to_integer(right)) == (0 - to_integer(right));
-                            };
-                        }
-                        have 0 <= to_integer(right) by {
-                            have (-1 * to_integer(right)) == (0 - to_integer(right)) by {
-                                normalize();
-                            }
-                            apply(integer::difference_le(0, to_integer(right), (-1 * to_integer(right)))) using {
-                                (-1 * to_integer(right)) <= 0;
-                                (-1 * to_integer(right)) == (0 - to_integer(right));
-                            };
-                        }
-                        have 0 != to_integer(right) by {
-                            normalize() using {
-                                to_integer(right) != 0;
-                            };
-                        }
-                        have 0 < to_integer(right) by {
-                            apply(integer::le_ne_lt(0, to_integer(right))) using {
-                                0 <= to_integer(right);
-                                0 != to_integer(right);
-                            };
-                        }
-                        have (0 + 1) <= to_integer(right) by {
-                            apply(integer::lt_step_le(0, to_integer(right))) using {
-                                0 < to_integer(right);
-                            };
-                        }
-                        have ((-1 * to_integer(right)) + 1) == ((0 + 1) - to_integer(right)) by {
-                            normalize();
-                        }
-                        apply(integer::le_difference((0 + 1), to_integer(right), ((-1 * to_integer(right)) + 1))) using {
-                            (0 + 1) <= to_integer(right);
-                            ((-1 * to_integer(right)) + 1) == ((0 + 1) - to_integer(right));
-                        };
-                    }
-                    have ((-1 * to_integer(right)) + 1) == (1 - to_integer(right)) by {
-                        normalize();
-                    }
-                    apply(integer::difference_le(1, to_integer(right), ((-1 * to_integer(right)) + 1))) using {
-                        ((-1 * to_integer(right)) + 1) <= 0;
-                        ((-1 * to_integer(right)) + 1) == (1 - to_integer(right));
-                    };
-                }
-                normalize() using {
-                    1 <= to_integer(right);
-                };
-            }
+            apply(integer::lt_step_le(0, to_integer(right))) using { 0 < to_integer(right); };
+            have 1 <= to_integer(right) by known();
             apply(integer::positive_divisor_quotient_lower(4294967295, to_integer(right), to_integer(left))) using {
                 to_integer(right) != 0;
                 1 <= to_integer(right);
-                (to_integer(left) * to_integer(right)) <= 4294967295;
+                to_integer(left) * to_integer(right) <= 4294967295;
             };
             apply(integer::uint32_divide_to_integer(4294967295u32, right)) using {
                 right != 0u32;
                 to_integer(right) != 0;
             };
-            have to_integer(left) <= to_integer((4294967295u32 / right)) by {
+            have to_integer(left) <= to_integer(4294967295u32 / right) by {
+                rewrite(to_integer(4294967295u32 / right), truncating_quotient(4294967295, to_integer(right)));
                 known();
             }
-            have left <= (4294967295u32 / right) as uint32 by {
-                normalize() using {
-                    to_integer(left) <= to_integer((4294967295u32 / right));
-                };
-            }
+            have left <= 4294967295u32 / right by known();
+            known();
+        } else {
+            have right == 0u32 by known();
             known();
         }
     }
@@ -1462,7 +1388,7 @@ theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
     ensures to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64) by {
         have to_integer(y) != 0;
         have 0 <= to_integer(y);
-        have 0 <= to_integer(18446744073709551615u64) by normalize();
+        have 0 <= to_integer(18446744073709551615u64) by known();
         apply(integer::uint64_divide_to_integer(18446744073709551615u64, y)) using {
             y != 0u64;
             to_integer(y) != 0;
@@ -1480,7 +1406,7 @@ theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
         };
         have to_integer(18446744073709551615u64 / y) * to_integer(y) == truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)) * to_integer(y) by {
             rewrite(to_integer(18446744073709551615u64 / y), truncating_quotient(to_integer(18446744073709551615u64), to_integer(y)));
-            normalize();
+            known();
         }
         solve() using {
             to_integer(x) * to_integer(y) <= to_integer(18446744073709551615u64 / y) * to_integer(y);
@@ -1734,8 +1660,8 @@ Integer value, so the observation is injective.
 theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
     requires divisor != 0u32;
     ensures value % divisor < divisor by {
-        have to_integer(divisor) != 0 by normalize() using { divisor != 0u32; };
-        have 0 <= to_integer(divisor) by normalize();
+        have to_integer(divisor) != 0 by known();
+        have 0 <= to_integer(divisor) by known();
         have 0 < to_integer(divisor) by {
             apply(integer::le_ne_lt(0, to_integer(divisor))) using { 0 <= to_integer(divisor); 0 != to_integer(divisor); };
         }
@@ -1745,7 +1671,7 @@ theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
             apply(integer::add_le(truncating_remainder(to_integer(value), to_integer(divisor)), to_integer(divisor) - 1, 1, 1)) using { truncating_remainder(to_integer(value), to_integer(divisor)) <= to_integer(divisor) - 1; 1 <= 1; to_integer(divisor) != 0; };
         }
         have truncating_remainder(to_integer(value), to_integer(divisor)) + 1 <= to_integer(divisor) by {
-            have to_integer(divisor) == (to_integer(divisor) - 1) + 1 by normalize();
+            have to_integer(divisor) == (to_integer(divisor) - 1) + 1 by known();
             apply(integer::le_substitute(truncating_remainder(to_integer(value), to_integer(divisor)) + 1, (to_integer(divisor) - 1) + 1, truncating_remainder(to_integer(value), to_integer(divisor)) + 1, to_integer(divisor))) using {
                 truncating_remainder(to_integer(value), to_integer(divisor)) + 1 <= (to_integer(divisor) - 1) + 1; truncating_remainder(to_integer(value), to_integer(divisor)) + 1 == truncating_remainder(to_integer(value), to_integer(divisor)) + 1; to_integer(divisor) == (to_integer(divisor) - 1) + 1; to_integer(divisor) != 0;
             };
@@ -1764,214 +1690,6 @@ theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
 ```
 
 The unsigned remainder is below its divisor for any dividend. The nonzero divisor premise is essential.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
-
-### `integer::uint32_less_than_divisor_implies_remainder_is_value`
-
-```click
-theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divisor: uint32) {
-    requires value < divisor;
-    ensures value % divisor == value by {
-        have to_integer(value) < to_integer(divisor) by {
-            normalize() using {
-                value < divisor;
-            };
-        }
-        have 0 <= to_integer(value) by {
-            normalize();
-        }
-        have 1 <= to_integer(divisor) by {
-            have 1 <= to_integer(divisor) by {
-                have (to_integer(value) + (-1 * to_integer(divisor)) + 1) <= 0 by {
-                    have (to_integer(value) + 1) <= to_integer(divisor) by {
-                        apply(integer::lt_step_le(to_integer(value), to_integer(divisor))) using {
-                            to_integer(value) < to_integer(divisor);
-                        };
-                    }
-                    have (to_integer(value) + (-1 * to_integer(divisor)) + 1) == ((to_integer(value) + 1) - to_integer(divisor)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference((to_integer(value) + 1), to_integer(divisor), (to_integer(value) + (-1 * to_integer(divisor)) + 1))) using {
-                        (to_integer(value) + 1) <= to_integer(divisor);
-                        (to_integer(value) + (-1 * to_integer(divisor)) + 1) == ((to_integer(value) + 1)
-                            - to_integer(divisor));
-                    };
-                }
-                have (-1 * to_integer(value)) <= 0 by {
-                    have 0 <= to_integer(value) by {
-                        normalize();
-                    }
-                    have (-1 * to_integer(value)) == (0 - to_integer(value)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(0, to_integer(value), (-1 * to_integer(value)))) using {
-                        0 <= to_integer(value);
-                        (-1 * to_integer(value)) == (0 - to_integer(value));
-                    };
-                }
-                have ((-1 * to_integer(divisor)) + 1) <= 0 by {
-                    have (to_integer(value) + (-1 * to_integer(divisor)) + 1 + (-1 * to_integer(value))) <= (0 + 0) by {
-                        apply(integer::add_le((to_integer(value) + (-1 * to_integer(divisor)) + 1), 0, (-1 * to_integer(value)), 0)) using {
-                            (to_integer(value) + (-1 * to_integer(divisor)) + 1) <= 0;
-                            (-1 * to_integer(value)) <= 0;
-                        };
-                    }
-                    have ((-1 * to_integer(divisor)) + 1) == (to_integer(value) + (-1 * to_integer(divisor)) + 1 + (-1 * to_integer(value))) by {
-                        normalize();
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute((to_integer(value) + (-1 * to_integer(divisor)) + 1 + (-1 * to_integer(value))), (0 + 0), ((-1 * to_integer(divisor)) + 1), 0)) using {
-                        (to_integer(value) + (-1 * to_integer(divisor)) + 1 + (-1 * to_integer(value)))
-                            <= (0 + 0);
-                        ((-1 * to_integer(divisor)) + 1) == (to_integer(value) + (-1 *
-                            to_integer(divisor)) + 1 + (-1 * to_integer(value)));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                have ((-1 * to_integer(divisor)) + 1) == (1 - to_integer(divisor)) by {
-                    normalize();
-                }
-                apply(integer::difference_le(1, to_integer(divisor), ((-1 * to_integer(divisor)) + 1))) using {
-                    ((-1 * to_integer(divisor)) + 1) <= 0;
-                    ((-1 * to_integer(divisor)) + 1) == (1 - to_integer(divisor));
-                };
-            }
-            normalize() using {
-                1 <= to_integer(divisor);
-            };
-        }
-        have to_integer(divisor) != 0 by {
-            normalize() using {
-                1 <= to_integer(divisor);
-            };
-        }
-        have divisor != 0u32 by {
-            normalize() using {
-                to_integer(divisor) != 0;
-            };
-        }
-        apply(integer::uint32_remainder_to_integer(value, divisor)) using {
-            divisor != 0u32;
-            to_integer(divisor) != 0;
-        };
-        have (0 * to_integer(divisor)) <= to_integer(value) by {
-            have (0 * to_integer(divisor)) <= to_integer(value) by {
-                have (-1 * to_integer(value)) <= 0 by {
-                    have (-1 * to_integer(value)) == (0 - to_integer(value)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(0, to_integer(value), (-1 * to_integer(value)))) using {
-                        0 <= to_integer(value);
-                        (-1 * to_integer(value)) == (0 - to_integer(value));
-                    };
-                }
-                have (-1 * to_integer(value)) == ((0 * to_integer(divisor)) - to_integer(value)) by {
-                    normalize();
-                }
-                apply(integer::difference_le((0 * to_integer(divisor)), to_integer(value), (-1 * to_integer(value)))) using {
-                    (-1 * to_integer(value)) <= 0;
-                    (-1 * to_integer(value)) == ((0 * to_integer(divisor)) - to_integer(value));
-                };
-            }
-            normalize() using {
-                (0 * to_integer(divisor)) <= to_integer(value);
-            };
-        }
-        apply(integer::positive_divisor_quotient_lower(to_integer(value), to_integer(divisor), 0)) using {
-            to_integer(divisor) != 0;
-            1 <= to_integer(divisor);
-            (0 * to_integer(divisor)) <= to_integer(value);
-        };
-        have to_integer(value) < (1 * to_integer(divisor)) by {
-            have to_integer(value) < (1 * to_integer(divisor)) by {
-                have (to_integer(value) + (-1 * to_integer(divisor)) + 1) <= 0 by {
-                    have (to_integer(value) + 1) <= to_integer(divisor) by {
-                        apply(integer::lt_step_le(to_integer(value), to_integer(divisor))) using {
-                            to_integer(value) < to_integer(divisor);
-                        };
-                    }
-                    have (to_integer(value) + (-1 * to_integer(divisor)) + 1) == ((to_integer(value) + 1) - to_integer(divisor)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference((to_integer(value) + 1), to_integer(divisor), (to_integer(value) + (-1 * to_integer(divisor)) + 1))) using {
-                        (to_integer(value) + 1) <= to_integer(divisor);
-                        (to_integer(value) + (-1 * to_integer(divisor)) + 1) == ((to_integer(value) + 1)
-                            - to_integer(divisor));
-                    };
-                }
-                have (to_integer(value) + (-1 * to_integer(divisor)) + 1) == ((to_integer(value) + 1) - (1 * to_integer(divisor))) by {
-                    normalize();
-                }
-                apply(integer::difference_le((to_integer(value) + 1), (1 * to_integer(divisor)), (to_integer(value) + (-1 * to_integer(divisor)) + 1))) using {
-                    (to_integer(value) + (-1 * to_integer(divisor)) + 1) <= 0;
-                    (to_integer(value) + (-1 * to_integer(divisor)) + 1) == ((to_integer(value) + 1) -
-                        (1 * to_integer(divisor)));
-                };
-                apply(integer::step_le_lt(to_integer(value), (1 * to_integer(divisor)))) using {
-                    (to_integer(value) + 1) <= (1 * to_integer(divisor));
-                };
-            }
-            normalize() using {
-                to_integer(value) < (1 * to_integer(divisor));
-            };
-        }
-        have 0 < 1 by {
-            normalize();
-        }
-        apply(integer::positive_divisor_quotient_strict_upper(to_integer(value), to_integer(divisor), 1)) using {
-            to_integer(divisor) != 0;
-            1 <= to_integer(divisor);
-            0 < 1;
-            to_integer(value) < (1 * to_integer(divisor));
-        };
-        have truncating_quotient(to_integer(value), to_integer(divisor)) == 0 by {
-            have truncating_quotient(to_integer(value), to_integer(divisor)) + 1 <= 1 by {
-                apply(integer::lt_step_le(truncating_quotient(to_integer(value), to_integer(divisor)), 1)) using { truncating_quotient(to_integer(value), to_integer(divisor)) < 1; to_integer(divisor) != 0; };
-            }
-            have truncating_quotient(to_integer(value), to_integer(divisor)) <= 0 by {
-                have truncating_quotient(to_integer(value), to_integer(divisor)) == (truncating_quotient(to_integer(value), to_integer(divisor)) + 1) - 1 by normalize();
-                apply(integer::le_difference(truncating_quotient(to_integer(value), to_integer(divisor)) + 1, 1, truncating_quotient(to_integer(value), to_integer(divisor)))) using { truncating_quotient(to_integer(value), to_integer(divisor)) + 1 <= 1; truncating_quotient(to_integer(value), to_integer(divisor)) == (truncating_quotient(to_integer(value), to_integer(divisor)) + 1) - 1; to_integer(divisor) != 0; };
-            }
-            apply(integer::le_antisymmetric(truncating_quotient(to_integer(value), to_integer(divisor)), 0)) using { truncating_quotient(to_integer(value), to_integer(divisor)) <= 0; 0 <= truncating_quotient(to_integer(value), to_integer(divisor)); to_integer(divisor) != 0; };
-        }
-        apply(integer::truncation_identity(to_integer(value), to_integer(divisor))) using {
-            to_integer(divisor) != 0;
-        };
-        have (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) == 0 by {
-            rewrite(truncating_quotient(to_integer(value), to_integer(divisor)), 0);
-            normalize();
-        }
-        have to_integer((value % divisor)) == to_integer(value) by {
-            have (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) + truncating_remainder(to_integer(value), to_integer(divisor)) == 0 + truncating_remainder(to_integer(value), to_integer(divisor)) by {
-                apply(integer::equal_add((truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)), 0, truncating_remainder(to_integer(value), to_integer(divisor)), truncating_remainder(to_integer(value), to_integer(divisor)))) using { (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) == 0; truncating_remainder(to_integer(value), to_integer(divisor)) == truncating_remainder(to_integer(value), to_integer(divisor)); to_integer(divisor) != 0; };
-            }
-            have truncating_remainder(to_integer(value), to_integer(divisor)) == 0 + truncating_remainder(to_integer(value), to_integer(divisor)) by normalize();
-            have (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) + truncating_remainder(to_integer(value), to_integer(divisor)) == truncating_remainder(to_integer(value), to_integer(divisor)) by {
-                apply(integer::equal_substitute((truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) + truncating_remainder(to_integer(value), to_integer(divisor)), 0 + truncating_remainder(to_integer(value), to_integer(divisor)), (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) + truncating_remainder(to_integer(value), to_integer(divisor)), truncating_remainder(to_integer(value), to_integer(divisor)))) using {
-                    (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) + truncating_remainder(to_integer(value), to_integer(divisor)) == 0 + truncating_remainder(to_integer(value), to_integer(divisor)); (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) + truncating_remainder(to_integer(value), to_integer(divisor)) == (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) + truncating_remainder(to_integer(value), to_integer(divisor)); truncating_remainder(to_integer(value), to_integer(divisor)) == 0 + truncating_remainder(to_integer(value), to_integer(divisor)); to_integer(divisor) != 0;
-                };
-            }
-            have to_integer(value) == truncating_remainder(to_integer(value), to_integer(divisor)) by {
-                apply(integer::equal_substitute((truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) + truncating_remainder(to_integer(value), to_integer(divisor)), truncating_remainder(to_integer(value), to_integer(divisor)), to_integer(value), truncating_remainder(to_integer(value), to_integer(divisor)))) using {
-                    (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) + truncating_remainder(to_integer(value), to_integer(divisor)) == truncating_remainder(to_integer(value), to_integer(divisor)); to_integer(value) == (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) + truncating_remainder(to_integer(value), to_integer(divisor)); truncating_remainder(to_integer(value), to_integer(divisor)) == truncating_remainder(to_integer(value), to_integer(divisor)); to_integer(divisor) != 0;
-                };
-            }
-            apply(integer::equal_substitute(truncating_remainder(to_integer(value), to_integer(divisor)), truncating_remainder(to_integer(value), to_integer(divisor)), to_integer(value % divisor), to_integer(value))) using {
-                truncating_remainder(to_integer(value), to_integer(divisor)) == truncating_remainder(to_integer(value), to_integer(divisor)); to_integer(value % divisor) == truncating_remainder(to_integer(value), to_integer(divisor)); to_integer(value) == truncating_remainder(to_integer(value), to_integer(divisor)); divisor != 0u32; to_integer(divisor) != 0;
-            };
-        }
-        known();
-    }
-}
-```
-
-A dividend below its unsigned divisor is unchanged by reduction. The strict
-unsigned premise excludes a zero divisor; a nonzero divisor or a non-strict
-bound alone is insufficient. Values above the signed sign bit retain their
-unsigned meaning.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
@@ -2111,602 +1829,6 @@ A proved non-strict order between exact signed observations establishes the nati
 
 **Verified use:** [`mdtests/signed_integer_order_bridges.md`](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
 
-### `integer::uint32_positive_predecessor_strictly_decreases`
-
-```click
-theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
-    requires 0u32 < value;
-
-    ensures to_integer(value - 1u32) < to_integer(value) by {
-        have 0 < to_integer(value) by {
-            known();
-        }
-        have 0 <= (to_integer(value) - 1) by {
-            have 0 <= (to_integer(value) - 1) by {
-                have ((-1 * to_integer(value)) + 1) <= 0 by {
-                    have (0 + 1) <= to_integer(value) by {
-                        apply(integer::lt_step_le(0, to_integer(value))) using {
-                            0 < to_integer(value);
-                        };
-                    }
-                    have ((-1 * to_integer(value)) + 1) == ((0 + 1) - to_integer(value)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference((0 + 1), to_integer(value), ((-1 * to_integer(value)) + 1))) using {
-                        (0 + 1) <= to_integer(value);
-                        ((-1 * to_integer(value)) + 1) == ((0 + 1) - to_integer(value));
-                    };
-                }
-                have ((-1 * to_integer(value)) + 1) == (0 - (to_integer(value) - 1)) by {
-                    normalize();
-                }
-                apply(integer::difference_le(0, (to_integer(value) - 1), ((-1 * to_integer(value)) + 1))) using {
-                    ((-1 * to_integer(value)) + 1) <= 0;
-                    ((-1 * to_integer(value)) + 1) == (0 - (to_integer(value) - 1));
-                };
-            }
-            normalize() using {
-                0 <= (to_integer(value) - 1);
-            };
-        }
-        have (to_integer(value) - 1) <= 4294967295 by {
-            have (to_integer(value) - 1) <= 4294967295 by {
-                have (to_integer(value) + -to_integer(4294967295u64)) <= 0 by {
-                    have to_integer(value) <= 4294967295 by {
-                        normalize();
-                    }
-                    have (to_integer(value) + -to_integer(4294967295u64)) == (to_integer(value) - 4294967295) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(to_integer(value), 4294967295, (to_integer(value) + -to_integer(4294967295u64)))) using {
-                        to_integer(value) <= 4294967295;
-                        (to_integer(value) + -to_integer(4294967295u64)) == (to_integer(value) -
-                            4294967295);
-                    };
-                }
-                have (let integer_constant: Integer = -1; integer_constant) <= 0 by {
-                    normalize();
-                }
-                have (to_integer(value) + -to_integer(4294967296u64)) <= 0 by {
-                    have (to_integer(value) + -to_integer(4294967295u64) + (let integer_constant: Integer = -1; integer_constant)) <= (0 + 0) by {
-                        apply(integer::add_le((to_integer(value) + -to_integer(4294967295u64)), 0, (let integer_constant: Integer = -1; integer_constant), 0)) using {
-                            (to_integer(value) + -to_integer(4294967295u64)) <= 0;
-                            (let integer_constant: Integer = -1; integer_constant) <= 0;
-                        };
-                    }
-                    have (to_integer(value) + -to_integer(4294967296u64)) == (to_integer(value) + -to_integer(4294967295u64) + (let integer_constant: Integer = -1; integer_constant)) by {
-                        normalize();
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute((to_integer(value) + -to_integer(4294967295u64) + (let integer_constant: Integer = -1; integer_constant)), (0 + 0), (to_integer(value) + -to_integer(4294967296u64)), 0)) using {
-                        (to_integer(value) + -to_integer(4294967295u64) + (let integer_constant: Integer
-                            = -1; integer_constant)) <= (0 + 0);
-                        (to_integer(value) + -to_integer(4294967296u64)) == (to_integer(value) +
-                            -to_integer(4294967295u64) + (let integer_constant: Integer = -1;
-                            integer_constant));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                have (to_integer(value) + -to_integer(4294967296u64)) == ((to_integer(value) - 1) - 4294967295) by {
-                    normalize();
-                }
-                apply(integer::difference_le((to_integer(value) - 1), 4294967295, (to_integer(value) + -to_integer(4294967296u64)))) using {
-                    (to_integer(value) + -to_integer(4294967296u64)) <= 0;
-                    (to_integer(value) + -to_integer(4294967296u64)) == ((to_integer(value) - 1) -
-                        4294967295);
-                };
-            }
-            normalize() using {
-                (to_integer(value) - 1) <= 4294967295;
-            };
-        }
-        have to_integer((value - 1u32)) == (to_integer(value) - 1) by {
-            normalize() using {
-                0 <= (to_integer(value) - 1);
-                (to_integer(value) - 1) <= 4294967295;
-            };
-        }
-        have to_integer((value - 1u32)) < to_integer(value) by {
-            have ((-1 * (to_integer(value) - 1)) + to_integer((value - 1u32))) == 0 by {
-                have (to_integer((value - 1u32)) - (to_integer(value) - 1)) == 0 by {
-                    apply(integer::equal_difference(to_integer((value - 1u32)), (to_integer(value) - 1))) using {
-                        to_integer((value - 1u32)) == (to_integer(value) - 1);
-                    };
-                }
-                have ((-1 * (to_integer(value) - 1)) + to_integer((value - 1u32))) == (to_integer((value - 1u32)) - (to_integer(value) - 1)) by {
-                    normalize();
-                }
-                apply(integer::equal_substitute((to_integer((value - 1u32)) - (to_integer(value) - 1)), 0, ((-1 * (to_integer(value) - 1)) + to_integer((value - 1u32))), 0)) using {
-                    (to_integer((value - 1u32)) - (to_integer(value) - 1)) == 0;
-                    ((-1 * (to_integer(value) - 1)) + to_integer((value - 1u32))) == (to_integer((value
-                        - 1u32)) - (to_integer(value) - 1));
-                    (let integer_value: Integer = 0; integer_value) == 0;
-                };
-            }
-            have ((-1 * (to_integer(value) - 1)) + to_integer((value - 1u32))) <= 0 by {
-                apply(integer::equal_le(((-1 * (to_integer(value) - 1)) + to_integer((value - 1u32))), 0)) using {
-                    ((-1 * (to_integer(value) - 1)) + to_integer((value - 1u32))) == 0;
-                };
-            }
-            have ((-1 * (to_integer(value) - 1)) + to_integer((value - 1u32))) == ((to_integer((value - 1u32)) + 1) - to_integer(value)) by {
-                normalize();
-            }
-            apply(integer::difference_le((to_integer((value - 1u32)) + 1), to_integer(value), ((-1 * (to_integer(value) - 1)) + to_integer((value - 1u32))))) using {
-                ((-1 * (to_integer(value) - 1)) + to_integer((value - 1u32))) <= 0;
-                ((-1 * (to_integer(value) - 1)) + to_integer((value - 1u32))) == ((to_integer((value -
-                    1u32)) + 1) - to_integer(value));
-            };
-            apply(integer::step_le_lt(to_integer((value - 1u32)), to_integer(value))) using {
-                (to_integer((value - 1u32)) + 1) <= to_integer(value);
-            };
-        }
-        normalize() using {
-            to_integer((value - 1u32)) < to_integer(value);
-        };
-    }
-}
-```
-
-**Meaning:** Given its listed requirements, proves `to_integer(value - 1u32) < to_integer(value)`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `integer::uint32_increment_upper_bound`
-
-```click
-theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
-    requires value < upper;
-
-    ensures to_integer(value + 1u32) <= to_integer(upper) by {
-        have to_integer(value) < to_integer(upper) by {
-            known();
-        }
-        have 0 <= (to_integer(value) + 1) by {
-            have 0 <= (to_integer(value) + 1) by {
-                have (-1 * to_integer(value)) <= 0 by {
-                    have 0 <= to_integer(value) by {
-                        normalize();
-                    }
-                    have (-1 * to_integer(value)) == (0 - to_integer(value)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(0, to_integer(value), (-1 * to_integer(value)))) using {
-                        0 <= to_integer(value);
-                        (-1 * to_integer(value)) == (0 - to_integer(value));
-                    };
-                }
-                have (let integer_constant: Integer = -1; integer_constant) <= 0 by {
-                    normalize();
-                }
-                have ((-1 * to_integer(value)) + -1) <= 0 by {
-                    have ((-1 * to_integer(value)) + (let integer_constant: Integer = -1; integer_constant)) <= (0 + 0) by {
-                        apply(integer::add_le((-1 * to_integer(value)), 0, (let integer_constant: Integer = -1; integer_constant), 0)) using {
-                            (-1 * to_integer(value)) <= 0;
-                            (let integer_constant: Integer = -1; integer_constant) <= 0;
-                        };
-                    }
-                    have ((-1 * to_integer(value)) + -1) == ((-1 * to_integer(value)) + (let integer_constant: Integer = -1; integer_constant)) by {
-                        normalize();
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute(((-1 * to_integer(value)) + (let integer_constant: Integer = -1; integer_constant)), (0 + 0), ((-1 * to_integer(value)) + -1), 0)) using {
-                        ((-1 * to_integer(value)) + (let integer_constant: Integer = -1;
-                            integer_constant)) <= (0 + 0);
-                        ((-1 * to_integer(value)) + -1) == ((-1 * to_integer(value)) + (let
-                            integer_constant: Integer = -1; integer_constant));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                have ((-1 * to_integer(value)) + -1) == (0 - (to_integer(value) + 1)) by {
-                    normalize();
-                }
-                apply(integer::difference_le(0, (to_integer(value) + 1), ((-1 * to_integer(value)) + -1))) using {
-                    ((-1 * to_integer(value)) + -1) <= 0;
-                    ((-1 * to_integer(value)) + -1) == (0 - (to_integer(value) + 1));
-                };
-            }
-            normalize() using {
-                0 <= (to_integer(value) + 1);
-            };
-        }
-        have (to_integer(value) + 1) <= 4294967295 by {
-            have (to_integer(value) + 1) <= 4294967295 by {
-                have (to_integer(value) + (-1 * to_integer(upper)) + 1) <= 0 by {
-                    have (to_integer(value) + 1) <= to_integer(upper) by {
-                        apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
-                            to_integer(value) < to_integer(upper);
-                        };
-                    }
-                    have (to_integer(value) + (-1 * to_integer(upper)) + 1) == ((to_integer(value) + 1) - to_integer(upper)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference((to_integer(value) + 1), to_integer(upper), (to_integer(value) + (-1 * to_integer(upper)) + 1))) using {
-                        (to_integer(value) + 1) <= to_integer(upper);
-                        (to_integer(value) + (-1 * to_integer(upper)) + 1) == ((to_integer(value) + 1) -
-                            to_integer(upper));
-                    };
-                }
-                have (to_integer(upper) + -to_integer(4294967295u64)) <= 0 by {
-                    have to_integer(upper) <= 4294967295 by {
-                        normalize();
-                    }
-                    have (to_integer(upper) + -to_integer(4294967295u64)) == (to_integer(upper) - 4294967295) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(to_integer(upper), 4294967295, (to_integer(upper) + -to_integer(4294967295u64)))) using {
-                        to_integer(upper) <= 4294967295;
-                        (to_integer(upper) + -to_integer(4294967295u64)) == (to_integer(upper) -
-                            4294967295);
-                    };
-                }
-                have (to_integer(value) + -to_integer(4294967294u64)) <= 0 by {
-                    have (to_integer(value) + (-1 * to_integer(upper)) + 1 + (to_integer(upper) + -to_integer(4294967295u64))) <= (0 + 0) by {
-                        apply(integer::add_le((to_integer(value) + (-1 * to_integer(upper)) + 1), 0, (to_integer(upper) + -to_integer(4294967295u64)), 0)) using {
-                            (to_integer(value) + (-1 * to_integer(upper)) + 1) <= 0;
-                            (to_integer(upper) + -to_integer(4294967295u64)) <= 0;
-                        };
-                    }
-                    have (to_integer(value) + -to_integer(4294967294u64)) == (to_integer(value) + (-1 * to_integer(upper)) + 1 + (to_integer(upper) + -to_integer(4294967295u64))) by {
-                        normalize();
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute((to_integer(value) + (-1 * to_integer(upper)) + 1 + (to_integer(upper) + -to_integer(4294967295u64))), (0 + 0), (to_integer(value) + -to_integer(4294967294u64)), 0)) using {
-                        (to_integer(value) + (-1 * to_integer(upper)) + 1 + (to_integer(upper) +
-                            -to_integer(4294967295u64))) <= (0 + 0);
-                        (to_integer(value) + -to_integer(4294967294u64)) == (to_integer(value) + (-1 *
-                            to_integer(upper)) + 1 + (to_integer(upper) + -to_integer(4294967295u64)));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                have (to_integer(value) + -to_integer(4294967294u64)) == ((to_integer(value) + 1) - 4294967295) by {
-                    normalize();
-                }
-                apply(integer::difference_le((to_integer(value) + 1), 4294967295, (to_integer(value) + -to_integer(4294967294u64)))) using {
-                    (to_integer(value) + -to_integer(4294967294u64)) <= 0;
-                    (to_integer(value) + -to_integer(4294967294u64)) == ((to_integer(value) + 1) -
-                        4294967295);
-                };
-            }
-            normalize() using {
-                (to_integer(value) + 1) <= 4294967295;
-            };
-        }
-        have to_integer((value + 1u32)) == (to_integer(value) + 1) by {
-            normalize() using {
-                0 <= (to_integer(value) + 1);
-                (to_integer(value) + 1) <= 4294967295;
-            };
-        }
-        have to_integer((value + 1u32)) <= to_integer(upper) by {
-            have ((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32))) == 0 by {
-                have (to_integer((value + 1u32)) - (to_integer(value) + 1)) == 0 by {
-                    apply(integer::equal_difference(to_integer((value + 1u32)), (to_integer(value) + 1))) using {
-                        to_integer((value + 1u32)) == (to_integer(value) + 1);
-                    };
-                }
-                have ((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32))) == (to_integer((value + 1u32)) - (to_integer(value) + 1)) by {
-                    normalize();
-                }
-                apply(integer::equal_substitute((to_integer((value + 1u32)) - (to_integer(value) + 1)), 0, ((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32))), 0)) using {
-                    (to_integer((value + 1u32)) - (to_integer(value) + 1)) == 0;
-                    ((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32))) == (to_integer((value
-                        + 1u32)) - (to_integer(value) + 1));
-                    (let integer_value: Integer = 0; integer_value) == 0;
-                };
-            }
-            have ((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32))) <= 0 by {
-                apply(integer::equal_le(((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32))), 0)) using {
-                    ((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32))) == 0;
-                };
-            }
-            have (to_integer(value) + (-1 * to_integer(upper)) + 1) <= 0 by {
-                have (to_integer(value) + 1) <= to_integer(upper) by {
-                    apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
-                        to_integer(value) < to_integer(upper);
-                    };
-                }
-                have (to_integer(value) + (-1 * to_integer(upper)) + 1) == ((to_integer(value) + 1) - to_integer(upper)) by {
-                    normalize();
-                }
-                apply(integer::le_difference((to_integer(value) + 1), to_integer(upper), (to_integer(value) + (-1 * to_integer(upper)) + 1))) using {
-                    (to_integer(value) + 1) <= to_integer(upper);
-                    (to_integer(value) + (-1 * to_integer(upper)) + 1) == ((to_integer(value) + 1) -
-                        to_integer(upper));
-                };
-            }
-            have (to_integer(value) + (-1 * (to_integer(value) + 1)) + (-1 * to_integer(upper)) + to_integer((value + 1u32)) + 1) <= 0 by {
-                have ((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32)) + (to_integer(value) + (-1 * to_integer(upper)) + 1)) <= (0 + 0) by {
-                    apply(integer::add_le(((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32))), 0, (to_integer(value) + (-1 * to_integer(upper)) + 1), 0)) using {
-                        ((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32))) <= 0;
-                        (to_integer(value) + (-1 * to_integer(upper)) + 1) <= 0;
-                    };
-                }
-                have (to_integer(value) + (-1 * (to_integer(value) + 1)) + (-1 * to_integer(upper)) + to_integer((value + 1u32)) + 1) == ((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32)) + (to_integer(value) + (-1 * to_integer(upper)) + 1)) by {
-                    normalize();
-                }
-                have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                    normalize();
-                }
-                apply(integer::le_substitute(((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32)) + (to_integer(value) + (-1 * to_integer(upper)) + 1)), (0 + 0), (to_integer(value) + (-1 * (to_integer(value) + 1)) + (-1 * to_integer(upper)) + to_integer((value + 1u32)) + 1), 0)) using {
-                    ((-1 * (to_integer(value) + 1)) + to_integer((value + 1u32)) + (to_integer(value) +
-                        (-1 * to_integer(upper)) + 1)) <= (0 + 0);
-                    (to_integer(value) + (-1 * (to_integer(value) + 1)) + (-1 * to_integer(upper)) +
-                        to_integer((value + 1u32)) + 1) == ((-1 * (to_integer(value) + 1)) +
-                        to_integer((value + 1u32)) + (to_integer(value) + (-1 * to_integer(upper)) +
-                        1));
-                    (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                };
-            }
-            have (to_integer(value) + (-1 * (to_integer(value) + 1)) + (-1 * to_integer(upper)) + to_integer((value + 1u32)) + 1) == (to_integer((value + 1u32)) - to_integer(upper)) by {
-                normalize();
-            }
-            apply(integer::difference_le(to_integer((value + 1u32)), to_integer(upper), (to_integer(value) + (-1 * (to_integer(value) + 1)) + (-1 * to_integer(upper)) + to_integer((value + 1u32)) + 1))) using {
-                (to_integer(value) + (-1 * (to_integer(value) + 1)) + (-1 * to_integer(upper)) +
-                    to_integer((value + 1u32)) + 1) <= 0;
-                (to_integer(value) + (-1 * (to_integer(value) + 1)) + (-1 * to_integer(upper)) +
-                    to_integer((value + 1u32)) + 1) == (to_integer((value + 1u32)) - to_integer(upper));
-            };
-        }
-        normalize() using {
-            to_integer((value + 1u32)) <= to_integer(upper);
-        };
-    }
-}
-```
-
-**Meaning:** Given its listed requirements, proves `to_integer(value + 1u32) <= to_integer(upper)`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-### `integer::uint32_less_than_implies_positive_difference`
-
-```click
-theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint32) {
-    requires value < upper;
-
-    ensures 0 < to_integer(upper - value) by {
-        have 0 <= (to_integer(upper) - to_integer(value)) by {
-            have 0 <= (to_integer(upper) - to_integer(value)) by {
-                have (to_integer(value) + (-1 * to_integer(upper)) + 1) <= 0 by {
-                    have (to_integer(value) + 1) <= to_integer(upper) by {
-                        apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
-                            to_integer(value) < to_integer(upper);
-                        };
-                    }
-                    have (to_integer(value) + (-1 * to_integer(upper)) + 1) == ((to_integer(value) + 1) - to_integer(upper)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference((to_integer(value) + 1), to_integer(upper), (to_integer(value) + (-1 * to_integer(upper)) + 1))) using {
-                        (to_integer(value) + 1) <= to_integer(upper);
-                        (to_integer(value) + (-1 * to_integer(upper)) + 1) == ((to_integer(value) + 1) -
-                            to_integer(upper));
-                    };
-                }
-                have (let integer_constant: Integer = -1; integer_constant) <= 0 by {
-                    normalize();
-                }
-                have (to_integer(value) + (-1 * to_integer(upper))) <= 0 by {
-                    have (to_integer(value) + (-1 * to_integer(upper)) + 1 + (let integer_constant: Integer = -1; integer_constant)) <= (0 + 0) by {
-                        apply(integer::add_le((to_integer(value) + (-1 * to_integer(upper)) + 1), 0, (let integer_constant: Integer = -1; integer_constant), 0)) using {
-                            (to_integer(value) + (-1 * to_integer(upper)) + 1) <= 0;
-                            (let integer_constant: Integer = -1; integer_constant) <= 0;
-                        };
-                    }
-                    have (to_integer(value) + (-1 * to_integer(upper))) == (to_integer(value) + (-1 * to_integer(upper)) + 1 + (let integer_constant: Integer = -1; integer_constant)) by {
-                        normalize();
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute((to_integer(value) + (-1 * to_integer(upper)) + 1 + (let integer_constant: Integer = -1; integer_constant)), (0 + 0), (to_integer(value) + (-1 * to_integer(upper))), 0)) using {
-                        (to_integer(value) + (-1 * to_integer(upper)) + 1 + (let integer_constant:
-                            Integer = -1; integer_constant)) <= (0 + 0);
-                        (to_integer(value) + (-1 * to_integer(upper))) == (to_integer(value) + (-1 *
-                            to_integer(upper)) + 1 + (let integer_constant: Integer = -1;
-                            integer_constant));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                have (to_integer(value) + (-1 * to_integer(upper))) == (0 - (to_integer(upper) - to_integer(value))) by {
-                    normalize();
-                }
-                apply(integer::difference_le(0, (to_integer(upper) - to_integer(value)), (to_integer(value) + (-1 * to_integer(upper))))) using {
-                    (to_integer(value) + (-1 * to_integer(upper))) <= 0;
-                    (to_integer(value) + (-1 * to_integer(upper))) == (0 - (to_integer(upper) -
-                        to_integer(value)));
-                };
-            }
-            normalize() using {
-                0 <= (to_integer(upper) - to_integer(value));
-            };
-        }
-        have (to_integer(upper) - to_integer(value)) <= 4294967295 by {
-            have (to_integer(upper) - to_integer(value)) <= 4294967295 by {
-                have (to_integer(upper) + -to_integer(4294967295u64)) <= 0 by {
-                    have to_integer(upper) <= 4294967295 by {
-                        normalize();
-                    }
-                    have (to_integer(upper) + -to_integer(4294967295u64)) == (to_integer(upper) - 4294967295) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(to_integer(upper), 4294967295, (to_integer(upper) + -to_integer(4294967295u64)))) using {
-                        to_integer(upper) <= 4294967295;
-                        (to_integer(upper) + -to_integer(4294967295u64)) == (to_integer(upper) -
-                            4294967295);
-                    };
-                }
-                have (-1 * to_integer(value)) <= 0 by {
-                    have 0 <= to_integer(value) by {
-                        normalize();
-                    }
-                    have (-1 * to_integer(value)) == (0 - to_integer(value)) by {
-                        normalize();
-                    }
-                    apply(integer::le_difference(0, to_integer(value), (-1 * to_integer(value)))) using {
-                        0 <= to_integer(value);
-                        (-1 * to_integer(value)) == (0 - to_integer(value));
-                    };
-                }
-                have ((-1 * to_integer(value)) + to_integer(upper) + -to_integer(4294967295u64)) <= 0 by {
-                    have (to_integer(upper) + -to_integer(4294967295u64) + (-1 * to_integer(value))) <= (0 + 0) by {
-                        apply(integer::add_le((to_integer(upper) + -to_integer(4294967295u64)), 0, (-1 * to_integer(value)), 0)) using {
-                            (to_integer(upper) + -to_integer(4294967295u64)) <= 0;
-                            (-1 * to_integer(value)) <= 0;
-                        };
-                    }
-                    have ((-1 * to_integer(value)) + to_integer(upper) + -to_integer(4294967295u64)) == (to_integer(upper) + -to_integer(4294967295u64) + (-1 * to_integer(value))) by {
-                        normalize();
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute((to_integer(upper) + -to_integer(4294967295u64) + (-1 * to_integer(value))), (0 + 0), ((-1 * to_integer(value)) + to_integer(upper) + -to_integer(4294967295u64)), 0)) using {
-                        (to_integer(upper) + -to_integer(4294967295u64) + (-1 * to_integer(value))) <=
-                            (0 + 0);
-                        ((-1 * to_integer(value)) + to_integer(upper) + -to_integer(4294967295u64)) ==
-                            (to_integer(upper) + -to_integer(4294967295u64) + (-1 * to_integer(value)));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                have ((-1 * to_integer(value)) + to_integer(upper) + -to_integer(4294967295u64)) == ((to_integer(upper) - to_integer(value)) - 4294967295) by {
-                    normalize();
-                }
-                apply(integer::difference_le((to_integer(upper) - to_integer(value)), 4294967295, ((-1 * to_integer(value)) + to_integer(upper) + -to_integer(4294967295u64)))) using {
-                    ((-1 * to_integer(value)) + to_integer(upper) + -to_integer(4294967295u64)) <= 0;
-                    ((-1 * to_integer(value)) + to_integer(upper) + -to_integer(4294967295u64)) ==
-                        ((to_integer(upper) - to_integer(value)) - 4294967295);
-                };
-            }
-            normalize() using {
-                (to_integer(upper) - to_integer(value)) <= 4294967295;
-            };
-        }
-        have to_integer((upper - value)) == (to_integer(upper) - to_integer(value)) by {
-            normalize() using {
-                0 <= (to_integer(upper) - to_integer(value));
-                (to_integer(upper) - to_integer(value)) <= 4294967295;
-            };
-        }
-        have 0 < to_integer((upper - value)) by {
-            have ((-1 * (to_integer(upper) - to_integer(value))) + to_integer((upper - value))) == 0 by {
-                have (to_integer((upper - value)) - (to_integer(upper) - to_integer(value))) == 0 by {
-                    apply(integer::equal_difference(to_integer((upper - value)), (to_integer(upper) - to_integer(value)))) using {
-                        to_integer((upper - value)) == (to_integer(upper) - to_integer(value));
-                    };
-                }
-                have ((-1 * (to_integer(upper) - to_integer(value))) + to_integer((upper - value))) == (to_integer((upper - value)) - (to_integer(upper) - to_integer(value))) by {
-                    normalize();
-                }
-                apply(integer::equal_substitute((to_integer((upper - value)) - (to_integer(upper) - to_integer(value))), 0, ((-1 * (to_integer(upper) - to_integer(value))) + to_integer((upper - value))), 0)) using {
-                    (to_integer((upper - value)) - (to_integer(upper) - to_integer(value))) == 0;
-                    ((-1 * (to_integer(upper) - to_integer(value))) + to_integer((upper - value))) ==
-                        (to_integer((upper - value)) - (to_integer(upper) - to_integer(value)));
-                    (let integer_value: Integer = 0; integer_value) == 0;
-                };
-            }
-            have ((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value)))) <= 0 by {
-                have (((-1 * (to_integer(upper) - to_integer(value))) + to_integer((upper - value))) * -1) == (0 * -1) by {
-                    apply(integer::equal_multiply(((-1 * (to_integer(upper) - to_integer(value))) + to_integer((upper - value))), 0, -1)) using {
-                        ((-1 * (to_integer(upper) - to_integer(value))) + to_integer((upper - value)))
-                            == 0;
-                    };
-                }
-                have ((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value)))) == 0 by {
-                    have ((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value)))) == (((-1 * (to_integer(upper) - to_integer(value))) + to_integer((upper - value))) * -1) by {
-                        normalize();
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 * -1) by {
-                        normalize();
-                    }
-                    apply(integer::equal_substitute((((-1 * (to_integer(upper) - to_integer(value))) + to_integer((upper - value))) * -1), (0 * -1), ((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value)))), 0)) using {
-                        (((-1 * (to_integer(upper) - to_integer(value))) + to_integer((upper - value)))
-                            * -1) == (0 * -1);
-                        ((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))))
-                            == (((-1 * (to_integer(upper) - to_integer(value))) + to_integer((upper -
-                            value))) * -1);
-                        (let integer_value: Integer = 0; integer_value) == (0 * -1);
-                    };
-                }
-                apply(integer::equal_le(((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value)))), 0)) using {
-                    ((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value)))) == 0;
-                };
-            }
-            have (to_integer(value) + (-1 * to_integer(upper)) + 1) <= 0 by {
-                have (to_integer(value) + 1) <= to_integer(upper) by {
-                    apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
-                        to_integer(value) < to_integer(upper);
-                    };
-                }
-                have (to_integer(value) + (-1 * to_integer(upper)) + 1) == ((to_integer(value) + 1) - to_integer(upper)) by {
-                    normalize();
-                }
-                apply(integer::le_difference((to_integer(value) + 1), to_integer(upper), (to_integer(value) + (-1 * to_integer(upper)) + 1))) using {
-                    (to_integer(value) + 1) <= to_integer(upper);
-                    (to_integer(value) + (-1 * to_integer(upper)) + 1) == ((to_integer(value) + 1) -
-                        to_integer(upper));
-                };
-            }
-            have (to_integer(value) + (-1 * to_integer(upper)) + (to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))) + 1) <= 0 by {
-                have ((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))) + (to_integer(value) + (-1 * to_integer(upper)) + 1)) <= (0 + 0) by {
-                    apply(integer::add_le(((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value)))), 0, (to_integer(value) + (-1 * to_integer(upper)) + 1), 0)) using {
-                        ((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))))
-                            <= 0;
-                        (to_integer(value) + (-1 * to_integer(upper)) + 1) <= 0;
-                    };
-                }
-                have (to_integer(value) + (-1 * to_integer(upper)) + (to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))) + 1) == ((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))) + (to_integer(value) + (-1 * to_integer(upper)) + 1)) by {
-                    normalize();
-                }
-                have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                    normalize();
-                }
-                apply(integer::le_substitute(((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))) + (to_integer(value) + (-1 * to_integer(upper)) + 1)), (0 + 0), (to_integer(value) + (-1 * to_integer(upper)) + (to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))) + 1), 0)) using {
-                    ((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))) +
-                        (to_integer(value) + (-1 * to_integer(upper)) + 1)) <= (0 + 0);
-                    (to_integer(value) + (-1 * to_integer(upper)) + (to_integer(upper) -
-                        to_integer(value)) + (-1 * to_integer((upper - value))) + 1) ==
-                        ((to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))) +
-                        (to_integer(value) + (-1 * to_integer(upper)) + 1));
-                    (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                };
-            }
-            have (to_integer(value) + (-1 * to_integer(upper)) + (to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))) + 1) == ((0 + 1) - to_integer((upper - value))) by {
-                normalize();
-            }
-            apply(integer::difference_le((0 + 1), to_integer((upper - value)), (to_integer(value) + (-1 * to_integer(upper)) + (to_integer(upper) - to_integer(value)) + (-1 * to_integer((upper - value))) + 1))) using {
-                (to_integer(value) + (-1 * to_integer(upper)) + (to_integer(upper) - to_integer(value))
-                    + (-1 * to_integer((upper - value))) + 1) <= 0;
-                (to_integer(value) + (-1 * to_integer(upper)) + (to_integer(upper) - to_integer(value))
-                    + (-1 * to_integer((upper - value))) + 1) == ((0 + 1) - to_integer((upper -
-                    value)));
-            };
-            apply(integer::step_le_lt(0, to_integer((upper - value)))) using {
-                (0 + 1) <= to_integer((upper - value));
-            };
-        }
-        normalize() using {
-            0 < to_integer((upper - value));
-        };
-    }
-}
-```
-
-**Meaning:** Given its listed requirements, proves `0 < to_integer(upper - value)`.
-
-**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
 ### `integer::uint32_difference_decreases_after_increment`
 
 ```click
@@ -2728,93 +1850,12 @@ theorem int32_less_equal_and_not_less_than_implies_equal(left: int32, right: int
     requires not (left < right);
 
     ensures left == right by {
-        have to_integer((left as int32)) == to_integer((right as int32)) by {
-            have ((-1 * to_integer((right as int32))) + to_integer((left as int32))) <= 0 by {
-                have to_integer((left as int32)) <= to_integer((right as int32)) by {
-                    normalize() using {
-                        left <= right;
-                    };
-                }
-                have ((-1 * to_integer((right as int32))) + to_integer((left as int32))) == (to_integer((left as int32)) - to_integer((right as int32))) by {
-                    normalize();
-                }
-                apply(integer::le_difference(to_integer((left as int32)), to_integer((right as int32)), ((-1 * to_integer((right as int32))) + to_integer((left as int32))))) using {
-                    to_integer((left as int32)) <= to_integer((right as int32));
-                    ((-1 * to_integer((right as int32))) + to_integer((left as int32))) ==
-                        (to_integer((left as int32)) - to_integer((right as int32)));
-                };
-            }
-            have (to_integer((right as int32)) + (-1 * to_integer((left as int32)))) <= 0 by {
-                have to_integer((right as int32)) <= to_integer((left as int32)) by {
-                    normalize() using {
-                        not left < right;
-                    };
-                }
-                have (to_integer((right as int32)) + (-1 * to_integer((left as int32)))) == (to_integer((right as int32)) - to_integer((left as int32))) by {
-                    normalize();
-                }
-                apply(integer::le_difference(to_integer((right as int32)), to_integer((left as int32)), (to_integer((right as int32)) + (-1 * to_integer((left as int32)))))) using {
-                    to_integer((right as int32)) <= to_integer((left as int32));
-                    (to_integer((right as int32)) + (-1 * to_integer((left as int32)))) ==
-                        (to_integer((right as int32)) - to_integer((left as int32)));
-                };
-            }
-            have ((-1 * to_integer((right as int32))) + to_integer((left as int32))) == 0 by {
-                have ((-1 * to_integer((right as int32))) + to_integer((left as int32))) <= ((-1 * to_integer((right as int32))) + to_integer((left as int32))) by {
-                    normalize();
-                }
-                have (to_integer((right as int32)) + (-1 * to_integer((left as int32))) + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))) <= (0 + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))) by {
-                    apply(integer::add_le((to_integer((right as int32)) + (-1 * to_integer((left as int32)))), 0, ((-1 * to_integer((right as int32))) + to_integer((left as int32))), ((-1 * to_integer((right as int32))) + to_integer((left as int32))))) using {
-                        (to_integer((right as int32)) + (-1 * to_integer((left as int32)))) <= 0;
-                        ((-1 * to_integer((right as int32))) + to_integer((left as int32))) <= ((-1 *
-                            to_integer((right as int32))) + to_integer((left as int32)));
-                    };
-                }
-                have 0 <= ((-1 * to_integer((right as int32))) + to_integer((left as int32))) by {
-                    have 0 == (to_integer((right as int32)) + (-1 * to_integer((left as int32))) + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))) by {
-                        normalize();
-                    }
-                    have ((-1 * to_integer((right as int32))) + to_integer((left as int32))) == (0 + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))) by {
-                        normalize();
-                    }
-                    apply(integer::le_substitute((to_integer((right as int32)) + (-1 * to_integer((left as int32))) + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))), (0 + ((-1 * to_integer((right as int32))) + to_integer((left as int32)))), 0, ((-1 * to_integer((right as int32))) + to_integer((left as int32))))) using {
-                        (to_integer((right as int32)) + (-1 * to_integer((left as int32))) + ((-1 *
-                            to_integer((right as int32))) + to_integer((left as int32)))) <= (0 + ((-1 *
-                            to_integer((right as int32))) + to_integer((left as int32))));
-                        0 == (to_integer((right as int32)) + (-1 * to_integer((left as int32))) + ((-1 *
-                            to_integer((right as int32))) + to_integer((left as int32))));
-                        ((-1 * to_integer((right as int32))) + to_integer((left as int32))) == (0 + ((-1
-                            * to_integer((right as int32))) + to_integer((left as int32))));
-                    };
-                }
-                apply(integer::le_antisymmetric(((-1 * to_integer((right as int32))) + to_integer((left as int32))), 0)) using {
-                    ((-1 * to_integer((right as int32))) + to_integer((left as int32))) <= 0;
-                    0 <= ((-1 * to_integer((right as int32))) + to_integer((left as int32)));
-                };
-            }
-            have ((-1 * to_integer((right as int32))) + to_integer((left as int32)) + to_integer((right as int32))) == (0 + to_integer((right as int32))) by {
-                apply(integer::equal_add(((-1 * to_integer((right as int32))) + to_integer((left as int32))), 0, to_integer((right as int32)), to_integer((right as int32)))) using {
-                    ((-1 * to_integer((right as int32))) + to_integer((left as int32))) == 0;
-                    to_integer((right as int32)) == to_integer((right as int32));
-                };
-            }
-            have to_integer((left as int32)) == ((-1 * to_integer((right as int32))) + to_integer((left as int32)) + to_integer((right as int32))) by {
-                normalize();
-            }
-            have to_integer((right as int32)) == (0 + to_integer((right as int32))) by {
-                normalize();
-            }
-            apply(integer::equal_substitute(((-1 * to_integer((right as int32))) + to_integer((left as int32)) + to_integer((right as int32))), (0 + to_integer((right as int32))), to_integer((left as int32)), to_integer((right as int32)))) using {
-                ((-1 * to_integer((right as int32))) + to_integer((left as int32)) + to_integer((right
-                    as int32))) == (0 + to_integer((right as int32)));
-                to_integer((left as int32)) == ((-1 * to_integer((right as int32))) + to_integer((left
-                    as int32)) + to_integer((right as int32)));
-                to_integer((right as int32)) == (0 + to_integer((right as int32)));
-            };
-        }
-        normalize() using {
-            to_integer((left as int32)) == to_integer((right as int32));
+        have to_integer(right) <= to_integer(left) by known();
+        apply(integer::le_antisymmetric(to_integer(left), to_integer(right))) using {
+            to_integer(left) <= to_integer(right);
+            to_integer(right) <= to_integer(left);
         };
+        known();
     }
 }
 ```
@@ -2833,125 +1874,11 @@ theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int
     requires left != right;
 
     ensures left < right by {
-        have to_integer(((left as int32) as int32)) < to_integer(((right as int32) as int32)) by {
-            have not not to_integer(((left as int32) as int32)) < to_integer(((right as int32) as int32)) by {
-                intro();
-                have ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))) <= 0 by {
-                    have to_integer(((right as int32) as int32)) <= to_integer(((left as int32) as int32)) by {
-                        normalize() using {
-                            not to_integer(((left as int32) as int32)) < to_integer(((right as int32) as
-                                int32));
-                        };
-                    }
-                    have ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))) == (to_integer(((right as int32) as int32)) - to_integer(((left as int32) as int32))) by {
-                        normalize();
-                    }
-                    apply(click::integer::le_difference(to_integer(((right as int32) as int32)), to_integer(((left as int32) as int32)), ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))))) using {
-                        to_integer(((right as int32) as int32)) <= to_integer(((left as int32) as
-                            int32));
-                        ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as
-                            int32))) == (to_integer(((right as int32) as int32)) - to_integer(((left as
-                            int32) as int32)));
-                    };
-                }
-                have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))) <= 0 by {
-                    have to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as int32) as int32) as int32)) by {
-                        normalize() using {
-                            ((left as int32) as int32) <= ((right as int32) as int32);
-                        };
-                    }
-                    have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))) == (to_integer((((left as int32) as int32) as int32)) - to_integer((((right as int32) as int32) as int32))) by {
-                        normalize();
-                    }
-                    apply(click::integer::le_difference(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)), (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))))) using {
-                        to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as
-                            int32) as int32) as int32));
-                        (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as
-                            int32)))) == (to_integer((((left as int32) as int32) as int32)) -
-                            to_integer((((right as int32) as int32) as int32)));
-                    };
-                }
-                have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1) <= 0 by {
-                    have to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as int32) as int32) as int32)) by {
-                        have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))) == (to_integer((((left as int32) as int32) as int32)) - to_integer((((right as int32) as int32) as int32))) by {
-                            normalize();
-                        }
-                        apply(click::integer::difference_le(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)), (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32)))))) using {
-                            (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32)
-                                as int32)))) <= 0;
-                            (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32)
-                                as int32)))) == (to_integer((((left as int32) as int32) as int32)) -
-                                to_integer((((right as int32) as int32) as int32)));
-                        };
-                    }
-                    have to_integer((((left as int32) as int32) as int32)) != to_integer((((right as int32) as int32) as int32)) by {
-                        normalize() using {
-                            ((left as int32) as int32) != ((right as int32) as int32);
-                        };
-                    }
-                    have to_integer((((left as int32) as int32) as int32)) < to_integer((((right as int32) as int32) as int32)) by {
-                        apply(click::integer::le_ne_lt(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)))) using {
-                            to_integer((((left as int32) as int32) as int32)) <= to_integer((((right as
-                                int32) as int32) as int32));
-                            to_integer((((left as int32) as int32) as int32)) != to_integer((((right as
-                                int32) as int32) as int32));
-                        };
-                    }
-                    have (to_integer((((left as int32) as int32) as int32)) + 1) <= to_integer((((right as int32) as int32) as int32)) by {
-                        apply(click::integer::lt_step_le(to_integer((((left as int32) as int32) as int32)), to_integer((((right as int32) as int32) as int32)))) using {
-                            to_integer((((left as int32) as int32) as int32)) < to_integer((((right as
-                                int32) as int32) as int32));
-                        };
-                    }
-                    have (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1) == ((to_integer((((left as int32) as int32) as int32)) + 1) - to_integer((((right as int32) as int32) as int32))) by {
-                        normalize();
-                    }
-                    apply(click::integer::le_difference((to_integer((((left as int32) as int32) as int32)) + 1), to_integer((((right as int32) as int32) as int32)), (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1))) using {
-                        (to_integer((((left as int32) as int32) as int32)) + 1) <= to_integer((((right
-                            as int32) as int32) as int32));
-                        (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as
-                            int32))) + 1) == ((to_integer((((left as int32) as int32) as int32)) + 1) -
-                            to_integer((((right as int32) as int32) as int32)));
-                    };
-                }
-                have (let integer_constant: Integer = 1; integer_constant) <= 0 by {
-                    have ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1)) <= (0 + 0) by {
-                        apply(click::integer::add_le(((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32))), 0, (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1), 0)) using {
-                            ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as
-                                int32) as int32))) <= 0;
-                            (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32)
-                                as int32))) + 1) <= 0;
-                        };
-                    }
-                    have (let integer_constant: Integer = 1; integer_constant) == ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1)) by {
-                        normalize();
-                    }
-                    have (let integer_value: Integer = 0; integer_value) == (0 + 0) by {
-                        normalize();
-                    }
-                    apply(click::integer::le_substitute(((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right as int32) as int32))) + 1)), (0 + 0), (let integer_constant: Integer = 1; integer_constant), 0)) using {
-                        ((-1 * to_integer(((left as int32) as int32))) + to_integer(((right as int32) as
-                            int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right
-                            as int32) as int32))) + 1)) <= (0 + 0);
-                        (let integer_constant: Integer = 1; integer_constant) == ((-1 *
-                            to_integer(((left as int32) as int32))) + to_integer(((right as int32) as
-                            int32)) + (to_integer(((left as int32) as int32)) + (-1 * to_integer(((right
-                            as int32) as int32))) + 1));
-                        (let integer_value: Integer = 0; integer_value) == (0 + 0);
-                    };
-                }
-                contradiction((let integer_constant: Integer = 1; integer_constant) <= 0);
-            }
-            normalize() using {
-                not not to_integer(((left as int32) as int32)) < to_integer(((right as int32) as
-                    int32));
-            };
-        }
-        have left < right by {
-            normalize() using {
-                to_integer(((left as int32) as int32)) < to_integer(((right as int32) as int32));
-            };
-        }
+        have to_integer(left) != to_integer(right) by known();
+        apply(integer::le_ne_lt(to_integer(left), to_integer(right))) using {
+            to_integer(left) <= to_integer(right);
+            to_integer(left) != to_integer(right);
+        };
         known();
     }
 }
@@ -3970,6 +2897,25 @@ theorem product_upper_bound(x: Integer, y: Integer, lo_x: Integer, hi_x: Integer
 }
 ```
 
+### `integer::int32_positive_is_nonnegative`
+
+```click
+theorem int32_positive_is_nonnegative(value: int32) {
+    requires 0 < value;
+
+    ensures 0 <= value by {
+        apply(integer::lt_le(0, to_integer(value))) using { 0 < to_integer(value); };
+        known();
+    }
+}
+```
+
+**Meaning:** Given its listed requirements, proves `0 <= value`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
 ### `integer::add_right_order`
 
 ```click
@@ -4381,6 +3327,110 @@ theorem int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32)
 ```
 
 **Meaning:** Given its listed requirements, proves `defined(value + amount)`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `integer::uint32_positive_predecessor_strictly_decreases`
+
+```click
+theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
+    requires 0u32 < value;
+
+    ensures to_integer(value - 1u32) < to_integer(value) by {
+        have to_integer(0u32) < to_integer(value) by known();
+        apply(integer::lt_step_le(0, to_integer(value))) using { 0 < to_integer(value); };
+        have to_integer(1u32) <= to_integer(value) by known();
+        have 1u32 <= value by known();
+        apply(integer::uint32_subtract_to_integer(value, 1u32)) using { 1u32 <= value; };
+        have to_integer(value) - 1 < to_integer(value) by known();
+        rewrite(to_integer(value - 1u32), to_integer(value) - to_integer(1u32));
+        known();
+    }
+}
+```
+
+**Meaning:** Given its listed requirements, proves `to_integer(value - 1u32) < to_integer(value)`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `integer::uint32_increment_upper_bound`
+
+```click
+theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures to_integer(value + 1u32) <= to_integer(upper) by {
+        have to_integer(value) + 1 <= to_integer(upper) by {
+            apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
+                to_integer(value) < to_integer(upper);
+            };
+        }
+        have to_integer(upper) <= 4294967295 by known();
+        have to_integer(value) + 1 <= 4294967295 by {
+            apply(integer::le_transitive(to_integer(value) + 1, to_integer(upper), 4294967295)) using {
+                to_integer(value) + 1 <= to_integer(upper);
+                to_integer(upper) <= 4294967295;
+            };
+        }
+        have to_integer(value) + to_integer(1u32) <= 4294967295 by known();
+        apply(integer::uint32_add_to_integer(value, 1u32)) using {
+            to_integer(value) + to_integer(1u32) <= 4294967295;
+        };
+        rewrite(to_integer(value + 1u32), to_integer(value) + to_integer(1u32));
+        known();
+    }
+}
+```
+
+**Meaning:** Given its listed requirements, proves `to_integer(value + 1u32) <= to_integer(upper)`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `integer::uint32_less_than_implies_positive_difference`
+
+```click
+theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures 0 < to_integer(upper - value) by {
+        have to_integer(value) + 1 <= to_integer(upper) by {
+            apply(integer::lt_step_le(to_integer(value), to_integer(upper))) using {
+                to_integer(value) < to_integer(upper);
+            };
+        }
+        have (to_integer(value) + 1) - to_integer(value) <= to_integer(upper) - to_integer(value) by {
+            apply(integer::subtract_right_order(to_integer(value) + 1, to_integer(upper), to_integer(value))) using {
+                to_integer(value) + 1 <= to_integer(upper);
+            };
+        }
+        have 0 + 1 <= to_integer(upper) - to_integer(value) by {
+            have 0 + 1 == (to_integer(value) + 1) - to_integer(value) by known();
+            rewrite(0 + 1, (to_integer(value) + 1) - to_integer(value));
+            known();
+        }
+        apply(integer::step_le_lt(0, to_integer(upper) - to_integer(value))) using {
+            0 + 1 <= to_integer(upper) - to_integer(value);
+        };
+        have to_integer(value) <= to_integer(upper) by {
+            apply(integer::lt_le(to_integer(value), to_integer(upper))) using {
+                to_integer(value) < to_integer(upper);
+            };
+        }
+        have value <= upper by known();
+        apply(integer::uint32_subtract_to_integer(upper, value)) using { value <= upper; };
+        rewrite(to_integer(upper - value), to_integer(upper) - to_integer(value));
+        known();
+    }
+}
+```
+
+**Meaning:** Given its listed requirements, proves `0 < to_integer(upper - value)`.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -5528,6 +4578,29 @@ theorem comparison_zero_when_equal(left: uint8[], right: uint8[], length: uint64
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) applies the comparison laws. C ordering clients are checked in [`mdtests/memcmp_orders_the_first_differing_byte.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_the_first_differing_byte.md) and [`mdtests/memcmp_orders_after_equal_prefix.md`](https://github.com/clicklang/click/blob/master/mdtests/memcmp_orders_after_equal_prefix.md).
 
+## `click::c::stdarg`
+
+Source: `library/c/stdarg.click`. A contract that declares `...args` brings
+it in.
+
+### `VarArg`
+
+```click
+spec enum VarArg {
+    Int(int32),
+    UInt(uint32),
+    Long(int64),
+    ULong(uint64),
+}
+```
+
+One variable argument of a C call after the default argument promotions. A
+variadic function's `extern` contract receives a call's variable arguments
+as its last parameter, `...args`, a `List<VarArg>` with the first argument
+first; see [variadic calls](../language/c.md#variadic-calls).
+
+**Verified use:** [`mdtests/a_variadic_contract_reads_its_variable_arguments.md`](https://github.com/clicklang/click/blob/master/mdtests/a_variadic_contract_reads_its_variable_arguments.md).
+
 ## `click::c::stdio`
 
 Source: `library/c/stdio.click`. The sidecar can import the module or
@@ -5880,85 +4953,124 @@ theorem pow10_9() {
 theorem pow10_nonzero(e: uint64) {
     requires e < 20u64;
     ensures stdio::pow10(e) != 0u64 by {
-        unfold(stdio::pow10(e));
         if e == 19u64 {
-            normalize() using { e == 19u64; };
+            unfold(stdio::pow10(e));
+            solve() using { e == 19u64; };
         } else {
             have e < 19u64 by { solve() using { e < 20u64; not (e == 19u64); }; }
             if e == 18u64 {
-                normalize() using { e == 18u64; };
+                unfold(stdio::pow10(e));
+                solve() using { e == 18u64; };
             } else {
                 have e < 18u64 by { solve() using { e < 19u64; not (e == 18u64); }; }
                 if e == 17u64 {
-                    normalize() using { e == 17u64; };
+                    unfold(stdio::pow10(e));
+                    solve() using { e == 17u64; };
                 } else {
                     have e < 17u64 by { solve() using { e < 18u64; not (e == 17u64); }; }
                     if e == 16u64 {
-                        normalize() using { e == 16u64; };
+                        unfold(stdio::pow10(e));
+                        solve() using { e == 16u64; };
                     } else {
                         have e < 16u64 by { solve() using { e < 17u64; not (e == 16u64); }; }
                         if e == 15u64 {
-                            normalize() using { e == 15u64; };
+                            unfold(stdio::pow10(e));
+                            solve() using { e == 15u64; };
                         } else {
                             have e < 15u64 by { solve() using { e < 16u64; not (e == 15u64); }; }
                             if e == 14u64 {
-                                normalize() using { e == 14u64; };
+                                unfold(stdio::pow10(e));
+                                solve() using { e == 14u64; };
                             } else {
                                 have e < 14u64 by { solve() using { e < 15u64; not (e == 14u64); }; }
                                 if e == 13u64 {
-                                    normalize() using { e == 13u64; };
+                                    unfold(stdio::pow10(e));
+                                    solve() using { e == 13u64; };
                                 } else {
                                     have e < 13u64 by { solve() using { e < 14u64; not (e == 13u64); }; }
                                     if e == 12u64 {
-                                        normalize() using { e == 12u64; };
+                                        unfold(stdio::pow10(e));
+                                        solve() using { e == 12u64; };
                                     } else {
                                         have e < 12u64 by { solve() using { e < 13u64; not (e == 12u64); }; }
                                         if e == 11u64 {
-                                            normalize() using { e == 11u64; };
+                                            unfold(stdio::pow10(e));
+                                            solve() using { e == 11u64; };
                                         } else {
                                             have e < 11u64 by { solve() using { e < 12u64; not (e == 11u64); }; }
                                             if e == 10u64 {
-                                                normalize() using { e == 10u64; };
+                                                unfold(stdio::pow10(e));
+                                                solve() using { e == 10u64; };
                                             } else {
                                                 have e < 10u64 by { solve() using { e < 11u64; not (e == 10u64); }; }
                                                 if e == 9u64 {
-                                                    normalize() using { e == 9u64; };
+                                                    rewrite(e, 9u64);
+                                                    apply(stdio::pow10_9());
+                                                    rewrite(stdio::pow10(9u64), 1000000000u64);
+                                                    known();
                                                 } else {
                                                     have e < 9u64 by { solve() using { e < 10u64; not (e == 9u64); }; }
                                                     if e == 8u64 {
-                                                        normalize() using { e == 8u64; };
+                                                        rewrite(e, 8u64);
+                                                        apply(stdio::pow10_8());
+                                                        rewrite(stdio::pow10(8u64), 100000000u64);
+                                                        known();
                                                     } else {
                                                         have e < 8u64 by { solve() using { e < 9u64; not (e == 8u64); }; }
                                                         if e == 7u64 {
-                                                            normalize() using { e == 7u64; };
+                                                            rewrite(e, 7u64);
+                                                            apply(stdio::pow10_7());
+                                                            rewrite(stdio::pow10(7u64), 10000000u64);
+                                                            known();
                                                         } else {
                                                             have e < 7u64 by { solve() using { e < 8u64; not (e == 7u64); }; }
                                                             if e == 6u64 {
-                                                                normalize() using { e == 6u64; };
+                                                                rewrite(e, 6u64);
+                                                                apply(stdio::pow10_6());
+                                                                rewrite(stdio::pow10(6u64), 1000000u64);
+                                                                known();
                                                             } else {
                                                                 have e < 6u64 by { solve() using { e < 7u64; not (e == 6u64); }; }
                                                                 if e == 5u64 {
-                                                                    normalize() using { e == 5u64; };
+                                                                    rewrite(e, 5u64);
+                                                                    apply(stdio::pow10_5());
+                                                                    rewrite(stdio::pow10(5u64), 100000u64);
+                                                                    known();
                                                                 } else {
                                                                     have e < 5u64 by { solve() using { e < 6u64; not (e == 5u64); }; }
                                                                     if e == 4u64 {
-                                                                        normalize() using { e == 4u64; };
+                                                                        rewrite(e, 4u64);
+                                                                        apply(stdio::pow10_4());
+                                                                        rewrite(stdio::pow10(4u64), 10000u64);
+                                                                        known();
                                                                     } else {
                                                                         have e < 4u64 by { solve() using { e < 5u64; not (e == 4u64); }; }
                                                                         if e == 3u64 {
-                                                                            normalize() using { e == 3u64; };
+                                                                            rewrite(e, 3u64);
+                                                                            apply(stdio::pow10_3());
+                                                                            rewrite(stdio::pow10(3u64), 1000u64);
+                                                                            known();
                                                                         } else {
                                                                             have e < 3u64 by { solve() using { e < 4u64; not (e == 3u64); }; }
                                                                             if e == 2u64 {
-                                                                                normalize() using { e == 2u64; };
+                                                                                rewrite(e, 2u64);
+                                                                                apply(stdio::pow10_2());
+                                                                                rewrite(stdio::pow10(2u64), 100u64);
+                                                                                known();
                                                                             } else {
                                                                                 have e < 2u64 by { solve() using { e < 3u64; not (e == 2u64); }; }
                                                                                 if e == 1u64 {
-                                                                                    normalize() using { e == 1u64; };
+                                                                                    rewrite(e, 1u64);
+                                                                                    apply(stdio::pow10_1());
+                                                                                    rewrite(stdio::pow10(1u64), 10u64);
+                                                                                    known();
                                                                                 } else {
                                                                                     have e < 1u64 by { solve() using { e < 2u64; not (e == 1u64); }; }
                                                                                     have e == 0u64 by { solve() using { e < 1u64; }; }
-                                                                                    normalize() using { e == 0u64; };
+                                                                                    rewrite(e, 0u64);
+                                                                                    apply(stdio::pow10_0());
+                                                                                    rewrite(stdio::pow10(0u64), 1u64);
+                                                                                    known();
                                                                                 }
                                                                             }
                                                                         }
@@ -6052,7 +5164,7 @@ theorem decimal_length_1(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -6128,7 +5240,7 @@ theorem decimal_length_2(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -6204,7 +5316,7 @@ theorem decimal_length_3(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -6280,7 +5392,7 @@ theorem decimal_length_4(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -6356,7 +5468,7 @@ theorem decimal_length_5(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -6432,7 +5544,7 @@ theorem decimal_length_6(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -6508,7 +5620,7 @@ theorem decimal_length_7(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -6584,7 +5696,7 @@ theorem decimal_length_8(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -6660,7 +5772,7 @@ theorem decimal_length_9(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -6736,7 +5848,7 @@ theorem decimal_length_10(v: uint64) {
         rewrite((if v < 1000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
         have (if v < 10000000000000000000u64 { 0u64 } else { 1u64 }) == 0u64 by { solve() using { v < 10000000000000000000u64; }; }
         rewrite((if v < 10000000000000000000u64 { 0u64 } else { 1u64 }), 0u64);
-        normalize();
+        known();
     }
 }
 ```
@@ -6778,7 +5890,7 @@ theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
     ensures stdio::decimal_digit(v, k) == (48u64 + v / stdio::pow10(n - 1u64 - k) % 10u64) as uint8 by {
         unfold(stdio::decimal_digit(v, k));
         rewrite(stdio::decimal_length(v), n);
-        normalize() using { k < n; };
+        solve() using { k < n; };
     }
 }
 ```
@@ -6796,13 +5908,15 @@ theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
     ensures 48u8 <= stdio::decimal_digit(v, k) by {
         if k < stdio::decimal_length(v) {
             apply(stdio::decimal_digit_power_nonzero(v, k));
-            unfold(stdio::decimal_digit(v, k));
-            have 48u8 <= (48u64 + v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k) % 10u64) as uint8;
-            normalize() using { k < stdio::decimal_length(v); };
-            known();
+            apply(stdio::decimal_digit_of_length(v, stdio::decimal_length(v), k)) using {
+                stdio::decimal_length(v) == stdio::decimal_length(v);
+                k < stdio::decimal_length(v);
+            };
+            rewrite(stdio::decimal_digit(v, k), (48u64 + v / stdio::pow10(stdio::decimal_length(v) - 1u64 - k) % 10u64) as uint8);
+            solve();
         } else {
             unfold(stdio::decimal_digit(v, k));
-            normalize() using { not (k < stdio::decimal_length(v)); };
+            solve() using { not (k < stdio::decimal_length(v)); };
         }
     }
 }```
@@ -6820,7 +5934,11 @@ theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
     ensures 48u8 <= stdio::padded_digit(v, width, 48u8, k) by {
         unfold(stdio::padded_digit(v, width, 48u8, k));
         if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) {
-            normalize() using { to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)); };
+            have (if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) { 48u8 } else { stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))) }) == 48u8 by {
+                solve() using { to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)); };
+            }
+            rewrite((if to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v)) { 48u8 } else { stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))) }), 48u8);
+            known();
         } else {
             apply(stdio::decimal_digit_lower_bound(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))));
             solve() using { not (to_integer(k) < to_integer(stdio::padded_length(v, width) - stdio::decimal_length(v))); 48u8 <= stdio::decimal_digit(v, k - (stdio::padded_length(v, width) - stdio::decimal_length(v))); };
@@ -7227,6 +6345,50 @@ names, `std::span<int>::size`. Its name table,
 `src/languages/cpp/standard_library.rs`, lists the functions and element
 types it maps to them. The model accessors `std_span_data`,
 `std_span_size` and `std_array_data` name a span's or array's state.
+
+### `std::vector<unsigned char>`
+
+The `click::cpp::vector_state::vector_state` resource records an existing
+byte vector's length and backing address. `size()`, `empty()`, and
+`data()` preserve it. A caller that reads the elements needs authority
+over the initialized byte range. The pinned libstdc++ fixture declares a
+byte-range resource in the sidecar, holds it alongside `vector_state(&bytes)`,
+and relates their `data` and `length` fields in the caller's contract. It
+unfolds the byte resource before passing the span to a reader and folds it
+again afterward.
+
+**Verified use:** [C++ importer tests](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs)
+check the catalog calls. The [pinned libstdc++ tests](https://github.com/clicklang/click/blob/master/tests/bitcoin_core_money_range.rs)
+pass a byte vector's backing storage to a span reader.
+
+```click
+abstract resource vector_state(vector: const void*) {
+    field length: uint64;
+    field data: uint8*;
+}
+
+unsigned long std::vector<unsigned char>::size() const {
+    owns state: vector_state(this);
+    ensures state.length == old(state.length);
+    ensures state.data == old(state.data);
+    ensures result == state.length;
+}
+
+bool std::vector<unsigned char>::empty() const {
+    owns state: vector_state(this);
+    ensures state.length == old(state.length);
+    ensures state.data == old(state.data);
+    ensures state.length == 0u64 implies result;
+    ensures state.length != 0u64 implies not result;
+}
+
+const unsigned char* std::vector<unsigned char>::data() const {
+    owns state: vector_state(this);
+    ensures state.length == old(state.length);
+    ensures state.data == old(state.data);
+    ensures result == state.data;
+}
+```
 
 ### `std::span<T>`
 
@@ -9451,6 +8613,80 @@ theorem nonnegative_quotient_from_remainder(n: Integer, d: Integer, q: Integer, 
     }
 }
 ```
+
+### `integer::uint32_less_than_divisor_implies_remainder_is_value`
+
+```click
+theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divisor: uint32) {
+    requires value < divisor;
+    ensures value % divisor == value by {
+        if divisor != 0u32 {
+            have 0 <= to_integer(value) by known();
+            have to_integer(value) + 1 <= to_integer(divisor) by {
+                apply(integer::lt_step_le(to_integer(value), to_integer(divisor))) using {
+                    to_integer(value) < to_integer(divisor);
+                };
+            }
+            have 0 + 1 <= to_integer(divisor) by {
+                have 0 + 1 <= to_integer(value) + 1 by {
+                    apply(integer::add_right_order(0, to_integer(value), 1)) using { 0 <= to_integer(value); };
+                }
+                apply(integer::le_transitive(0 + 1, to_integer(value) + 1, to_integer(divisor))) using {
+                    0 + 1 <= to_integer(value) + 1;
+                    to_integer(value) + 1 <= to_integer(divisor);
+                };
+            }
+            have 1 <= to_integer(divisor) by known();
+            have 0 < to_integer(divisor) by {
+                apply(integer::step_le_lt(0, to_integer(divisor))) using { 0 + 1 <= to_integer(divisor); };
+            }
+            have to_integer(divisor) != 0 by known();
+            have to_integer(value) <= to_integer(divisor) - 1 by {
+                apply(integer::lt_le_predecessor(to_integer(value), to_integer(divisor))) using {
+                    to_integer(value) < to_integer(divisor);
+                };
+            }
+            have to_integer(value) == 0 * to_integer(divisor) + to_integer(value) by known();
+            apply(integer::nonnegative_quotient_from_remainder(to_integer(value), to_integer(divisor), 0, to_integer(value))) using {
+                to_integer(divisor) != 0;
+                1 <= to_integer(divisor);
+                0 <= to_integer(value);
+                to_integer(value) <= to_integer(divisor) - 1;
+                to_integer(value) == 0 * to_integer(divisor) + to_integer(value);
+            };
+            apply(integer::truncation_identity(to_integer(value), to_integer(divisor))) using { to_integer(divisor) != 0; };
+            apply(integer::uint32_remainder_to_integer(value, divisor)) using { divisor != 0u32; to_integer(divisor) != 0; };
+            have to_integer(value) == truncating_remainder(to_integer(value), to_integer(divisor)) by {
+                have truncating_remainder(to_integer(value), to_integer(divisor)) == 0 * to_integer(divisor) + truncating_remainder(to_integer(value), to_integer(divisor)) by known();
+                rewrite(truncating_remainder(to_integer(value), to_integer(divisor)), 0 * to_integer(divisor) + truncating_remainder(to_integer(value), to_integer(divisor)));
+                rewrite(0, truncating_quotient(to_integer(value), to_integer(divisor)));
+                known();
+            }
+            have to_integer(value % divisor) == to_integer(value) by {
+                rewrite(to_integer(value % divisor), truncating_remainder(to_integer(value), to_integer(divisor)));
+                known();
+            }
+            known();
+        } else {
+            have divisor == 0u32 by known();
+            have to_integer(divisor) == 0 by known();
+            have to_integer(value) < 0 by {
+                rewrite(0, to_integer(divisor));
+                known();
+            }
+            have 0 <= to_integer(value) by known();
+            contradiction(to_integer(value) < 0);
+        }
+    }
+}
+```
+
+A dividend below its unsigned divisor is unchanged by reduction. The strict
+unsigned premise excludes a zero divisor; a nonzero divisor or a non-strict
+bound alone is insufficient. Values above the signed sign bit retain their
+unsigned meaning.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
 ### `integer::nonnegative_quotient_shift`
 

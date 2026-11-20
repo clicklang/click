@@ -66,9 +66,9 @@ pub(crate) use facts::take_fact_entry_counts;
 pub(crate) use facts::{PropositionSource, PureFactStore, is_definedness_guard};
 pub(in crate::kernel) use facts::{clear_rewritten_load_syntax_cache, clear_selected_atom_cache};
 pub(crate) use object::{
-    ExecutionUpdateError, FrontierSplitError, ProofFocusError, ProofJoinError, ProofObject,
-    ProofState, PropositionCloseError, PropositionIntroduction, PropositionKnownContext,
-    PropositionSplitError,
+    ExecutionUpdateError, FrontierSplitError, PreparedLoopInvariantEdge, ProofFocusError,
+    ProofJoinError, ProofObject, ProofState, PropositionCloseError, PropositionIntroduction,
+    PropositionKnownContext, PropositionSplitError,
 };
 pub(crate) use obligations::{
     CheckedProposition, ClaimGoalError, ClaimGoalEvidence, ClaimResourceReceipt,

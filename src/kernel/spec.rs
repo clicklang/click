@@ -3487,33 +3487,32 @@ fn lower_spec_algebraic_comparison_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
-    if super::functions::spec_algebraic_expression_is_obligation_free(left)
-        && super::functions::spec_algebraic_expression_is_obligation_free(right)
-        && super::functions::spec_algebraic_expression_is_state_independent(left)
-        && super::functions::spec_algebraic_expression_is_state_independent(right)
-        && (left == right
-            || algebraic_match_reconstructs(left, right)
-            || algebraic_match_reconstructs(right, left))
-    {
-        return Ok(vec![SpecPropositionPath {
-            introductions: Vec::new(),
-            proposition: Proposition::condition_is(ConditionTerm::Constant(equal), true),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-        }]);
-    }
     let mut paths = Vec::new();
+    let share_operand = left == right
+        && super::functions::spec_algebraic_expression_is_obligation_free(left)
+        && super::functions::spec_algebraic_expression_is_state_independent(left);
     for left_path in
         evaluate_spec_algebraic_at_state_with_bindings_in(scope, left, assumptions, budget)?
     {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
-        for right_path in evaluate_spec_algebraic_at_state_with_bindings_in(
-            scope,
-            right,
-            &right_assumptions,
-            budget,
-        )? {
+        let right_paths = if share_operand {
+            // A second evaluation of the same match would mint different arm
+            // binders. Both operand occurrences can share this evaluation.
+            vec![SpecAlgebraicPath {
+                value: left_path.value.clone(),
+                facts: Vec::new().into(),
+                obligations: Vec::new(),
+            }]
+        } else {
+            evaluate_spec_algebraic_at_state_with_bindings_in(
+                scope,
+                right,
+                &right_assumptions,
+                budget,
+            )?
+        };
+        for right_path in right_paths {
             if left_path.value.algebraic_type() != right_path.value.algebraic_type() {
                 continue;
             }
@@ -3527,15 +3526,10 @@ fn lower_spec_algebraic_comparison_at_state_in(
             ) else {
                 continue;
             };
-            // State-dependent projections must be resolved (and their ownership
-            // checked) before reflexivity can close a symbolic application.
-            let left = algebraic_output(left_path.value.root().clone());
-            let right = algebraic_output(right_path.value.into_kernel());
-            let equality = if evaluated_algebraic_operands_equal(&left, &right) {
-                Proposition::condition_is(ConditionTerm::Constant(true), true)
-            } else {
-                Proposition::Equal(left, right)
-            };
+            let equality = Proposition::Equal(
+                algebraic_output(left_path.value.root().clone()),
+                algebraic_output(right_path.value.into_kernel()),
+            );
             paths.push(SpecPropositionPath {
                 introductions: if equal {
                     Vec::new()
@@ -3553,66 +3547,6 @@ fn lower_spec_algebraic_comparison_at_state_in(
         }
     }
     Ok(paths)
-}
-
-fn algebraic_match_reconstructs(
-    expression: &SpecAlgebraicExpression,
-    scrutinee: &SpecAlgebraicExpression,
-) -> bool {
-    let SpecAlgebraicExpressionNode::Match {
-        scrutinee: matched,
-        arms,
-    } = &expression.node
-    else {
-        return false;
-    };
-    if matched.as_ref() != scrutinee || expression.algebraic_type != scrutinee.algebraic_type {
-        return false;
-    }
-    let arm_variants = arms
-        .iter()
-        .map(|arm| arm.variant.as_str())
-        .collect::<BTreeSet<_>>();
-    !scrutinee.algebraic_type.rigid
-        && arms.len() == scrutinee.algebraic_type.variants.len()
-        && arm_variants.len() == arms.len()
-        && arms.iter().all(|arm| {
-            let Some(schema) = scrutinee
-                .algebraic_type
-                .variants
-                .iter()
-                .find(|variant| variant.name == arm.variant)
-            else {
-                return false;
-            };
-            let SpecAlgebraicExpressionNode::Constructor { variant, fields } = &arm.body.node
-            else {
-                return false;
-            };
-            arm.body.algebraic_type == scrutinee.algebraic_type
-                && variant == &arm.variant
-                && arm.binding_types == schema.fields
-                && fields.len() == arm.bindings.len()
-                && fields.iter().zip(&schema.fields).zip(&arm.bindings).all(
-                    |((field, field_type), binding)| match (field, field_type) {
-                        (
-                            SpecAlgebraicValue::Program(SpecExpression::ProgramExpression(
-                                ProgramExpression::Variable(name),
-                            )),
-                            AlgebraicValueType::Program(_)
-                            | AlgebraicValueType::ObjectPointer(_, _),
-                        ) => name == binding,
-                        (
-                            SpecAlgebraicValue::Algebraic(SpecAlgebraicExpression {
-                                node: SpecAlgebraicExpressionNode::Binding(name),
-                                ..
-                            }),
-                            AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_),
-                        ) => name == binding,
-                        _ => false,
-                    },
-                )
-        })
 }
 
 #[cfg(test)]
@@ -4325,30 +4259,6 @@ fn spec_algebraic_result_match_arms_are_well_formed(
                         arm.binding_types == variant.fields && arm.bindings_are_well_formed()
                     })
         })
-}
-
-// Different evaluated algebraic node forms have different native syntax.
-// For the same form, keep the existing native equality contract, including
-// cases where equal values carry different producer metadata.
-fn evaluated_algebraic_operands_equal(left: &Term, right: &Term) -> bool {
-    let (Term::Algebraic(left), Term::Algebraic(right)) = (left, right) else {
-        unreachable!("evaluated algebraic operands")
-    };
-    let (a, b) = (
-        left.root().expect("evaluated root"),
-        right.root().expect("evaluated root"),
-    );
-    match (a.node(), b.node()) {
-        (KernelTermNode::Legacy(_), _) | (_, KernelTermNode::Legacy(_)) => left == right,
-        (KernelTermNode::Variable(a), KernelTermNode::Variable(b)) => a == b,
-        (KernelTermNode::Constructor(a), KernelTermNode::Constructor(b))
-            if a.variant != b.variant =>
-        {
-            false
-        }
-        (a, b) if std::mem::discriminant(a) != std::mem::discriminant(b) => false,
-        _ => left == right,
-    }
 }
 
 /// Store evaluated operands and newly produced arm witnesses in their common form.
@@ -6801,34 +6711,40 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let (lower, upper) = integer_machine_bounds(*destination);
             let mut paths = Vec::new();
             for path in integer_paths {
-                if let Some(value) = integer_constant_to_machine(&path.value, *destination) {
-                    paths.push(SpecExpressionPath {
-                        value: value.into(),
-                        facts: path.facts,
-                        obligations: path.obligations,
-                    });
-                    continue;
-                }
-                if path.value.as_const().is_some() {
-                    return Err(ExecutionLimit::Paths);
-                }
                 let mut obligations = path.obligations;
-                let lower_bound = Proposition::condition_is(
-                    ConditionTerm::integer_greater_equal(
-                        path.value.clone().into_native_compat(),
-                        lower.clone(),
-                    ),
-                    true,
-                );
-                let upper_bound = Proposition::condition_is(
-                    ConditionTerm::integer_less_equal(
-                        path.value.clone().into_native_compat(),
-                        upper.clone(),
-                    ),
-                    true,
-                );
-                retain_required_integer_obligation(&mut obligations, assumptions, lower_bound);
-                retain_required_integer_obligation(&mut obligations, assumptions, upper_bound);
+                if let Some(literal) = path.value.as_const() {
+                    let constant =
+                        MachineIntegerConstant::from_integer(destination.format(), literal)
+                            .ok_or(ExecutionLimit::Paths)?;
+                    if budget.machine_result_production_disabled {
+                        paths.push(SpecExpressionPath {
+                            value: destination
+                                .constant_value(constant)
+                                .ok_or(ExecutionLimit::Paths)?
+                                .into(),
+                            facts: path.facts,
+                            obligations,
+                        });
+                        continue;
+                    }
+                } else {
+                    let lower_bound = Proposition::condition_is(
+                        ConditionTerm::integer_greater_equal(
+                            path.value.clone().into_native_compat(),
+                            lower.clone(),
+                        ),
+                        true,
+                    );
+                    let upper_bound = Proposition::condition_is(
+                        ConditionTerm::integer_less_equal(
+                            path.value.clone().into_native_compat(),
+                            upper.clone(),
+                        ),
+                        true,
+                    );
+                    retain_required_integer_obligation(&mut obligations, assumptions, lower_bound);
+                    retain_required_integer_obligation(&mut obligations, assumptions, upper_bound);
+                }
                 let value: SpecValue = if budget.machine_result_production_disabled {
                     program_value_from_bitvector_term(
                         destination.program_type(),
@@ -7876,7 +7792,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     _ => selected_state.expect("selected read state").program_point(),
                 };
                 let version = if !*exact && ProgramPoint::supports_indexed_version(&pointer) {
-                    read_point().indexed_typed_version(&pointer, *value_type)
+                    read_point().ordinary_typed_version(&pointer, *value_type)
                 } else {
                     None
                 };
@@ -8524,7 +8440,7 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
         return source.clone();
     };
     let block = &pointer.address().base;
-    let start = source.array_read_start(block);
+    let start = source.parameter_read_start(block);
     let version = crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Block(block),
         &start,
@@ -8558,14 +8474,6 @@ pub(in crate::kernel) fn program_value_bitvector_term(value: &ProgramValue) -> O
         | ProgramValue::Float64(term) => Some(term.clone()),
         ProgramValue::Void | ProgramValue::Pointer(_) | ProgramValue::Parameter(_) => None,
     }
-}
-
-fn integer_constant_to_machine(
-    value: &IntegerResult,
-    destination: MachineIntegerType,
-) -> Option<ProgramValue> {
-    let value = MachineIntegerConstant::from_integer(destination.format(), value.as_const()?)?;
-    destination.constant_value(value)
 }
 
 pub(super) fn integer_machine_bounds(

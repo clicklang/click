@@ -73,8 +73,10 @@ def first_lines(text, limit=SUMMARY_LIMIT):
         return ""
     lines = [line.strip() for line in text.splitlines()]
     # A Rust panic: the message follows `panicked at <location>:`.
+    location = None
     for index, line in enumerate(lines):
         if "panicked at" in line:
+            location = line.split("panicked at", 1)[1].strip().rstrip(":")
             rest = [l for l in lines[index + 1:] if l and "panicked at" not in l]
             if rest:
                 lines = rest
@@ -83,6 +85,16 @@ def first_lines(text, limit=SUMMARY_LIMIT):
     if not lines:
         return ""
     line = lines[0]
+    # A test that prints the Click source it checked, `assert!(.., "{expanded}")`,
+    # has no reason in its message: name where it failed instead.
+    if location and re.match(r'(verifying|import) "', line):
+        return f"panicked at {location}; the message is the Click source it checked"
+    # A `ClickError` printed with `{:?}` carries its diagnostic as `message`.
+    line = re.sub(
+        r'ClickError \{ message: "(.*?)", (?:rendered|kind|failed_tactic):.*',
+        lambda m: m.group(1).replace('\\"', '"').replace("\\n", " "),
+        line,
+    )
     # A header line that ends in a colon introduces the reason on the next.
     if line.endswith(":") and len(lines) > 1:
         line = f"{line} {lines[1]}"

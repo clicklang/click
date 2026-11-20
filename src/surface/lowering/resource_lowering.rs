@@ -747,7 +747,7 @@ pub(in crate::surface) fn initial_call_state(
     });
     state
         .memory()
-        .prepare_parameter_store_partition(state.resources());
+        .prepare_parameter_store_partition(state.resources(), &entry_assumptions);
     Ok((state, arguments, entry_assumptions))
 }
 
@@ -2804,6 +2804,12 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
     argument: &ContractExpression,
 ) -> Result<ProgramExpression, ClickError> {
     match argument {
+        ContractExpression::MemoryLoad { .. } => {
+            super::contract_substitution::contract_expression_as_program_expression(argument)
+                .ok_or_else(|| {
+                    ClickError::new("a state-dependent load is not a C resource argument")
+                })
+        }
         ContractExpression::IntegerContext(_) => Err(ClickError::new(
             "an Integer context is not a C resource argument",
         )),

@@ -484,7 +484,8 @@ fn require_write_loan_separation(
         .loan_ledger()
         .and_then(|ledger| ledger.memory_access_requirement(range))
     {
-        obligations.push(ProofObligation::verification_condition(requirement));
+        obligations
+            .push(ProofObligation::verification_condition(requirement).with_live_view_write());
     }
 }
 
@@ -1158,6 +1159,9 @@ fn write_program_lvalue_paths_for_initialization(
                     None => ExecutionValue::from(written_value.clone()).retain_pointer_result(),
                 }
             };
+            let cache_owner = authorized_range.as_ref().filter(|_| {
+                written_pointer == pointer && written_value.byte_width() == value.byte_width()
+            });
             let next_memory = state.memory.clone().store_retained_classed_with_context(
                 written_pointer.clone(),
                 retained_written,
@@ -1166,6 +1170,7 @@ fn write_program_lvalue_paths_for_initialization(
                     .0
                     .as_ref()
                     .and_then(|class| class.effective_type_of_store()),
+                cache_owner,
             );
             state.set_memory_with_checked_stores(next_memory, true);
             if !iterated_plan.is_empty() {

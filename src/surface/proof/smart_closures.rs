@@ -159,6 +159,7 @@ fn collect_signed_surface_terms<'a>(
             }
 
             ContractExpression::CUnary { operand: inner, .. }
+            | ContractExpression::MemoryLoad { pointer: inner, .. }
             | ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
             | ContractExpression::Exact(inner)
@@ -4249,6 +4250,29 @@ struct SourceBackedCallSurface {
 /// Validate the carrier against the current concrete call before any source
 /// declaration is consulted.  The returned owned call is deliberately small:
 /// the statement splitter does not expose borrowed argument storage.
+/// The Surface form of a C call's argument: a program's constructor of a
+/// `spec enum`, such as the `List<VarArg>` a variadic call passes, is that
+/// constructor, each field the source argument it holds.
+fn source_call_argument_surface(argument: &ProgramExpression) -> ContractExpression {
+    if let ProgramExpression::EnumConstruct {
+        enum_type,
+        variant,
+        fields,
+    } = argument
+        && let Some(algebraic_type) =
+            crate::surface::AlgebraicTypeApplication::of_enum_interface_type(
+                InterfaceType::Parameter(*enum_type),
+            )
+    {
+        return ContractExpression::AlgebraicConstructor {
+            algebraic_type,
+            variant: variant.clone(),
+            arguments: fields.iter().map(source_call_argument_surface).collect(),
+        };
+    }
+    ContractExpression::ProgramExpression(super::surface_synthesis::source_c_argument(argument))
+}
+
 fn source_backed_call_requirement_surface(
     requirement: &UnresolvedRequirement,
     step: &ProofStep,
@@ -4467,11 +4491,7 @@ fn source_backed_call_requirement_surface(
                     *parameter_type,
                 ),
                 None => caller_embedded_record_argument(argument, context.parsed_function)
-                    .unwrap_or_else(|| {
-                        ContractExpression::ProgramExpression(
-                            super::surface_synthesis::source_c_argument(argument),
-                        )
-                    }),
+                    .unwrap_or_else(|| source_call_argument_surface(argument)),
             };
             (parameter.clone(), argument)
         })
@@ -4578,15 +4598,13 @@ fn source_backed_call_requirement_surface(
         _ => site
             .resource_arguments
             .iter()
-            // The call site records the kernel's binder-numbered map, which
-            // also carries named mutex-authority binders; only instances
-            // these reads reference are renamed.
-            .map(|(binder, identity, actual)| {
+            // Only instance binders these reads reference are renamed.
+            .filter_map(|(binder, identity, actual)| match (identity, actual) {
                 (
-                    binder,
-                    crate::kernel::InstanceId::from_variable(*identity),
-                    crate::kernel::InstanceId::from_variable(*actual),
-                )
+                    crate::kernel::ResourceBinder::Instance(identity),
+                    crate::kernel::ResourceBinder::Instance(actual),
+                ) => Some((binder, *identity, *actual)),
+                _ => None,
             })
             .filter(|(_, identity, _)| referenced_instances.contains(identity))
             .map(|(binder, identity, actual)| {

@@ -15,16 +15,20 @@ use crate::kernel::{bits32_constant, constant_u32};
 use exclusive_calls::{ExclusiveCallBinding, ExclusiveCallId, ExclusiveCallRecord};
 use return_backing::PermittedDescriptions;
 
+#[cfg(test)]
+use super::Variable;
 use super::functions::CheckedResourceFact;
+#[cfg(test)]
+use super::primitives::memory_ranges_proven_overlapping;
 use super::primitives::{
     Address, AddressBase, MemorySplitOrigins, OwnedMemberKey, ResourceMemoryIntervalNode,
     memory_interval_ancestors, memory_interval_nodes, memory_range_covers,
-    memory_range_is_proven_empty, memory_ranges_proven_overlapping,
+    memory_range_is_proven_empty,
 };
 use super::{
     ExecutionState, MachineTerm, MemoryRange, Proposition, PureFactContext, Resource,
     ResourceContext, ResourceDescription, ResourceFact, ResourceOccurrenceId, ResourceStateSource,
-    ResourceTransferRole, Variable,
+    ResourceTransferRole,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::cmp::Ordering;
@@ -656,6 +660,7 @@ fn memory_range_is_empty(range: &MemoryRange) -> bool {
     )
 }
 
+#[cfg(test)]
 fn memory_range_aliases(range: &MemoryRange, assumptions: &PureFactContext) -> Vec<MemoryRange> {
     crate::kernel::search::ProofSearch::<LoanLedger>::loan_aliases(range, assumptions)
 }
@@ -678,23 +683,6 @@ pub(crate) fn protected_range_proven_overlapping(
     query: &MemoryRange,
     protected: &MemoryRange,
     assumptions: &PureFactContext,
-) -> bool {
-    protected_range_proven_overlapping_with_separation(query, protected, assumptions, true)
-}
-
-pub(crate) fn protected_range_proven_overlapping_ignoring_separation(
-    query: &MemoryRange,
-    protected: &MemoryRange,
-    assumptions: &PureFactContext,
-) -> bool {
-    protected_range_proven_overlapping_with_separation(query, protected, assumptions, false)
-}
-
-fn protected_range_proven_overlapping_with_separation(
-    query: &MemoryRange,
-    protected: &MemoryRange,
-    assumptions: &PureFactContext,
-    use_separation: bool,
 ) -> bool {
     let queries = memory_range_aliases(query, assumptions);
     let protected_ranges = memory_range_aliases(protected, assumptions);
@@ -732,25 +720,22 @@ fn protected_range_proven_overlapping_with_separation(
                     query,
                     protected,
                     assumptions,
-                ) && (!use_separation
-                    || !assumptions
-                        .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
-                            query, protected,
-                        ));
+                ) && !assumptions
+                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                        query, protected,
+                    );
             }
             let (query, protected) = (byte_range(query), byte_range(protected));
-            let overlapping = if use_separation {
-                memory_ranges_proven_overlapping
-            } else {
-                super::primitives::memory_ranges_proven_overlapping_ignoring_separation
-            };
-            overlapping(&query, &protected, assumptions)
-                || overlapping(&protected, &query, assumptions)
+            memory_ranges_proven_overlapping(&query, &protected, assumptions)
+                || memory_ranges_proven_overlapping(&protected, &query, assumptions)
         })
     })
 }
 
-fn protected_ranges_constant_overlap(query: &MemoryRange, protected: &MemoryRange) -> Option<bool> {
+pub(super) fn protected_ranges_constant_overlap(
+    query: &MemoryRange,
+    protected: &MemoryRange,
+) -> Option<bool> {
     // Compare concrete intervals in exact byte arithmetic. Negative offsets
     // and large widths must not wrap through a 32-bit byte-count term.
     let byte_bounds = |range: &MemoryRange| {
@@ -1294,6 +1279,14 @@ impl LoanRefusalSubject {
         }
     }
 
+    pub(crate) fn for_write_and_view(write: MemoryRange, viewed: MemoryRange) -> Self {
+        Self {
+            range: Some(Box::new(write)),
+            conflicting: Some(Box::new(ResourceFact::view_memory(viewed))),
+            ..Self::none()
+        }
+    }
+
     /// A contract input view and the owned entry in the same contract that
     /// already supports it.
     pub(crate) fn for_supported_view(
@@ -1319,20 +1312,12 @@ impl LoanRefusalSubject {
     pub(crate) fn for_resource(resource: ResourceFact) -> Self {
         Self::resource(resource)
     }
-    fn range(range: MemoryRange) -> Self {
+    #[cfg(test)]
+    pub(crate) fn for_range(range: MemoryRange) -> Self {
         Self {
             range: Some(Box::new(range)),
             ..Self::none()
         }
-    }
-
-    pub(crate) fn with_range(range: MemoryRange) -> Self {
-        Self::range(range)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn for_range(range: MemoryRange) -> Self {
-        Self::with_range(range)
     }
 
     fn with_loan_id(loan: LoanId) -> Self {
@@ -6400,6 +6385,15 @@ impl LoanLedger {
         })
     }
 
+    /// Name the protected range when the retained footprint is a single range.
+    /// A compound footprint needs no walk to report an unbounded call effect.
+    pub(super) fn single_protected_range(&self) -> Option<MemoryRange> {
+        match self.storage.data.active_footprint.resource() {
+            Resource::Memory(range) => Some(range),
+            _ => None,
+        }
+    }
+
     /// A proof-only ownership exchange may expose writable authority. Use
     /// the exact separation established before the exchange.
     pub(crate) fn rewrite_separates_from_loans(
@@ -6468,7 +6462,7 @@ impl LoanLedger {
                 loan,
                 origin,
             ),
-            None => LoanRefusalSubject::with_range(range.clone()),
+            None => LoanRefusalSubject::for_range(range.clone()),
         };
         Some(refusal.diagnostic_with_subject(operation, subject))
     }
@@ -7816,4 +7810,5 @@ mod local_storage_tests;
 #[cfg(test)]
 mod hold_identity_tests;
 
+#[cfg(test)]
 mod legacy_search;

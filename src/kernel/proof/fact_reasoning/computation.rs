@@ -27,7 +27,13 @@ pub(crate) fn computes_leaf(goal: &Proposition) -> bool {
             condition_value(condition.native_compat()).map(|value| value == *truth)
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            algebraic_equality(left.native_compat(), right.native_compat())
+            if let (Some(left), Some(right)) = (left.root(), right.root())
+                && left == right
+            {
+                Some(true)
+            } else {
+                algebraic_equality(left.native_compat(), right.native_compat())
+            }
         }
         Proposition::Equal(Term::Integer(left), Term::Integer(right)) => {
             integer_affine_comparison(&ConditionTerm::IntegerEqual(
@@ -199,6 +205,15 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                         | CompareRelation::LessEqual
                         | CompareRelation::GreaterEqual
                 ));
+            }
+            if (matches!(left.as_ref(), MachineTerm::IntegerToMachine { .. })
+                || matches!(right.as_ref(), MachineTerm::IntegerToMachine { .. }))
+                && let Some(value) =
+                    crate::kernel::machine_integer::comparison::literal_native_comparison_value(
+                        condition,
+                    )
+            {
+                return Some(value);
             }
             if let (Some(left), Some(right)) = (
                 format.constant_from_term(left),
@@ -800,6 +815,12 @@ fn integer_affine_difference(
         }
         if let Some(value) = reduced_matches.get(&term.id()) {
             *coefficients.entry(value.id()).or_default() += coefficient;
+            continue;
+        }
+        if let IntegerTerm::Machine(value) = term.as_ref()
+            && let Some(value) = value.literal_conversion_value()
+        {
+            constant += value.to_integer() * coefficient;
             continue;
         }
         match term.as_ref() {
