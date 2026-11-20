@@ -89,9 +89,9 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
         } => contains_old_expression(function) || arguments.iter().any(contains_old_expression),
 
         ContractExpression::IntegerLiteral(_) => false,
-        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
-            contains_old_expression(inner)
-        }
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::MemoryLoad { pointer: inner, .. }
+        | ContractExpression::Negate(inner) => contains_old_expression(inner),
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_) => false,
@@ -178,9 +178,9 @@ pub(in crate::surface) fn contains_resource_count(expression: &ContractExpressio
         } => contains_resource_count(function) || arguments.iter().any(contains_resource_count),
 
         ContractExpression::IntegerLiteral(_) => false,
-        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
-            contains_resource_count(inner)
-        }
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::MemoryLoad { pointer: inner, .. }
+        | ContractExpression::Negate(inner) => contains_resource_count(inner),
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_) => false,
@@ -403,6 +403,7 @@ pub(in crate::surface) fn collect_resource_count_families(
 
             ContractExpression::IntegerLiteral(_) => {}
             ContractExpression::CUnary { operand: inner, .. }
+            | ContractExpression::MemoryLoad { pointer: inner, .. }
             | ContractExpression::Negate(inner) => collect_expression(inner, families),
             ContractExpression::ResourceField(_)
             | ContractExpression::AlgebraicVariable { .. }
@@ -693,9 +694,9 @@ pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression
         } => contains_at_expression(function) || arguments.iter().any(contains_at_expression),
 
         ContractExpression::IntegerLiteral(_) => false,
-        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
-            contains_at_expression(inner)
-        }
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::MemoryLoad { pointer: inner, .. }
+        | ContractExpression::Negate(inner) => contains_at_expression(inner),
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_) => false,
@@ -901,9 +902,9 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
         }
 
         ContractExpression::IntegerLiteral(_) => {}
-        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
-            collect_click_function_calls(inner, calls)
-        }
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::MemoryLoad { pointer: inner, .. }
+        | ContractExpression::Negate(inner) => collect_click_function_calls(inner, calls),
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_) => {}
@@ -1446,9 +1447,9 @@ fn validate_recursive_calls_in_expression(
         }
 
         ContractExpression::IntegerLiteral(_) => Ok(()),
-        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
-            recurse(inner, lower_bounds, structural_subterms)
-        }
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::MemoryLoad { pointer: inner, .. }
+        | ContractExpression::Negate(inner) => recurse(inner, lower_bounds, structural_subterms),
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_) => Ok(()),

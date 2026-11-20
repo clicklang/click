@@ -2,7 +2,7 @@
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";
-import "rbtree_size_context_resources.click";
+import "rbtree_size_context_flip_frames.click";
 
 spec enum SizedMirroredFlipPhase {
     Before(struct rb_node*, struct rb_node*, struct rb_node*),
@@ -111,9 +111,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite((node->__rb_parent_color & 1), color_bit(Color::Red));
                 rewrite(color_bit(Color::Red), 0); normalize();
             }
+            have ((load<uint64>(node) & ~3) as (struct rb_node *)) == p by known();
             step(); step(); step(); step();
+            have ((load<uint64>(node) & ~3) as (struct rb_node *)) == p by known();
             let focus = fold(sized_at(node), { model: old(state.model), metadata: n_size, right: n_left, left: n_right });
             let state = fold(sized_mirrored_flip_at(node,root), { phase: SizedMirroredFlipPhase::Before(g, p, u), model: old(state.model), context: old(state.context), focus: focus, path: path });
+            step();
             loop {
                 owns state: sized_mirrored_flip_at(old(node),root);
                 decreases sized_context_depth(state.context);
@@ -151,13 +154,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             }
                             let { focus: focus, path: path } = unfold(state);
                             let { metadata: g_size, right: p_tree, left: u_tree } = unfold(focus);
-                            have separate(memory(root->rb_node), memory(node->__rb_parent_color));
-                            mark before_root_recolor;
+                            let root_link = fold(sized_flip_root_link(root), { top: x });
                             step(); step();
-                            transport(at(before_root_recolor, root->rb_node == x), root->rb_node == x) using {
-                                at(before_root_recolor, root->rb_node == x);
-                                separate(memory(root->rb_node), memory(node->__rb_parent_color));
-                            };
+                            unfold(root_link);
                             have (x->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); solve(); }
                             let focus = fold(sized_at(x), { model: SizedTree::Node(x, 0, Color::Black, 4, SizedTree::Node(z, x, Color::Black, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(y, x, Color::Black, 2, SizedTree::Empty, SizedTree::Node(old(node), y, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))), metadata: g_size, right: p_tree, left: u_tree });
                             let state = fold(sized_mirrored_flip_at(old(node),root), { phase: SizedMirroredFlipPhase::Done(x, y, z), model: SizedTree::Node(x, 0, Color::Black, 4, SizedTree::Node(z, x, Color::Black, 1, SizedTree::Empty, SizedTree::Empty), SizedTree::Node(y, x, Color::Black, 2, SizedTree::Empty, SizedTree::Node(old(node), y, Color::Red, 1, SizedTree::Empty, SizedTree::Empty))), context: SizedContext::Top, focus: focus, path: path });
@@ -178,29 +177,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             let { metadata: p_size, sibling: p_right, up: g_path } = unfold(path);
                             let { metadata: g_size, sibling: u_tree, up: top } = unfold(g_path);
                             let { metadata: u_size, right: u_left, left: u_right } = unfold(u_tree);
-                            have separate(memory(x->__rb_parent_color), memory(y->__rb_parent_color));
-                            have separate(memory(x->__rb_parent_color), memory(z->__rb_parent_color));
-                            have separate(memory(root->rb_node), memory(x->__rb_parent_color));
-                            have separate(memory(root->rb_node), memory(y->__rb_parent_color));
-                            have separate(memory(root->rb_node), memory(z->__rb_parent_color));
-                            have separate(memory(z->rb_left), memory(x->__rb_parent_color));
-                            have separate(memory(z->rb_left), memory(y->__rb_parent_color));
-                            have separate(memory(z->rb_left), memory(z->__rb_parent_color));
-                            have separate(memory(z->rb_right), memory(x->__rb_parent_color));
-                            have separate(memory(z->rb_right), memory(y->__rb_parent_color));
-                            have separate(memory(z->rb_right), memory(z->__rb_parent_color));
-                            have separate(memory(y->rb_left), memory(x->__rb_parent_color));
-                            have separate(memory(y->rb_left), memory(y->__rb_parent_color));
-                            have separate(memory(y->rb_left), memory(z->__rb_parent_color));
-                            have separate(memory(y->rb_right), memory(x->__rb_parent_color));
-                            have separate(memory(y->rb_right), memory(y->__rb_parent_color));
-                            have separate(memory(y->rb_right), memory(z->__rb_parent_color));
-                            have separate(memory(x->rb_left), memory(x->__rb_parent_color));
-                            have separate(memory(x->rb_left), memory(y->__rb_parent_color));
-                            have separate(memory(x->rb_left), memory(z->__rb_parent_color));
-                            have separate(memory(x->rb_right), memory(x->__rb_parent_color));
-                            have separate(memory(x->rb_right), memory(y->__rb_parent_color));
-                            have separate(memory(x->rb_right), memory(z->__rb_parent_color));
+                            unfold(u_left); unfold(u_right); unfold(p_right);
                             unfold(color_bit(Color::Red)); unfold(color_bit(Color::Black));
                             have y->__rb_parent_color == address(x) by {
                                 rewrite(y->__rb_parent_color, address(x) + (y->__rb_parent_color & 1));
@@ -211,87 +188,39 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             step();
                             have tmp == z by { known(); }
                             have gparent == x by { known(); }
-                            have parent == y by { known(); }
-                            mark before_recolor;
-                            step(); step();
-                            transport(at(before_recolor, ((x->__rb_parent_color & ~3) as (struct rb_node *)) == 0),
-                                      ((x->__rb_parent_color & ~3) as (struct rb_node *)) == 0) using {
-                                at(before_recolor, ((x->__rb_parent_color & ~3) as (struct rb_node *)) == 0);
-                                tmp == z;
-                                parent == y;
-                                separate(memory(x->__rb_parent_color), memory(y->__rb_parent_color));
-                                separate(memory(x->__rb_parent_color), memory(z->__rb_parent_color));
-                            };
-                            step();
-                            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by {
-                                known();
+                            have aligned(gparent, 8) by known();
+                            have (address(gparent) | 1) == address(gparent) + 1 by {
+                                normalize() using { aligned(gparent, 8); };
                             }
+                            have parent == y by { known(); }
+                            step_until(call(rb_set_parent_color, 7));
+                            let links = fold(sized_context_flip_links(root, x, y, z), {
+                                top: x, xl: z, xr: y,
+                                yl: 0 as (int32 *), yr: old(node), zl: 0 as (int32 *), zr: 0 as (int32 *)
+                            });
+                            let parent_word = fold(sized_context_flip_parent_word(x), {
+                                up: 0 as (int32 *), word: x->__rb_parent_color
+                            });
                             step();
-                            have parent == 0 by { known(); }
+                            let uncle_word = fold(sized_context_flip_black_word(tmp, gparent), {
+                                word: tmp->__rb_parent_color
+                            });
+                            step_until(call(rb_set_parent_color, 8));
                             step();
-                            transport(at(before_recolor, root->rb_node == x), root->rb_node == x) using {
-                                tmp == z;
-                                gparent == x;
-                                at(before_recolor, parent) == y;
-                                at(before_recolor, root->rb_node == x);
-                                separate(memory(root->rb_node), memory(x->__rb_parent_color));
-                                separate(memory(root->rb_node), memory(y->__rb_parent_color));
-                                separate(memory(root->rb_node), memory(z->__rb_parent_color));
-                            };
-                            transport(at(before_recolor, z->rb_left) == at(before_recolor, z->rb_left),
-                                      z->rb_left == at(before_recolor, z->rb_left)) using {
-                                tmp == z;
-                                gparent == x;
-                                at(before_recolor, parent) == y;
-                                separate(memory(z->rb_left), memory(x->__rb_parent_color));
-                                separate(memory(z->rb_left), memory(y->__rb_parent_color));
-                                separate(memory(z->rb_left), memory(z->__rb_parent_color));
-                            };
-                            transport(at(before_recolor, z->rb_right) == at(before_recolor, z->rb_right),
-                                      z->rb_right == at(before_recolor, z->rb_right)) using {
-                                tmp == z;
-                                gparent == x;
-                                at(before_recolor, parent) == y;
-                                separate(memory(z->rb_right), memory(x->__rb_parent_color));
-                                separate(memory(z->rb_right), memory(y->__rb_parent_color));
-                                separate(memory(z->rb_right), memory(z->__rb_parent_color));
-                            };
-                            transport(at(before_recolor, y->rb_left) == at(before_recolor, y->rb_left),
-                                      y->rb_left == at(before_recolor, y->rb_left)) using {
-                                tmp == z;
-                                gparent == x;
-                                at(before_recolor, parent) == y;
-                                separate(memory(y->rb_left), memory(x->__rb_parent_color));
-                                separate(memory(y->rb_left), memory(y->__rb_parent_color));
-                                separate(memory(y->rb_left), memory(z->__rb_parent_color));
-                            };
-                            transport(at(before_recolor, y->rb_right) == at(before_recolor, y->rb_right),
-                                      y->rb_right == at(before_recolor, y->rb_right)) using {
-                                tmp == z;
-                                gparent == x;
-                                at(before_recolor, parent) == y;
-                                separate(memory(y->rb_right), memory(x->__rb_parent_color));
-                                separate(memory(y->rb_right), memory(y->__rb_parent_color));
-                                separate(memory(y->rb_right), memory(z->__rb_parent_color));
-                            };
-                            transport(at(before_recolor, x->rb_left) == at(before_recolor, x->rb_left),
-                                      x->rb_left == at(before_recolor, x->rb_left)) using {
-                                tmp == z;
-                                gparent == x;
-                                at(before_recolor, parent) == y;
-                                separate(memory(x->rb_left), memory(x->__rb_parent_color));
-                                separate(memory(x->rb_left), memory(y->__rb_parent_color));
-                                separate(memory(x->rb_left), memory(z->__rb_parent_color));
-                            };
-                            transport(at(before_recolor, x->rb_right) == at(before_recolor, x->rb_right),
-                                      x->rb_right == at(before_recolor, x->rb_right)) using {
-                                tmp == z;
-                                gparent == x;
-                                at(before_recolor, parent) == y;
-                                separate(memory(x->rb_right), memory(x->__rb_parent_color));
-                                separate(memory(x->rb_right), memory(y->__rb_parent_color));
-                                separate(memory(x->rb_right), memory(z->__rb_parent_color));
-                            };
+                            let black_parent_word = fold(sized_context_flip_black_word(parent, gparent), {
+                                word: parent->__rb_parent_color
+                            });
+                            unfold(parent_word);
+                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by known();
+                            step_until(call(rb_set_parent_color, 9));
+                            have parent == 0 by known();
+                            step();
+                            unfold(uncle_word);
+                            unfold(black_parent_word);
+                            unfold(links);
+                            let u_left = fold(sized_at(0), { model: SizedTree::Empty });
+                            let u_right = fold(sized_at(0), { model: SizedTree::Empty });
+                            let p_right = fold(sized_at(0), { model: SizedTree::Empty });
                             let u_tree = fold(sized_at(z), { model: SizedTree::Node(z, x, Color::Black, 1, SizedTree::Empty, SizedTree::Empty), metadata: u_size, right: u_left, left: u_right });
                             have sized_parent_is(focus.model,y) == 1 by {
                                 rewrite(focus.model, SizedTree::Node(old(node), y, Color::Red, 1, SizedTree::Empty, SizedTree::Empty));

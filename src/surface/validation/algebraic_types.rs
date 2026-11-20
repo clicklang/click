@@ -3125,6 +3125,7 @@ fn validate_algebraic_expression_node(
         }
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CUnary { .. }
+        | ContractExpression::MemoryLoad { .. }
         | ContractExpression::ProgramExpression(_)
         | ContractExpression::ArrayIndex { .. }
         | ContractExpression::Field { .. }
@@ -3849,6 +3850,7 @@ fn infer_generic_expression_type(
         )) => Ok(variables.get(name).cloned()),
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CUnary { .. }
+        | ContractExpression::MemoryLoad { .. }
         | ContractExpression::ProgramExpression(_) => infer_contract_expression_type(
             expression,
             &variables.program_value_types,

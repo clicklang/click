@@ -6282,10 +6282,15 @@ impl Parser {
                 self.position += 1;
             }
             receiver_constant = constant;
+            let interface_type = if self.struct_layouts.contains_key(&record) {
+                InterfaceType::Int32Pointer
+            } else {
+                InterfaceType::VoidPointer
+            };
             let this = self.parse_parameter_array_suffix(
                 "this".into(),
                 ParsedType {
-                    interface_type: InterfaceType::Int32Pointer,
+                    interface_type,
                     struct_name: Some(record.clone()),
                     struct_pointer: true,
                     constant: false,
@@ -6523,6 +6528,37 @@ impl Parser {
         }
 
         loop {
+            // `...args`: a C variadic function's variable arguments, one
+            // `List<VarArg>` (`crate::languages::c::variadic`). It is the
+            // last parameter.
+            if self.peek() == Some(&Token::DotDot) && self.peek_next() == Some(&Token::Dot) {
+                self.position += 2;
+                let name = self.expect_ident("variable-argument parameter name after `...`")?;
+                self.implied_library_modules
+                    .insert(crate::languages::c::variadic::STDARG_MODULE);
+                parameters.push(FunctionParameter {
+                    slice_length: None,
+                    click_type: ClickType::Program(InterfaceType::Parameter(
+                        crate::languages::c::variadic::variable_arguments_type(),
+                    )),
+                    name,
+                    struct_name: None,
+                    function_pointer_signature: None,
+                    constant: false,
+                    pointee_constant: false,
+                    reference: false,
+                });
+                if self.peek() != Some(&Token::RParen) {
+                    return Err(self.error("`...args` must be the last parameter"));
+                }
+                return Ok(ParsedParameters {
+                    parameters,
+                    struct_params,
+                    struct_array_params,
+                    reference_params,
+                    declared_loadable_bytes,
+                });
+            }
             // `const std::function<int(int)>& f` or `std::function<int(int)> f`:
             // a callable value, as a function pointer is; so is `unary f` for a
             // C function-pointer typedef.
@@ -6764,7 +6800,9 @@ impl Parser {
             None => self.expect_ident("type")?,
         };
         let cpp_record = qualified_record.is_some()
-            || (self.verifies_cpp() && self.struct_layouts.contains_key(&spelling));
+            || (self.verifies_cpp()
+                && (self.struct_layouts.contains_key(&spelling)
+                    || self.record_spellings.contains_key(&spelling)));
         // A function head may write a typedef name of the verified C source
         // for the type it stands for, where the name is not a standard
         // spelling; a specification writes Click's type.
@@ -6791,7 +6829,10 @@ impl Parser {
             let struct_name = if let Some((name, _, _)) = typedef_struct {
                 name
             } else if cpp_record {
-                spelling
+                self.record_spellings
+                    .get(&spelling)
+                    .cloned()
+                    .unwrap_or(spelling)
             } else {
                 self.expect_ident("struct name")?
             };
@@ -6802,8 +6843,14 @@ impl Parser {
             }
             if self.peek() == Some(&Token::Amp) && alias_pointer.is_none() {
                 self.position += 1;
+                let interface_type =
+                    if self.verifies_cpp() && !self.struct_layouts.contains_key(&struct_name) {
+                        InterfaceType::VoidPointer
+                    } else {
+                        InterfaceType::Int32Pointer
+                    };
                 return Ok(ParsedType {
-                    interface_type: InterfaceType::Int32Pointer,
+                    interface_type,
                     struct_name: Some(struct_name),
                     struct_pointer: true,
                     constant: false,
@@ -16422,17 +16469,11 @@ impl Parser {
             // The operand remains authoritative during spec lowering. A
             // historical pointer selects an address, while this load uses
             // the surrounding clause's memory state.
-            let pointer = ProgramExpression::Value(int32(0));
-            return Ok(ContractExpression::CUnary {
-                operand: Box::new(source_pointer),
-                lowered: ProgramExpression::TypedLoad {
-                    pointer: Box::new(pointer),
-                    value_type,
-                    volatile,
-                    pointee_constant,
-                    access_class: None,
-                    source: Default::default(),
-                },
+            return Ok(ContractExpression::MemoryLoad {
+                pointer: Box::new(source_pointer),
+                value_type,
+                volatile,
+                pointee_constant,
             });
         }
 

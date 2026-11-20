@@ -1273,6 +1273,23 @@ fn rewrite_contract_expression_exact(
                 changed,
             )
         }
+        ContractExpression::MemoryLoad {
+            pointer,
+            value_type,
+            volatile,
+            pointee_constant,
+        } => {
+            let (pointer, changed) = unary(pointer);
+            (
+                ContractExpression::MemoryLoad {
+                    pointer: Box::new(pointer),
+                    value_type: *value_type,
+                    volatile: *volatile,
+                    pointee_constant: *pointee_constant,
+                },
+                changed,
+            )
+        }
         ContractExpression::Negate(inner) => {
             let (inner, changed) = unary(inner);
             (ContractExpression::Negate(Box::new(inner)), changed)
@@ -2610,6 +2627,7 @@ pub(in crate::surface) fn collect_contract_expression_referenced_bindings<N: Ref
                     pending.push(left);
                 }
                 ContractExpression::CUnary { operand: inner, .. }
+                | ContractExpression::MemoryLoad { pointer: inner, .. }
                 | ContractExpression::Negate(inner)
                 | ContractExpression::Old(inner)
                 | ContractExpression::Exact(inner)
@@ -2707,7 +2725,10 @@ fn collect_contract_expression_referenced_bindings_one<N: ReferencedBinding>(
             names.insert(name.clone().into());
             collect_program_expression_referenced_bindings(lowered, names);
         }
-        ContractExpression::CUnary { operand, .. } => {
+        ContractExpression::CUnary { operand, .. }
+        | ContractExpression::MemoryLoad {
+            pointer: operand, ..
+        } => {
             collect_contract_expression_referenced_bindings(operand, names);
         }
         ContractExpression::ProgramExpression(expression) => {
@@ -3416,6 +3437,9 @@ pub(in crate::surface) fn contract_expression_has_explicit_program_result_refere
         match expression {
             ContractExpression::ProgramBinding(name) if name == "result" => return true,
             ContractExpression::CUnary { operand, .. }
+            | ContractExpression::MemoryLoad {
+                pointer: operand, ..
+            }
             | ContractExpression::Field { base: operand, .. }
             | ContractExpression::Negate(operand)
             | ContractExpression::Exact(operand)
@@ -3777,6 +3801,7 @@ pub(in crate::surface) fn contract_expression_has_explicit_program_result_base(
         match expression {
             ContractExpression::ProgramBinding(name) => return name == "result",
             ContractExpression::CUnary { operand: base, .. }
+            | ContractExpression::MemoryLoad { pointer: base, .. }
             | ContractExpression::Field { base, .. }
             | ContractExpression::ArrayIndex { base, .. }
             | ContractExpression::Index(base, _) => expression = base,
@@ -3942,6 +3967,17 @@ fn substitute_contract_expression_node(
                 operand: Box::new(operand),
             })
         }
+        ContractExpression::MemoryLoad {
+            pointer,
+            value_type,
+            volatile,
+            pointee_constant,
+        } => Ok(ContractExpression::MemoryLoad {
+            pointer: Box::new(substitute_contract_expression_in(pointer, substitutions)?),
+            value_type: *value_type,
+            volatile: *volatile,
+            pointee_constant: *pointee_constant,
+        }),
 
         ContractExpression::IntegerLiteral(_) => Ok(expression.clone()),
         ContractExpression::ResourceField(access)
@@ -4830,6 +4866,22 @@ pub(in crate::surface) fn substitute_program_expression_in(
     }
 }
 
+fn typed_memory_load_fragment(
+    pointer: ProgramExpression,
+    value_type: ProgramType,
+    volatile: bool,
+    pointee_constant: bool,
+) -> ProgramExpression {
+    ProgramExpression::TypedLoad {
+        pointer: Box::new(pointer),
+        value_type,
+        volatile,
+        pointee_constant,
+        access_class: None,
+        source: Default::default(),
+    }
+}
+
 pub(in crate::surface) fn contract_expression_as_program_expression(
     expression: &ContractExpression,
 ) -> Option<ProgramExpression> {
@@ -4895,6 +4947,17 @@ pub(in crate::surface) fn contract_expression_as_program_expression_resolving_fi
         ContractExpression::CUnary { operand, lowered } => Some(c_unary_with_operand(
             lowered,
             contract_expression_as_program_expression(operand)?,
+        )),
+        ContractExpression::MemoryLoad {
+            pointer,
+            value_type,
+            volatile,
+            pointee_constant,
+        } => Some(typed_memory_load_fragment(
+            contract_expression_as_program_expression(pointer)?,
+            *value_type,
+            *volatile,
+            *pointee_constant,
         )),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
         ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
@@ -5034,6 +5097,17 @@ pub(in crate::surface) fn contract_expression_to_program_expression(
         ContractExpression::CUnary { operand, lowered } => Some(c_unary_with_operand(
             lowered,
             contract_expression_to_program_expression(operand)?,
+        )),
+        ContractExpression::MemoryLoad {
+            pointer,
+            value_type,
+            volatile,
+            pointee_constant,
+        } => Some(typed_memory_load_fragment(
+            contract_expression_to_program_expression(pointer)?,
+            *value_type,
+            *volatile,
+            *pointee_constant,
         )),
         ContractExpression::Field { lowered, .. } => Some(lowered.clone()),
         ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {

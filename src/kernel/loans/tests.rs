@@ -4498,6 +4498,77 @@ fn active_memory_index_returns_only_overlapping_live_loans() {
 }
 
 #[test]
+fn contract_entry_overlap_does_not_walk_pointer_aliases() {
+    use crate::instrumentation::measure_deterministic_work;
+    use crate::kernel::primitives::contract_entry_memory_overlap;
+
+    for same_block in [false, true] {
+        let pointer = |id| {
+            if same_block {
+                Address {
+                    base: AddressBase::ExternalArgument,
+                    offset: AddressOffset::Variable(Variable(id)),
+                }
+            } else {
+                Address::symbolic(Variable(id))
+            }
+        };
+        let owned_base = pointer(10_001);
+        let viewed_base = pointer(10_002);
+        let owned =
+            MemoryRange::new_with_element_width(owned_base.clone(), 0u32.into(), 3u32.into(), 4);
+        let viewed =
+            |start, end| MemoryRange::new_with_element_width(viewed_base.clone(), start, end, 1);
+        let overlap = viewed(0u32.into(), 4u32.into());
+        let adjacent = viewed(4u32.into(), 8u32.into());
+        let empty = viewed(0u32.into(), 0u32.into());
+        let mut work = Vec::new();
+        for aliases in [4, 16, 64] {
+            let mut facts = PureFactContext::new().assume_condition(
+                ConditionTerm::address_equal(viewed_base.clone(), owned_base.offset_by_bytes(8)),
+                true,
+            );
+            for i in 0..aliases {
+                for (base, id) in [(&owned_base, 11_000 + i), (&viewed_base, 12_000 + i)] {
+                    facts = facts.assume_condition(
+                        ConditionTerm::address_equal(base.clone(), pointer(id)),
+                        true,
+                    );
+                }
+            }
+            for (range, expected) in [(&overlap, true), (&adjacent, false), (&empty, false)] {
+                let input = facts.clone();
+                let (actual, charged) = measure_deterministic_work(|| {
+                    contract_entry_memory_overlap(&owned, range, &input)
+                });
+                assert_eq!(
+                    actual, expected,
+                    "same block={same_block}, aliases={aliases}, {range:?}"
+                );
+                work.push(charged);
+            }
+            let asserted_separation = facts.assume_proposition(Proposition::ResourceSeparate {
+                left: Box::new(Resource::Memory(owned.clone())),
+                right: Box::new(Resource::Memory(overlap.clone())),
+            });
+            assert!(contract_entry_memory_overlap(
+                &owned,
+                &overlap,
+                &asserted_separation
+            ));
+        }
+        assert!(
+            work.chunks_exact(3).skip(1).all(|row| {
+                row.iter()
+                    .zip(&work[..3])
+                    .all(|(actual, first)| *actual <= *first + 16)
+            }),
+            "same block={same_block}, work={work:?}"
+        );
+    }
+}
+
+#[test]
 fn indexed_loan_blocks_write_through_exact_pointer_alias() {
     let (ledger, owner, reader) = participants();
     let protected_base = Address {

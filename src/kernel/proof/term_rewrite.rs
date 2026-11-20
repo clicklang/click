@@ -1287,6 +1287,39 @@ fn collect_pointer_offset_carriers(offset: &AddressOffset, variables: &mut Carri
     }
 }
 
+fn collect_retained_offset_carriers(
+    offset: &SharedAddressOffset,
+    variables: &mut CarrierVariables,
+) {
+    offset.visit_root_while(|node| {
+        collect_offset_node_carriers(node, variables, |index, variables| {
+            collect_machine_carriers(&SharedAddressOffset::exact_index(index), variables);
+        })
+    });
+}
+
+fn collect_offset_node_carriers(
+    node: &KernelAddressOffset,
+    variables: &mut CarrierVariables,
+    collect_index: impl FnOnce(&KernelTerm, &mut CarrierVariables),
+) -> bool {
+    if !variables.visit() {
+        return false;
+    }
+    match node {
+        KernelAddressOffset::Variable(variable) => {
+            variables.program_values.insert(*variable);
+            collect_registered_load_carriers(*variable, variables);
+        }
+        node => {
+            if let Some(index) = node.index() {
+                collect_index(index, variables);
+            }
+        }
+    }
+    !variables.exhausted()
+}
+
 fn collect_sequence_carriers(term: &SequenceTerm, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
@@ -3192,7 +3225,11 @@ impl<'a> TermRewrite<'a> {
                     &mut seen,
                 ),
                 Term::PointerOffset(offset) => {
-                    collect_pointer_offset_carriers(offset.native_compat(), &mut variables)
+                    if let Some(root) = offset.root() {
+                        collect_retained_offset_carriers(root, &mut variables);
+                    } else {
+                        collect_pointer_offset_carriers(offset.native_compat(), &mut variables);
+                    }
                 }
                 Term::ProgramValue(value) => {
                     collect_program_value_carriers(value.native_compat(), &mut variables);
@@ -3711,7 +3748,7 @@ impl<'a> TermRewrite<'a> {
             Term::Integer(v) => Term::Integer(self.integer(v.native_compat()).into()),
             Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
             Term::Condition(v) => Term::Condition(self.condition(v.native_compat()).into()),
-            Term::PointerOffset(v) => Term::PointerOffset(self.offset(v.native_compat()).into()),
+            Term::PointerOffset(v) => Term::PointerOffset(self.contract_offset(v)),
             _ => term.clone(),
         };
         if self.checked_work_exhausted() {
@@ -5452,6 +5489,110 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
+    fn rewrite_offset_index(
+        &mut self,
+        value: &SharedMachineIntegerTerm,
+        byte_width: i64,
+        wide: Option<bool>,
+    ) -> AddressOffset {
+        let value = self.index_bits(value);
+        let bounded = wide == Some(true)
+            && self.conditions.is_some_and(|conditions| {
+                self.bounded_uint64_indices
+                    .get_or_insert_with(|| bounded_uint64_indices(conditions))
+                    .contains(&BoundedIndexKey::of(&value))
+            });
+        if bounded {
+            self.changed = true;
+            let narrowed = if let Some(root) = value.shared_operand() {
+                SharedMachineIntegerTerm::from_shared(
+                    MachineIntegerType::Int32,
+                    root.checking_low_word(),
+                )
+                .expect("low-word index")
+            } else {
+                SharedMachineIntegerTerm::index(
+                    MachineIntegerType::Int32,
+                    MachineTerm::uint32_from_64(value.value().clone()),
+                )
+            };
+            // The checked narrowing keeps a written scaled node.
+            AddressOffset::Int32Scaled {
+                value: narrowed,
+                byte_width,
+            }
+        } else {
+            self.rebuilt_index(value, byte_width, wide)
+        }
+    }
+
+    fn contract_offset(&mut self, offset: &StoredPointerOffset) -> StoredPointerOffset {
+        // Exact replacement uses the original native subtree identities.
+        let Some(source) = offset
+            .root()
+            .filter(|_| self.pointer_offset_exact.is_none())
+        else {
+            return self.offset(offset.native_compat()).into();
+        };
+        match self.rewrite_retained_offset(source) {
+            Ok(root) if root == *source => offset.clone(),
+            Ok(root) => StoredPointerOffset::from_rewritten_root(root),
+            Err(()) => exhausted_offset().into(),
+        }
+    }
+
+    fn rewrite_retained_offset(
+        &mut self,
+        source: &SharedAddressOffset,
+    ) -> Result<SharedAddressOffset, ()> {
+        let root = source.try_map_root(|original, node| {
+            if self.checked_work_exhausted() {
+                return Err(());
+            }
+            Ok(match node {
+                KernelAddressOffset::Add([a, b]) if self.resolve_registered_loads => {
+                    SharedAddressOffset::add(a, b)
+                }
+                KernelAddressOffset::Add(children) => KernelAddressOffset::Add(children)
+                    .into_shared()
+                    .expect("offset sum"),
+                KernelAddressOffset::Variable(variable)
+                    if self.resolve_registered_loads
+                        && crate::kernel::is_load_variable(&variable) =>
+                {
+                    self.rewrite_registered_load(variable).map_or_else(
+                        || original.clone(),
+                        |variable| {
+                            KernelAddressOffset::Variable(variable)
+                                .into_shared()
+                                .expect("offset variable")
+                        },
+                    )
+                }
+                KernelAddressOffset::Int32Scaled { value, byte_width } => {
+                    let index = SharedAddressOffset::exact_index(&value);
+                    KernelAddressOffset::import(
+                        &self.rewrite_offset_index(&index, byte_width, None),
+                    )
+                }
+                KernelAddressOffset::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned,
+                } => {
+                    let index = SharedAddressOffset::exact_index(&value);
+                    KernelAddressOffset::import(&self.rewrite_offset_index(
+                        &index,
+                        byte_width,
+                        Some(unsigned),
+                    ))
+                }
+                _ => original.clone(),
+            })
+        })?;
+        (!self.checked_work_exhausted()).then_some(root).ok_or(())
+    }
+
     fn offset(&mut self, v: &AddressOffset) -> AddressOffset {
         if let Some((from, to)) = self.pointer_offset_exact
             && v == from
@@ -5482,44 +5623,13 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             AddressOffset::Int32Scaled { value, byte_width } => {
-                let value = self.index_bits(value);
-                self.rebuilt_index(value, *byte_width, None)
+                self.rewrite_offset_index(value, *byte_width, None)
             }
             AddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
-            } => {
-                let value = self.index_bits(value);
-                let bounded = *unsigned
-                    && self.conditions.is_some_and(|conditions| {
-                        self.bounded_uint64_indices
-                            .get_or_insert_with(|| bounded_uint64_indices(conditions))
-                            .contains(&BoundedIndexKey::of(&value))
-                    });
-                if bounded {
-                    self.changed = true;
-                    let narrowed = if let Some(root) = value.shared_operand() {
-                        SharedMachineIntegerTerm::from_shared(
-                            MachineIntegerType::Int32,
-                            root.checking_low_word(),
-                        )
-                        .expect("low-word index")
-                    } else {
-                        SharedMachineIntegerTerm::index(
-                            MachineIntegerType::Int32,
-                            MachineTerm::uint32_from_64(value.value().clone()),
-                        )
-                    };
-                    // The checked narrowing keeps a written scaled node.
-                    AddressOffset::Int32Scaled {
-                        value: narrowed,
-                        byte_width: *byte_width,
-                    }
-                } else {
-                    self.rebuilt_index(value, *byte_width, Some(*unsigned))
-                }
-            }
+            } => self.rewrite_offset_index(value, *byte_width, Some(*unsigned)),
         };
         if self.checked_work_exhausted() {
             exhausted_offset()
@@ -7194,6 +7304,92 @@ mod tests {
         }),) if matches!(value.as_ref(), IntegerTerm::Machine(machine)
             if machine.value() == &MachineTerm::Variable(Variable(881)))))
         );
+    }
+
+    #[test]
+    fn retained_contract_offset_rewrite_preserves_index_rules() {
+        let _session = VerificationSession::enter();
+        let variable = MachineTerm::Variable(Variable(3_103_905));
+        for (replacement, wide) in [
+            (MachineTerm::constant(u32::MAX), None),
+            (MachineTerm::int64_constant(-1), Some(false)),
+            (MachineTerm::uint64_constant(1 << 63), Some(true)),
+            (
+                MachineTerm::PureFunctionApplication {
+                    name: "opaque_index".into(),
+                    arguments: vec![],
+                },
+                None,
+            ),
+        ] {
+            let index = match wide {
+                None => AddressOffset::scaled_int32_node(variable.clone(), 4),
+                Some(unsigned) => AddressOffset::scaled_int64_node(variable.clone(), 8, unsigned),
+            };
+            let native = AddressOffset::Add(Box::new(AddressOffset::Constant(0)), Box::new(index));
+            let input = StoredPointerOffset::from(native.clone());
+            assert!(input.root().is_some());
+            for resolve_registered_loads in [false, true] {
+                let rewrite = || {
+                    let mut rewrite = TermRewrite::for_bits_checked(&variable, &replacement);
+                    if resolve_registered_loads {
+                        rewrite.enable_registered_load_resolution();
+                    }
+                    rewrite
+                };
+                let mut reference = rewrite();
+                let expected = reference.offset(&native);
+                let mut retained = rewrite();
+                let Term::PointerOffset(actual) =
+                    retained.term(&Term::PointerOffset(input.clone()))
+                else {
+                    unreachable!();
+                };
+                assert_eq!(retained.refusal(), reference.refusal());
+                assert_eq!(retained.changed, reference.changed);
+                assert!(!input.has_cached_native_offset());
+                assert!(!actual.has_cached_native_offset());
+                assert_eq!(actual.native_compat(), &expected);
+            }
+        }
+    }
+
+    #[test]
+    fn retained_contract_offset_uses_the_same_unsigned_narrowing_and_work_refusal() {
+        let _session = VerificationSession::enter();
+        let variable = MachineTerm::Variable(Variable(3_103_906));
+        let native = AddressOffset::scaled_int64_node(variable.clone(), 8, true);
+        let input = StoredPointerOffset::from(native.clone());
+        let conditions = HashMap::from([(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt64,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(variable.clone()),
+                right: Box::new(MachineTerm::uint64_constant(i32::MAX as u64)),
+            },
+            true,
+        )]);
+        let expected = TermRewrite::for_conditions(&conditions).offset(&native);
+        assert!(matches!(
+            expected,
+            AddressOffset::Int32Scaled { byte_width: 8, .. }
+        ));
+        let Term::PointerOffset(actual) =
+            TermRewrite::for_conditions(&conditions).term(&Term::PointerOffset(input.clone()))
+        else {
+            unreachable!();
+        };
+        assert!(!input.has_cached_native_offset());
+        assert_eq!(actual.native_compat(), &expected);
+
+        let refused = with_checked_simple_budget(4, || {
+            let replacement = MachineTerm::Variable(Variable(3_103_907));
+            let mut rewrite = TermRewrite::for_bits_checked(&variable, &replacement);
+            rewrite.term(&Term::PointerOffset(input.clone()));
+            rewrite.refusal()
+        });
+        assert_eq!(refused, Some(RewriteRefusal::WorkExhausted));
+        assert!(!input.has_cached_native_offset());
     }
 
     #[test]

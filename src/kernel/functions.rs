@@ -1207,7 +1207,7 @@ pub(crate) struct CheckedResourceFact {
     pub(crate) section_index: Option<usize>,
     /// Caller-selected exact named authority for a mutex-use loan. The
     /// planner must consume this source, never select by address instead.
-    pub(crate) selected_mutex_source: Option<std::sync::Arc<(Variable, ResourceFact)>>,
+    pub(crate) selected_mutex_source: Option<std::sync::Arc<(MutexAuthorityId, ResourceFact)>>,
     /// Byte extent formed from the evaluated mutex pointer at clause entry.
     pub(crate) mutex_storage: Option<Arc<MemoryRange>>,
 }
@@ -4970,7 +4970,7 @@ fn execute_verified_function_applications_with_suspension(
                     continue;
                 };
                 if resource.role() == ResourceTransferRole::Produce {
-                    let Some(actual) = bindings.get(&formal).copied() else {
+                    let Some(actual) = bound_mutex_authority(bindings, formal) else {
                         paths.push(resource_call_failure(&format!(
                             "call map omits produced mutex authority binder `{binder}`"
                         )));
@@ -5008,7 +5008,7 @@ fn execute_verified_function_applications_with_suspension(
                 if resource.role() != ResourceTransferRole::Borrow {
                     continue;
                 }
-                let Some(actual) = bindings.get(&formal).copied() else {
+                let Some(actual) = bound_mutex_authority(bindings, formal) else {
                     paths.push(resource_call_failure(&format!(
                         "call map omits returned mutex authority binder `{binder}`"
                     )));
@@ -5921,7 +5921,7 @@ fn prepare_verified_function_call<'a>(
             let Some((formal, _)) = parameter.mutex_authority_binding() else {
                 continue;
             };
-            let Some(actual) = application.bindings.get(&formal) else {
+            let Some(actual) = bound_mutex_authority(&application.bindings, formal) else {
                 continue;
             };
             let expected = evaluate_function_resource_spec_with_entry(
@@ -5933,10 +5933,10 @@ fn prepare_verified_function_call<'a>(
             )?;
             let error = match expected {
                 Ok(expected)
-                    if caller_state.resolve_named_mutex_authority(*actual) == Some(&expected)
+                    if caller_state.resolve_named_mutex_authority(actual) == Some(&expected)
                         || (matches!(expected.resource(), Resource::MutexUse(_))
                             && caller_state
-                                .resolve_named_mutex_authority(*actual)
+                                .resolve_named_mutex_authority(actual)
                                 .is_some_and(|source| {
                                     match (source.resource(), expected.resource()) {
                                         (Resource::MutexLive(live), Resource::MutexUse(usage)) => {
@@ -6188,7 +6188,7 @@ fn prepare_verified_function_call<'a>(
             let Some((formal, binder)) = parameter.mutex_authority_binding() else {
                 continue;
             };
-            let Some(actual) = selected.bindings.get(&formal).copied() else {
+            let Some(actual) = bound_mutex_authority(&selected.bindings, formal) else {
                 return Ok(Err(resource_call_failure(&format!(
                     "call map omits mutex authority binder `{binder}`"
                 ))));
@@ -7324,7 +7324,7 @@ impl ResourceCallApplication {
             };
             let owned = if parameter.mutex_authority_binding().is_some() {
                 caller_state
-                    .resolve_named_mutex_authority(*actual)
+                    .resolve_named_mutex_authority(MutexAuthorityId::from_variable(*actual))
                     .is_some()
             } else {
                 caller_state
@@ -12009,8 +12009,7 @@ fn prepare_contract_resource_transfer_unexplained(
         let Some(actual) = callee_state
             .resource_bindings
             .as_ref()
-            .and_then(|bindings| bindings.get(&formal))
-            .copied()
+            .and_then(|bindings| bound_mutex_authority(bindings, formal))
         else {
             continue;
         };

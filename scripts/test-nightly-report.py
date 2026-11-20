@@ -17,6 +17,22 @@ note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
       </failure>
     </testcase>
   </testsuite>
+  <testsuite name="clicklang::examples" tests="2" failures="2">
+    <testcase name="prints_source" classname="clicklang::examples" time="2">
+      <failure message="thread 'prints_source' panicked at src/surface/tests/loop_tests.rs:369:5" type="test failure">
+thread 'prints_source' panicked at src/surface/tests/loop_tests.rs:369:5:
+verifying "count.c";
+
+uint64 count(uint64 n) {
+      </failure>
+    </testcase>
+    <testcase name="debug_error" classname="clicklang::examples" time="2">
+      <failure message="thread 'debug_error' panicked at tests/examples.rs:9:5" type="test failure">
+thread 'debug_error' panicked at tests/examples.rs:9:5:
+the rotation must recheck: ClickError { message: "`f.contract` tactic 0:\\nstep refused: a \\"loan\\" is active", rendered: OnceLock(&lt;uninit&gt;), kind: Proof }
+      </failure>
+    </testcase>
+  </testsuite>
   <testsuite name="clicklang::mdtests" tests="1" failures="1">
     <testcase name="mdtests" classname="clicklang::mdtests" time="700">
       <failure message="2 of 3 mdtests failed" type="test failure"/>
@@ -83,7 +99,16 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
     assert set(by_id) == {
         "mdtest:rb_next.md", "mdtest:rb_prev.md", "mdtest:reads.md", "example:arena",
         "audit:examples/arena/cells.click:12:5", "test:clicklang surface::tests::breaks",
+        "test:clicklang::examples prints_source", "test:clicklang::examples debug_error",
     }, sorted(by_id)
+    # A panic whose message is the checked Click source names its location.
+    assert by_id["test:clicklang::examples prints_source"]["summary"] == (
+        "panicked at src/surface/tests/loop_tests.rs:369:5; "
+        "the message is the Click source it checked"), by_id["test:clicklang::examples prints_source"]
+    # A debug-printed ClickError shows its message, unescaped.
+    assert by_id["test:clicklang::examples debug_error"]["summary"] == (
+        'the rotation must recheck: `f.contract` tactic 0: step refused: a "loan" is active'
+    ), by_id["test:clicklang::examples debug_error"]["summary"]
     # The aggregate mdtests failure is replaced by its fixtures.
     assert not any("clicklang::mdtests" in key for key in by_id)
     assert by_id["mdtest:rb_next.md"]["status"] == "persisting"
@@ -107,7 +132,7 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
     assert by_id["example:arena"]["summary"] == (
         "sidecar `arena.click` failed: `requires x` proves the same obligation")
     markdown = (out / "report.md").read_text()
-    assert "1 new" not in markdown and "5 new, 1 persisting; 1 fixed" in markdown, markdown
+    assert "1 new" not in markdown and "7 new, 1 persisting; 1 fixed" in markdown, markdown
     assert "## New failures" in markdown and "## Fixed since the previous night" in markdown
     assert "&lt;state A&gt;" in markdown and "<state A>" not in markdown, markdown
 

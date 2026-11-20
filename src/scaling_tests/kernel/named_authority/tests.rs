@@ -24,9 +24,9 @@ fn alias_lookup_does_not_scan_unrelated_resources() {
             crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
                     let aliases = NamedMutexAuthorities::new()
-                        .bind(Variable(1), &fact, &state)
+                        .bind(name(1), &fact, &state)
                         .unwrap();
-                    aliases.resolve(Variable(1), &state).cloned()
+                    aliases.resolve(name(1), &state).cloned()
                 })
             });
         assert_eq!(result, Some(fact));

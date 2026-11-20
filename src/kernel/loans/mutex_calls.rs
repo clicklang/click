@@ -3,6 +3,7 @@
 //! component never assumes missing authority and does not certify a C body.
 
 use super::*;
+use crate::kernel::MutexAuthorityId;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum MutexUseCallError {
@@ -31,7 +32,7 @@ pub(crate) struct MutexUseCallTransfer {
     retained_resource: Option<ResourceFact>,
     pub(crate) usage: MutexUseBinding,
     source: ResourceFact,
-    selected_alias: Option<Variable>,
+    selected_alias: Option<MutexAuthorityId>,
     pub(crate) mutex_storage: Option<Arc<MemoryRange>>,
     interface: Option<Arc<crate::kernel::mutexes::InitializedMutexInterface>>,
     required_type: Option<ResourceDescription>,
@@ -438,12 +439,12 @@ impl MutexUseCallTransfer {
         &self.source
     }
 
-    pub(crate) fn with_selected_alias(mut self, alias: Variable) -> Self {
+    pub(crate) fn with_selected_alias(mut self, alias: MutexAuthorityId) -> Self {
         self.selected_alias = Some(alias);
         self
     }
 
-    pub(crate) fn selected_alias(&self) -> Option<Variable> {
+    pub(crate) fn selected_alias(&self) -> Option<MutexAuthorityId> {
         self.selected_alias
     }
 
@@ -618,7 +619,11 @@ mod tests {
                 let mut named_state =
                     crate::kernel::ExecutionState::new().with_resource_context(resources.clone());
                 let mut names = crate::kernel::named_authority::NamedMutexAuthorities::new()
-                    .bind(Variable(7000), &source, &named_state)
+                    .bind(
+                        MutexAuthorityId::from_variable(Variable(7000)),
+                        &source,
+                        &named_state,
+                    )
                     .unwrap();
                 let first = MutexUseCallTransfer::prepare_suspended(
                     &ledger,
@@ -639,7 +644,14 @@ mod tests {
                     .apply_checked_mutex_updates(&updates, &named_state)
                     .unwrap();
                 // A lifecycle source's name follows its retained use share too.
-                assert!(names.resolve(Variable(7000), &named_state).is_some());
+                assert!(
+                    names
+                        .resolve(
+                            MutexAuthorityId::from_variable(Variable(7000)),
+                            &named_state
+                        )
+                        .is_some()
+                );
                 let retained = first
                     .caller_resources
                     .mutex_use_at(&Address::symbolic(Variable(100)))
@@ -707,7 +719,14 @@ mod tests {
                     .apply_checked_mutex_updates(&joined.authority_updates, &named_state)
                     .unwrap();
                 // A lifecycle source's name follows its retained use share too.
-                assert!(names.resolve(Variable(7000), &named_state).is_some());
+                assert!(
+                    names
+                        .resolve(
+                            MutexAuthorityId::from_variable(Variable(7000)),
+                            &named_state
+                        )
+                        .is_some()
+                );
                 assert!(!joined.ledger.scope_can_end(parent.0.scope, caller));
                 assert!(
                     early
@@ -736,7 +755,13 @@ mod tests {
                 names = names
                     .apply_checked_mutex_updates(&done.authority_updates, &named_state)
                     .unwrap();
-                assert_eq!(names.resolve(Variable(7000), &named_state), Some(&source));
+                assert_eq!(
+                    names.resolve(
+                        MutexAuthorityId::from_variable(Variable(7000)),
+                        &named_state
+                    ),
+                    Some(&source)
+                );
                 if borrowed {
                     assert!(
                         done.caller_resources
@@ -1124,7 +1149,10 @@ mod tests {
             state_source: ResourceStateSource::Entry,
             clause_position: None,
             section_index: Some(0),
-            selected_mutex_source: Some(Arc::new((Variable(500), second_fact.clone()))),
+            selected_mutex_source: Some(Arc::new((
+                MutexAuthorityId::from_variable(Variable(500)),
+                second_fact.clone(),
+            ))),
             mutex_storage: None,
         };
         // A generic lookup is ambiguous here. The selected proof name picks
@@ -1142,7 +1170,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(plan.mutex_uses[0].source_resource(), &second_fact);
-        assert_eq!(plan.mutex_uses[0].selected_alias(), Some(Variable(500)));
+        assert_eq!(
+            plan.mutex_uses[0].selected_alias(),
+            Some(MutexAuthorityId::from_variable(Variable(500)))
+        );
         let mut stale = first_identity.clone();
         stale.initialization = Some(u64::MAX);
         required.fact = ResourceFact::own(Resource::MutexUse(stale));

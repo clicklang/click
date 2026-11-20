@@ -1021,6 +1021,11 @@ impl SharedMachineIntegerTerm {
         }
     }
 
+    pub(crate) fn literal_conversion_value(&self) -> Option<MachineIntegerConstant> {
+        let (destination, value) = self.operand_view().checked_literal_integer_conversion()?;
+        (destination == self.ty()).then_some(value)
+    }
+
     /// The Integer term this observation equals by the value relations of
     /// conversions (rule W): `to_integer(widen(v))` is `to_integer(v)`, an
     /// observation of σ(x) at either 32-bit format is `x` read at that
@@ -1049,6 +1054,9 @@ impl SharedMachineIntegerTerm {
         self.0
             .reading
             .get_or_init(|| {
+                if let Some(value) = self.literal_conversion_value() {
+                    return Some(IntegerTerm::constant(value.to_integer()));
+                }
                 if let Some((root, reading)) = shared_reading {
                     let (ty, read) = reading?;
                     if let KernelTermNode::MachineLiteral(value) = read.node() {
@@ -1838,6 +1846,7 @@ impl IntegerInterner {
             .expect("mathematical Integer node identity exhausted");
         let literal_arithmetic = match &term {
             IntegerTerm::Constant(_) => true,
+            IntegerTerm::Machine(value) => value.literal_conversion_value().is_some(),
             IntegerTerm::Negate(child) => child.is_literal_arithmetic(),
             IntegerTerm::Add(left, right)
             | IntegerTerm::Subtract(left, right)

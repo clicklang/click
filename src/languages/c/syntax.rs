@@ -2871,6 +2871,11 @@ pub enum CExpression {
         pointee_constant: bool,
         struct_name: Option<String>,
     },
+    /// The variable arguments of a call to a variadic function, each after
+    /// the default argument promotions and named by the `VarArg` variant
+    /// that holds it: one `List<VarArg>` value, the call's last argument
+    /// (`crate::languages::c::variadic`).
+    VariableArguments(Vec<(&'static str, CExpression)>),
     /// A C function call that is still embedded in an expression. The
     /// parser lowers it to a call step before the AST reaches the kernel,
     /// so the kernel executes calls only as checked statement transitions.
@@ -4491,6 +4496,11 @@ impl CExpression {
                 crate::kernel::ProgramExpression::Value(hosted_stdout_value())
             }
             Self::Variable(name) => crate::kernel::program_expression::variable(name.clone()),
+            Self::VariableArguments(arguments) => super::variadic::arguments_expression(
+                arguments
+                    .iter()
+                    .map(|(variant, argument)| (*variant, argument.lower_expression())),
+            ),
             Self::Call { .. } => {
                 unreachable!("call expressions must be lowered before kernel conversion")
             }
@@ -6009,6 +6019,7 @@ fn evaluate_static_integer_expression(
     expression: &CExpression,
 ) -> Result<StaticIntegerValue, StaticIntegerEvaluationError> {
     match expression {
+        CExpression::VariableArguments(_) => Err(StaticIntegerEvaluationError::NotConstant),
         CExpression::Int32Literal(value) => {
             checked_static_signed(i128::from(i32::from_ne_bytes(value.to_ne_bytes())), 32)
         }
@@ -6942,6 +6953,7 @@ fn field_expression(
 
 fn contains_aggregate_value(expression: &CExpression) -> bool {
     match expression {
+        CExpression::VariableArguments(_) => false,
         CExpression::ScalarUpdate { .. } => false,
         CExpression::AggregateAddress { .. } | CExpression::UnionAddress { .. } => true,
         CExpression::Field {
@@ -7559,6 +7571,11 @@ impl CFunctionHeader {
 
     pub(crate) fn linkage_name(&self) -> &str {
         &self.name
+    }
+
+    /// Whether the declaration ends with `...`.
+    pub(crate) fn is_variadic(&self) -> bool {
+        self.variadic
     }
 
     pub(crate) fn compatible_with(&self, other: &Self) -> bool {
@@ -14387,6 +14404,7 @@ impl Parser {
 
     fn aggregate_struct_name(&self, expression: &CExpression) -> Option<String> {
         match expression {
+            CExpression::VariableArguments(_) => None,
             CExpression::StepResult {
                 interface_type: Some(InterfaceType::Int32),
                 struct_name,
@@ -14478,6 +14496,7 @@ impl Parser {
             return true;
         }
         match expression {
+            CExpression::VariableArguments(_) => false,
             CExpression::ScalarUpdate { .. } => false,
             CExpression::Call { .. }
             | CExpression::IndirectCall { .. }
@@ -14734,6 +14753,9 @@ impl Parser {
                 return true;
             }
             match expression {
+                CExpression::VariableArguments(arguments) => {
+                    expressions.extend(arguments.iter().map(|(_, argument)| argument));
+                }
                 CExpression::Call { .. }
                 | CExpression::IndirectCall { .. }
                 | CExpression::Assignment { .. }
@@ -14798,6 +14820,9 @@ impl Parser {
         let mut expressions = vec![expression];
         while let Some(expression) = expressions.pop() {
             match expression {
+                CExpression::VariableArguments(arguments) => {
+                    expressions.extend(arguments.iter().map(|(_, argument)| argument));
+                }
                 CExpression::Call { .. }
                 | CExpression::IndirectCall { .. }
                 | CExpression::Assignment { .. }
@@ -14870,6 +14895,9 @@ impl Parser {
     /// static-storage scalars, and address-exposed automatic scalars are not.
     fn expression_reads_potentially_changed_value(&self, expression: &CExpression) -> bool {
         match expression {
+            CExpression::VariableArguments(arguments) => arguments
+                .iter()
+                .any(|(_, argument)| self.expression_reads_potentially_changed_value(argument)),
             // A call's result is the term the call returned: nothing the
             // statement does afterwards changes it.
             CExpression::StepResult { .. } => false,
@@ -15585,6 +15613,21 @@ impl Parser {
         &mut self,
         arguments: Vec<CExpression>,
     ) -> Result<(Vec<CStatement>, Vec<CExpression>), CSyntaxError> {
+        // A variadic call's variable arguments are arguments of the call:
+        // each is lowered and sequenced as a named one is, and the list is
+        // formed again from the lowered values.
+        let mut arguments = arguments;
+        let variable_variants = match arguments.last() {
+            Some(CExpression::VariableArguments(_)) => {
+                let Some(CExpression::VariableArguments(variable)) = arguments.pop() else {
+                    unreachable!("the last argument was just matched");
+                };
+                let (variants, variable): (Vec<_>, Vec<_>) = variable.into_iter().unzip();
+                arguments.extend(variable);
+                Some(variants)
+            }
+            _ => None,
+        };
         let mut prefix = Vec::new();
         let mut lowered_arguments = Vec::with_capacity(arguments.len());
         let mut earlier_call_position = None;
@@ -15643,6 +15686,12 @@ impl Parser {
             if earlier_assignment_position.is_none() {
                 earlier_assignment_position = assignment_position;
             }
+        }
+        if let Some(variants) = variable_variants {
+            let variable = lowered_arguments.split_off(lowered_arguments.len() - variants.len());
+            lowered_arguments.push(CExpression::VariableArguments(
+                variants.into_iter().zip(variable).collect(),
+            ));
         }
         Ok((prefix, lowered_arguments))
     }
@@ -16952,11 +17001,85 @@ impl Parser {
                 if formatted_output_prototype(header) {
                     return self.parse_formatted_output_arguments(source_name);
                 }
-                return Err(self.error_at_previous(format!(
-                    "calls to variadic function `{source_name}` are not supported by Click; its variable arguments are not modeled"
-                )));
+                let fixed = header.parameters.len();
+                let source_name = source_name.to_string();
+                let arguments = self.parse_listed_call_arguments(Some(&source_name))?;
+                return self.variable_call_arguments(&source_name, fixed, arguments);
             }
         }
+        self.parse_listed_call_arguments(function_name)
+    }
+
+    /// The arguments of a call to a variadic function: the named ones, then
+    /// one `List<VarArg>` of the rest, each after the default argument
+    /// promotions (C11 6.5.2.2p6-7). A narrower integer is promoted to
+    /// `int`; Click models `int`, `unsigned int`, `long` and `unsigned long`
+    /// arguments (`crate::languages::c::variadic`).
+    fn variable_call_arguments(
+        &mut self,
+        source_name: &str,
+        fixed: usize,
+        mut arguments: Vec<CExpression>,
+    ) -> Result<Vec<CExpression>, CSyntaxError> {
+        if arguments.len() < fixed {
+            return Err(self.error_at_previous(format!(
+                "the call to `{source_name}` passes {} arguments; it declares {fixed} before `...`",
+                arguments.len()
+            )));
+        }
+        let mut variable = Vec::with_capacity(arguments.len() - fixed);
+        for (offset, mut argument) in arguments.split_off(fixed).into_iter().enumerate() {
+            let source_type = self.source_expression_type(&argument);
+            let promoted = match source_type {
+                Some(
+                    InterfaceType::Bool
+                    | InterfaceType::Char(_)
+                    | InterfaceType::Int8
+                    | InterfaceType::UInt8
+                    | InterfaceType::Int16
+                    | InterfaceType::UInt16,
+                ) => Some(InterfaceType::Int32),
+                Some(interface_type) => Some(interface_type),
+                None => None,
+            };
+            let Some((promoted, variant)) = promoted.and_then(|promoted| {
+                super::variadic::variant_for_promoted_type(promoted)
+                    .map(|variant| (promoted, variant))
+            }) else {
+                return Err(self.error_at_previous(format!(
+                    "argument {} of `{source_name}` {}; Click models variable arguments of type `int`, `unsigned int`, `long` and `unsigned long`, and of narrower integers, which C promotes to `int`",
+                    fixed + offset + 1,
+                    source_type.map_or_else(
+                        || "is an unmodeled value".to_string(),
+                        |interface_type| format!(
+                            "has type `{}`",
+                            interface_type.ranked_diagnostic_name()
+                        )
+                    )
+                )));
+            };
+            if source_type != Some(promoted) {
+                argument = CExpression::Cast {
+                    expression: Box::new(argument),
+                    interface_type: promoted,
+                    struct_name: None,
+                    pointee_volatile: false,
+                    pointee_constant: false,
+                    explicit_qualification: false,
+                };
+            }
+            variable.push((variant, argument));
+        }
+        arguments.push(CExpression::VariableArguments(variable));
+        Ok(arguments)
+    }
+
+    /// The comma-separated arguments of a direct call, checked against the
+    /// parameters `function_name` declares.
+    fn parse_listed_call_arguments(
+        &mut self,
+        function_name: Option<&str>,
+    ) -> Result<Vec<CExpression>, CSyntaxError> {
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         if self.peek() == Some(&Token::RParen) {
@@ -18676,6 +18799,7 @@ impl Parser {
 
     fn expression_is_float(&self, expression: &CExpression) -> bool {
         match expression {
+            CExpression::VariableArguments(_) => false,
             CExpression::StepResult { interface_type, .. } => {
                 matches!(
                     interface_type,
@@ -19080,6 +19204,7 @@ impl Parser {
     /// same kernel byte type. This only inspects the expression being checked.
     fn source_expression_type(&self, expression: &CExpression) -> Option<InterfaceType> {
         match expression {
+            CExpression::VariableArguments(_) => None,
             CExpression::StepResult { interface_type, .. } => *interface_type,
             CExpression::StringLiteral(literal) => Some(InterfaceType::CharArray(
                 literal.plain_char(),
@@ -21160,6 +21285,9 @@ fn prefix_has_non_assertion(prefix: &[CStatement]) -> bool {
 
 fn first_embedded_call_position(expression: &CExpression) -> Option<SourcePosition> {
     match expression {
+        CExpression::VariableArguments(arguments) => arguments
+            .iter()
+            .find_map(|(_, argument)| first_embedded_call_position(argument)),
         CExpression::ScalarUpdate { .. } => None,
         CExpression::Call {
             position,
@@ -21266,6 +21394,9 @@ fn assignment_chain_targets(expression: &CExpression) -> Option<Vec<BindingName>
 
 fn first_assignment_position(expression: &CExpression) -> Option<SourcePosition> {
     match expression {
+        CExpression::VariableArguments(arguments) => arguments
+            .iter()
+            .find_map(|(_, argument)| first_assignment_position(argument)),
         CExpression::ScalarUpdate { position, .. } => position.clone(),
         CExpression::Assignment {
             position, value, ..
@@ -21343,6 +21474,9 @@ fn first_assignment_position(expression: &CExpression) -> Option<SourcePosition>
 /// refused rather than guessed.
 fn expression_reads_runtime_value(expression: &CExpression) -> bool {
     match expression {
+        CExpression::VariableArguments(arguments) => arguments
+            .iter()
+            .any(|(_, argument)| expression_reads_runtime_value(argument)),
         CExpression::ScalarUpdate { .. } => true,
         CExpression::StringLiteral(_)
         | CExpression::Void

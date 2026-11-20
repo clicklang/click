@@ -6,6 +6,41 @@ use super::*;
 use crate::kernel::binary_node;
 
 #[test]
+fn retained_contract_offset_rewrite_visits_shared_displacements_once() {
+    let _session = VerificationSession::enter();
+    let from = MachineTerm::Variable(Variable(970_008));
+    let to = MachineTerm::Variable(Variable(970_009));
+    let repeated = |index: &MachineTerm, depth| {
+        let mut root =
+            KernelAddressOffset::import(&AddressOffset::scaled_int32_node(index.clone(), 4));
+        for _ in 0..depth {
+            root = KernelAddressOffset::Add([root.clone(), root])
+                .into_shared()
+                .unwrap();
+        }
+        root
+    };
+    let mut samples = Vec::new();
+    for depth in [16, 64, 256] {
+        let input = StoredPointerOffset::from_rewritten_root(repeated(&from, depth));
+        let term = Term::PointerOffset(input.clone());
+        let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
+        let (output, work) =
+            crate::instrumentation::measure_deterministic_work(|| rewrite.term(&term));
+        assert_eq!(rewrite.refusal(), None);
+        assert!(rewrite.changed);
+        let Term::PointerOffset(output) = output else {
+            unreachable!()
+        };
+        assert_eq!(output.root(), Some(&repeated(&to, depth)));
+        assert!(!input.has_cached_native_offset());
+        assert!(!output.has_cached_native_offset());
+        samples.push(work);
+    }
+    assert!(samples[2] <= 20 * samples[0], "{samples:?}");
+}
+
+#[test]
 fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
     let class = crate::kernel::effective_type::CAccessClass::Struct(
         crate::kernel::effective_type::CStructClass::opaque("node"),
