@@ -25119,6 +25119,68 @@ fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
 }
 
 #[test]
+fn named_contract_value_arguments_survive_expansion() {
+    for (fixture, claim, unfolds) in [
+        (
+            "named_contract_value_parameter",
+            "add3_is_adds_three.ensures_0",
+            &["unfold(Adds(&add3, { amount: 3 }));"][..],
+        ),
+        (
+            "named_contract_value_parameter_refinement_theorem",
+            "add3_adds_three.ensures_0",
+            &["unfold(Adds(&add3, { amount: 3 }));"][..],
+        ),
+        (
+            "named_contract_value_parameter_contract_refinement_theorem",
+            "adds_three_shifts_three.ensures_0",
+            &[
+                "unfold(Adds(f, { amount: 3 }));",
+                "unfold(Shifts(f, { offset: 3 }));",
+            ][..],
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{claim}: {error}"));
+        for unfold in unfolds {
+            assert!(expanded.contains(unfold), "{expanded}");
+        }
+        crate::surface::check_audit_claim(claim, true, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+fn named_contract_value_arguments_survive_function_expansion() {
+    let (source, sources) = mdtest_sources("mdtests/named_contract_value_parameter.md");
+    let source = source.replace(
+        "    apply(add3_is_adds_three());",
+        "    apply(add3_is_adds_three());\n    have Adds(&add3, { amount: 3 }) by { solve(); }\n    step_until(function.exit);",
+    );
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let claim = "caller.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(
+        expanded.contains("have Adds(&add3, { amount: 3 })"),
+        "{expanded}"
+    );
+    crate::surface::check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{claim}: {error}\n{expanded}"));
+}
+
+#[test]
 fn contract_unfold_rejects_another_application() {
     let (source, sources) =
         mdtest_sources("mdtests/named_contract_value_parameter_contract_refinement_theorem.md");

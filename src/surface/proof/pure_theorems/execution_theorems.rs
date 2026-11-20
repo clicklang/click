@@ -421,6 +421,10 @@ pub(super) fn verify_execution_theorem(
         ensure_clause: ensure.clone(),
         proof_kind: ProofKind::TacticScript,
         proof: Some(certificate),
+        contract_value_parameters: spec_definitions
+            .predicates
+            .contract_value_parameters
+            .clone(),
         requires: context.requires,
         conclusion,
         kernel_authority: Some(authority),

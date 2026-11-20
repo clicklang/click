@@ -718,6 +718,10 @@ fn prove_claims_by_checked_tactics(
         state: state.clone(),
         arguments: arguments.clone(),
         pure_facts: pure_facts.clone(),
+        contract_value_parameters: spec_definitions
+            .predicates
+            .contract_value_parameters
+            .clone(),
     });
     // The proof of a function that declares an expression `decreases` measure
     // steps under that function's recursion anchor, which is what makes a
