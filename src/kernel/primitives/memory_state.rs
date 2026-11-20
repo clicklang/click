@@ -8807,7 +8807,7 @@ impl ExecutionState {
     }
     pub(crate) fn resolve_named_mutex_authority(
         &self,
-        identity: Variable,
+        identity: MutexAuthorityId,
     ) -> Option<&ResourceFact> {
         self.named_mutex_authorities
             .as_ref()?
@@ -8816,7 +8816,7 @@ impl ExecutionState {
 
     pub(in crate::kernel) fn bind_named_mutex_authority(
         mut self,
-        identity: Variable,
+        identity: MutexAuthorityId,
         fact: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
         let current = self
@@ -8831,7 +8831,7 @@ impl ExecutionState {
 
     pub(in crate::kernel) fn rebind_named_mutex_authority(
         mut self,
-        identity: Variable,
+        identity: MutexAuthorityId,
         expected: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
         let current = self
@@ -8844,7 +8844,7 @@ impl ExecutionState {
     }
     pub(in crate::kernel) fn transport_named_mutex_use(
         mut self,
-        identity: Variable,
+        identity: MutexAuthorityId,
         source: &ResourceFact,
         derived: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
