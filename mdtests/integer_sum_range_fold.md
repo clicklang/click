@@ -313,6 +313,9 @@ int32 sum(int32 a[], int32 n) {
                 };
             }
         }
+        otherwise {
+            have to_integer(total) == (0..i).fold(0, |acc, k| { acc + to_integer(a[k]) }) by known();
+        }
     }
     have i == n;
     have n == i by {

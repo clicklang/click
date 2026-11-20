@@ -5199,9 +5199,16 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
 pub(crate) type LoopOtherwiseProof<'a> =
     dyn FnMut(&ExecutionState, &ExecutionState, &ExecutionFacts) -> Option<ExecutionFacts> + 'a;
 
-/// Marks the checked common facts that the enclosing proof can name, in
-/// producer order. The join can only retain facts the exits already proved.
-pub(crate) type LoopExitFactScope<'a> = dyn Fn(&ExecutionState, &ExecutionFacts) -> Vec<bool> + 'a;
+/// Checks the source interface for a loop join. The mask selects checked
+/// common facts in producer order. Written exports are checked in every
+/// concrete predecessor and returned in terms of the abstract successor.
+pub(crate) type LoopExitFactScope<'a> = dyn Fn(
+        &ExecutionState,
+        &IntegerTerm,
+        &[(ExecutionState, ExecutionFacts)],
+        &ExecutionFacts,
+    ) -> (Vec<bool>, Vec<Proposition>)
+    + 'a;
 
 pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     state: ExecutionState,

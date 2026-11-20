@@ -718,18 +718,44 @@ pub(in crate::surface) fn with_scoped_loop_exit_facts<T>(run: impl FnOnce() -> T
     run()
 }
 
-/// Check the experimental export interface against the actual outer scope.
-/// Exit-private proof locals and historical points are absent from this frame.
-/// Only a spelling that lowers back to the checked proposition is eligible.
-pub(super) fn scoped_loop_exit_facts(
+/// The written candidates are the loop's own proof statements. A nested
+/// loop has its own export boundary, and a have body proves its parent goal
+/// in a separate scope.
+fn loop_exit_claims(clause: &StructuralClause) -> Vec<&ClickProposition> {
+    use crate::surface::TacticChild;
+    let mut pending = [clause.preserve_proof(), clause.otherwise_proof()]
+        .into_iter()
+        .flatten()
+        .filter_map(SourceProof::tactics)
+        .flatten()
+        .collect::<Vec<_>>();
+    let mut claims = Vec::new();
+    while let Some(tactic) = pending.pop() {
+        match tactic {
+            ProofTactic::Have(have) => claims.push(&have.proposition),
+            ProofTactic::Loop(_) => {}
+            _ => pending.extend(
+                tactic
+                    .children()
+                    .into_iter()
+                    .filter_map(|child| match child {
+                        TacticChild::Continuing(proof) => proof.tactics(),
+                        TacticChild::Obligation(_) => None,
+                    })
+                    .flatten(),
+            ),
+        }
+    }
+    claims
+}
+
+fn loop_exit_recorded_states(
     loop_index: usize,
     state: &ExecutionState,
-    facts: &crate::kernel::ExecutionFacts,
+    iterations: &crate::kernel::IntegerTerm,
     context: &PlanningExecutionContext,
     environment: &ExecutionProofEnvironment<'_>,
-) -> Vec<bool> {
-    use crate::surface::proof::raise_lower_audit::{self, RoundTrip};
-
+) -> RecordedStates {
     let mut recorded_states = context.recorded_states.clone();
     for (kind, state) in [
         (ProgramPointKind::Entry, &context.state),
@@ -743,37 +769,126 @@ pub(super) fn scoped_loop_exit_facts(
             state.clone(),
         );
     }
-    let outer = Proof::for_fixed_state_frontier_of_list(
+    let iterations = crate::kernel::KernelTermImport::default().integer(&iterations.clone().into());
+    recorded_states.record_loop_iterations_root(loop_index, iterations);
+    recorded_states
+}
+
+fn loop_exit_scope<'a>(
+    state: &'a ExecutionState,
+    iterations: &crate::kernel::IntegerTerm,
+    recorded_states: &'a RecordedStates,
+    facts: &'a PureFactList,
+    context: &'a PlanningExecutionContext,
+    environment: &'a ExecutionProofEnvironment<'a>,
+) -> Proof<'a> {
+    Proof::for_fixed_state_frontier_of_list(
         &environment.frontier_loop_source.claim_label,
         0,
-        &context.pure_facts,
+        facts,
         environment.parameter_binding(),
-        FixedStateFrame::new(environment.initial_state, state, None, &recorded_states),
+        FixedStateFrame::new(environment.initial_state, state, None, recorded_states),
         &context.surface_propositions,
         environment.spec_definitions,
         environment.theorem_environment,
         &[],
     )
-    .with_surface_local_scope(&phase_proof_scope(environment));
-    facts
+    .with_surface_local_scope(&phase_proof_scope(environment))
+    .with_loop_iterations(iterations)
+}
+
+/// Check the experimental export interface against the actual outer scope.
+/// Exit-private proof locals and historical points are absent from this frame.
+pub(super) fn scoped_loop_exit_facts(
+    loop_index: usize,
+    state: &ExecutionState,
+    iterations: &crate::kernel::IntegerTerm,
+    exits: &[(ExecutionState, crate::kernel::ExecutionFacts)],
+    facts: &crate::kernel::ExecutionFacts,
+    context: &PlanningExecutionContext,
+    environment: &ExecutionProofEnvironment<'_>,
+) -> (Vec<bool>, Vec<Proposition>) {
+    use crate::surface::proof::raise_lower_audit::{self, RoundTrip};
+
+    let recorded_states =
+        loop_exit_recorded_states(loop_index, state, iterations, context, environment);
+    let outer = loop_exit_scope(
+        state,
+        iterations,
+        &recorded_states,
+        &context.pure_facts,
+        context,
+        environment,
+    );
+    let claims = environment
+        .function_block
+        .structural_clauses()
+        .for_loop(loop_index)
+        .map_or_else(Vec::new, loop_exit_claims);
+    let addresses_in_scope = |proposition: &Proposition| {
+        !crate::kernel::proof::term_rewrite::proposition_pointer_terms(proposition)
+            .iter()
+            .any(|address| {
+                matches!(address.base, AddressBase::AutomaticLocal { .. })
+                    && [&context.state, state].into_iter().all(|visible| {
+                        visible
+                            .locals()
+                            .name_for_slot(&Address {
+                                base: address.base.clone(),
+                                offset: AddressOffset::Constant(0),
+                            })
+                            .is_none()
+                    })
+            })
+    };
+    let mut written_exports = BTreeSet::new();
+    if !claims.is_empty() {
+        let exit_inputs = exits
+            .iter()
+            .map(|(state, facts)| {
+                let mut available = context.pure_facts.clone();
+                available.extend(facts.iter().map(|fact| fact.proposition().clone()));
+                (
+                    loop_exit_recorded_states(loop_index, state, iterations, context, environment),
+                    available,
+                )
+            })
+            .collect::<Vec<_>>();
+        let exit_scopes = exits
+            .iter()
+            .zip(&exit_inputs)
+            .map(|((state, _), (records, available))| {
+                loop_exit_scope(state, iterations, records, available, context, environment)
+            })
+            .collect::<Vec<_>>();
+        let lower = |scope: &Proof<'_>, claim| {
+            without_open_obligation_probe(|| {
+                scope.lower_surface_proposition_direct(claim, "written loop exit fact")
+            })
+        };
+        for claim in claims {
+            let Ok(joined) = lower(&outer, claim) else {
+                continue;
+            };
+            if addresses_in_scope(&joined)
+                && exit_scopes.iter().all(|exit| {
+                    lower(exit, claim)
+                        .is_ok_and(|lowered| exit.facts().has_stated_conjunct(&lowered))
+                })
+            {
+                written_exports.insert(joined);
+            }
+        }
+    }
+
+    let admitted = facts
         .iter()
         .map(|fact| {
             let proposition = fact.proposition();
-            if crate::kernel::proof::term_rewrite::proposition_pointer_terms(proposition)
-                .iter()
-                .any(|address| {
-                    matches!(address.base, AddressBase::AutomaticLocal { .. })
-                        && [&context.state, state].into_iter().all(|visible| {
-                            visible
-                                .locals()
-                                .name_for_slot(&Address {
-                                    base: address.base.clone(),
-                                    offset: AddressOffset::Constant(0),
-                                })
-                                .is_none()
-                        })
-                })
-            {
+            if written_exports.remove(proposition) {
+                return true;
+            }
+            if !addresses_in_scope(proposition) {
                 return false;
             }
             let Some(spelling) = outer.structural_proposition_candidate(proposition) else {
@@ -789,7 +904,8 @@ pub(super) fn scoped_loop_exit_facts(
                 )
             })
         })
-        .collect()
+        .collect();
+    (admitted, written_exports.into_iter().collect())
 }
 
 pub(in crate::surface::proof) fn verify_loop_otherwise(

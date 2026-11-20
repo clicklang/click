@@ -46,12 +46,14 @@ int32 stop_at(int32 n) {
         maintain by {
             if i == 3 {
                 step();
+                have i == 3 or i == 0 by known();
                 step();
             } else {
                 step();
                 step();
                 if i == 0 {
                     step();
+                    have i == 3 or i == 0 by known();
                     step();
                 } else {
                     step();
