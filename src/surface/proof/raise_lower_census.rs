@@ -297,6 +297,43 @@ mod tests {
     }
 
     #[test]
+    fn algebraic_match_reconstruction_raises_after_lowering_and_rewrite() {
+        let fixture = include_str!("../../../mdtests/algebraic_match_reconstruction.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        let raised = |prefix: &str| {
+            lines
+                .iter()
+                .find_map(|line| line.strip_prefix(prefix))
+                .unwrap_or_else(|| panic!("missing {prefix:?}: {lines:#?}"))
+        };
+        assert_eq!(
+            raised("raised\tgoal\tequal:algebraic\twritten.ensures_0\tintro()\twritten\t"),
+            raised("raised\tgoal\tequal:algebraic\trewritten.ensures_0\trewrite\twritten\t"),
+        );
+        let error = crate::surface::verify_c_sources(
+            "spec enum Pair { Both(int32, int32) }
+             theorem swapped(p: Pair) {
+                 ensures p == (match p { Pair::Both(a, b) => Pair::Both(b, a) }) by normalize();
+             }",
+            &[],
+        )
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("goal did not normalize to true"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn algebraic_match_arm_values_name_unfold_facts() {
         let source = r#"
 verifying "keep.c";

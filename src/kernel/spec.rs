@@ -3487,19 +3487,6 @@ fn lower_spec_algebraic_comparison_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
-    if (algebraic_match_reconstructs(left, right) || algebraic_match_reconstructs(right, left))
-        && super::functions::spec_algebraic_expression_is_obligation_free(left)
-        && super::functions::spec_algebraic_expression_is_obligation_free(right)
-        && super::functions::spec_algebraic_expression_is_state_independent(left)
-        && super::functions::spec_algebraic_expression_is_state_independent(right)
-    {
-        return Ok(vec![SpecPropositionPath {
-            introductions: Vec::new(),
-            proposition: Proposition::condition_is(ConditionTerm::Constant(equal), true),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-        }]);
-    }
     let mut paths = Vec::new();
     let share_operand = left == right
         && super::functions::spec_algebraic_expression_is_obligation_free(left)
@@ -3560,66 +3547,6 @@ fn lower_spec_algebraic_comparison_at_state_in(
         }
     }
     Ok(paths)
-}
-
-fn algebraic_match_reconstructs(
-    expression: &SpecAlgebraicExpression,
-    scrutinee: &SpecAlgebraicExpression,
-) -> bool {
-    let SpecAlgebraicExpressionNode::Match {
-        scrutinee: matched,
-        arms,
-    } = &expression.node
-    else {
-        return false;
-    };
-    if matched.as_ref() != scrutinee || expression.algebraic_type != scrutinee.algebraic_type {
-        return false;
-    }
-    let arm_variants = arms
-        .iter()
-        .map(|arm| arm.variant.as_str())
-        .collect::<BTreeSet<_>>();
-    !scrutinee.algebraic_type.rigid
-        && arms.len() == scrutinee.algebraic_type.variants.len()
-        && arm_variants.len() == arms.len()
-        && arms.iter().all(|arm| {
-            let Some(schema) = scrutinee
-                .algebraic_type
-                .variants
-                .iter()
-                .find(|variant| variant.name == arm.variant)
-            else {
-                return false;
-            };
-            let SpecAlgebraicExpressionNode::Constructor { variant, fields } = &arm.body.node
-            else {
-                return false;
-            };
-            arm.body.algebraic_type == scrutinee.algebraic_type
-                && variant == &arm.variant
-                && arm.binding_types == schema.fields
-                && fields.len() == arm.bindings.len()
-                && fields.iter().zip(&schema.fields).zip(&arm.bindings).all(
-                    |((field, field_type), binding)| match (field, field_type) {
-                        (
-                            SpecAlgebraicValue::Program(SpecExpression::ProgramExpression(
-                                ProgramExpression::Variable(name),
-                            )),
-                            AlgebraicValueType::Program(_)
-                            | AlgebraicValueType::ObjectPointer(_, _),
-                        ) => name == binding,
-                        (
-                            SpecAlgebraicValue::Algebraic(SpecAlgebraicExpression {
-                                node: SpecAlgebraicExpressionNode::Binding(name),
-                                ..
-                            }),
-                            AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_),
-                        ) => name == binding,
-                        _ => false,
-                    },
-                )
-        })
 }
 
 #[cfg(test)]
