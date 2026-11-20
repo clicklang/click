@@ -159,6 +159,7 @@ fn collect_signed_surface_terms<'a>(
             }
 
             ContractExpression::CUnary { operand: inner, .. }
+            | ContractExpression::MemoryLoad { pointer: inner, .. }
             | ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
             | ContractExpression::Exact(inner)

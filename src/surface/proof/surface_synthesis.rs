@@ -7091,9 +7091,11 @@ fn synthesize_memory_load(
     operand: ContractExpression,
     value_type: ProgramType,
 ) -> ContractExpression {
-    ContractExpression::CUnary {
-        operand: Box::new(operand),
-        lowered: typed_load_expression(ProgramExpression::Value(int32(0)), value_type),
+    ContractExpression::MemoryLoad {
+        pointer: Box::new(operand),
+        value_type,
+        volatile: false,
+        pointee_constant: false,
     }
 }
 
