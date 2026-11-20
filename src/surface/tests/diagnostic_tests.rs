@@ -1350,8 +1350,14 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
         ParameterBinding::default(),
     );
 
-    assert!(rendered.contains("selected resource"), "{rendered}");
-    assert!(rendered.contains("selected_resource"), "{rendered}");
+    assert!(
+        rendered.contains("`owns selected_resource[0..4]`"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("A live borrow still depends on this resource."),
+        "{rendered}"
+    );
     assert!(!rendered.contains("unrelated_resource"), "{rendered}");
     assert!(rendered.len() < 1024, "{}", rendered.len());
 }
@@ -1379,8 +1385,11 @@ fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
         ParameterBinding::default(),
     );
 
-    assert!(rendered.contains("selected range"), "{rendered}");
-    assert!(rendered.contains("selected_range"), "{rendered}");
+    assert!(rendered.contains("`selected_range[1..3]`"), "{rendered}");
+    assert!(
+        rendered.contains("Borrowing this resource shape is unsupported."),
+        "{rendered}"
+    );
     assert!(!rendered.contains("MemoryRange {"), "{rendered}");
     assert!(rendered.len() < 1024, "{}", rendered.len());
 }
