@@ -1015,7 +1015,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                     "loop{}{} {{",
                     loop_clause
                         .label()
-                        .map(|label| format!(" as {label}"))
+                        .map(|label| format!(" {label}"))
                         .unwrap_or_default(),
                     if loop_clause.diverges() {
                         " diverges"

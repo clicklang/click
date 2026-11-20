@@ -27,7 +27,7 @@ int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
 } by {
     step();
     step();
-    loop as fill {
+    loop fill {
         decreases hi - i;
         invariant lo <= i;
         invariant i <= hi;

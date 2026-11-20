@@ -20,7 +20,7 @@ int32 drain_to_zero(int32 n) {
     requires n <= 100;
     ensures returns_zero: result == 0;
 } by {
-    loop as drain {
+    loop drain {
         decreases n;
         invariant n >= 0;
         invariant n <= at(drain.entry, n);

@@ -38,7 +38,7 @@ int32 count(struct cell* p) {
 } by {
     step();
     step();
-    loop as counting {
+    loop counting {
         decreases p->value - i;
         invariant i >= 0;
         owns flat(p);

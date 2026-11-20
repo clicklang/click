@@ -45,7 +45,7 @@ int32 loop_sorted_range_invariant(int32 p[3]) {
     unfold(sorted_range(p, 0, 3));
     step();
     step();
-    loop as carry_sorted {
+    loop carry_sorted {
         decreases 3 - i;
         invariant i >= 0 and i <= 3;
         invariant sorted(old(p), 3);

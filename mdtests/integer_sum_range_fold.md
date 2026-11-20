@@ -94,7 +94,7 @@ int32 sum(int32 a[], int32 n) {
         }
         known();
     }
-    loop as sum {
+    loop sum {
         decreases (n - i);
         invariant forall (j: int32) { 0 <= j and j < n implies defined(a[j]) };
         invariant 0 <= i;

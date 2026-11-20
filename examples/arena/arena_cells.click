@@ -260,7 +260,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     have contains(memory(*arena), memory(arena->live_regions)) by { normalize(); }
     mark initialize_entry;
     have arena->live_regions == 0;
-    loop as initialize_occupied {
+    loop initialize_occupied {
         decreases to_integer(capacity) - to_integer(i);
         invariant 0 <= i and i <= capacity;
         invariant forall (k: int32) {
@@ -745,7 +745,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         observe(old(arena->occupied)[0..old(arena->capacity)]);
     }
     let run = fold(arena_scan(arena->data, arena->occupied, arena->capacity), { lo: 0, hi: 0 });
-    loop as find_first_free_run {
+    loop find_first_free_run {
         decreases (to_integer(arena->capacity) - to_integer(i));
         owns run: arena_scan(arena->data, arena->occupied, arena->capacity);
         invariant run.hi == i;
@@ -1377,7 +1377,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             observe(old(arena->occupied)[0..old(arena->capacity)]);
         }
         let w = fold(arena_window(arena->data, arena->occupied, arena->capacity, start, end), { next: start });
-        loop as mark_free_run {
+        loop mark_free_run {
             decreases (to_integer(end) - to_integer(i));
             owns w: arena_window(arena->data, arena->occupied, arena->capacity, start, end);
             invariant w.next == i;
@@ -2426,7 +2426,7 @@ void arena_free(struct region* region) {
         known();
     }
     let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, region->start, region->end), { next: region->start });
-    loop as clear_occupied {
+    loop clear_occupied {
         decreases (to_integer(region->end) - to_integer(i));
         owns w: arena_clear_window(arena->data, arena->occupied, arena->capacity, region->start, region->end);
         invariant w.next == i;

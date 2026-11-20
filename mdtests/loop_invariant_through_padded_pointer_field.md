@@ -67,7 +67,7 @@ int32 probe_contract(struct job *j) {
 } by {
     step();
     step();
-    loop as fill {
+    loop fill {
         decreases j->hi - i;
         invariant j->lo <= i and i <= j->hi;
         invariant forall (k: int32) { j->lo <= k and k < i implies j->p[k] == j->v };

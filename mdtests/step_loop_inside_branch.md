@@ -36,7 +36,7 @@ int32 branch_count_to_one(int32 flag, int32 i) {
     have i == 1 by {
         known();
     }
-    loop as count {
+    loop count {
         decreases 0;
         invariant i == 1;
     }

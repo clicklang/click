@@ -529,6 +529,7 @@ fn loop_preservation_have_resolves_entry_label_and_expands() {
         verify_c_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "drain_to_zero")
         .unwrap_or_else(|e| panic!("{}", e.message()));
+    assert!(expanded.contains("loop drain {"), "{expanded}");
     verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
 }
 
@@ -917,7 +918,7 @@ fn frontier_local_loop_verifies_and_advances_to_exit() {
             } by {
                 step();
                 step();
-                loop as count {
+                loop count {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
@@ -959,7 +960,7 @@ fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
             ensures result == 3 by {
                 step();
                 step();
-                loop as count {
+                loop count {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
@@ -2824,8 +2825,8 @@ fn indexed_structural_clauses_agree_with_the_clause_list_walks() {
         r#"
         verifying "count.c";
         int32 count(int32 i) { ensures result >= 0; } by {
-            loop as a { invariant i >= 0; }
-            loop as b { invariant i >= 0; }
+            loop a { invariant i >= 0; }
+            loop b { invariant i >= 0; }
             loop { invariant i >= bound; }
         }
     "#,

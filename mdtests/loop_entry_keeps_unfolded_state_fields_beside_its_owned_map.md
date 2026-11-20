@@ -43,7 +43,7 @@ void mark_all(struct arena* arena) {
     unfold(state(arena));
     step();
     step();
-    loop as mark {
+    loop mark {
         decreases (arena->capacity - i);
         owns arena->occupied[0..arena->capacity];
         invariant 0 <= i and i <= arena->capacity;

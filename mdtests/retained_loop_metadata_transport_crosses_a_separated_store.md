@@ -42,7 +42,7 @@ void clear(struct region* region) {
     requires separate(memory(*region), memory(region->arena->occupied[0..region->arena->capacity]));
 } by {
     step(); step(); step(); step();
-    loop as scan {
+    loop scan {
         decreases to_integer(region->end) - to_integer(i);
         owns w: arena_clear_window(arena->data, arena->occupied, arena->capacity, region->start, region->end);
         invariant w.next == i;

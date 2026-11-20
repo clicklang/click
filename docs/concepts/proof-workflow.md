@@ -447,7 +447,7 @@ by {
     have i == 0 by {
         solve();
     }
-    loop as fill {
+    loop fill {
         decreases n - i;
         owns p[0..n];
         invariant i >= 0;
@@ -499,7 +499,7 @@ have at(region(4).entry, y) >= 0 by {
 }
 ```
 
-`loop as name { ... }` names the entry and exit points of the loop at
+`loop name { ... }` names the entry and exit points of the loop at
 the current frontier; the name is not a selector and never moves the frontier.
 
 A code region is a static source construct with extent, such as a function,

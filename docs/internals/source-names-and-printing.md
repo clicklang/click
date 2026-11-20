@@ -103,8 +103,8 @@ its file bindings once before rewriting the fragment.
 
 A written code region resolves through `CodeRegionRef::resolve`, both in
 annotation lowering and in proof execution. A loop label binds once per
-execution path, through the structural clause of the `loop as label` that
-declared it; a second `loop as label` at another loop is refused. A recorded
+execution path, through the structural clause of the `loop label` that
+declared it; a second `loop label` at another loop is refused. A recorded
 state is one entry per program point. The state map keeps the labels the
 path gave its loops, files a loop's state under its first label, and reads
 `loop(N)`, that label and any other label of the loop as the same entry, so

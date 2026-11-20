@@ -1,7 +1,7 @@
 # A loop label names one loop
 
-`loop as label` names the loop the tactic meets, and `at(label.exit, ...)`
-reads that loop's exit state. A second `loop as label` at a different loop
+`loop label` names the loop the tactic meets, and `at(label.exit, ...)`
+reads that loop's exit state. A second `loop label` at a different loop
 would make the same name mean two program points, so it is refused. Here
 `L` would name both loops, and `at(L.exit, j)` would read 0 at the first
 loop's exit and 5 at the second's.
@@ -27,10 +27,10 @@ int32 two(int32 i, int32 n, int32 j) {
     requires j == 0;
     ensures at(L.exit, j) == 5;
 } by {
-    loop as L {
+    loop L {
         invariant 0 <= i and i <= n and j == 0;
     }
-    loop as L {
+    loop L {
         invariant 0 <= j and j <= 5;
     }
     step();

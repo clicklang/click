@@ -196,7 +196,7 @@ A labeled loop can also expose its entry point to the invariant:
 
 <!-- verified-example: mdtests/loop_entry_program_point.md -->
 ```click
-loop as drain {
+loop drain {
     decreases n;
     invariant n >= 0;
     invariant n <= at(drain.entry, n);

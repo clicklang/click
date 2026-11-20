@@ -53,7 +53,7 @@ void *fill_range(void *argument) {
     step();
     step();
     step();
-    loop as fill {
+    loop fill {
         decreases job->end - index;
         views job->output;
         views job->begin;

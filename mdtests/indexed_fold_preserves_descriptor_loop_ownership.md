@@ -141,7 +141,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     }
     let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end), { next: initial_next });
     step(); step();
-    loop as clear_occupied {
+    loop clear_occupied {
         decreases end - i;
         owns w: arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end);
         invariant w.next == i;

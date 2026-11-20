@@ -348,7 +348,7 @@ the one execution transition that fails.
 | `let { result: name } = step()` | simple | Specialized | Bind a checked assignment, call, or scalar step result. | [Reference](#binding-a-statement-result) |
 | `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
 | `branch [ensuring { ... }] { true => { ... } false => { ... } }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
-| `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
+| `loop [name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
 | `step(callee, { binder: instance })` | simple | Specialized | Map a call's instance binders and value parameters, and name what it produces. | [Reference](#calls-with-binder-maps) |
 | `step(Contract, { handle: instance, ... })`; `step(Contract, { binder: instance })` | simple | Specialized | Select a contract and map its resource instances. | [Reference](#named-contracts-with-resource-bindings) |
@@ -768,7 +768,7 @@ through local pointers keep their declared element types.
 
 ### Loop transitions
 
-**Form:** `loop [as name] { ... }`
+**Form:** `loop [name] [diverges] { ... }`
 
 **Core.** At a C loop frontier, prove initialization and one arbitrary
 iteration, construct the loop rule, and advance to its abstract exit. One

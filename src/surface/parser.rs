@@ -11198,13 +11198,16 @@ impl Parser {
             }));
         }
         if name == "loop" {
-            let label = if self.peek_ident() == Some("as") {
-                self.position += 1;
-                let label = self.expect_ident("loop label")?;
-                self.refuse_cast_type_binder(&label)?;
-                Some(label)
-            } else {
-                None
+            let label = match self.peek_ident() {
+                Some("as") => {
+                    return Err(self.error("write a named loop as `loop name { ... }`"));
+                }
+                Some("diverges") | None => None,
+                Some(_) => {
+                    let label = self.expect_ident("loop label")?;
+                    self.refuse_cast_type_binder(&label)?;
+                    Some(label)
+                }
             };
             // A loop has no signature, so its `diverges` marker sits on the
             // head, where the signature marker sits for a function.
@@ -18890,6 +18893,20 @@ mod loop_name_tests {
                 "{body}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn retired_loop_label_syntax_names_its_replacement() {
+        let source = "int32 f() { ensures result == 0; } by { loop as scan { invariant 0 == 0; } }";
+        let error = Parser::with_program_layouts(source, ProgramLayouts::default(), None)
+            .unwrap()
+            .parse_file_items(&[])
+            .unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("write a named loop as `loop name { ... }`")
+        );
     }
 
     #[test]

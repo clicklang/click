@@ -1028,7 +1028,7 @@ int32 vector_fill(struct vector* owner, int32 value) {
     step();
     have i >= 0;
     have i <= owner->len;
-    loop as fill_cells {
+    loop fill_cells {
         decreases owner->len - i;
         invariant i >= 0 and i <= owner->len;
         invariant owner->len == old(owner->len);

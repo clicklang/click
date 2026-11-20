@@ -46,7 +46,7 @@ int32 composite_resource_vector_fill_loop_state(
 } by {
     step();
     step();
-    loop as fill_cells {
+    loop fill_cells {
         decreases owner->len - i;
         invariant i >= 0 and i <= owner->len;
         owns vector(owner);

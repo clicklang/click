@@ -1517,9 +1517,9 @@ sequence does not receive a separate ID. The same IDs name execution targets,
 annotations, and the points `at(region(N).entry|exit, ...)` reads at.
 
 A frontier-local loop tactic may give the loop it encounters a stable name
-with `loop as label { ... }`.  The label names that encountered loop's entry
+with `loop label { ... }`.  The label names that encountered loop's entry
 and exit points; it never searches for or jumps to a source region. A
-label names one loop on an execution path: a second `loop as label` at a
+label names one loop on an execution path: a second `loop label` at a
 different loop is refused. Use
 `at(label.entry, expression_or_proposition)` and
 `at(label.exit, expression_or_proposition)` after the tactic has established
@@ -4562,7 +4562,7 @@ loop. Predicate bodies needed by the loop rule can be exposed in its
 
 <!-- verified-example: mdtests/loop_sorted_range_invariant.md -->
 ```click
-loop as carry_sorted {
+loop carry_sorted {
     decreases 3 - i;
     invariant i >= 0 and i <= 3;
     invariant sorted(old(p), 3);

@@ -235,7 +235,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         };
     }
     step();
-    loop as initialize_occupied {
+    loop initialize_occupied {
         decreases capacity - i;
         invariant 0 <= i and i <= capacity;
         invariant forall (k: int32) {
