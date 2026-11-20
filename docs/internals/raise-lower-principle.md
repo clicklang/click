@@ -631,11 +631,11 @@ them.
 An Integer-valued match with Integer-only fields retains its scrutinee and
 scoped arms even when the scrutinee is a written constructor. Goal-local
 checking may select the constructor's arm and substitute its fields.
-Integer equality and disequality also retain a direct match over a pure
-constructor with Integer or int32 payloads when each arm is a literal, a
-payload observation, or an addition or subtraction of those atoms. Explicit
-algebraic rewriting keeps that match in the comparison. Normalization selects
-the arm and checks the resulting Integer equation.
+Integer equality, disequality, and standalone order comparisons retain a
+direct match over a pure constructor with Integer or int32 payloads when each
+arm is a literal, a payload observation, or an addition or subtraction of
+those atoms. Explicit algebraic rewriting keeps that match in the comparison.
+Normalization selects the arm and compares the resulting Integer values.
 Pure, obligation-free algebraic-valued matches in comparisons also retain
 their scrutinee and arms with a known constructor. Algebraic equality
 rewriting keeps the match available for reduction during normalization.
