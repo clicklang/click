@@ -8567,11 +8567,103 @@ impl ResourceContext {
                 candidates.extend(remaining);
             }
         }
+        let merge_candidates = fact.is_own().then(|| candidates.clone());
         if self.consume_fact_from_candidates(fact, assumptions, candidates) {
+            return true;
+        }
+        if let Some(candidates) = merge_candidates
+            && self.consume_fact_from_merged_units(fact, assumptions, &candidates)
+        {
             return true;
         }
         fact.owned_quantity_term()
             .is_some_and(|quantity| resource_quantity_resolves_to_zero(quantity, assumptions))
+    }
+
+    /// Consume a constant owned quantity no single held unit covers from
+    /// several plain units of the same resource. A body that took one of two
+    /// `slot(pool)` and later produced another holds `slot(pool) x 1` twice;
+    /// a context only merges them when it normalizes, which consumption
+    /// deliberately does not do first. The units are those the consumption
+    /// already selected by key, admitted with the family's own pair rule in
+    /// their index order until their constant total covers `fact`. Memory keeps
+    /// its own supplier composition, and a unit with a loan, support,
+    /// projection or witness keeps its identity.
+    fn consume_fact_from_merged_units(
+        &mut self,
+        fact: &ResourceFact,
+        assumptions: &PureFactContext,
+        candidates: &[ResourceEntryId],
+    ) -> bool {
+        if fact.memory_range().is_some()
+            || fact
+                .owned_quantity_term()
+                .and_then(MachineTerm::as_const)
+                .is_none()
+        {
+            return false;
+        }
+        let algebra = resource_family_algebra(fact.family());
+        // The first selected unit, the running constant total, and the units
+        // merged so far. Each further unit is checked against the first with
+        // the family's pair rule, so the check stays the size of one unit
+        // while the total is kept as a constant.
+        let mut first: Option<ResourceFact> = None;
+        let mut total = 0_u32;
+        let mut used = Vec::new();
+        let mut seen = BTreeSet::new();
+        for &entry in candidates {
+            crate::instrumentation::record_deterministic_work(1);
+            let unit = self.fact(entry);
+            let Some(quantity) = unit.owned_quantity_term().and_then(MachineTerm::as_const) else {
+                continue;
+            };
+            if !seen.insert(entry)
+                || !self.merged_unit_eligible(entry)
+                || !unit.is_own()
+                || unit.resource() != fact.resource()
+            {
+                continue;
+            }
+            if let Some(first) = &first
+                && normalize_resource_fact_pair(first, unit, assumptions).is_none()
+            {
+                continue;
+            }
+            let Some(next_total) = total.checked_add(quantity) else {
+                return false;
+            };
+            first.get_or_insert_with(|| unit.clone());
+            total = next_total;
+            used.push(entry);
+            if used.len() < 2 {
+                continue;
+            }
+            let merged =
+                ResourceFact::own_quantity(fact.resource().clone(), MachineTerm::constant(total));
+            if let Some(ResourceFactConsumption::Replace(residual)) =
+                algebra.consume(&merged, fact, assumptions)
+            {
+                for entry in &used {
+                    let occurrence = self.occurrence(*entry);
+                    if self
+                        .storage
+                        .expansions_by_support_occurrence
+                        .contains_key(&occurrence)
+                    {
+                        *self = self
+                            .clone()
+                            .without_cached_supported_expansion_for_occurrence(occurrence);
+                    }
+                    self.remove_entry(*entry);
+                }
+                for residual in residual {
+                    self.insert_fact(residual);
+                }
+                return true;
+            }
+        }
+        false
     }
 
     fn consume_fact_from_candidates(
@@ -8817,6 +8909,24 @@ impl ResourceContext {
         }
         candidates.remove(&entry);
         candidates
+    }
+
+    /// A unit [`Self::consume_fact_from_merged_units`] may merge away: what
+    /// delta normalization accepts, and also a unit whose only extra is a
+    /// cached expansion of its body. That cache is derived again wherever it
+    /// is needed and is dropped with the unit.
+    fn merged_unit_eligible(&self, entry: ResourceEntryId) -> bool {
+        let occurrence = self.occurrence(entry);
+        !self.storage.supported_by.contains_key(&entry)
+            && !self
+                .storage
+                .projections_by_support_occurrence
+                .contains_key(&occurrence)
+            && self.loan_dependency(occurrence).is_none()
+            && !self
+                .structural_witnesses
+                .as_ref()
+                .is_some_and(|witnesses| witnesses.contains(occurrence))
     }
 
     fn delta_normalization_eligible(&self, entry: ResourceEntryId) -> bool {
@@ -10496,6 +10606,41 @@ mod zero_quantity_graph_tests {
             &required(MachineTerm::constant(i32::MAX as u32)),
             &assumptions,
         ));
+    }
+
+    #[test]
+    fn separately_retained_units_are_consumed_together_without_normalizing() {
+        let assumptions = PureFactContext::new();
+        let one = required(MachineTerm::constant(1));
+        let two = required(MachineTerm::constant(2));
+        let three = required(MachineTerm::constant(3));
+        let pair = ResourceContext::new().unchecked_with_facts([one.clone(), one.clone()]);
+        assert!(
+            pair.clone()
+                .without_fact_delaying_normalization(&two, &assumptions)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            pair.clone()
+                .without_fact_delaying_normalization(&three, &assumptions)
+                .is_none()
+        );
+        // The merged unit keeps its residual.
+        let left = ResourceContext::new()
+            .unchecked_with_facts([one.clone(), one.clone(), one.clone()])
+            .without_fact_delaying_normalization(&two, &assumptions)
+            .unwrap();
+        assert!(left.satisfies_fact(&one, &assumptions));
+        assert!(!left.satisfies_fact(&two, &assumptions));
+        // A view of the resource is not a unit of it.
+        let viewed = ResourceContext::new()
+            .unchecked_with_facts([ResourceFact::View(one.resource().clone()), one.clone()]);
+        assert!(
+            viewed
+                .without_fact_delaying_normalization(&two, &assumptions)
+                .is_none()
+        );
     }
 
     #[test]
