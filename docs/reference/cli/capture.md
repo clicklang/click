@@ -2772,7 +2772,7 @@ outside the retained dependencies. File-scope assembly is still refused.
 At `-O0`, this rooted import also accepts `-fvisibility=hidden`. Retained
 external declarations then need explicit default visibility. This preserves
 the source-level linkage of the projected definitions. See the unchanged
-[cJSON integration](../../../integrations/cjson/README.md).
+[cJSON integration](https://github.com/clicklang/click/blob/master/integrations/cjson/README.md).
 
 ## Locations and trust boundary
 

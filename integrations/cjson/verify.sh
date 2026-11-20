@@ -63,6 +63,6 @@ project = {
 PY
 
 cp "$integration_dir"/cjson-is-number-*.click "$work_dir/source/"
-"${CLICK:-click}" import lock "$work_dir/source/cjson-is-number-null.click"
-"${CLICK:-click}" verify "$work_dir/source/cjson-is-number-null.click"
-"${CLICK:-click}" verify "$work_dir/source/cjson-is-number-tag.click"
+"${CLICK:-click}" capture "$work_dir/source/cjson-is-number-null.click"
+"${CLICK:-click}" verify --locked "$work_dir/source/cjson-is-number-null.click"
+"${CLICK:-click}" verify --locked "$work_dir/source/cjson-is-number-tag.click"
