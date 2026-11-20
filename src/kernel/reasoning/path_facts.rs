@@ -230,6 +230,15 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
         Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) => {
             sequence_terms_equal_by_elements(left, right)
         }
+        Proposition::SequenceMembership { .. } => {
+            crate::kernel::spec::checks_int32_sequence_comparison(
+                proposition,
+                true,
+                |condition, truth| {
+                    solve_builtin_prop(&Proposition::condition_is(condition.clone(), truth))
+                },
+            ) == Some(true)
+        }
         Proposition::Equal(left, right) => left == right,
         condition_source_0 @ Proposition::ConditionIs(_, expected)
             if let Some((ConditionTerm::Constant(actual), _)) =
@@ -316,6 +325,15 @@ pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> boo
         }
         Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) => {
             sequence_terms_definitely_distinct(left, right)
+        }
+        Proposition::SequenceMembership { .. } => {
+            crate::kernel::spec::checks_int32_sequence_comparison(
+                proposition,
+                false,
+                |condition, truth| {
+                    solve_builtin_prop(&Proposition::condition_is(condition.clone(), truth))
+                },
+            ) == Some(true)
         }
         Proposition::Equal(Term::ProgramValue(left), Term::ProgramValue(right)) => {
             program_values_definitely_distinct(left.native_compat(), right.native_compat())

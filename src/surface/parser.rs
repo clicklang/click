@@ -756,6 +756,7 @@ fn is_tactic_name(name: &str) -> bool {
 fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
     Some(match name {
         "both" => "`both` is retired: write `all { P => { ... } Q => { ... } }`",
+        "open" => "`open` is now `with`; write `with(resource) { ... }`",
         "assumption" => {
             "`assumption()` is now `known()`; use `known()` to close a goal from available facts"
         }
@@ -4031,8 +4032,7 @@ impl Parser {
             return;
         };
         let is_parent = |access: &ResourceFieldAccess| {
-            access.owner == "__body"
-                && access.identity == InstanceId::from_variable(Variable(u64::MAX))
+            access.owner == "__body" && access.identity == crate::kernel::InstanceRef::Body
         };
         let (child, parent) = match (is_parent(one), is_parent(other)) {
             (false, true) => (one, other),
@@ -4078,7 +4078,7 @@ impl Parser {
             let hidden = ResourceFieldAccess {
                 owner: "__body".into(),
                 resource_name: resource_name.into(),
-                identity: InstanceId::from_variable(Variable(u64::MAX)),
+                identity: crate::kernel::InstanceRef::Body,
                 children: vec![],
                 field: hidden_name.clone(),
                 field_index: fields.len(),
@@ -4092,7 +4092,7 @@ impl Parser {
                 left: ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: binding.name.clone(),
                     resource_name: child.clone(),
-                    identity: binding.instance()?,
+                    identity: binding.instance()?.into(),
                     children: vec![],
                     field: child_field.name.clone(),
                     field_index: 0,
@@ -4140,7 +4140,7 @@ impl Parser {
                         ResourceFieldAccess {
                             owner: "__body".into(),
                             resource_name: resource_name.into(),
-                            identity: InstanceId::from_variable(Variable(u64::MAX)),
+                            identity: crate::kernel::InstanceRef::Body,
                             children: vec![],
                             field: field.name.clone(),
                             field_index,
@@ -5679,6 +5679,18 @@ impl Parser {
                         return Err(self.value_binder_refusal(false));
                     }
                     let resource = self.parse_function_contract_memory_binding()?;
+                    if self.peek_ident() == Some("as") {
+                        self.position += 1;
+                        if !matches!(resource, ResourceClause::Declared { .. }) {
+                            return Err(self.error("a named consumed borrow must be one composite"));
+                        }
+                        let name = self.expect_ident("borrow source name")?;
+                        if view_inputs.insert(name.clone(), requires.len()).is_some() {
+                            return Err(
+                                self.error(format!("duplicate borrow source name `{name}`"))
+                            );
+                        }
+                    }
                     self.expect(Token::Semicolon)?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -10885,7 +10897,7 @@ impl Parser {
                 ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: child.clone(),
                     resource_name: family.clone(),
-                    identity: *identity,
+                    identity: (*identity).into(),
                     children: vec![],
                     field: child_field.to_string(),
                     field_index: 0,
@@ -11105,7 +11117,7 @@ impl Parser {
             self.expect(Token::Semicolon)?;
             return Ok(ProofTactic::Mark(mark));
         }
-        if name == "open" {
+        if name == "with" {
             self.expect(Token::LParen)?;
             let resource = if self.starts_named_resource_target() {
                 self.parse_owned_resource_target()?
@@ -11116,7 +11128,7 @@ impl Parser {
             let tactics = self.parse_possibly_empty_tactic_block()?;
             if self.peek_ident() == Some("by") {
                 return Err(self.error(
-                    "`open` takes no trailing `by`; prove the closing fact with `have` inside the block",
+                    "`with` takes no trailing `by`; prove the closing fact with `have` inside the block",
                 ));
             }
             self.skip_redundant_semicolon();
@@ -14679,6 +14691,11 @@ impl Parser {
                 "contract expression",
             )?;
         }
+        let recover_byte_view = target_type == ProgramType::UInt8Pointer
+            && crate::surface::validation::infer_program_expression_type(
+                &expression,
+                &self.names.program_parameter_types,
+            ) == Some(InterfaceType::VoidPointer);
         Ok(ContractExpression::CUnary {
             operand: Box::new(operand),
             lowered: ProgramExpression::Cast {
@@ -14686,9 +14703,11 @@ impl Parser {
                 target_type,
                 // This cast was written in the contract. Pointer targets
                 // use the specification cast rule, not the C conversion
-                // marker also used for inserted pointer coercions. Authored
-                // void and byte casts select the enclosing-object view.
-                integer_mode: if target_type.is_pointer() {
+                // marker also used for inserted pointer coercions. A byte
+                // view recovered from void retains that pointer's bounds.
+                integer_mode: if recover_byte_view {
+                    crate::kernel::IntegerCastMode::PointerCoercion
+                } else if target_type.is_pointer() {
                     crate::kernel::IntegerCastMode::Standard
                 } else {
                     crate::kernel::IntegerCastMode::CConversion
@@ -15390,7 +15409,8 @@ impl Parser {
                             resource_name,
                             identity: identity
                                 .instance()
-                                .ok_or_else(|| self.error("a mutex authority has no fields"))?,
+                                .ok_or_else(|| self.error("a mutex authority has no fields"))?
+                                .into(),
                             children: vec![],
                             field,
                             field_index: 0,
@@ -16570,7 +16590,8 @@ impl Parser {
                     resource_name: name,
                     identity: identity
                         .instance()
-                        .ok_or_else(|| self.error("a mutex authority has no fields"))?,
+                        .ok_or_else(|| self.error("a mutex authority has no fields"))?
+                        .into(),
                     children: vec![],
                     field: path.join("."),
                     field_index: 0,
@@ -18801,7 +18822,7 @@ mod tactic_classification_tests {
             "apply(theorem(x)) using { x == 1; };",
         ),
         ("have", "have x == 1 by { normalize(); }"),
-        ("open", "open(reference(p)) { normalize(); }"),
+        ("with", "with(reference(p)) { normalize(); }"),
         ("if", "if x == 1 { normalize(); } else { normalize(); }"),
         (
             "cases",

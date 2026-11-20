@@ -29,7 +29,7 @@ int32 update(int32 *pool, int32 *p, int32 *q) {
     step_until(statement(3).entry);
     branch { true => { step(); solve(); } false => {} }
     have separate(memory(p[0..1]), memory(q[0..1]) * memory(task[0..1])) by { solve(); }
-    open(slot(pool, p)) { step(); }
+    with(slot(pool, p)) { step(); }
 }
 ```
 ```expect

@@ -22,7 +22,7 @@ int32 lifecycle() { ensures result == 9; } by {
     fold(slot(&pool, &first));
     fold(slot(&pool, &second));
     have count(slot(&pool, _)) == 2 by solve();
-    open(slot(&pool, &first)) { step(); }
+    with(slot(&pool, &first)) { step(); }
     have count(slot(&pool, _)) == 2 by solve();
     unfold(slot(&pool, &first));
     unfold(slot(&pool, &second));

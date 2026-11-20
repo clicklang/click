@@ -101,7 +101,7 @@ fn recursive_return_retains_one_explicit_frontier_and_its_actual_child_identity(
         &destination,
     );
     assert_eq!(projections[0].expansion, body.expansion);
-    assert_eq!(projections[0].frontier, body.frontier);
+    assert_eq!(projections[0].viewed_children, body.viewed_children);
 }
 
 #[test]

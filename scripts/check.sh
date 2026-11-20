@@ -25,6 +25,7 @@ run_quality_checks() {
     find src/scaling_tests -name '*.rs' -print0 | xargs -0 rustfmt --edition 2024 --check
     scripts/test-setup-environment.sh
     python3 -I scripts/test-check-nightly.py
+    python3 -I scripts/test-benchmark-verify.py
     python3 -I scripts/test-nightly-report.py
     scripts/mdbook-build.sh
     scripts/docs-lint.sh

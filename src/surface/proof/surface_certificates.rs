@@ -1508,7 +1508,7 @@ fn conjunction_leaf_preservation_steps(
 #[derive(Eq, PartialEq, Hash)]
 enum TransportReadSubject {
     Cell(ProgramExpression),
-    Resource(crate::kernel::InstanceId),
+    Resource(crate::kernel::InstanceRef),
 }
 
 fn transport_read_subject(read: &ContractExpression) -> Option<TransportReadSubject> {
@@ -1534,7 +1534,7 @@ fn transport_read_subject(read: &ContractExpression) -> Option<TransportReadSubj
 fn transport_separation_subject(subject: &ResourceSubject) -> Option<TransportReadSubject> {
     match subject {
         ResourceSubject::Instance { identity, .. } => {
-            Some(TransportReadSubject::Resource(*identity))
+            Some(TransportReadSubject::Resource((*identity).into()))
         }
         // A historical descriptor is not a current read subject.
         ResourceSubject::At { .. } => None,

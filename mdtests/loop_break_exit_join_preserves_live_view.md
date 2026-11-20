@@ -63,26 +63,19 @@ int32 paint(struct node* p, const int32* q, int32 flag) {
                 step();
                 step();
                 let c = fold(painted(p), { color: Color::Red });
+                have c.color == Color::Red or c.color == Color::Black by known();
                 step();
             } else {
                 step();
                 step();
                 let c = fold(painted(p), { color: Color::Black });
+                have c.color == Color::Red or c.color == Color::Black by known();
                 step();
             }
         }
     }
     step();
-    have c.color == Color::Red or c.color == Color::Black by {
-        cases {
-            (flag == 0 and c.color == Color::Red and p->shade == 0) => {
-                solve();
-            }
-            (c.color == Color::Black and p->shade == 1) => {
-                solve();
-            }
-        }
-    }
+    have c.color == Color::Red or c.color == Color::Black;
     solve();
 }
 ```

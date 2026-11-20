@@ -25,7 +25,7 @@ int32 set_and_read(int32* p, int32 x, int32 y) {
     ensures c.tag == old(c.tag);
     ensures result > 0;
 } by {
-    open(c) {
+    with(c) {
         branch {
             true => { step_until(function.exit); }
             false => { step_until(function.exit); }

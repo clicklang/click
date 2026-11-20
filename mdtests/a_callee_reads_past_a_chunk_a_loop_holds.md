@@ -53,5 +53,5 @@ uint32 sum(const uint8* bytes, uint64 length, uint64 start) {
 ```
 
 ```expect
-fail: stable-view
+fail: The caller needs an owner or a live view that covers it.
 ```

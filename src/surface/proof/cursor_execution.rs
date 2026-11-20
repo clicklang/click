@@ -958,6 +958,7 @@ pub(super) fn next_top_level_statement_from_frontier_position(
                     })?;
                 (execution_start_state, current_state)
             };
+            current_state.prepare_modular_call_reservations();
             let (statement, remaining) =
                 split_next_source_operation(function.body()).map_err(|message| {
                     ClickError::new(format!(
@@ -2918,7 +2919,12 @@ fn execute_step_from_frontier_position_selecting_path(
                             proof_context.parsed_function,
                             parameter_binding,
                         ),
-                        describe_missing_range_end_note(error, resources, parameter_binding)
+                        describe_missing_range_end_note(
+                            error,
+                            resources,
+                            Some(&current_state),
+                            parameter_binding
+                        )
                     )
                 });
                 if matches!(
@@ -3732,7 +3738,12 @@ fn execute_step_from_frontier_position_selecting_path(
                         proof_context.parsed_function,
                         parameter_binding,
                     ),
-                    describe_missing_range_end_note(&error, resources, parameter_binding)
+                    describe_missing_range_end_note(
+                        &error,
+                        resources,
+                        Some(&current_state),
+                        parameter_binding
+                    )
                 )
             });
             if matches!(

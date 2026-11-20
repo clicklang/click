@@ -1,4 +1,4 @@
-# A bare `open` proves several closing body facts
+# A bare `with` proves several closing body facts
 
 `control(obj)` carries two body facts. After the block runs to function exit,
 the closing fold leaves both open: the facts were established at entry, and
@@ -32,7 +32,7 @@ int32 read_payload(struct child* c) {
     owns control(c);
     ensures result == c->payload;
 } by {
-    open(control(c)) { step_until(function.exit); }
+    with(control(c)) { step_until(function.exit); }
     solve();
 }
 ```

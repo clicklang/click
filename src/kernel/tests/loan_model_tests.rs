@@ -33,7 +33,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::kernel::functions::CheckedResourceFact;
-use crate::kernel::loans::{LoanLedger, LoanRefusal, LoanViewBinding, plan_stable_view_transfer};
+use crate::kernel::loans::{BorrowLedger, LoanRefusal, LoanViewBinding, plan_stable_view_transfer};
 use crate::kernel::{
     Address, AddressOffset, MachineTerm, MemoryRange, PureFactContext, ResourceContext,
     ResourceFact, ResourceOccurrenceId, ResourceStateSource, ResourceTransferRole,
@@ -1592,7 +1592,7 @@ fn correspondence_calls_production_partition_lend_split_transfer_join() {
     let assumptions = PureFactContext::new();
     let owner_fact = production_memory_fact(0, 8, true);
     let resources = ResourceContext::new().unchecked_with_fact(owner_fact);
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let caller = ledger.fresh_participant().unwrap();
     let callee = ledger.fresh_participant().unwrap();
     let plan = plan_stable_view_transfer(
@@ -1637,7 +1637,7 @@ fn correspondence_calls_production_partition_lend_split_transfer_join() {
 
 #[test]
 fn correspondence_calls_production_shared_reborrow_and_end_ordering() {
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let parent_holder = ledger.fresh_participant().unwrap();
     let child_holder = ledger.fresh_participant().unwrap();
     let fact = ResourceFact::own_token("v14-parent".to_string(), Vec::new());

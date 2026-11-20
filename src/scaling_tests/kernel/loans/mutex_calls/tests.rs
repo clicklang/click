@@ -8,7 +8,7 @@ use super::*;
 fn suspended_mutex_share_recovery_scales_with_worker_count() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let worker = ledger.fresh_participant().unwrap();
         let resources = ResourceContext::new().unchecked_with_fact(owner());
@@ -71,7 +71,7 @@ fn suspended_mutex_share_recovery_scales_with_worker_count() {
 fn use_call_partition_and_return_ignore_unrelated_resources() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let callee = ledger.fresh_participant().unwrap();
         let mut resources = ResourceContext::new().unchecked_with_fact(owner());
@@ -154,7 +154,7 @@ fn use_call_return_recheck_scales_with_explicit_certificate_delta() {
 fn integrated_use_planner_reserves_and_recovers_without_scanning_the_frame() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let callee = ledger.fresh_participant().unwrap();
         let mut resources = ResourceContext::new().unchecked_with_fact(owner());

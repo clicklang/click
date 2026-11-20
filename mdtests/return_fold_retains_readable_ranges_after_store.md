@@ -250,7 +250,16 @@ void arena_write(struct region* region, int32 index, int32 value) {
         have contains(memory(region->arena->data[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)])) by { rewrite(region->arena->data, at(before_access, region->arena->data)); known(); }
         have separate(memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]), memory(region->arena->occupied[k])) by {
             apply(separation::separate_symm(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity])));
-            apply(separation::separate_restrict(memory(region->arena->data[0..region->arena->capacity]), memory(region->arena->occupied[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]), memory(region->arena->occupied[k])));
+            apply(separation::separate_restrict(
+                memory(region->arena->data[0..region->arena->capacity]),
+                memory(region->arena->occupied[0..region->arena->capacity]),
+                memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]),
+                memory(region->arena->occupied[k])
+            )) using {
+                separate(memory(region->arena->data[0..region->arena->capacity]), memory(region->arena->occupied[0..region->arena->capacity]));
+                contains(memory(region->arena->data[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]));
+                contains(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->occupied[k]));
+            };
         }
         have separate(statement(0).footprint, memory(region->arena->occupied[k])) by { normalize() using {}; }
         have at(statement(0).exit, region->arena->occupied[k]) == at(statement(0).entry, region->arena->occupied[k]) by {

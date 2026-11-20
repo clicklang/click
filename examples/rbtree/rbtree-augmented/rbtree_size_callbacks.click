@@ -25,7 +25,7 @@ void sized_copy_from_table(struct rb_node* old, struct rb_node* new,
     ensures source.value == old(source.value);
     ensures target.value == old(source.value);
 } by {
-    open(sized_callback_table(augment)) {
+    with(sized_callback_table(augment)) {
         step(); step();
         step(CopySizedStructure, {
             source_tree: source_tree, target_tree: target_tree, source: source, target: target
@@ -99,7 +99,7 @@ void sized_rotate_from_table(struct rb_node* old, struct rb_node* new,
     ensures sized_shape(checked.model) == sized_shape(sized_rotation_input_tree(old(input.model)));
     ensures to_integer(sized_value(checked.model)) == rb_subtree_size(sized_shape(checked.model));
 } by {
-    open(sized_callback_table(augment)) {
+    with(sized_callback_table(augment)) {
         match input.model {
             SizedRotationInput::Left(tree_model) => {
                 let { tree: tree } = unfold(input);
@@ -198,7 +198,7 @@ void sized_propagate_from_table(struct rb_node* rb, struct rb_node* stop,
     ensures sized_shape(sized_result_tree(whole.model)) == sized_shape(sized_walk_tree(old(walk.model)));
     ensures sized_counts_valid(sized_result_tree(whole.model)) == 1;
 } by {
-    open(sized_callback_table(augment)) {
+    with(sized_callback_table(augment)) {
         step(); step();
         let { whole: whole } = step(PropagateTree, { walk: walk });
         step_until(function.exit);

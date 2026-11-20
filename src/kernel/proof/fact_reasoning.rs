@@ -2,7 +2,7 @@ mod computation;
 mod intervals;
 mod known_bridges;
 pub(crate) use computation::{computes_leaf, trivial_condition_value};
-pub(crate) use known_bridges::known_bridge_leaf;
+pub(crate) use known_bridges::{is_quotient_remainder_order, known_bridge_leaf};
 
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
@@ -30,6 +30,13 @@ pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
 }
 
 fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
+    if let Some(holds) =
+        crate::kernel::spec::checks_int32_sequence_comparison(goal, true, |condition, truth| {
+            normalizes_context_free_reduced(&Proposition::condition_is(condition.clone(), truth))
+        })
+    {
+        return holds;
+    }
     // A guarded proposition whose guard has no model, or a universal over
     // one, is context-free: `intro` exposes the guard and `contradiction`
     // closes it. This is a planning judgment only; lowering keeps such a
@@ -296,17 +303,21 @@ fn normalize_condition_selection(
     for (index, premise) in premises.iter().enumerate() {
         // A complete arithmetic domain supplies its two ordinary bounds.
         // Keep shared operands intact; no private overflow spelling is needed.
-        let leaves =
-            if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(premise)
-                .is_some()
-            {
-                let Proposition::And(first, second) = premise else {
-                    unreachable!()
-                };
-                vec![first.as_ref(), second.as_ref()]
-            } else {
-                vec![premise]
+        let sequence = crate::kernel::spec::int32_sequence_equalities(premise);
+        let leaves = if let Some(sequence) = &sequence {
+            sequence.iter().collect()
+        } else if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(
+            premise,
+        )
+        .is_some()
+        {
+            let Proposition::And(first, second) = premise else {
+                unreachable!()
             };
+            vec![first.as_ref(), second.as_ref()]
+        } else {
+            vec![premise]
+        };
         for premise in leaves {
             let (condition, value) = crate::kernel::spec::proposition_as_single_condition(premise)
                 .ok_or(ConditionalNormalizationError::UnsupportedPremise(index))?;
@@ -503,6 +514,12 @@ fn normalize_condition_selection(
     for (condition, value) in admission_order {
         crate::instrumentation::record_deterministic_work(1);
         selected = selected.assume_condition(condition, value);
+    }
+    if crate::kernel::spec::checks_int32_sequence_comparison(goal, true, |condition, truth| {
+        selected.decide(condition) == Some(truth)
+    }) == Some(true)
+    {
+        return Ok(());
     }
     if let Some((
         ConditionTerm::Compare {

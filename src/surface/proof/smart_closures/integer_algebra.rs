@@ -838,15 +838,39 @@ impl<'p, 'a> Algebra<'p, 'a> {
         Ok(out)
     }
 }
+/// Look only through the exact arithmetic spine. A let inside an opaque
+/// call or read is part of that operand, not algebra for this planner.
+fn has_integer_let(expression: &Expr) -> bool {
+    let mut pending = vec![expression];
+    while let Some(node) = pending.pop() {
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return false;
+        }
+        match node {
+            Expr::Let {
+                click_type: Some(ClickType::Integer),
+                ..
+            } => return true,
+            Expr::IntegerContext(value) | Expr::Negate(value) => pending.push(value),
+            Expr::Add(a, b) | Expr::Subtract(a, b) | Expr::Multiply(a, b) => {
+                pending.extend([a.as_ref(), b.as_ref()])
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_integer_algebra(
         input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_integer_algebra");
-        let Some(mut goal) = input.goal() else {
+        let Some(original_goal) = input.goal() else {
             return Ok(None);
         };
+        let mut goal = original_goal;
         while let Proposition::Not(body) = goal {
             goal = body;
         }
@@ -924,6 +948,34 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         } = &surface
         else {
             return Ok(None);
+        };
+        let open_left = has_integer_let(left);
+        let open_right = has_integer_let(right);
+        let opened = if *operator == ComparisonOperator::Equal && (open_left || open_right) {
+            // Integer lets lower with their lexical bindings resolved.
+            // Use the exact raised arithmetic, preserving the original
+            // operands on sides that do not need a new spelling.
+            let Some(ClickProposition::Comparison {
+                left,
+                operator: ComparisonOperator::Equal,
+                right,
+            }) = input
+                .structural_goal_spelling(original_goal)
+                .as_ref()
+                .and_then(integer_composition::canonical_surface)
+            else {
+                return Ok(None);
+            };
+            Some((left, right))
+        } else {
+            None
+        };
+        let (left, right) = match &opened {
+            Some((opened_left, opened_right)) => (
+                if open_left { opened_left } else { left },
+                if open_right { opened_right } else { right },
+            ),
+            None => (left, right),
         };
         let mut algebra = Algebra {
             proof: input,

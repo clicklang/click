@@ -1141,6 +1141,7 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::UnbackedReturnedView { .. } => {
             RuntimeError::UNBACKED_RETURNED_VIEW.to_string()
         }
+        RuntimeError::ReturnedBorrow(_) => "the returned resource cannot borrow from its selected input view".into(),
         RuntimeError::UninitializedMutex { .. } => {
             "the mutex has not been initialized on this path".to_string()
         }
@@ -1541,11 +1542,13 @@ fn program_function_contract_entry_facts(
             .ok_or_else(|| {
                 "an aggregate contract argument is not a value at the contract entry".to_string()
             })?;
+        // As in the entry-resource pass below, the callee's own clauses
+        // establish the spans they name while its proof entry is opened.
         entry_state = match prepare_function_contract_entry_state_with_values(
             caller_state,
             function,
             &argument_values,
-            &assumptions,
+            &assumptions.clone().assume_entry_clause_spans(),
             &mut budget,
         ) {
             Ok(Ok(state)) => state,

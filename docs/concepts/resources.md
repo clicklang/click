@@ -606,7 +606,7 @@ int32 update(int32* pool, int32* p) {
 }
 ```
 
-`open(slot(pool, p)) { ... }` exposes that member's memory and requires the
+`with(slot(pool, p)) { ... }` exposes that member's memory and requires the
 same body to be restored on close. Neither step changes membership. The
 helper needs the member, while its caller can retain authority and other
 members. Two members can own disjoint cells of the same allocation, and
@@ -746,8 +746,8 @@ that cell. Ordinary helpers express these transfers with `consumes` and
 `produces`, including nested calls. Their count changes concern the outer
 member only.
 
-`open(slot(pool, p))` temporarily exposes the cell. Inside that block,
-`open(cell(pool, p))` exposes its memory for C access. Both scopes must restore
+`with(slot(pool, p))` temporarily exposes the cell. Inside that block,
+`with(cell(pool, p))` exposes its memory for C access. Both scopes must restore
 their owned contents, and neither requires population authority. Missing or
 mismatched children cannot establish the outer member; its child cannot also
 be returned as independent ownership while retained inside the folded member.
@@ -1128,7 +1128,7 @@ return something weaker
 the folded head in escrow and protects the direct memory children the
 definition names; a contained composite becomes a read-only description under
 the same borrow. Reading further down is projection: `unfold`, `observe`, and
-`open` of a borrowed composite add the child to the borrow's permitted
+`with` of a borrowed composite add the child to the borrow's permitted
 descriptions after the kernel rechecks that the definition contains it. A
 projection exposes nothing owned, so the depth a proof reaches costs nothing in
 authority.
@@ -1154,11 +1154,16 @@ backing that the caller can recover directly when the borrow ends.
 
 Each produced cursor keeps its own hold on the input. Unfolding moves the hold
 to its viewed pieces, and refolding those pieces together moves it back to
-the new head. Consuming
-one cursor leaves the other cursors' holds live. Once the last hold is gone,
-the caller can recover its original ownership. For contracts with unannotated
-borrowing composites, Click still infers backing when it can identify a
-unique source.
+the new head. Consuming one cursor leaves the other cursors' holds live.
+Once the last hold is gone, the caller can recover its original ownership.
+A call that repackages an existing borrow can name a consumed composite with
+`consumes cursor(...) as input` and write `produces other_cursor(...) from input`.
+An `owns` clause carries the original resource and its borrow through the call.
+
+On a failed return, the borrow diagnostic can name the output, the selected
+input view, and the viewed piece it does not cover. A blocked write can name
+the resource keeping the view live. When the caller directly holds a produced
+memory view, `release_view` gives it up after its last use.
 
 Members of an `authorized` family are the exception: they carry no body, so
 folding one places no hold, and lending one member of a quantity leaves the

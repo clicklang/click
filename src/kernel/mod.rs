@@ -71,7 +71,7 @@ pub(crate) use iterated::{IteratedStep, apply_iterated_step, plan_iterated_guard
 // V7 routes ordinary calls through it.
 mod loans;
 #[cfg(test)]
-pub(crate) use loans::LoanLedger;
+pub(crate) use loans::BorrowLedger;
 
 /// The memory a canonical load projection was built from, for a read of
 /// `pointer`: the source `reasoning::memory_resolution` recorded when it
@@ -146,6 +146,7 @@ pub(crate) use spec::{
     capture_spec_integer_value, capture_spec_integer_value_with_guards,
     refine_object_pointer_argument_using_facts,
 };
+pub(crate) use spec::{int32_sequence_equality_view, sequence_membership_view};
 mod termination;
 pub(crate) use termination::StatementProofInput;
 pub(crate) use termination::descent_completion::DescentStep;

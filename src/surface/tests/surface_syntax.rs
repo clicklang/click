@@ -3247,7 +3247,7 @@ fn parses_sequence_literals_states_and_concatenation() {
     ));
     assert_eq!(
         describe_contract_expression(left),
-        "([dst[0], dst[1]] ++ [dst[2]])"
+        "[dst[0], dst[1]] ++ [dst[2]]"
     );
 }
 

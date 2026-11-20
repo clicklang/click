@@ -141,6 +141,10 @@ struct SourceExecutionLayoutData {
     snapshot_step_results: bool,
     aggregate_results:
         BTreeMap<usize, std::sync::Arc<BTreeMap<String, crate::kernel::AggregateField>>>,
+    /// The fields of the record each pointer-valued result points at, by
+    /// the region that makes the pointer.
+    pointee_results:
+        BTreeMap<usize, std::sync::Arc<BTreeMap<String, crate::kernel::AggregateField>>>,
     full_expression_ends: BTreeSet<usize>,
     /// The region of each step whose result its statement reads, by the
     /// step's number: a call step, or an assignment step keeping its
@@ -955,6 +959,14 @@ impl SourceExecutionLayout {
             &mut aggregate_objects,
         )?;
         layout.snapshot_step_results = !layout.call_numbers.is_empty();
+        for (step, pointee) in imported.step_pointee_layouts() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(region) = layout.step_regions.get(step) {
+                layout
+                    .pointee_results
+                    .insert(*region, aggregate_result_fields(pointee));
+            }
+        }
         // The statements as written its front end says each region comes
         // from, which name them as C's do.
         if let Some(sites) = imported.source_sites() {
@@ -1727,6 +1739,20 @@ impl SourceExecutionLayout {
     ) -> Option<&crate::kernel::AggregateField> {
         crate::instrumentation::record_deterministic_work(1);
         self.data.aggregate_results.get(&region)?.get(field)
+    }
+
+    /// Field `field` of the record `region`'s pointer result points at.
+    pub(in crate::surface) fn pointee_result_field(
+        &self,
+        region: usize,
+        field: &str,
+    ) -> Option<&crate::kernel::AggregateField> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.data.pointee_results.get(&region)?.get(field)
+    }
+
+    pub(in crate::surface) fn is_pointee_result(&self, region: usize) -> bool {
+        self.data.pointee_results.contains_key(&region)
     }
 
     pub(in crate::surface) fn call_number(&self, region: usize) -> Option<u32> {
@@ -2991,6 +3017,7 @@ mod source_execution_layout_tests {
                 operator_regions: BTreeMap::new(),
                 call_results: BTreeMap::new(),
                 call_captures: BTreeMap::new(),
+                pointee_results: BTreeMap::new(),
                 named_calls: None,
                 allocation_regions: BTreeSet::new(),
                 region_paths: BTreeMap::new(),

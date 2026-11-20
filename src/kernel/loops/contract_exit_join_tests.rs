@@ -43,6 +43,7 @@ fn exit_disjunct_restates_model_getters_without_replacing_history() {
         vec![ExecutionPureFact::new(historical.clone())].into(),
         vec![],
         empty_checked_loan_evidence_sequence(),
+        false,
     );
     assert!(joined.disjunct.contains(&expected));
     assert!(!joined.disjunct.contains(&historical));

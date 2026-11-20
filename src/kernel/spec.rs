@@ -2922,6 +2922,10 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
         Proposition::Equal(left, right) => {
             term_contains(left, variable) || term_contains(right, variable)
         }
+        Proposition::SequenceMembership { element, sequence } => {
+            integer_carrier_in_program_value(element.native_compat(), variable)
+                || sequence_contains_integer_variable(sequence, variable)
+        }
         Proposition::ConditionIs(condition, _) => {
             condition_contains(condition.native_compat(), variable)
         }
@@ -4542,6 +4546,8 @@ fn lower_spec_sequence_membership_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let retain = super::functions::spec_sequence_element_is_state_independent(element)
+        && super::functions::spec_sequence_is_state_independent(sequence);
     let mut paths = Vec::new();
     for element_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
@@ -4554,9 +4560,13 @@ fn lower_spec_sequence_membership_at_state_in(
             &element_path.facts,
             &element_path.obligations,
         );
-        for sequence_path in
-            evaluate_spec_sequence_at_state_in(scope, sequence, &sequence_assumptions, budget)?
-        {
+        for sequence_path in evaluate_spec_sequence_at_state_in(
+            scope,
+            sequence,
+            &sequence_assumptions,
+            budget,
+            retain && element_path.value.program_type() == ProgramType::Int32,
+        )? {
             if sequence_path
                 .value
                 .element_type
@@ -4574,22 +4584,14 @@ fn lower_spec_sequence_membership_at_state_in(
             ) else {
                 continue;
             };
-            let comparisons = sequence_elements(&sequence_path.value)
-                .filter_map(|member| {
-                    program_value_comparison_proposition(
-                        &element_path.value.native(),
-                        ComparisonOperator::Equal,
-                        member,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let proposition = comparisons
-                .into_iter()
-                .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
-                .unwrap_or(Proposition::condition_is(
-                    ConditionTerm::Constant(false),
-                    true,
-                ));
+            let proposition = if retain && element_path.value.program_type() == ProgramType::Int32 {
+                Proposition::SequenceMembership {
+                    element: element_path.value.clone().into(),
+                    sequence: sequence_path.value,
+                }
+            } else {
+                sequence_membership_disjunction(&element_path.value.native(), &sequence_path.value)
+            };
             paths.push(SpecPropositionPath {
                 introductions: Vec::new(),
                 proposition,
@@ -4599,6 +4601,47 @@ fn lower_spec_sequence_membership_at_state_in(
         }
     }
     Ok(paths)
+}
+
+fn sequence_member_comparisons<'a>(
+    element: &'a ProgramValue,
+    sequence: &'a SequenceTerm,
+) -> impl Iterator<Item = Proposition> + 'a {
+    sequence_elements(sequence).filter_map(|member| {
+        program_value_comparison_proposition(element, ComparisonOperator::Equal, member)
+    })
+}
+
+fn sequence_membership_disjunction(element: &ProgramValue, sequence: &SequenceTerm) -> Proposition {
+    sequence_member_comparisons(element, sequence)
+        .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
+        .unwrap_or_else(|| Proposition::condition_is(ConditionTerm::Constant(false), true))
+}
+
+pub(crate) fn sequence_membership_view(proposition: &Proposition) -> Option<Proposition> {
+    let Proposition::SequenceMembership { element, sequence } = proposition else {
+        return None;
+    };
+    Some(sequence_membership_disjunction(
+        element.native_compat(),
+        sequence,
+    ))
+}
+
+pub(crate) fn sequence_nonmembership_components(
+    proposition: &Proposition,
+) -> Option<impl Iterator<Item = Proposition> + '_> {
+    let Proposition::SequenceMembership { element, sequence } = proposition else {
+        return None;
+    };
+    Some(
+        sequence_member_comparisons(element.native_compat(), sequence).map(|claim| {
+            let Proposition::ConditionIs(condition, truth) = claim else {
+                unreachable!("int32 membership")
+            };
+            Proposition::condition_is(condition, !truth)
+        }),
+    )
 }
 
 pub(super) fn sequence_elements(sequence: &SequenceTerm) -> SequenceElements<'_> {
@@ -4620,11 +4663,14 @@ impl<'a> Iterator for SequenceElements<'a> {
         loop {
             if let Some(values) = &mut self.current {
                 if let Some(value) = values.next() {
+                    crate::instrumentation::record_deterministic_work(1);
                     return Some(value);
                 }
                 self.current = None;
             }
-            match self.pending.pop()?.node.as_ref() {
+            let node = self.pending.pop()?.node.as_ref();
+            crate::instrumentation::record_deterministic_work(1);
+            match node {
                 SequenceTermNode::Literal(values) => self.current = Some(values.iter()),
                 SequenceTermNode::Concat(left, right) => {
                     self.pending.push(right);
@@ -4643,12 +4689,14 @@ fn lower_spec_sequence_comparison_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let retain = super::functions::spec_sequence_is_state_independent(left)
+        && super::functions::spec_sequence_is_state_independent(right);
     let mut paths = Vec::new();
-    for left_path in evaluate_spec_sequence_at_state_in(scope, left, assumptions, budget)? {
+    for left_path in evaluate_spec_sequence_at_state_in(scope, left, assumptions, budget, retain)? {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
         for right_path in
-            evaluate_spec_sequence_at_state_in(scope, right, &right_assumptions, budget)?
+            evaluate_spec_sequence_at_state_in(scope, right, &right_assumptions, budget, retain)?
         {
             if !sequence_element_types_compatible(
                 left_path.value.element_type,
@@ -4666,7 +4714,14 @@ fn lower_spec_sequence_comparison_at_state_in(
             ) else {
                 continue;
             };
-            let equality = finite_sequence_equality(&left_path.value, &right_path.value);
+            let equality = if retain && int32_sequence_types(&left_path.value, &right_path.value) {
+                Proposition::Equal(
+                    Term::Sequence(left_path.value.clone()),
+                    Term::Sequence(right_path.value),
+                )
+            } else {
+                finite_sequence_equality(&left_path.value, &right_path.value)
+            };
             paths.push(SpecPropositionPath {
                 introductions: if equal {
                     Vec::new()
@@ -4686,28 +4741,94 @@ fn lower_spec_sequence_comparison_at_state_in(
     Ok(paths)
 }
 
-/// Finite integer sequences have ordinary elementwise equality. Expose that
-/// logical structure once during elaboration, so every proof context can use
-/// the same introduction, extraction, and equality rules. Other element types
-/// retain logical sequence equality (not C floating or address comparison).
+fn int32_sequence_types(left: &SequenceTerm, right: &SequenceTerm) -> bool {
+    [left, right]
+        .iter()
+        .all(|term| matches!(term.element_type, None | Some(ProgramType::Int32)))
+}
+
+/// Scalar consequences of one explicitly selected finite sequence equation.
+/// An unequal length entails falsehood. An empty equation needs no premises.
+pub(crate) fn int32_sequence_equalities(proposition: &Proposition) -> Option<Vec<Proposition>> {
+    let Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) = proposition else {
+        return None;
+    };
+    if !int32_sequence_types(left, right) {
+        return None;
+    }
+    finite_sequence_equalities(left, right)
+}
+
+pub(crate) fn int32_sequence_equality_view(proposition: &Proposition) -> Option<Proposition> {
+    int32_sequence_equalities(proposition).map(balance_sequence_equalities)
+}
+
+/// For a positive sequence comparison every component must hold. For its
+/// negation one component must be refuted. Undecided components prove neither.
+pub(crate) fn checks_int32_sequence_comparison(
+    proposition: &Proposition,
+    expected: bool,
+    mut proves: impl FnMut(&ConditionTerm, bool) -> bool,
+) -> Option<bool> {
+    let (equation, expected) = match proposition {
+        Proposition::Not(equation) => (equation.as_ref(), !expected),
+        equation => (equation, expected),
+    };
+    let check = |component: Proposition| {
+        let Proposition::ConditionIs(condition, truth) = component else {
+            unreachable!("int32 component equality")
+        };
+        proves(condition.native_compat(), truth == expected)
+    };
+    if let Proposition::SequenceMembership { element, sequence } = equation {
+        let mut components = sequence_member_comparisons(element.native_compat(), sequence);
+        return Some(if expected {
+            components.any(check)
+        } else {
+            components.all(check)
+        });
+    }
+    let mut components = int32_sequence_equalities(equation)?.into_iter();
+    Some(if expected {
+        components.all(check)
+    } else {
+        components.any(check)
+    })
+}
+
+// Compatibility for the other sequence carriers and state-reading clauses.
 fn finite_sequence_equality(left: &SequenceTerm, right: &SequenceTerm) -> Proposition {
-    let fallback =
-        || Proposition::Equal(Term::Sequence(left.clone()), Term::Sequence(right.clone()));
+    finite_sequence_equalities(left, right).map_or_else(
+        || Proposition::Equal(Term::Sequence(left.clone()), Term::Sequence(right.clone())),
+        balance_sequence_equalities,
+    )
+}
+
+fn finite_sequence_equalities(
+    left: &SequenceTerm,
+    right: &SequenceTerm,
+) -> Option<Vec<Proposition>> {
     let mut left = sequence_elements(left);
     let mut right = sequence_elements(right);
     let mut equalities = Vec::new();
     loop {
         match (left.next(), right.next()) {
             (Some(left), Some(right)) => {
-                let Some(equality) = integer_sequence_element_equality(left, right) else {
-                    return fallback();
-                };
-                equalities.push(equality);
+                equalities.push(integer_sequence_element_equality(left, right)?);
             }
             (None, None) => break,
-            _ => return Proposition::condition_is(ConditionTerm::Constant(false), true),
+            _ => {
+                return Some(vec![Proposition::condition_is(
+                    ConditionTerm::Constant(false),
+                    true,
+                )]);
+            }
         }
     }
+    Some(equalities)
+}
+
+fn balance_sequence_equalities(mut equalities: Vec<Proposition>) -> Proposition {
     if equalities.is_empty() {
         return Proposition::condition_is(ConditionTerm::Constant(true), true);
     }
@@ -4742,6 +4863,7 @@ fn evaluate_spec_sequence_at_state_in(
     expression: &SpecSequenceExpression,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
+    retain_concat: bool,
 ) -> ExecutionResult<Vec<SpecSequencePath>> {
     budget.consume_expression_step()?;
     match expression {
@@ -4749,15 +4871,19 @@ fn evaluate_spec_sequence_at_state_in(
             let mut paths = vec![(Vec::new(), ExecutionFacts::new(), Vec::new())];
             for element in elements {
                 let mut next = Vec::new();
-                for (values, facts, obligations) in paths {
+                for (mut values, facts, obligations) in paths {
                     let path_assumptions =
                         assumptions_with_path_context(assumptions, &facts, &obligations);
-                    for element_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                        scope,
-                        element,
-                        &path_assumptions,
-                        budget,
-                    )? {
+                    let mut element_paths =
+                        evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                            scope,
+                            element,
+                            &path_assumptions,
+                            budget,
+                        )?
+                        .into_iter()
+                        .peekable();
+                    while let Some(element_path) = element_paths.next() {
                         let Some((merged_facts, merged_obligations)) =
                             merge_execution_pure_facts_and_obligations_under(
                                 &facts,
@@ -4770,7 +4896,12 @@ fn evaluate_spec_sequence_at_state_in(
                         else {
                             continue;
                         };
-                        let mut next_values = values.clone();
+                        let mut next_values = if element_paths.peek().is_none() {
+                            std::mem::take(&mut values)
+                        } else {
+                            crate::instrumentation::record_deterministic_work(values.len());
+                            values.clone()
+                        };
                         next_values.push(element_path.value);
                         next.push((next_values, merged_facts, merged_obligations));
                     }
@@ -4799,15 +4930,21 @@ fn evaluate_spec_sequence_at_state_in(
         }
         SpecSequenceExpression::Concat(left, right) => {
             let mut paths = Vec::new();
-            for left_path in evaluate_spec_sequence_at_state_in(scope, left, assumptions, budget)? {
+            for left_path in
+                evaluate_spec_sequence_at_state_in(scope, left, assumptions, budget, retain_concat)?
+            {
                 let right_assumptions = assumptions_with_path_context(
                     assumptions,
                     &left_path.facts,
                     &left_path.obligations,
                 );
-                for right_path in
-                    evaluate_spec_sequence_at_state_in(scope, right, &right_assumptions, budget)?
-                {
+                for right_path in evaluate_spec_sequence_at_state_in(
+                    scope,
+                    right,
+                    &right_assumptions,
+                    budget,
+                    retain_concat,
+                )? {
                     if !sequence_element_types_compatible(
                         left_path.value.element_type,
                         right_path.value.element_type,
@@ -4827,10 +4964,13 @@ fn evaluate_spec_sequence_at_state_in(
                         continue;
                     };
                     paths.push(SpecSequencePath {
-                        value: concatenate_sequence_terms(
-                            left_path.value.clone(),
-                            right_path.value,
-                        ),
+                        value: if retain_concat
+                            && int32_sequence_types(&left_path.value, &right_path.value)
+                        {
+                            sequence_concat_node(left_path.value.clone(), right_path.value)
+                        } else {
+                            concatenate_sequence_terms(left_path.value.clone(), right_path.value)
+                        },
                         facts,
                         obligations,
                     });
@@ -4855,6 +4995,10 @@ fn concatenate_sequence_terms(left: SequenceTerm, right: SequenceTerm) -> Sequen
     if matches!(right.node.as_ref(), SequenceTermNode::Literal(values) if values.is_empty()) {
         return left;
     }
+    sequence_concat_node(left, right)
+}
+
+fn sequence_concat_node(left: SequenceTerm, right: SequenceTerm) -> SequenceTerm {
     SequenceTerm {
         element_type: left.element_type.or(right.element_type),
         node: std::sync::Arc::new(SequenceTermNode::Concat(left, right)),
@@ -10015,6 +10159,9 @@ fn compound_spec_value_condition(proposition: &Proposition) -> Option<(Condition
             let (condition, expected) = compound_spec_value_condition(body)?;
             return Some((condition, !expected));
         }
+        Proposition::SequenceMembership { .. } => {
+            return compound_spec_value_condition(&sequence_membership_view(proposition)?);
+        }
         _ => return proposition_as_single_condition(proposition),
     };
     let (left, left_expected) = compound_spec_value_condition(left)?;
@@ -10120,6 +10267,14 @@ pub(super) fn proposition_as_single_condition(
     match proposition {
         Proposition::ConditionIs(condition, value) => {
             Some(((condition.clone()).native_compat().clone(), *value))
+        }
+        Proposition::SequenceMembership { element, sequence } => {
+            let mut comparisons = sequence_member_comparisons(element.native_compat(), sequence);
+            match (comparisons.next(), comparisons.next()) {
+                (None, _) => Some((ConditionTerm::Constant(false), true)),
+                (Some(comparison), None) => proposition_as_single_condition(&comparison),
+                (_, Some(_)) => None,
+            }
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((
             ConditionTerm::AlgebraicEqual(

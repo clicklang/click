@@ -41,13 +41,13 @@ maintainability, not a known wrong verdict.
   - an `known` that closes a resource claim is an exact resource check;
   - a closer on a divergent path closes its claims vacuously;
   - `apply using` keeps its written spelling;
-  - an `open` scope's deferred close proof is rebuilt from that close's
+  - a `with` scope's deferred close proof is rebuilt from that close's
     checked certificate.
 
 ## Current state and violated invariant
 
 The invariant: one function applies a written source tactic to a proof
-context. A context (pure goal, execution frontier, execution arm, `open`
+context. A context (pure goal, execution frontier, execution arm, `with`
 scope, post-execution outcome path, loop body) differs only in the `Proof`
 state it supplies and in which tactics it admits, and admission is a declared
 table, not a separate code path. Expansion prints what checking recorded, from
@@ -55,7 +55,7 @@ one source of truth.
 
 These still interpret written tactics on their own:
 
-- linear `open` scopes (`advance_linear_open_scope` in
+- linear `with` scopes (`advance_linear_open_scope` in
   `src/surface/proof/checked_drivers/proof_execution.rs`);
 - explicit scripts for pure theorems, claims and smart search
   (`run_addressed_linear_script` in `src/surface/proof/smart_closures.rs`,
@@ -99,14 +99,14 @@ frontier `match` driver, on the facts every outcome path shares.
 Add mdtests that write the same tactic in each context where the language
 admits it and expect the same verdict and the same expansion: a written
 `transport`, a nested `have` whose body misses, and `solve`, at the linear
-frontier, in a focused arm, in an `open` scope, in a pure theorem script and
+frontier, in a focused arm, in a `with` scope, in a pure theorem script and
 after execution. Each remaining difference becomes either an agreeing pair or
 a documented refusal with a diagnostic that names the context. Keep every
 existing expansion round-trip regression.
 
 ## Acceptance criteria
 
-- `open` scopes, explicit pure and smart-search scripts and loop
+- `with` scopes, explicit pure and smart-search scripts and loop
   initialization apply written tactics through the shared frontier function
   or one shared script interpreter, with admission declared in
   `SourceContext`.

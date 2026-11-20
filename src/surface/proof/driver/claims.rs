@@ -4298,7 +4298,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     matches!(restoration, OpenResourceRestoration::Named(_));
                                 let already_restored =
                                     if let OpenResourceRestoration::Named(instance) = restoration {
-                                        evolving.outcome_holds_open_instance(instance)?
+                                        evolving.holds_open_instance(instance)?
                                     } else {
                                         false
                                     };

@@ -3567,19 +3567,47 @@ fn read_retained_lvalue_paths_without_ranges(
                         }]);
                     }
                 }
-                let mut paths = evaluate_retained_memory_load_paths(
-                    &state.memory,
-                    pointer.clone(),
-                    lvalue.value_type,
-                    facts,
-                    obligations,
-                    assumptions,
-                    is_external && has_read_resource,
-                    // A specification names a value, not another C access.
-                    lvalue.is_volatile() && !SpecificationAccessScope::is_active(),
-                    source,
-                    budget.program_byte_order(),
-                );
+                let entry_read = (has_read_resource
+                    && pointer.base == AddressBase::ExternalArgument
+                    && (!lvalue.is_volatile() || SpecificationAccessScope::is_active()))
+                .then(|| {
+                    let point = state.program_point();
+                    let entry = match lvalue.value_type {
+                        ProgramType::Int32 => point.entry_integer_version(pointer, LoadKind::Int32),
+                        ProgramType::Parameter(parameter) => {
+                            point.generic_entry_version(pointer, parameter)
+                        }
+                        _ => None,
+                    }?;
+                    Some((entry, point))
+                })
+                .flatten();
+                let mut paths = if let Some((entry, point)) = entry_read {
+                    vec![
+                        super::memory_loads::evaluate_indexed_read(
+                            entry,
+                            &point,
+                            pointer.clone(),
+                            lvalue.value_type,
+                            facts,
+                            obligations,
+                        )
+                        .map_value(Into::into),
+                    ]
+                } else {
+                    evaluate_retained_memory_load_paths(
+                        &state.memory,
+                        pointer.clone(),
+                        lvalue.value_type,
+                        facts,
+                        obligations,
+                        assumptions,
+                        is_external && has_read_resource,
+                        lvalue.is_volatile() && !SpecificationAccessScope::is_active(),
+                        source,
+                        budget.program_byte_order(),
+                    )
+                };
                 for path in &mut paths {
                     record_call_output_read(
                         state,

@@ -328,8 +328,23 @@ pub(super) fn pointer_qualification(source: &CppType, target: &CppType) -> bool 
     }
 }
 
+/// Whether this is a void pointer, with the pointee's const qualification.
+pub(super) fn void_pointer(value: &CppType) -> Option<bool> {
+    match value {
+        CppType::Pointer { pointee } => match pointee.as_ref() {
+            CppType::Void => Some(false),
+            CppType::ConstVoid => Some(true),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 /// Whether a returned reference or pointer refers to a const native element.
 pub(super) fn returns_constant_element(value: &CppType) -> bool {
+    if let Some(is_const) = void_pointer(value) {
+        return is_const;
+    }
     match value {
         CppType::LvalueReference { pointee } | CppType::Pointer { pointee } => {
             Scalar::pointer_element(pointee, true).is_some_and(|element| element.is_const)

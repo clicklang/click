@@ -1528,7 +1528,7 @@ fn borrowed_observation_work_tracks_the_selected_body_instead_of_the_frame_or_lo
         let child = ResourceFact::view_token("child".into(), Vec::new());
         let resources = ResourceContext::new().unchecked_with_fact(head.clone());
         let support = resources.first_exact_occurrence(&head).unwrap();
-        let ledger = crate::kernel::LoanLedger::new();
+        let ledger = crate::kernel::BorrowLedger::new();
         let holder = ledger.fresh_participant().unwrap();
         let backing = crate::kernel::loans::BorrowedContractInputBacking::from_checked_expansion(
             support,

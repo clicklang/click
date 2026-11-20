@@ -3475,7 +3475,7 @@ fn loan_preserving_havoc_keeps_cell(
     pointer: &Address,
     byte_width: u32,
     preserved_blocks: &dyn BlockMembership,
-    ledger: Option<&crate::kernel::loans::LoanLedger>,
+    ledger: Option<&crate::kernel::loans::BorrowLedger>,
 ) -> bool {
     preserved_blocks.contains_block(&pointer.base)
         || ledger.is_some_and(|ledger| {
@@ -3498,7 +3498,7 @@ fn loan_preserving_havoc_keeps_cell(
 fn loan_preserving_havoc_keeps_run(
     run: &CellRun,
     preserved_blocks: &dyn BlockMembership,
-    ledger: Option<&crate::kernel::loans::LoanLedger>,
+    ledger: Option<&crate::kernel::loans::BorrowLedger>,
 ) -> (SlotSet, crate::kernel::primitives::RuleAnswer) {
     let exact = crate::kernel::primitives::RuleAnswer::Exact;
     if preserved_blocks.contains_block(&run.base().base) {
@@ -4895,7 +4895,7 @@ impl SymbolicMemory {
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
     ) -> Self {
         self.loop_memory_havoc(
             variable,
@@ -4912,7 +4912,7 @@ impl SymbolicMemory {
         variable: Variable,
         locals: &LocalEnvironment,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
         kept_by_function: Option<CallKeptRanges>,
     ) -> Self {
         // The loop head has already abstracted every directly assigned
@@ -4941,7 +4941,7 @@ impl SymbolicMemory {
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
         kept_by_function: Option<CallKeptRanges>,
     ) -> Self {
         self.loop_memory_havoc(
@@ -4959,7 +4959,7 @@ impl SymbolicMemory {
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
         kept_by_function: Option<CallKeptRanges>,
         scope: ForgetScope<'_>,
     ) -> Self {
@@ -5023,7 +5023,7 @@ impl SymbolicMemory {
         &mut self,
         scope: ForgetScope<'_>,
         preserved_blocks: &dyn BlockMembership,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
         agreeing: &[&SymbolicMemory],
     ) {
         let union_widths = union_overlay_widths(self);
@@ -5130,7 +5130,7 @@ impl SymbolicMemory {
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         sibling_memories: &[&SymbolicMemory],
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::loans::BorrowLedger>,
     ) -> Result<Self, String> {
         let mut incoming = std::iter::once(&self)
             .chain(sibling_memories.iter().copied())
@@ -6725,11 +6725,7 @@ impl SymbolicMemory {
         source: &ProgramPoint,
     ) -> Self {
         let value = if let ProgramType::Parameter(parameter) = program_type {
-            AlgebraicTermNode::parameter_load(
-                source.shared_memory().clone(),
-                pointer.clone(),
-                parameter,
-            )
+            AlgebraicTermNode::parameter_cell_load(source, pointer.clone(), parameter)
         } else {
             let load = crate::kernel::eval::canonical_cell_load(source, &pointer, program_type);
             crate::kernel::cell_run_value(program_type, load)
@@ -8448,24 +8444,6 @@ impl SymbolicMemory {
         self.cells.value_width_at(pointer) == Some(byte_width)
     }
 
-    pub(in crate::kernel) fn string_literal_loadable_facts(&self) -> Vec<Proposition> {
-        self.blocks
-            .iter()
-            .filter(|&(block, contents)| {
-                contents.is_read_only() && matches!(block, AddressBase::StringLiteral { .. })
-            })
-            .map(|(block, contents)| Proposition::MemoryLoadable {
-                memory: self.clone(),
-                base: Address {
-                    base: block.clone(),
-                    offset: AddressOffset::Constant(0),
-                },
-                bytes: (contents.size().clone()).into(),
-                wide: false,
-            })
-            .collect()
-    }
-
     pub(in crate::kernel) fn can_store_concretely(
         &self,
         pointer: &Address,
@@ -8695,7 +8673,7 @@ impl ExecutionState {
                 },
             });
         }
-        let parts: [(&str, bool); 22] = [
+        let parts: [(&str, bool); 23] = [
             ("memory", self.memory != other.memory),
             ("the local variables", self.locals != other.locals),
             (
@@ -8705,6 +8683,10 @@ impl ExecutionState {
             (
                 "the instance field scope",
                 self.instance_field_scope != other.instance_field_scope,
+            ),
+            (
+                "the body field view",
+                self.body_field_view != other.body_field_view,
             ),
             (
                 "the aggregate destination",
@@ -8821,6 +8803,7 @@ impl ExecutionState {
             && same_or_empty_persistent_map(&self.locals.bindings, &other.locals.bindings)
             && same_or_empty_persistent_map(&self.locals.slots, &other.locals.slots)
             && same_or_empty_resources(&self.instance_field_scope, &other.instance_field_scope)
+            && self.body_field_view == other.body_field_view
             && same_or_empty_resources(&self.resources, &other.resources)
             && self.loan_ledger == other.loan_ledger
             && self.loan_participant == other.loan_participant
@@ -8851,7 +8834,7 @@ impl ExecutionState {
 
     pub(crate) fn resource_instance_at_path(
         &self,
-        identity: InstanceId,
+        identity: impl Into<InstanceRef>,
         children: &[String],
     ) -> Option<&ResourceInstance> {
         if !children.is_empty() {
@@ -8866,20 +8849,40 @@ impl ExecutionState {
             None => Some(identity),
         }
     }
+    /// The instance a field read names. [`InstanceRef::Body`] is the opened
+    /// instance its body binding names, or else the field view of a
+    /// definition evaluated without one.
     pub(crate) fn resource_instance_fields(
         &self,
-        identity: InstanceId,
+        identity: impl Into<InstanceRef>,
     ) -> Option<&ResourceInstance> {
-        let actual = self.bound_instance(identity)?;
+        let actual = match identity.into() {
+            InstanceRef::Body => {
+                match self
+                    .resource_bindings
+                    .as_ref()
+                    .and_then(|bindings| bindings.body())
+                {
+                    Some(actual) => actual,
+                    None => return self.body_field_view.as_deref(),
+                }
+            }
+            InstanceRef::Instance(identity) => self.bound_instance(identity)?,
+        };
         self.resources
             .owned_instance(actual)
             .or_else(|| self.instance_field_scope.owned_instance(actual))
     }
+    /// The owned instance a reference names. [`InstanceRef::Body`] names
+    /// only an opened instance: a definition's field view is never owned.
     pub(crate) fn owned_resource_instance(
         &self,
-        identity: InstanceId,
+        identity: impl Into<InstanceRef>,
     ) -> Option<&ResourceInstance> {
-        let actual = self.bound_instance(identity)?;
+        let actual = match identity.into() {
+            InstanceRef::Body => self.resource_bindings.as_ref()?.body()?,
+            InstanceRef::Instance(identity) => self.bound_instance(identity)?,
+        };
         self.resources.owned_instance(actual)
     }
     pub(crate) fn resolve_named_mutex_authority(
@@ -10702,6 +10705,12 @@ impl ExecutionState {
         );
     }
 
+    /// Summarize the installed inputs while establishing an execution entry.
+    /// Later calls need only the bindings and resources changed from it.
+    pub(crate) fn prepare_modular_call_reservations(&self) {
+        crate::kernel::reasoning::caller_state_variable_bound(self);
+    }
+
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {
         // ResourceContext owns the canonical persistent dependency root. The
         // ExecutionState field is only a shared mirror, so replacing a context does
@@ -10737,12 +10746,12 @@ impl ExecutionState {
         );
         self
     }
-    pub(crate) fn loan_ledger(&self) -> Option<&crate::kernel::loans::LoanLedger> {
+    pub(crate) fn loan_ledger(&self) -> Option<&crate::kernel::loans::BorrowLedger> {
         self.loan_ledger.as_ref()
     }
     pub(crate) fn with_loan_ledger(
         mut self,
-        ledger: Option<crate::kernel::loans::LoanLedger>,
+        ledger: Option<crate::kernel::loans::BorrowLedger>,
     ) -> Self {
         self.loan_ledger = ledger;
         self

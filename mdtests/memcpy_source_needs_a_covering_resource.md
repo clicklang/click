@@ -22,5 +22,5 @@ void copy4(uint8* dst, const uint8* src) {
 ```
 
 ```expect
-fail: the required loan backing or binding is missing refused during planning; selected resource `views src[0..4]`
+fail: cannot supply `views src[0..4]` at this call
 ```

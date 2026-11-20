@@ -6,7 +6,7 @@ use super::functions::{
     function_return_resources_definitionally_established,
 };
 use super::loans::{
-    BorrowedContractInputBacking, LoanLedger, LoanRefusal, LoanRefusalDiagnostic,
+    BorrowLedger, BorrowedContractInputBacking, LoanRefusal, LoanRefusalDiagnostic,
     LoanRefusalOperation, LoanRefusalSubject, LoanViewBinding, LoanViewBindings,
 };
 pub(super) use super::memory_history::*;
@@ -2157,7 +2157,7 @@ fn join_variable(
 fn branch_memory_delta_requirements(
     base: &SymbolicMemory,
     sibling: &SymbolicMemory,
-    ledger: &crate::kernel::loans::LoanLedger,
+    ledger: &crate::kernel::loans::BorrowLedger,
     requirements: &mut BTreeSet<Proposition>,
 ) -> Result<(), String> {
     if !ledger.has_active_memory_loans() {
@@ -3906,7 +3906,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
         let mut ledger = rooted
             .loan_ledger()
             .cloned()
-            .unwrap_or_else(LoanLedger::new);
+            .unwrap_or_else(BorrowLedger::new);
         let holder = match rooted.loan_participant() {
             Some(holder) => holder,
             None => ledger
@@ -4175,7 +4175,7 @@ fn install_borrowed_contract_inputs(
         return Ok(state);
     }
 
-    let mut ledger = LoanLedger::new();
+    let mut ledger = BorrowLedger::new();
     let participant = ledger
         .fresh_participant()
         .map_err(|error| error.diagnostic(LoanRefusalOperation::Entry))?;
@@ -4990,15 +4990,7 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
     };
     let paths = paths
         .into_iter()
-        .map(|mut path| {
-            if let Some(memory) = statement_outcome_memory(&path.outcome) {
-                path.facts.extend(
-                    memory
-                        .string_literal_loadable_facts()
-                        .into_iter()
-                        .map(ExecutionPureFact::certified),
-                );
-            }
+        .map(|path| {
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
             // Calls apply their callees' verified rules, which describe a
@@ -5125,20 +5117,6 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
             );
         }
     };
-    let paths = paths
-        .into_iter()
-        .map(|mut path| {
-            if let Some(memory) = statement_outcome_memory(&path.outcome) {
-                path.facts.extend(
-                    memory
-                        .string_literal_loadable_facts()
-                        .into_iter()
-                        .map(ExecutionPureFact::certified),
-                );
-            }
-            path
-        })
-        .collect();
     symbolic_execution_statement_execution_with_loop_rule(
         state,
         statement,
@@ -5147,22 +5125,6 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
         &environment,
         loop_evidence,
     )
-}
-
-fn statement_outcome_memory(outcome: &StatementOutcome) -> Option<&SymbolicMemory> {
-    match outcome {
-        StatementOutcome::Normal(state)
-        | StatementOutcome::LoopTestFalse(state)
-        | StatementOutcome::Break(state)
-        | StatementOutcome::Continue(state)
-        | StatementOutcome::Jump { state, .. } => Some(state.memory()),
-        StatementOutcome::Return { state, .. } | StatementOutcome::Throw { state, .. } => {
-            Some(state.memory())
-        }
-        StatementOutcome::VerificationDiverges
-        | StatementOutcome::UndefinedBehavior(_)
-        | StatementOutcome::RuntimeError(_) => None,
-    }
 }
 
 #[cfg(test)]
@@ -5189,6 +5151,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
         early_exits,
         return_exits,
         None,
+        None,
         &mut budget,
     )
 }
@@ -5197,6 +5160,17 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
 /// that frontier's checked facts and returns the facts its proof added.
 pub(crate) type LoopOtherwiseProof<'a> =
     dyn FnMut(&ExecutionState, &ExecutionState, &ExecutionFacts) -> Option<ExecutionFacts> + 'a;
+
+/// Checks the source interface for a loop join. The mask selects checked
+/// common facts in producer order. Written exports are checked in every
+/// concrete predecessor and returned in terms of the abstract successor.
+pub(crate) type LoopExitFactScope<'a> = dyn Fn(
+        &ExecutionState,
+        &IntegerTerm,
+        &[(ExecutionState, ExecutionFacts)],
+        &ExecutionFacts,
+    ) -> (Vec<bool>, Vec<Proposition>)
+    + 'a;
 
 pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     state: ExecutionState,
@@ -5209,6 +5183,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     early_exits: Vec<LoopEarlyExit>,
     return_exits: Vec<LoopReturnExit>,
     otherwise: Option<&mut LoopOtherwiseProof<'_>>,
+    exit_fact_scope: Option<&LoopExitFactScope<'_>>,
     budget: &mut ExecutionBudget,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
     let crate::kernel::StatementProofInput {
@@ -5238,6 +5213,7 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
         &early_exits,
         &return_exits,
         otherwise,
+        exit_fact_scope,
         budget,
         &mut variables,
     );
@@ -5962,7 +5938,7 @@ mod proof_case_evidence_tests {
             .unique_owned_occurrence_for_fact(&escrow)
             .expect("the test escrow has one backing occurrence")
             .0;
-        let ledger = crate::kernel::loans::LoanLedger::new();
+        let ledger = crate::kernel::loans::BorrowLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let opening = ledger.lend(owner, owner, support, escrow).unwrap();
         let ledger = ledger.apply(&opening.transition).unwrap();
@@ -5996,7 +5972,7 @@ mod proof_case_evidence_tests {
             Vec::new(),
             ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
         );
-        let ledger = crate::kernel::loans::LoanLedger::new();
+        let ledger = crate::kernel::loans::BorrowLedger::new();
         let first_holder = ledger.fresh_participant().unwrap();
         let second_holder = ledger.fresh_participant().unwrap();
         let first = ExecutionState::new()

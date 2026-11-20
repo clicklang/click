@@ -109,9 +109,9 @@ int32 input_cursor_clone(
         memory(source->data[0..source->len])
     );
     consumes *target;
-    views input_cursor(source);
+    views input_cursor(source) as input;
 
-    produces input_cursor(target);
+    produces input_cursor(target) from input;
     ensures result == source->pos;
     ensures target->pos == source->pos;
     ensures target->len == source->len;

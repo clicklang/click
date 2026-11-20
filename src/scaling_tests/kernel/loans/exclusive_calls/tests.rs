@@ -9,7 +9,7 @@ fn exclusive_call_selected_transition_ignores_unrelated_scopes() {
     use super::super::super::tests::memory;
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
-        let mut ledger = LoanLedger::new();
+        let mut ledger = BorrowLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let support = ResourceContext::new()
             .unchecked_with_fact(memory(0, 4, true))

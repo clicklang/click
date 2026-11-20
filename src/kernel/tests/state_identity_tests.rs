@@ -1,14 +1,14 @@
 use super::*;
-use crate::kernel::loans::LoanLedger;
+use crate::kernel::loans::BorrowLedger;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
 fn ledger_with_participants() -> (
-    LoanLedger,
+    BorrowLedger,
     crate::kernel::loans::LoanParticipantId,
     crate::kernel::loans::LoanParticipantId,
 ) {
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner identity");
     let reader = ledger.fresh_participant().expect("reader identity");
     (ledger, owner, reader)
@@ -206,7 +206,7 @@ fn abstract_join_rejects_a_loan_ended_on_only_one_arm() {
 /// taken from `ledger`. The state keeps `ledger` itself, so two arms built
 /// this way differ only in their occurrence bindings.
 fn arm_with_view_binding(
-    ledger: &LoanLedger,
+    ledger: &BorrowLedger,
     owner: crate::kernel::loans::LoanParticipantId,
     reader: crate::kernel::loans::LoanParticipantId,
     name: &str,

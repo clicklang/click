@@ -6253,7 +6253,7 @@ instance with the bytes it no longer covers. The bytes determine `len`, so
 `fold(cstr_at(p, m))` at any other length fails. An owner lends its instance
 to a callee that views it, and a caller that owns the bytes and holds the
 facts but no instance has the call assemble the view; the caller keeps its
-bytes. `open(cstr_at(p, len)) { ... }` exposes the body and the facts. A
+bytes. `with(cstr_at(p, len)) { ... }` exposes the body and the facts. A
 `char`, `signed char`, or `unsigned char` pointer may be passed for `p`, as
 for the C-string predicates; a signed character pointer is read through its
 byte view `p as (uint8 *)`.
@@ -6354,6 +6354,26 @@ names, `std::span<int>::size`. Its name table,
 `src/languages/cpp/standard_library.rs`, lists the functions and element
 types it maps to them. The model accessors `std_span_data`,
 `std_span_size` and `std_array_data` name a span's or array's state.
+
+### C++ `memcpy`
+
+The C++ interface uses the native pointer types and the same byte equality
+predicate as the C interface. It borrows initialized source bytes and
+turns writable destination storage into an initialized byte range.
+
+```click
+void* memcpy(void* destination, const void* source, unsigned long bytes) {
+    views (source as (const uint8*))[0..bytes];
+    consumes uninitialized((destination as (uint8*))[0..bytes]);
+    produces (destination as (uint8*))[0..bytes];
+    ensures result == destination;
+    ensures bytes::equal(destination as (uint8*), 0u64, old(source as (const uint8*)), 0u64, bytes);
+}
+```
+
+**Verified use:** [C++ importer tests](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs)
+copy a byte through the implicit pointer conversions and check the required
+destination authority.
 
 ### `std::vector<unsigned char>`
 

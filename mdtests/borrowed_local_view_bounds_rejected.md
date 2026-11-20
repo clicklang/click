@@ -36,5 +36,5 @@ int32 borrowed_local_view_bounds_rejected() {
 ```
 
 ```expect
-fail: selected resource `views pair[0..3]`
+fail: `views pair[0..3]`
 ```

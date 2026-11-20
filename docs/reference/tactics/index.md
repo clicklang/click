@@ -145,7 +145,7 @@ not the resource, it first folds it, as a written `fold(R(...))` after the C
 would; a fold that does not check leaves the path as it was
 (`mdtests/an_omitted_proof_folds_the_resource_its_contract_produces.md`). A proof
 script that ends with a claim still open closes it the same way, so a script
-needs no final closer and no final step to function exit. The body of an `open` scope is
+needs no final closer and no final step to function exit. The body of a `with` scope is
 the exception: the scope closes where its body ends, before the tail runs, so
 a body that must reach the function's return steps there itself with
 `step_until(function.exit)`. On a stated fact,
@@ -1142,7 +1142,7 @@ step is still checked.
 | `have P by { ... }` | control | Core | Prove and retain a named or unnamed fact. | [Reference](#intermediate-facts) |
 | `if P [ensuring { ... } then] { ... } else { ... }` | control | Core | Split a proof on a chosen proposition. | [Reference](#proposition-branches) |
 | `cases { A => { ... } B => { ... } }` | control | Specialized | Prove a written collection of cases. | [Reference](#explicit-cases) |
-| `open(resource) { ... }` | control | Specialized | Unfold a resource for a nested proof. | [Reference](#scoped-resource-opening) |
+| `with(resource) { ... }` | control | Specialized | Expose a resource body and restore it at scope exit. | [Reference](#scoped-resource-opening) |
 | `witness(value, ...);` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
 | `let name = obtain(exists (k: Type) { P });` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
 
@@ -1668,6 +1668,11 @@ or infer alignment for a symbolic offset.
 The same fixed local check accepts intrinsic machine type ranges and
 constant-divisor quotient, remainder, and right-shift bounds. This includes
 `x % d < d` and its exact Integer reading for a positive machine literal `d`.
+An unsigned `x % d` is at most `x` when the exact divisor is known nonzero.
+Signed quotient and remainder bounds against zero use the named operand
+signs and the divisor's nonzero guard. Machine operations also require
+evidence that excludes the signed minimum divided by `-1` when the signs
+alone leave that pair possible.
 A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.
@@ -3325,22 +3330,26 @@ arm. Profiling reports the descendant tactics.
 
 ### Scoped resource opening
 
-**Form:** `open(resource) { ... }`
+**Form:** `with(resource) { ... }`
 
-**Specialized.** Write it to work inside one layer of a composite resource and
-have it folded back automatically at the end of the block. Temporarily replace a
-held composite resource with one body layer, check the nested proof, then fold
-it at scope exit. For an ordinary named instance, `open(c) { ... }` selects
-the same instance as `unfold(c)`. The closing fold restores that instance's
-identity and field values from the start of the block. Use the family call
-form for unnamed resources, including population members and viewed resources.
+**Specialized.** A `with` block gives temporary access to one layer of a
+composite resource's body and checks that the resource is restored on every
+path out, including a function return. For an ordinary named instance,
+`with(c) { ... }` selects the same instance as `unfold(c)`. The scope must
+restore its original identity and field values. If the proof already restored
+that exact instance with `fold(c)`, the scope closes without another fold.
+
+Use a family call for unnamed resources, including population members and
+viewed resources. Opening and restoring a population member preserves its
+membership and count. Operations inside the block can change the population
+under the usual authority rules. A viewed resource gives read-only access.
 A model `match` inside the block uses the ordinary checked
 constructor arms and joins: terminal arms each restore the resource at return;
 an `ensuring` interface can rejoin before the block closes.
 
 **Failure, checking, and tools:**
 
-Missing ownership, an undecided guard, or failure to restore the body fails. A
+A missing resource, an undecided guard, or failure to restore the body fails. A
 body fact the closing fold leaves open is proved by the implicit closer, which
 expansion writes as `have` steps at the end of the block. To supply a closing
 proof by hand, put the `have` there yourself, after any execution that
@@ -3351,7 +3360,7 @@ A trailing `by` after the block is refused.
 
 **Checked examples:** [`resource_population_open.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_population_open.md), [`open_scope_model_match_terminal.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_terminal.md), [`open_scope_model_match_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejoins.md), [`open_scope_model_match_rejects_bad_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejects_bad_arm.md)
 
-**Checked closing examples:** [`open_named_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource.md), [`open_named_resource_requires_restoration.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource_requires_restoration.md), [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md)
+**Checked closing examples:** [`open_named_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource.md), [`with_accepts_an_already_restored_instance.md`](https://github.com/clicklang/click/blob/master/mdtests/with_accepts_an_already_restored_instance.md), [`open_named_resource_requires_restoration.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource_requires_restoration.md), [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md)
 
 ### Existential witnesses
 

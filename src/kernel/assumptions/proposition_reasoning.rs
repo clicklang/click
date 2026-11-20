@@ -5095,6 +5095,14 @@ impl PureFactContext {
         if solve_builtin_prop(proposition) {
             return true;
         }
+        if crate::kernel::spec::checks_int32_sequence_comparison(
+            proposition,
+            true,
+            |condition, truth| self.decide(condition) == Some(truth),
+        ) == Some(true)
+        {
+            return true;
+        }
 
         let directly_proven = match proposition {
             Proposition::ConditionIs(condition, value) => {

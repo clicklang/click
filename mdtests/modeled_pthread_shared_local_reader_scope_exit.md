@@ -46,5 +46,5 @@ int32 run() {
 ```
 
 ```expect
-fail: stable-view memory access conflicts with an active loan
+fail: overlaps the live borrow of
 ```

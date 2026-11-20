@@ -14,8 +14,8 @@ void keep(struct S* p) { lend(p); unlend(p); }
 verifying "lend.c";
 resource Lent(p: struct S*) { views *p; }
 extern void lend(const struct S* p) {
-    views *p;
-    produces Lent(p);
+    views *p as input;
+    produces Lent(p) from input;
 }
 extern void unlend(const struct S* p) {
     consumes Lent(p);
@@ -29,5 +29,5 @@ void keep(struct S* p) {
 ```
 
 ```expect
-fail: stable-view the required loan backing or binding is missing refused during planning
+fail: The caller needs an owner or a live view that covers it.
 ```

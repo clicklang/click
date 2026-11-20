@@ -16,7 +16,7 @@ fn helper_summary_keeps_the_selected_sibling_share_and_checked_evidence() {
         .unique_owned_occurrence_for_fact(&nominal)
         .unwrap()
         .0;
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let holder = ledger.fresh_participant().unwrap();
     let (ledger, input) = ledger
         .borrowed_mutex_use_input(holder, support, mutex.clone())

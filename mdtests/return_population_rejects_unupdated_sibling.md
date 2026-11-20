@@ -28,8 +28,8 @@ void retain(struct object* left, struct object* right) {
     produces reference(left);
     produces reference(right);
 } by {
-    open(control(right)) {
-        open(control(left)) {
+    with(control(right)) {
+        with(control(left)) {
             step();
             fold(reference(left));
             fold(reference(right));

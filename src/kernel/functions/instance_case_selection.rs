@@ -265,7 +265,7 @@ pub(super) fn checked_returned_instance_body_facts(
             continue;
         };
         let projection = ResourceFieldProjection {
-            identity: instance.identity(),
+            identity: instance.identity().into(),
             children: Vec::new(),
             field_index: matched.field_index,
             at_entry: false,
@@ -328,7 +328,7 @@ pub(super) fn selected_resource_instance_case_facts(
             let (_, constructor) =
                 selected_instance_match_arm(instance, definition, definitions, assumptions).ok()?;
             let projection = ResourceFieldProjection {
-                identity: instance.identity,
+                identity: instance.identity.into(),
                 children: Vec::new(),
                 field_index: matched.field_index,
                 at_entry: false,
@@ -552,7 +552,6 @@ pub(super) fn check_unmatched_instance_children(
         if child.name.is_empty()
             || reserved.contains(child.name.as_str())
             || !names.insert(child.name.as_str())
-            || child.binding == InstanceId::from_variable(Variable(u64::MAX))
             || !bindings.insert(child.binding)
             || child.arguments.len() != child_definition.parameters.len()
             || child.field_bindings.len() != child_schema.fields().len()
@@ -690,7 +689,6 @@ pub(in crate::kernel) fn selected_instance_match_arm<'a>(
                 || reserved.contains(child.name.as_str())
                 || names.contains(&child.name)
                 || !child_names.insert(&child.name)
-                || child.binding == InstanceId::from_variable(Variable(u64::MAX))
                 || !child_bindings.insert(child.binding)
                 || child.arguments.len() != child_definition.parameters.len()
                 || child.field_bindings.len() != child_schema.fields().len()
@@ -927,10 +925,7 @@ pub(in crate::kernel) fn instance_body_evaluation(
         evaluation.locals = LocalEnvironment::default();
     }
     let mut bindings = ResourceBindings::new();
-    bindings.insert_instance(
-        InstanceId::from_variable(Variable(u64::MAX)),
-        instance.identity,
-    );
+    bindings.bind_body(instance.identity);
     evaluation.resource_bindings = Some(std::sync::Arc::new(bindings));
     // A C-typed field is stable model data of this instance, so the body may
     // name it wherever it may name a matched constructor payload: as a memory

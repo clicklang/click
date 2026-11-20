@@ -801,7 +801,7 @@ fn collect_algebraic_carriers_seen(
             pointer,
         } => {
             collect_algebraic_value_carriers(
-                &AlgebraicTermNode::memory_load_carrier_value(memory.shared_memory(), pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
                 variables,
                 seen,
             );
@@ -1449,6 +1449,10 @@ fn collect_integer_substitution_variables_with_carriers(
                 }
                 collect_integer_substitution_term_variables(right, carriers);
             }
+            Proposition::SequenceMembership { element, sequence } => {
+                collect_program_value_carriers(element.native_compat(), carriers);
+                collect_sequence_carriers(sequence, carriers);
+            }
             Proposition::ConditionIs(condition, _) => {
                 collect_condition_carriers(condition.native_compat(), carriers);
             }
@@ -1559,6 +1563,9 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
             collect_pointer_offset_carriers(value.native_compat(), variables)
         }
         Term::Algebraic(value) => collect_algebraic_carriers(value.native_compat(), variables),
+        Term::Sequence(value) if matches!(value.element_type, Some(ProgramType::Int32) | None) => {
+            collect_sequence_carriers(value, variables)
+        }
         _ => {}
     }
 }
@@ -1925,7 +1932,8 @@ pub(crate) struct TermRewrite<'a> {
     /// Reads of a library or enum value at a fixed address, each with the
     /// value its state stores there: the read-over-write authority for
     /// values a scalar cell cannot hold.
-    comparison_algebraic_reads: Option<&'a HashMap<((u32, u32), Address), AlgebraicTerm>>,
+    comparison_algebraic_reads:
+        Option<&'a HashMap<(crate::kernel::ProgramPoint, Address), AlgebraicTerm>>,
     // Recursive read-address walks must share this memo: each address can
     // reference the same earlier read more than once. Include lexical scope
     // and temporary rewrite modes so entries never cross interpretations.
@@ -2123,7 +2131,7 @@ impl<'a> TermRewrite<'a> {
     pub(crate) fn comparison_read_batch_with_algebraic(
         proposition: &Proposition,
         replacements: impl IntoIterator<Item = (MachineTerm, MachineTerm)>,
-        algebraic_reads: &HashMap<((u32, u32), Address), AlgebraicTerm>,
+        algebraic_reads: &HashMap<(crate::kernel::ProgramPoint, Address), AlgebraicTerm>,
     ) -> Option<Proposition> {
         let mut named = BTreeMap::new();
         let mut reads = HashMap::new();
@@ -3567,6 +3575,20 @@ impl<'a> TermRewrite<'a> {
                 }
                 Proposition::Equal(left, right)
             }
+            Proposition::SequenceMembership { element, sequence } => {
+                self.reserve_terms_variables_once(&[
+                    &Term::ProgramValue(element.clone()),
+                    &Term::Sequence(sequence.clone()),
+                ]);
+                if self.checked_work_exhausted() {
+                    return exhausted_proposition();
+                }
+                Proposition::SequenceMembership {
+                    element: self.rewrite_sequence_value(element.value()).into(),
+                    sequence: sequence
+                        .map_program_values(&mut |value| self.rewrite_sequence_value(value)),
+                }
+            }
             Proposition::ConditionIs(condition, value) => {
                 self.reserve_condition_variables_once(condition.native_compat());
                 if self.checked_work_exhausted() {
@@ -3762,12 +3784,26 @@ impl<'a> TermRewrite<'a> {
             Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
             Term::Condition(v) => Term::Condition(self.condition(v.native_compat()).into()),
             Term::PointerOffset(v) => Term::PointerOffset(self.contract_offset(v)),
+            Term::Sequence(v) if matches!(v.element_type, Some(ProgramType::Int32) | None) => {
+                Term::Sequence(
+                    v.map_program_values(&mut |value| self.rewrite_sequence_value(value)),
+                )
+            }
             _ => term.clone(),
         };
         if self.checked_work_exhausted() {
             exhausted_term(term)
         } else {
             result
+        }
+    }
+    fn rewrite_sequence_value(&mut self, value: &ExecutionValue) -> ExecutionValue {
+        match value {
+            ExecutionValue::Shared(root) => self
+                .shared_machine_operand(root)
+                .map(ExecutionValue::Shared)
+                .unwrap_or_else(|| value.clone()),
+            ExecutionValue::Native(value) => ExecutionValue::Native(self.value(value)),
         }
     }
     fn algebraic(&mut self, term: &AlgebraicTerm) -> AlgebraicTerm {
@@ -3804,20 +3840,38 @@ impl<'a> TermRewrite<'a> {
             pointer,
         } = &term.node
             && let Some(reads) = self.comparison_algebraic_reads
-            && let Some(replacement) =
-                reads.get(&(memory.shared_memory().arena_id(), pointer.as_ref().clone()))
+            && let Some(replacement) = reads.get(&(memory.clone(), pointer.as_ref().clone()))
         {
             self.changed = true;
             return replacement.clone();
         }
         let node = match &term.node {
             AlgebraicTermNode::Variable(v) => AlgebraicTermNode::Variable(*v),
+            AlgebraicTermNode::MemoryLoad { point, pointer } if point.is_entry_read() => {
+                let pointer = self.pointer(pointer);
+                if pointer.base == AddressBase::ExternalArgument {
+                    AlgebraicTermNode::MemoryLoad {
+                        point: point.clone(),
+                        pointer: Box::new(pointer),
+                    }
+                } else {
+                    AlgebraicTermNode::MemoryLoad {
+                        point: crate::kernel::ProgramPoint::at(
+                            &crate::kernel::memory_history::canonical_value_load_memory(
+                                point.shared_memory(),
+                                &pointer,
+                                crate::kernel::ABSTRACT_VALUE_WIDTH,
+                            ),
+                        ),
+                        pointer: Box::new(pointer),
+                    }
+                }
+            }
             AlgebraicTermNode::MemoryLoad {
                 point: memory,
                 pointer,
             } => {
-                let carrier =
-                    AlgebraicTermNode::memory_load_carrier_value(memory.shared_memory(), pointer);
+                let carrier = AlgebraicTermNode::memory_load_carrier_value(memory, pointer);
                 match self.field(&carrier) {
                     AlgebraicValue::Program(value) => {
                         let rewritten = AlgebraicTermNode::memory_load_from_carrier(&value)

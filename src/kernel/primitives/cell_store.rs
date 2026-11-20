@@ -562,15 +562,14 @@ impl CellRun {
         let pointer = self.slot_pointer(index);
         // A slot of an abstract type parameter holds the load of its type.
         if let ProgramType::Parameter(parameter) = self.element_type {
-            let (source, pointer) = match &self.mode {
-                RunValueMode::Copy { source_base } => (
-                    self.source().clone(),
-                    source_base.offset_by_bytes(index * self.element_width),
-                ),
+            let pointer = match &self.mode {
+                RunValueMode::Copy { source_base } => {
+                    source_base.offset_by_bytes(index * self.element_width)
+                }
                 RunValueMode::Constant(value) => return value.clone(),
-                RunValueMode::Load => (self.source().clone(), pointer),
+                RunValueMode::Load => pointer,
             };
-            return super::AlgebraicTermNode::parameter_load(source, pointer, parameter);
+            return super::AlgebraicTermNode::parameter_cell_load(&self.source, pointer, parameter);
         }
         match &self.mode {
             RunValueMode::Load => {

@@ -1146,7 +1146,7 @@ void object_retain_many(struct object* obj, int32 amount) {
     produces amount of reference(obj);
     ensures defined(obj->refs);
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         have obj->refs == count(reference(obj)) by solve();
         step();
         fold(amount of reference(obj));

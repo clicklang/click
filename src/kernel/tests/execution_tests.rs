@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::loans::LoanLedger;
+use crate::kernel::loans::BorrowLedger;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{constant_u32, int32_constant};
 use std::sync::Arc;
@@ -141,14 +141,14 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
     );
 }
 
-fn active_memory_loan(range: MemoryRange) -> LoanLedger {
+fn active_memory_loan(range: MemoryRange) -> BorrowLedger {
     let fact = ResourceFact::own_memory(range);
     let support = ResourceContext::new()
         .unchecked_with_fact(fact.clone())
         .unique_owned_occurrence_for_fact(&fact)
         .expect("memory backing")
         .0;
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner identity");
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
@@ -2293,7 +2293,7 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
     let support = resources.occurrences_for_fact(&viewed)[0];
 
-    let rooted = |ledger: LoanLedger| {
+    let rooted = |ledger: BorrowLedger| {
         let participant = ledger.fresh_participant().expect("a participant");
         let opening = ledger
             .borrowed_contract_input(participant, support, viewed.clone(), None)
@@ -2302,7 +2302,7 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
         (ledger, participant, opening)
     };
 
-    let (head_ledger, participant, opening) = rooted(LoanLedger::new());
+    let (head_ledger, participant, opening) = rooted(BorrowLedger::new());
     let bindings = crate::kernel::loans::LoanViewBindings::default().with_inserted(
         support,
         crate::kernel::loans::LoanViewBinding {
@@ -2314,7 +2314,7 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
             hold: None,
         },
     );
-    let at = |ledger: LoanLedger, participant| {
+    let at = |ledger: BorrowLedger, participant| {
         ExecutionState::new()
             .with_resource_context(resources.clone())
             .with_loan_ledger(Some(ledger))
@@ -3086,7 +3086,7 @@ fn loop_entry_lowering_limit_is_spelled_in_words() {
         operator: ComparisonOperator::LessEqual,
         right: SpecExpression::ResourceField {
             projection: ResourceFieldProjection {
-                identity: InstanceId::from_variable(Variable(10)),
+                identity: InstanceId::from_variable(Variable(10)).into(),
                 children: vec![],
                 field_index: 0,
                 at_entry: false,

@@ -1,6 +1,6 @@
 # Closing a resource population body requires restoring it
 
-`open` does not permit a proof to destroy part of a population body and then
+`with` does not permit a proof to destroy part of a population body and then
 retain the folded population resource.
 
 ```c filename=use_population.c
@@ -23,12 +23,12 @@ verifying "use_population.c";
 int32 use_population(int32* cell) {
     owns population(cell);
 } by {
-    open(population(cell)) {
+    with(population(cell)) {
         fold(inner_cell(cell));
     }
 }
 ```
 
 ```expect
-fail: closing `open(population(cell))`
+fail: closing `with(population(cell))`
 ```

@@ -37,7 +37,7 @@ void rb_erase_augmented(struct rb_node* node, struct rb_root* root,
         have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(deficit.model, RbTree::Empty);
         unfold(hole);
         step(); // Select the nonnull rebalance branch.
-        open(erase_callbacks(augment)) {
+        with(erase_callbacks(augment)) {
             mark repair;
             let { whole: whole } = step(__rb_erase_color, { c: deficit });
             have whole.model == erase_flips_red_all_result(at(repair, deficit.model), RbTree::Empty);

@@ -2,7 +2,7 @@
 
 `owns` keeps a resource across the call, `views` borrows it read-only,
 `consumes` takes it without returning it, and `produces` returns a new one;
-`reopen` composes `close` and `open` and ends with the token it started with.
+`reopen` composes `close` and `with` and ends with the token it started with.
 
 ```c filename=resource_verbs.c
 extern int32 close(int32 fd);

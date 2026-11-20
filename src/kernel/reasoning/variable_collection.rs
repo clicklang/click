@@ -22,12 +22,13 @@ fn visit_machine_operand_carrier_leaves(
     operand: MachineOperandView<'_>,
     visit: impl FnMut(MachineOperandView<'_>),
 ) {
-    visit_machine_operand_carrier_leaves_selected(operand, true, visit);
+    visit_machine_operand_carrier_leaves_selected(operand, true, false, visit);
 }
 
 fn visit_machine_operand_carrier_leaves_selected(
     operand: MachineOperandView<'_>,
     include_variables: bool,
+    ceiling_only: bool,
     mut visit: impl FnMut(MachineOperandView<'_>),
 ) {
     let MachineOperandView::Shared(root) = operand else {
@@ -98,6 +99,27 @@ fn visit_machine_operand_carrier_leaves_selected(
     if let Some(written) =
         shared_machine_syntax_variables(root, || !checked_collection_checkpoint())
     {
+        if ceiling_only {
+            if let Some(variable) =
+                written.get_less_than(&Variable(ExecutionBudget::KERNEL_VARIABLE_CEILING))
+            {
+                visit(MachineOperandView::Legacy(&MachineTerm::Variable(
+                    *variable,
+                )));
+            }
+            let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
+            let mut previous = Variable(range.start - 1);
+            while let Some(variable) = written.get_greater_than(&previous) {
+                if variable.0 >= range.end || checked_collection_checkpoint() {
+                    break;
+                }
+                visit(MachineOperandView::Legacy(&MachineTerm::Variable(
+                    *variable,
+                )));
+                previous = *variable;
+            }
+            return;
+        }
         for variable in written.iter() {
             if checked_collection_checkpoint() {
                 return;
@@ -116,7 +138,7 @@ pub(in crate::kernel) fn visit_machine_operand_scoped_leaves(
     operand: MachineOperandView<'_>,
     visit: impl FnMut(MachineOperandView<'_>),
 ) {
-    visit_machine_operand_carrier_leaves_selected(operand, false, visit);
+    visit_machine_operand_carrier_leaves_selected(operand, false, false, visit);
 }
 
 /// The machine-variable collector's existing carrier rules on a retained
@@ -484,6 +506,100 @@ pub(in crate::kernel) fn execution_variable_ceiling(
     )
 }
 
+fn local_binding_variable_bound(binding: &LocalBinding) -> Option<Variable> {
+    let LocalBinding::Object { value, .. } = binding else {
+        return None;
+    };
+    conservative_execution_variable_bound(|variables| {
+        if let Some((_, view @ MachineOperandView::Shared(_))) = value.machine() {
+            visit_machine_operand_carrier_leaves_selected(view, true, true, |leaf| {
+                collect_operand_bitvector_variables(leaf, variables)
+            });
+        } else {
+            collect_expression_value_bitvector_variables(value, variables);
+        }
+    })
+}
+
+thread_local! {
+    static LOCAL_VARIABLE_BOUNDS: std::cell::RefCell<
+        crate::persistent::PersistentMapMaxMemo<BindingName, LocalBinding, Variable>,
+    > = std::cell::RefCell::new(crate::persistent::PersistentMapMaxMemo::new(local_binding_variable_bound));
+    static RESOURCE_VARIABLE_BOUNDS: std::cell::RefCell<
+        crate::persistent::PersistentMapMaxMemo<u64, ResourceFact, Variable>,
+    > = std::cell::RefCell::new(crate::persistent::PersistentMapMaxMemo::new(resource_fact_variable_bound));
+}
+
+fn conservative_execution_variable_bound(
+    collect: impl FnOnce(&mut BTreeSet<Variable>),
+) -> Option<Variable> {
+    struct Restore(Option<StateReservation>, bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            STATE_RESERVATION.with(|state| *state.borrow_mut() = self.0.take());
+            LOAD_PRESENCE_ONLY.with(|flag| flag.set(self.1));
+        }
+    }
+    // A persistent bound has to include what another collector already
+    // reserved. It cannot inherit that collector's exclusions.
+    let _restore = Restore(
+        STATE_RESERVATION.with(|state| state.borrow_mut().take()),
+        LOAD_PRESENCE_ONLY.with(|flag| flag.replace(false)),
+    );
+    let bound = execution_variable_ceiling(None, collect).0;
+    if crate::instrumentation::checked_collection_exhausted() {
+        // An interrupted collector cannot certify that later candidates are free.
+        return Some(Variable(ExecutionBudget::KERNEL_VARIABLE_CEILING - 1));
+    }
+    bound
+}
+
+/// The upper bound used by a modular call to decide whether it needs the
+/// exact reservations of a caller supplied alongside its execution budget.
+pub(in crate::kernel) fn caller_state_variable_bound(state: &ExecutionState) -> Option<Variable> {
+    let destination = state
+        .aggregate_destination
+        .as_ref()
+        .and_then(|destination| {
+            conservative_execution_variable_bound(|variables| {
+                collect_pointer_bitvector_variables(&destination.pointer, variables);
+            })
+        });
+    let locals =
+        LOCAL_VARIABLE_BOUNDS.with(|bounds| bounds.borrow_mut().maximum(&state.locals.bindings));
+    let memory = crate::kernel::primitives::interned_storage_of(&state.memory)
+        .unwrap_or_else(|| intern_memory_ref(&state.memory));
+    let memory = memory_execution_variable_bound(&memory, WholeCount::Uncharged);
+    destination
+        .max(locals)
+        .max(memory)
+        .max(resource_context_variable_bound(&state.resources))
+        .max(resource_context_variable_bound(&state.instance_field_scope))
+}
+
+fn resource_context_variable_bound(resources: &ResourceContext) -> Option<Variable> {
+    RESOURCE_VARIABLE_BOUNDS.with(|bounds| bounds.borrow_mut().maximum(&resources.storage.facts))
+}
+
+fn resource_fact_variable_bound(fact: &ResourceFact) -> Option<Variable> {
+    conservative_execution_variable_bound(|variables| {
+        collect_resource_fact_bitvector_variables(fact, variables);
+    })
+}
+
+pub(in crate::kernel) fn collect_call_caller_state_variables(
+    state: &ExecutionState,
+    variables: &mut BTreeSet<Variable>,
+) {
+    crate::instrumentation::record_deterministic_work(
+        state.locals.bindings.len()
+            + memory_entry_count(&state.memory)
+            + state.resources.fact_count()
+            + state.instance_field_scope.fact_count(),
+    );
+    collect_execution_state_bitvector_variables(state, variables);
+}
+
 /// The bitvector variables of `proposition`, with those of the ranges the
 /// calls and loops recently behind each state it loads from wrote.
 ///
@@ -590,6 +706,10 @@ fn collect_proposition_bitvector_variables_one(
         Proposition::Equal(left, right) => {
             collect_term_bitvector_variables(left, variables);
             collect_term_bitvector_variables(right, variables);
+        }
+        Proposition::SequenceMembership { element, sequence } => {
+            collect_expression_value_bitvector_variables(element.value(), variables);
+            collect_sequence_bitvector_variables(sequence, variables);
         }
         Proposition::ConditionIs(condition, _) => {
             retained_folds::collect_boolean_variables(
@@ -1545,10 +1665,10 @@ fn collect_spec_bound_identities(
             N::Expression(SpecExpression::ProgramExpression(expression)) => {
                 collect_program_expression_bound_identities(expression, variables, integer_seen);
             }
-            N::Expression(SpecExpression::ResourceField { projection, .. })
-            | N::Integer(SpecIntegerExpression::ResourceField(projection)) => {
-                variables.insert(projection.identity.variable());
-            }
+            // A projection names its instance, an identity of another sort
+            // than the values this set reserves.
+            N::Expression(SpecExpression::ResourceField { .. })
+            | N::Integer(SpecIntegerExpression::ResourceField(_)) => {}
             N::Integer(SpecIntegerExpression::Term(term)) => {
                 collect_integer_bound_identities(term, variables, integer_seen);
             }
@@ -1670,6 +1790,9 @@ pub(in crate::kernel) fn collect_execution_state_bitvector_variables(
     collect_memory_bitvector_variables(&state.memory, variables);
     collect_resource_context_bitvector_variables(&state.resources, variables);
     collect_resource_context_bitvector_variables(&state.instance_field_scope, variables);
+    if let Some(view) = &state.body_field_view {
+        collect_resource_bitvector_variables(&Resource::Instance(view.as_ref().clone()), variables);
+    }
 }
 
 pub(in crate::kernel) fn collect_resource_context_bitvector_variables(
@@ -2065,9 +2188,9 @@ fn collect_execution_environment_variables_uncached(
             collect_ranking_component_variables(component, variables);
         }
         // A structural anchor holds the entry instance whose model later call
-        // steps compare against, so its names are reserved like a measure's.
+        // steps compare against, so the values it holds are reserved like a
+        // measure's. Its identity is an instance's, not a value's.
         if let Some(entry) = anchor.structural_entry() {
-            variables.insert(entry.identity.variable());
             for value in entry.arguments.iter() {
                 collect_algebraic_value_bitvector_variables(value, variables);
             }
@@ -5990,6 +6113,8 @@ thread_local! {
 pub(in crate::kernel) fn clear_shared_memory_variables() {
     SHARED_MEMORY_VARIABLES.with(|table| table.borrow_mut().clear());
     HEAP_VARIABLES.with(|table| *table.borrow_mut() = None);
+    LOCAL_VARIABLE_BOUNDS.with(|bounds| bounds.borrow_mut().clear());
+    RESOURCE_VARIABLE_BOUNDS.with(|bounds| bounds.borrow_mut().clear());
 }
 
 fn remembered_memory_variables(memory: &SharedMemory) -> Option<VariableCounts> {
@@ -6072,7 +6197,11 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
         return;
     }
 
-    extend_with_state_variables(memory, WholeCount::Charged, variables);
+    if EXECUTION_CEILING_ONLY.with(std::cell::Cell::get) {
+        variables.extend(memory_execution_variable_bound(memory, WholeCount::Charged));
+    } else {
+        extend_with_state_variables(memory, WholeCount::Charged, variables);
+    }
 }
 
 /// The states a fact set already reserves, while it reserves one more
@@ -6343,6 +6472,22 @@ pub(in crate::kernel) fn proposition_variables_reserving(
 enum WholeCount {
     Charged,
     Uncharged,
+}
+
+fn memory_execution_variable_bound(memory: &SharedMemory, whole: WholeCount) -> Option<Variable> {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            EXECUTION_CEILING_ONLY.with(|flag| flag.set(self.0));
+        }
+    }
+    // Counts remain exact for their other readers, even if this query only
+    // needs their maximum. Build a cold count in the normal collection mode.
+    let _restore = Restore(EXECUTION_CEILING_ONLY.with(|flag| flag.replace(false)));
+    shared_memory_variable_counts(memory, whole)
+        .get_less_than(&Variable(ExecutionBudget::KERNEL_VARIABLE_CEILING))
+        .map(|(variable, _)| *variable)
+        .filter(|variable| variable.0 >= ExecutionBudget::KERNEL_VARIABLE_BASE)
 }
 
 fn shared_memory_variable_counts(memory: &SharedMemory, whole: WholeCount) -> VariableCounts {
@@ -6757,14 +6902,10 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
     // states its cells' loads reach.
     if let Some(shared) = crate::kernel::primitives::interned_storage_of(memory) {
         if EXECUTION_CEILING_ONLY.with(std::cell::Cell::get) {
-            let counts = shared_memory_variable_counts(&shared, WholeCount::Uncharged);
-            variables.extend(
-                counts
-                    .get_less_than(&Variable(
-                        crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING,
-                    ))
-                    .map(|(variable, _)| *variable),
-            );
+            variables.extend(memory_execution_variable_bound(
+                &shared,
+                WholeCount::Uncharged,
+            ));
             return;
         }
         extend_with_state_variables(&shared, WholeCount::Uncharged, variables);

@@ -555,6 +555,7 @@ pub enum CppFunctionKind {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppType {
     Void,
+    ConstVoid,
     Boolean {
         bits: u32,
         is_const: bool,
@@ -748,6 +749,11 @@ pub enum CppExpression {
     },
     /// Add native pointee const, preserving element identity and address.
     PointerQualification {
+        value: Box<CppExpression>,
+        value_type: CppType,
+        span: CppSpan,
+    },
+    VoidPointerCast {
         value: Box<CppExpression>,
         value_type: CppType,
         span: CppSpan,
@@ -2922,8 +2928,8 @@ impl CppFunction {
                         ));
                     }
                 }
-                CppType::Pointer { pointee } => {
-                    require_native_pointer_element(pointee, true, "pointer pointee")?;
+                CppType::Pointer { .. } => {
+                    require_native_object_pointer(&parameter.value_type, "pointer parameter")?;
                 }
                 CppType::FunctionPointer { .. } => {
                     require_function_pointer(&parameter.value_type, "function-pointer parameter")?;
@@ -4470,13 +4476,7 @@ fn validate_call_in_context(
     }
     let observer_values = arguments.iter().any(|argument| match argument {
         CppCallArgument::Value { value } if returned_construction => value.contains_observer(),
-        CppCallArgument::Value { value } => matches!(
-            value,
-            CppExpression::ObserverCall {
-                returned_member: None,
-                ..
-            }
-        ),
+        CppCallArgument::Value { value } => observer_argument(value),
         _ => false,
     });
     if observer_values
@@ -4486,13 +4486,7 @@ fn validate_call_in_context(
             .any(|(index, argument)| match argument {
                 CppCallArgument::Value { .. } if returned_construction => false,
                 CppCallArgument::Value { value } => {
-                    !matches!(
-                        value,
-                        CppExpression::ObserverCall {
-                            returned_member: None,
-                            ..
-                        }
-                    ) && !stable_scalar_argument(value, places)
+                    !observer_argument(value) && !stable_scalar_argument(value, places)
                 }
                 CppCallArgument::Reference { .. } => returned_construction || index != 0,
                 _ => true,
@@ -4552,6 +4546,20 @@ fn validate_call_in_context(
         }
     }
     Ok(())
+}
+
+fn observer_argument(value: &CppExpression) -> bool {
+    let value = match value {
+        CppExpression::VoidPointerCast { value, .. } => value.as_ref(),
+        _ => value,
+    };
+    matches!(
+        value,
+        CppExpression::ObserverCall {
+            returned_member: None,
+            ..
+        }
+    )
 }
 
 // No pointer or reference crosses this call boundary, and no input is another
@@ -4824,6 +4832,7 @@ impl CppExpression {
             | Self::IntegralCast { value, .. }
             | Self::EnumCast { value, .. }
             | Self::PointerQualification { value, .. }
+            | Self::VoidPointerCast { value, .. }
             | Self::BytePointerCast { value, .. }
             | Self::ReferenceBinding { address: value, .. }
             | Self::Dereference { pointer: value, .. } => value.contains_observer(),
@@ -4883,6 +4892,7 @@ impl CppExpression {
             | Self::IntegralCast { value_type, .. }
             | Self::EnumCast { value_type, .. }
             | Self::PointerQualification { value_type, .. }
+            | Self::VoidPointerCast { value_type, .. }
             | Self::BytePointerCast { value_type, .. }
             | Self::FunctionAddress { value_type, .. }
             | Self::ClosureInstance { value_type, .. }
@@ -4915,6 +4925,7 @@ impl CppExpression {
             | Self::IntegralCast { value: pointer, .. }
             | Self::EnumCast { value: pointer, .. }
             | Self::PointerQualification { value: pointer, .. }
+            | Self::VoidPointerCast { value: pointer, .. }
             | Self::BytePointerCast { value: pointer, .. } => {
                 pointer.references_place(declaration_id)
             }
@@ -5129,7 +5140,9 @@ impl CppExpression {
                     CppType::Record { .. } => {
                         Err("C++ record values cannot be loaded or copied".into())
                     }
-                    CppType::Void => Err("C++ void values cannot be loaded".into()),
+                    CppType::Void | CppType::ConstVoid => {
+                        Err("C++ void values cannot be loaded".into())
+                    }
                 }
             }
             Self::AddressOf {
@@ -5319,6 +5332,23 @@ impl CppExpression {
                 value.validate(places, records, logical_source)?;
                 if !super::scalar::pointer_qualification(value.value_type(), value_type) {
                     return Err("C++ pointer qualification must only add pointee const".into());
+                }
+                Ok(())
+            }
+            Self::VoidPointerCast {
+                value,
+                value_type,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                value.validate(places, records, logical_source)?;
+                if !matches!(value.value_type(), CppType::Pointer { pointee }
+                    if Scalar::pointer_element(pointee, true).is_some())
+                    || !super::scalar::void_pointer(value_type).is_some_and(|is_const| {
+                        is_const || !super::scalar::returns_constant_element(value.value_type())
+                    })
+                {
+                    return Err("C++ void pointer conversion requires a native object pointer and preserves pointee const".into());
                 }
                 Ok(())
             }
@@ -6541,6 +6571,7 @@ fn collect_expression_calls<'a>(value: &'a CppExpression, calls: &mut Vec<Collec
         | CppExpression::IntegralCast { value, .. }
         | CppExpression::EnumCast { value, .. }
         | CppExpression::PointerQualification { value, .. }
+        | CppExpression::VoidPointerCast { value, .. }
         | CppExpression::BytePointerCast { value, .. } => collect_expression_calls(value, calls),
         CppExpression::Binary { left, right, .. } => {
             collect_expression_calls(left, calls);
@@ -6756,9 +6787,8 @@ fn validate_argument_types(
                     false
                 }
             }
-            (CppCallArgument::Value { value }, CppType::Pointer { pointee }) => {
-                (require_native_pointer_element(pointee, true, "call pointer parameter").is_ok()
-                    || super::scalar::record_pointee(parameter_type).is_some())
+            (CppCallArgument::Value { value }, CppType::Pointer { .. }) => {
+                require_object_pointer_value(parameter_type, "call pointer parameter").is_ok()
                     && require_object_pointer_value(value.value_type(), "call pointer argument")
                         .is_ok()
                     && same_scalar_type(parameter_type, value.value_type())
@@ -7385,6 +7415,7 @@ impl CppExpression {
             | Self::IntegralCast { value, .. }
             | Self::EnumCast { value, .. }
             | Self::PointerQualification { value, .. }
+            | Self::VoidPointerCast { value, .. }
             | Self::BytePointerCast { value, .. } => {
                 value.validate_constant_references(logical_source, constants, referenced_constants)
             }
@@ -7769,6 +7800,7 @@ fn require_object_pointer_value(value: &CppType, label: &str) -> Result<(), Stri
 
 fn require_native_object_pointer(value: &CppType, label: &str) -> Result<(), String> {
     match value {
+        _ if super::scalar::void_pointer(value).is_some() => Ok(()),
         CppType::Pointer { pointee } => require_native_pointer_element(pointee, true, label),
         _ => Err(format!(
             "{label} requires a supported native object pointer"

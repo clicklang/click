@@ -94,7 +94,7 @@ void initialize_pair(struct pool* source, struct pool* destination) {
     ensures to_integer(count(pool_slot(destination))) == 1;
 } by {
     step();
-    open(pool_control(source)) { step(); }
+    with(pool_control(source)) { step(); }
 }
 void forward(struct pool* source, struct pool* destination) {
     requires source != destination;

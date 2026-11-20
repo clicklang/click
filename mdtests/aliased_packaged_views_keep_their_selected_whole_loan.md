@@ -18,8 +18,8 @@ resource pair(p: int32*, q: int32*) {
 verifying "separate_packaged_views.c";
 extern void package(int32* p, int32* q) {
     requires q == p + 1;
-    views p[0..2];
-    produces pair(p, q);
+    views p[0..2] as input;
+    produces pair(p, q) from input;
 }
 extern void drop(int32* p, int32* q) {
     consumes pair(p, q);

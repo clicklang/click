@@ -35,7 +35,7 @@ void checkout(struct pool* pool, struct payload* p) {
     ensures to_integer(pool->checked_out) == to_integer(old(pool->checked_out) + 1);
     ensures pool->capacity == old(pool->capacity);
 } by {
-    open(control(pool)) {
+    with(control(pool)) {
         have 1 <= to_integer(count(slot(pool))) by { known(); }
         have defined(pool->checked_out);
         have to_integer(pool->checked_out) + 1 <= 2147483647 by {

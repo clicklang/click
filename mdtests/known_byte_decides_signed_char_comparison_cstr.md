@@ -14,7 +14,7 @@ int32 terminator(const char* src, uint64 n) {
     views cstr_at(src, n);
     ensures result == 1;
 } by {
-    open(cstr_at(src, n)) {
+    with(cstr_at(src, n)) {
     }
 }
 ```

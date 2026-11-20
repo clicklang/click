@@ -1855,6 +1855,7 @@ mod tests {
                 slice_local_owner: LocalFunctionId::new(None, "test".into()),
                 next_slice_local: 0,
                 next_result_step: std::cell::Cell::new(0),
+                step_pointee_layouts: std::cell::RefCell::new(BTreeMap::new()),
                 loop_iterators: Vec::new(),
                 locals: BTreeSet::new(),
                 return_type: InterfaceType::Void,

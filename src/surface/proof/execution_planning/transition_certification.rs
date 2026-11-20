@@ -554,6 +554,7 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     early_exits: &[LoopEarlyExit],
     return_exits: &[LoopReturnExit],
     otherwise: Option<&mut crate::kernel::LoopOtherwiseProof<'_>>,
+    exit_fact_scope: Option<&crate::kernel::LoopExitFactScope<'_>>,
     next_opaque_call: &mut u64,
     next_kernel_variable: &mut u64,
 ) -> Result<(Vec<CertifiedStatementTransition>, Option<VerifiedLoopRule>), ClickError> {
@@ -579,6 +580,7 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
         early_exits.to_vec(),
         return_exits.to_vec(),
         otherwise,
+        exit_fact_scope,
         &mut budget,
     );
     *next_opaque_call = budget.next_opaque_call();

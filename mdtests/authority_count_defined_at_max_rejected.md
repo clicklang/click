@@ -18,7 +18,7 @@ void inspect(struct pool* pool) {
     owns control(pool);
     requires pool->checked_out == 2147483647;
 } by {
-    open(control(pool)) {
+    with(control(pool)) {
         have count(item(pool, _)) == 2147483647 by solve();
         have defined(count(item(pool, _)) + 1) by solve();
     }

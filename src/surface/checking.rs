@@ -262,7 +262,12 @@ pub(super) fn prove_ensure_resource<'e>(
             &expected,
             &assumptions,
         )
-        .map_err(ClickError::new)?;
+        .map_err(|error| {
+            ClickError::new(crate::surface::diagnostics::describe_runtime_error(
+                &error,
+                parameter_binding,
+            ))
+        })?;
         if expected.iter().all(|expected| {
             post_state
                 .resources()

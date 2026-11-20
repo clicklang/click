@@ -353,7 +353,12 @@ impl<'a> Proof<'a> {
         let successor = execution
             .core
             .record_view_release(&selected, facts.assumptions())
-            .map_err(|error| self.step_error(error))?;
+            .map_err(|error| {
+                self.step_error(format!(
+                    "cannot release `{}`. {error}",
+                    crate::surface::validation::describe_resource_clause(resource),
+                ))
+            })?;
         execution.core.state = successor.into();
         let branch = self
             .focused_branch()
@@ -957,7 +962,7 @@ impl<'a> Proof<'a> {
                         child_name.clone(),
                         crate::surface::lowering::InstanceRename {
                             name: name.to_string(),
-                            identity: child_identity,
+                            identity: child_identity.into(),
                             target_identity: Some(*actual),
                         },
                     );
@@ -1123,19 +1128,19 @@ impl<'a> Proof<'a> {
         })
     }
 
-    pub(in crate::surface::proof) fn outcome_holds_open_instance(
+    pub(in crate::surface::proof) fn holds_open_instance(
         &self,
         instance: &crate::kernel::ResourceInstance,
     ) -> Result<bool, ClickError> {
-        let outcome = self
-            .focused_outcome_data()
-            .ok_or_else(|| self.step_error("named resource scope lost its returning outcome"))?;
-        Ok(outcome
-            .core
-            .state
-            .resources()
-            .owned_instance(instance.identity())
-            == Some(instance))
+        let state = if let Some(outcome) = self.focused_outcome_data() {
+            &outcome.core.state
+        } else {
+            let execution = self
+                .branch_execution()
+                .ok_or_else(|| self.step_error("with block lost its execution state"))?;
+            &execution.core.state
+        };
+        Ok(state.resources().owned_instance(instance.identity()) == Some(instance))
     }
 
     /// Retain the explicit fold written at a returning scope arm's close.

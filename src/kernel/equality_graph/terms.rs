@@ -21,7 +21,9 @@ use crate::kernel::{bits32_constant, constant_i64, constant_u64, int64_constant,
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
 
+mod class_links;
 mod congruence;
+use class_links::ClassLinks;
 pub(super) mod constants;
 mod machine_relations;
 mod shared_machine;
@@ -702,12 +704,11 @@ pub(super) struct TermClasses {
     // Weight counts class members plus registered parent uses. Moving the
     // lighter side bounds both root depth and reindexing, including a class
     // with many application parents repeatedly joined to fresh singleton terms.
-    parents: PersistentMap<u64, u64>,
+    class_links: ClassLinks,
     // Cache representative lookups under the current merge epoch. A new union
     // invalidates entries lazily, without a scan. Keys are shallow node IDs,
     // with at most one entry per node; semantic graph roots remain persistent.
     root_cache: RootLookupCache,
-    weights: PersistentMap<u64, usize>,
     int32_constants: PersistentMap<u64, i32>,
     uint64_constants: PersistentMap<u64, u64>,
     /// A typed creation identity witnessed in a word class. `None` records
@@ -764,7 +765,7 @@ impl TermClasses {
         if insert && !bucket.contains_key(&identity) {
             // Payloads participate in union weighting, so a large class of
             // witnesses cannot be moved repeatedly by fresh singleton terms.
-            self.weights.insert(root, self.weight(root) + 1);
+            self.class_links.set_weight(root, self.weight(root) + 1);
         }
         let bucket = if insert {
             bucket.with_inserted(identity, source.clone())
@@ -1438,7 +1439,7 @@ impl TermClasses {
     /// merge exists, or a defined byte product joins its byte offset to its
     /// element offset as soon as the query registers that node.
     pub(super) fn has_equivalences(&self) -> bool {
-        !self.parents.is_empty() || !self.defined_byte_products.is_empty()
+        self.class_links.has_parents() || !self.defined_byte_products.is_empty()
     }
 
     /// A non-affine offset equality can add suppliers not represented by an
@@ -2294,7 +2295,8 @@ impl TermClasses {
             return match (self.nodes.get(&left), self.nodes.get(&right)) {
                 (Some(left), Some(right)) => {
                     left == right
-                        || ((self.parents.contains_key(left) || self.parents.contains_key(right))
+                        || ((self.class_links.parent(*left).is_some()
+                            || self.class_links.parent(*right).is_some())
                             && self.root(*left) == self.root(*right))
                 }
                 _ => false,
@@ -2340,8 +2342,8 @@ impl TermClasses {
         }
         loop {
             crate::instrumentation::record_deterministic_work(1);
-            match self.parents.get(&id) {
-                Some(parent) => id = *parent,
+            match self.class_links.parent(id) {
+                Some(parent) => id = parent,
                 None => break,
             }
         }
@@ -2366,7 +2368,7 @@ impl TermClasses {
     }
 
     fn weight(&self, id: u64) -> usize {
-        self.weights.get(&id).copied().unwrap_or(1)
+        self.class_links.weight(id)
     }
 
     fn register_application(&mut self, id: u64, application: Application) {
@@ -2409,7 +2411,7 @@ impl TermClasses {
             let uses = self.uses.get(&root).cloned().unwrap_or_default();
             if !uses.contains(&id) {
                 self.uses.insert(root, uses.with_value(id));
-                self.weights.insert(root, self.weight(root) + 1);
+                self.class_links.set_weight(root, self.weight(root) + 1);
             }
         }
         let mut pending = PendingUnions::default();
@@ -3080,14 +3082,12 @@ impl TermClasses {
                 self.condition_truth.remove(&moved);
                 self.retain_condition_truth(kept, truth);
             }
-            self.parents.insert(moved, kept);
+            self.class_links.merge(moved, kept, weight);
             self.history = Some(Arc::new(MergeHistory {
                 depth: self.history.as_ref().map_or(1, |node| node.depth + 1),
                 merge: TermClassMerge { moved, kept },
                 parent: self.history.clone(),
             }));
-            self.weights.remove(&moved);
-            self.weights.insert(kept, weight);
             let kept_was_settled = self.int32_constants.contains_key(&kept);
             let moved_uses = self.uses.get(&moved).cloned().unwrap_or_default();
             let mut kept_uses = self.uses.get(&kept).cloned().unwrap_or_default();

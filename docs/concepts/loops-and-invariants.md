@@ -642,22 +642,13 @@ the loop (`mdtests/loop_exit_restates_model_getters.md`):
 
 <!-- verified-example: mdtests/loop_break_exit_binder_model_join.md -->
 ```click
-have c.color == Color::Red or c.color == Color::Black by {
-    cases {
-        (flag == 0 and c.color == Color::Red and p->shade == 0) => {
-            solve();
-        }
-        (c.color == Color::Black and p->shade == 1) => {
-            solve();
-        }
-    }
-}
+have c.color == Color::Red or c.color == Color::Black;
 ```
 
 That is a `while (true)` whose two `break`s paint the node a different colour
-and refold the binder before leaving: the model of `c` and the byte in
-`p->shade` are both fresh in the successor, and the disjunction is what ties
-them back to the two ways out. A local the exits disagree on works the same way
+and refold the binder before leaving. Each exit proves the colour disjunction
+for the instance it holds. The successor can use that same fact with its
+rebound `c`. A local the exits disagree on works the same way
 (`mdtests/loop_body_break_exit_joined_state.md`), and a claim only one exit
 supports still fails
 (`mdtests/loop_body_break_exit_joined_state_rejected.md`).
@@ -1166,7 +1157,7 @@ is non-executing because its point is already the first loop entry.
 
 A preservation script is the ordinary execution grammar: `step()` and the
 other linear execution tactics, `have`, the resource operations, a proof-level
-`if`, a proof `match` on a model, an `open` scope, and `branch` on the C `if`
+`if`, a proof `match` on a model, a `with` scope, and `branch` on the C `if`
 at the frontier. The two conditional forms differ in where their arms go. A
 proof `if` and a proof `match` never join: each arm runs its own complete
 iteration to the loop rule, so each closes the invariants and satisfies the

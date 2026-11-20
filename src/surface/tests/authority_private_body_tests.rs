@@ -114,7 +114,7 @@ fn authority_member_private_heap_body_round_trip() {
             }
             fold(authority(reference(p)));
             fold(reference(p));
-            open(reference(p)) {
+            with(reference(p)) {
                 have count(reference(p)) == 1 by { solve(); }
             }
             unfold(reference(p));
@@ -154,7 +154,7 @@ fn authority_helper_returns_member_with_private_memory_body() {
             owns reference(p);
             ensures result == 7;
         } by {
-            open(reference(p)) { step(); }
+            with(reference(p)) { step(); }
             step_until(function.exit);
             solve();
         }
@@ -431,11 +431,11 @@ fn authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes(
             step();
             fold(authority(reference(p)));
             fold(control(p));
-            open(control(p)) {
+            with(control(p)) {
                 fold(reference(p));
                 step();
             }
-            open(control(p)) {
+            with(control(p)) {
                 unfold(reference(p));
                 step();
             }
@@ -480,7 +480,7 @@ fn authority_control_wrapper_rejects_a_false_close_invariant() {
             step();
             fold(authority(reference(p)));
             fold(control(p));
-            open(control(p)) {
+            with(control(p)) {
                 step();
             }
         }
@@ -609,7 +609,7 @@ fn authority_control_survives_balanced_helper_calls() {
             requires p[0] < 2147483647;
             produces reference(p);
         } by {
-            open(control(p)) {
+            with(control(p)) {
                 step();
                 fold(reference(p));
             }
@@ -620,7 +620,7 @@ fn authority_control_survives_balanced_helper_calls() {
             consumes reference(p);
             requires p[0] > 0;
         } by {
-            open(control(p)) {
+            with(control(p)) {
                 unfold(reference(p));
                 step();
             }
@@ -633,7 +633,7 @@ fn authority_control_survives_balanced_helper_calls() {
             fold(authority(reference(p)));
             fold(control(p));
             step();
-            open(control(p)) {
+            with(control(p)) {
                 have count(reference(p)) == 1 by { solve(); }
                 have p[0] == 1 by { solve(); }
             }

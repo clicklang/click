@@ -7,7 +7,7 @@ use super::reasoning::{
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
     signed_bitvector_constant, signed_i64_bitvector_constant,
 };
-use super::{ExecutionFacts, StoredExecutionValue, StoredMemoryValue};
+use super::{ExecutionFacts, ExecutionValue, StoredExecutionValue, StoredMemoryValue};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -4580,7 +4580,7 @@ pub enum SpecAlgebraicExpressionNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ResourceFieldProjection {
-    pub identity: InstanceId,
+    pub identity: InstanceRef,
     pub children: Vec<String>,
     pub field_index: usize,
     /// Select the explicit entry state supplied to spec evaluation. There is
@@ -4962,6 +4962,19 @@ impl AlgebraicTermNode {
         Self::parameter_load_at(ProgramPoint::at(&memory), pointer, parameter)
     }
 
+    /// A checked cell observation uses the entry version when the point
+    /// establishes that the caller's storage is unchanged.
+    pub(crate) fn parameter_cell_load(
+        source: &ProgramPoint,
+        pointer: Address,
+        parameter: TypeParameterName,
+    ) -> ProgramValue {
+        if let Some(entry) = source.generic_entry_version(&pointer, parameter) {
+            return Self::parameter_load_at(entry, pointer, parameter);
+        }
+        Self::parameter_load(source.shared_memory().clone(), pointer, parameter)
+    }
+
     pub(crate) fn parameter_load_at(
         point: ProgramPoint,
         pointer: Address,
@@ -4978,12 +4991,11 @@ impl AlgebraicTermNode {
 
     /// [`Self::memory_load_carrier`] as an algebraic field value.
     pub(crate) fn memory_load_carrier_value(
-        memory: &SharedMemory,
+        point: &ProgramPoint,
         pointer: &Address,
     ) -> AlgebraicValue {
         AlgebraicValue::Program(ProgramValue::UInt64(Self::memory_load_carrier(
-            &crate::kernel::ProgramPoint::at(memory),
-            pointer,
+            point, pointer,
         )))
     }
 }
@@ -5631,6 +5643,34 @@ pub enum SpecProposition {
 pub struct SequenceTerm {
     pub element_type: Option<ProgramType>,
     pub node: std::sync::Arc<SequenceTermNode>,
+}
+
+impl SequenceTerm {
+    pub(crate) fn map_program_values(
+        &self,
+        map: &mut impl FnMut(&ExecutionValue) -> ExecutionValue,
+    ) -> Self {
+        let node = match self.node.as_ref() {
+            SequenceTermNode::Literal(values) => {
+                SequenceTermNode::Literal(SequenceValues::from_values((0..values.len()).map(
+                    |index| match values.retained_value_ref(index) {
+                        Some(value) => map(value),
+                        None => map(&ExecutionValue::Native(
+                            values.get(index).expect("sequence element").clone(),
+                        )),
+                    },
+                )))
+            }
+            SequenceTermNode::Concat(left, right) => SequenceTermNode::Concat(
+                left.map_program_values(map),
+                right.map_program_values(map),
+            ),
+        };
+        Self {
+            element_type: self.element_type,
+            node: std::sync::Arc::new(node),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -8030,6 +8070,28 @@ pub struct WideRangeNoWrap {
     pub factor: u64,
 }
 
+/// Source-level evidence for a refused returned borrow. These are the
+/// resources the checker already selected, retained only on refusal.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ReturnedBorrowRefusal {
+    pub output: ResourceFact,
+    pub reason: ReturnedBorrowReason,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum ReturnedBorrowReason {
+    ExplicitSourceRequired,
+    UnevaluableSource,
+    InactiveSource,
+    UnrecoverableSource(ResourceFact),
+    UncoveredView {
+        source: ResourceFact,
+        viewed: ResourceFact,
+    },
+    MissingOutput,
+    MissingHold(ResourceFact),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum RuntimeError {
     UnboundVariable(String),
@@ -8097,6 +8159,7 @@ pub enum RuntimeError {
     UnbackedReturnedView {
         view: Box<ResourceFact>,
     },
+    ReturnedBorrow(Box<ReturnedBorrowRefusal>),
     MissingVerifiedFunctionRule(String),
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
@@ -10656,6 +10719,10 @@ pub struct ExecutionState {
     pub(super) instance_field_scope: ResourceContext,
     /// Call-local formal identities; the ledger retains actual caller identities.
     pub(super) resource_bindings: Option<std::sync::Arc<ResourceBindings>>,
+    /// The fields of a resource definition evaluated without an instance,
+    /// which [`InstanceRef::Body`] reads when no opened instance is bound.
+    /// Scratch resource-body evaluation only, like `instance_field_scope`.
+    pub(super) body_field_view: Option<Arc<ResourceInstance>>,
     pub(super) locals: LocalEnvironment,
     pub(super) memory: SymbolicMemory,
     /// The point this state's path has reached; not part of equality
@@ -10664,7 +10731,7 @@ pub struct ExecutionState {
     pub(super) resources: ResourceContext,
     /// Active stable-view authority. `None` is the canonical empty ledger so
     /// independently constructed states retain ordinary structural equality.
-    pub(super) loan_ledger: Option<super::loans::LoanLedger>,
+    pub(super) loan_ledger: Option<super::loans::BorrowLedger>,
     /// Holder identity for the authority carried by this state. Keeping it
     /// beside the immutable ledger lets nested candidate calls reuse the
     /// caller's participant when lending a view.
@@ -11948,6 +12015,40 @@ impl InstanceId {
     pub const fn variable(self) -> Variable {
         self.0
     }
+
+    /// Whether an execution created this instance
+    /// ([`ExecutionBudget::allocate_instance_identity`]) rather than a
+    /// binder the surface named.
+    pub fn created_by_execution(self) -> bool {
+        self.0.0 >= ExecutionBudget::KERNEL_VARIABLE_BASE
+    }
+}
+
+/// The instance a resource field read names: the instance a resource
+/// definition's body describes (its `self`), or a particular instance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum InstanceRef {
+    /// The instance whose body is being read. It is bound where an instance
+    /// is opened ([`ResourceBindings::bind_body`]), or read from the field
+    /// view of a definition evaluated without one.
+    Body,
+    Instance(InstanceId),
+}
+
+impl From<InstanceId> for InstanceRef {
+    fn from(identity: InstanceId) -> Self {
+        InstanceRef::Instance(identity)
+    }
+}
+
+impl InstanceRef {
+    /// The particular instance this names, if it is not the body's own.
+    pub const fn instance(self) -> Option<InstanceId> {
+        match self {
+            InstanceRef::Body => None,
+            InstanceRef::Instance(identity) => Some(identity),
+        }
+    }
 }
 
 /// The proof name of one exact mutex authority occurrence (a live, use or
@@ -12018,6 +12119,8 @@ impl ResourceBinder {
 pub struct ResourceBindings {
     instances: BTreeMap<InstanceId, InstanceId>,
     mutex_authorities: BTreeMap<MutexAuthorityId, MutexAuthorityId>,
+    /// The instance [`InstanceRef::Body`] names while its body is opened.
+    body: Option<InstanceId>,
 }
 
 impl ResourceBindings {
@@ -12028,6 +12131,16 @@ impl ResourceBindings {
     /// The caller instance an instance binder names.
     pub fn instance(&self, binder: InstanceId) -> Option<InstanceId> {
         self.instances.get(&binder).copied()
+    }
+
+    /// Binds [`InstanceRef::Body`] to the instance whose body is opened.
+    pub fn bind_body(&mut self, instance: InstanceId) {
+        self.body = Some(instance);
+    }
+
+    /// The instance [`InstanceRef::Body`] names, if a body is opened.
+    pub fn body(&self) -> Option<InstanceId> {
+        self.body
     }
 
     /// The caller authority a mutex authority binder names.
@@ -12115,11 +12228,11 @@ impl ResourceBindings {
     }
 
     pub fn len(&self) -> usize {
-        self.instances.len() + self.mutex_authorities.len()
+        self.instances.len() + self.mutex_authorities.len() + usize::from(self.body.is_some())
     }
 
     pub fn is_empty(&self) -> bool {
-        self.instances.is_empty() && self.mutex_authorities.is_empty()
+        self.instances.is_empty() && self.mutex_authorities.is_empty() && self.body.is_none()
     }
 }
 
@@ -12139,6 +12252,24 @@ pub struct ResourceInstance {
 }
 
 impl ResourceInstance {
+    /// The identity a field view carries. A field view is a definition's
+    /// fields and arguments read without an instance; it is reached only
+    /// through [`InstanceRef::Body`] and never looked up by identity, so this
+    /// value names nothing.
+    const FIELD_VIEW_IDENTITY: InstanceId = InstanceId(Variable(u64::MAX));
+
+    /// A definition's fields and arguments, to read as its body's own
+    /// instance when there is no instance: it grants no ownership and is
+    /// never held in a resource context.
+    pub(crate) fn field_view(
+        name: String,
+        arguments: ResourceArguments,
+        schema: ResourceFieldSchema,
+        fields: ResourceFieldValues,
+    ) -> Option<Self> {
+        Self::new(Self::FIELD_VIEW_IDENTITY, name, arguments, schema, fields)
+    }
+
     pub fn new(
         identity: InstanceId,
         name: String,
@@ -13793,6 +13924,10 @@ pub struct VolatileAccess {
 pub enum Proposition {
     VolatileAccess(Arc<VolatileAccess>),
     Equal(Term, Term),
+    SequenceMembership {
+        element: StoredProgramValue,
+        sequence: SequenceTerm,
+    },
     ConditionIs(StoredConditionTerm, bool),
     Predicate {
         name: String,
@@ -14034,6 +14169,10 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
         Proposition::Equal(left, right) => {
             left.hash(state);
             right.hash(state);
+        }
+        Proposition::SequenceMembership { element, sequence } => {
+            element.hash(state);
+            sequence.hash(state);
         }
         Proposition::ConditionIs(condition, value) => {
             condition.hash(state);
@@ -14319,6 +14458,10 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
     match proposition {
         Proposition::VolatileAccess(event) => Proposition::VolatileAccess(event.clone()),
         Proposition::Equal(left, right) => Proposition::Equal(left.clone(), right.clone()),
+        Proposition::SequenceMembership { element, sequence } => Proposition::SequenceMembership {
+            element: element.clone(),
+            sequence: sequence.clone(),
+        },
         Proposition::ConditionIs(condition, value) => {
             Proposition::condition_is(condition.clone(), *value)
         }

@@ -123,9 +123,9 @@ path = "mdtests/post_execution_have_checks_each_path.md"
 needle = "have result == 1 by solve();"
 
 [[form]]
-id = "open"
+id = "with"
 path = "mdtests/resource_population_open.md"
-needle = "open(control(obj)) {"
+needle = "with(control(obj)) {"
 
 [[form]]
 id = "if"

@@ -26,5 +26,5 @@ uint8 read(const uint8* bytes, uint64 length, uint64 index) {
 ```
 
 ```expect
-fail: selected resource `views bytes[index..(index + 4)]`
+fail: `views bytes[index..(index + 4)]`
 ```

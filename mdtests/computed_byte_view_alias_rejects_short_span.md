@@ -21,5 +21,5 @@ uint8 read(const uint8* bytes, const uint8* base, uint64 length, uint64 index, i
 ```
 
 ```expect
-fail: stable-view
+fail: The caller needs an owner or a live view that covers it.
 ```

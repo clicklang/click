@@ -24,7 +24,7 @@ int32 read(int32* p) {
     ensures c.model == old(c.model);
     ensures *(p + 1) == 7;
 } by {
-    open(table(p + 1)) {
+    with(table(p + 1)) {
         match c.model {
             Pair::First(value) => {
                 unfold(c);

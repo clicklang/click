@@ -154,7 +154,7 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
 pub(crate) struct ProofDiagnosticOrigin {
     pub stage: String,
     pub location: String,
-    /// Written outer tactic and each nested `have`/`open` body position.
+    /// Written outer tactic and each nested `have`/`with` body position.
     pub source_tactic_path: Option<Vec<usize>>,
 }
 

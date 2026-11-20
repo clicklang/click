@@ -327,7 +327,7 @@ fn candidate_function_entry_preserves_outer_loan_authority() {
         vec![program_parameter("p", ProgramType::Int32Pointer)],
         program_return(program_void_value()),
     );
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("caller participant");
     let caller_state = caller(&pointer)
         .with_loan_ledger(Some(ledger.clone()))
@@ -976,7 +976,7 @@ fn candidate_composite_reader_can_be_called_twice() {
 fn candidate_reader_recovers_owner_for_following_write() {
     let pointer = pointer();
     let function = reader("candidate_reader_return", false);
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("caller participant");
     let caller_state = caller(&pointer)
         .with_loan_ledger(Some(ledger))
@@ -1056,7 +1056,7 @@ fn candidate_direct_reader_recovers_owner_for_following_write() {
 fn candidate_evidence_rejects_definitionally_equal_resources_with_new_identity() {
     let pointer = pointer();
     let function = reader("candidate_identity_guard", false);
-    let caller_ledger = LoanLedger::new();
+    let caller_ledger = BorrowLedger::new();
     let caller_participant = caller_ledger
         .fresh_participant()
         .expect("caller participant");
@@ -1091,7 +1091,7 @@ fn candidate_evidence_rejects_definitionally_equal_resources_with_new_identity()
     assert_eq!(
         evidence
             .recheck(
-                &LoanLedger::new(),
+                &BorrowLedger::new(),
                 Some(caller_participant),
                 &evidence.entry.ledger,
                 Some(evidence.entry.callee_participant()),
@@ -1372,7 +1372,7 @@ fn candidate_rejects_malformed_ledger_participant_pairs() {
     let function = reader("candidate_pair_mismatch", false);
     let assumptions = PureFactContext::new();
     let mut budget = ExecutionBudget::new();
-    let caller_with_ledger = caller(&pointer).with_loan_ledger(Some(LoanLedger::new()));
+    let caller_with_ledger = caller(&pointer).with_loan_ledger(Some(BorrowLedger::new()));
     let callee = bind_program_function_arguments(
         &caller_with_ledger,
         &function,
@@ -1397,7 +1397,7 @@ fn candidate_rejects_malformed_ledger_participant_pairs() {
                 && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Plan
     ));
 
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("participant");
     let caller_with_participant = caller(&pointer).with_loan_participant(Some(participant));
     let callee = bind_program_function_arguments(
@@ -2072,7 +2072,7 @@ fn verified_call_checks_its_writes_against_preexisting_loans() {
             SymbolicMemory::local_pointer("other")
         };
         let range = MemoryRange::new(protected, 0u32.into(), 1u32.into());
-        let opening_ledger = LoanLedger::new();
+        let opening_ledger = BorrowLedger::new();
         let lender = opening_ledger.fresh_participant().unwrap();
         let reader = opening_ledger.fresh_participant().unwrap();
         let ledger = lend_summary_test_range(&opening_ledger, lender, reader, range);
@@ -2116,11 +2116,11 @@ fn verified_call_checks_its_writes_against_preexisting_loans() {
 }
 
 fn lend_summary_test_range(
-    ledger: &LoanLedger,
+    ledger: &BorrowLedger,
     lender: super::super::loans::LoanParticipantId,
     reader: super::super::loans::LoanParticipantId,
     range: MemoryRange,
-) -> LoanLedger {
+) -> BorrowLedger {
     let owner = ResourceFact::own_memory(range);
     let support = ResourceContext::new()
         .unchecked_with_fact(owner.clone())
@@ -2630,7 +2630,7 @@ fn candidate_early_return_closes_call_scope() {
 
 #[test]
 fn candidate_wrong_scope_close_is_refused() {
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner participant");
     let reader = ledger.fresh_participant().expect("reader participant");
     let escrow = ResourceFact::own(Resource::Token {
@@ -2838,7 +2838,7 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
                 crate::kernel::program_expression::int32_literal(2),
             ),
         );
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let participant = ledger.fresh_participant().expect("caller participant");
         let state = caller(&pointer)
             .with_loan_ledger(Some(ledger))
@@ -3149,7 +3149,7 @@ fn returning_multiple_owners_from_one_input_hold_constructs_distinct_holds() {
         .into_iter()
         .map(|(head, occurrence)| (occurrence, (head, original.clone())))
         .collect::<BTreeMap<_, _>>();
-    retain_rebound_composite_holds(&mut recovery, &mut rebound, caller).unwrap();
+    retain_rebound_composite_holds(&mut recovery, &mut rebound, BTreeSet::new(), caller).unwrap();
     let bindings = rebound
         .values()
         .map(|(_, binding)| binding)

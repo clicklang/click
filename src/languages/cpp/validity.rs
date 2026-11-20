@@ -75,9 +75,11 @@ impl CppType {
                     .iter()
                     .try_for_each(|parameter| parameter.check_aliases(accepts_source))
             }
-            Self::Void | Self::Boolean { .. } | Self::Record { .. } | Self::Parameter { .. } => {
-                Ok(())
-            }
+            Self::Void
+            | Self::ConstVoid
+            | Self::Boolean { .. }
+            | Self::Record { .. }
+            | Self::Parameter { .. } => Ok(()),
         }
     }
 }
@@ -293,6 +295,7 @@ impl Metadata<'_> {
             | CppExpression::IntegralCast { value, span, .. }
             | CppExpression::EnumCast { value, span, .. }
             | CppExpression::PointerQualification { value, span, .. }
+            | CppExpression::VoidPointerCast { value, span, .. }
             | CppExpression::BytePointerCast { value, span, .. } => {
                 self.expression(value)?;
                 span

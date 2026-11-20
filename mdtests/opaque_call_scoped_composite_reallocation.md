@@ -63,7 +63,7 @@ int32 replace_after_scoped_open(struct cell_owner* owner) {
 
     ensures result == 0 or result == 1;
 } by {
-    open(allocated_cell(owner)) {
+    with(allocated_cell(owner)) {
     }
 }
 ```

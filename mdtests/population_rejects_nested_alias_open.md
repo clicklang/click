@@ -29,8 +29,8 @@ int32 object_refcount(struct object* obj, struct object* alias) {
 
     ensures result == count(object_ref(obj));
 } by {
-    open(control(obj)) {
-        open(control(alias)) { }
+    with(control(obj)) {
+        with(control(alias)) { }
     }
     solve();
 }

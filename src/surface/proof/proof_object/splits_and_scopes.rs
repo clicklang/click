@@ -1,4 +1,4 @@
-//! Logical/execution/outcome splits, joins, and `have`/`open` scopes.
+//! Logical/execution/outcome splits, joins, and `have`/`with` scopes.
 
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
@@ -148,7 +148,9 @@ impl<'a> Proof<'a> {
         let Some(surface) = self.surface_goal() else {
             return Ok(self.bundle_member_surface_children());
         };
-        let Some(Proposition::And(left, right)) = self.goal() else {
+        let goal = self.goal();
+        let sequence = goal.and_then(crate::kernel::int32_sequence_equality_view);
+        let Some(Proposition::And(left, right)) = sequence.as_ref().or(goal) else {
             return Err(
                 self.step_error("`all` presentation correspondence requires a kernel conjunction")
             );
@@ -425,6 +427,16 @@ impl<'a> Proof<'a> {
         Ok(children)
     }
 
+    pub(in crate::surface::proof) fn has_conjunctive_goal(&self) -> bool {
+        self.goal().is_some_and(|goal| {
+            matches!(goal, Proposition::And(..))
+                || matches!(
+                    crate::kernel::int32_sequence_equality_view(goal),
+                    Some(Proposition::And(..))
+                )
+        })
+    }
+
     fn checked_whole_surface_child(
         &self,
         surface: &ClickProposition,
@@ -569,13 +581,15 @@ impl<'a> Proof<'a> {
     ) -> Result<(Self, SplitId, [BranchId; 2]), ClickError> {
         let kernel = self.lower_surface_proposition(&disjunction, "`cases` disjunction")?;
         // The trace shows the disjunct each arm assumes.
-        let traced_arms =
-            crate::surface::proof_trace::enabled_for(self.claim_label()).then(|| match &kernel {
+        let traced_arms = crate::surface::proof_trace::enabled_for(self.claim_label()).then(|| {
+            let view = crate::kernel::sequence_membership_view(&kernel);
+            match view.as_ref().unwrap_or(&kernel) {
                 Proposition::Or(left, right) => {
                     [vec![left.as_ref().clone()], vec![right.as_ref().clone()]]
                 }
                 _ => [Vec::new(), Vec::new()],
-            });
+            }
+        });
         let (state, split, ids) = self
             .state
             .split_proposition_cases(kernel)
@@ -1281,15 +1295,15 @@ impl<'a> Proof<'a> {
         source_index: usize,
     ) -> Result<ProofScope<'a>, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("`open` requires an execution-frontier proof"));
+            return Err(self.step_error("`with` requires an execution-frontier proof"));
         };
-        self.require_execution_frontier("`open`")?;
+        self.require_execution_frontier("`with`")?;
         let mut execution = self
             .execution()
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
         if execution.core.frontier.is_at_function_exit() {
-            return Err(self.step_error("`open` must begin before execution reaches function exit"));
+            return Err(self.step_error("`with` must begin before execution reaches function exit"));
         }
         let (state, introduced_facts, restoration) = if let ResourceClause::Named {
             binding,
@@ -1303,7 +1317,7 @@ impl<'a> Proof<'a> {
                     .is_some_and(ResourceDefinition::is_authorized)
             {
                 return Err(self.step_error(
-                    "`open` on a named instance requires an ordinary composite resource",
+                    "`with` on a named instance requires an ordinary composite resource",
                 ));
             }
             let instance = execution
@@ -1312,7 +1326,7 @@ impl<'a> Proof<'a> {
                 .resource_instance_at_path(binding.instance()?, &binding.children)
                 .ok_or_else(|| {
                     self.step_error(format!(
-                        "`open` requires a held instance `{}`",
+                        "`with` requires a held instance `{}`",
                         binding.name
                     ))
                 })?;
@@ -1350,7 +1364,7 @@ impl<'a> Proof<'a> {
                 )
                 .map_err(|message| {
                     self.step_error(format!(
-                        "kernel rejected checked resource `open`: {message}"
+                        "kernel rejected checked resource `with`: {message}"
                     ))
                 })?;
             execution.core.state = checked.state.into();
@@ -1363,7 +1377,7 @@ impl<'a> Proof<'a> {
                     checked.added_facts.clone(),
                     checked.added_facts,
                 )
-                .map_err(|error| self.execution_update_error("`open`", error))?;
+                .map_err(|error| self.execution_update_error("`with`", error))?;
             (
                 state,
                 introduced_facts,

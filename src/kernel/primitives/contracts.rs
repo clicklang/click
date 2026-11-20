@@ -4238,7 +4238,7 @@ impl ExecutionEnvironment {
             let active_loans = |state: &ExecutionState| {
                 state.loan_ledger()
                     .filter(|ledger| ledger.has_active_memory_loans())
-                    .map(crate::kernel::loans::LoanLedger::state_identity)
+                    .map(crate::kernel::loans::BorrowLedger::state_identity)
             };
             let state_matches = active_loans(&rule.symbolic_entry_state) == active_loans(state)
                 && rule.symbolic_entry_state.locals == state.locals

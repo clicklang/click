@@ -59,7 +59,7 @@ fn a_loop_frame_normalizes_its_retained_views_once() {
 /// as its real checking caller, without charging fixture/index construction.
 #[test]
 fn loop_binding_carryover_ignores_ambient_observations() {
-    use crate::kernel::loans::{LoanLedger, LoanViewBinding, LoanViewBindings};
+    use crate::kernel::loans::{BorrowLedger, LoanViewBinding, LoanViewBindings};
 
     let mut curves = Vec::new();
     for case in ["early", "late", "unbound", "retained_metadata"] {
@@ -93,7 +93,7 @@ fn loop_binding_carryover_ignores_ambient_observations() {
                     observations,
                 ));
             let selected = occurrences[if case == "late" { count } else { 0 }].1;
-            let ledger = LoanLedger::new();
+            let ledger = BorrowLedger::new();
             let holder = ledger.fresh_participant().unwrap();
             let opening = ledger
                 .borrowed_contract_input(holder, selected, view.clone(), None)

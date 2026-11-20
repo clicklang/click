@@ -463,7 +463,7 @@ mod tests {
         );
         let expression = SpecExpression::ResourceField {
             projection: ResourceFieldProjection {
-                identity: InstanceId::from_variable(Variable(10993301)),
+                identity: InstanceId::from_variable(Variable(10993301)).into(),
                 children: vec![],
                 field_index: 0,
                 at_entry: false,

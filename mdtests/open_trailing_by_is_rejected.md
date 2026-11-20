@@ -11,11 +11,11 @@ void set(int32* p, int32 x) {
     requires x > 0;
     owns cell(p);
 } by {
-    open(cell(p)) { } by { solve(); }
+    with(cell(p)) { } by { solve(); }
     solve();
 }
 ```
 
 ```expect
-fail: `open` takes no trailing `by`
+fail: `with` takes no trailing `by`
 ```

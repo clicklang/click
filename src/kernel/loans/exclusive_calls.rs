@@ -26,7 +26,7 @@ pub(super) struct ExclusiveCallRecord {
     children: usize,
 }
 
-impl LoanLedger {
+impl BorrowLedger {
     #[cfg(test)]
     pub(super) fn exclusive_calls_invariant(&self) -> bool {
         let data = &self.storage.data;
@@ -242,7 +242,7 @@ mod tests {
 
     fn plan(
         resources: &ResourceContext,
-        ledger: &LoanLedger,
+        ledger: &BorrowLedger,
         caller: LoanParticipantId,
         callee: LoanParticipantId,
         fact: ResourceFact,
@@ -263,7 +263,7 @@ mod tests {
         use super::super::tests::memory;
         let facts = PureFactContext::new();
         let resources = ResourceContext::new().unchecked_with_fact(memory(0, 8, true));
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let child = ledger.fresh_participant().unwrap();
         let grandchild = ledger.fresh_participant().unwrap();
@@ -341,7 +341,7 @@ mod tests {
         use super::super::tests::memory;
         let facts = PureFactContext::new();
         let resources = ResourceContext::new().unchecked_with_fact(memory(0, 4, true));
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let child = ledger.fresh_participant().unwrap();
         let first = plan(&resources, &ledger, owner, child, memory(0, 4, true));
@@ -406,7 +406,7 @@ mod tests {
         let facts = PureFactContext::new();
         let resources =
             ResourceContext::new().unchecked_with_facts([memory(0, 2, true), memory(2, 4, true)]);
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let child = ledger.fresh_participant().unwrap();
         let borrowed = plan(&resources, &ledger, owner, child, memory(0, 4, true));

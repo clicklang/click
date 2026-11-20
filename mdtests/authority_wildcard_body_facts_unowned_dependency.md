@@ -35,10 +35,10 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
     fold(slot(&pool, p));
     fold(slot(&pool, p + 1));
     have count(slot(&pool, _)) == 2 by solve();
-    open(slot(&pool, p)) { step(); have 0 <= p[0] by solve(); }
+    with(slot(&pool, p)) { step(); have 0 <= p[0] by solve(); }
     have count(slot(&pool, _)) == 2 by solve();
-    open(slot(&pool, p)) {
-        open(slot(&pool, p + 1)) { step(); step(); }
+    with(slot(&pool, p)) {
+        with(slot(&pool, p + 1)) { step(); step(); }
     }
     unfold(slot(&pool, p));
     unfold(slot(&pool, p + 1));

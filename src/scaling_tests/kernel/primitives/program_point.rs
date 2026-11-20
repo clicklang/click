@@ -504,7 +504,7 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
     let entry = ExecutionState::new().begin_function_entry_memory();
     let cell = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: AddressOffset::Constant(4),
     };
     let local = slot();
     let declared = entry
@@ -538,19 +538,20 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
         let integer_body = observation(body.clone());
         let ((native, integer), work) = crate::instrumentation::measure_deterministic_work(|| {
             let zero = MachineTerm::constant(0);
+            let one = MachineTerm::constant(1);
             let native = crate::kernel::reasoning::order_reasoning::instantiate_range_fold_step(
                 &body,
                 accumulator,
                 &zero,
                 item,
-                &zero,
+                &one,
             );
             let integer = crate::kernel::reasoning::instantiate_integer_range_fold_step(
                 &integer_body,
                 accumulator,
                 &IntegerTerm::constant_i64(0),
                 item,
-                &IntegerTerm::constant_i64(0),
+                &IntegerTerm::constant_i64(1),
                 Some(MachineIntegerType::Int32),
             )
             .unwrap();
@@ -563,5 +564,84 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
     assert!(
         samples.iter().all(|&work| work <= samples[0] + 8),
         "{samples:?}"
+    );
+}
+
+#[test]
+fn generic_entry_cells_and_compact_runs_keep_the_same_version_across_local_stores() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let parameter = crate::kernel::TypeParameterName::intern("PointNamedCell");
+    let ty = ProgramType::Parameter(parameter);
+    let base = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let cell = base.offset_by_bytes(ty.byte_width());
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let source = entry.program_point();
+    let expected =
+        crate::kernel::AlgebraicTermNode::parameter_cell_load(&source, cell.clone(), parameter);
+    let ProgramValue::Parameter(expected_term) = &expected else {
+        panic!("generic cell has its abstract type");
+    };
+    let crate::kernel::AlgebraicTermNode::MemoryLoad { point, .. } = &expected_term.node else {
+        panic!("generic cell has its own read");
+    };
+    assert_eq!(point.read_version_id(), source.id());
+
+    let local = slot();
+    let declared = entry
+        .clone()
+        .with_memory(entry.memory().clone().with_block(local.base.clone(), 4));
+    let mut samples = Vec::new();
+    for count in [4, 16, 64, 256] {
+        let mut state = declared.clone();
+        for value in 0..count {
+            state = state.clone().with_memory(state.memory().clone().store(
+                local.clone(),
+                ProgramValue::Int32(MachineTerm::constant(value)),
+            ));
+        }
+        let source = state.program_point();
+        let run = crate::kernel::CellRun::new_at(
+            base.clone(),
+            ty.byte_width(),
+            ty,
+            count,
+            source.clone(),
+            crate::kernel::RunValueMode::Load,
+            crate::kernel::IndexIntervals::default(),
+        );
+        let ((named, compact), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let named = crate::kernel::AlgebraicTermNode::parameter_cell_load(
+                &source,
+                cell.clone(),
+                parameter,
+            );
+            (named, run.value(1))
+        });
+        assert_eq!(named, expected);
+        assert_eq!(compact, expected);
+        samples.push(work);
+    }
+    assert_eq!(samples, vec![samples[0]; samples.len()]);
+
+    let other_entry = ExecutionState::new().begin_function_entry_memory();
+    assert_ne!(
+        crate::kernel::AlgebraicTermNode::parameter_cell_load(
+            &other_entry.program_point(),
+            cell.clone(),
+            parameter,
+        ),
+        expected,
+    );
+    let changed = entry
+        .clone()
+        .with_memory(entry.memory().clone().store(cell.clone(), expected.clone()));
+    assert!(
+        changed
+            .program_point()
+            .generic_entry_version(&cell, parameter)
+            .is_none()
     );
 }

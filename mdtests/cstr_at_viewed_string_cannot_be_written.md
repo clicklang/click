@@ -20,7 +20,7 @@ void poke(uint8* s, uint64 n) {
     views cstr_at(s, n);
     requires 0u64 < n;
 } by {
-    open(cstr_at(s, n)) {
+    with(cstr_at(s, n)) {
     }
 }
 ```

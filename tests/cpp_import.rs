@@ -19129,6 +19129,61 @@ public:
 "#;
 
 #[test]
+fn cpp_memcpy_copies_initialized_bytes_through_implicit_void_conversions() {
+    let project = Project::with_fixture(
+        "driver.cpp",
+        "probe",
+        r#"#include "copy.h"
+unsigned char probe(unsigned char* destination, const unsigned char* source) noexcept {
+    memcpy(destination, source, 1);
+    return destination[0];
+}
+"#,
+    );
+    fs::write(
+        project.directory.join("copy.h"),
+        "#pragma clang system_header\nextern \"C\" void* memcpy(void*, const void*, unsigned long) noexcept;\n",
+    )
+    .unwrap();
+    project.write_config("probe");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "driver.cpp";
+uint8 probe(uint8* destination, const uint8* source) {
+    owns uninitialized(destination[0..1]);
+    views source[0..1];
+    ensures result == old(source[0]);
+} by {
+    step();
+    have destination[0] == old(source[0]) by {
+        instantiate(forall (k: uint64) {
+            true and k < 1u64 implies destination[0u64 + k] == old(source[0u64 + k])
+        }, 0u64);
+        solve();
+    }
+    step_until(function.exit);
+}
+"#;
+    let path = project.directory.join("copy.click");
+    fs::write(&path, source).unwrap();
+    let parsed = read_click_project(&path, source).unwrap();
+    let (summary, verification) =
+        click::surface::verify_project_with_summary(&parsed, &ProgramInputs::program(&import))
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    verification.unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(summary.assumptions["probe"].iter().any(|assumption| {
+        assumption.family == click::surface::ModelFamily::CppStd && assumption.name == "memcpy"
+    }));
+    let missing_write = source.replace(
+        "owns uninitialized(destination[0..1]);",
+        "views destination[0..1];",
+    );
+    let parsed = read_click_project(&path, &missing_write).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(error.report().contains("memcpy"), "{}", error.report());
+}
+
+#[test]
 fn byte_vector_size_uses_a_layout_free_catalog_contract() {
     let project = Project::with_fixture(
         "driver.cpp",
@@ -20408,7 +20463,6 @@ fn unlocked_copy(example: &str, name: &str) -> PathBuf {
     let copy = scratch_copy(name);
     copy_tree(&Path::new(env!("CARGO_MANIFEST_DIR")).join(example), &copy);
     fs::remove_dir_all(copy.join(".click")).unwrap();
-    fs::remove_file(copy.join(click::project::LOCK_NAME)).unwrap();
     copy
 }
 
@@ -20806,6 +20860,51 @@ uint64 probe(const struct View& source) {
     fs::write(&sidecar, callee).unwrap();
     let parsed = read_click_project(&sidecar, callee).unwrap();
     verify_program_prepared_project(&parsed, &import).unwrap();
+}
+
+#[test]
+fn cpp_by_value_record_keeps_receiver_field_ownership_at_proof_entry() {
+    let project = Project::with_fixture(
+        "reader.cpp",
+        "Reader::read",
+        r#"struct Field { unsigned long first; unsigned long count; };
+struct Reader {
+    Field data;
+    void read(Field dst) noexcept { return; }
+};
+void caller(Reader& reader, Field dst) noexcept { reader.read(dst); }
+"#,
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let path = project.directory.join("reader.click");
+    let callee = r#"verifying "reader.cpp";
+void Reader::read(Field dst) {
+    owns this->data.first;
+    ensures true;
+}
+"#;
+    fs::write(&path, callee).unwrap();
+    let parsed = read_click_project(&path, callee).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+
+    project.write_config("caller");
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let caller = format!(
+        "{callee}void caller(Reader& reader, Field dst) {{\n    owns reader.data.first;\n    ensures true;\n}}\n"
+    );
+    fs::write(&path, &caller).unwrap();
+    let parsed = read_click_project(&path, &caller).unwrap();
+    verify_program_prepared_project(&parsed, &import).unwrap();
+
+    let caller = caller.replace("owns reader.data.first;", "views reader.data.first;");
+    let parsed = read_click_project(&path, &caller).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import)
+        .expect_err("the caller only has read access to the receiver field");
+    let report = error.report();
+    assert!(report.contains("`caller.ensures_0`"), "{report}");
+    assert!(report.contains("write ownership required"), "{report}");
 }
 
 const RECORD_TEMPORARY_ARGUMENT_SOURCE: &str = r#"

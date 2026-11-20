@@ -25,5 +25,5 @@ uint8 read(const uint8* bytes, uint64 length, const uint8* cursor, uint64 index)
 ```
 
 ```expect
-fail: stable-view
+fail: cannot supply `views cursor[0..4]` at this call
 ```

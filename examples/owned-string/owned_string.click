@@ -315,6 +315,9 @@ int32 owned_string_clear(struct owned_string* owner) {
     ensures owner->data[0] == 0;
 } by {
     unfold(owned_string(owner));
+    have 0 < owner->cap by {
+        solve() using { 0 <= owner->len; owner->len < owner->cap; };
+    }
     step();
     step();
     step();
@@ -325,6 +328,11 @@ int32 owned_string_clear(struct owned_string* owner) {
         memory(owner->data[0..owner->cap])
     ) by {
         solve();
+    }
+    have owner->len == 0;
+    have owner->len < owner->cap by {
+        rewrite(owner->len, 0);
+        known();
     }
     fold(owned_string(owner));
     known();

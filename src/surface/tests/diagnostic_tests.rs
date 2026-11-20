@@ -1350,8 +1350,14 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
         ParameterBinding::default(),
     );
 
-    assert!(rendered.contains("selected resource"), "{rendered}");
-    assert!(rendered.contains("selected_resource"), "{rendered}");
+    assert!(
+        rendered.contains("`owns selected_resource[0..4]`"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("A live borrow still depends on this resource."),
+        "{rendered}"
+    );
     assert!(!rendered.contains("unrelated_resource"), "{rendered}");
     assert!(rendered.len() < 1024, "{}", rendered.len());
 }
@@ -1379,8 +1385,11 @@ fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
         ParameterBinding::default(),
     );
 
-    assert!(rendered.contains("selected range"), "{rendered}");
-    assert!(rendered.contains("selected_range"), "{rendered}");
+    assert!(rendered.contains("`selected_range[1..3]`"), "{rendered}");
+    assert!(
+        rendered.contains("The requested ranges must be proved separate."),
+        "{rendered}"
+    );
     assert!(!rendered.contains("MemoryRange {"), "{rendered}");
     assert!(rendered.len() < 1024, "{}", rendered.len());
 }
@@ -2064,7 +2073,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
         left: ContractExpression::ResourceField(ResourceFieldAccess {
             owner: "absent".into(),
             resource_name: "cell".into(),
-            identity: InstanceId::from_variable(Variable(999)),
+            identity: InstanceId::from_variable(Variable(999)).into(),
             children: vec![],
             field: "rank".into(),
             field_index: 0,

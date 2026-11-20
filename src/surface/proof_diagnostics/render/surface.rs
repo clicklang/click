@@ -512,6 +512,15 @@ impl Printer<'_> {
                     operand(right, SHIFT)
                 )))
             }
+            Proposition::SequenceMembership { element, sequence } => {
+                let element = self.cvalue(element.native_compat(), depth)?;
+                let sequence = self.sequence(sequence, depth)?;
+                Some(atom(format!(
+                    "{} in {}",
+                    operand(element, SHIFT),
+                    sequence.text
+                )))
+            }
             _ if !self.source_mode() => None,
             Proposition::Predicate { name, arguments } => {
                 if let Some(surface) =
@@ -1385,6 +1394,7 @@ impl Printer<'_> {
             }
             Term::ProgramValue(value) => self.cvalue(value.native_compat(), depth + 1),
             Term::Algebraic(value) => self.algebraic(value.native_compat(), depth + 1),
+            Term::Sequence(value) => self.sequence(value, depth + 1),
             _ if !self.source_mode() => None,
             Term::Condition(condition) => {
                 self.condition(condition.native_compat(), true, depth + 1)
@@ -1394,7 +1404,41 @@ impl Printer<'_> {
             }
             Term::ArrayReadPoint(point) => Some(atom(self.state_phrase(point.memory()))),
             Term::ExecutionState(state) => Some(atom(self.state_phrase(state.memory()))),
-            Term::Sequence(_) => Some(atom("<a sequence>")),
+        }
+    }
+
+    fn sequence(
+        &mut self,
+        sequence: &crate::kernel::SequenceTerm,
+        depth: usize,
+    ) -> Option<Spelled> {
+        if let Err(elided) = self.enter(depth) {
+            return elided;
+        }
+        use crate::kernel::SequenceTermNode;
+        match sequence.node.as_ref() {
+            SequenceTermNode::Literal(values) => {
+                let mut elements = Vec::new();
+                for value in values.iter() {
+                    if self.remaining == 0 {
+                        if !self.source_mode() {
+                            return None;
+                        }
+                        elements.push("…".into());
+                        break;
+                    }
+                    elements.push(self.cvalue(value, depth + 1)?.text);
+                }
+                Some(atom(format!("[{}]", elements.join(", "))))
+            }
+            SequenceTermNode::Concat(left, right) => Some(spelled(
+                format!(
+                    "{} ++ {}",
+                    operand(self.sequence(left, depth + 1)?, ADD),
+                    operand(self.sequence(right, depth + 1)?, ADD + 1)
+                ),
+                ADD,
+            )),
         }
     }
 

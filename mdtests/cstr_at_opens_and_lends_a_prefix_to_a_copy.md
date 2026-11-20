@@ -35,7 +35,7 @@ uint64 copy_prefix(uint8* dst, const uint8* src, uint64 n, uint64 k) {
     ensures result == k;
     ensures src[n] == '\0';
 } by {
-    open(cstr_at(src, n)) {
+    with(cstr_at(src, n)) {
     }
 }
 ```

@@ -311,9 +311,7 @@ fn old_collect_spec_integer_bound_variables_inner(
     integer_seen: &mut SeenTerms,
 ) {
     match expression {
-        SpecIntegerExpression::ResourceField(projection) => {
-            variables.insert(projection.identity.variable());
-        }
+        SpecIntegerExpression::ResourceField(_) => {}
         SpecIntegerExpression::Term(term) => {
             collect_integer_bound_identities(term, variables, integer_seen);
         }
@@ -420,9 +418,7 @@ fn old_collect_spec_integer_bound_expression(
         SpecExpression::IntegerToMachine { value, .. } => {
             old_collect_spec_integer_bound_variables_inner(value, variables, integer_seen);
         }
-        SpecExpression::ResourceField { projection, .. } => {
-            variables.insert(projection.identity.variable());
-        }
+        SpecExpression::ResourceField { .. } => {}
         SpecExpression::AlgebraicMatch { scrutinee, arms } => {
             old_collect_spec_algebraic_bound_identities(scrutinee, variables, integer_seen);
             for arm in arms {

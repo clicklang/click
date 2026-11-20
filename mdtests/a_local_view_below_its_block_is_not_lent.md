@@ -75,5 +75,5 @@ int32 lends_below_its_local() {
 ```
 
 ```expect
-fail: selected resource `views pair[-1..3]`
+fail: `views pair[-1..3]`
 ```

@@ -441,7 +441,7 @@ fn checked_execution_region_end(
 }
 
 /// Nested regions (`match` arms, `branch` and proof `if` cases, call
-/// outcomes, an `open` body) are one level deeper. A node's continuation is
+/// outcomes, a `with` body) are one level deeper. A node's continuation is
 /// the rest of the region the node sits in, so it keeps `depth` and is walked
 /// iteratively: a long run of sibling regions neither charges the nesting
 /// bound nor reserves Rust stack.
@@ -3141,12 +3141,12 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                 )?
                 else {
                     return Err(ClickError::new(format!(
-                        "`{claim_label}` tactic {index}: `open` did not verify as a checked preservation operation"
+                        "`{claim_label}` tactic {index}: `with` did not verify as a checked preservation operation"
                     )));
                 };
                 proof = scope.driver().complete_scope()?;
                 node = continuation;
-                last_tactic = Some((*index, "open"));
+                last_tactic = Some((*index, "with"));
                 continue;
             }
         };

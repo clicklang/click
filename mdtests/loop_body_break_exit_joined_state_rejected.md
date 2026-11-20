@@ -3,10 +3,9 @@
 The positive sibling of
 [`loop_body_break_exit_joined_state.md`](loop_body_break_exit_joined_state.md),
 with the postcondition strengthened to a claim only one of the two exits
-supports. The `break` exit leaves with `r == 1`; the guard-false exit leaves
-with the `r` the invariant pins, `0`. The join gives `r` one fresh name and
-exports the disjunction of what each exit said about it, so `result == 1` is
-not available: the rule weakens, it does not pick a favourite exit.
+supports. The `break` exit explicitly proves `r == 1`. The guard-false exit
+leaves with the `r` the invariant pins, `0`, so the written claim cannot
+establish `result == 1` after the loop.
 
 ```c filename=assign_then_break_claim.c
 int32 assign_then_break_claim(int32 n) {
@@ -39,6 +38,7 @@ int32 assign_then_break_claim(int32 n) {
         initialize by solve();
         maintain by {
             step();
+            have r == 1 by known();
             step();
         }
     }

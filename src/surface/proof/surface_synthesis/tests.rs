@@ -3171,6 +3171,72 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
 }
 
 #[test]
+fn pure_sequence_membership_round_trips_its_operands_and_negation() {
+    let element =
+        |value| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value)));
+    let literal = |value| ContractExpression::SequenceLiteral(vec![element(value)]);
+    let empty = ContractExpression::SequenceLiteral(vec![]);
+    let concat = |left, right| ContractExpression::SequenceConcat(Box::new(left), Box::new(right));
+    let membership = ClickProposition::Comparison {
+        left: element(2),
+        operator: ComparisonOperator::In,
+        right: concat(empty, concat(literal(1), literal(2))),
+    };
+    let state = ExecutionState::new();
+    for written in [
+        membership.clone(),
+        ClickProposition::Not(Box::new(membership)),
+    ] {
+        let lowered = relower_written_proposition(&written, &state).unwrap();
+        let atom = match &lowered {
+            Proposition::Not(body) => body.as_ref(),
+            atom => atom,
+        };
+        assert!(matches!(atom, Proposition::SequenceMembership { .. }));
+        let raised =
+            synthesize_surface_proposition(&lowered, ParameterBinding::default(), &state).unwrap();
+        assert_eq!(raised, written);
+        assert_eq!(
+            relower_written_proposition(&raised, &state).unwrap(),
+            lowered
+        );
+    }
+}
+
+#[test]
+fn pure_sequence_equality_round_trips_empty_and_nested_concatenation() {
+    let literal = |value| {
+        ContractExpression::SequenceLiteral(vec![ContractExpression::ProgramExpression(
+            ProgramExpression::Value(int32(value)),
+        )])
+    };
+    let empty = ContractExpression::SequenceLiteral(vec![]);
+    let concat = |left, right| ContractExpression::SequenceConcat(Box::new(left), Box::new(right));
+    let written = ClickProposition::Comparison {
+        left: concat(empty.clone(), concat(literal(1), literal(2))),
+        operator: ComparisonOperator::Equal,
+        right: concat(concat(literal(1), literal(2)), empty),
+    };
+    let state = ExecutionState::new();
+    let lowered = relower_written_proposition(&written, &state).unwrap();
+    assert!(matches!(
+        lowered,
+        Proposition::Equal(Term::Sequence(_), Term::Sequence(_))
+    ));
+    let raised =
+        synthesize_surface_proposition(&lowered, ParameterBinding::default(), &state).unwrap();
+    assert_eq!(raised, written);
+    assert_eq!(
+        relower_written_proposition(&raised, &state).unwrap(),
+        lowered
+    );
+    assert_eq!(
+        crate::surface::printing::source_click_proposition(&raised),
+        "[] ++ ([1] ++ [2]) == [1] ++ [2] ++ []",
+    );
+}
+
+#[test]
 fn synthesized_uint32_cast_preserves_its_state() {
     let selector = ProgramPointSelector::Mark("before".into());
     let expression = synthesize_uint32_operand(ContractExpression::At {
@@ -9432,5 +9498,84 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
         matches!(&raised, ClickProposition::PredicateCall { arguments, .. }
         if matches!(arguments.first(), Some(ContractExpression::Old(_))))
     );
+    assert_eq!(lower(&raised), Ok(original));
+}
+
+#[test]
+fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
+    use crate::kernel::{AlgebraicTermNode, TypeParameterName};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = TypeParameterName::intern("GenericEntryRead");
+    let address = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(id)),
+    };
+    let left = address(1008401);
+    let right = address(1008402);
+    let argument =
+        |address| ProgramValue::typed_pointer(address, ProgramType::ParameterPointer(ty));
+    let parameters = ["p", "q"].map(|name| {
+        crate::languages::interface::ImportedParameter::new(
+            InterfaceType::ParameterPointer(ty),
+            name.into(),
+            None,
+        )
+    });
+    let arguments =
+        [left.clone(), right.clone()].map(|address| ProgramExpression::Value(argument(address)));
+    let entry = ExecutionState::new()
+        .with_local("p", argument(left.clone()))
+        .with_local("q", argument(right))
+        .begin_function_entry_memory();
+    let post = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .store(left, ProgramValue::Int32(MachineTerm::constant(9))),
+    );
+    let file = crate::surface::parse(
+        "theorem probe<GenericEntryRead>(p: GenericEntryRead*, q: GenericEntryRead*) {
+             requires old(*p) == old(*q);
+             ensures true;
+         }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("generic read premise");
+    };
+    let points = RecordedStates::new();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let lower = |surface: &ClickProposition| {
+        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+            surface,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
+            FixedStateFrame::new(&entry, &post, None, &points),
+            SpecDefinitions::new(&predicates, &functions),
+            FixedStateLoweringOptions::default(),
+        )
+        .map(|(proposition, _, _, _)| proposition)
+    };
+    let original = lower(written).unwrap();
+    let Some((ConditionTerm::AlgebraicEqual(left, right), true)) = original.condition_native()
+    else {
+        panic!("generic value equality: {original:?}");
+    };
+    for term in [left, right] {
+        assert!(matches!(
+            &term.node,
+            AlgebraicTermNode::MemoryLoad { point, .. }
+                if point.read_version_id() == entry.observation_point_id()
+        ));
+    }
+    let raised = synthesize_surface_proposition_at_entry_and_post(
+        &original,
+        ParameterBinding::new(&parameters, &arguments),
+        &entry,
+        &post,
+    )
+    .expect("the generic entry read has a spelling");
     assert_eq!(lower(&raised), Ok(original));
 }

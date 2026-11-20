@@ -22,5 +22,5 @@ void package(int32* p, int32* q) {
 ```
 
 ```expect
-fail: prove that the input view covers the produced view
+fail: The selected input `views q[0]` does not establish coverage of `views p[0]`
 ```

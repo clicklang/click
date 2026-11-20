@@ -284,7 +284,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "obtain",
     "of",
     "old",
-    "open",
+    "with",
     "or",
     "owns",
     "predicate",
@@ -2304,7 +2304,7 @@ impl ResourceInstanceBinding {
 pub struct ResourceFieldAccess {
     owner: String,
     resource_name: String,
-    identity: crate::kernel::InstanceId,
+    identity: crate::kernel::InstanceRef,
     children: Vec<String>,
     field: String,
     field_index: usize,
@@ -6541,8 +6541,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "control",
     },
     PublicTacticForm {
-        id: "open",
-        syntax: "open(resource)",
+        id: "with",
+        syntax: "with(resource)",
         class: "control",
     },
     PublicTacticForm {
@@ -6690,12 +6690,12 @@ pub use proof_certificate::*;
 #[derive(Clone, Copy)]
 pub(crate) enum TacticChild<'a> {
     /// A block that continues the tactic's own proof: an `if`, `branch`,
-    /// `match`, `cases`, induction or `outcomes` arm, an `open` body, a side
+    /// `match`, `cases`, induction or `outcomes` arm, a `with` body, a side
     /// of `both`, a `close_invariants by` body, or a loop's `initialize` or
     /// `maintain` proof.
     Continuing(ChildProof<'a>),
     /// A proof of a separate proposition, as a `have` body is: a `have`, the
-    /// close proof of an `open`, or a step's obligation proofs.
+    /// close proof of a `with`, or a step's obligation proofs.
     Obligation(ChildProof<'a>),
 }
 

@@ -19,7 +19,7 @@ fn loop_havoc_requires_a_checked_set_disjoint_from_active_loans() {
         .unique_owned_occurrence_for_fact(&escrow)
         .expect("the test escrow has one backing occurrence")
         .0;
-    let ledger = super::super::loans::LoanLedger::new();
+    let ledger = super::super::loans::BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let opening = ledger.lend(owner, owner, support, escrow).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();

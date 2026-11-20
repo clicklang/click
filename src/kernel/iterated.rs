@@ -148,6 +148,11 @@ fn guard_cell_value(
     {
         return Ok(value);
     }
+    if let Some(kind) = LoadKind::of_type(iterated.guard().cell_type)
+        && let Some(entry) = state.program_point().entry_integer_version(&cell, kind)
+    {
+        return Ok(MachineTerm::MemoryLoad(entry, Box::new(cell), kind));
+    }
     let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
         state.memory(),
         cell,

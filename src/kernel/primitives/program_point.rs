@@ -102,8 +102,16 @@ impl StepLog {
                 | MemoryDerivation::RepresentationWrite { pointer, .. } => {
                     indexed_local(&pointer.base)
                 }
-                MemoryDerivation::BlockDeclared { block, .. } => indexed_local(block),
-                _ => false,
+                MemoryDerivation::BlockDeclared { block, .. }
+                | MemoryDerivation::LocalLifetimeEnded { block, .. } => indexed_local(block),
+                MemoryDerivation::LoopHavoc {
+                    mutable_ranges: Some(ranges),
+                    ..
+                } => ranges.iter().all(|range| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    indexed_local(&range.base().base)
+                }),
+                _ => names_existing_cells,
             };
         Arc::new(Self {
             step,
@@ -412,6 +420,7 @@ impl PathLink {
         let id = ProgramPointId::fresh();
         let point_read_index =
             join_point_read_indexes(points).unwrap_or_else(|| PointReadIndex::empty(id));
+        let external_read_start = joined_external_entry(points);
         Self(
             Some(Arc::new(PointNode {
                 id,
@@ -421,7 +430,7 @@ impl PathLink {
                 predecessors,
                 split: split.filter(|point| point.0.is_some()).cloned(),
                 point_read_index,
-                external_read_start: None,
+                external_read_start,
                 array_entry_after_call: None,
             })),
             IndexedView::Recorded,
@@ -698,6 +707,23 @@ fn external_array_entry(path: &PathLink, memory: &SharedMemory) -> Option<Extern
         };
     }
     node.array_entry_after_call.clone()
+}
+
+/// Retain the common entry only when every incoming path proves that it
+/// preserved external storage. The incoming points already own the anchors.
+fn joined_external_entry(points: &[ProgramPoint]) -> Option<ExternalReadStart> {
+    let (first, rest) = points.split_first()?;
+    let entry = external_array_entry(&first.path, &first.memory)?;
+    for point in rest {
+        crate::instrumentation::record_deterministic_work(1);
+        let other = external_array_entry(&point.path, &point.memory)?;
+        if !Weak::ptr_eq(&entry.point, &other.point)
+            || entry.memory.arena_id() != other.memory.arena_id()
+        {
+            return None;
+        }
+    }
+    Some(entry)
 }
 
 /// Apply the explicit effects once, when execution seals the point. A read
@@ -1165,11 +1191,6 @@ impl ProgramPoint {
     /// Read applications use the execution version when known. Legacy views
     /// retain their existing read identity across pure memory materialization.
     pub(in crate::kernel) fn congruence_read_key(&self) -> ReadKey {
-        // Fold instantiation can still produce a bare read of the empty
-        // entry view. Share its comparison key while retaining the point.
-        if self.is_entry_read() {
-            return ReadKey::Memory(self.memory.read_identity());
-        }
         match self.read_version_id() {
             Some(id) => self.read_key_at(id),
             None => ReadKey::Memory(self.memory.read_identity()),
@@ -1249,19 +1270,31 @@ impl ProgramPoint {
     /// store supplies a value. Use the recorded disjoint suffix only when
     /// it reaches a verified function-entry view.
     pub(crate) fn entry_integer_version(&self, pointer: &Address, kind: LoadKind) -> Option<Self> {
-        let direct_parameter = matches!(pointer.offset, AddressOffset::Constant(0))
-            || matches!(&pointer.offset, AddressOffset::Int32Scaled { value, byte_width: 4 }
-                if value.operand_view().variable().is_some());
-        if kind != LoadKind::Int32
-            || pointer.base != AddressBase::ExternalArgument
-            || !direct_parameter
-        {
+        if kind != LoadKind::Int32 {
+            return None;
+        }
+        self.external_entry_read(pointer)
+    }
+
+    pub(crate) fn generic_entry_version(
+        &self,
+        pointer: &Address,
+        parameter: super::TypeParameterName,
+    ) -> Option<Self> {
+        if parameter.is_enum() {
+            return None;
+        }
+        self.external_entry_read(pointer)
+    }
+
+    fn external_entry_read(&self, pointer: &Address) -> Option<Self> {
+        if pointer.base != AddressBase::ExternalArgument {
             return None;
         }
         let mut entry = self.parameter_read_start(&pointer.base);
         let node = entry.path.0.as_ref()?;
-        // An empty entry view needs no projection to compare with an
-        // older producer that still carries a bare memory view.
+        // The empty view has no previously materialized values to account
+        // for when selecting the version of a substituted address.
         if !node.function_entry
             || !entry.path.matches_indexed_view(&entry.memory)
             || entry.memory() != &SymbolicMemory::default()
@@ -1295,14 +1328,14 @@ impl ProgramPoint {
         pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
-        self.indexed_typed_version(pointer, value_type).or_else(|| {
-            if value_type == ProgramType::Int32 {
-                self.call_output_integer_version(pointer, LoadKind::Int32)
-                    .or_else(|| self.entry_integer_version(pointer, LoadKind::Int32))
-            } else {
-                None
-            }
-        })
+        self.indexed_typed_version(pointer, value_type)
+            .or_else(|| match value_type {
+                ProgramType::Int32 => self
+                    .call_output_integer_version(pointer, LoadKind::Int32)
+                    .or_else(|| self.entry_integer_version(pointer, LoadKind::Int32)),
+                ProgramType::Parameter(parameter) => self.generic_entry_version(pointer, parameter),
+                _ => None,
+            })
     }
 
     pub(in crate::kernel) fn supports_local_call_word(pointer: &Address) -> bool {
@@ -1596,6 +1629,43 @@ mod tests {
         assert_eq!(
             new_version.indexed_integer_store_bits(),
             Some(&MachineTerm::constant(7))
+        );
+    }
+
+    #[test]
+    fn a_join_retains_the_common_external_entry() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let declared = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_block(slot().base, 4));
+        let first = stored(&declared, 1);
+        let second = stored(&declared, 2);
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(4),
+        };
+        let join = |left: &ExecutionState, right: &ExecutionState| {
+            let mut joined = left.clone();
+            joined.join_program_points(left, right, declared.path_link());
+            joined.program_point()
+        };
+        let entry_id = entry.program_point().id();
+        assert_eq!(
+            join(&first, &second)
+                .entry_integer_version(&pointer, LoadKind::Int32)
+                .and_then(|point| point.read_version_id()),
+            entry_id,
+        );
+
+        let changed = second.clone().with_memory(second.memory().clone().store(
+            pointer.clone(),
+            ProgramValue::Int32(MachineTerm::constant(3)),
+        ));
+        assert!(
+            join(&first, &changed)
+                .entry_integer_version(&pointer, LoadKind::Int32)
+                .is_none()
         );
     }
 

@@ -1097,6 +1097,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         }
         if compound_available.contains(&std::ptr::from_ref(proposition))
             || available(proposition)
+            || crate::kernel::spec::sequence_membership_view(proposition)
+                .as_ref()
+                .is_some_and(&available)
             || spelled_otherwise()
             || observed_otherwise()
         {
@@ -1892,7 +1895,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let ProofObligation::Proposition(goal) = &branch.obligation else {
             return Err("`both` requires a proposition goal");
         };
-        let Proposition::And(left, right) = goal.proposition() else {
+        let sequence = crate::kernel::spec::int32_sequence_equality_view(goal.proposition());
+        let Proposition::And(left, right) = sequence.as_ref().unwrap_or_else(|| goal.proposition())
+        else {
             return Err("`both` requires an `and` goal");
         };
         let arm = |proposition: &Proposition, left: bool| {
@@ -1946,6 +1951,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         if !branch.state.facts.contains(&disjunction) {
             return Err(PropositionSplitError::MissingDisjunction);
         }
+        let disjunction =
+            crate::kernel::spec::sequence_membership_view(&disjunction).unwrap_or(disjunction);
         let Proposition::Or(left, right) = disjunction else {
             return Err(PropositionSplitError::ExpectedDisjunction);
         };

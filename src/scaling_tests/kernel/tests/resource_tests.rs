@@ -3276,7 +3276,7 @@ fn observable_projection_ignores_excluded_loan_bindings_when_hashing() {
         let base = context_with_one_loan_dependency(false);
         let expected = base.observable_composition();
         let mut context = base;
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let reader = ledger.fresh_participant().unwrap();
         for index in 0..size {

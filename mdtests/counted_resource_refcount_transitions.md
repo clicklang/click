@@ -47,7 +47,7 @@ struct object* object_retain(struct object* obj) {
 
     ensures result == obj;
 } by {
-    open(object_control(obj)) {
+    with(object_control(obj)) {
         step();
         fold(object_ref(obj));
     }
@@ -59,7 +59,7 @@ void object_release_nonfinal(struct object* obj) {
     owns object_ref(obj);
     consumes object_ref(obj);
 } by {
-    open(object_control(obj)) {
+    with(object_control(obj)) {
         unfold(object_ref(obj));
         have 1 < obj->refs;
         have to_integer(obj->refs - 1) >= 1;

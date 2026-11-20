@@ -32,5 +32,5 @@ void caller(struct node* p) {
 ```
 
 ```expect
-fail: stable-view
+fail: Borrowing this resource shape is unsupported.
 ```
