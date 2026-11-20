@@ -746,7 +746,17 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
             collect_condition_bitvector_variables(condition.native_compat(), variables)
         }
         Term::Bitvector32(bits) => collect_bitvector_variables(bits.native_compat(), variables),
-        Term::Integer(integer) => collect_integer_variables(integer.native_compat(), variables),
+        Term::Integer(integer) => {
+            if !integer.root().is_some_and(|root| {
+                retained_folds::collect_integer_scope_variables(
+                    root,
+                    retained_folds::FoldVariableRead::ExpressionFree,
+                    variables,
+                )
+            }) {
+                collect_integer_variables(integer.native_compat(), variables);
+            }
+        }
         Term::PointerOffset(offset) => {
             if let Some(root) = offset.root() {
                 root.visit_root_in_order(false, |node| match node {
