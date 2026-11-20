@@ -20,7 +20,7 @@ int32 once(int32 i, int32 x) {
         decreases i;
         invariant i >= 0;
         initialize by { known(); }
-        preserve by {
+        maintain by {
             step();
             have i >= 0 by { normalize(); }
         }
