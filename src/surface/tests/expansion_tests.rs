@@ -110,6 +110,59 @@ fn automatic_object_separation_expands_without_normalize() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 8s for five checked observation expansions with cold replay"]
+fn bounded_observation_identities_expand_without_normalize() {
+    for (fixture, label) in [
+        (
+            "integer_product_bounds_over_narrow_observations",
+            "short_product_identity.ensures_0",
+        ),
+        ("int8_conversion", "from_unsigned.ensures_0"),
+        ("int8_conversion", "to_unsigned.ensures_0"),
+        (
+            "narrowing_from_wide_sources_into_bytes_and_shorts",
+            "sbyte_from_uint.ensures_0",
+        ),
+        (
+            "narrowing_from_wide_sources_into_bytes_and_shorts",
+            "short_from_uint.ensures_0",
+        ),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{label}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{label}\n{error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 16s for cursor order expansion with cold replay"]
+fn selected_native_cursor_order_expands_without_normalize() {
+    let (source, c_sources) = mdtest_sources("mdtests/loop_entry_memory_capture_cursor.md");
+    let sources = crate::cli::source_refs(&c_sources);
+    let label = "cursor.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert_eq!(expanded.matches("normalize()").count(), 1, "{expanded}");
+    let (_, pointer_certificate) = expanded.split_once("normalize()").unwrap();
+    assert!(
+        pointer_certificate.contains("at(head, p) == (old(p) + (old(n) - at(head, n)))"),
+        "{pointer_certificate}"
+    );
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s for widened-sum and loop expansion with cold replay"]
 fn intrinsic_sum_bounds_expand_without_normalize() {
     for (fixture, label) in [
