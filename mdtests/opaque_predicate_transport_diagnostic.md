@@ -1,14 +1,13 @@
 # Opaque predicate transport recommends unfolding
 
-An opaque predicate hides the memory it observes, so Click cannot frame it
-across even a local-only C transition. Smart `transport` should explain the
-explicit proof path rather than expose certificate-reconstruction internals.
+The store to `p` changes the array version. An opaque predicate hides
+which cells it observes. Smart `transport` should explain how to expose
+the selected predicate's reads when it cannot frame the predicate.
 
 ```c filename=opaque_predicate_transport_diagnostic.c
 int32 preserve_sorted(int32 p[3]) {
-    int32 local;
-    local = 0;
-    return local;
+    p[0] = 1;
+    return 0;
 }
 ```
 
@@ -25,10 +24,10 @@ predicate sorted(p: int32[], n: int32) {
 
 int32 preserve_sorted(int32 p[3]) {
     requires viewable(p[0..3]);
+    owns p[0..1];
     requires sorted(p, 3);
     ensures sorted(p, 3);
 } by {
-    step();
     step();
     transport(at(function.entry, sorted(p, 3)), sorted(p, 3));
 }
