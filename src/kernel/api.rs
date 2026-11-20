@@ -4990,15 +4990,7 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
     };
     let paths = paths
         .into_iter()
-        .map(|mut path| {
-            if let Some(memory) = statement_outcome_memory(&path.outcome) {
-                path.facts.extend(
-                    memory
-                        .string_literal_loadable_facts()
-                        .into_iter()
-                        .map(ExecutionPureFact::certified),
-                );
-            }
+        .map(|path| {
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
             // Calls apply their callees' verified rules, which describe a
@@ -5125,20 +5117,6 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
             );
         }
     };
-    let paths = paths
-        .into_iter()
-        .map(|mut path| {
-            if let Some(memory) = statement_outcome_memory(&path.outcome) {
-                path.facts.extend(
-                    memory
-                        .string_literal_loadable_facts()
-                        .into_iter()
-                        .map(ExecutionPureFact::certified),
-                );
-            }
-            path
-        })
-        .collect();
     symbolic_execution_statement_execution_with_loop_rule(
         state,
         statement,
@@ -5147,22 +5125,6 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
         &environment,
         loop_evidence,
     )
-}
-
-fn statement_outcome_memory(outcome: &StatementOutcome) -> Option<&SymbolicMemory> {
-    match outcome {
-        StatementOutcome::Normal(state)
-        | StatementOutcome::LoopTestFalse(state)
-        | StatementOutcome::Break(state)
-        | StatementOutcome::Continue(state)
-        | StatementOutcome::Jump { state, .. } => Some(state.memory()),
-        StatementOutcome::Return { state, .. } | StatementOutcome::Throw { state, .. } => {
-            Some(state.memory())
-        }
-        StatementOutcome::VerificationDiverges
-        | StatementOutcome::UndefinedBehavior(_)
-        | StatementOutcome::RuntimeError(_) => None,
-    }
 }
 
 #[cfg(test)]
