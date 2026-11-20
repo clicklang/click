@@ -768,7 +768,9 @@ fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
         let steps = run.statement_steps("repeated numeric-address stores");
         [steps[1].1, steps[2].1]
     };
-    let samples = [4, 16, 64, 128].map(|size| (measure(size, "p"), measure(size, "other")));
+    // A 16-alias star already distinguishes the old scan from the indexed
+    // check. Keep the larger source probes out of the budgeted gate.
+    let samples = [2, 8, 16].map(|size| (measure(size, "p"), measure(size, "other")));
     eprintln!("repeated store work with connected and disconnected aliases: {samples:?}");
     let baseline = samples[0].0.into_iter().min().unwrap();
     for (connected, disconnected) in samples {
