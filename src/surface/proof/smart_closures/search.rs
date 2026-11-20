@@ -10770,6 +10770,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .ok()
                 .filter(|closed| closed.is_complete() || closed.focused_discharged());
         }
+        if let Ok(Some(closed)) = Self::try_interval_exclusion_using(&proof, &premise_pairs) {
+            return Some(closed);
+        }
         // A listed equality under a definedness guard the list does not
         // state: prove the guard from the other listed premises, extract the
         // consequent, and continue from the list with the consequent in the
