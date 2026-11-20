@@ -34,7 +34,7 @@ theorem sequence_length_distinguishes_multiplicity() {
 }
 
 theorem sequence_order_is_observable() {
-    ensures [0, 1] != [1, 0] by solve();
+    ensures [0, 1] != [1, 0] by known();
 }
 
 theorem singleton_contains_its_element(a: int32) {
