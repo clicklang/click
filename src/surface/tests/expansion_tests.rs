@@ -25360,3 +25360,19 @@ fn expanded_call_names_the_folded_supplier() {
         .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
     }
 }
+
+#[test]
+fn explicit_produced_view_release_expands_and_reverifies() {
+    let (source, c_sources) = mdtest_sources("mdtests/explicit_produced_view_restores_owner.md");
+    let c_sources = c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &c_sources, "update")
+        .expect("expand the caller's proof");
+    assert!(expanded.contains("release_view("), "{expanded}");
+    without_implicit_solve_for_claim("update.contract", || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("replay the explicit view release");
+}

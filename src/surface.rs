@@ -2050,6 +2050,8 @@ pub struct EnsureClause {
     /// A resource ensure desugared from `owns`: the function returns what it
     /// was lent, so the clause is evaluated at entry, not at exit.
     borrowed: bool,
+    /// Source requirement index (before aggregate expansion) selected by `from`.
+    view_source: Option<usize>,
     /// A resource ensure nested in a contract `if`. The condition is a
     /// pre-state proposition; the clause is present in the post-state only
     /// when that proposition is established at the call boundary.
@@ -2854,6 +2856,7 @@ fn clone_ensure_clause_iteratively(clause: &EnsureClause) -> EnsureClause {
         },
         proof: clause.proof.clone(),
         borrowed: clause.borrowed,
+        view_source: clause.view_source,
         condition: clause.condition.clone(),
     }
 }
@@ -6081,6 +6084,7 @@ pub enum ProofTactic {
     UnfoldProposition(ClickProposition),
     UnfoldFunction(ClickFunctionApplication),
     UnfoldResource(ResourceClause),
+    ReleaseView(ResourceClause),
     /// `let { witness: name, ... } = unfold(resource)` on a declared
     /// resource: the unfold, with each named `let ... where` witness of the
     /// opened body bound to a proof name.
@@ -6260,6 +6264,7 @@ pub enum SimpleTactic {
     FactTransport,
     Instantiate,
     FoldResource,
+    ReleaseView,
     ConstructResource,
     IteratedOwnership,
 }
@@ -6432,6 +6437,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "fold-resource",
         syntax: "fold(resource)",
+        class: "simple",
+    },
+    PublicTacticForm {
+        id: "release-view",
+        syntax: "release_view(range)",
         class: "simple",
     },
     PublicTacticForm {
@@ -6803,6 +6813,7 @@ impl ProofTactic {
             Self::TransportUsing { .. } => TacticClass::Simple(SimpleTactic::FactTransport),
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
+            Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
             Self::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
             Self::SmartExecute | Self::ExecuteUntil(_) => {
                 TacticClass::smart(SmartTacticKind::Execute)

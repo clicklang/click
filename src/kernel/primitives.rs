@@ -12542,6 +12542,8 @@ pub struct ResourceSpec {
     /// A pre-state proposition controlling a conditional resource effect.
     /// `None` is the ordinary unconditional clause.
     guard: Option<SpecProposition>,
+    /// The normalized input requirement that backs this produced memory view.
+    view_source: Option<usize>,
     /// Source-level clause identity, when lowering expanded one source
     /// clause into more than one normalized specification.  Keeping this on
     /// the spec lets kernel diagnostics retain the surface clause numbering
@@ -12691,6 +12693,7 @@ impl ResourceSpec {
             role,
             state_source,
             guard: None,
+            view_source: None,
             clause_position: None,
             source_arguments: None,
         };
@@ -12987,6 +12990,15 @@ impl ResourceSpec {
         self.guard.as_ref()
     }
 
+    pub(crate) fn with_view_source(mut self, source: usize) -> Self {
+        self.view_source = Some(source);
+        self
+    }
+
+    pub(crate) fn view_source(&self) -> Option<usize> {
+        self.view_source
+    }
+
     pub fn with_guard(mut self, guard: SpecProposition) -> Self {
         self.guard = Some(guard);
         self
@@ -13199,6 +13211,7 @@ impl PartialEq for ResourceSpec {
             && self.role == other.role
             && self.state_source == other.state_source
             && self.guard == other.guard
+            && self.view_source == other.view_source
     }
 }
 
@@ -13215,6 +13228,7 @@ impl Hash for ResourceSpec {
         self.role.hash(state);
         self.state_source.hash(state);
         self.guard.hash(state);
+        self.view_source.hash(state);
     }
 }
 
@@ -13230,6 +13244,7 @@ impl Ord for ResourceSpec {
             self.role,
             self.state_source,
             &self.guard,
+            self.view_source,
         )
             .cmp(&(
                 &other.term,
@@ -13241,6 +13256,7 @@ impl Ord for ResourceSpec {
                 other.role,
                 other.state_source,
                 &other.guard,
+                other.view_source,
             ))
     }
 }

@@ -4847,6 +4847,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: true,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -4892,6 +4893,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: false,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -5289,6 +5291,7 @@ impl Parser {
         let mut contract_lets = Vec::new();
         let mut contract_let_names = BTreeSet::new();
         let mut requires = Vec::new();
+        let mut view_inputs = BTreeMap::new();
         let mut decreases = None;
         let mut constructs = Vec::new();
         let mut ensures = Vec::new();
@@ -5537,6 +5540,7 @@ impl Parser {
                                     ensure: Ensure::Resource(resource),
                                     proof,
                                     borrowed: false,
+                                    view_source: None,
                                     condition: Some(condition.clone()),
                                 },
                                 &contract_lets,
@@ -5631,6 +5635,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: true,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -5644,6 +5649,16 @@ impl Parser {
                         return Err(self.value_binder_refusal(true));
                     }
                     let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                    if self.peek_ident() == Some("as") {
+                        self.position += 1;
+                        if !matches!(resource, ResourceClause::ViewMemory(_)) {
+                            return Err(self.error("a named input view must name one memory range"));
+                        }
+                        let name = self.expect_ident("input view name")?;
+                        if view_inputs.insert(name.clone(), requires.len()).is_some() {
+                            return Err(self.error(format!("duplicate input view name `{name}`")));
+                        }
+                    }
                     self.expect(Token::Semicolon)?;
                     requires.push(
                         apply_contract_lets_to_requirement(
@@ -5679,6 +5694,42 @@ impl Parser {
                 }
                 Some("produces") => {
                     self.position += 1;
+                    if self.peek_ident() == Some("view")
+                        && self.peek_next() == Some(&Token::LParen)
+                        && self.matching_parentheses[self.position + 1]
+                            .is_some_and(|close| matches!(self.tokens.get(close + 1), Some(Token::Ident(keyword)) if keyword == "from"))
+                    {
+                        self.position += 2;
+                        let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                        if matches!(resource, ResourceClause::ViewMemory(_)) {
+                            self.expect(Token::RParen)?;
+                            self.expect_ident_spelling("from")?;
+                            let name = self.expect_ident("input view name")?;
+                            let source = view_inputs.get(&name).copied().ok_or_else(|| {
+                                self.error(format!("unknown input view `{name}`"))
+                            })?;
+                            let proof = self.parse_proof_clause_or_default()?;
+                            ensure_kinds.push(ClaimClauseKind::Produces);
+                            clause_positions.push(clause_start.clone());
+                            ensures.push(
+                                apply_contract_lets_to_ensure_clause(
+                                    EnsureClause {
+                                        proof_bindings: Vec::new(),
+                                        name: None,
+                                        ensure: Ensure::Resource(resource),
+                                        proof,
+                                        borrowed: false,
+                                        view_source: Some(source),
+                                        condition: None,
+                                    },
+                                    &contract_lets,
+                                )
+                                .map_err(|message| self.error(message))?,
+                            );
+                            continue;
+                        }
+                        return Err(self.error("a produced view must name one memory range"));
+                    }
                     let resource = self.parse_function_contract_memory_binding()?;
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
@@ -5700,6 +5751,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: false,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -8851,6 +8903,7 @@ impl Parser {
                 ensure,
                 proof,
                 borrowed: false,
+                view_source: None,
                 condition: None,
             },
             introduced,
@@ -11408,6 +11461,15 @@ impl Parser {
                 let point = self.parse_execution_point()?;
                 self.expect(Token::RParen)?;
                 ProofTactic::ExecuteUntil(point)
+            }
+            "release_view" => {
+                self.expect(Token::LParen)?;
+                let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                if !matches!(resource, ResourceClause::ViewMemory(_)) {
+                    return Err(self.error("release_view requires one memory view"));
+                }
+                self.expect(Token::RParen)?;
+                ProofTactic::ReleaseView(resource)
             }
             "unfold" => {
                 self.expect(Token::LParen)?;
@@ -17859,6 +17921,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
         ensure,
         proof,
         borrowed,
+        view_source,
         condition,
     } = clause;
     match ensure {
@@ -17870,6 +17933,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
                 ensure: Ensure::Resource(resource),
                 proof: proof.clone(),
                 borrowed,
+                view_source,
                 condition: condition.clone(),
             })
             .collect(),
@@ -17879,6 +17943,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
             ensure,
             proof,
             borrowed,
+            view_source,
             condition,
         }],
     }
@@ -18632,6 +18697,7 @@ mod tactic_classification_tests {
         ("unfold-function", "unfold(f(x));"),
         ("unfold-resource", "unfold(reference(p));"),
         ("fold-resource", "fold(reference(p));"),
+        ("release-view", "release_view(*p);"),
         ("unfold-slot", "unfold(reference(p)[0]);"),
         ("fold-slot", "fold(reference(p)[0]);"),
         ("fold-iterated-clause", "fold(reference(p)[..]);"),

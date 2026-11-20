@@ -3353,6 +3353,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::UnfoldResource(_)
             | ProofTactic::UnfoldWitnesses { .. }
             | ProofTactic::FoldResource(_)
+            | ProofTactic::ReleaseView(_)
             | ProofTactic::ConstructResource(_)
             | ProofTactic::Sorry => {
                 return Err(ClickError::new(format!(
@@ -3383,6 +3384,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         | ProofTactic::UnfoldResource(_)
         | ProofTactic::UnfoldWitnesses { .. } => "unfold",
         ProofTactic::FoldResource(_) => "fold",
+        ProofTactic::ReleaseView(_) => "release_view",
         ProofTactic::ConstructResource(_) => "construct",
         ProofTactic::Induct { .. } => "induct",
         ProofTactic::Match(_) => "match",

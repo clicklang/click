@@ -317,6 +317,59 @@ impl<'a> Proof<'a> {
         })
     }
 
+    pub(super) fn apply_release_view(
+        &self,
+        resource: &ResourceClause,
+    ) -> Result<CheckedFocusedTransition, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error("release_view requires an execution proof"));
+        };
+        self.require_execution_frontier("release_view")?;
+        let mut execution = self
+            .execution()
+            .cloned()
+            .ok_or_else(|| self.step_error("release_view requires a running state"))?;
+        let facts = self.facts().clone();
+        let ResourceClause::ViewMemory(segment) = resource else {
+            return Err(self.step_error("release_view requires one memory view"));
+        };
+        let mut segment = segment.clone();
+        if let ProgramExpression::Variable(name) = &mut segment.base {
+            *name = execution
+                .core
+                .reached_state()
+                .locals()
+                .resolve_binding(name);
+        }
+        let element_width =
+            crate::surface::lowering::contract_segment_element_width_with_pointer_types(
+                context.parameter_binding().parameters,
+                &segment,
+                None,
+                None,
+            );
+        let selected = crate::kernel::MemorySegment::new(segment.base, segment.start, segment.end)
+            .with_element_width(element_width);
+        let successor = execution
+            .core
+            .record_view_release(&selected, facts.assumptions())
+            .map_err(|error| self.step_error(error))?;
+        execution.core.state = successor.into();
+        let branch = self
+            .focused_branch()
+            .ok_or_else(|| self.step_error("release_view requires an open goal"))?
+            .with_state(BranchState {
+                facts,
+                execution: Some(Arc::new(execution)),
+            });
+        Ok(CheckedFocusedTransition {
+            locals: self.state().locals().clone(),
+            branch: Some(branch),
+            added_facts: Vec::new(),
+            checked_facts: Vec::new(),
+        })
+    }
+
     fn apply_execution_population_authority_exchange(
         &self,
         resource: &ResourceClause,

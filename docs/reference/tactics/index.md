@@ -3469,6 +3469,7 @@ mathematical product.
 | `unfold(predicate(args))` | simple | Core | Open one selected predicate application. | [Reference](#unfolding-predicates) |
 | `unfold(resource(args))` | simple | Core | Open an owned resource instance. | [Reference](#unfolding-resources) |
 | `fold(resource)` | simple | Core | Assemble a resource from its body and children. | [Reference](#folding-resources) |
+| `release_view(range)` | simple | Specialized | Give up one directly held produced view. | [Reference](#releasing-a-view) |
 | `fold(...) by { ... }` | control | Expansion output | Supply a proof for one fold obligation. | [Reference](#folding-with-one-obligation) |
 | `fold(...) { requires P by ...; }` | control | Expansion output | Supply proofs for selected fold obligations. | [Reference](#folding-with-several-obligations) |
 | `construct(resource)` | simple | Specialized | Create an abstract token authorized by a `constructs` clause. | [Reference](#constructing-resources) |
@@ -3785,6 +3786,14 @@ write. Click opens exactly one resource layer; expansion is unchanged, and
 profiling charges the produced body.
 
 **Checked examples:** [`composite_resource_composes_token.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_composes_token.md), [`unfold_names_its_pieces_on_the_left.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_names_its_pieces_on_the_left.md), [`conditional_resource_unfold_requires_decided_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/conditional_resource_unfold_requires_decided_guard.md), [`composite_resource_once_flag.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_once_flag.md)
+
+### Releasing a view
+
+`release_view(*p);` gives up a directly held memory view produced by a
+call. Write the whole range held by the view. If this ends the borrow,
+write access the caller lent becomes available again. The tactic runs at
+the current C frontier without advancing it. See
+[Producing a view](../../concepts/resources.md#producing-a-view).
 
 ### Folding resources
 

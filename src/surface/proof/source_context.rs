@@ -79,6 +79,7 @@ impl SourceContext {
                     | ProofTactic::UnfoldResource(_)
                     | ProofTactic::UnfoldWitnesses { .. }
                     | ProofTactic::FoldResource(_)
+                    | ProofTactic::ReleaseView(_)
                     | ProofTactic::ObserveResource(_)
                     | ProofTactic::Iterated(_)
                     | ProofTactic::ApplyFactUsing { .. }
