@@ -9271,3 +9271,41 @@ fn integer_match_on_written_constructor_round_trips() {
         "{text}"
     );
 }
+
+#[test]
+fn literal_integer_conversions_round_trip_after_exact_rewrite() {
+    use crate::kernel::proof::PureFactStore;
+    let fixture = ConditionalRoundTrip::new(MachineIntegerType::Int32, "int32");
+    for (conversion, literal, incremented) in [
+        ("to_int32", "7", "8"),
+        ("to_uint32", "4294967295", "4294967296"),
+        ("to_uint64", "18446744073709551615", "18446744073709551616"),
+    ] {
+        let input = "to_integer(y) + 1";
+        let equality = fixture.lower(&format!("{input} == {literal}"));
+        let original = fixture.lower(&format!(
+            "to_integer({conversion}({input})) + 1 == {incremented}"
+        ));
+        let proof = PureFactStore::from_ordered(std::slice::from_ref(&equality))
+            .check_equality_rewrite(&original, &equality)
+            .unwrap();
+        let expected = proof.proposition();
+        let written = format!("to_integer({conversion}({literal})) + 1 == {incremented}");
+        assert_eq!(fixture.lower(&written), *expected, "{written}");
+        assert!(
+            crate::kernel::proof::fact_reasoning::computes_leaf(expected),
+            "{written}"
+        );
+        let raised =
+            synthesize_surface_proposition(expected, ParameterBinding::default(), &fixture.state)
+                .unwrap();
+        let text = crate::surface::printing::source_click_proposition(&raised);
+        assert!(text.contains(conversion), "{text}");
+        assert_eq!(
+            relower_written_proposition(&raised, &fixture.state).unwrap(),
+            *expected,
+            "{text}"
+        );
+        assert_eq!(fixture.lower(&text), *expected, "{text}");
+    }
+}

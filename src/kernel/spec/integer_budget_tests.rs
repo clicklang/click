@@ -946,7 +946,20 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         )
         .expect("representable Integer constants should convert");
         assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].value.clone().into_native(), expected);
+        let root = paths[0]
+            .value
+            .shared()
+            .expect("retained literal conversion");
+        assert!(matches!(
+            root.node(),
+            KernelTermNode::IntegerToMachine { .. }
+        ));
+        let (actual, value) = MachineOperandView::Shared(root)
+            .checked_literal_integer_conversion()
+            .unwrap();
+        assert_eq!(actual, destination);
+        assert_eq!(destination.constant_value(value), Some(expected));
+        assert!(paths[0].obligations.is_empty());
     }
 }
 

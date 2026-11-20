@@ -1,5 +1,11 @@
-// Owned frames shared by the two context color-flip proofs.
+// Owned frames shared by the augmented insertion color-flip proofs.
 import "rbtree_size_context_resources.click";
+
+resource sized_flip_root_link(root: struct rb_root*) {
+    field top: int32*;
+    owns root->rb_node;
+    fact root->rb_node == top;
+}
 
 // The recoloring calls change parent words, retaining every tree link.
 resource sized_context_flip_links(root: struct rb_root*, x: struct rb_node*, y: struct rb_node*, z: struct rb_node*) {

@@ -2427,6 +2427,10 @@ id = "library.cpp.std::span<T>::data"
 path = "reference/library/index.md#stdspant"
 
 [[item]]
+id = "library.cpp.std::vector<unsigned char>::size"
+path = "reference/library/index.md#stdvectorunsigned-char"
+
+[[item]]
 id = "library.cpp.std::span<T>::empty"
 path = "reference/library/index.md#stdspant"
 
@@ -5363,6 +5367,10 @@ path = "reference/library/index.md#integerfloat64_pointer_translate_uint64"
 [[item]]
 id = "library.theorem.integer::float64_pointer_add_associate_uint64"
 path = "reference/library/index.md#integerfloat64_pointer_add_associate_uint64"
+
+[[item]]
+id = "library.type.VarArg"
+path = "reference/library/index.md#vararg"
 
 [[item]]
 id = "library.type.WriteAttempt"

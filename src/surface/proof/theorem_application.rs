@@ -1492,6 +1492,9 @@ fn pointer_element_width_for_argument(
     known: &BTreeMap<String, u32>,
 ) -> Option<u32> {
     match argument {
+        ContractExpression::MemoryLoad { value_type, .. } => {
+            value_type.pointee_type().map(ProgramType::byte_width)
+        }
         ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
             known.get(name).copied()
         }

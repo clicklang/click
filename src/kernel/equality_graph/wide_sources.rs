@@ -16,11 +16,13 @@ pub(in crate::kernel) struct NumericAddressConnectivity {
     objects: PersistentMap<Address, u64>,
     components: PersistentComponents<u64>,
     next_id: u64,
+    has_variable_endpoint: bool,
 }
 
 impl NumericAddressConnectivity {
     pub(in crate::kernel) fn record(&mut self, endpoints: [(&Key, &MachineTerm); 2]) {
         let [left, right] = endpoints.map(|(key, term)| {
+            self.has_variable_endpoint |= key.operand_view().variable().is_some();
             let operand = Self::node(&mut self.operands, &mut self.next_id, key);
             if let Some(address) = term.address_pointer() {
                 let bucket = crate::kernel::assumptions::parameter_alias_bucket(address);
@@ -40,6 +42,13 @@ impl NumericAddressConnectivity {
         *next_id += 1;
         nodes.insert(key.clone(), id);
         id
+    }
+
+    /// A raw variable equality can stand for a parameter address without
+    /// naming its object bucket. Preserve the conservative store fallback
+    /// when such an endpoint may be present.
+    pub(super) fn has_raw_store_alias_endpoints(&self) -> bool {
+        self.has_variable_endpoint
     }
 
     pub(in crate::kernel) fn connected(&self, left: &Address, right: &Address) -> bool {

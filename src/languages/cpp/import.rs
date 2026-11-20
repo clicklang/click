@@ -345,6 +345,9 @@ fn export(
     for template in &config.templates {
         arguments.extend(["--generic-template".into(), template.clone()]);
     }
+    for record in super::standard_library::LAYOUT_FREE_RECORDS {
+        arguments.extend(["--layout-free-library-record".into(), (*record).into()]);
+    }
     arguments.extend([
         "--source".into(),
         source.to_string_lossy().into_owned(),

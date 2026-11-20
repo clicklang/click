@@ -2393,6 +2393,17 @@ fn retained_enum_field_value(
     declared: &AlgebraicValueType,
     value: crate::kernel::execution_value::ExecutionValue,
 ) -> Option<KernelTerm> {
+    // A logical field holds the value's mathematical observation, never a C
+    // representation record: a 64-bit C integer that may carry pointer
+    // provenance is stored as the plain `int64` a Click expression writes,
+    // so the constructor a C call builds is the one a proof writes.
+    if matches!(declared, AlgebraicValueType::Program(_))
+        && let ProgramValue::PointerInteger(_) = value.native().as_ref()
+    {
+        let numeric = value.native().numeric_value().clone();
+        return enum_field_value(declared, numeric)
+            .map(|field| KernelTermImport::default().match_field(&field));
+    }
     if let Some(root) = value.shared() {
         if matches!(declared, AlgebraicValueType::Algebraic { .. })
             && let KernelType::Algebraic(ty) = root.ty()

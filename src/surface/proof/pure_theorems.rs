@@ -2777,6 +2777,7 @@ pub(super) fn click_function_applications(
 
             ContractExpression::IntegerLiteral(_) => {}
             ContractExpression::CUnary { operand: inner, .. }
+            | ContractExpression::MemoryLoad { pointer: inner, .. }
             | ContractExpression::Negate(inner) => expression(inner, known_facts, applications),
             ContractExpression::ResourceField(_)
             | ContractExpression::AlgebraicVariable { .. }

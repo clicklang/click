@@ -158,6 +158,9 @@ const SPAN_ELEMENTS: &[SpanElement] = &[
     },
 ];
 
+/// System record names admitted as nominal references for catalog contracts.
+pub(super) const LAYOUT_FREE_RECORDS: &[&str] = &["std::vector<unsigned char>"];
+
 /// The Click library file that states the `std::span<T>` and
 /// `std::span<T, N>` contracts, as template methods a sidecar writes.
 pub(crate) const SPAN_LIBRARY: &str = include_str!("../../../library/cpp/span.interface.click");
@@ -171,9 +174,19 @@ pub(crate) const ARRAY_LIBRARY: &str = include_str!("../../../library/cpp/array.
 pub(crate) const AS_WRITABLE_BYTES_LIBRARY: &str =
     include_str!("../../../library/cpp/as_writable_bytes.interface.click");
 
+const VECTOR_LIBRARY: &str = include_str!("../../../library/cpp/vector.interface.click");
+
 /// Logical descriptor contracts, currently selected for dynamic `std::span<int>`.
 const SPAN_STATE_CONTRACTS: &str =
     include_str!("../../../library/cpp/span_state_contracts.interface.click");
+
+/// Resolved declarations whose contracts are written at their exact types.
+const CONCRETE_LIBRARY_FUNCTIONS: &[(&str, &str, &[&str], &str)] = &[(
+    "std::vector<unsigned char>::size",
+    "unsigned long (void) const noexcept",
+    &["std", "vector<unsigned char>", "size"],
+    VECTOR_LIBRARY,
+)];
 
 /// The exact standard signatures that the Click library maps to templates: each instance's qualified name and canonical signature as Clang
 /// spells them, the library template's path, and its file. An axiom
@@ -293,12 +306,12 @@ const LIBRARY_CLASSES: &[LibraryClass] = &[
 /// static extent, or one whose byte size does not fit a `uint64`, is no
 /// instance, so a call is refused by name.
 fn library_method(axiom: &super::schema::CppAxiom) -> Option<(String, &'static str)> {
-    if let Some((_, _, path, library)) =
-        LIBRARY_FUNCTIONS
-            .iter()
-            .find(|(qualified_name, signature, _, _)| {
-                *qualified_name == axiom.qualified_name && *signature == axiom.signature
-            })
+    if let Some((_, _, path, library)) = LIBRARY_FUNCTIONS
+        .iter()
+        .chain(CONCRETE_LIBRARY_FUNCTIONS)
+        .find(|(qualified_name, signature, _, _)| {
+            *qualified_name == axiom.qualified_name && *signature == axiom.signature
+        })
     {
         return Some((super::names::path_name(path), library));
     }
@@ -368,7 +381,8 @@ pub(super) fn has_nonthrowing_contract(axiom: &super::schema::CppAxiom) -> bool 
 /// The library method an axiom is an instance of, by importer name
 /// ([`library_method`]).
 pub(super) fn library_generic(axiom: &super::schema::CppAxiom) -> Option<String> {
-    library_method(axiom).map(|(generic, _)| generic)
+    let (name, _) = library_method(axiom)?;
+    is_library_generic(&name).then_some(name)
 }
 
 /// Whether `generic`, a method's importer name, is a Click library

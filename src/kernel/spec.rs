@@ -6801,34 +6801,40 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             let (lower, upper) = integer_machine_bounds(*destination);
             let mut paths = Vec::new();
             for path in integer_paths {
-                if let Some(value) = integer_constant_to_machine(&path.value, *destination) {
-                    paths.push(SpecExpressionPath {
-                        value: value.into(),
-                        facts: path.facts,
-                        obligations: path.obligations,
-                    });
-                    continue;
-                }
-                if path.value.as_const().is_some() {
-                    return Err(ExecutionLimit::Paths);
-                }
                 let mut obligations = path.obligations;
-                let lower_bound = Proposition::condition_is(
-                    ConditionTerm::integer_greater_equal(
-                        path.value.clone().into_native_compat(),
-                        lower.clone(),
-                    ),
-                    true,
-                );
-                let upper_bound = Proposition::condition_is(
-                    ConditionTerm::integer_less_equal(
-                        path.value.clone().into_native_compat(),
-                        upper.clone(),
-                    ),
-                    true,
-                );
-                retain_required_integer_obligation(&mut obligations, assumptions, lower_bound);
-                retain_required_integer_obligation(&mut obligations, assumptions, upper_bound);
+                if let Some(literal) = path.value.as_const() {
+                    let constant =
+                        MachineIntegerConstant::from_integer(destination.format(), literal)
+                            .ok_or(ExecutionLimit::Paths)?;
+                    if budget.machine_result_production_disabled {
+                        paths.push(SpecExpressionPath {
+                            value: destination
+                                .constant_value(constant)
+                                .ok_or(ExecutionLimit::Paths)?
+                                .into(),
+                            facts: path.facts,
+                            obligations,
+                        });
+                        continue;
+                    }
+                } else {
+                    let lower_bound = Proposition::condition_is(
+                        ConditionTerm::integer_greater_equal(
+                            path.value.clone().into_native_compat(),
+                            lower.clone(),
+                        ),
+                        true,
+                    );
+                    let upper_bound = Proposition::condition_is(
+                        ConditionTerm::integer_less_equal(
+                            path.value.clone().into_native_compat(),
+                            upper.clone(),
+                        ),
+                        true,
+                    );
+                    retain_required_integer_obligation(&mut obligations, assumptions, lower_bound);
+                    retain_required_integer_obligation(&mut obligations, assumptions, upper_bound);
+                }
                 let value: SpecValue = if budget.machine_result_production_disabled {
                     program_value_from_bitvector_term(
                         destination.program_type(),
@@ -8558,14 +8564,6 @@ pub(in crate::kernel) fn program_value_bitvector_term(value: &ProgramValue) -> O
         | ProgramValue::Float64(term) => Some(term.clone()),
         ProgramValue::Void | ProgramValue::Pointer(_) | ProgramValue::Parameter(_) => None,
     }
-}
-
-fn integer_constant_to_machine(
-    value: &IntegerResult,
-    destination: MachineIntegerType,
-) -> Option<ProgramValue> {
-    let value = MachineIntegerConstant::from_integer(destination.format(), value.as_const()?)?;
-    destination.constant_value(value)
 }
 
 pub(super) fn integer_machine_bounds(

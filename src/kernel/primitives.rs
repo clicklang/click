@@ -11930,6 +11930,44 @@ impl InstanceId {
     }
 }
 
+/// The proof name of one exact mutex authority occurrence (a live, use or
+/// guard authority bound by a named resource clause). It is an alias in a
+/// state's named-authority table, never a resource instance or a value.
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct MutexAuthorityId(Variable);
+
+/// Prints as the number it is carried as, like [`InstanceId`].
+impl std::fmt::Debug for MutexAuthorityId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl MutexAuthorityId {
+    /// A mutex authority name from the binder number it is carried as.
+    pub const fn from_variable(variable: Variable) -> Self {
+        Self(variable)
+    }
+
+    /// The binder number, for call binding maps still keyed by it.
+    pub const fn variable(self) -> Variable {
+        self.0
+    }
+}
+
+/// The caller authority a call binding map gives a callee's mutex authority
+/// binder. Binding maps are keyed by binder number because they also carry
+/// instance binders; this is the one place a mutex authority leaves them.
+pub(crate) fn bound_mutex_authority(
+    bindings: &BTreeMap<Variable, Variable>,
+    formal: MutexAuthorityId,
+) -> Option<MutexAuthorityId> {
+    bindings
+        .get(&formal.variable())
+        .copied()
+        .map(MutexAuthorityId::from_variable)
+}
+
 /// The instance a binder names in a resource binding map. A binding map is
 /// keyed by binder number because it also carries named mutex-authority
 /// binders (see [`ResourceSpec::binding_identity`]); this is the one place an
@@ -12411,7 +12449,7 @@ pub struct ResourceSpec {
     term: ResourceTerm,
     /// A proof binder for one raw mutex authority. This does not change the
     /// resource family or turn the authority into a composite instance.
-    mutex_authority_binding: Option<Arc<(Variable, String)>>,
+    mutex_authority_binding: Option<Arc<(MutexAuthorityId, String)>>,
     access: ResourceAccessMode,
     quantity: ResourceQuantity,
     quantity_state_source: ResourceStateSource,
@@ -12795,7 +12833,7 @@ impl ResourceSpec {
 
     pub fn with_mutex_authority_binding(
         mut self,
-        identity: Variable,
+        identity: MutexAuthorityId,
         binder: String,
     ) -> Result<Self, ResourceSpecError> {
         if !matches!(
@@ -12815,7 +12853,7 @@ impl ResourceSpec {
         Ok(self)
     }
 
-    pub fn mutex_authority_binding(&self) -> Option<(Variable, &str)> {
+    pub fn mutex_authority_binding(&self) -> Option<(MutexAuthorityId, &str)> {
         self.mutex_authority_binding
             .as_ref()
             .map(|entry| (entry.0, entry.1.as_str()))
@@ -12835,7 +12873,10 @@ impl ResourceSpec {
     pub fn binding_identity(&self) -> Option<Variable> {
         self.instance_identity()
             .map(InstanceId::variable)
-            .or_else(|| self.mutex_authority_binding().map(|(identity, _)| identity))
+            .or_else(|| {
+                self.mutex_authority_binding()
+                    .map(|(identity, _)| identity.variable())
+            })
     }
 
     pub fn access(&self) -> ResourceAccessMode {
@@ -13164,7 +13205,10 @@ mod named_mutex_authority_spec_tests {
             let unnamed = authority(term);
             let named = unnamed
                 .clone()
-                .with_mutex_authority_binding(Variable(9), "guard".into())
+                .with_mutex_authority_binding(
+                    MutexAuthorityId::from_variable(Variable(9)),
+                    "guard".into(),
+                )
                 .unwrap();
             assert_eq!(named.term(), unnamed.term());
             assert_eq!(named.family(), unnamed.family());
@@ -13172,7 +13216,7 @@ mod named_mutex_authority_spec_tests {
             assert_eq!(named.instance_identity(), None);
             assert_eq!(
                 named.mutex_authority_binding(),
-                Some((Variable(9), "guard"))
+                Some((MutexAuthorityId::from_variable(Variable(9)), "guard"))
             );
             assert_ne!(named, unnamed);
             assert_ne!(named.cmp(&unnamed), std::cmp::Ordering::Equal);
@@ -13182,11 +13226,14 @@ mod named_mutex_authority_spec_tests {
                     .with_role(ResourceTransferRole::Consume)
                     .with_state_source(ResourceStateSource::Entry)
                     .mutex_authority_binding(),
-                Some((Variable(9), "guard"))
+                Some((MutexAuthorityId::from_variable(Variable(9)), "guard"))
             );
             assert!(
                 named
-                    .with_mutex_authority_binding(Variable(10), "another".into())
+                    .with_mutex_authority_binding(
+                        MutexAuthorityId::from_variable(Variable(10)),
+                        "another".into()
+                    )
                     .is_err()
             );
         }
@@ -13197,14 +13244,20 @@ mod named_mutex_authority_spec_tests {
         let token = ResourceSpec::token(ResourceAccessMode::Own, "token".into(), vec![], vec![]);
         assert!(
             token
-                .with_mutex_authority_binding(Variable(1), "token".into())
+                .with_mutex_authority_binding(
+                    MutexAuthorityId::from_variable(Variable(1)),
+                    "token".into()
+                )
                 .is_err()
         );
         let composite =
             ResourceSpec::composite(ResourceAccessMode::Own, "state".into(), vec![], vec![]);
         assert!(
             composite
-                .with_mutex_authority_binding(Variable(1), "state".into())
+                .with_mutex_authority_binding(
+                    MutexAuthorityId::from_variable(Variable(1)),
+                    "state".into()
+                )
                 .is_err()
         );
         let mutex = Box::new(ProgramExpression::Value(ProgramValue::pointer(
