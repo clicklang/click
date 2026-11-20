@@ -228,7 +228,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "call",
     "cases",
     "close_invariants",
-    "construct",
     "constructs",
     "consumes",
     "contains",
@@ -1458,12 +1457,12 @@ pub struct CallBinderBinding {
     /// The callee's binder name, written on the left of the map entry.
     binder: String,
     /// The binder number the callee's own contract gave that binder.
-    binder_identity: crate::kernel::ResourceBinderId,
+    binder_identity: crate::kernel::ResourceBinder,
     /// The caller's resource name.
     instance: String,
     /// The binder number of the caller's resource; the callee's clause for
     /// `binder` says whether it names an instance or a mutex authority.
-    identity: crate::kernel::ResourceBinderId,
+    identity: crate::kernel::ResourceBinder,
     /// The resource a produced instance is, from the callee's contract;
     /// `None` for an instance the caller supplies.
     family: Option<String>,
@@ -1483,11 +1482,11 @@ impl CallBinderBinding {
         &self.instance
     }
 
-    pub(crate) fn binder_identity(&self) -> crate::kernel::ResourceBinderId {
+    pub(crate) fn binder_identity(&self) -> crate::kernel::ResourceBinder {
         self.binder_identity
     }
 
-    pub(crate) fn identity(&self) -> crate::kernel::ResourceBinderId {
+    pub(crate) fn identity(&self) -> crate::kernel::ResourceBinder {
         self.identity
     }
 
@@ -2276,7 +2275,7 @@ pub struct ResourceInstanceBinding {
     name: String,
     /// What the binder names comes from its resource: an instance, or a
     /// mutex authority for a named mutex live, use or guard clause.
-    identity: crate::kernel::ResourceBinderId,
+    identity: crate::kernel::ResourceBinder,
     children: Vec<String>,
     schema: Option<crate::kernel::ResourceFieldSchema>,
     fields: Option<crate::kernel::ResourceFieldValues>,
@@ -2285,6 +2284,20 @@ pub struct ResourceInstanceBinding {
     /// Explicit child slot, surface name, and instance identity. Shared to
     /// keep recursive tactic syntax small.
     child_bindings: Option<std::sync::Arc<[(String, String, crate::kernel::InstanceId)]>>,
+}
+
+impl ResourceInstanceBinding {
+    /// The instance this binding names. A binding of a named mutex live,
+    /// use or guard authority names no instance, so a use that needs one
+    /// (a field, a fold or unfold, a child, an instance argument) is refused.
+    pub(crate) fn instance(&self) -> Result<crate::kernel::InstanceId, ClickError> {
+        self.identity.instance().ok_or_else(|| {
+            ClickError::new(format!(
+                "`{}` names a mutex authority, not a resource instance",
+                self.name
+            ))
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -2378,9 +2391,16 @@ pub enum ClickProposition {
     Loadable {
         segment: ContractSegment,
     },
+    /// `defined(e)`: the definedness special form. Unlike the point
+    /// selectors `old`, `at` and `exact`, which are `SurfaceTerm`s, it is a
+    /// proposition, and it lowers `e` keeping native address checks
+    /// (`checking_definedness`). See `docs/reference/glossary.md#special-forms`.
     Defined {
         expression: ContractExpression,
     },
+    /// `at(point, P)`: the `at` special form in proposition position, the
+    /// whole proposition `P` stated at `point`. `SurfaceTerm::At` is the term
+    /// position.
     At {
         selector: ProgramPointSelector,
         proposition: Box<ClickProposition>,
@@ -3399,15 +3419,23 @@ pub enum SurfaceTerm {
         region: CodeRegionRef,
         name: String,
     },
+    /// `old(e)`: a point-selecting special form, sugar for
+    /// `at(function.entry, e)`. The special forms are `old`, `at`, `exact`
+    /// and `defined` (`ClickProposition::Defined`); see
+    /// `docs/reference/glossary.md#special-forms`.
     Old(Box<ContractExpression>),
+    /// `at(point, e)`: a point-selecting special form, `e` read when the
+    /// proof path was at `point`. `ClickProposition::At` is the same form in
+    /// proposition position.
     At {
         selector: ProgramPointSelector,
         expression: Box<ContractExpression>,
     },
-    /// `exact(place)`: the read of `place` named by the state in scope
-    /// itself, with no version walk (`design/exact-reads.md`). It applies to
-    /// the outermost read only; reads computing the place's address stay
-    /// ordinary. It grants no access and adds no facts.
+    /// `exact(place)`, a point-selecting special form: the read of `place`
+    /// named by the state in scope itself, with no version walk
+    /// (`design/exact-reads.md`). It applies to the outermost read only;
+    /// reads computing the place's address stay ordinary. It grants no
+    /// access and adds no facts.
     Exact(Box<ContractExpression>),
     Negate(Box<ContractExpression>),
     Add(Box<ContractExpression>, Box<ContractExpression>),
@@ -5712,7 +5740,7 @@ struct SpecElaborationContext {
     contract_result_in_scope: bool,
     /// A fixed return value, separate from all lexical bindings.
     contract_result: Option<std::sync::Arc<SpecExpression>>,
-    /// Preserve native address checks inside an explicit `defined(...)`.
+    /// Preserve native address checks inside the `defined(...)` special form.
     checking_definedness: bool,
 }
 
@@ -6140,7 +6168,6 @@ pub enum ProofTactic {
     },
     /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
-    ConstructResource(ResourceClause),
     Witness(ProofWitness),
     LetSatisfy(ProofLetSatisfy),
     Choose(ProofChoice),
@@ -6270,7 +6297,6 @@ pub enum SimpleTactic {
     Instantiate,
     FoldResource,
     ReleaseView,
-    ConstructResource,
     IteratedOwnership,
 }
 
@@ -6467,11 +6493,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "unfold-iterated-clause",
         syntax: "unfold(resource(args)[..])",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "construct-resource",
-        syntax: "construct(resource)",
         class: "simple",
     },
     PublicTacticForm {
@@ -6820,7 +6841,6 @@ impl ProofTactic {
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
-            Self::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
             Self::SmartExecute | Self::ExecuteUntil(_) => {
                 TacticClass::smart(SmartTacticKind::Execute)
             }

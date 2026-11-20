@@ -5893,6 +5893,40 @@ fn is_recognized_representation_copy_block(
     Ok(standard_library_function_block(name)?.as_ref() == Some(function_block))
 }
 
+/// An exact lowered range names one input clause, or records that multiple
+/// clauses wrote that range. Construct this index from the contract's own
+/// requirements before any call has an execution state.
+struct DirectViewInputs<'a>(BTreeMap<&'a crate::kernel::MemorySegment, Option<usize>>);
+
+impl<'a> DirectViewInputs<'a> {
+    fn new(requirements: &'a [ResourceSpec]) -> Self {
+        let mut inputs = BTreeMap::new();
+        for (index, spec) in requirements.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            if spec.is_view()
+                && spec.guard().is_none()
+                && let Some(segment) = spec.memory_segment()
+            {
+                inputs
+                    .entry(segment)
+                    .and_modify(|source| *source = None)
+                    .or_insert(Some(index));
+            }
+        }
+        Self(inputs)
+    }
+
+    fn lookup(&self, output: &crate::kernel::MemorySegment) -> Option<Option<usize>> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.0.get(output).copied()
+    }
+}
+
+#[cfg(test)]
+mod direct_view_inputs_scaling_tests {
+    include!("../scaling_tests/surface/verification/direct_view_inputs.rs");
+}
+
 pub(in crate::surface) fn function_resource_summary(
     function_block: &FunctionBlock,
     parsed_function: &crate::languages::interface::ImportedFunction,
@@ -5916,7 +5950,7 @@ pub(in crate::surface) fn function_resource_summary(
         .filter(|requirement| matches!(requirement, Requirement::Resource(_)))
         .count();
     let resource_positions = function_block.resource_requirement_positions();
-    let has_produced_views = function_block
+    let has_named_view_sources = function_block
         .ensures()
         .iter()
         .any(|clause| clause.view_source.is_some());
@@ -5937,9 +5971,13 @@ pub(in crate::surface) fn function_resource_summary(
             resource_environment,
             &mut requires,
         )?;
-        if has_produced_views
-            && matches!(resource, ResourceClause::ViewMemory(_))
+        if has_named_view_sources
+            && matches!(
+                resource,
+                ResourceClause::ViewMemory(_) | ResourceClause::Declared { .. }
+            )
             && requires.len() == first_spec + 1
+            && requires[first_spec].is_view()
         {
             let source = function_block
                 .requirement_source_clauses
@@ -5972,6 +6010,18 @@ pub(in crate::surface) fn function_resource_summary(
         }
         resource_clause_index += 1;
     }
+    let direct_view_inputs = function_block
+        .ensures()
+        .iter()
+        .any(|clause| {
+            clause.view_source.is_none()
+                && !clause.borrowed()
+                && matches!(
+                    clause.ensure(),
+                    Ensure::Resource(ResourceClause::ViewMemory(_))
+                )
+        })
+        .then(|| DirectViewInputs::new(&requires));
     let mut ensures = Vec::new();
     let ensure_clause_count = function_block
         .ensures()
@@ -6058,9 +6108,38 @@ pub(in crate::surface) fn function_resource_summary(
             }
             if let Some(source) = ensure.view_source {
                 let input = view_inputs.get(&source).ok_or_else(|| {
-                    ClickError::new("the selected input view must lower to one memory range")
+                    ClickError::new(
+                        "the selected input view must lower to one memory range or composite",
+                    )
                 })?;
+                if !spec.is_view()
+                    && !matches!(spec.term(), crate::kernel::ResourceTerm::Composite { .. })
+                {
+                    return Err(ClickError::new(
+                        "`from` requires a produced view or an unnamed composite resource",
+                    ));
+                }
                 spec = spec.with_view_source(*input);
+            } else if !ensure.borrowed() && matches!(resource, ResourceClause::ViewMemory(_)) {
+                let input = direct_view_inputs
+                    .as_ref()
+                    .expect("index for abbreviated produced views")
+                    .lookup(spec.memory_segment().expect("produced memory view"));
+                let source = match input {
+                    Some(Some(source)) => source,
+                    result => {
+                        let problem = if result.is_none() {
+                            "has no direct match"
+                        } else {
+                            "matches multiple input views"
+                        };
+                        return Err(ClickError::new(format!(
+                            "produced view `{}` {problem}; name its input with `views ... as name` and write `from name`",
+                            crate::surface::printing::format_resource_target(resource)
+                        )));
+                    }
+                };
+                spec = spec.with_view_source(source);
             }
             if let Some(guard) = &guard {
                 spec = spec.with_guard(guard.clone());
@@ -6643,21 +6722,16 @@ fn resource_clause_to_resource_spec_with_metadata(
                 retained_state,
                 pointer_element_types,
             )?;
-            if matches!(
-                inner.term(),
-                crate::kernel::ResourceTerm::MutexGuard { .. }
-                    | crate::kernel::ResourceTerm::MutexLive { .. }
-                    | crate::kernel::ResourceTerm::MutexUse { .. }
-            ) {
-                return inner
-                    .with_mutex_authority_binding(
-                        binding.identity.mutex_authority(),
-                        binding.name.clone(),
-                    )
-                    .map_err(|error| ClickError::new(error.to_string()));
-            }
+            let identity = match binding.identity {
+                crate::kernel::ResourceBinder::MutexAuthority(identity) => {
+                    return inner
+                        .with_mutex_authority_binding(identity, binding.name.clone())
+                        .map_err(|error| ClickError::new(error.to_string()));
+                }
+                crate::kernel::ResourceBinder::Instance(identity) => identity,
+            };
             ResourceSpec::instance(
-                binding.identity.instance(),
+                identity,
                 binding.name.clone(),
                 binding.schema.clone().ok_or_else(|| {
                     ClickError::new("resource binding has no checked field schema")
@@ -6957,6 +7031,10 @@ fn resource_clause_to_resource_spec_with_metadata(
                 )
                 .map_err(|error| ClickError::new(error.to_string()));
             }
+            let resource_arguments = resource_arguments
+                .iter()
+                .map(ResourceInstanceBinding::instance)
+                .collect::<Result<Vec<_>, _>>()?;
             ResourceSpec::declared_with_argument_states(
                 match kind {
                     ResourceKind::Composite => ResourceFamily::Composite,
@@ -6970,14 +7048,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 role,
                 retained_state,
             )
-            .map(|spec| {
-                spec.with_resource_arguments(
-                    resource_arguments
-                        .iter()
-                        .map(|reference| reference.identity.instance())
-                        .collect(),
-                )
-            })
+            .map(|spec| spec.with_resource_arguments(resource_arguments))
             .map_err(|error| ClickError::new(error.to_string()))
         }
     }
@@ -7009,7 +7080,10 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
             )?),
         }),
         ResourceClause::Named { binding, resource } => Ok(ResourceClause::Named {
-            binding: match substitutions.instance_rename(&binding.name, binding.identity.instance())
+            binding: match binding
+                .identity
+                .instance()
+                .and_then(|identity| substitutions.instance_rename(&binding.name, identity))
             {
                 Some(name) => ResourceInstanceBinding {
                     name,
@@ -7065,7 +7139,10 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
             resource_arguments: resource_arguments
                 .iter()
                 .map(|binding| {
-                    match substitutions.instance_rename(&binding.name, binding.identity.instance())
+                    match binding
+                        .identity
+                        .instance()
+                        .and_then(|identity| substitutions.instance_rename(&binding.name, identity))
                     {
                         Some(name) => ResourceInstanceBinding {
                             name,

@@ -595,7 +595,14 @@ fn attach_deferred_open_tail(steps: &mut [ProofStep], step: &ProofStep) -> bool 
         return false;
     }
     let mut body = scope_body.steps().to_vec();
-    body.extend(proof.steps().iter().cloned());
+    if matches!(scope, ResourceClause::Named { .. }) && ends_in_terminal_match(&body) {
+        for step in proof.steps() {
+            append_surface_step_to_leaves_ref(&mut body, step);
+        }
+        append_surface_step_to_leaves_ref(&mut body, &ProofStep::FoldResource(resource.clone()));
+    } else {
+        body.extend(proof.steps().iter().cloned());
+    }
     let Ok(body) = ProofCertificate::from_steps(body) else {
         return false;
     };
@@ -960,6 +967,9 @@ pub(super) fn append_surface_tactics_by_leaf(
                     && open_scope == Some(resource)
                 {
                     steps.extend(proof.steps().iter().cloned());
+                    if matches!(resource, ResourceClause::Named { .. }) {
+                        steps.push(ProofStep::FoldResource(resource.clone()));
+                    }
                 } else {
                     push_surface_step(steps, step);
                 }
@@ -1449,6 +1459,13 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
     Ok(steps)
 }
 
+/// The representation a scoped resource operation must restore on exit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum OpenResourceRestoration {
+    Declared { preserve_exposed_body: bool },
+    Named(Arc<crate::kernel::ResourceInstance>),
+}
+
 #[derive(Clone)]
 pub(super) enum PostExecutionTactic {
     /// A written leaf the post-execution context admits
@@ -1462,7 +1479,7 @@ pub(super) enum PostExecutionTactic {
     FoldProved(ProofTactic),
     CloseOpen {
         resource: ResourceClause,
-        preserve_exposed_body: bool,
+        restoration: OpenResourceRestoration,
     },
     Apply(TheoremApplication),
     Have(ProofHave),

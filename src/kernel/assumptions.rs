@@ -2705,7 +2705,7 @@ fn collect_term_memory_loads(
             loads,
             seen_integers,
         ),
-        Term::Memory(_) | Term::ExecutionState(_) => Ok(()),
+        Term::ArrayReadPoint(_) | Term::ExecutionState(_) => Ok(()),
     }
 }
 

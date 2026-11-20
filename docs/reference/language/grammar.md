@@ -137,15 +137,17 @@ documentation inventory keep the following accepted words synchronized.
 | `forall`, `exists` | Universal and existential quantifiers; `exists (x: T, y: U) { P }` binds multiple variables. |
 | `all`, `any`, `fold` | Range proposition and expression methods. |
 | `prop` | Proposition value: `prop { P }`. |
-| `defined`, `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Definedness, readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
-| `old`, `at`, `program` | Point-reading and program-binding forms: `program::name` names a program binding where a Click name has the same name. |
-| `exact` | `exact(place)` reads `place` named by the state in scope itself, with no version walk ([`exact(...)`](index.md#exact)). |
+| `defined` | The definedness [special form](index.md#special-forms), a proposition. |
+| `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
+| `old`, `at` | Point-selecting [special forms](index.md#special-forms): `old(e)` reads at the function's entry, `at(point, e)` at a named point. |
+| `program` | Program-binding qualifier: `program::name` names a program binding where a Click name has the same name. |
+| `exact` | Point-selecting [special form](index.md#special-forms): `exact(place)` reads `place` named by the state in scope itself, with no version walk ([`exact(...)`](index.md#exact)). |
 | `float32_from_bits`, `float64_from_bits` | Literal-only IEEE bit-pattern expressions; see [exact float bit literals](#exact-float-bit-literals). |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
 | `load` | Typed memory read `load<T>(p)`: reads the object at `p` as `T`, a scalar, data pointer, or function pointer `R (*)(A, ...)`; `volatile T` makes the access volatile and `const T*` reads a pointer to `const T`. Expansion writes it for a read with no C place to name it. See [Typed loads](#typed-loads). |
 | `by`, `using` | Proof introduction and exact-premise syntax. |
 | `mark`, `step`, `step_until` | Execution tactics. |
-| `unfold`, `fold`, `observe`, `construct`, `open` | Predicate and resource tactics. |
+| `unfold`, `fold`, `observe`, `open` | Predicate and resource tactics. |
 | `unfold` and `fold` with `[i]` or `[..]` | Expose or restore an iterated ownership slot, or form or dissolve the whole iterated fact. `forall` inside a resource body starts the iterated clause itself. |
 | `apply`, `have`, `if`, `cases`, `all`, `branch`, `outcomes`, `loop` | Theorem application and structural proof tactics. |
 | `both` | Retired conjunction tactic. Use `all { P => { ... } Q => { ... } }`. |

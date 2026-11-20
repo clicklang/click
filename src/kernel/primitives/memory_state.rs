@@ -8657,8 +8657,18 @@ impl ExecutionState {
         else {
             return None;
         };
+        if let Some(version) = self
+            .program_point()
+            .abstract_local_version(slot, value_type)
+        {
+            return Some(AlgebraicTermNode::parameter_load_at(
+                version,
+                slot.clone(),
+                value_type,
+            ));
+        }
         Some(AlgebraicTermNode::parameter_load(
-            crate::kernel::intern_memory(self.memory().clone()),
+            crate::kernel::intern_memory_ref(self.memory()),
             slot.clone(),
             value_type,
         ))

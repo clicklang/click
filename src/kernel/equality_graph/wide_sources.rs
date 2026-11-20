@@ -1,9 +1,10 @@
 //! Exact wide equality premises indexed by shallow operand identity.
 use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+use crate::kernel::assumptions::{parameter_alias_bucket, parameter_partition_variable};
 use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
 use crate::kernel::{
     Address, AddressBase, AddressOffset, ConditionTerm, MachineIntegerType, MachineOperandView,
-    MachineTerm, Proposition,
+    MachineTerm, Proposition, Variable,
 };
 use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
 use std::collections::BTreeSet;
@@ -18,8 +19,15 @@ pub(in crate::kernel) struct NumericAddressConnectivity {
     other_objects: PersistentMap<Address, u64>,
     owner_forest: NumericAddressForest,
     next_id: u64,
-    has_variable_endpoint: bool,
     pointer_alias_roots: PersistentSet<u64>,
+    raw_coordinates: PersistentMap<Variable, RawStoreCoordinate>,
+    raw_coordinate_roots: PersistentSet<u64>,
+}
+
+#[derive(Clone, Debug)]
+enum RawStoreCoordinate {
+    Pending(PersistentSet<u64>),
+    HasWideEquality,
 }
 
 /// The paths through the numeric union forest use only numeric IDs. Keeping
@@ -38,17 +46,22 @@ impl NumericAddressConnectivity {
         has_pointer_alias: impl Fn(&Address) -> bool,
     ) {
         let [left, right] = endpoints.map(|(key, term)| {
-            self.has_variable_endpoint |= key.operand_view().variable().is_some();
-            let operand = Self::node(&mut self.operands, &mut self.next_id, key);
+            if let Some(variable) = key.operand_view().variable() {
+                self.record_raw_coordinate_equality(*variable);
+            }
+            let (operand, _) = Self::node(&mut self.operands, &mut self.next_id, key);
             if let Some(address) = term.address_pointer() {
-                let bucket = crate::kernel::assumptions::parameter_alias_bucket(address);
+                let bucket = parameter_alias_bucket(address);
                 let objects = if Self::can_be_owner(&bucket) {
                     &mut self.owner_forest.objects
                 } else {
                     &mut self.other_objects
                 };
-                let object = Self::node(objects, &mut self.next_id, &bucket);
+                let (object, inserted) = Self::node(objects, &mut self.next_id, &bucket);
                 self.join(operand, object);
+                if inserted && let Some(variable) = parameter_partition_variable(&bucket) {
+                    self.record_coordinate_bucket(*variable, object);
+                }
                 if has_pointer_alias(&bucket) {
                     self.mark_pointer_alias_node(object);
                 }
@@ -59,14 +72,52 @@ impl NumericAddressConnectivity {
     }
 
     fn join(&mut self, left: u64, right: u64) {
-        if let Some((root, absorbed)) = self.owner_forest.components.join(&left, &right)
-            && self.pointer_alias_roots.contains(&absorbed)
-        {
-            self.pointer_alias_roots = self
-                .pointer_alias_roots
-                .without_value(&absorbed)
-                .with_value(root);
+        if let Some((root, absorbed)) = self.owner_forest.components.join(&left, &right) {
+            for marks in [
+                &mut self.pointer_alias_roots,
+                &mut self.raw_coordinate_roots,
+            ] {
+                if marks.contains(&absorbed) {
+                    *marks = marks.without_value(&absorbed).with_value(root);
+                }
+            }
         }
+    }
+
+    fn record_coordinate_bucket(&mut self, variable: Variable, object: u64) {
+        let mut pending = match self.raw_coordinates.get(&variable) {
+            Some(RawStoreCoordinate::HasWideEquality) => {
+                self.mark_raw_coordinate_node(object);
+                return;
+            }
+            Some(RawStoreCoordinate::Pending(nodes)) => nodes.clone(),
+            None => PersistentSet::default(),
+        };
+        pending = pending.with_value(object);
+        self.raw_coordinates
+            .insert(variable, RawStoreCoordinate::Pending(pending));
+    }
+
+    fn record_raw_coordinate_equality(&mut self, variable: Variable) {
+        let pending = match self.raw_coordinates.get(&variable) {
+            Some(RawStoreCoordinate::HasWideEquality) => return,
+            Some(RawStoreCoordinate::Pending(nodes)) => Some(nodes.clone()),
+            None => None,
+        };
+        self.raw_coordinates
+            .insert(variable, RawStoreCoordinate::HasWideEquality);
+        // A coordinate can name multiple bucket spellings. Each pending
+        // bucket is marked once along an extending path, on the first wide
+        // equality for that coordinate. Numeric components remain separate.
+        for node in pending.iter().flat_map(|nodes| nodes.iter()) {
+            crate::instrumentation::record_deterministic_work(1);
+            self.mark_raw_coordinate_node(*node);
+        }
+    }
+
+    fn mark_raw_coordinate_node(&mut self, node: u64) {
+        let root = *self.owner_forest.components.root(&node);
+        self.raw_coordinate_roots = self.raw_coordinate_roots.with_value(root);
     }
 
     // The marks track which numeric components can reach an exact pointer
@@ -112,25 +163,35 @@ impl NumericAddressConnectivity {
             }
     }
 
-    fn node<K: Ord + Clone>(nodes: &mut PersistentMap<K, u64>, next_id: &mut u64, key: &K) -> u64 {
+    fn node<K: Ord + Clone>(
+        nodes: &mut PersistentMap<K, u64>,
+        next_id: &mut u64,
+        key: &K,
+    ) -> (u64, bool) {
         if let Some(id) = nodes.get(key) {
-            return *id;
+            return (*id, false);
         }
         let id = *next_id;
         *next_id += 1;
         nodes.insert(key.clone(), id);
-        id
+        (id, true)
     }
 
-    /// A raw variable equality can stand for a parameter address without
-    /// naming its object bucket. Preserve the conservative store fallback
-    /// when such an endpoint may be present.
-    pub(super) fn has_raw_store_alias_endpoints(&self) -> bool {
-        self.has_variable_endpoint
+    pub(super) fn reaches_raw_store_coordinate(&self, bucket: &Address) -> bool {
+        // The write's own bucket may be absent from the numeric forest.
+        parameter_partition_variable(bucket).is_some_and(|variable| {
+            matches!(
+                self.raw_coordinates.get(variable),
+                Some(RawStoreCoordinate::HasWideEquality)
+            )
+        }) || !self.raw_coordinate_roots.is_empty()
+            && self.object_node(bucket).is_some_and(|node| {
+                self.raw_coordinate_roots
+                    .contains(self.owner_forest.components.root(node))
+            })
     }
 
     pub(in crate::kernel) fn connected(&self, left: &Address, right: &Address) -> bool {
-        use crate::kernel::assumptions::parameter_alias_bucket;
         let node = |address| self.object_node(&parameter_alias_bucket(address));
         let Some(left) = node(left) else {
             return false;

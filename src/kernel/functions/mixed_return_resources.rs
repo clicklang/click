@@ -1655,6 +1655,22 @@ pub(super) struct ProjectedReturnResource {
 }
 
 impl ProjectedReturnResource {
+    pub(super) fn explicitly_backed_pieces(&self, input: usize) -> Vec<ProducedBorrowingPiece> {
+        self.viewed_children
+            .iter()
+            .map(|(piece, source)| ProducedBorrowingPiece {
+                support: super::super::loans::EscapingBorrow {
+                    head: self.support.clone(),
+                    occurrence: self.destination,
+                    root_permission: None,
+                },
+                piece: piece.clone(),
+                input_view: Some(input),
+                sources: Arc::new(vec![*source]),
+            })
+            .collect()
+    }
+
     pub(super) fn constructed_borrowing_pieces(&self) -> Vec<ProducedBorrowingPiece> {
         let children = &self.viewed_children;
         // Normalization may merge adjacent or equal views. Keep the producer's

@@ -706,6 +706,32 @@ fn recorded_point_of_load(
     })
 }
 
+/// An indexed algebraic load names the value held by a local at its
+/// defining write. Check the local's read before offering its spelling.
+fn synthesize_point_held_value(
+    ty: &crate::kernel::AlgebraicType,
+    point: &crate::kernel::ProgramPoint,
+    pointer: &Address,
+    state: &ExecutionState,
+) -> Option<SurfaceTerm> {
+    let raise = |selected: &ExecutionState| {
+        let name = selected.locals().name_for_slot(pointer)?;
+        let ProgramValue::Parameter(held) = selected.held_local_value(name)? else {
+            return None;
+        };
+        let crate::kernel::AlgebraicTermNode::MemoryLoad {
+            point: held_point,
+            pointer: held_pointer,
+        } = &held.node
+        else {
+            return None;
+        };
+        (&held.algebraic_type == ty && held_point == point && held_pointer.as_ref() == pointer)
+            .then(|| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())))
+    };
+    raise(state).or_else(|| synthesize_at_program_point(point, state, raise))
+}
+
 /// The name of the local that keeps `term` in its object at `pointer`, in
 /// `state`: a borrowed Rust enum local `o` read there is spelled `o`. The
 /// local's name reads its object at the point it was last written
@@ -2569,16 +2595,9 @@ fn synthesize_surface_atomic_proposition(
             right: sequence(right, parameter_binding, state, bound_variables)?,
         });
     }
-    // A declared predicate call starts with its hidden logical resource-state
-    // state. Its source call does not write that argument. Each array-ref
-    // argument then lowers to a (memory, pointer) term pair and each value
-    // argument to a single value term, so the remaining kernel argument list
-    // reads back unambiguously: a `SymbolicMemory` term always opens an array-ref
-    // pair. The state the pair names is not written here — the current
-    // memory needs no form, and every caller re-lowers the candidate and
-    // compares it to the kernel fact, so a candidate built against the wrong
-    // state is rejected by that round trip rather than by a guess made
-    // here.
+    // The hidden resource-state argument has no written spelling. A
+    // predicate's array source point is followed by its pointer, so each
+    // argument can be raised at its own recorded point.
     if let Proposition::Predicate {
         name,
         arguments: kernel_arguments,
@@ -2594,7 +2613,7 @@ fn synthesize_surface_atomic_proposition(
         ));
         while index < kernel_arguments.len() {
             match &kernel_arguments[index] {
-                Term::Memory(memory) => {
+                Term::ArrayReadPoint(point) => {
                     let Some(term_source_0 @ Term::ProgramValue(_)) =
                         kernel_arguments.get(index + 1)
                     else {
@@ -2605,8 +2624,8 @@ fn synthesize_surface_atomic_proposition(
                     else {
                         return None;
                     };
-                    call_arguments.push(synthesize_at_memory(
-                        &crate::kernel::intern_memory_ref(memory),
+                    call_arguments.push(synthesize_at_array_read_point(
+                        point,
                         state,
                         |selected| {
                             synthesize_surface_pointer_expression(
@@ -3956,6 +3975,9 @@ fn raise_algebraic_read(
         return None;
     };
     let (point, address) = read.parts();
+    if point.read_version_id().is_some() {
+        return synthesize_point_held_value(ty, point, &address.export().ok()?, state);
+    }
     let memory = point.shared_memory();
     let same_address = |pointer: &Address| address.syntax_equal(&SharedAddress::import(pointer));
     if let Some((parameter, _)) = parameter_binding
@@ -4474,8 +4496,7 @@ fn raise_kernel_term_dispatch(
             let raise = |selected: &ExecutionState| {
                 raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
             };
-            synthesize_at_program_point(point, state, raise)
-                .or_else(|| synthesize_at_memory(point.shared_memory(), state, raise))?
+            synthesize_at_array_read_point(point, state, raise)?
         }
 
         Node::PointerRead { value, .. }
@@ -6394,6 +6415,19 @@ fn synthesize_at_program_point(
     })
 }
 
+fn synthesize_at_array_read_point(
+    point: &crate::kernel::ProgramPoint,
+    state: &ExecutionState,
+    raise: impl Fn(&ExecutionState) -> Option<SurfaceTerm>,
+) -> Option<SurfaceTerm> {
+    if point.read_version_id().is_some() {
+        synthesize_at_program_point(point, state, raise)
+    } else {
+        synthesize_at_program_point(point, state, &raise)
+            .or_else(|| synthesize_at_memory(point.shared_memory(), state, raise))
+    }
+}
+
 /// A state-bearing argument selects its memory by identity. An intermediate
 /// recorded state is as explicit as `old`; no timeline or frame search is
 /// needed to recover that state's source selector.
@@ -6462,22 +6496,7 @@ fn synthesize_legacy_call_argument(
         crate::kernel::PureFunctionArgument::Algebraic(value) => {
             synthesize_surface_algebraic(value, parameter_binding, state, bound_variables)?
         }
-        crate::kernel::PureFunctionArgument::ArrayRef {
-            memory,
-            pointer: ProgramValue::Pointer(pointer),
-            ..
-        } => synthesize_at_memory(
-            &crate::kernel::intern_memory_ref(memory),
-            state,
-            |selected| {
-                synthesize_surface_pointer_expression(
-                    pointer,
-                    parameter_binding,
-                    selected,
-                    bound_variables,
-                )
-            },
-        )?,
+        // Pointer arrays are imported into ArrayReference before raising.
         _ => return None,
     })
 }
@@ -8230,6 +8249,11 @@ fn synthesize_surface_algebraic(
             })
         }
 
+        crate::kernel::AlgebraicTermNode::MemoryLoad { point, pointer }
+            if point.read_version_id().is_some() =>
+        {
+            synthesize_point_held_value(&term.algebraic_type, point, pointer, state)
+        }
         // The value a reference parameter refers to is spelled `*r`.
         crate::kernel::AlgebraicTermNode::MemoryLoad { pointer, .. } => parameter_binding
             .parameters

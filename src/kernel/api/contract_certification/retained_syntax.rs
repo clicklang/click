@@ -57,10 +57,7 @@ impl Comparison {
                     point: bm,
                     pointer: bp,
                 },
-            ) => {
-                am.shared_memory().arena_id() == bm.shared_memory().arena_id()
-                    && self.pointer(ap, bp)
-            }
+            ) => am.read_key() == bm.read_key() && self.pointer(ap, bp),
             // Match/conditional/constructor payloads keep their existing
             // certification route. This boundary admits only call syntax.
             _ => false,
@@ -434,8 +431,7 @@ impl Comparison {
             (N::AlgebraicRead(a), N::AlgebraicRead(b)) => {
                 let (am, ap) = a.parts();
                 let (bm, bp) = b.parts();
-                am.shared_memory().arena_id() == bm.shared_memory().arena_id()
-                    && self.shared_addresses(ap, bp)
+                am.read_key() == bm.read_key() && self.shared_addresses(ap, bp)
             }
             _ => false,
         }
@@ -476,19 +472,18 @@ impl Comparison {
             }
             (
                 A::ArrayRef {
-                    memory: am,
+                    point: am,
                     pointer: ap,
                     element_type: at,
                 },
                 A::ArrayRef {
-                    memory: bm,
+                    point: bm,
                     pointer: bp,
                     element_type: bt,
                 },
             ) => {
                 at == bt
-                    && crate::kernel::intern_memory_ref(am).arena_id()
-                        == crate::kernel::intern_memory_ref(bm).arena_id()
+                    && am.read_key() == bm.read_key()
                     && self.argument(&A::Value(ap.clone()), &A::Value(bp.clone()))
             }
             (A::Algebraic(a), A::Algebraic(b)) => self.algebraic(a, b),
@@ -664,7 +659,7 @@ mod tests {
         for (memory, expected) in [(&memory, true), (&changed, false)] {
             let b = shared(memory);
             let native = A::ArrayRef {
-                memory: memory.clone(),
+                point: crate::kernel::ProgramPoint::of_memory(memory),
                 pointer: ProgramValue::Pointer(pointer.clone()),
                 element_type: ProgramType::Int32,
             };
@@ -1171,7 +1166,7 @@ mod tests {
             )
         };
         let captured = |retained_state: &SymbolicMemory, address| A::ArrayRef {
-            memory: retained_state.clone(),
+            point: ProgramPoint::of_memory(retained_state),
             pointer: ProgramValue::Pointer(address),
             element_type: ProgramType::Int32,
         };

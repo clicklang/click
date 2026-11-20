@@ -788,7 +788,9 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
         Term::Algebraic(term) => {
             collect_algebraic_term_bitvector_variables(term.native_compat(), variables)
         }
-        Term::Memory(memory) => collect_memory_bitvector_variables(memory, variables),
+        Term::ArrayReadPoint(point) => {
+            collect_memory_bitvector_variables(point.memory(), variables)
+        }
         Term::ExecutionState(state) => {
             collect_execution_state_bitvector_variables(state, variables)
         }
@@ -875,9 +877,11 @@ fn collect_algebraic_term_bitvector_variables(
                         collect_integer_variables(value, variables)
                     }
                     PureFunctionArgument::ArrayRef {
-                        memory, pointer, ..
+                        point: memory,
+                        pointer,
+                        ..
                     } => {
-                        collect_memory_bitvector_variables(memory, variables);
+                        collect_memory_bitvector_variables(memory.memory(), variables);
                         collect_program_value_bitvector_variables(pointer, variables);
                     }
                 }
@@ -3112,9 +3116,11 @@ fn collect_integer_variables_seen(
                         collect_algebraic_term_bitvector_variables(value, variables)
                     }
                     PureFunctionArgument::ArrayRef {
-                        memory, pointer, ..
+                        point: memory,
+                        pointer,
+                        ..
                     } => {
-                        collect_memory_bitvector_variables(memory, variables);
+                        collect_memory_bitvector_variables(memory.memory(), variables);
                         collect_program_value_bitvector_variables(pointer, variables);
                     }
                 }

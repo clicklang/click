@@ -4959,10 +4959,18 @@ impl AlgebraicTermNode {
             &pointer,
             ABSTRACT_VALUE_WIDTH,
         );
+        Self::parameter_load_at(ProgramPoint::at(&memory), pointer, parameter)
+    }
+
+    pub(crate) fn parameter_load_at(
+        point: ProgramPoint,
+        pointer: Address,
+        parameter: TypeParameterName,
+    ) -> ProgramValue {
         ProgramValue::Parameter(Box::new(AlgebraicTerm {
             algebraic_type: parameter.algebraic_type(),
             node: Self::MemoryLoad {
-                point: crate::kernel::ProgramPoint::at(&memory),
+                point,
                 pointer: Box::new(pointer),
             },
         }))
@@ -4990,7 +4998,7 @@ pub enum PureFunctionArgument {
     Integer(SharedIntegerTerm),
     Algebraic(AlgebraicTerm),
     ArrayRef {
-        memory: SymbolicMemory,
+        point: ProgramPoint,
         pointer: ProgramValue,
         element_type: ProgramType,
     },
@@ -5615,6 +5623,7 @@ pub enum SpecProposition {
         end: SpecExpression,
         element_width: u32,
     },
+    /// Lowered from the `defined(...)` special form.
     Defined(SpecExpression),
 }
 
@@ -7133,7 +7142,7 @@ pub struct CallBinderTransport {
     /// Every instance binder of that callee, mapped to the caller instance
     /// that supplies it. A `produces` binder maps to the fresh identity the
     /// caller's `let` introduced.
-    pub(crate) bindings: std::sync::Arc<BTreeMap<ResourceBinderId, ResourceBinderId>>,
+    pub(crate) bindings: std::sync::Arc<ResourceBindings>,
     /// Runtime binders that name a resource type, evaluated at the call.
     pub(crate) type_arguments: std::sync::Arc<BTreeMap<Variable, super::ResourceDescription>>,
 }
@@ -11163,6 +11172,8 @@ pub(super) struct ResourceContextStorage {
     /// Exact non-memory observations with live owned support. Separating this
     /// from ordinary views avoids searching equal descriptions for an owner.
     pub(super) nonmemory_projections_by_fact: PersistentMap<ResourceFact, ResourceEntryIds>,
+    /// Explicit views are indexed separately from derived observations.
+    pub(super) principal_views_by_fact: PersistentMap<ResourceFact, ResourceEntryIds>,
     /// Exact owned-entry identity for each supported projection. The fact
     /// cache above is useful for diagnostics, but this occurrence index is
     /// authoritative when one of several equal owned entries is consumed.
@@ -11964,67 +11975,6 @@ impl MutexAuthorityId {
     }
 }
 
-/// A resource binder's number as a proof or contract writes it, before the
-/// clause that declares the binder says what it names. A named resource
-/// clause, a call map entry and a proof's resource name all carry one. It
-/// becomes an [`InstanceId`] or a [`MutexAuthorityId`] only where a clause or
-/// a use decides which ([`Self::instance`], [`Self::mutex_authority`]).
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct ResourceBinderId(Variable);
-
-/// Prints as the number it is carried as, like [`InstanceId`].
-impl std::fmt::Debug for ResourceBinderId {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
-
-impl ResourceBinderId {
-    /// A binder number given out by the surface parser or a runtime binder
-    /// descriptor.
-    pub const fn from_variable(variable: Variable) -> Self {
-        Self(variable)
-    }
-
-    /// The number this binder is carried as, for maps still keyed by it and
-    /// for hidden binder spellings.
-    pub const fn variable(self) -> Variable {
-        self.0
-    }
-
-    /// The binder read as an instance binder: its clause declares an
-    /// exclusive instance, or its use requires one.
-    pub const fn instance(self) -> InstanceId {
-        InstanceId::from_variable(self.0)
-    }
-
-    /// The binder read as a named mutex authority: its clause names a mutex
-    /// live, use or guard authority.
-    pub const fn mutex_authority(self) -> MutexAuthorityId {
-        MutexAuthorityId::from_variable(self.0)
-    }
-
-    /// The binder read in the sort `binder` has.
-    pub const fn in_sort_of(self, binder: ResourceBinder) -> ResourceBinder {
-        match binder {
-            ResourceBinder::Instance(_) => ResourceBinder::Instance(self.instance()),
-            ResourceBinder::MutexAuthority(_) => {
-                ResourceBinder::MutexAuthority(self.mutex_authority())
-            }
-        }
-    }
-}
-
-impl ResourceBinder {
-    /// The written binder number this classified binder came from.
-    pub const fn written(self) -> ResourceBinderId {
-        match self {
-            ResourceBinder::Instance(identity) => ResourceBinderId(identity.variable()),
-            ResourceBinder::MutexAuthority(identity) => ResourceBinderId(identity.variable()),
-        }
-    }
-}
-
 /// A callee's resource binder: an exclusive instance binder or a named
 /// mutex authority binder. Which one a binder is comes from the clause that
 /// declares it ([`ResourceSpec::binding_identity`]).
@@ -12032,6 +11982,33 @@ impl ResourceBinder {
 pub enum ResourceBinder {
     Instance(InstanceId),
     MutexAuthority(MutexAuthorityId),
+}
+
+impl ResourceBinder {
+    /// The instance this binder names, if it is an instance binder.
+    pub const fn instance(self) -> Option<InstanceId> {
+        match self {
+            ResourceBinder::Instance(identity) => Some(identity),
+            ResourceBinder::MutexAuthority(_) => None,
+        }
+    }
+
+    /// The mutex authority this binder names, if it is an authority binder.
+    pub const fn mutex_authority(self) -> Option<MutexAuthorityId> {
+        match self {
+            ResourceBinder::Instance(_) => None,
+            ResourceBinder::MutexAuthority(identity) => Some(identity),
+        }
+    }
+
+    /// The number this binder is carried as, for hidden binder spellings
+    /// and runtime binder descriptors.
+    pub const fn variable(self) -> Variable {
+        match self {
+            ResourceBinder::Instance(identity) => identity.variable(),
+            ResourceBinder::MutexAuthority(identity) => identity.variable(),
+        }
+    }
 }
 
 /// The checked binding of a callee's resource binders to the caller's
@@ -12090,18 +12067,37 @@ impl ResourceBindings {
         self.mutex_authorities.insert(binder, actual)
     }
 
-    /// Binds `binder` to the caller resource a proof's map wrote by its
-    /// binder number, read in the binder's sort. Returns whether the binder
+    /// Binds `binder` to `actual`, a caller resource of the same sort.
+    /// Returns `Err` when the sorts differ, and otherwise whether the binder
     /// was already bound.
-    pub fn insert_written(&mut self, binder: ResourceBinder, written: ResourceBinderId) -> bool {
-        match binder {
-            ResourceBinder::Instance(binder) => {
-                self.insert_instance(binder, written.instance()).is_some()
+    pub fn insert(&mut self, binder: ResourceBinder, actual: ResourceBinder) -> Result<bool, ()> {
+        match (binder, actual) {
+            (ResourceBinder::Instance(binder), ResourceBinder::Instance(actual)) => {
+                Ok(self.insert_instance(binder, actual).is_some())
             }
-            ResourceBinder::MutexAuthority(binder) => self
-                .insert_mutex_authority(binder, written.mutex_authority())
-                .is_some(),
+            (ResourceBinder::MutexAuthority(binder), ResourceBinder::MutexAuthority(actual)) => {
+                Ok(self.insert_mutex_authority(binder, actual).is_some())
+            }
+            _ => Err(()),
         }
+    }
+
+    /// Every binding, instances first, each in binder order.
+    pub fn iter(&self) -> impl Iterator<Item = (ResourceBinder, ResourceBinder)> + '_ {
+        self.instances
+            .iter()
+            .map(|(binder, actual)| {
+                (
+                    ResourceBinder::Instance(*binder),
+                    ResourceBinder::Instance(*actual),
+                )
+            })
+            .chain(self.mutex_authorities.iter().map(|(binder, actual)| {
+                (
+                    ResourceBinder::MutexAuthority(*binder),
+                    ResourceBinder::MutexAuthority(*actual),
+                )
+            }))
     }
 
     /// Adds every binding of `other`, replacing this map's binding of the
@@ -13566,7 +13562,8 @@ pub enum Term {
     Algebraic(StoredAlgebraicTerm),
     // Outcomes carry ExecutionState. Keep them out of Term's inline size so cloning
     // a deep pure proposition does not spend stack on unused C variants.
-    Memory(SymbolicMemory),
+    /// The source point of the following pointer in a predicate array argument.
+    ArrayReadPoint(ProgramPoint),
     ExecutionState(Box<ExecutionState>),
 }
 

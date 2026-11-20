@@ -417,11 +417,12 @@ impl<'a> Proof<'a> {
         })
     }
 
-    fn apply_instance_rewrite(
+    pub(super) fn apply_instance_rewrite(
         &self,
         binding: &ResourceInstanceBinding,
         resource: &ResourceClause,
         unfold: bool,
+        saved_instance: Option<&crate::kernel::ResourceInstance>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         if let ResourceClause::Named { resource, .. } = resource
             && let ResourceClause::Declared { name, .. } = resource.as_ref()
@@ -469,7 +470,9 @@ impl<'a> Proof<'a> {
             outcome.map_or(&*execution.core.state, |goal| &*goal.data.core.state);
         let pre_state = context.old_reference_state(&execution.core.frontier, before);
         let constructed;
-        let instance = if let Some(fields) = &binding.fold_fields {
+        let instance = if let Some(instance) = saved_instance {
+            instance
+        } else if let Some(fields) = &binding.fold_fields {
             if unfold || !binding.children.is_empty() {
                 return Err(self.step_error("explicit fields require a fold construction"));
             }
@@ -559,8 +562,8 @@ impl<'a> Proof<'a> {
                 proposed.push(value);
             }
             let identity = pre_state
-                .owned_resource_instance(binding.identity.instance())
-                .map_or(binding.identity.instance(), |instance| instance.identity());
+                .owned_resource_instance(binding.instance()?)
+                .map_or(binding.instance()?, |instance| instance.identity());
             constructed = crate::kernel::ResourceInstance::new_with_resource_arguments(
                 identity,
                 name,
@@ -573,10 +576,10 @@ impl<'a> Proof<'a> {
             &constructed
         } else {
             before
-                .resource_instance_at_path(binding.identity.instance(), &binding.children)
+                .resource_instance_at_path(binding.instance()?, &binding.children)
                 .or_else(|| {
                     if !unfold && binding.children.is_empty() {
-                        pre_state.owned_resource_instance(binding.identity.instance())
+                        pre_state.owned_resource_instance(binding.identity.instance()?)
                     } else {
                         None
                     }
@@ -938,7 +941,7 @@ impl<'a> Proof<'a> {
                     .map(|child| (&child.name, child.identity))
                     .chain(body.contains().iter().filter_map(|clause| {
                         if let ResourceClause::Named { binding, .. } = clause {
-                            Some((&binding.name, binding.identity.instance()))
+                            Some((&binding.name, binding.identity.instance()?))
                         } else {
                             None
                         }
@@ -1101,6 +1104,54 @@ impl<'a> Proof<'a> {
             branch: Some(updated_branch),
             added_facts: added.clone(),
             checked_facts: added,
+        })
+    }
+
+    /// Close an ordinary named scope using the instance selected at its entry.
+    pub(in crate::surface::proof) fn restore_open_instance(
+        &self,
+        resource: &ResourceClause,
+        instance: &crate::kernel::ResourceInstance,
+    ) -> Result<Self, ClickError> {
+        let ResourceClause::Named { binding, .. } = resource else {
+            unreachable!("a named scope retains its written resource binding")
+        };
+        let transition = self.apply_instance_rewrite(binding, resource, false, Some(instance))?;
+        Ok(Self {
+            state: self.publish_checked_transition(transition)?,
+            ..self.clone()
+        })
+    }
+
+    pub(in crate::surface::proof) fn outcome_holds_open_instance(
+        &self,
+        instance: &crate::kernel::ResourceInstance,
+    ) -> Result<bool, ClickError> {
+        let outcome = self
+            .focused_outcome_data()
+            .ok_or_else(|| self.step_error("named resource scope lost its returning outcome"))?;
+        Ok(outcome
+            .core
+            .state
+            .resources()
+            .owned_instance(instance.identity())
+            == Some(instance))
+    }
+
+    /// Retain the explicit fold written at a returning scope arm's close.
+    pub(in crate::surface::proof) fn apply_explicit_open_instance_fold(
+        &self,
+        resource: &ResourceClause,
+        instance: &crate::kernel::ResourceInstance,
+    ) -> Result<Self, ClickError> {
+        let restored = self.restore_open_instance(resource, instance)?;
+        Ok(Self {
+            node: ProofNode::step_child(
+                &self.node,
+                self.focused_branch_id(),
+                Arc::new(ProofStep::FoldResource(resource.clone())),
+            ),
+            ..restored
         })
     }
 
@@ -2511,7 +2562,7 @@ impl<'a> Proof<'a> {
             );
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, true);
+            return self.apply_instance_rewrite(binding, resource, true, None);
         }
         if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
             return self.apply_execution_population_authority_exchange(resource, false);
@@ -2585,7 +2636,17 @@ impl<'a> Proof<'a> {
             "resource fold: apply selected fold",
         );
         let step = ProofStep::FoldResource(resource.clone());
-        let mut transition = {
+        let at_outcome = self.focused_outcome_data().is_some();
+        let transition = if at_outcome
+            && let ResourceClause::Declared { name, .. } = resource
+            && let ProofContext::Execution(context) = self.context.as_ref()
+            && context
+                .function
+                .contract_interface()
+                .is_ordinary_abstract_family(name)
+        {
+            self.apply_outcome_resource_construction(resource)?
+        } else {
             // Resolve proof bindings before either the execution or
             // outcome path interprets ordinary resource arguments.
             let source_resource = resource;
@@ -2604,18 +2665,20 @@ impl<'a> Proof<'a> {
                     _ => None,
                 })
                 .collect();
-            crate::surface::proof::surface_synthesis::with_proof_local_value_names(
-                named_values,
-                || {
-                    if self.focused_outcome_data().is_some() {
-                        self.apply_outcome_resource_fold(resource)
-                    } else {
-                        self.apply_execution_resource_fold(resource, source_resource)
-                    }
-                },
-            )
-        }?;
-        transition.clear_existential_projection();
+            let mut transition =
+                crate::surface::proof::surface_synthesis::with_proof_local_value_names(
+                    named_values,
+                    || {
+                        if at_outcome {
+                            self.apply_outcome_resource_fold(resource)
+                        } else {
+                            self.apply_execution_resource_fold(resource, source_resource)
+                        }
+                    },
+                )?;
+            transition.clear_existential_projection();
+            transition
+        };
         let state = self.publish_checked_transition(transition)?;
         Ok(Self {
             site: self.site.clone(),
@@ -2644,7 +2707,7 @@ impl<'a> Proof<'a> {
             );
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, false);
+            return self.apply_instance_rewrite(binding, resource, false, None);
         }
         if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
             return self.apply_execution_population_authority_exchange(resource, true);
@@ -2737,7 +2800,7 @@ impl<'a> Proof<'a> {
             ));
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, true);
+            return self.apply_instance_rewrite(binding, resource, true, None);
         }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome resource `unfold` requires an execution proof"));
@@ -2809,7 +2872,7 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// Applies one source-ordered composite fold to the focused branch typed outcome.
+    /// Applies one source-ordered composite fold to the focused branch's typed outcome.
     /// The result/state state and persistent fact root advance together in
     /// the returned Proof successor; no caller-owned outcome is mutated.
     pub(super) fn apply_outcome_resource_fold(
@@ -2824,7 +2887,7 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("resource fold after function outcome is unavailable"));
         }
         if let ResourceClause::Named { binding, .. } = resource {
-            return self.apply_instance_rewrite(binding, resource, false);
+            return self.apply_instance_rewrite(binding, resource, false, None);
         }
         if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
             return Err(self.step_error(
@@ -2843,13 +2906,22 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn close_outcome_resource_scope(
         &self,
         resource: &ResourceClause,
-        preserve_exposed_body: bool,
+        restoration: &OpenResourceRestoration,
         contract_resources_established: bool,
     ) -> Result<Self, ClickError> {
+        let OpenResourceRestoration::Declared {
+            preserve_exposed_body,
+        } = restoration
+        else {
+            let OpenResourceRestoration::Named(instance) = restoration else {
+                unreachable!()
+            };
+            return self.restore_open_instance(resource, instance);
+        };
         let transition = self.apply_outcome_resource_fold_with_closure(
             resource,
             ResourceBodyClosure::CloseOpen {
-                preserve_exposed_body,
+                preserve_exposed_body: *preserve_exposed_body,
             },
             !contract_resources_established,
         )?;
@@ -2998,28 +3070,21 @@ impl<'a> Proof<'a> {
     /// Applies one kernel-checked, zero-source construction to the focused
     /// function outcome. The retained `ProofStep` is the certificate event;
     /// the kernel checks its authorization and exact one-token delta.
-    pub(super) fn apply_outcome_resource_construction(
+    fn apply_outcome_resource_construction(
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        // Constructing an ordinary family's token creates no population
-        // member; an authorized family's member needs its authority.
-        if self.execution().is_some() && !self.names_unauthorized_family(resource) {
-            return Err(self.step_error("resource construction may create untracked members"));
-        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("outcome resource `construct` requires an execution proof"));
+            return Err(self.step_error("abstract token `fold` requires an execution proof"));
         };
         let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() else {
-            return Err(
-                self.step_error("outcome resource `construct` requires a focused outcome goal")
-            );
+            return Err(self.step_error("abstract token `fold` requires a focused outcome goal"));
         };
         let branch_state = &self.focused_branch().expect("focused branch exists").state;
         let execution = branch_state
             .execution
             .as_deref()
-            .ok_or_else(|| self.step_error("resource `construct` lost its execution state"))?;
+            .ok_or_else(|| self.step_error("abstract token `fold` lost its execution state"))?;
         let value = goal.data.core.result.native();
         let state = (*goal.data.core.state).clone();
         let fact = lower_resource_clause_at_state_with_result(
@@ -3039,7 +3104,7 @@ impl<'a> Proof<'a> {
         )
         .map_err(|message| {
             self.step_error(format!(
-                "kernel rejected checked resource `construct`: {message}"
+                "kernel rejected checked resource `fold`: {message}"
             ))
         })?;
         let mut data = (*goal.data).clone();

@@ -192,19 +192,16 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
     let state = ExecutionState::new()
         .with_resource_context(ResourceContext::new().unchecked_with_facts([owned(10), owned(11)]));
     let bind = |callee: &str, pairs: &[(u64, u64)]| {
-        let environment = ExecutionEnvironment::new().with_selected_call_binders(
-            callee,
-            0,
-            pairs
-                .iter()
-                .map(|(binder, instance)| {
-                    (
-                        ResourceBinderId::from_variable(Variable(*binder)),
-                        ResourceBinderId::from_variable(Variable(*instance)),
-                    )
-                })
-                .collect(),
-        );
+        let environment = ExecutionEnvironment::new().with_selected_call_binders(callee, 0, {
+            let mut bindings = crate::kernel::ResourceBindings::new();
+            for (binder, instance) in pairs {
+                bindings.insert_instance(
+                    InstanceId::from_variable(Variable(*binder)),
+                    InstanceId::from_variable(Variable(*instance)),
+                );
+            }
+            bindings
+        });
         selected_call_binder_application(
             "touch",
             function.contract_interface(),

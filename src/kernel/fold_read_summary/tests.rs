@@ -416,7 +416,7 @@ fn application(
         "unmarked".into(),
         vec![
             PureFunctionArgument::ArrayRef {
-                memory: memory.clone(),
+                point: crate::kernel::ProgramPoint::of_memory(memory),
                 pointer: ProgramValue::Pointer(Pointer::new(
                     base.clone(),
                     ProgramType::Int32Pointer,
@@ -992,7 +992,7 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
             "byte_sum".into(),
             vec![
                 PureFunctionArgument::ArrayRef {
-                    memory: memory.clone(),
+                    point: crate::kernel::ProgramPoint::of_memory(memory),
                     pointer: ProgramValue::typed_pointer(base.clone(), ProgramType::UInt8Pointer),
                     element_type,
                 },

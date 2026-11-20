@@ -12,8 +12,7 @@ impl PartialEq for KernelMemoryRead {
     fn eq(&self, other: &Self) -> bool {
         match (&self.observation, &other.observation) {
             (None, None) => {
-                self.point.shared_memory().arena_id() == other.point.shared_memory().arena_id()
-                    && self.address == other.address
+                self.point.read_key() == other.point.read_key() && self.address == other.address
             }
             (Some(a), Some(b)) => self.point == other.point && a == b,
             _ => false,
@@ -28,7 +27,7 @@ impl Hash for KernelMemoryRead {
             self.point.hash(state);
             address.hash(state);
         } else {
-            self.point.shared_memory().arena_id().hash(state);
+            self.point.read_key().hash(state);
             self.address.hash(state);
         }
     }

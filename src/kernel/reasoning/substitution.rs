@@ -1588,11 +1588,12 @@ fn walk_pure_function_argument<S: VariableSubstitution + ?Sized>(
             PureFunctionArgument::Algebraic(s.algebraic_term(value))
         }
         PureFunctionArgument::ArrayRef {
-            memory,
+            point,
             pointer,
             element_type,
         } => PureFunctionArgument::ArrayRef {
-            memory: s.memory(memory),
+            point: point
+                .with_renamed_memory(crate::kernel::intern_memory(s.memory(point.memory()))),
             pointer: s.program_value(pointer),
             element_type: *element_type,
         },
@@ -2662,7 +2663,7 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
         Term::Sequence(sequence) => collect_sequence_bound_variables(sequence, variables),
         Term::Algebraic(term) => collect_algebraic_bound_variables(term.native_compat(), variables),
         Term::ExecutionState(state) => collect_execution_state_bound_variables(state, variables),
-        Term::Memory(memory) => collect_memory_bound_variables(memory, variables),
+        Term::ArrayReadPoint(point) => collect_memory_bound_variables(point.memory(), variables),
     }
 }
 
@@ -3557,10 +3558,8 @@ fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSe
                         collect_algebraic_bound_variables(term, variables)
                     }
                     PureFunctionArgument::Integer(_) => {}
-                    PureFunctionArgument::ArrayRef {
-                        memory, pointer, ..
-                    } => {
-                        collect_memory_bound_variables(memory, variables);
+                    PureFunctionArgument::ArrayRef { point, pointer, .. } => {
+                        collect_memory_bound_variables(point.memory(), variables);
                         collect_program_value_bound_variables(pointer, variables);
                     }
                 }
@@ -3657,10 +3656,8 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
                         collect_algebraic_bound_variables(term, variables)
                     }
                     PureFunctionArgument::Integer(_) => {}
-                    PureFunctionArgument::ArrayRef {
-                        memory, pointer, ..
-                    } => {
-                        collect_memory_bound_variables(memory, variables);
+                    PureFunctionArgument::ArrayRef { point, pointer, .. } => {
+                        collect_memory_bound_variables(point.memory(), variables);
                         collect_program_value_bound_variables(pointer, variables);
                     }
                 }
@@ -3737,10 +3734,8 @@ fn collect_condition_bound_variables(
                         collect_algebraic_bound_variables(term, variables)
                     }
                     PureFunctionArgument::Integer(_) => {}
-                    PureFunctionArgument::ArrayRef {
-                        memory, pointer, ..
-                    } => {
-                        collect_memory_bound_variables(memory, variables);
+                    PureFunctionArgument::ArrayRef { point, pointer, .. } => {
+                        collect_memory_bound_variables(point.memory(), variables);
                         collect_program_value_bound_variables(pointer, variables);
                     }
                 }
@@ -3901,8 +3896,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
             }
             .into(),
         ),
-        Term::Memory(memory) => {
-            Term::Memory(substitute_bitvector_variable_in_memory(memory, from, to))
+        Term::ArrayReadPoint(point) => {
+            Term::ArrayReadPoint(point.with_renamed_memory(crate::kernel::intern_memory(
+                substitute_bitvector_variable_in_memory(point.memory(), from, to),
+            )))
         }
         Term::ExecutionState(state) => Term::ExecutionState(Box::new(
             substitute_bitvector_variable_in_execution_state(state, from, to),
@@ -6176,9 +6173,21 @@ pub(crate) fn substitute_bitvector_variable(
                 .collect(),
         },
         MachineTerm::MemoryLoad(memory, pointer, kind) => {
+            let rewritten_pointer = substitute_bitvector_variable_in_pointer(pointer, from, to);
+            if let Some(entry) = memory.entry_version_after_rewrite(&rewritten_pointer, *kind) {
+                if rewritten_pointer == **pointer {
+                    return term.clone();
+                }
+                // The selected entry is empty, so only the address changes.
+                return crate::kernel::eval::scalar_read_for_exact_cell_at(
+                    &entry,
+                    &rewritten_pointer,
+                    *kind,
+                    kind.byte_width(),
+                );
+            }
             let rewritten_memory =
                 substitute_bitvector_variable_in_shared_memory(memory.shared_memory(), from, to);
-            let rewritten_pointer = substitute_bitvector_variable_in_pointer(pointer, from, to);
             if rewritten_memory == *memory.shared_memory() && rewritten_pointer == **pointer {
                 return term.clone();
             }
@@ -6923,8 +6932,10 @@ fn substitute_pointer_variable_in_term(term: &Term, from: Variable, to: &Address
             }
             .into(),
         ),
-        Term::Memory(memory) => {
-            Term::Memory(substitute_pointer_variable_in_memory(memory, from, to))
+        Term::ArrayReadPoint(point) => {
+            Term::ArrayReadPoint(point.with_renamed_memory(crate::kernel::intern_memory(
+                substitute_pointer_variable_in_memory(point.memory(), from, to),
+            )))
         }
         Term::ExecutionState(state) => Term::ExecutionState(Box::new(
             substitute_pointer_variable_in_execution_state(state, from, to),
@@ -10140,7 +10151,9 @@ mod checked_singleton_substitution_tests {
     fn checked_singleton_substitution_refuses_unsupported_carriers() {
         let source = Proposition::Predicate {
             name: "opaque".into(),
-            arguments: vec![Term::Memory(SymbolicMemory::new())],
+            arguments: vec![Term::ArrayReadPoint(ProgramPoint::of_memory(
+                &SymbolicMemory::new(),
+            ))],
         };
         assert_eq!(
             substitute_machine_constant_in_pure_proposition(&source, Variable(70_103), 7),

@@ -213,7 +213,7 @@ pub(in crate::surface) fn instantiate_predicate_definition(
     // array argument read in a different memory, `old(p)` beside `p`, keeps
     // its own: without it, `b[0]` would read the frame's memory and the
     // body would equate two reads of the same array.
-    let frame_point = crate::kernel::ProgramPoint::of_memory(state.memory());
+    let frame_point = state.program_point();
     let bound_array_memories = array_refs
         .iter()
         .filter(|(_, array_ref)| array_ref.point != frame_point)
@@ -260,13 +260,13 @@ pub(in crate::surface) fn decode_predicate_arguments(
         };
         let mut values = ProgramValueBindings::new();
         let mut array_refs = BTreeMap::new();
-        let mut default_memory = None;
+        let mut default_point = None;
         let mut index = 1;
         for parameter in definition.parameters() {
             if parameter_is_click_array_ref(parameter) {
-                let Some(Term::Memory(memory)) = arguments.get(index) else {
+                let Some(Term::ArrayReadPoint(point)) = arguments.get(index) else {
                     return Err(format!(
-                        "predicate `{}` argument `{}` is missing its array-ref memory",
+                        "predicate `{}` argument `{}` is missing its array-ref source",
                         definition.name(),
                         parameter.name()
                     ));
@@ -287,7 +287,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                         parameter.name()
                     ));
                 };
-                default_memory.get_or_insert_with(|| memory.clone());
+                default_point.get_or_insert(point);
                 let element_type = click_array_element_type(parameter.interface_type())
                     .ok_or_else(|| {
                         format!(
@@ -306,7 +306,7 @@ pub(in crate::surface) fn decode_predicate_arguments(
                 array_refs.insert(
                     parameter.name().to_string(),
                     ClickArrayRef {
-                        point: crate::kernel::ProgramPoint::of_memory(memory),
+                        point: point.clone(),
                         pointer: pointer.address().clone(),
                         element_type,
                     },
@@ -324,13 +324,11 @@ pub(in crate::surface) fn decode_predicate_arguments(
                 index += 1;
             }
         }
-        return Ok((
-            state
-                .clone()
-                .with_memory(default_memory.unwrap_or_default()),
-            values,
-            array_refs,
-        ));
+        let mut frame = state.as_ref().clone();
+        if let Some(point) = default_point {
+            frame.set_memory_of(&ExecutionState::at_point(point));
+        }
+        return Ok((frame, values, array_refs));
     }
 
     Err(format!(

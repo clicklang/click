@@ -2197,9 +2197,9 @@ fn prepare_produced_tokens<'a>(
             continue;
         }
 
-        // The usual construct step checks that this exact token is authorized.
+        // The token fold checks that this exact token is authorized.
         let before = current.checkpoint();
-        let step = ProofStep::ConstructResource(resource.clone());
+        let step = ProofStep::FoldResource(resource.clone());
         let Ok(constructed) = current.driver().apply_step(step) else {
             check_verification_deadline()?;
             continue;
@@ -2236,6 +2236,16 @@ fn fold_produced_resources<'a>(
             continue;
         };
         let current = required_outcome(outcome_proof)?;
+        // Direct abstract outputs use the separate guarded preparation above.
+        if let ResourceClause::Declared { name, .. } = resource
+            && let ProofContext::Execution(context) = current.context.as_ref()
+            && context
+                .function
+                .contract_interface()
+                .is_ordinary_abstract_family(name)
+        {
+            continue;
+        }
         // An already-held exact resource needs no new fold or certificate
         // node. This lookup only selects whether to attempt a new operation.
         if let (ProofContext::Execution(context), FunctionOutcome::Return { state, value }) =
@@ -3900,9 +3910,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | PostExecutionTactic::ImplicitSolve
                                 | PostExecutionTactic::SolveUsing(_)
                                 | PostExecutionTactic::Leaf(
-                                    ProofTactic::FoldResource(_)
-                                        | ProofTactic::UnfoldResource(_)
-                                        | ProofTactic::ConstructResource(_)
+                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
                                 )
                                 | PostExecutionTactic::FoldProved(_)
                                 | PostExecutionTactic::CloseOpen { .. }
@@ -3938,6 +3946,18 @@ pub(super) fn finish_ordered_proof<'a>(
                     // nothing when the script's own tactics closed every
                     // claim. Its checked steps join the path's closers, so an
                     // expanded proof writes them out.
+                    // An explicitly expanded fold in a returning arm uses
+                    // the template captured by its enclosing open.
+                    let mut named_open_templates = BTreeMap::new();
+                    for deferred in post_execution_tactics.iter() {
+                        if let PostExecutionTactic::CloseOpen {
+                            resource: ResourceClause::Named { binding, .. },
+                            restoration: OpenResourceRestoration::Named(instance),
+                        } = &deferred.tactic
+                        {
+                            named_open_templates.insert(binding.instance()?, instance);
+                        }
+                    }
                     let mut pending_post_execution_tactics = Vec::new();
                     if require_explicit_closers {
                         pending_post_execution_tactics.push((&implicit_closer, 0, None));
@@ -4096,9 +4116,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::FoldProved(_)
                                 | PostExecutionTactic::CloseOpen { .. }
                                 | PostExecutionTactic::Leaf(
-                                    ProofTactic::FoldResource(_)
-                                        | ProofTactic::UnfoldResource(_)
-                                        | ProofTactic::ConstructResource(_)
+                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
                                 )
                         ) {
                             closing_input = None;
@@ -4268,26 +4286,51 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                             PostExecutionTactic::CloseOpen {
                                 resource,
-                                preserve_exposed_body,
+                                restoration,
                             } => {
+                                if let ResourceClause::Named { binding, .. } = resource {
+                                    named_open_templates.remove(&binding.instance()?);
+                                }
                                 let evolving = outcome_proof.take().ok_or_else(|| ClickError::new(
                                     format!("`{proof_label}` path {path_index}: resource scope has no outcome Proof")
                                 ))?;
-                                let (closed, tail) = evolving
-                                    .driver()
-                                    .close_scope_with_body_fact_proof(resource, &|proof| {
-                                        proof.close_outcome_resource_scope(
-                                            resource,
-                                            *preserve_exposed_body,
-                                            resource_transition_applied,
-                                        )
-                                    })?;
+                                let named =
+                                    matches!(restoration, OpenResourceRestoration::Named(_));
+                                let already_restored =
+                                    if let OpenResourceRestoration::Named(instance) = restoration {
+                                        evolving.outcome_holds_open_instance(instance)?
+                                    } else {
+                                        false
+                                    };
+                                let (closed, tail) = if already_restored {
+                                    (evolving, None)
+                                } else {
+                                    evolving.driver().close_scope_with_body_fact_proof(
+                                        resource,
+                                        restoration,
+                                        &|proof| {
+                                            proof.close_outcome_resource_scope(
+                                                resource,
+                                                restoration,
+                                                resource_transition_applied,
+                                            )
+                                        },
+                                    )?
+                                };
+                                has_return_resource_rewrite |= named
+                                    && closed.execution().is_some_and(|execution| {
+                                        execution
+                                            .core
+                                            .has_checked_return_resource_rewrite(path_index)
+                                    });
                                 outcome = closed.focused_outcome_state()?;
                                 outcome_proof = Some(closed);
-                                if let Some(tail) = tail {
+                                if tail.is_some() || (named && !already_restored) {
                                     let deferred = ProofOpen::deferred_block_tail(
                                         resource.clone(),
-                                        tail.to_proof_tactics(),
+                                        tail.map_or_else(Vec::new, |proof| {
+                                            proof.to_proof_tactics()
+                                        }),
                                     );
                                     record_post_execution_surface_tactic(
                                         &mut path_surface_post_tactics,
@@ -5199,12 +5242,22 @@ pub(super) fn finish_ordered_proof<'a>(
                                     format!("`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable")
                                 ))?;
                                 let before = evolving.checkpoint();
-                                let applied = evolving.driver().apply_step(step)?;
+                                let applied = if let ProofTactic::FoldResource(
+                                    resource @ ResourceClause::Named { binding, .. },
+                                ) = tactic
+                                    && binding.fold_fields.is_none()
+                                    && binding.child_bindings.is_none()
+                                    && let Some(instance) =
+                                        named_open_templates.get(&binding.instance()?)
+                                {
+                                    evolving
+                                        .apply_explicit_open_instance_fold(resource, instance)?
+                                } else {
+                                    evolving.driver().apply_step(step)?
+                                };
                                 if matches!(
                                     tactic,
-                                    ProofTactic::FoldResource(_)
-                                        | ProofTactic::UnfoldResource(_)
-                                        | ProofTactic::ConstructResource(_)
+                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
                                 ) {
                                     has_return_resource_rewrite |=
                                         applied.execution().is_some_and(|execution| {
@@ -5217,9 +5270,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // resources; the other leaves only add facts.
                                 if matches!(
                                     tactic,
-                                    ProofTactic::FoldResource(_)
-                                        | ProofTactic::UnfoldResource(_)
-                                        | ProofTactic::ConstructResource(_)
+                                    ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
                                 ) {
                                     outcome = applied.focused_outcome_state()?;
                                 }

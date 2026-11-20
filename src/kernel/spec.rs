@@ -1450,8 +1450,17 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             operator,
             right,
         } => {
-            let left_paths =
-                evaluate_spec_integer_expression_paths_in(scope, left, assumptions, budget)?;
+            let retain_match = matches!(
+                operator,
+                IntegerComparisonOperator::Equal | IntegerComparisonOperator::NotEqual
+            );
+            let left_paths = evaluate_spec_integer_comparison_operand_in(
+                scope,
+                left,
+                assumptions,
+                budget,
+                retain_match,
+            )?;
             let mut result = Vec::new();
             for left_path in left_paths {
                 let path_assumptions = assumptions_with_path_context(
@@ -1459,11 +1468,12 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     &left_path.facts,
                     &left_path.obligations,
                 );
-                for right_path in evaluate_spec_integer_expression_paths_in(
+                for right_path in evaluate_spec_integer_comparison_operand_in(
                     scope,
                     right,
                     &path_assumptions,
                     budget,
+                    retain_match,
                 )? {
                     let Some((facts, obligations)) =
                         merge_execution_pure_facts_and_obligations_under(
@@ -2222,6 +2232,7 @@ fn evaluate_spec_integer_expression_paths_in(
                 arms,
                 assumptions,
                 budget,
+                false,
             )
         }
         SpecIntegerExpression::If {
@@ -2859,7 +2870,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             // rather than silently dropping the accumulator scope; memory
             // states themselves remain opaque below.
             Term::ExecutionState(_) => true,
-            Term::Memory(_) => false,
+            Term::ArrayReadPoint(_) => false,
         }
     }
 
@@ -3089,13 +3100,64 @@ fn evaluate_spec_integer_range_fold_indices_in(
     }
 }
 
+fn evaluate_spec_integer_comparison_operand_in(
+    scope: SpecScope<'_>,
+    expression: &SpecIntegerExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+    retain_match: bool,
+) -> ExecutionResult<Vec<SpecIntegerPath>> {
+    if retain_match && let SpecIntegerExpression::AlgebraicMatch { scrutinee, arms } = expression {
+        return evaluate_spec_integer_algebraic_match_paths_in(
+            scope,
+            scrutinee,
+            arms,
+            assumptions,
+            budget,
+            true,
+        );
+    }
+    evaluate_spec_integer_expression_paths_in(scope, expression, assumptions, budget)
+}
+
+// The retained-root test is shared with rewriting. Also check the written arm
+// here: a condition simplified during evaluation could otherwise qualify as
+// a literal depending on the facts in scope.
+fn spec_integer_match_arm_is_simple(arm: &SpecIntegerMatchArm) -> bool {
+    let atom = |expression: &SpecIntegerExpression| match expression {
+        SpecIntegerExpression::Term(_) => true,
+        SpecIntegerExpression::FromMachine(machine) => matches!(
+            machine.as_ref(),
+            SpecExpression::Value(_)
+                | SpecExpression::ProgramExpression(ProgramExpression::Variable(_))
+        ),
+        _ => false,
+    };
+    match arm.body.as_ref() {
+        SpecIntegerExpression::Add(left, right) | SpecIntegerExpression::Subtract(left, right) => {
+            atom(left) && atom(right)
+        }
+        body => atom(body),
+    }
+}
+
 fn evaluate_spec_integer_algebraic_match_paths_in(
     scope: SpecScope<'_>,
     scrutinee: &SpecAlgebraicExpression,
     arms: &[SpecIntegerMatchArm],
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
+    retain_match: bool,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
+    let retain_match = retain_match
+        && !budget.checked_reads
+        && matches!(
+            scrutinee.node,
+            SpecAlgebraicExpressionNode::Constructor { .. }
+        )
+        && super::functions::spec_algebraic_expression_is_state_independent(scrutinee)
+        && super::functions::spec_algebraic_expression_is_obligation_free(scrutinee)
+        && arms.iter().all(spec_integer_match_arm_is_simple);
     let scrutinee_paths =
         evaluate_spec_algebraic_at_state_with_bindings_in(scope, scrutinee, assumptions, budget)?;
     let mut result = Vec::new();
@@ -3201,14 +3263,23 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                 .iter()
                 .all(|ty| *ty == AlgebraicValueType::Integer)
         });
-        let constructor = if integer_fields {
-            None
-        } else {
-            scrutinee_path.value.native_constructor()
-        };
+        let matched = KernelMatch::new(
+            KernelType::Integer,
+            scrutinee_path.value.clone().into_kernel(),
+            lowered_arms,
+        )
+        .map_err(|_| ExecutionLimit::Paths)?;
+        let constructor =
+            if integer_fields || (retain_match && matched.retains_known_integer_equality()) {
+                None
+            } else {
+                scrutinee_path.value.native_constructor()
+            };
         let value = match constructor.map(|value| &value.node) {
-            Some(AlgebraicTermNode::Constructor { variant, fields }) => lowered_arms
+            Some(AlgebraicTermNode::Constructor { variant, fields }) => matched
+                .arms
                 .iter()
+                .zip(&matched.arguments[1..])
                 .find(|(arm, _)| arm.variant == *variant)
                 .and_then(|(arm, body)| {
                     if arm.bindings.len() != fields.len() {
@@ -3222,15 +3293,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
                         .map(IntegerResult::from)
                 })
                 .ok_or(ExecutionLimit::Paths)?,
-            _ => IntegerResult::from_kernel(
-                KernelMatch::new(
-                    KernelType::Integer,
-                    scrutinee_path.value.into_kernel(),
-                    lowered_arms,
-                )
-                .map_err(|_| ExecutionLimit::Paths)?
-                .into_term(),
-            ),
+            _ => IntegerResult::from_kernel(matched.into_term()),
         };
         result.push(SpecIntegerPath {
             value,
@@ -5912,18 +5975,28 @@ fn lower_spec_predicate_proposition_at_state_in(
                 else {
                     unreachable!("predicate lowering should carry predicate propositions")
                 };
-                if let Some(memory) = memory {
-                    let memory = match memory {
-                        SpecPoint::Current => state.memory(),
+                if let Some(source) = memory {
+                    let source = match source {
+                        SpecPoint::Current => state.program_point(),
                         SpecPoint::FunctionEntry | SpecPoint::LoopEntry => {
                             let Some(entry_state) = loop_entry_state else {
                                 continue;
                             };
-                            entry_state.memory()
+                            entry_state.program_point()
                         }
-                        SpecPoint::At(point) => point.memory(),
+                        SpecPoint::At(point) => point.clone(),
                     };
-                    arguments.push(Term::Memory(memory.clone()));
+                    let point = match argument_path.value.native().as_ref() {
+                        ProgramValue::Pointer(pointer)
+                            if pointer.program_type() == ProgramType::Int32Pointer =>
+                        {
+                            indexed_array_entry_version(&source, &pointer.address().base)
+                        }
+                        _ => None,
+                    };
+                    arguments.push(Term::ArrayReadPoint(
+                        point.unwrap_or_else(|| ProgramPoint::at(source.shared_memory())),
+                    ));
                 }
                 arguments.push(Term::ProgramValue(argument_path.value.clone().into()));
                 next_paths.push(SpecPropositionPath {
@@ -8473,7 +8546,7 @@ fn evaluate_spec_pure_function_argument_paths_in(
                     || !path.value.program_type().is_pointer()
                 {
                     SpecCallArgument::Native(PureFunctionArgument::ArrayRef {
-                        memory: version.memory().clone(),
+                        point: version.clone(),
                         pointer: path.value.into_native(),
                         element_type: *element_type,
                     })
@@ -8495,19 +8568,17 @@ fn evaluate_spec_pure_function_argument_paths_in(
     }
 }
 
-/// The state an array argument at `pointer` names, given the state it was
-/// evaluated at.
-///
-/// See [`crate::kernel::resource_tracker`] for
-/// what the epoch guarantees and which derivation edges it crosses. An
-/// argument that is not a pointer at all keeps the live state, which is
-/// always sound and merely as fragile as before; so does a block the walk
-/// cannot separate from anything, because it then crosses no edge.
+/// Name an external array by its verified entry point when the recorded
+/// suffix preserves external storage, including a call confined to one
+/// automatic object. Other arrays use the block version selector.
 fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> ProgramPoint {
     let ProgramValue::Pointer(pointer) = pointer else {
         return source.clone();
     };
     let block = &pointer.address().base;
+    if let Some(entry) = indexed_array_entry_version(source, block) {
+        return entry;
+    }
     let start = source.parameter_read_start(block);
     let version = crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Block(block),
@@ -8521,6 +8592,19 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
         }
         _ => start,
     }
+}
+
+fn indexed_array_entry_version(source: &ProgramPoint, block: &AddressBase) -> Option<ProgramPoint> {
+    crate::instrumentation::measure_operation(
+        "kernel",
+        "canonical form",
+        "array-ref entry version",
+        || {
+            let entry = source.entry_array_version(block)?;
+            crate::instrumentation::record_deterministic_work(1);
+            Some(entry)
+        },
+    )
 }
 
 pub(in crate::kernel) fn program_value_bitvector_term(value: &ProgramValue) -> Option<MachineTerm> {

@@ -684,13 +684,8 @@ impl<'a> ProofScope<'a> {
             ProofScopeStructure::Open {
                 ref resource,
                 source_index,
-                preserve_exposed_body,
-            } => self.close_open_scope_from(
-                &self.body,
-                resource,
-                source_index,
-                preserve_exposed_body,
-            ),
+                ref restoration,
+            } => self.close_open_scope_from(&self.body, resource, source_index, restoration),
         }
     }
 
@@ -703,102 +698,109 @@ impl<'a> ProofScope<'a> {
         body: &Proof<'a>,
         resource: &ResourceClause,
         source_index: usize,
-        preserve_exposed_body: bool,
+        restoration: &OpenResourceRestoration,
     ) -> Result<Proof<'a>, ClickError> {
         let ProofContext::Execution(context) = self.root.context.as_ref() else {
             unreachable!("an open scope can only be created from an execution Proof")
         };
         let body_certificate = self.body.certificate();
-        let mut execution = body
-            .branch_execution()
-            .cloned()
-            .map(Arc::unwrap_or_clone)
-            .ok_or_else(|| {
-                self.root
-                    .step_error("open scope body lost its execution frontier")
-            })?;
-        let mut facts = body.facts().clone();
-        let deferred = execution.core.frontier.is_at_function_exit();
-        if deferred {
-            execution.presentation.defer_post_execution(
-                context.tactic_index,
-                source_index,
-                PostExecutionTactic::CloseOpen {
-                    resource: resource.clone(),
-                    preserve_exposed_body,
-                },
-                Some(body.state.locals().values.clone()),
-            );
+        let deferred = body.is_at_function_exit();
+        let state = if !deferred && let OpenResourceRestoration::Named(instance) = restoration {
+            body.restore_open_instance(resource, instance)?.state
         } else {
-            let before_facts = facts.clone();
-            let pre_state = context
-                .old_reference_state(&execution.core.frontier, &execution.core.state)
-                .clone();
-            let checked = close_open_resource_for_proof(
-                context.resource_environment,
-                resource,
-                context.claim_label,
-                context.tactic_index,
-                facts.clone(),
-                context.parameter_binding(),
-                &pre_state,
-                (*execution.core.state).clone(),
-                context.spec_definitions,
-                preserve_exposed_body,
-            )?;
-            let lowered = lower_resource_clause_at_state(
-                resource,
-                context.parameter_binding(),
-                &checked.state,
-            )?;
-            // The `open(...)` clause spells no access, so it lowers
-            // as owned, but the head returns to the closed state
-            // with the access it was opened with. Record the head as
-            // the state holds it, so a viewed open closes through the
-            // same evidence an owned one does; the deferred close at
-            // function exit already folds against the state.
-            let selected = checked
-                .state
-                .resources()
-                .facts()
-                .iter()
-                .find(|fact| fact.resource() == lowered.resource())
+            let mut execution = body
+                .branch_execution()
                 .cloned()
-                .unwrap_or(lowered);
-            let recorded = execution.core.record_resource_rewrite(
-                context.function,
-                context.arguments,
-                &before_facts,
-                &selected,
-                &checked.state,
-                &checked.facts,
-            );
-            recorded.map_err(|message| {
-                self.root.step_error(format!(
-                    "kernel rejected checked resource close: {}",
-                    spell_resource_clause(resource, &message)
-                ))
-            })?;
-            facts = checked.facts;
-            execution.core.state = checked.state.into();
-        }
-        let state = body
-            .state
-            .publish_checked_frontier_transition(
-                facts,
-                execution,
-                self.introduced_facts.clone(),
-                self.introduced_facts.clone(),
-            )
-            .map_err(|error| match error {
-                ExecutionUpdateError::NotFrontier | ExecutionUpdateError::MissingExecution => self
-                    .root
-                    .step_error("open scope body lost its execution frontier"),
-                ExecutionUpdateError::NotLoopBody
-                | ExecutionUpdateError::InvariantsAlreadyClosed => {
-                    unreachable!("open-scope publication checks only frontier ownership")
-                }
-            })?;
+                .map(Arc::unwrap_or_clone)
+                .ok_or_else(|| {
+                    self.root
+                        .step_error("open scope body lost its execution frontier")
+                })?;
+            let mut facts = body.facts().clone();
+            if deferred {
+                execution.presentation.defer_post_execution(
+                    context.tactic_index,
+                    source_index,
+                    PostExecutionTactic::CloseOpen {
+                        resource: resource.clone(),
+                        restoration: restoration.clone(),
+                    },
+                    Some(body.state.locals().values.clone()),
+                );
+            } else if let OpenResourceRestoration::Declared {
+                preserve_exposed_body,
+            } = restoration
+            {
+                let before_facts = facts.clone();
+                let pre_state = context
+                    .old_reference_state(&execution.core.frontier, &execution.core.state)
+                    .clone();
+                let checked = close_open_resource_for_proof(
+                    context.resource_environment,
+                    resource,
+                    context.claim_label,
+                    context.tactic_index,
+                    facts.clone(),
+                    context.parameter_binding(),
+                    &pre_state,
+                    (*execution.core.state).clone(),
+                    context.spec_definitions,
+                    *preserve_exposed_body,
+                )?;
+                let lowered = lower_resource_clause_at_state(
+                    resource,
+                    context.parameter_binding(),
+                    &checked.state,
+                )?;
+                // The `open(...)` clause spells no access, so it lowers
+                // as owned, but the head returns to the closed state
+                // with the access it was opened with. Record the head as
+                // the state holds it, so a viewed open closes through the
+                // same evidence an owned one does; the deferred close at
+                // function exit already folds against the state.
+                let selected = checked
+                    .state
+                    .resources()
+                    .facts()
+                    .iter()
+                    .find(|fact| fact.resource() == lowered.resource())
+                    .cloned()
+                    .unwrap_or(lowered);
+                let recorded = execution.core.record_resource_rewrite(
+                    context.function,
+                    context.arguments,
+                    &before_facts,
+                    &selected,
+                    &checked.state,
+                    &checked.facts,
+                );
+                recorded.map_err(|message| {
+                    self.root.step_error(format!(
+                        "kernel rejected checked resource close: {}",
+                        spell_resource_clause(resource, &message)
+                    ))
+                })?;
+                facts = checked.facts;
+                execution.core.state = checked.state.into();
+            }
+            body.state
+                .publish_checked_frontier_transition(
+                    facts,
+                    execution,
+                    self.introduced_facts.clone(),
+                    self.introduced_facts.clone(),
+                )
+                .map_err(|error| match error {
+                    ExecutionUpdateError::NotFrontier | ExecutionUpdateError::MissingExecution => {
+                        self.root
+                            .step_error("open scope body lost its execution frontier")
+                    }
+                    ExecutionUpdateError::NotLoopBody
+                    | ExecutionUpdateError::InvariantsAlreadyClosed => {
+                        unreachable!("open-scope publication checks only frontier ownership")
+                    }
+                })?
+        };
         // The successor's goal map came from the scope body, whose
         // cursor may have moved through a decided branch.
         let focused_branch = body.focused_branch_id();

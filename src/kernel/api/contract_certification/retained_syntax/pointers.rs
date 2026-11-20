@@ -184,7 +184,7 @@ impl<'a> Value<'a> {
 }
 
 struct Array<'a> {
-    memory: (u32, u32),
+    memory: crate::kernel::program_point::ReadKey,
     element_type: ProgramType,
     pointer: Value<'a>,
 }
@@ -192,11 +192,11 @@ impl<'a> Array<'a> {
     fn argument(argument: CallArgument<'a>) -> Option<Self> {
         match argument {
             CallArgument::Native(A::ArrayRef {
-                memory,
+                point,
                 pointer: ProgramValue::Pointer(pointer),
                 element_type,
             }) => Some(Self {
-                memory: crate::kernel::intern_memory_ref(memory).arena_id(),
+                memory: point.read_key(),
                 element_type: *element_type,
                 pointer: Value::Native(pointer),
             }),
@@ -210,7 +210,7 @@ impl<'a> Array<'a> {
                     return None;
                 };
                 Some(Self {
-                    memory: point.shared_memory().arena_id(),
+                    memory: point.read_key(),
                     element_type: *element_type,
                     pointer: Value::Shared(pointer.pointer_payload()?),
                 })

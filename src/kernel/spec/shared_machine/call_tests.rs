@@ -777,3 +777,215 @@ fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
         }
     }
 }
+
+#[test]
+fn cold_native_array_argument_retains_the_entry_point_across_local_stores() {
+    let _session = VerificationSession::enter();
+    let local = Address {
+        base: "local:unrelated".into(),
+        offset: AddressOffset::Constant(0),
+    };
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let argument = SpecPureFunctionArgument::ArrayRef {
+        point: SpecPoint::Current,
+        pointer: SpecExpression::Value(ProgramValue::typed_pointer(
+            pointer,
+            ProgramType::Int32Pointer,
+        )),
+        element_type: ProgramType::Int32,
+    };
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let read = |state: &ExecutionState| {
+        let mut execution = ExecutionBudget::new();
+        let mut budget = SpecEvaluation::logical(&mut execution);
+        budget.machine_result_production_disabled = true;
+        let paths = evaluate_spec_pure_function_argument_paths_in(
+            SpecScope::unbound(state, None),
+            &argument,
+            &PureFactContext::new(),
+            &mut budget,
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one argument path");
+        };
+        let SpecCallArgument::Native(PureFunctionArgument::ArrayRef { point, .. }) = &path.value
+        else {
+            panic!("native array argument");
+        };
+        assert_eq!(point.read_version_id(), entry.observation_point_id());
+        let SpecCallArgument::Native(argument) = &path.value else {
+            unreachable!()
+        };
+        let root = KernelTermImport::default().argument(argument);
+        assert_eq!(
+            KernelTermExport::default().argument(&root).unwrap(),
+            *argument
+        );
+        argument.clone()
+    };
+    let work = [4, 16, 64].map(|count| {
+        let mut state = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_block(local.base.clone(), 4));
+        for value in 0..count {
+            state = state
+                .clone()
+                .with_memory(state.memory().clone().store(local.clone(), int32(value)));
+        }
+        let (argument, work) = crate::instrumentation::measure_deterministic_work(|| read(&state));
+        assert_eq!(argument, read(&entry));
+        work
+    });
+    assert!(work.iter().all(|cost| *cost <= work[0] + 5), "{work:?}");
+}
+
+#[test]
+fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
+    let _session = VerificationSession::enter();
+    let array = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let local = Address {
+        base: "local:callee-write".into(),
+        offset: AddressOffset::Constant(0),
+    };
+    let argument = ProgramValue::typed_pointer(array.clone(), ProgramType::Int32Pointer);
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let expected = array_ref_argument_point(&entry.program_point(), &argument);
+    assert_eq!(expected.read_version_id(), entry.observation_point_id());
+    let declared = entry
+        .clone()
+        .with_memory(entry.memory().clone().with_block(local.base.clone(), 4));
+    let assumptions = PureFactContext::new();
+    let call = |state: &ExecutionState, changed: Address, index| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().with_call_memory_havoc(
+                Variable(index),
+                &[MemoryRange::new(changed, 0.into(), 1.into())],
+                &assumptions,
+                None,
+            ))
+    };
+    let work = [1, 8, 64].map(|count| {
+        let mut state = declared.clone();
+        for index in 0..count {
+            state = call(&state, local.clone(), 1011300 + index);
+            state = state
+                .clone()
+                .with_memory(state.memory().clone().store(local.clone(), int32(2)));
+        }
+        let current = state.program_point();
+        assert!(
+            current
+                .entry_integer_version(&array, LoadKind::Int32)
+                .is_none()
+        );
+        let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            array_ref_argument_point(&current, &argument)
+        });
+        assert_eq!(selected, expected);
+        work
+    });
+    assert!(work.iter().all(|units| *units == work[0]), "{work:?}");
+
+    let can_write = call(&declared, array.clone(), 1011400);
+    let wrote = declared
+        .clone()
+        .with_memory(declared.memory().clone().store(array, int32(9)));
+    let symbolic = call(&declared, Address::symbolic(Variable(1011401)), 1011402);
+    for changed in [can_write, wrote, symbolic] {
+        let point = changed.program_point();
+        assert!(
+            point
+                .entry_array_version(&AddressBase::ExternalArgument)
+                .is_none()
+        );
+        assert_ne!(array_ref_argument_point(&point, &argument), expected);
+        let later = call(&changed, local.clone(), 1011403);
+        assert!(
+            later
+                .program_point()
+                .entry_array_version(&AddressBase::ExternalArgument)
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn declared_predicate_array_names_its_entry_point_after_local_calls() {
+    let _session = VerificationSession::enter();
+    let array = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let local = Address {
+        base: "local:callee-write".into(),
+        offset: AddressOffset::Constant(0),
+    };
+    let arguments = [SpecPredicateArgument::ArrayRef {
+        point: SpecPoint::Current,
+        pointer: SpecExpression::Value(ProgramValue::typed_pointer(
+            array.clone(),
+            ProgramType::Int32Pointer,
+        )),
+    }];
+    let assumptions = PureFactContext::new();
+    let lower = |state: &ExecutionState| {
+        let mut execution = ExecutionBudget::new();
+        let paths = lower_spec_predicate_proposition_at_state_in(
+            SpecScope::unbound(state, None),
+            "array_predicate",
+            &arguments,
+            false,
+            &assumptions,
+            &mut SpecEvaluation::logical(&mut execution),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one predicate path");
+        };
+        path.proposition.clone()
+    };
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let expected = lower(&entry);
+    let Proposition::Predicate { arguments, .. } = &expected else {
+        panic!("declared predicate");
+    };
+    let [_, Term::ArrayReadPoint(point), Term::ProgramValue(_)] = arguments.as_slice() else {
+        panic!("array argument retains a point");
+    };
+    assert_eq!(point.read_version_id(), entry.observation_point_id());
+    let independent = ExecutionState::new().begin_function_entry_memory();
+    assert_eq!(entry.memory(), independent.memory());
+    assert_ne!(expected, lower(&independent));
+
+    let call = |state: &ExecutionState, changed: &Address, index| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().with_call_memory_havoc(
+                Variable(index),
+                &[MemoryRange::new(changed.clone(), 0.into(), 1.into())],
+                &assumptions,
+                None,
+            ))
+    };
+    let work = [1, 8, 64].map(|count| {
+        let mut state = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_block(local.base.clone(), 4));
+        for index in 0..count {
+            state = call(&state, &local, 1011700 + index);
+        }
+        let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| lower(&state));
+        assert_eq!(lowered, expected);
+        work
+    });
+    assert!(work.iter().all(|units| *units == work[0]), "{work:?}");
+    assert_ne!(lower(&call(&entry, &array, 1011800)), expected);
+}

@@ -7791,6 +7791,82 @@ fn a_parameter_partition_detects_exact_edges_reachable_through_numeric_aliases()
     }
 }
 
+#[test]
+fn a_parameter_partition_detects_only_reachable_raw_coordinates() {
+    let p = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(991_031)),
+    };
+    let coordinate = MachineTerm::Variable(Variable(991_032));
+    let scaled = |width| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(coordinate.clone(), width),
+    };
+    let q = scaled(4);
+    let other_width = scaled(8);
+    let foreign = Address::symbolic(Variable(991_033));
+    let raw_peer = Variable(991_034);
+    let peer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(raw_peer),
+    };
+    let equal = |left: &Address, right: &Address| {
+        let word = |address: &Address| {
+            MachineTerm::IntegerAddress(
+                Box::new(address.clone()),
+                crate::kernel::AddressObjectClass::NONE,
+            )
+        };
+        ConditionTerm::uint64_equal(word(left), word(right))
+    };
+    let numeric = equal(&foreign, &q);
+    let second_width = equal(&other_width, &Address::symbolic(Variable(991_035)));
+    let raw = ConditionTerm::uint64_equal(coordinate.clone(), MachineTerm::Variable(raw_peer));
+    let bridge = equal(&p, &foreign);
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(own_memory_fact(p.clone(), 0, 1))
+        .unchecked_with_fact(own_memory_fact(q.clone(), 0, 1));
+    let initial = PureFactContext::new()
+        .assume_proposition(Proposition::ResourceComposition(resources.clone()));
+    let memory = SymbolicMemory::new().store(q.clone(), int32(5));
+    let can_use_projection = |facts: &PureFactContext, address| {
+        facts
+            .parameter_store_numeric_connectivity(Some(address))
+            .is_some()
+    };
+    for order in [
+        [&numeric, &second_width, &raw],
+        [&raw, &numeric, &second_width],
+    ] {
+        let separate = order.into_iter().fold(initial.clone(), |facts, condition| {
+            facts.assume_condition(condition.clone(), true)
+        });
+        assert!(can_use_projection(&separate, &p));
+        assert!(!can_use_projection(&separate, &other_width));
+        assert!(!can_use_projection(&separate, &peer));
+        assert!(!separate.addresses_numerically_connected(&q, &other_width));
+        let joined = separate.clone().assume_condition(bridge.clone(), true);
+        assert!(!can_use_projection(&joined, &p));
+        assert!(joined.parameter_store_alias_bases(&p).is_none());
+        memory.prepare_parameter_store_partition(&resources, &separate);
+        assert!(
+            memory
+                .without_possible_aliasing_cells(&p, 4, &separate)
+                .has_known_cell_at(&q)
+        );
+        assert!(
+            !memory
+                .without_possible_aliasing_cells(&p, 4, &joined)
+                .has_known_cell_at(&q)
+        );
+        assert!(can_use_projection(&separate, &p));
+
+        let selected = [&numeric, &bridge, &second_width].map(|fact| (fact.clone(), true));
+        let restricted = joined.restricted_to_facts(&selected, &[]);
+        assert!(can_use_projection(&restricted, &p));
+    }
+}
+
 /// Reuse the same cache while the fact snapshots join and split an existing
 /// pair of components. The bridge changes links but introduces no objects.
 #[test]

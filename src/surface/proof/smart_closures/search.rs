@@ -45,6 +45,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return search_input.driver().apply_step(ProofStep::Known);
         }
+        if let Some(closed) =
+            attempt::candidate_outcome(Self::try_intrinsic_sum_bound(search_input))?.flatten()
+        {
+            return Ok(closed);
+        }
         if let Some(premises) = &premises
             && let Some(closed) = attempt::candidate_outcome(
                 Self::try_bounded_cast_identity_using(search_input, premises),
@@ -660,6 +665,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_direct_logical_leaf");
         let mut candidates = direct_logical_candidates(input.goal()).into_iter();
         if let Some(closed) = attempt::try_steps(input, budget, candidates.by_ref().take(1))? {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) =
+            attempt::candidate_outcome(Self::try_intrinsic_sum_bound(input))?.flatten()
+        {
             return Ok(Some(closed));
         }
         if let Some(closed) =
@@ -2210,9 +2220,42 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     right: surface_signed_integer_literal(&max),
                 },
             );
+            // For a narrowing of a previously proved machine sum, cite
+            // that exact identity before composing the operand ranges.
+            let sum_identity = if matches!(value, IntegerTerm::Machine(_)) {
+                established
+                    .iter()
+                    .find_map(|(kernel, surface)| match kernel.condition_native() {
+                        Some((ConditionTerm::IntegerEqual(observed, exact), true))
+                            if observed.as_ref() == value
+                                && matches!(exact.as_ref(), IntegerTerm::Add(..)) =>
+                        {
+                            Some(surface.clone())
+                        }
+                        _ => None,
+                    })
+            } else {
+                None
+            };
             for bound in [&lower, &upper] {
                 let scope = proof.driver().open_have(bound.clone())?;
-                let closed = if let Some(listed) = listed {
+                let intrinsic = if let Some(identity) = &sum_identity {
+                    attempt::candidate_outcome((|| {
+                        let rewritten = scope
+                            .driver()
+                            .apply_step(ProofStep::Rewrite(identity.clone()))?;
+                        if rewritten.is_complete() {
+                            return Ok(Some(rewritten));
+                        }
+                        rewritten.driver().try_intrinsic_sum_bound()
+                    })())?
+                    .flatten()
+                } else {
+                    None
+                };
+                let closed = if intrinsic.is_some() {
+                    intrinsic
+                } else if let Some(listed) = listed {
                     let mut premises = listed.to_vec();
                     premises.extend(established.iter().map(|(_, surface)| surface.clone()));
                     scope

@@ -49,11 +49,18 @@ fn checked_surface_fact_in_state_with_assumptions(
         name,
         arguments: target_arguments,
     } = kernel
+        && !target_arguments.iter().any(|argument| {
+            matches!(argument,
+            Term::ArrayReadPoint(point) if point.read_version_id().is_some())
+        })
     {
         let same_non_memory_arguments = |arguments: &[Term]| {
             arguments.len() == target_arguments.len()
                 && arguments.iter().zip(target_arguments).all(|(left, right)| {
-                    matches!((left, right), (Term::Memory(_), Term::Memory(_))) || left == right
+                    matches!(
+                        (left, right),
+                        (Term::ArrayReadPoint(_), Term::ArrayReadPoint(_))
+                    ) || left == right
                 })
         };
         for recorded in view.surface_propositions.atomic_kernel_facts() {
@@ -214,19 +221,21 @@ fn proposition_state_memories(proposition: &Proposition) -> Vec<SymbolicMemory> 
             }
             Proposition::Equal(left, right) => {
                 for term in [left, right] {
-                    if let Term::Memory(memory) = term
-                        && !memories.contains(memory)
+                    if let Term::ArrayReadPoint(point) = term
+                        && point.read_version_id().is_none()
+                        && !memories.contains(point.memory())
                     {
-                        memories.push(memory.clone());
+                        memories.push(point.memory().clone());
                     }
                 }
             }
             Proposition::Predicate { arguments, .. } => {
                 for argument in arguments {
-                    if let Term::Memory(memory) = argument
-                        && !memories.contains(memory)
+                    if let Term::ArrayReadPoint(point) = argument
+                        && point.read_version_id().is_none()
+                        && !memories.contains(point.memory())
                     {
-                        memories.push(memory.clone());
+                        memories.push(point.memory().clone());
                     }
                 }
             }

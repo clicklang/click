@@ -607,9 +607,11 @@ pub(super) fn collect_argument(
                 collect_algebraic_term_bitvector_variables(value, variables)
             }
             PureFunctionArgument::ArrayRef {
-                memory, pointer, ..
+                point: memory,
+                pointer,
+                ..
             } => {
-                collect_memory_bitvector_variables(memory, variables);
+                collect_memory_bitvector_variables(memory.memory(), variables);
                 collect_program_value_bitvector_variables(pointer, variables);
             }
         },
@@ -1781,7 +1783,7 @@ mod mixed_argument_tests {
             PureFunctionArgument::Value(ProgramValue::Parameter(Box::new(value))),
             PureFunctionArgument::Value(pointer.clone()),
             PureFunctionArgument::ArrayRef {
-                memory: SymbolicMemory::new(),
+                point: crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
                 pointer,
                 element_type: ProgramType::Int32,
             },

@@ -482,7 +482,7 @@ enum ProofScopeStructure {
     Open {
         resource: ResourceClause,
         source_index: usize,
-        preserve_exposed_body: bool,
+        restoration: OpenResourceRestoration,
     },
 }
 
@@ -3888,7 +3888,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::UnfoldWitnesses { .. } => "unfold",
         ProofStep::FoldResource(_) => "fold",
         ProofStep::ReleaseView(_) => "release_view",
-        ProofStep::ConstructResource(_) => "construct",
         ProofStep::ObserveResource(_) | ProofStep::ObserveSavedMemory { .. } => "observe",
         ProofStep::Iterated(tactic) => tactic.name(),
         ProofStep::CloseInvariantsBy(_) => "close_invariants() by",

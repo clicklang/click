@@ -329,7 +329,7 @@ impl CheckedFoldReadSummary {
             }
         }
         let PureFunctionArgument::ArrayRef {
-            memory,
+            point,
             pointer: ProgramValue::Pointer(pointer),
             ..
         } = &arguments[self.array_parameter]
@@ -354,7 +354,7 @@ impl CheckedFoldReadSummary {
             },
         };
         Some(FoldReadInterval {
-            memory: memory.clone(),
+            memory: point.memory().clone(),
             base: pointer.address().clone(),
             start: endpoint(self.start)?,
             end: endpoint(self.end)?,
@@ -933,14 +933,14 @@ pub(crate) fn frame_fold_applications(
         return Err(differ());
     }
     let PureFunctionArgument::ArrayRef {
-        memory: right_memory,
+        point: right_memory,
         ..
     } = &right.arguments()[summary.array_parameter]
     else {
         return Err(differ());
     };
     let left_state = intern_memory_ref(&left_interval.memory);
-    let right_state = intern_memory_ref(right_memory);
+    let right_state = right_memory.shared_memory().clone();
     if left_state == right_state {
         return Ok(0);
     }

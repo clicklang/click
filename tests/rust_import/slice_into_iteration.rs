@@ -95,14 +95,21 @@ fn charon_slice_into_iter_live_refresh_and_rejected_mutable_or_owned_shapes() {
             "pub fn bad(values: [u32;4])->u32 { let mut x=0; for value in values { x ^= value; } x }",
             "pub fn bad(values: &[i32]) { for value in values { *value = 0; } }",
             "pub fn bad(values: &[i32])->i32 { for &value in values.iter().rev() { return value; } 0 }",
-            "pub fn bad(values: &[i32], values_len: usize)->i32 { for &value in values { return value; } 0 }",
         ] {
             fs::write(p.root.join("iteration.rs"), source).unwrap();
             let old_artifact = fs::read(p.artifact("iteration.rs")).unwrap();
             let old_lock = fs::read(p.lock_file()).unwrap();
-            assert!(p.refresh().is_err());
+            assert!(p.refresh().is_err(), "accepted: {source}");
             assert_eq!(fs::read(p.artifact("iteration.rs")).unwrap(), old_artifact);
             assert_eq!(fs::read(p.lock_file()).unwrap(), old_lock);
         }
+        // A slice's length is a typed binding, not a generated `values_len`
+        // local, so a parameter of that name no longer collides with it.
+        fs::write(
+            p.root.join("iteration.rs"),
+            "pub fn ok(values: &[i32], values_len: usize)->i32 { for &value in values { return value; } 0 }",
+        )
+        .unwrap();
+        p.refresh().unwrap();
     }
 }

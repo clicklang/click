@@ -283,8 +283,8 @@ range facts may still need more explicit proof support.
 
 ## `old(...)` is still a surface construct
 
-`old(...)` is surface syntax for elaborating an expression in the function-entry
-context. As an array argument to a pure Click function or predicate, `old(p)`
+`old(...)` is a [special form](index.md#special-forms) for elaborating an
+expression in the function-entry context. As an array argument to a pure Click function or predicate, `old(p)`
 becomes an entry-state array ref, so `permutation::permutation(p, old(p), lo, hi)` has the
 expected old-vs-current meaning.
 

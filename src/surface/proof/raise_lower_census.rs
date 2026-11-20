@@ -76,7 +76,7 @@ pub(super) fn kind(proposition: &Proposition) -> String {
                 Term::Sequence(_) => "sequence",
                 Term::ProgramValue(_) => "c-value",
                 Term::PointerOffset(_) => "pointer-offset",
-                Term::Memory(_) => "memory",
+                Term::ArrayReadPoint(_) => "array-read-point",
                 Term::ExecutionState(_) => "state",
                 _ => "outcome",
             }
@@ -387,6 +387,51 @@ mod tests {
         );
         assert!(written.contains("match Packet::Full(7)"), "{written}");
         assert_eq!(written, rewritten);
+    }
+
+    #[test]
+    fn known_integer_matches_keep_the_comparison_after_rewrite() {
+        let fixture = include_str!("../../../mdtests/integer_match_on_known_constructor.md");
+        let source = fixture
+            .split("```")
+            .nth(1)
+            .unwrap()
+            .strip_prefix("click\n")
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        let raised = |claim: &str, tactic: &str, kind: &str| {
+            let prefix =
+                format!("raised\tgoal\tcondition:{kind}\t{claim}.ensures_0\t{tactic}\twritten\t");
+            lines
+                .iter()
+                .find_map(|line| line.strip_prefix(&prefix))
+                .unwrap_or_else(|| panic!("missing {prefix:?}: {lines:#?}"))
+        };
+        for (name, datatype) in [("machine", "MachinePacket"), ("integer", "IntegerPacket")] {
+            let written = raised(&format!("{name}_written"), "intro()", "IntegerEqual");
+            let rewritten = raised(&format!("{name}_rewritten"), "rewrite", "IntegerEqual");
+            assert!(
+                written.contains(&format!("match {datatype}::Full(7)")),
+                "{written}"
+            );
+            assert_eq!(written, rewritten);
+        }
+        assert!(
+            raised("mixed_unselected", "intro()", "IntegerEqual")
+                .contains("match MachinePacket::Empty")
+        );
+        assert!(
+            raised("machine_disequal", "intro()", "IntegerNotEqual")
+                .contains("match MachinePacket::Full(7)")
+        );
+        let wrong = source.replacen("}) == 8", "}) == 9", 1);
+        let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
+        assert!(
+            error.to_string().contains("goal did not normalize to true"),
+            "{error}"
+        );
     }
 
     #[test]

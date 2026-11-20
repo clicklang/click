@@ -1833,7 +1833,7 @@ impl Renderer<'_> {
             Term::Integer(i) => self.integer(i.native_compat()),
             Term::PointerOffset(o) => self.offset(o.native_compat(), 0),
             Term::ProgramValue(v) => self.cvalue(v.native_compat()),
-            Term::Memory(m) => self.memory(m),
+            Term::ArrayReadPoint(point) => self.memory(point.memory()),
             Term::ExecutionState(s) => self.state(s),
             Term::Sequence(_) => self.push("sequence(<bounded opaque value>)"),
             Term::Algebraic(value) => self.algebraic(value.native_compat()),
@@ -1971,7 +1971,7 @@ impl Renderer<'_> {
             // rendered `count(a) < count(a)`: a reader could not tell the two
             // sides apart, and a true goal read as a false one.
             PureFunctionArgument::ArrayRef {
-                memory,
+                point: memory,
                 pointer,
                 element_type,
             } => {
@@ -1983,7 +1983,7 @@ impl Renderer<'_> {
                 } else {
                     self.push("array-ref(");
                 }
-                self.memory(memory);
+                self.memory(memory.memory());
                 self.push(", ");
                 self.cvalue(pointer);
                 self.push(")");

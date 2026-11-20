@@ -647,7 +647,7 @@ fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
         kind: ProgramPointKind::Exit,
     });
     let arguments = [crate::kernel::PureFunctionArgument::ArrayRef {
-        memory: selected.memory().clone(),
+        point: crate::kernel::ProgramPoint::of_memory(selected.memory()),
         pointer,
         element_type: ProgramType::Int32,
     }];

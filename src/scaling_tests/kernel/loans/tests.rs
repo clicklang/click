@@ -1755,3 +1755,121 @@ fn releasing_one_produced_view_ignores_unrelated_resources() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn consuming_a_borrowing_composite_ignores_unrelated_resources() {
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let owner = memory(0, 8, true);
+        let view = memory(0, 8, false);
+        let (ledger, caller, callee) = participants();
+        let plan = plan_stable_view_transfer(
+            &ResourceContext::new().unchecked_with_fact(owner.clone()),
+            &[checked(view.clone())],
+            &assumptions,
+            &ledger,
+            caller,
+            callee,
+        )
+        .unwrap();
+        let head = owned("cursor");
+        let (_, occurrences) =
+            ResourceContext::new().unchecked_with_facts_and_occurrences([head.clone()]);
+        let escaping = BTreeMap::from([(
+            plan.stable_views()[0].loan,
+            vec![EscapingBorrow {
+                head,
+                occurrence: occurrences[0].1,
+                root_permission: Some(view),
+            }],
+        )]);
+        let recovery = plan
+            .recover_stable_views(&assumptions, &escaping, &[])
+            .unwrap();
+        let consumed = &recovery.escaped_holds[0].binding;
+        let resources = recovery.resources.unchecked_with_facts(
+            (0..size).map(|extra| owned(&format!("unrelated-cursor-{extra}"))),
+        );
+        let next = plan_stable_view_transfer(
+            &resources,
+            &[],
+            &assumptions,
+            &recovery.ledger,
+            caller,
+            recovery.ledger.fresh_participant().unwrap(),
+        )
+        .unwrap();
+        let (recovered, work) = crate::instrumentation::measure_deterministic_work(|| {
+            next.recover_stable_views(
+                &assumptions,
+                &BTreeMap::new(),
+                std::slice::from_ref(consumed),
+            )
+        });
+        let recovered = recovered.unwrap();
+        assert!(recovered.resources.contains_exact_representation(&owner));
+        assert!(!recovered.ledger.has_active_memory_loans());
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn folding_a_held_view_ignores_equal_owner_observations() {
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let view = memory(0, 8, false);
+        let owner = memory(0, 8, true);
+        let (ledger, caller, callee) = participants();
+        let plan = plan_stable_view_transfer(
+            &ResourceContext::new().unchecked_with_fact(owner),
+            &[checked(view.clone())],
+            &assumptions,
+            &ledger,
+            caller,
+            callee,
+        )
+        .unwrap();
+        let (mut resources, inserted) =
+            ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
+        let occurrence = inserted[0].1;
+        let escaping = BTreeMap::from([(
+            plan.stable_views()[0].loan,
+            vec![EscapingBorrow {
+                head: view.clone(),
+                occurrence,
+                root_permission: Some(view.clone()),
+            }],
+        )]);
+        let recovery = plan
+            .recover_stable_views(&assumptions, &escaping, &[])
+            .unwrap();
+        for extra in 0..size {
+            let cursor = owned(&format!("observed-cursor-{extra}"));
+            resources = resources
+                .unchecked_with_fact(cursor.clone())
+                .unchecked_with_supported_facts(&cursor, [view.clone()]);
+        }
+        let binding = &recovery.escaped_holds[0].binding;
+        let state = ExecutionState::new()
+            .with_resource_context_and_loan_dependencies(resources, [(occurrence, binding.clone())])
+            .with_loan_participant(Some(caller))
+            .with_loan_ledger(Some(recovery.ledger));
+        let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            state.fold_view_dependency(&view, &assumptions)
+        });
+        assert_eq!(selected.unwrap(), Some((Some(occurrence), binding.clone())));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}

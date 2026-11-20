@@ -110,6 +110,40 @@ fn automatic_object_separation_expands_without_normalize() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 6s for widened-sum and loop expansion with cold replay"]
+fn intrinsic_sum_bounds_expand_without_normalize() {
+    for (fixture, label) in [
+        (
+            "solve_reads_a_widening_cast_as_its_operand",
+            "widened_sum_guard.ensures_0",
+        ),
+        (
+            "a_uint8_loop_counter_ranks_as_a_promoted_int32",
+            "clear.contract",
+        ),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(
+            expanded.contains("apply(click::integer::add_le("),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+    let too_tight = "theorem too_tight(x: uint8) {
+        ensures to_integer(x) + 1 <= 255 by solve();
+    }";
+    assert!(verify_click_theorems(too_tight).is_err());
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies a uint64 loop back edge"]
 fn uint64_loop_successor_bound_expands_without_normalize() {
     let (source, c_sources) =
@@ -9905,6 +9939,49 @@ fn literal_constructor_field_disequality_expands_to_known() {
     })
     .expect_err("a symbolic field does not establish disequality");
     assert!(error.contains("known"), "{error}");
+}
+
+#[test]
+fn computed_sequence_negations_expand_to_known() {
+    let (source, _) = mdtest_sources("mdtests/sequence_literals.md");
+    let source = source.replace("[0, 1] != [1, 0] by known()", "[0, 1] != [1, 0] by solve()");
+    for (theorem, next_theorem) in [
+        (
+            "sequence_order_is_observable",
+            Some("singleton_contains_its_element"),
+        ),
+        ("absent_constant_is_not_a_member", None),
+    ] {
+        let label = format!("{theorem}.ensures_0");
+        let expanded = expand_c_claim_source_by_label(&source, &[], &label)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        let claim = expanded
+            .split_once(&format!("theorem {theorem}"))
+            .unwrap()
+            .1;
+        let claim = next_theorem.map_or(claim, |name| {
+            claim.split_once(&format!("theorem {name}")).unwrap().0
+        });
+        assert!(claim.contains("known();"), "{claim}");
+        assert!(!claim.contains("normalize()"), "{claim}");
+        without_implicit_solve_for_claim(&label, || {
+            verify_click_theorems(&expanded).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+
+    let mixed = "theorem mixed(x: int32) {
+        ensures not ((x == 0 and 0 == 1) or not (2 == 2)) by known();
+    }";
+    without_implicit_solve(|| verify_click_theorems(mixed)).unwrap();
+
+    for claim in ["not (1 in [0, 1])", "not (x in [0, 1])", "[0, 1] != [0, 1]"] {
+        let source = format!("theorem rejected(x: int32) {{ ensures {claim} by known(); }}");
+        let error = without_implicit_solve(|| verify_click_theorems(&source))
+            .unwrap_err()
+            .report();
+        assert!(error.contains("`known` requires"), "{error}");
+    }
 }
 
 #[test]
@@ -21148,6 +21225,26 @@ int32 f(int32* p, int32 x, int32 y) {
     assert!(!expanded.contains("\n    } by {"), "{expanded}");
     assert!(
         expanded.contains("have p[0] > 0 or p[0] < -1"),
+        "{expanded}"
+    );
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+fn named_open_replays_its_closing_facts_on_both_returns() {
+    let (source, sources) = mdtest_sources("mdtests/open_named_resource.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "set_and_read").unwrap();
+    assert!(expanded.contains("open(c) {"), "{expanded}");
+    assert_eq!(
+        expanded
+            .matches("have load<int32>(p) > 0 or load<int32>(p) < -1")
+            .count(),
+        2,
         "{expanded}"
     );
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))

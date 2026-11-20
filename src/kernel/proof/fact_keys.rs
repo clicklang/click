@@ -2496,11 +2496,17 @@ fn alpha_pure_function_argument_key_with_bindings<const ALLOW_LOADS: bool>(
             alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(value, bindings, next_binder)?,
         ),
         PureFunctionArgument::ArrayRef {
-            memory,
+            point,
             pointer,
             element_type,
         } => AlphaPureFunctionArgumentKey::ArrayRef {
-            memory: alpha_retained_state_key(&crate::kernel::intern_memory_ref(memory), bindings)?,
+            memory: {
+                let mut key = alpha_retained_state_key(point.shared_memory(), bindings)?;
+                if point.read_version_id().is_some() {
+                    key.key = point.read_key();
+                }
+                key
+            },
             pointer: alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                 pointer,
                 bindings,
@@ -3366,7 +3372,7 @@ mod proposition_identity_tests {
                     name: "walk".into(),
                     arguments: vec![
                         PureFunctionArgument::ArrayRef {
-                            memory,
+                            point: crate::kernel::ProgramPoint::of_memory(&memory),
                             pointer: ProgramValue::pointer(pointer.clone()),
                             element_type: ProgramType::Int32,
                         },
@@ -3776,11 +3782,13 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                                 bindings,
                             )?)
                         }
-                        Term::Memory(memory) => {
-                            AlphaPredicateArgumentKey::Memory(alpha_retained_state_key(
-                                &crate::kernel::intern_memory_ref(memory),
-                                bindings,
-                            )?)
+                        Term::ArrayReadPoint(point) => {
+                            let mut key =
+                                alpha_retained_state_key(point.shared_memory(), bindings)?;
+                            if point.read_version_id().is_some() {
+                                key.key = point.read_key();
+                            }
+                            AlphaPredicateArgumentKey::Memory(key)
                         }
                         Term::ProgramValue(value) => AlphaPredicateArgumentKey::Value(
                             alpha_program_value_key_with_bindings::<ALLOW_LOADS>(

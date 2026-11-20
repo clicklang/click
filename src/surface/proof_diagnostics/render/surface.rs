@@ -548,7 +548,7 @@ impl Printer<'_> {
                         Term::ExecutionState(_) => continue,
                         // Each array argument is a (memory, pointer) pair.
                         // Its state is part of the argument's identity.
-                        Term::Memory(memory) => {
+                        Term::ArrayReadPoint(memory) => {
                             let pointer @ term_source_0 @ Term::ProgramValue(_) =
                                 arguments.next()?
                             else {
@@ -559,7 +559,9 @@ impl Printer<'_> {
                             else {
                                 return None;
                             };
-                            self.place_read_in(memory, |printer| printer.term(pointer, depth))?
+                            self.place_read_in(memory.memory(), |printer| {
+                                printer.term(pointer, depth)
+                            })?
                         }
                         _ => self.term(argument, depth)?,
                     };
@@ -1390,7 +1392,7 @@ impl Printer<'_> {
             Term::PointerOffset(offset) => {
                 Some(atom(self.offset(offset.native_compat(), depth + 1)))
             }
-            Term::Memory(memory) => Some(atom(self.state_phrase(memory))),
+            Term::ArrayReadPoint(point) => Some(atom(self.state_phrase(point.memory()))),
             Term::ExecutionState(state) => Some(atom(self.state_phrase(state.memory()))),
             Term::Sequence(_) => Some(atom("<a sequence>")),
         }
@@ -2631,7 +2633,7 @@ impl Printer<'_> {
             PureFunctionArgument::Integer(value) => self.integer(value, depth + 1),
             PureFunctionArgument::Algebraic(value) => self.algebraic(value, depth + 1),
             PureFunctionArgument::ArrayRef {
-                memory,
+                point: memory,
                 pointer: crate::kernel::ProgramValue::Pointer(pointer),
                 element_type,
             } => {
@@ -2641,7 +2643,7 @@ impl Printer<'_> {
                     {
                         return None;
                     }
-                    let (point, naming) = self.labels.source_memory_context(memory)?;
+                    let (point, naming) = self.labels.source_memory_context(memory.memory())?;
                     let (point, naming) = (point.to_owned(), naming.clone());
                     let name = self.exact_pointer_value(pointer, &naming)?;
                     return Some(atom(if point == "current" {
@@ -2650,7 +2652,7 @@ impl Printer<'_> {
                         format!("at({point}, {name})")
                     }));
                 }
-                self.place_read_in(memory, |printer| {
+                self.place_read_in(memory.memory(), |printer| {
                     printer.pointer(pointer.address(), depth + 1)
                 })
             }
@@ -3414,7 +3416,7 @@ mod tests {
             arguments: std::iter::once(Term::ExecutionState(Box::new(before.clone())))
                 .chain(memories.into_iter().flat_map(|memory| {
                     [
-                        Term::Memory(memory.clone()),
+                        Term::ArrayReadPoint(crate::kernel::ProgramPoint::of_memory(memory)),
                         Term::ProgramValue(pointer.clone().into()),
                     ]
                 }))

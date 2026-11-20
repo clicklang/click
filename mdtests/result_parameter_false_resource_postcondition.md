@@ -16,7 +16,7 @@ int32 bump(int32 result) {
     constructs pair(result, program::result);
     produces pair(result, result) by {
         step_until(function.exit);
-        construct(pair(result, result));
+        fold(pair(result, result));
     }
 }
 ```

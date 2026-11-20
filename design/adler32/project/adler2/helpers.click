@@ -41,7 +41,7 @@ impl adler2::algo::U32X4 {
         apply(adler_helper_byte_observation(bytes[1]));
         apply(adler_helper_byte_observation(bytes[2]));
         apply(adler_helper_byte_observation(bytes[3]));
-        step_until(assignment(__rust_mir_12, 0).entry);
+        step_until(read(3).entry);
         step();
         // The lanes are stored into the result. Restrict its separation
         // from the input to each checked lane store.

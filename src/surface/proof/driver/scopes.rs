@@ -133,6 +133,20 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
+    /// Compose an exact sum's intrinsic bounds inside an owned have body.
+    pub(in crate::surface::proof) fn try_intrinsic_sum_bound(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_intrinsic_sum_bound(&self.proof.body)?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Emit the explicit interval-product proof inside a selected have body.
     pub(in crate::surface::proof) fn try_product_bound_using(
         &self,
@@ -185,21 +199,22 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         let ProofScopeStructure::Open {
             resource,
             source_index,
-            preserve_exposed_body,
+            restoration,
         } = scope.structure.as_ref()
         else {
             return scope.clone().join();
         };
         let close = |body: &Proof<'a>| {
-            scope.close_open_scope_from(body, resource, *source_index, *preserve_exposed_body)
+            scope.close_open_scope_from(body, resource, *source_index, restoration)
         };
         if scope.body.is_at_function_exit() {
             return close(&scope.body);
         }
-        let (closed, tail) = scope
-            .body
-            .driver()
-            .close_scope_with_body_fact_proof(resource, &close)?;
+        let (closed, tail) =
+            scope
+                .body
+                .driver()
+                .close_scope_with_body_fact_proof(resource, restoration, &close)?;
         let Some(tail) = tail else {
             return Ok(closed);
         };
