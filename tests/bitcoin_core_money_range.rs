@@ -3892,7 +3892,7 @@ uint8 probe(const std::vector<unsigned char>& bytes) {
             .unwrap_err()
             .report();
         assert!(
-            report.contains("read_first") && report.contains("required loan backing"),
+            report.contains("read_first") && report.contains("required borrow backing"),
             "{report}"
         );
     }

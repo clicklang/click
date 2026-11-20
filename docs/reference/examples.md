@@ -336,7 +336,7 @@ sequence:
 - `mdtests/stable_view_partial_borrow.md`: a read-only prefix and owned
   writable suffix form a disjoint partial borrow.
 - `mdtests/stable_view_returned_pointer.md`: returning a raw C pointer does
-  not export a stable loan beyond the caller's independent ownership.
+  not export a stable borrow beyond the caller's independent ownership.
 - `mdtests/permission_call_consumes_write_without_return.md`: a helper consumes
   write permission when it does not return it.
 - `mdtests/permission_call_returns_write.md`: a helper returns write permission

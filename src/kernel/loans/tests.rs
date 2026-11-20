@@ -290,7 +290,7 @@ fn rooted_parameter_view(
 }
 
 /// A contract input over parameter memory has a symbolic base offset, so
-/// it cannot enter the concrete index; it is still a live loan that
+/// it cannot enter the concrete index; it is still a live borrow that
 /// refuses writes proven to touch it and rejects closure and recovery.
 #[test]
 fn symbolic_borrowed_contract_input_is_live_outside_the_concrete_index() {
@@ -298,7 +298,7 @@ fn symbolic_borrowed_contract_input_is_live_outside_the_concrete_index() {
     let (ledger, holder, opening, _) = rooted_parameter_view(41);
     assert!(
         ledger.has_indexed_memory_overlap(&parameter_range(41, 0, 1, 4)),
-        "an exact symbolic origin is indexed without a loan search"
+        "an exact symbolic origin is indexed without a borrow search"
     );
     assert!(ledger.has_indexed_memory_overlap(&parameter_range(41, 3, 4, 1)));
     assert!(ledger.has_indexed_memory_overlap(&parameter_range(41, 0, 8, 1)));
@@ -357,9 +357,9 @@ fn symbolic_borrowed_contract_input_is_live_outside_the_concrete_index() {
     );
 }
 
-/// A concrete query is refused while a symbolic loan on its block is
+/// A concrete query is refused while a symbolic borrow on its block is
 /// live only when the overlap is proven; a symbolic query is refused
-/// outright while any concrete loan is indexed, because the index cannot
+/// outright while any concrete borrow is indexed, because the index cannot
 /// answer it.
 #[test]
 fn symbolic_and_concrete_loans_fail_closed_across_the_index_boundary() {
@@ -376,7 +376,7 @@ fn symbolic_and_concrete_loans_fail_closed_across_the_index_boundary() {
         .and_then(|transfer| ledger.apply(&transfer))
         .and_then(|ledger| ledger.end(concrete.scope, owner).map(|end| (ledger, end)))
         .and_then(|(ledger, end)| ledger.apply(&end))
-        .expect("close the concrete loan");
+        .expect("close the concrete borrow");
     assert!(ended.invariant_holds());
     assert_eq!(
         ended.permits_memory_access_with_assumptions(&parameter_range(7, 0, 1, 4), &assumptions),
@@ -397,9 +397,9 @@ fn buffer_range(start: u32, end: u32, width: u32) -> MemoryRange {
     )
 }
 
-/// Loans and accesses are compared bytewise, so a mismatched element
+/// Borrows and accesses are compared bytewise, so a mismatched element
 /// width can neither hide an overlap nor manufacture one. The ledger
-/// holds a width-4 loan over bytes 0..4 and a width-1 loan over byte 5;
+/// holds a width-4 borrow over bytes 0..4 and a width-1 borrow over byte 5;
 /// byte 4 is the gap between them, and it separates the accepted
 /// mismatched-width queries from the refused ones (R08's width-crossing
 /// case; docs/internals/stable-views.md).
@@ -424,20 +424,20 @@ fn bytewise_overlap_is_decided_across_mismatched_element_widths() {
     let ledger = ledger.apply(&narrow.transition).unwrap();
     assert!(ledger.invariant_holds());
 
-    // A width-1 access at byte 2, inside the width-4 loan.
+    // A width-1 access at byte 2, inside the width-4 borrow.
     assert_eq!(
         ledger.permits_memory_access(&buffer_range(2, 3, 1)),
         Err(LoanRefusal::ActiveDependency)
     );
     // The reverse direction: a width-4 access covering bytes 4..8, which
-    // contains the width-1 loan's byte 5.
+    // contains the width-1 borrow's byte 5.
     assert_eq!(
         ledger.permits_memory_access(&buffer_range(1, 2, 4)),
         Err(LoanRefusal::ActiveDependency)
     );
-    // Byte 4 alone: mismatched widths against both loans, no shared byte.
+    // Byte 4 alone: mismatched widths against both borrows, no shared byte.
     assert_eq!(ledger.permits_memory_access(&buffer_range(4, 5, 1)), Ok(()));
-    // Bytes 8..12 at width 4: past both loans.
+    // Bytes 8..12 at width 4: past both borrows.
     assert_eq!(ledger.permits_memory_access(&buffer_range(2, 3, 4)), Ok(()));
 }
 
@@ -492,7 +492,7 @@ fn child_reborrow_of_a_symbolic_root_keeps_the_root_protected() {
     );
 }
 
-/// Projection extends a composite loan's permitted descriptions by a
+/// Projection extends a composite borrow's permitted descriptions by a
 /// checked child without changing the ledger's identity; it needs a
 /// permitted composite parent and a live scope, and never admits an
 /// exclusive instance.
@@ -569,7 +569,7 @@ fn projection_extends_permitted_descriptions_without_a_transition() {
         ),
         Err(LoanRefusal::UnsupportedResource)
     );
-    // The evidence must expand the very parent the loan permits, and the
+    // The evidence must expand the very parent the borrow permits, and the
     // child must be one that expansion contains (docs/internals/stable-views.md).
     assert_eq!(
         projected.project(
@@ -601,7 +601,7 @@ fn projection_extends_permitted_descriptions_without_a_transition() {
 }
 
 /// A projection is derived read-only authority: it keeps the ledger
-/// identity, changes only what the loan permits, and mints no share, no
+/// identity, changes only what the borrow permits, and mints no share, no
 /// scope, and no recovery right. No transition is reachable from a
 /// projected description alone (the identity rule on `project`, F4).
 #[test]
@@ -656,7 +656,7 @@ fn a_projection_mints_no_share_and_keeps_the_ledger_identity() {
         hold: None,
     };
     // The projection carries no share of its own, so every
-    // transition-bearing operation still needs the authority the loan
+    // transition-bearing operation still needs the authority the borrow
     // already had: the borrower's share, the lender's close right, and
     // the escrow's recovery right.
     assert_eq!(
@@ -688,7 +688,7 @@ fn a_projection_mints_no_share_and_keeps_the_ledger_identity() {
     assert!(projected.invariant_holds());
 }
 
-/// A reborrow is authorized by one description, so the child loan
+/// A reborrow is authorized by one description, so the child borrow
 /// permits that description alone: it cannot describe the parent's head
 /// or a sibling child of it (docs/internals/stable-views.md).
 #[test]
@@ -747,7 +747,7 @@ fn a_reborrow_narrows_to_the_description_that_authorized_it() {
     for wider in [head_view, sibling_view, deep.clone()] {
         assert!(
             !ledger.permits_view(borrower, &describe(wider), child.root_share, &assumptions),
-            "a child scope reborrowed from one description cannot describe the rest of the parent loan"
+            "a child scope reborrowed from one description cannot describe the rest of the parent borrow"
         );
     }
     // A nested composite child has no byte backing of its own; the
@@ -772,7 +772,7 @@ fn a_reborrow_narrows_to_the_description_that_authorized_it() {
         Err(LoanRefusal::ActiveDependency)
     );
     // The same holds for a reborrow of a projected child: it authorizes
-    // that description and nothing else of the loan it came from.
+    // that description and nothing else of the borrow it came from.
     let projected_parent = LoanViewBinding {
         loan: opening.loan,
         scope: opening.scope,
@@ -874,12 +874,12 @@ fn a_reborrow_of_a_memory_view_protects_exactly_the_viewed_bytes() {
         assert_eq!(
             ledger.permits_memory_access_with_assumptions(range, &assumptions),
             Err(LoanRefusal::ActiveDependency),
-            "the parent composite loan still protects its whole frontier"
+            "the parent composite borrow still protects its whole frontier"
         );
     }
 }
 
-/// A reborrow of a byte-less composite loan is counted and uncounted by
+/// A reborrow of a byte-less composite borrow is counted and uncounted by
 /// the same predicate, so ending the child leaves the parent's
 /// contribution to the fail-closed barrier in place (docs/internals/stable-views.md).
 #[test]
@@ -917,7 +917,7 @@ fn ending_a_reborrow_of_a_byteless_composite_loan_keeps_the_barrier_armed() {
     let ledger = ledger.apply(&end).unwrap();
     assert!(
         ledger.has_active_memory_loans(),
-        "the parent composite loan is still live"
+        "the parent composite borrow is still live"
     );
     assert!(ledger.invariant_holds());
     let transfer = ledger.transfer(opening.root_share, reader, owner).unwrap();
@@ -1863,7 +1863,7 @@ fn lifetime_hold_certificate_cannot_substitute_a_different_share() {
     );
 }
 
-/// A hold placed by a folded borrowing composite keeps the loan's scope
+/// A hold placed by a folded borrowing composite keeps the borrow's scope
 /// from ending, and therefore the owner from being recovered, until it is
 /// released by the participant that placed it. The hold changes ledger
 /// identity but mints no share or recovery right (escaping borrows in
@@ -1995,7 +1995,7 @@ fn a_borrowing_fold_hold_is_exactly_the_hold_its_head_carries() {
     assert_eq!(
         ledger.apply_borrowing_fold_hold(&transition, &elsewhere, holder),
         Err(LoanRefusal::InvalidEvidence),
-        "the hold must be on the head's loan authority"
+        "the hold must be on the head's borrow authority"
     );
     assert_eq!(
         held.apply_borrowing_fold_hold(&transition, &carried, holder),
@@ -2036,7 +2036,7 @@ fn a_hold_needs_a_live_binding_and_may_rest_on_a_contract_input_root() {
     assert_ne!(held, ledger, "contract-input holds also change identity");
 }
 
-/// A composite loan is a memory loan whether or not its one-level
+/// A composite borrow is a memory borrow whether or not its one-level
 /// frontier enumerated any bytes: the head is memory.
 #[test]
 fn composite_lend_counts_as_a_memory_loan_without_byte_backing() {
@@ -2159,7 +2159,7 @@ fn checked_two_reader_lifecycle_recovers_exact_escrow_once() {
     assert!(ledger.invariant_holds());
     let duplicate = ledger
         .recover(opening.loan, owner)
-        .expect_err("a loan cannot be recovered twice");
+        .expect_err("a borrow cannot be recovered twice");
     assert_eq!(
         duplicate
             .diagnostic(LoanRefusalOperation::Recovery)
@@ -2254,11 +2254,11 @@ fn shared_reader_recovery_rejects_wrong_sibling_reuse_and_stale_branch() {
 }
 
 /// D2 law 4: a description outlives its authority, and D2 law 5: a
-/// reused resource term is not a reused identity. The first loan over a
-/// cell ends and is recovered, then a fresh loan starts over the very
+/// reused resource term is not a reused identity. The first borrow over a
+/// cell ends and is recovered, then a fresh borrow starts over the very
 /// same support occurrence and the very same resource term. One
 /// participant lends to itself throughout, so the old binding's share is
-/// never handed away: only scope and loan identity separate the two, and
+/// never handed away: only scope and borrow identity separate the two, and
 /// the old description, binding, and reborrow are all refused while the
 /// new ones are accepted (R04's fresh-scope case; docs/internals/stable-views.md).
 #[test]
@@ -2269,7 +2269,7 @@ fn an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource() {
     let support = backing(&escrow);
     let first = ledger
         .lend(owner, owner, support, escrow.clone())
-        .expect("a first loan over the cell");
+        .expect("a first borrow over the cell");
     let ledger = ledger.apply(&first.transition).unwrap();
     let old_binding = LoanViewBinding {
         loan: first.loan,
@@ -2288,7 +2288,7 @@ fn an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource() {
         .reborrow(old_binding.clone(), owner, reader)
         .expect("the live binding reborrows");
 
-    // Close the first loan and recover its escrow. The share stays with
+    // Close the first borrow and recover its escrow. The share stays with
     // the same holder, so nothing but scope liveness changes.
     let end = ledger.end(first.scope, owner).unwrap();
     let ledger = ledger.apply(&end).unwrap();
@@ -2297,10 +2297,10 @@ fn an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource() {
     assert_eq!(recovered_support, support);
     let ledger = ledger.apply(&recover).unwrap();
 
-    // A fresh loan over the same support occurrence and resource term.
+    // A fresh borrow over the same support occurrence and resource term.
     let second = ledger
         .lend(owner, owner, support, escrow)
-        .expect("a fresh loan over the same cell");
+        .expect("a fresh borrow over the same cell");
     let ledger = ledger.apply(&second.transition).unwrap();
     assert!(ledger.invariant_holds());
     assert_ne!(first.loan, second.loan);
@@ -2328,7 +2328,7 @@ fn an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource() {
     // The old descriptor authorizes nothing, on any of the three routes.
     assert!(!ledger.permits_view(owner, &first.description, first.root_share, &assumptions));
     // Nor when paired with the new scope's live share: the description
-    // still names the ended loan.
+    // still names the ended borrow.
     assert!(!ledger.permits_view(owner, &first.description, second.root_share, &assumptions));
     assert_eq!(
         ledger.validate_view_binding(old_binding.clone(), owner),
@@ -2711,7 +2711,7 @@ fn owner_observation_is_not_a_stable_view_description() {
     );
     let (_ledger, _owner, _reader) = participants();
     // Only `lend` creates a `StableViewDescription`; an observation has
-    // no loan or scope identity to transfer to another participant.
+    // no borrow or scope identity to transfer to another participant.
     assert!(observation.viewed().is_view());
 }
 
@@ -2785,7 +2785,7 @@ fn local_ledger_updates_allocate_logarithmically() {
         let allocation_bound = 64 * logarithmic_height + 64;
         assert!(
             allocations <= allocation_bound,
-            "size {size} loan update allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} borrow update allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert_eq!(ancestor.storage.data.loans.len(), size);
         assert_eq!(successor.storage.data.loans.len(), size + 1);
@@ -2860,8 +2860,8 @@ fn a_range_starting_below_its_base_is_not_empty_to_the_write_barrier() {
 }
 
 /// The exit itself stays: a backwards range is how a range says it is
-/// empty, and an empty range touches no loan however far the lent range
-/// reaches. Both spellings of empty, and one wholly below the loan.
+/// empty, and an empty range touches no borrow however far the lent range
+/// reaches. Both spellings of empty, and one wholly below the borrow.
 #[test]
 fn an_empty_or_separate_range_still_passes_the_write_barrier() {
     let ledger = ledger_lending_the_first_four_elements();
@@ -3347,9 +3347,9 @@ fn memory_split_origins_retain_both_sides_and_isolate_speculative_branches() {
     assert_eq!(child_origins.origin_of(right), original);
 }
 
-/// Step 7: a loan a produced borrowing composite escapes through is not
+/// Step 7: a borrow a produced borrowing composite escapes through is not
 /// recovered at return; the caller keeps the escrow lent, holds the
-/// loan through the composite's binding, and recovers the owner only
+/// borrow through the composite's binding, and recovers the owner only
 /// when a later call consumes the composite.
 #[test]
 fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
@@ -3383,7 +3383,7 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
     let recovery = plan
         .clone()
         .recover_stable_views(&assumptions, &escaping, &[])
-        .expect("an escaping loan recovers open");
+        .expect("an escaping borrow recovers open");
     let evidence = CheckedLoanCallEvidence::new(
         plan.clone(),
         recovery.ledger.clone(),
@@ -3935,7 +3935,7 @@ fn joint_planner_shares_one_loan_between_two_covered_symbolic_views() {
     assert_eq!(plan.stable_views[0].loan, plan.stable_views[1].loan);
 }
 
-/// Every view the plan composes into the callee context carries its loan
+/// Every view the plan composes into the callee context carries its borrow
 /// binding on the occurrence itself, not only in the plan's sidecar. The
 /// sidecar alone left the fact indistinguishable from an unbound view, so
 /// normalization was free to merge it with a neighbour and the
@@ -3974,7 +3974,7 @@ fn joint_planner_refuses_an_unbound_view_the_caller_does_not_own() {
     let assumptions = PureFactContext::new();
     let caller_resources = ResourceContext::new().unchecked_with_fact(memory(0, 8, false));
     let (ledger, caller, callee) = participants();
-    // A view description with no loan binding is not authority, and no
+    // A view description with no borrow binding is not authority, and no
     // owner covers the requirement either.
     assert_eq!(
         plan_stable_view_transfer(
@@ -4463,7 +4463,7 @@ fn active_memory_index_returns_only_overlapping_live_loans() {
     );
     let blocked = ledger
         .permits_memory_access(memory(2, 4, false).memory_range().unwrap())
-        .expect_err("a live loan must block overlapping memory access");
+        .expect_err("a live borrow must block overlapping memory access");
     assert_eq!(
         blocked
             .diagnostic(LoanRefusalOperation::MemoryAccess)
@@ -4692,7 +4692,7 @@ fn ending_nested_memory_loan_keeps_parent_footprint_indexed() {
     );
     let blocked = ledger
         .permits_memory_access(overlapping)
-        .expect_err("the parent loan must remain indexed");
+        .expect_err("the parent borrow must remain indexed");
     assert_eq!(
         blocked
             .diagnostic(LoanRefusalOperation::MemoryAccess)

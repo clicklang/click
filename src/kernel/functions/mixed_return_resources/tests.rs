@@ -2105,7 +2105,7 @@ fn selected_view_expansion_fixture_with_cells(
     let (caller_resources, owned) =
         ResourceContext::new().unchecked_with_facts_and_occurrences([owner.clone()]);
     // The fixture's declared body is exactly these disjoint cells. Supply
-    // the typed composite backing required by the ordinary loan planner.
+    // the typed composite backing required by the ordinary borrow planner.
     let backing = CompositeLoanBacking::from_checked_expansion(
         owned[0].1,
         owner,

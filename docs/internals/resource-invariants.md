@@ -92,7 +92,7 @@ Reference counting needs the same conserved accounting with a different
 body. A reference may justify a lifetime claim and immutable payload access
 only through the chosen protocol. It never implicitly grants mutable access
 to the payload. Final release must establish absence of outstanding users
-and loans and recover allocation authority. Atomic decrement to zero alone
+and borrows and recover allocation authority. Atomic decrement to zero alone
 does not establish the required ordering of earlier payload accesses.
 
 The frozen sequential shared-parent source remains the sequential regression.
@@ -165,14 +165,14 @@ Initialization checks the full writable storage footprint and ABI alignment
 before minting lifetime authority or moving a protected invariant. Ordinary
 memory ownership authorizes external storage; live automatic objects supply
 implicit storage ownership. Stable views do not authorize it, and active storage
-loans block it. The transition forgets the previous byte values of the
+borrows block it. The transition forgets the previous byte values of the
 footprint. Initialization consumes the explicit ownership of its footprint and
 destruction returns it; automatic footprints are instead reserved against
 ordinary writes and overlapping initializations until destroy. Independent
 abstract inputs carry indexed reservation dependencies derived from their owned
 resource definitions; the dependency grants no lifecycle or guard authority.
 
-Use loans, preserving `mutex_use` contracts, named binders, and their remaining
+Use borrows, preserving `mutex_use` contracts, named binders, and their remaining
 gaps are described in
 [concurrency contracts](concurrency-contracts-and-diagnostics.md) and
 [mutex resource contracts](mutex-resource-contracts.md).

@@ -7038,7 +7038,7 @@ pub struct CompositeResourceDefinition {
     /// answers for the definition as a whole.
     pub(super) matched_recursive: bool,
     /// Whether a body fact reads a population count. Such a fact can change
-    /// while the head is lent, so a stable loan cannot carry it.
+    /// while the head is lent, so a stable borrow cannot carry it.
     pub(super) facts_read_counts: bool,
     /// A definition-level restriction on direct transfer to another thread.
     /// Computed when definitions are installed, including contained families.
@@ -7059,7 +7059,7 @@ pub struct CompositeResourceDefinition {
     /// (`owned_footprint_reach`).
     pub(super) owned_footprint_unnamed: bool,
     /// Whether a body fact mentions an allocation-liveness claim
-    /// (`loadable(...)`, directly or through a predicate). A loan of the
+    /// (`loadable(...)`, directly or through a predicate). A borrow of the
     /// composite stabilizes its memory and tokens, not the liveness of
     /// storage the fact names, so such facts are not restored by recovery.
     pub(super) facts_claim_liveness: bool,
@@ -8138,7 +8138,7 @@ pub enum RuntimeError {
     MissingMutexLive {
         mutex: Address,
     },
-    /// An operation requires a use loan for this mutex initialization.
+    /// An operation requires a use borrow for this mutex initialization.
     MissingMutexUse {
         mutex: Address,
     },
@@ -8176,7 +8176,7 @@ pub enum RuntimeError {
     /// evaluator retries the clause after the others. Otherwise it is a
     /// [`Self::FunctionContract`] refusal and is reported as one.
     UnsuppliedResourceValue(String),
-    /// Candidate loan recovery refused while these exact checked path
+    /// Candidate borrow recovery refused while these exact checked path
     /// obligations remain. Retained for diagnostics, never admitted as facts.
     PendingCallObligations(Arc<[ProofObligation]>),
     /// Exact operands retained at a rejected contract boundary. Diagnostic
@@ -9418,7 +9418,7 @@ impl AllocationSize {
 pub(super) struct PendingReallocation {
     pub(super) old_pointer: Address,
     pub(super) old_bytes: AllocationSize,
-    /// Full old byte range separated from the active loans at the call.
+    /// Full old byte range separated from the active borrows at the call.
     pub(super) retirement_separation: Option<std::sync::Arc<Proposition>>,
     /// Bytes at the start of the new block that retain calloc's guaranteed
     /// zero value. A prefix equal to the new allocation size means the whole
@@ -10761,7 +10761,7 @@ pub struct ExecutionState {
     /// checked delta when a C condition establishes the returned status.
     pub(super) pending_thread_create: Option<super::threads::PendingThreadCreate>,
     pub(super) population_access: super::population_access::PopulationAccess,
-    /// Resource families the proof has observed, for authority loan
+    /// Resource families the proof has observed, for authority borrow
     /// classification (`functions::observes_population_family`).
     pub(super) observed_population_families: ObservedPopulationFamilies,
     /// Shared persistent roots keep population effect accounting to one word
@@ -11032,9 +11032,9 @@ pub struct ResourceContext {
     pub(super) observable_projection:
         std::sync::Arc<std::sync::Mutex<Option<ObservableResourceProjection>>>,
     /// Checked dependency bundles for resource occurrences that are views of
-    /// an active stable loan.  This is deliberately separate from the
+    /// an active stable borrow.  This is deliberately separate from the
     /// resource algebra's support graph: equal resource terms can have
-    /// different loan origins, and a rewrite must preserve the opaque
+    /// different borrow origins, and a rewrite must preserve the opaque
     /// occurrence identity rather than rediscovering it from the term.
     pub(super) loan_dependencies: std::sync::Arc<crate::kernel::loans::LoanViewBindingsState>,
     pub(super) structural_witnesses:
@@ -11156,9 +11156,9 @@ impl ResourceContext {
     pub(crate) fn live_loan_dependencies(
         &self,
     ) -> impl Iterator<Item = (ResourceOccurrenceId, &crate::kernel::loans::LoanViewBinding)> {
-        // A filtered observation shares the current loan state, which may
+        // A filtered observation shares the current borrow state, which may
         // also contain excluded occurrences. Query the smaller side of the
-        // intersection; never walk all excluded loans for a small frame.
+        // intersection; never walk all excluded borrows for a small frame.
         let by_entries = self.storage.facts.len() < self.loan_dependencies.map.len();
         let mut selected = Vec::new();
         if by_entries {
@@ -11404,7 +11404,7 @@ pub(super) struct ResourceContextIndex {
     pub(super) exact_shapes_by_root: PersistentMap<ShapeRootKey, ResourceEntryIds>,
     pub(super) memory_by_block: PersistentMap<AddressBase, ResourceEntryIds>,
     /// SymbolicMemory facts whose allocation identity is not a concrete block. An
-    /// implicit local loan must not rediscover whether these alias its storage.
+    /// implicit local borrow must not rediscover whether these alias its storage.
     pub(super) nonconcrete_memory_count: usize,
     /// Iterated guarded-ownership facts keyed by both blocks their
     /// denotation depends on: the element base and the guard cells. A store,
@@ -11637,7 +11637,7 @@ fn compare_cached_expansions(
     }
 }
 
-/// One live loan dependency, reduced to keys that do not name a process-local
+/// One live borrow dependency, reduced to keys that do not name a process-local
 /// counter.
 ///
 /// `ResourceOccurrenceId`, `LoanId`, `LoanScopeId`, and `LoanShareId` are all
@@ -11646,9 +11646,9 @@ fn compare_cached_expansions(
 /// ledgers or were allocated in a different order, which silently costs loop
 /// fixpoints, interning, and cross-run artifact reuse. The occurrence and the
 /// dependency's support become the stable entry ordinals `compare_support_graph`
-/// already uses; the loan, scope, and share become the position of their first
+/// already uses; the borrow, scope, and share become the position of their first
 /// appearance in that stable order, which preserves exactly which dependencies
-/// share a loan, scope, or share without naming any of them.
+/// share a borrow, scope, or share without naming any of them.
 ///
 /// This changes only how dependencies compare. Their meaning, and every
 /// authority check that reads `loan_dependency`, still uses the exact
@@ -11681,7 +11681,7 @@ fn first_appearance<K: Ord>(seen: &mut std::collections::BTreeMap<K, usize>, key
     *seen.entry(key).or_insert(next)
 }
 
-/// The context's live loan dependencies in a canonical, structure-derived
+/// The context's live borrow dependencies in a canonical, structure-derived
 /// order. Ordering by the stable entry ordinal is a total order because
 /// `entry_by_occurrence` maps distinct occurrences to distinct entries.
 fn stable_loan_dependencies(context: &ResourceContext) -> Vec<StableLoanDependency<'_>> {
@@ -11824,7 +11824,7 @@ pub enum Resource {
     ConditionalMutexGuard(Arc<ConditionalMutexGuard>),
     /// Exclusive lifecycle authority for one initialized mutex.
     MutexLive(MutexIdentity),
-    /// Owned permission to use one checked loan share of an initialized mutex.
+    /// Owned permission to use one checked borrow share of an initialized mutex.
     MutexUse(MutexUseIdentity),
     /// Iterated guarded ownership: one fact for every element of a bounded
     /// index range whose guard cell holds (`iterated.rs`).
@@ -11934,7 +11934,7 @@ impl ConditionalMutexGuard {
 }
 
 /// Opaque identity of one use-share resource occurrence. The pointer is
-/// diagnostic metadata, not a constructor for loan authority. Substitution
+/// diagnostic metadata, not a constructor for borrow authority. Substitution
 /// must preserve this identity just as it preserves a concrete acquisition.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MutexUseIdentity {
@@ -16040,7 +16040,7 @@ impl CheckedFunctionExecution {
                 return Err(format!("path {index}: the obligations differ"));
             }
             if left.loan_evidence != right.loan_evidence {
-                return Err(format!("path {index}: the loan evidence differs"));
+                return Err(format!("path {index}: the borrow evidence differs"));
             }
             same_proposition(left.theorem.proposition(), right.theorem.proposition())
                 .map_err(|difference| format!("path {index}: {difference}"))?;
@@ -16228,7 +16228,7 @@ impl StatementExecutionPath {
         self
     }
 
-    /// A path with no loop-invariant correspondence and no loan evidence,
+    /// A path with no loop-invariant correspondence and no borrow evidence,
     /// which is every path not leaving a checked loop or a borrowing call.
     pub(super) fn new(
         outcome: StatementOutcome,
@@ -16300,7 +16300,7 @@ impl CallParameters {
 }
 
 impl FunctionPath {
-    /// A path with no loan evidence: every path not ending in a borrowing
+    /// A path with no borrow evidence: every path not ending in a borrowing
     /// call.
     pub(super) fn new(
         outcome: FunctionOutcome,

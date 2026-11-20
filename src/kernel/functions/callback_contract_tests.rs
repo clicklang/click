@@ -469,7 +469,7 @@ fn stable_view_refinement_uses_checked_variance_for_subranges() {
         )
         .expect("refinement planning should stay bounded"),
         Some(true),
-        "a proper owned superrange must enter through the checked loan adapter"
+        "a proper owned superrange must enter through the checked borrow adapter"
     );
 
     let viewed = interface("view_target", ResourceSpec::viewed_memory(segment(2)));

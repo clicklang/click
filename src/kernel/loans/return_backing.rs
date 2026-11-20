@@ -1,4 +1,4 @@
-//! Producer-maintained description indexes for selected return loan sources.
+//! Producer-maintained description indexes for selected return borrow sources.
 use super::*;
 use crate::kernel::ResourceFamily;
 

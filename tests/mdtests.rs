@@ -60,7 +60,7 @@ const NIGHTLY: &[&str] = &[
     "a_summarized_pure_loop_does_not_record_its_test_state.md", // 0.84s focused; fast layout coverage checks the test selector
     "a_fixed_range_transfer_preserves_the_retained_tail.md", // 0.55s focused: typed byte-range call and return
     "consumed_scalar_transfer_mixes_with_a_borrowed_return.md", // 0.67s focused: two-parameter call and caller return
-    "aliased_packaged_views_keep_their_selected_whole_loan.md", // 0.71s focused: selected whole-loan recovery
+    "aliased_packaged_views_keep_their_selected_whole_loan.md", // 0.71s focused: selected whole-borrow recovery
     "multiple_witnesses_survive_checked_calls.md", // 1.07s focused: repeated calls with two recorded witnesses
     "symbolic_return_boundary_uses_explicit_bounds.md", // 0.78s focused: symbolic return beside retained memory
     "symbolic_output_partitions_rejoin_a_retained_frame.md", // 3.8s focused: symbolic flat/composite partitions beside retained memory

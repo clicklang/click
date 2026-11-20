@@ -26,10 +26,10 @@ client proof. It does not certify an operating system's pthread implementation.
   Both forms require the complete 40-byte writable storage and 8-byte alignment.
   Local automatic objects provide implicit ownership within their live bounds;
   other storage requires an ordinary owned memory range. A stable view cannot
-  authorize initialization, and an active storage loan prevents it. Initialization
+  authorize initialization, and an active storage borrow prevents it. Initialization
   forgets previous values of the mutex bytes while preserving disjoint memory.
 - `pthread_mutex_lock` requires the current initialization's available
-  `mutex_live` owner or a checked owned `mutex_use` loan for that initialization.
+  `mutex_live` owner or a checked owned `mutex_use` borrow for that initialization.
   It succeeds for an unlocked mutex and gives
   the current path its escrowed resource. `pthread_mutex_unlock` succeeds only
   when an owned instance of the authenticated protected resource type has been
@@ -47,7 +47,7 @@ Typed worker inputs `owns access: mutex_use(mu, counter_state(p))` receive a
 checked share of use authority. Creation lends the lifetime owner on the first
 use, retains a parent share, and splits a separate worker share on each success.
 Failure leaves the parent's authority unchanged. Join returns only that child's
-share into the current loan ledger. Destruction requires every share to return;
+share into the current borrow ledger. Destruction requires every share to return;
 a saved pre-create state cannot replace the current state. Creation while the
 parent holds a guard remains outside this profile.
 
@@ -72,13 +72,13 @@ normal or abrupt scope exit, including function return. Folding its owner into
 a resource does not remove this storage dependency. Unresolved symbolic mutex
 storage conservatively blocks expiry when it might alias the local object.
 Initialization now checks storage ownership, known lifetime expiry, read-only
-storage, alignment, and stable loans. Successful initialization reserves its
+storage, alignment, and stable borrows. Successful initialization reserves its
 footprint against ordinary C stores, aggregate writes, call-result assignments,
 and modular calls whose mutable footprint may overlap it. Another initialization
 must also be separate. Unlocking or folding lifecycle ownership does not release
 the reservation; destruction does. Missing separation reports `Requires separate(...)`.
 Every checked mutex runtime transition may change its opaque bytes, forgets their
-old values, and must respect active stable storage loans.
+old values, and must respect active stable storage borrows.
 
 Reservations are retained in the concrete runtime ledger. Independently verified
 preserving helpers also retain the storage dependencies of their assumed owned
@@ -88,7 +88,7 @@ authority. Unknown dependencies are conservative. Direct preserving `mutex_use`
 helpers may perform balanced opaque lock/unlock: acquisition creates an exact
 local guard and lifetime hold, and release consumes both. These operations
 expose no protected assertion. Return requires the preserved use input with no
-outstanding acquisition or child loan. Init/destroy and
+outstanding acquisition or child borrow. Init/destroy and
 escaping acquisitions remain unsupported in this abstract path. Typed use inputs
 add an authenticated protected resource type: lock produces `guard` and `state`,
 and unlock consumes the guard and an owned replacement of that resource type.
@@ -99,7 +99,7 @@ unlocked and reject potentially aliased owned abstract guards, including guards
 hidden in entry wrappers. This is local availability, not a promise of global
 unlockedness, fairness, or termination. Such calls may change the opaque mutex
 representation: their checked summaries forget those storage bytes and respect
-stable storage loans, even when the caller retains ordinary storage ownership.
+stable storage borrows, even when the caller retains ordinary storage ownership.
 
 The C client still owes its worker proof, creation failure paths, ownership
 separation, parent access checks, and every source-level continuation. The

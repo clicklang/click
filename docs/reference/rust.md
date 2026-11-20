@@ -1178,7 +1178,7 @@ Compiler storage starts for local scalar arrays create checked fresh backing at
 that point, including inside symbolic iterator loops. Plain record storage
 starts also restore backing for array-field state copies. The loop contract
 need not list compiler-created local arrays as input resources. Re-entry checks
-live loans and replaces the previous object's identity; initialization and
+live borrows and replaces the previous object's identity; initialization and
 complete source/destination copy authority remain required.
 
 Builtin `.len()`, local reference aliases and reborrows, and direct fixed-array
@@ -1635,7 +1635,7 @@ of conflicting parent access and use after move. The example passes verification
 profiling, audit, expansion, and re-verification without new Click syntax.
 
 rustc establishes source borrow legality. These checks do not yet extract a
-complete Rust loan protocol or infer ownership contracts from Rust types.
+complete Rust borrow protocol or infer ownership contracts from Rust types.
 
 The adapter supports moving a reference field out of a plain local struct.
 It still excludes general partial moves with cleanup, nested owned fields,

@@ -305,7 +305,7 @@ fn direct_native_construction_distinguishes_fields_from_padding() {
     let arguments = [ProgramValue::pointer(destination.clone())];
 
     // The 16-byte layout writes an 8-byte pointer and a 4-byte scalar.
-    // A loan at byte 12 covers only padding. A loan at byte 8 covers a field.
+    // A borrow at byte 12 covers only padding. A borrow at byte 8 covers a field.
     for (loan_offset, separates) in [(12, true), (8, false)] {
         let view = ResourceFact::view_memory(MemoryRange::new_with_element_width(
             destination.offset_by_bytes(loan_offset),

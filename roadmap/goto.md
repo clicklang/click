@@ -47,7 +47,7 @@ A target label alone is not enough for every language. An edge may need
 checked scope-exit operations, object-lifetime changes, and a distinction
 between normal transfer and unwinding. C++ can require destructors on scope
 exit and restrict jumps across initialization. Rust MIR has block edges and
-conditional drops, even though Rust has no source `goto`. Loan expiration
+conditional drops, even though Rust has no source `goto`. Borrow expiration
 must remain distinct from lexical scope exit and object destruction.
 
 Keep the edge mechanism shared and its legality/cleanup rules language-specific.
@@ -118,5 +118,5 @@ and multiple-backedge extensions.
 - The edge/scope representation has an explicit account of the C++ cleanup
   and Rust drop design checks above, with language-specific legality and
   reserved normal/unwind distinctions. It does not require a second proof
-  engine or treat every scope exit as automatic loan recovery.
+  engine or treat every scope exit as automatic borrow recovery.
 - The general-jump regressions and `scripts/check.sh` pass.

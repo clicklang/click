@@ -3,10 +3,10 @@
 `f` holds no resource for its local `tmp`: a local's bytes are implicit local
 storage. A callee that views `cstr_at(s, n)` for a value parameter `n` takes
 the view from those bytes, as it takes a plain view of a local. Every piece
-of the string's body is lent from `tmp` as a checked local loan for the call,
+of the string's body is lent from `tmp` as a checked local borrow for the call,
 and the string's facts are decided at the call from the bytes stored there.
 The call map gives the length, since nothing the caller holds supplies it.
-After each call the loan is closed, so `tmp[0] = 'a'` writes the array again,
+After each call the borrow is closed, so `tmp[0] = 'a'` writes the array again,
 and the second call views the same bytes twice.
 
 ```c filename=a_local_char_array_lends_its_c_string_view.c

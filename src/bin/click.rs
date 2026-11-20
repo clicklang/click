@@ -105,7 +105,7 @@ mod tests {
     }
 
     /// A view of a global cell borrows it for the call. A store into that
-    /// cell must report the unproved separation from the loaned range and
+    /// cell must report the unproved separation from the borrowed range and
     /// locate the original C store.
     #[test]
     fn verify_refuses_a_store_into_a_viewed_global_with_the_separation_goal() {

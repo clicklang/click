@@ -63,7 +63,7 @@ pub(super) enum Refusal {
 
 /// Exact unary populations for the first kernel slice: family(anchor).
 /// Every lookup/update touches a bounded number of persistent map paths.
-/// Wildcard scopes, C bindings, symbolic totals, views, and loans are not
+/// Wildcard scopes, C bindings, symbolic totals, views, and borrows are not
 /// admitted by this module; callers cannot simulate them with guessed IDs.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct AuthorityState {

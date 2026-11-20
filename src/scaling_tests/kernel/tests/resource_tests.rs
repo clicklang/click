@@ -3312,12 +3312,15 @@ fn observable_projection_ignores_excluded_loan_bindings_when_hashing() {
             crate::instrumentation::measure_deterministic_work(|| resource_context_hash(&observed));
         assert_eq!(hash, resource_context_hash(&expected));
         assert_eq!(observed.live_loan_dependencies().count(), 1);
-        assert!(work <= 16, "{size} excluded loans caused {work} hash units");
+        assert!(
+            work <= 16,
+            "{size} excluded borrows caused {work} hash units"
+        );
         costs.push(work);
     }
     assert!(
         costs.iter().all(|work| *work == costs[0]),
-        "excluded loan costs: {costs:?}"
+        "excluded borrow costs: {costs:?}"
     );
 }
 

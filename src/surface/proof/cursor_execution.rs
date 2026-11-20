@@ -151,7 +151,7 @@ pub(super) fn apply_branch_interface_with_proof_facts(
             .unwrap_or_default();
         return Err(join_entry.step_error_with_requirement(
             format!(
-                "branch memory join requires separation from active loans at the split{detail}"
+                "branch memory join requires separation from active borrows at the split{detail}"
             ),
             None,
             Some((
@@ -1740,7 +1740,7 @@ pub(super) fn checked_returned_call_value(
 
 /// Record one of the two transitions retained by
 /// [`prepare_call_outcome_split`].  This is intentionally a recorder, not an
-/// evaluator: the theorem, outcome, facts, and loan evidence all come from
+/// evaluator: the theorem, outcome, facts, and borrow evidence all come from
 /// the one checked transition list produced during preparation.
 pub(super) fn apply_prepared_call_outcome_transition(
     execution: &mut ExecutionProofState,

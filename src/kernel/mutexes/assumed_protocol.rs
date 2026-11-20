@@ -20,7 +20,7 @@ pub(super) struct AssumedMutexProtocol {
     pub(super) lifetime: ResourceFact,
 }
 
-/// An exact acquisition receipt. The guard atom and its loan hold must also
+/// An exact acquisition receipt. The guard atom and its borrow hold must also
 /// remain in the state; copying this receipt never copies ownership.
 #[derive(Clone, Debug)]
 pub(super) struct AssumedMutexGuard {
@@ -46,7 +46,10 @@ impl AssumedMutexProtocol {
         let holder = state
             .loan_participant
             .ok_or("missing mutex use participant")?;
-        let loans = state.loan_ledger.as_ref().ok_or("missing mutex use loan")?;
+        let loans = state
+            .loan_ledger
+            .as_ref()
+            .ok_or("missing mutex use borrow")?;
         let use_fact = loans.mutex_use_resource(usage, holder).map_err(|error| {
             MutexTransitionError::OwnedRefusal(format!("missing rooted mutex use input: {error}"))
         })?;
@@ -283,7 +286,7 @@ impl AssumedMutexProtocol {
                 });
             }
             if loans.has_active_memory_loans() || state.loan_view_bindings.iter().next().is_some() {
-                return Err("protected mutex release requires returned memory loans".into());
+                return Err("protected mutex release requires returned memory borrows".into());
             }
             Some(ResourceFact::own(Resource::Instance(current.clone())))
         } else {
@@ -1077,7 +1080,7 @@ mod tests {
                 .is_err()
         );
         // Even a hostile receipt retaining the correct guard atom cannot
-        // substitute another loan's hold and release its lifetime early.
+        // substitute another borrow's hold and release its lifetime early.
         guard.hold = other_guard.hold;
         assert!(protocol.release(&held.state, &guard, &assumptions).is_err());
     }

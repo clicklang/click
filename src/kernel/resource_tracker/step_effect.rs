@@ -984,7 +984,7 @@ fn seeded_cell_effect_store_by_store(
 ///   the declared ranges, drops the zeroed reading of every allocation those
 ///   ranges may reach, and inserts its two marker blocks. A loop havoc forgets
 ///   every cell outside the preserved scalar-local blocks and the
-///   loan-protected ones, and inserts its marker block; it changes no size,
+///   borrow-protected ones, and inserts its marker block; it changes no size,
 ///   no ended-local entry and no heap status at all. When every declared range
 ///   lies in an object proven distinct from this block:
 ///     * its cells keep their values across a call havoc, because block

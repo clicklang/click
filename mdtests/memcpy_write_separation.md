@@ -1,7 +1,7 @@
-# A memcpy destination is separate from an active loan
+# A memcpy destination is separate from an active borrow
 
 The destination is already owned. The copy uses an entry separation fact
-for its destination and the unrelated live loan. A zero-byte copy beside
+for its destination and the unrelated live borrow. A zero-byte copy beside
 a view of the same object needs no separation proof.
 
 ```c filename=memcpy_write_separation.c

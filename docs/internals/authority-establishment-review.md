@@ -155,7 +155,7 @@ from the projection, then composes the checked private body. Lowering and
 memory-dependency checks use this same projection. The live folded resource
 remains unchanged until its separately checked resource exchange. An unrelated
 unbound view still fails the dependency check, even beside owned memory; an
-ownership observation grants no stable-view loan.
+ownership observation grants no stable-view borrow.
 
 Closing an open control authenticates the children currently owned, rather
 than trusting the suspended head's invariant. Its local projection retires

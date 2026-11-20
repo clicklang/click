@@ -2,7 +2,7 @@
 
 `box(p)` owns the struct's fields and views the array its `d` field points
 at: a struct holding a borrow. `setup` builds one from a viewed input, so
-the produced composite keeps that input's loan open (step 7 of fix-views);
+the produced composite keeps that input's borrow open (step 7 of fix-views);
 `bump` then takes the whole composite by ownership and returns it, and the
 caller still knows `p->b` afterwards through the callee's `old()` ensures.
 The same shape verifies under both view semantics.

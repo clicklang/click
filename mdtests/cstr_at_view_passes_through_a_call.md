@@ -2,7 +2,7 @@
 
 `views cstr_at(src, n)` borrows the `n + 1` bytes of `src` through its
 terminator; `cstr_at` is declared in the `click::c::string` library module.
-`measure` receives that loan and lends the same composite to `string_length`
+`measure` receives that borrow and lends the same composite to `string_length`
 without opening it: the call needs no unfold, refold, or restatement of the
 string's facts. `string_length` stands for a library
 function whose contract takes the borrowed string; its length is a C argument

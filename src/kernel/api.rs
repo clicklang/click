@@ -33,7 +33,7 @@ thread_local! {
     /// verification session, keyed by function name and holding the exact
     /// entry state they were installed on. Every proof unit of one function
     /// (each claim proof, loop proof, and certification) must share one
-    /// entry authority: a loan ledger's identity is opaque and fresh, so two
+    /// entry authority: a borrow ledger's identity is opaque and fresh, so two
     /// installs would be two different authorities and no completion from
     /// one could certify a claim at the other. The pre-install state is
     /// compared exactly, once per proof unit; a function whose entry state
@@ -1627,7 +1627,7 @@ pub struct StateJoinAbstraction {
 
 impl StateJoinAbstraction {
     /// The abstraction may be published only if every changed span separates
-    /// from the live loan footprint at the split, before any arm runs.
+    /// from the live borrow footprint at the split, before any arm runs.
     pub(crate) fn unproved_memory_separation(
         &self,
         entry_facts: &crate::kernel::proof::PureFactStore,
@@ -1747,8 +1747,8 @@ fn abstract_execution_state_for_join_across_with_policy(
 ) -> Result<StateJoinAbstraction, String> {
     let preserve_exact_common_memory = matches!(join_locals, JoinLocals::ArmsAgree);
     // A join may retain one exact persistent ledger root, but it cannot pick
-    // one arm's loan history when siblings have advanced independently. The
-    // ledger equality is an opaque state-identity comparison; no loan map or
+    // one arm's borrow history when siblings have advanced independently. The
+    // ledger equality is an opaque state-identity comparison; no borrow map or
     // history is traversed here.
     if sibling_states
         .iter()
@@ -1760,13 +1760,13 @@ fn abstract_execution_state_for_join_across_with_policy(
         .iter()
         .any(|sibling| sibling.loan_ledger != state.loan_ledger)
     {
-        return Err("stable-view loan state differs across branch join".to_string());
+        return Err("stable-view borrow state differs across branch join".to_string());
     }
     if sibling_states
         .iter()
         .any(|sibling| sibling.loan_participant != state.loan_participant)
     {
-        return Err("stable-view loan participant differs across branch join".to_string());
+        return Err("stable-view borrow participant differs across branch join".to_string());
     }
     if sibling_states
         .iter()
@@ -2142,9 +2142,9 @@ fn abstract_execution_state_for_join_across_with_policy(
         );
     }
     // Drop the resource context through the rebasing setter, not by writing
-    // the field. The occurrence-to-loan sidecar is keyed by the occurrences of
+    // the field. The occurrence-to-borrow sidecar is keyed by the occurrences of
     // the context being discarded, so a direct assignment would leave the
-    // abstraction advertising loan dependencies for occurrences it no longer
+    // abstraction advertising borrow dependencies for occurrences it no longer
     // has -- and would disagree with every other path that reaches an empty
     // context through `with_resource_context`. The ledger and participant are
     // untouched: the arms' authority survives the abstraction, only the
@@ -2199,7 +2199,7 @@ fn branch_memory_delta_requirements(
         || base.heap != sibling.heap
         || base.forgotten.ended_local_blocks != sibling.forgotten.ended_local_blocks
     {
-        return Err("branch memory join has an unsupported allocation or block delta while a stable-view loan is active".to_string());
+        return Err("branch memory join has an unsupported allocation or block delta while a stable-view borrow is active".to_string());
     }
     for pointer in base.differing_cell_pointers(sibling) {
         crate::instrumentation::record_deterministic_work(1);
@@ -2208,7 +2208,7 @@ fn branch_memory_delta_requirements(
             .max(sibling.join_cell_width(&pointer));
         if byte_width == 0 {
             return Err(
-                "branch memory join has an unknown changed cell width while a stable-view loan is active".to_string(),
+                "branch memory join has an unknown changed cell width while a stable-view borrow is active".to_string(),
             );
         }
         let range = MemoryRange::new_with_element_width(
@@ -3910,7 +3910,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
             .filter(|(installed_on, _)| installed_on == &state)
             .map(|(_, rooted)| rooted.clone())
     }) {
-        // Loan identities are reused across separately checked claims, but
+        // Borrow identities are reused across separately checked claims, but
         // their pure contexts have independent graph lineages. This is the
         // selected contract-input producer boundary, not a permission query.
         rooted
@@ -5790,7 +5790,7 @@ pub(crate) fn execution_evidence_states_match(
     }
     // Stable-view authority is semantic state, even though ordinary entry
     // rebasing is allowed to change the ghost resource representation.  Do
-    // not let a checked execution cross a loan root, holder, or occurrence
+    // not let a checked execution cross a borrow root, holder, or occurrence
     // binding boundary while comparing the remaining representation.
     if !loan_authority_states_match(left, right) {
         return false;

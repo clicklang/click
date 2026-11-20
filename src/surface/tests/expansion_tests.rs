@@ -18528,7 +18528,7 @@ fn local_job_views_expand_and_reverify_without_ownership_annotations() {
     verify_c_sources(&click, &sources).expect("local job must verify before expansion");
     for function in ["read_local_job", "relay_local_job", "use_local_job"] {
         click = expand_function_proof_source(&click, &sources, function)
-            .expect("local loan and lifetime certificates should expand");
+            .expect("local borrow and lifetime certificates should expand");
     }
     assert!(!click.contains("step_until(function.exit);"), "{click}");
     assert!(!click.contains("solve();"), "{click}");

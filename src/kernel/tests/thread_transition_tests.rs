@@ -732,7 +732,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
         unreachable!()
     };
     // The two caller scalar allocation owners survive alongside the recovered
-    // thread argument and byte owners; no worker token or loan escapes join.
+    // thread argument and byte owners; no worker token or borrow escapes join.
     assert_eq!(after_join.resources().facts().len(), 4);
     for fact in [
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -1728,7 +1728,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         )
         .unwrap()
         .unwrap();
-    // The frame owns the array's bytes from its declaration. The view loan
+    // The frame owns the array's bytes from its declaration. The view borrow
     // escrows the lent element's backing and adds no ownership: the parent
     // keeps exactly the rest of the array.
     let [ResourceFact::Own(Resource::Memory(declared_range), _)] = declared_resources.as_slice()
@@ -1821,10 +1821,10 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     )
     .unwrap();
     let Proposition::Implies(requirement, _) = theorem.proposition() else {
-        panic!("even a same-value alias write must require loan separation");
+        panic!("even a same-value alias write must require borrow separation");
     };
     let Proposition::ResourceSeparate { left, right } = requirement.as_ref() else {
-        panic!("expected the explicit loan separation premise");
+        panic!("expected the explicit borrow separation premise");
     };
     assert!(!PureFactContext::new().proves_resource_separate(left, right));
     let (joined, _) = active
@@ -1834,8 +1834,8 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
             &PureFactContext::new(),
         )
         .unwrap();
-    // The join ends the loan: the parent again owns all of the array's bytes,
-    // in the pieces the loan left, and holds nothing else.
+    // The join ends the borrow: the parent again owns all of the array's bytes,
+    // in the pieces the borrow left, and holds nothing else.
     let mut owned = joined
         .parent()
         .resources()

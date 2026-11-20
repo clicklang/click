@@ -1017,7 +1017,7 @@ an observation, not a borrow. It is read authority derived from that owner and
 is usable only while the owner is held; it cannot satisfy another function's
 `views` clause, which only the checked lending transition supplies. When the
 observed resource is itself borrowed, the published fact carries that borrow's
-identity, so it stays tied to the loan it was read through.
+identity, so it stays tied to the borrow it was read through.
 
 A guarded directly recursive resource also has a finite inductive witness.
 `decreases list(node)`, or `decreases n;` naming the binder of an

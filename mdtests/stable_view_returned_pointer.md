@@ -1,6 +1,6 @@
 # A returned C pointer does not escape a caller's independent ownership
 
-Returning a raw pointer value does not return a stable loan. The caller keeps
+Returning a raw pointer value does not return a stable borrow. The caller keeps
 its own ownership, so it may use the returned pointer for a later write after
 the read-only helper returns.
 

@@ -40,8 +40,8 @@ impl crate::kernel::search::ProofSearch<BorrowLedger> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("loan_access");
         // This barrier only restricts otherwise owner-authorized writes.
-        // With no active memory loans there is nothing to compare, regardless
-        // of pointer aliases, non-memory loans, or ended loan history.
+        // With no active memory borrows there is nothing to compare, regardless
+        // of pointer aliases, non-memory borrows, or ended borrow history.
         if !proof_input.has_active_memory_loans() || memory_range_is_empty(range) {
             return Ok(());
         }
@@ -70,7 +70,7 @@ impl crate::kernel::search::ProofSearch<BorrowLedger> {
                 }) && proof_input.storage.data.active_nonlocal_indexed_ranges == 0
                     && proof_input.storage.data.unindexed_memory.is_empty())
             {
-                // Every indexed loan is then on a fresh `local:` block. An
+                // Every indexed borrow is then on a fresh `local:` block. An
                 // external input cannot reach those blocks unless an exact
                 // alias says otherwise; in that case the test above refuses
                 // the non-indexable query conservatively.

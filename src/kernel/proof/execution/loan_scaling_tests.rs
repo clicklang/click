@@ -21,10 +21,10 @@ fn assert_near_linear(axis: &str, samples: &[(usize, usize)]) {
     }
 }
 
-/// An arm carrying `count` occurrence-keyed bindings of one shared loan,
+/// An arm carrying `count` occurrence-keyed bindings of one shared borrow,
 /// and an interface successor claiming `claimed` of those bindings. This is the shape a
 /// proof reaches by exposing one child per unfold or observe: the binding
-/// count follows the proof, while the loan and its ledger follow the
+/// count follows the proof, while the borrow and its ledger follow the
 /// contract. The successor's resource context is rebuilt from the
 /// declared clauses, so its occurrences are fresh and only the binding
 /// content can connect it to the arm.
@@ -41,7 +41,7 @@ fn interface_join_states(count: usize, claimed: usize) -> (ExecutionState, Execu
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
         .lend(owner, reader, support, support_fact)
-        .expect("one shared loan backs every exposed child");
+        .expect("one shared borrow backs every exposed child");
     let bindings = viewed
         .iter()
         .map(|fact| LoanViewBinding {
@@ -96,7 +96,7 @@ fn parameter_view(variable: u64) -> ResourceFact {
     ))
 }
 
-/// `count` live symbolic contract-input loans, all in one block.
+/// `count` live symbolic contract-input borrows, all in one block.
 fn symbolic_contract_input_ledger(count: usize) -> BorrowLedger {
     let viewed = (0..count as u64).map(parameter_view).collect::<Vec<_>>();
     let resources = ResourceContext::new().unchecked_with_facts(viewed.iter().cloned());
@@ -115,7 +115,7 @@ fn symbolic_contract_input_ledger(count: usize) -> BorrowLedger {
     ledger
 }
 
-/// `count` concrete cells in the same block those loans protect.
+/// `count` concrete cells in the same block those borrows protect.
 fn cells_in_the_symbolic_block(count: usize) -> SymbolicMemory {
     let mut memory = SymbolicMemory::new();
     for index in 0..count {

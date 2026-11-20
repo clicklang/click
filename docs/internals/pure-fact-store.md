@@ -186,7 +186,7 @@ construct a scope. `ordered_fact_store` distinguishes occurrence views: proof
 stores present each proposition once, while explicit sequences and lists retain
 repetitions. The old proof-wrapper conversion factories are removed.
 
-Checked loop exits and resource-state restoration use stores directly; loan
+Checked loop exits and resource-state restoration use stores directly; borrow
 evidence stays on each exit. The Surface index of explicitly retained `have`
 facts and the fixed-state lowering availability index also use stores, with
 justification retained by the corresponding proof operations. Read-only entry-resource evaluation and initial composite-fact recording also

@@ -1,4 +1,4 @@
-# a caller's own entry partition does not back a second loan
+# a caller's own entry partition does not back a second borrow
 
 `a_caller_cannot_lend_and_transfer_one_range.md` from a caller that holds an
 entry partition of its own. `caller` lends `a` and transfers `g`, so its body
@@ -8,7 +8,7 @@ against `g`: it reserves the callee's `owns g[0..1]` out of the residual and
 then cannot find backing for the callee's `views g[0..1]` in what is left.
 
 The checked point is that a separation the caller holds is never mistaken for
-the backing a loan needs.
+the backing a borrow needs.
 
 ```c filename=a_callers_own_partition_does_not_back_a_second_loan.c
 int32 g[4];

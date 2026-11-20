@@ -1496,7 +1496,7 @@ These still stay a temporary:
 - a call's result read more than once, so a slice, chunk or `enumerate`
   loop's `next` result is one and a proof sees it;
 - a borrow, unless its one read in its block takes it whole: a call
-  argument (`t = &mut x; f(t)` is `f(&mut x)`, whose loan lasts the call), a
+  argument (`t = &mut x; f(t)` is `f(&mut x)`, whose borrow lasts the call), a
   local's whole value (`let r = &mut x`), or a reborrow (`&mut *t` is the
   borrow). A borrow of a place rooted at a local moves past statements that
   do not name that local;
@@ -1863,7 +1863,7 @@ judgment. The judgments differ in exactly two named branches:
 
 Everything else is shared: each statement is charged one step, every
 statement passes the same pending-thread-create gate, and a sequence whose
-first statement leaves abnormally carries that statement's facts and loan
+first statement leaves abnormally carries that statement's facts and borrow
 evidence out with it. `execute_execution_statement_paths` and
 `execute_execution_statement_verification_paths` remain only as names for the two
 judgments.
@@ -1912,7 +1912,7 @@ resources, and rejects surviving direct or composite resource aliases at the
 `free` transition. A `views` requirement on an opaque call is a scoped borrow:
 call application escrows the caller's owned resource, or reborrows its existing
 view, and the return recovers it without creating a persistent view. Retiring
-an allocation also consults the loan ledger on every path, so a live borrow of
+an allocation also consults the borrow ledger on every path, so a live borrow of
 any part of an allocation refuses the `free` or the undecided-continuity
 realloc that would invalidate it. Thus a borrow from ownership ends before a
 following `free`, while a view that survives the call must be proved separate

@@ -982,7 +982,7 @@ pub(super) fn lower(
                     let (length, element, _) = cx.arrays[local];
                     // Mint checked fresh automatic storage at the compiler's
                     // lifetime start, including each symbolic loop iteration.
-                    // Re-entry retires the old object and checks live loans.
+                    // Re-entry retires the old object and checks live borrows.
                     program_begin_aggregate_construction(
                         cx.binding(&local.clone()),
                         AggregateLayout::new(

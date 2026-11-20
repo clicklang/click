@@ -578,7 +578,7 @@ a cached store. When every exit proves the same exact integer or pointer
 value, the join retains that value, including a call on one exit and a direct
 store on another (`mdtests/loop_break_exit_contract_call_joins_a_direct_store.md`).
 An owner's own observation and identity expansion cache do not add authority;
-loan-bound views and nontrivial resource descriptions still have to agree.
+borrow-bound views and nontrivial resource descriptions still have to agree.
 Different stored values remain a named join refusal
 (`mdtests/loop_break_exit_contract_call_different_store_rejected.md`). Numerical
 floating equality and `bool` reads (the `Bool` `byte != 0`) do not establish

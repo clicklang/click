@@ -1201,14 +1201,14 @@ fn format_loan_category(category: crate::kernel::LoanRefusalCategory) -> &'stati
         }
         crate::kernel::LoanRefusalCategory::WrongHolder => "the holder is wrong",
         crate::kernel::LoanRefusalCategory::WrongArena => "the authority arena is wrong",
-        crate::kernel::LoanRefusalCategory::WrongScope => "the loan scope is wrong",
+        crate::kernel::LoanRefusalCategory::WrongScope => "the borrow scope is wrong",
         crate::kernel::LoanRefusalCategory::ActiveDependency => "an active dependency remains",
         crate::kernel::LoanRefusalCategory::StalePredecessor => "the predecessor is stale",
         crate::kernel::LoanRefusalCategory::Recovery => "recovery evidence is invalid",
-        crate::kernel::LoanRefusalCategory::Lifetime => "the loan lifetime is invalid",
+        crate::kernel::LoanRefusalCategory::Lifetime => "the borrow lifetime is invalid",
         crate::kernel::LoanRefusalCategory::Unsupported => "the resource shape is unsupported",
-        crate::kernel::LoanRefusalCategory::Missing => "loan backing or binding is missing",
-        crate::kernel::LoanRefusalCategory::InvalidEvidence => "loan evidence is invalid",
+        crate::kernel::LoanRefusalCategory::Missing => "borrow backing or binding is missing",
+        crate::kernel::LoanRefusalCategory::InvalidEvidence => "borrow evidence is invalid",
     }
 }
 
@@ -1219,7 +1219,7 @@ fn format_loan_subject(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> &'s
     } else if subject.memory_range().is_some() {
         "selected memory range"
     } else {
-        "the selected loan boundary"
+        "the selected borrow boundary"
     }
 }
 
@@ -1227,7 +1227,7 @@ fn format_loan_ids(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> String 
     let subject = diagnostic.subject();
     let mut ids = Vec::new();
     if let Some((arena, ordinal)) = subject.loan_id() {
-        ids.push(format!("loan {arena}:{ordinal}"));
+        ids.push(format!("borrow {arena}:{ordinal}"));
     }
     if let Some((arena, ordinal)) = subject.scope_id() {
         ids.push(format!("scope {arena}:{ordinal}"));

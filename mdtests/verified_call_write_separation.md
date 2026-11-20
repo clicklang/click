@@ -1,4 +1,4 @@
-# A verified call proves separation from a caller loan at entry
+# A verified call proves separation from a caller borrow at entry
 
 The call's write effect and the active view give the step its proof goal.
 The caller's resource partition establishes their separation.

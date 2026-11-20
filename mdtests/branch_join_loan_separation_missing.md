@@ -35,5 +35,5 @@ int32 run(int32 *out, const int32 *input, int32 choice) {
 ```
 
 ```expect
-fail: branch memory join requires separation from active loans at the split
+fail: branch memory join requires separation from active borrows at the split
 ```

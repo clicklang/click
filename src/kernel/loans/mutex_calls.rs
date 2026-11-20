@@ -353,7 +353,7 @@ impl MutexUseCallTransfer {
 
     /// Attach only metadata authenticated by the selected concrete
     /// initialization. Preparing the transfer has already checked ownership
-    /// and the callee's loan; a source declaration cannot supply this binding.
+    /// and the callee's borrow; a source declaration cannot supply this binding.
     pub(in crate::kernel) fn bind_interface(
         &mut self,
         protocols: &crate::kernel::mutexes::MutexLedger,
@@ -464,7 +464,7 @@ impl MutexUseCallTransfer {
         Ok(())
     }
 
-    /// The body must already be certified. Its explicit loan deltas connect
+    /// The body must already be certified. Its explicit borrow deltas connect
     /// this exact entry to the returned ledger; a sibling ledger is insufficient.
     /// Assumed roots belong only to modular entry, never an executing call.
     #[cfg(test)]

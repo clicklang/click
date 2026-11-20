@@ -589,10 +589,10 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
     )
     .expect("an owner-authorized aggregate copy over a lent field has a checked outcome");
     let Proposition::Implies(requirement, execution) = theorem.proposition() else {
-        panic!("the aggregate copy must remain conditional on loan separation");
+        panic!("the aggregate copy must remain conditional on borrow separation");
     };
     let Proposition::ResourceSeparate { left, right } = requirement.as_ref() else {
-        panic!("expected the explicit loan separation premise");
+        panic!("expected the explicit borrow separation premise");
     };
     assert!(!PureFactContext::new().proves_resource_separate(left, right));
     assert_eq!(right.as_ref(), view_memory_fact(target, 1, 2).resource());
@@ -605,7 +605,7 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
     ));
 }
 
-/// The loan barrier exists for exactly one shape: a write the ordinary
+/// The borrow barrier exists for exactly one shape: a write the ordinary
 /// owned-authority check already accepted, landing inside a concretely lent
 /// range. An unowned write never reaches it, because the missing-ownership
 /// check now runs first.
@@ -664,10 +664,10 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
     )
     .expect("an owner-authorized write into a lent range has a checked outcome");
     let Proposition::Implies(requirement, execution) = theorem.proposition() else {
-        panic!("the write must remain conditional on loan separation");
+        panic!("the write must remain conditional on borrow separation");
     };
     let Proposition::ResourceSeparate { left, right } = requirement.as_ref() else {
-        panic!("expected the explicit loan separation premise");
+        panic!("expected the explicit borrow separation premise");
     };
     assert!(!PureFactContext::new().proves_resource_separate(left, right));
     assert_eq!(
@@ -749,10 +749,10 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
     )
     .expect("a same-value store into a lent range has a checked outcome");
     let Proposition::Implies(requirement, execution) = theorem.proposition() else {
-        panic!("the write must remain conditional on loan separation");
+        panic!("the write must remain conditional on borrow separation");
     };
     let Proposition::ResourceSeparate { left, right } = requirement.as_ref() else {
-        panic!("expected the explicit loan separation premise");
+        panic!("expected the explicit borrow separation premise");
     };
     assert!(!PureFactContext::new().proves_resource_separate(left, right));
     assert_eq!(

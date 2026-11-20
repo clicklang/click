@@ -553,7 +553,7 @@ fn use_loan_round_trip_does_not_scan_unrelated_mutexes() {
     for pair in samples.windows(2) {
         assert!(
             pair[1].1 <= pair[0].1 * 2 && pair[1].2 <= pair[0].2 * 2,
-            "one mutex loan scans unrelated initializations: {samples:?}"
+            "one mutex borrow scans unrelated initializations: {samples:?}"
         );
     }
 }

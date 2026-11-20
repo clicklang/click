@@ -968,7 +968,7 @@ fn bind_program_function_arguments_impl(
     callee_state.opaque_mutex_acquisitions = caller_state.opaque_mutex_acquisitions.clone();
     callee_state.named_mutex_authorities = caller_state.named_mutex_authorities.clone();
     // The caller's outstanding workers stay outstanding across the call. A
-    // callee cannot join them (each completion right names the caller's loan
+    // callee cannot join them (each completion right names the caller's borrow
     // participant), and returning its ledger must not erase their rights or
     // the population changes they defer to join.
     callee_state.thread_ledger = caller_state.thread_ledger.clone();
@@ -982,7 +982,7 @@ fn bind_program_function_arguments_impl(
         .as_ref()
         .map(|events| events.enter_call());
     // A function entry is a lexical/frame rebind, not an authority reset.
-    // Preserve an already-active candidate loan through calls whose resource
+    // Preserve an already-active candidate borrow through calls whose resource
     // interface is empty; the resource-transfer planner may replace these
     // fields with a checked callee participant when it lends new views.
     callee_state.loan_ledger = caller_state.loan_ledger.clone();
@@ -1183,7 +1183,7 @@ pub(super) fn bind_contract_arguments(
     callee_state.opaque_mutex_acquisitions = caller_state.opaque_mutex_acquisitions.clone();
     callee_state.named_mutex_authorities = caller_state.named_mutex_authorities.clone();
     // The caller's outstanding workers stay outstanding across the call. A
-    // callee cannot join them (each completion right names the caller's loan
+    // callee cannot join them (each completion right names the caller's borrow
     // participant), and returning its ledger must not erase their rights or
     // the population changes they defer to join.
     callee_state.thread_ledger = caller_state.thread_ledger.clone();

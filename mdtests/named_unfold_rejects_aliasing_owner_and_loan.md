@@ -1,6 +1,6 @@
 # A named owner's body cannot also be lent to its callee
 
-Opening a named owner exposes its separation from checked incoming loans.
+Opening a named owner exposes its separation from checked incoming borrows.
 The caller must not create such a partition by lending that same owner.
 
 ```c filename=probe.c

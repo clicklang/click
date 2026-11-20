@@ -6679,7 +6679,7 @@ impl PureFactContext {
             })
     }
 
-    /// Separation of an exposed owner and a checked loan-bound projection.
+    /// Separation of an exposed owner and a checked borrow-bound projection.
     /// Candidate lookup uses only the queried address keys, and the retained
     /// composition is the authority subsequently checked by memory evidence.
     pub(in crate::kernel) fn borrow_partition_separated_members<'a>(

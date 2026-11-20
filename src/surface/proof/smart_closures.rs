@@ -3450,7 +3450,7 @@ impl<'a> Proof<'a> {
         // is a spelling defect, not a reason to search other spellings.
         // Calls have their own authoritative source at this frontier. A
         // context fact's source may instead be relative to function entry.
-        // Generated loan separation already names its caller-side ranges.
+        // Generated borrow separation already names its caller-side ranges.
         // Its call site restricts proof to entry, but supplies no source clause.
         let generated_separation = requirement.call_site.as_ref().is_some_and(|site| {
             site.source_requirement_ordinal.is_none()
