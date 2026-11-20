@@ -64,8 +64,23 @@ impl SharedAddressOffset {
     /// smart reconstruction and the caller's lexical/state rewrite policy.
     pub(crate) fn try_map_pair<E>(
         roots: &[Self; 2],
-        mut map: impl FnMut(&Self, KernelAddressOffset) -> Result<Self, E>,
+        map: impl FnMut(&Self, KernelAddressOffset) -> Result<Self, E>,
     ) -> Result<[Self; 2], E> {
+        Self::try_map_roots(roots, map)
+    }
+
+    pub(crate) fn try_map_root<E>(
+        &self,
+        map: impl FnMut(&Self, KernelAddressOffset) -> Result<Self, E>,
+    ) -> Result<Self, E> {
+        let [root] = Self::try_map_roots(std::array::from_ref(self), map)?;
+        Ok(root)
+    }
+
+    fn try_map_roots<E, const N: usize>(
+        roots: &[Self; N],
+        mut map: impl FnMut(&Self, KernelAddressOffset) -> Result<Self, E>,
+    ) -> Result<[Self; N], E> {
         let mut results: HashMap<SharedAddressOffset, SharedAddressOffset> = HashMap::new();
         let mut pending: Vec<_> = roots.iter().rev().map(|root| (root, false)).collect();
         while let Some((root, finish)) = pending.pop() {
@@ -111,6 +126,21 @@ impl SharedAddressOffset {
     }
 
     fn visit_roots(roots: &[Self], right_first: bool, mut visit: impl FnMut(&KernelAddressOffset)) {
+        Self::visit_roots_while(roots, right_first, |node| {
+            visit(node);
+            true
+        });
+    }
+
+    pub(crate) fn visit_root_while(&self, visit: impl FnMut(&KernelAddressOffset) -> bool) -> bool {
+        Self::visit_roots_while(std::slice::from_ref(self), false, visit)
+    }
+
+    fn visit_roots_while(
+        roots: &[Self],
+        right_first: bool,
+        mut visit: impl FnMut(&KernelAddressOffset) -> bool,
+    ) -> bool {
         let mut pending: Vec<_> = roots.iter().rev().collect();
         let mut seen = std::collections::HashSet::new();
         while let Some(root) = pending.pop() {
@@ -118,13 +148,16 @@ impl SharedAddressOffset {
                 continue;
             }
             crate::instrumentation::record_deterministic_work(1);
-            visit(root.node());
+            if !visit(root.node()) {
+                return false;
+            }
             if right_first {
                 pending.extend(root.node().offset_children());
             } else {
                 pending.extend(root.node().offset_children().iter().rev());
             }
         }
+        true
     }
 
     pub(crate) fn syntax_equal(&self, other: &Self) -> bool {
