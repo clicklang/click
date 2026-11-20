@@ -3501,17 +3501,31 @@ fn lower_spec_algebraic_comparison_at_state_in(
         }]);
     }
     let mut paths = Vec::new();
+    let share_operand = left == right
+        && super::functions::spec_algebraic_expression_is_obligation_free(left)
+        && super::functions::spec_algebraic_expression_is_state_independent(left);
     for left_path in
         evaluate_spec_algebraic_at_state_with_bindings_in(scope, left, assumptions, budget)?
     {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
-        for right_path in evaluate_spec_algebraic_at_state_with_bindings_in(
-            scope,
-            right,
-            &right_assumptions,
-            budget,
-        )? {
+        let right_paths = if share_operand {
+            // A second evaluation of the same match would mint different arm
+            // binders. Both operand occurrences can share this evaluation.
+            vec![SpecAlgebraicPath {
+                value: left_path.value.clone(),
+                facts: Vec::new().into(),
+                obligations: Vec::new(),
+            }]
+        } else {
+            evaluate_spec_algebraic_at_state_with_bindings_in(
+                scope,
+                right,
+                &right_assumptions,
+                budget,
+            )?
+        };
+        for right_path in right_paths {
             if left_path.value.algebraic_type() != right_path.value.algebraic_type() {
                 continue;
             }
