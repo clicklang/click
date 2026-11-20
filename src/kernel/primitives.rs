@@ -4580,7 +4580,7 @@ pub enum SpecAlgebraicExpressionNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ResourceFieldProjection {
-    pub identity: InstanceId,
+    pub identity: InstanceRef,
     pub children: Vec<String>,
     pub field_index: usize,
     /// Select the explicit entry state supplied to spec evaluation. There is
@@ -10678,6 +10678,10 @@ pub struct ExecutionState {
     pub(super) instance_field_scope: ResourceContext,
     /// Call-local formal identities; the ledger retains actual caller identities.
     pub(super) resource_bindings: Option<std::sync::Arc<ResourceBindings>>,
+    /// The fields of a resource definition evaluated without an instance,
+    /// which [`InstanceRef::Body`] reads when no opened instance is bound.
+    /// Scratch resource-body evaluation only, like `instance_field_scope`.
+    pub(super) body_field_view: Option<Arc<ResourceInstance>>,
     pub(super) locals: LocalEnvironment,
     pub(super) memory: SymbolicMemory,
     /// The point this state's path has reached; not part of equality
@@ -11970,6 +11974,40 @@ impl InstanceId {
     pub const fn variable(self) -> Variable {
         self.0
     }
+
+    /// Whether an execution created this instance
+    /// ([`ExecutionBudget::allocate_instance_identity`]) rather than a
+    /// binder the surface named.
+    pub fn created_by_execution(self) -> bool {
+        self.0.0 >= ExecutionBudget::KERNEL_VARIABLE_BASE
+    }
+}
+
+/// The instance a resource field read names: the instance a resource
+/// definition's body describes (its `self`), or a particular instance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum InstanceRef {
+    /// The instance whose body is being read. It is bound where an instance
+    /// is opened ([`ResourceBindings::bind_body`]), or read from the field
+    /// view of a definition evaluated without one.
+    Body,
+    Instance(InstanceId),
+}
+
+impl From<InstanceId> for InstanceRef {
+    fn from(identity: InstanceId) -> Self {
+        InstanceRef::Instance(identity)
+    }
+}
+
+impl InstanceRef {
+    /// The particular instance this names, if it is not the body's own.
+    pub const fn instance(self) -> Option<InstanceId> {
+        match self {
+            InstanceRef::Body => None,
+            InstanceRef::Instance(identity) => Some(identity),
+        }
+    }
 }
 
 /// The proof name of one exact mutex authority occurrence (a live, use or
@@ -12040,6 +12078,8 @@ impl ResourceBinder {
 pub struct ResourceBindings {
     instances: BTreeMap<InstanceId, InstanceId>,
     mutex_authorities: BTreeMap<MutexAuthorityId, MutexAuthorityId>,
+    /// The instance [`InstanceRef::Body`] names while its body is opened.
+    body: Option<InstanceId>,
 }
 
 impl ResourceBindings {
@@ -12050,6 +12090,16 @@ impl ResourceBindings {
     /// The caller instance an instance binder names.
     pub fn instance(&self, binder: InstanceId) -> Option<InstanceId> {
         self.instances.get(&binder).copied()
+    }
+
+    /// Binds [`InstanceRef::Body`] to the instance whose body is opened.
+    pub fn bind_body(&mut self, instance: InstanceId) {
+        self.body = Some(instance);
+    }
+
+    /// The instance [`InstanceRef::Body`] names, if a body is opened.
+    pub fn body(&self) -> Option<InstanceId> {
+        self.body
     }
 
     /// The caller authority a mutex authority binder names.
@@ -12137,11 +12187,11 @@ impl ResourceBindings {
     }
 
     pub fn len(&self) -> usize {
-        self.instances.len() + self.mutex_authorities.len()
+        self.instances.len() + self.mutex_authorities.len() + usize::from(self.body.is_some())
     }
 
     pub fn is_empty(&self) -> bool {
-        self.instances.is_empty() && self.mutex_authorities.is_empty()
+        self.instances.is_empty() && self.mutex_authorities.is_empty() && self.body.is_none()
     }
 }
 
@@ -12161,6 +12211,24 @@ pub struct ResourceInstance {
 }
 
 impl ResourceInstance {
+    /// The identity a field view carries. A field view is a definition's
+    /// fields and arguments read without an instance; it is reached only
+    /// through [`InstanceRef::Body`] and never looked up by identity, so this
+    /// value names nothing.
+    const FIELD_VIEW_IDENTITY: InstanceId = InstanceId(Variable(u64::MAX));
+
+    /// A definition's fields and arguments, to read as its body's own
+    /// instance when there is no instance: it grants no ownership and is
+    /// never held in a resource context.
+    pub(crate) fn field_view(
+        name: String,
+        arguments: ResourceArguments,
+        schema: ResourceFieldSchema,
+        fields: ResourceFieldValues,
+    ) -> Option<Self> {
+        Self::new(Self::FIELD_VIEW_IDENTITY, name, arguments, schema, fields)
+    }
+
     pub fn new(
         identity: InstanceId,
         name: String,

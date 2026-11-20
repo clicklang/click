@@ -4204,6 +4204,7 @@ fn loop_exit_state_difference(
     let ExecutionState {
         aggregate_destination,
         instance_field_scope,
+        body_field_view,
         resource_bindings,
         loan_ledger,
         loan_participant,
@@ -4274,6 +4275,7 @@ fn loop_exit_state_difference(
     }
     component!(aggregate_destination, "aggregate call destination");
     component!(instance_field_scope, "resource field evaluation scope");
+    component!(body_field_view, "resource body field view");
     if resource_bindings != &right.resource_bindings {
         differences.push(format!(
             "call resource bindings (successor: {} entries; exit: {} entries)",
@@ -6440,7 +6442,7 @@ pub(super) fn prepare_loop_top_state(
     let mut direct_mutexes = Vec::new();
     for spec in resource_specs {
         if spec.guard().is_some() && matches!(spec.term(), ResourceTerm::MutexGuard { .. }) {
-            let identity = InstanceId::from_variable(variables.next_in(budget)?);
+            let identity = budget.allocate_instance_identity()?;
             match super::mutexes::prepare_direct_loop_guard(
                 &entry_state,
                 &top_state,

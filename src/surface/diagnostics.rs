@@ -3579,10 +3579,11 @@ pub(super) fn describe_unheld_model_field_initializer(
     // The instance identity a fold writes is the reader's binder, so the
     // registry's spelling is available here too; register it in case this
     // access is the first one lowered.
-    crate::kernel::model_fields::register_instance_spelling(access.identity, &access.owner);
+    let identity = access.identity.instance()?;
+    crate::kernel::model_fields::register_instance_spelling(identity, &access.owner);
     let explanation = resource_tracker::explain_at_states(
         resource_tracker::TrackedResource::ModelField {
-            identity: access.identity,
+            identity,
             children: &access.children,
             field_index: access.field_index,
         },
@@ -3710,7 +3711,9 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
     }
     let owner = &access.owner;
     let field = &access.field;
-    let cause = state.resources().instance_consumption(access.identity);
+    let cause = state
+        .resources()
+        .instance_consumption(access.identity.instance()?);
     let advice = match cause {
         Some(crate::kernel::InstanceConsumption::Unfold) => match &access.click_type {
             Some(ClickType::Program(_)) => format!(

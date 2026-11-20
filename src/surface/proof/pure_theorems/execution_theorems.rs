@@ -282,7 +282,7 @@ pub(super) fn verify_execution_theorem(
             parameter.clone(),
             InstanceRename {
                 name: introduced.clone(),
-                identity: binding.instance()?,
+                identity: binding.instance()?.into(),
                 target_identity: None,
             },
         );

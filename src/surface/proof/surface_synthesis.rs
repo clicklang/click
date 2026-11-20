@@ -7970,7 +7970,7 @@ fn synthesize_scalar_model_field(
         Some(ContractExpression::ResourceField(ResourceFieldAccess {
             owner: owner.to_string(),
             resource_name: instance.name().to_string(),
-            identity: origin.identity,
+            identity: origin.identity.into(),
             children: vec![],
             field: origin.field.to_string(),
             field_index: origin.field_index,
@@ -8220,7 +8220,7 @@ fn synthesize_surface_algebraic(
                 Some(ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: owner.to_string(),
                     resource_name: instance.name().to_string(),
-                    identity: origin.identity,
+                    identity: origin.identity.into(),
                     children: vec![],
                     field: origin.field.to_string(),
                     field_index: origin.field_index,

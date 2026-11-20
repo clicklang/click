@@ -44,7 +44,7 @@ fn negated_resource_fields_receive_their_declared_metadata() {
             Box::new(ContractExpression::ResourceField(ResourceFieldAccess {
                 owner: "r".into(),
                 resource_name: "reference".into(),
-                identity: InstanceId::from_variable(Variable(0)),
+                identity: InstanceId::from_variable(Variable(0)).into(),
                 children: vec![],
                 field: name.into(),
                 field_index: 0,

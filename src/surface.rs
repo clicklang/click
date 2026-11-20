@@ -2304,7 +2304,7 @@ impl ResourceInstanceBinding {
 pub struct ResourceFieldAccess {
     owner: String,
     resource_name: String,
-    identity: crate::kernel::InstanceId,
+    identity: crate::kernel::InstanceRef,
     children: Vec<String>,
     field: String,
     field_index: usize,

@@ -68,7 +68,7 @@ fn wide_matched_instance_projection_keeps_native_loadability() {
             .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance.clone()))),
     );
     let projection = ResourceFieldProjection {
-        identity: instance.identity(),
+        identity: instance.identity().into(),
         children: vec![],
         field_index: 0,
         at_entry: false,

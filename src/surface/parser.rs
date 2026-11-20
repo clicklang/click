@@ -4031,8 +4031,7 @@ impl Parser {
             return;
         };
         let is_parent = |access: &ResourceFieldAccess| {
-            access.owner == "__body"
-                && access.identity == InstanceId::from_variable(Variable(u64::MAX))
+            access.owner == "__body" && access.identity == crate::kernel::InstanceRef::Body
         };
         let (child, parent) = match (is_parent(one), is_parent(other)) {
             (false, true) => (one, other),
@@ -4078,7 +4077,7 @@ impl Parser {
             let hidden = ResourceFieldAccess {
                 owner: "__body".into(),
                 resource_name: resource_name.into(),
-                identity: InstanceId::from_variable(Variable(u64::MAX)),
+                identity: crate::kernel::InstanceRef::Body,
                 children: vec![],
                 field: hidden_name.clone(),
                 field_index: fields.len(),
@@ -4092,7 +4091,7 @@ impl Parser {
                 left: ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: binding.name.clone(),
                     resource_name: child.clone(),
-                    identity: binding.instance()?,
+                    identity: binding.instance()?.into(),
                     children: vec![],
                     field: child_field.name.clone(),
                     field_index: 0,
@@ -4140,7 +4139,7 @@ impl Parser {
                         ResourceFieldAccess {
                             owner: "__body".into(),
                             resource_name: resource_name.into(),
-                            identity: InstanceId::from_variable(Variable(u64::MAX)),
+                            identity: crate::kernel::InstanceRef::Body,
                             children: vec![],
                             field: field.name.clone(),
                             field_index,
@@ -10885,7 +10884,7 @@ impl Parser {
                 ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: child.clone(),
                     resource_name: family.clone(),
-                    identity: *identity,
+                    identity: (*identity).into(),
                     children: vec![],
                     field: child_field.to_string(),
                     field_index: 0,
@@ -15390,7 +15389,8 @@ impl Parser {
                             resource_name,
                             identity: identity
                                 .instance()
-                                .ok_or_else(|| self.error("a mutex authority has no fields"))?,
+                                .ok_or_else(|| self.error("a mutex authority has no fields"))?
+                                .into(),
                             children: vec![],
                             field,
                             field_index: 0,
@@ -16570,7 +16570,8 @@ impl Parser {
                     resource_name: name,
                     identity: identity
                         .instance()
-                        .ok_or_else(|| self.error("a mutex authority has no fields"))?,
+                        .ok_or_else(|| self.error("a mutex authority has no fields"))?
+                        .into(),
                     children: vec![],
                     field: path.join("."),
                     field_index: 0,

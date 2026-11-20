@@ -4591,7 +4591,7 @@ fn source_backed_call_requirement_surface(
                     binding.binder().to_string(),
                     crate::surface::lowering::InstanceRename {
                         name: binding.instance().to_string(),
-                        identity: binding.binder_identity().instance()?,
+                        identity: binding.binder_identity().instance()?.into(),
                         target_identity: Some(binding.identity().instance()?),
                     },
                 ))
@@ -4608,14 +4608,16 @@ fn source_backed_call_requirement_surface(
                 ) => Some((binder, *identity, *actual)),
                 _ => None,
             })
-            .filter(|(_, identity, _)| referenced_instances.contains(identity))
+            .filter(|(_, identity, _)| {
+                referenced_instances.contains(&crate::kernel::InstanceRef::Instance(*identity))
+            })
             .map(|(binder, identity, actual)| {
                 let name = crate::kernel::model_fields::registered_instance_spelling(actual)?;
                 Some((
                     binder.clone(),
                     crate::surface::lowering::InstanceRename {
                         name: name.to_string(),
-                        identity,
+                        identity: identity.into(),
                         target_identity: Some(actual),
                     },
                 ))

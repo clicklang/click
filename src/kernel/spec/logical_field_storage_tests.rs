@@ -34,7 +34,7 @@ fn logical_resource_field_projections_keep_stored_roots_and_result_modes() {
         ResourceContext::new().unchecked_with_fact(ResourceFact::own(Resource::Instance(instance))),
     );
     let projection = |field_index| ResourceFieldProjection {
-        identity,
+        identity: identity.into(),
         children: vec![],
         field_index,
         at_entry: false,
