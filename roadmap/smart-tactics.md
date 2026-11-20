@@ -243,9 +243,9 @@ excluding prose and Rust test strings, leaves:
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
 | `mdtests/` | 0 | 0 |
-| `examples/` | 10 | 61 |
+| `examples/` | 9 | 60 |
 | `library/` | 0 | 0 |
-| Total | 10 | 61 |
+| Total | 9 | 60 |
 
 Positive fixtures also supply exact input text to expansion and mutation tests.
 Migrate those inputs together with their tests and keep the smart proof inputs.
@@ -292,7 +292,6 @@ pattern is understood but the complete family has not yet been validated.
 | 18 | Insertion: field and parent-link preservation | Medium |
 | 19 | Insertion: inner/double rotations | Medium |
 | 20 | Insertion: mirrored and remaining paths | Medium |
-| 21 | Deletion: augmented-erase wrapper | Medium |
 | 22 | Deletion: primary color-fixup cases | Medium |
 | 23 | Deletion: mirrored and remaining fixups | Medium |
 | 24 | Augmented trees: basic rotation, model, propagation | Medium |
