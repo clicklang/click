@@ -534,7 +534,7 @@ theorem contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
                     rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value), if head == value { true } else { list::contains(list::append(tail, ys), value) });
                     apply(list::contains_cons(head, tail, value));
                     rewrite(list::contains(List<T>::Cons(head, tail), value), if head == value { true } else { list::contains(tail, value) });
-                    solve() using { head == value; };
+                    normalize() using { head == value; };
                 } else {
                     apply(list::contains_cons(head, list::append(tail, ys), value));
                     rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value), if head == value { true } else { list::contains(list::append(tail, ys), value) });
