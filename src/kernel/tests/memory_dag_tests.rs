@@ -4399,7 +4399,10 @@ fn owned_byte_separation_survives_an_unknown_numeric_displacement() {
         true,
     );
     let context = address.clone().assume_proposition(owners.clone());
-    assert!(context.addresses_numerically_connected(&q, &p));
+    // The address of `p` occurs inside an addition, so it is not an
+    // address endpoint of the stated equality. The owner proves separation.
+    assert!(context.addresses_numerically_connected(&q, &q));
+    assert!(!context.addresses_numerically_connected(&q, &p));
     let before = intern_memory(SymbolicMemory::new().store(
         p.clone(),
         ProgramValue::UInt64(MachineTerm::uint64_constant(17)),
