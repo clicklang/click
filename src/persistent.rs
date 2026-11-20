@@ -1,7 +1,8 @@
 use std::borrow::Borrow;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 /// Persistent union by size. A fork shares the maps, and a root lookup
 /// follows at most a logarithmic number of parent links.
@@ -94,6 +95,61 @@ struct Node<K, V> {
     right: Option<Arc<Node<K, V>>>,
     height: u16,
     subtree_len: usize,
+}
+
+/// A lazy maximum over a persistent map. Its owner chooses the value summary
+/// and the cache lifetime. Sharing either a subtree or its value shares the
+/// corresponding computation, without adding metadata to general map writes.
+pub(crate) struct PersistentMapMaxMemo<K, V, T> {
+    nodes: HashMap<usize, (Weak<Node<K, V>>, Option<T>)>,
+    values: HashMap<usize, (Weak<V>, Option<T>)>,
+    value_max: fn(&V) -> Option<T>,
+    next_sweep: usize,
+}
+
+impl<K, V, T: Copy + Ord> PersistentMapMaxMemo<K, V, T> {
+    pub(crate) fn new(value_max: fn(&V) -> Option<T>) -> Self {
+        Self {
+            nodes: HashMap::new(),
+            values: HashMap::new(),
+            value_max,
+            next_sweep: 1024,
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        *self = Self::new(self.value_max);
+    }
+
+    pub(crate) fn maximum(&mut self, map: &PersistentMap<K, V>) -> Option<T> {
+        let maximum = map.root.as_ref().and_then(|node| self.subtree(node));
+        if self.nodes.len() >= self.next_sweep {
+            self.nodes.retain(|_, (node, _)| node.strong_count() != 0);
+            self.values
+                .retain(|_, (value, _)| value.strong_count() != 0);
+            self.next_sweep = self.nodes.len().saturating_mul(2).max(1024);
+        }
+        maximum
+    }
+
+    fn subtree(&mut self, node: &Arc<Node<K, V>>) -> Option<T> {
+        // The weak handle keeps the address from being reused while it is a key.
+        let key = Arc::as_ptr(node) as usize;
+        if let Some((_, maximum)) = self.nodes.get(&key) {
+            return *maximum;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        let value_key = Arc::as_ptr(&node.value) as usize;
+        let (_, value) = self.values.entry(value_key).or_insert_with(|| {
+            let maximum = (self.value_max)(&node.value);
+            (Arc::downgrade(&node.value), maximum)
+        });
+        let maximum = (*value)
+            .max(node.left.as_ref().and_then(|child| self.subtree(child)))
+            .max(node.right.as_ref().and_then(|child| self.subtree(child)));
+        self.nodes.insert(key, (Arc::downgrade(node), maximum));
+        maximum
+    }
 }
 
 impl<K, V> Default for PersistentMap<K, V> {

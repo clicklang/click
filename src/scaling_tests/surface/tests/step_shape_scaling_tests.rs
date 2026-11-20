@@ -1158,6 +1158,53 @@ void caller(int32* scratch, {parameters}) {{
     );
 }
 
+#[test]
+fn modular_call_reservation_ignores_unrelated_caller_state() {
+    use crate::instrumentation::VerificationEvent;
+
+    for with_owners in [false, true] {
+        let samples = [4, 16, 64].map(|count| {
+            let mut parameters = "int32 input".to_owned();
+            let mut owns = String::new();
+            let mut setup = String::new();
+            for i in 0..count {
+                setup += &format!("    int32 spare{i}; spare{i} = input;\n");
+                if with_owners {
+                    parameters += &format!(", int32* p{i}");
+                    owns += &format!("    owns *p{i};\n");
+                }
+            }
+            let c = format!(
+                "void leaf(void) {{ return; }}\nvoid caller({parameters}) {{\n{setup}    leaf(); leaf(); leaf(); return;\n}}"
+            );
+            let proof = format!(
+                "verifying \"hunt.c\";\nvoid leaf() {{ ensures true; }} by {{ step(); }}\nvoid caller({parameters}) {{\n{owns}    ensures true;\n}} by {{ {} }}",
+                steps(2 * count + 4)
+            );
+            let (result, events) =
+                crate::instrumentation::collect(|| verify_c_sources(&proof, &[("hunt.c", &c)]));
+            result.unwrap_or_else(|error| panic!("size {count}: {}", error.message()));
+            let calls = events
+                .into_iter()
+                .filter_map(|event| match event {
+                    VerificationEvent::OperationFinished { name, function, work, .. }
+                        if name == "verified call variable collection" && function == "leaf" =>
+                    {
+                        Some(work)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(calls.len(), 3);
+            calls
+        });
+        eprintln!("call reservation work at 4/16/64, owned={with_owners}: {samples:?}");
+        for (small, large) in samples[0].iter().zip(&samples[2]).skip(1) {
+            assert!(*large <= *small + 16, "{samples:?}");
+        }
+    }
+}
+
 // Splitting a caller's owner must not enumerate the other parameter owners
 // that happen to share its external-argument memory block.
 #[test]

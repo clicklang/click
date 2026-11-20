@@ -3379,13 +3379,22 @@ fn execute_verified_function_applications_with_suspension(
         )]);
     }
     budget.consume_function_call()?;
+    let fact_bound = assumptions.execution_variable_ceiling();
     let existing_variables = crate::instrumentation::measure_operation(
         application.name,
         "verified function rule application",
         "verified call variable collection",
         || {
             let mut existing_variables = BTreeSet::new();
-            collect_execution_state_bitvector_variables(caller_state, &mut existing_variables);
+            let caller_bound = caller_state_variable_bound(caller_state);
+            // Usual callers continue above everything they issued. For a
+            // supplied state with live identities above the mark, retain
+            // exact membership so a free identity below its bound stays usable.
+            if caller_bound.is_some_and(|bound| {
+                bound.0 >= budget.next_kernel_variable && Some(bound) > fact_bound
+            }) {
+                collect_call_caller_state_variables(caller_state, &mut existing_variables);
+            }
             for application in applications {
                 collect_program_function_contract_interface_bitvector_variables(
                     application.interface,
@@ -3402,7 +3411,7 @@ fn execute_verified_function_applications_with_suspension(
     // collected: collecting walked every fact, and every state a fact
     // names, at every call.
     let mut variables = KernelVariableGenerator::fresh_for_execution(existing_variables)
-        .reserving_through(assumptions.execution_variable_ceiling());
+        .reserving_through(fact_bound);
     let memory_identity = variables.next_in(budget)?;
     let result_identity = variables.next_in(budget)?;
     let exceptional_payload_identity =
