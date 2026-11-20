@@ -49,6 +49,7 @@ pub(crate) struct StepLog {
     named_cells_origin: Option<NamedCellsOrigin>,
     first_base: SharedMemory,
     contiguous: bool,
+    preserves_external_array: bool,
 }
 
 /// The exact source of a suffix that only names existing cells. The log
@@ -93,6 +94,17 @@ impl StepLog {
                 )
             },
         );
+        let preserves_external_array = previous
+            .as_ref()
+            .is_none_or(|old| old.preserves_external_array)
+            && match step.as_ref() {
+                MemoryDerivation::Store { pointer, .. }
+                | MemoryDerivation::RepresentationWrite { pointer, .. } => {
+                    indexed_local(&pointer.base)
+                }
+                MemoryDerivation::BlockDeclared { block, .. } => indexed_local(block),
+                _ => false,
+            };
         Arc::new(Self {
             step,
             produced,
@@ -100,6 +112,7 @@ impl StepLog {
             named_cells_origin,
             first_base,
             contiguous,
+            preserves_external_array,
         })
     }
 
@@ -225,6 +238,16 @@ struct PointNode {
     /// Disjoint typed cells, keyed by storage and byte start. The
     /// predecessor chain owns the version points.
     point_read_index: PointReadIndex,
+    /// Earliest recorded view in a suffix of effects disjoint from parameter
+    /// array storage. The normal block selector starts here.
+    external_array_start: Option<ExternalArrayStart>,
+}
+
+#[derive(Clone, Debug)]
+struct ExternalArrayStart {
+    point: Weak<PointNode>,
+    view: IndexedView,
+    memory: SharedMemory,
 }
 
 impl Drop for PointNode {
@@ -378,6 +401,7 @@ impl PathLink {
                 predecessors,
                 split: split.filter(|point| point.0.is_some()).cloned(),
                 point_read_index,
+                external_array_start: None,
             })),
             IndexedView::Recorded,
         )
@@ -395,6 +419,7 @@ impl PathLink {
             .into_iter()
             .filter(|point| point.0.is_some())
             .collect::<Box<[_]>>();
+        let external_array_start = external_array_start(&predecessors, steps.as_deref(), &memory);
         Self(
             Some(Arc::new_cyclic(|version| {
                 let id = ProgramPointId::fresh();
@@ -413,6 +438,7 @@ impl PathLink {
                     predecessors,
                     split: split.filter(|point| point.0.is_some()),
                     point_read_index,
+                    external_array_start,
                 }
             })),
             IndexedView::Recorded,
@@ -562,6 +588,37 @@ fn join_point_read_indexes(points: &[ProgramPoint]) -> Option<PointReadIndex> {
         }
     }
     Some(result)
+}
+
+fn external_array_start(
+    predecessors: &[PathLink],
+    steps: Option<&StepLog>,
+    memory: &SharedMemory,
+) -> Option<ExternalArrayStart> {
+    let [from @ PathLink(Some(point), view)] = predecessors else {
+        return None;
+    };
+    let source = match steps {
+        Some(log)
+            if log.contiguous
+                && log.preserves_external_array
+                && log.produced.arena_id() == memory.arena_id() =>
+        {
+            &log.first_base
+        }
+        Some(_) => return None,
+        None => memory,
+    };
+    if !from.matches_indexed_view(source) {
+        return None;
+    }
+    point.external_array_start.clone().or_else(|| {
+        Some(ExternalArrayStart {
+            point: Arc::downgrade(point),
+            view: view.clone(),
+            memory: source.clone(),
+        })
+    })
 }
 
 /// Apply the explicit effects once, when execution seals the point. A read
@@ -1047,6 +1104,31 @@ impl ProgramPoint {
 
     pub(crate) fn is_exact_read(&self) -> bool {
         self.exact_read && self.id().is_some()
+    }
+
+    /// Skip the recorded suffix that is already known to leave the entire
+    /// parameter array alone. An unverified view cannot use the suffix.
+    pub(in crate::kernel) fn array_read_start(&self, block: &AddressBase) -> Self {
+        if !external_storage(block) {
+            return self.clone();
+        }
+        let anchor = self
+            .path
+            .0
+            .as_ref()
+            .filter(|_| self.path.matches_indexed_view(&self.memory))
+            .and_then(|point| point.external_array_start.as_ref());
+        if let Some(anchor) = anchor
+            && let Some(point) = anchor.point.upgrade()
+        {
+            return Self {
+                memory: anchor.memory.clone(),
+                path: PathLink(Some(point), anchor.view.clone()),
+                indexed_write: None,
+                exact_read: false,
+            };
+        }
+        self.clone()
     }
 
     pub(crate) fn supports_indexed_version(pointer: &Address) -> bool {

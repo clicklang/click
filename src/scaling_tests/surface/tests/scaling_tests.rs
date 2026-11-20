@@ -3360,7 +3360,7 @@ fn exceptional_cleanup_edges_scale_near_linearly_with_unrelated_context() {
 
 /// One project with `statement_count` local stores between two uses of the
 /// same fact about an array the stores cannot touch.
-fn array_fact_across_local_stores(statement_count: usize) -> (String, String) {
+fn array_fact_across_local_stores(statement_count: usize, observe_each: bool) -> (String, String) {
     let mut c_source = String::from("void bump(int32 a[], int32 n) {\n    int32 i;\n    i = 0;\n");
     for _ in 0..statement_count {
         c_source.push_str("    i = i + 1;\n");
@@ -3375,7 +3375,12 @@ fn array_fact_across_local_stores(statement_count: usize) -> (String, String) {
     // version walk cannot reuse the answer it computed one state ago.
     for _ in 0..statement_count {
         click_source.push_str("    step();\n");
-        click_source.push_str("    have icount(a, 0, 0) == 0 by { solve(); }\n");
+        if observe_each {
+            click_source.push_str("    have icount(a, 0, 0) == 0 by { solve(); }\n");
+        }
+    }
+    if !observe_each {
+        click_source.push_str("    have icount(a, 0, 0) == 0 by { known(); }\n");
     }
     click_source.push_str("    step_until(function.exit);\n    solve();\n}\n");
     (c_source, click_source)
@@ -3493,7 +3498,7 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
     let samples = [4, 8, 16, 32]
         .into_iter()
         .map(|size| {
-            let (c_source, click_source) = array_fact_across_local_stores(size);
+            let (c_source, click_source) = array_fact_across_local_stores(size, true);
             let (verified, sample) = scaling_sample(size, || {
                 verify_c_sources(&click_source, &[("bump.c", c_source.as_str())])
             });
@@ -3526,6 +3531,29 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
         })
         .collect::<Vec<_>>();
     assert_near_linear_scaling("array-ref block version walk", &walk);
+}
+
+/// The first array read after a long run of disjoint statements must not
+/// traverse that run. Per-statement lookups can hide this behind memo hits.
+#[test]
+fn one_array_lookup_after_disjoint_local_stores_has_bounded_work() {
+    let work = [4, 16, 64].map(|size| {
+        let (c, source) = array_fact_across_local_stores(size, false);
+        let (verified, events) =
+            crate::instrumentation::collect(|| verify_c_sources(&source, &[("bump.c", &c)]));
+        verified.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        events
+            .into_iter()
+            .filter_map(|event| match event {
+                crate::instrumentation::VerificationEvent::OperationFinished {
+                    name, work, ..
+                } if name == "array-ref block version walk" => Some(work),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0)
+    });
+    assert!(work.iter().all(|sample| *sample <= work[0]), "{work:?}");
 }
 
 /// One project with `size` stores made while `size` owned ranges are held, so
