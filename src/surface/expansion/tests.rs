@@ -4265,7 +4265,7 @@ fn solve_expands_loop_exit_projection_without_extract() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c_sources(source, &sources).unwrap();
-    let expanded = expand_c_claim_source_by_label(source, &sources, "paint.ensures_0").unwrap();
+    let expanded = expand_c_claim_source_by_label(source, &sources, "paint.contract").unwrap();
     assert!(!expanded.contains("extract("), "{expanded}");
     without_implicit_solve_for_claim("paint.contract", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())

@@ -16,12 +16,9 @@ about a memory is compared as before, which is why a write no binder describes
 ([`loop_break_exit_unowned_cell_rejected.md`](loop_break_exit_unowned_cell_rejected.md))
 is still refused.
 
-The claim after the loop is proved from the exported disjunction, so both
-exits reach the successor.
-
-The proof opens the joined resource in each model case to obtain its current
-cell-value fact, then exports the full disjunction explicitly. It does not
-recover that fact by registering a read against the joined memory cache.
+Both exits prove the colour disjunction for the binder they hold. After
+the join, each model case opens the rebound instance and checks the value
+of its cell before closing the instance again.
 
 ```c filename=paint_or_leave.c
 struct node { int32 shade; };
@@ -67,51 +64,34 @@ void paint(struct node* p, int32 flag) {
                 step();
                 step();
                 let c = fold(painted(p), { color: Color::Red });
+                have c.color == Color::Red or c.color == Color::Black by known();
                 step();
             } else {
                 unfold(c);
                 step();
                 let c = fold(painted(p), { color: Color::Black });
+                have c.color == Color::Red or c.color == Color::Black by known();
                 step();
             }
         }
     }
-    have flag == 0 or c.color == Color::Black by {
-        cases {
-            (flag == 0 and c.color == Color::Red) => { solve(); }
-            (c.color == Color::Black) => { solve(); }
-        }
-    }
+    have c.color == Color::Red or c.color == Color::Black;
     match c.color ensuring {
         owns c: painted(p);
-        fact (flag == 0 and c.color == Color::Red and p->shade == 0) or (p->shade == 1 and c.color == Color::Black);
+        fact c.color == Color::Red or c.color == Color::Black;
     } {
         Color::Red => {
-            have flag == 0 by {
-                cases {
-                    (flag == 0) => { known(); }
-                    (c.color == Color::Black) => { solve(); }
-                }
-            }
             unfold(c);
+            have p->shade == 0 by known();
             let c = fold(painted(p), { color: Color::Red });
-            have (flag == 0 and c.color == Color::Red and p->shade == 0) or (p->shade == 1 and c.color == Color::Black);
+            have c.color == Color::Red or c.color == Color::Black by known();
         },
         Color::Black => {
             unfold(c);
+            have p->shade == 1 by known();
             let c = fold(painted(p), { color: Color::Black });
-            have (flag == 0 and c.color == Color::Red and p->shade == 0) or (p->shade == 1 and c.color == Color::Black);
+            have c.color == Color::Red or c.color == Color::Black by known();
         },
-    }
-    have c.color == Color::Red or c.color == Color::Black by {
-        cases {
-            (flag == 0 and c.color == Color::Red and p->shade == 0) => {
-                solve();
-            }
-            (p->shade == 1 and c.color == Color::Black) => {
-                solve();
-            }
-        }
     }
     step();
     solve();
