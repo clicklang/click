@@ -66,7 +66,7 @@ void release_one(struct child* obj) {
 } by {
     have obj->refs == count(child_ref(obj)) by { solve(); }
     have 1 < count(child_ref(obj)) by { solve(); }
-    step(child_release, {});
+    step(child_release);
     have obj->payload == old(obj->payload) by { solve(); }
     step();
     solve();
@@ -122,6 +122,7 @@ fn authority_conditional_release_keeps_undischarged_ensure_premise() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn authority_conditional_release_expansion_roundtrips_every_smart_site() {
     let source = SOURCE.replace(
@@ -172,6 +173,7 @@ fn authority_conditional_release_expansion_roundtrips_every_smart_site() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn authority_borrowed_member_handoff_expands_every_smart_site() {
     let fixture = crate::cli::parse_mdtest(
@@ -235,6 +237,7 @@ fn authority_borrowed_member_handoff_expands_every_smart_site() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn authority_owned_member_supplies_nested_release_count_bound() {
     let child_release = SOURCE
@@ -258,6 +261,7 @@ void release_one(struct child* obj) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 14s in the parallel gate"]
 fn authority_nonterminal_detach_keeps_folded_named_output_once() {
     let fixture = crate::cli::parse_mdtest(
@@ -368,6 +372,7 @@ fn strict_successor_bound_does_not_wrap_signed_maximum() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn authority_parent_entry_alias_expansion_preserves_later_resource_proof() {
     crate::instrumentation::with_default_tactic_limits(|| {

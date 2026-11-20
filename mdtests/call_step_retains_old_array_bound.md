@@ -54,7 +54,7 @@ int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
         instantiate(forall (k: int32) { 0 <= k and k < n implies 0 <= old(left[k]) and old(left[k]) < n }, cur);
         known();
     }
-    let { result: value } = step(use, {});
+    let { result: value } = step(use);
     step(); solve();
 }
 ```

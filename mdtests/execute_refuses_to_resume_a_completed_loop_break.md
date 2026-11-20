@@ -23,12 +23,12 @@ uint64 drain(uint64 n) {
  requires n <= 15u64;
  ensures result == 18446744073709551615u64;
 } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  loop {
   decreases n;
   invariant n <= 15u64;
   initialize by { known(); }
-  preserve by {
+  maintain by {
    if n == 0u64 { step_until(function.exit); } else { step(); }
   }
  }

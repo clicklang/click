@@ -2332,6 +2332,8 @@ pub struct PointerLoadId(pub(crate) u64);
 pub(crate) struct LoadedPointerView {
     pub(crate) identity: PointerLoadId,
     pub(crate) defining_memory: SharedMemory,
+    pub(crate) point: ProgramPoint,
+    pub(crate) value_type: Option<ProgramType>,
     pub(crate) defining_address: Address,
     pub(crate) displacement: AddressOffset,
 }
@@ -2608,6 +2610,36 @@ impl Pointer {
         crate::instrumentation::record_deterministic_work(1);
         let source = memory.unchanged_bytes_source();
         let origin = Arc::new(Address::loaded_value(&source, cell));
+        value
+            .with_bounds_owner(Some(origin.clone()))
+            .with_provenance(origin)
+    }
+
+    /// A point-named complete read uses the same identity for its address,
+    /// provenance, and bounds owner. Function pointers have no object domain.
+    pub(in crate::kernel) fn from_point_read(
+        point: ProgramPoint,
+        program_type: ProgramType,
+        cell: &Address,
+    ) -> Self {
+        if point.read_version_id().is_none() {
+            let memory = point.shared_memory();
+            let address = Address::loaded_value(&memory.unchanged_bytes_source(), cell);
+            return Self::from_read(address, program_type, memory, cell);
+        }
+        let address = Address {
+            base: AddressBase::LoadedPointer(crate::kernel::eval::pointer_load_at_point(
+                point,
+                cell,
+                Some(program_type),
+            )),
+            offset: AddressOffset::Constant(0),
+        };
+        let value = Self::new(address.clone(), program_type);
+        if matches!(program_type, ProgramType::FunctionPointer(_)) {
+            return value;
+        }
+        let origin = Arc::new(address);
         value
             .with_bounds_owner(Some(origin.clone()))
             .with_provenance(origin)
@@ -7101,7 +7133,7 @@ pub struct CallBinderTransport {
     /// Every instance binder of that callee, mapped to the caller instance
     /// that supplies it. A `produces` binder maps to the fresh identity the
     /// caller's `let` introduced.
-    pub(crate) bindings: std::sync::Arc<BTreeMap<Variable, Variable>>,
+    pub(crate) bindings: std::sync::Arc<BTreeMap<ResourceBinderId, ResourceBinderId>>,
     /// Runtime binders that name a resource type, evaluated at the call.
     pub(crate) type_arguments: std::sync::Arc<BTreeMap<Variable, super::ResourceDescription>>,
 }
@@ -7243,7 +7275,7 @@ impl VerifiedLoopRules {
 pub struct ExecutionEnvironment {
     // A proof-local rule choice. This is not installed in the project environment.
     pub(crate) selected_call_contract: Option<std::sync::Arc<str>>,
-    pub(crate) selected_call_resource_arguments: Option<std::sync::Arc<[Variable]>>,
+    pub(crate) selected_call_resource_arguments: Option<std::sync::Arc<[InstanceId]>>,
     /// A proof-local binder map for one ordinary C call: the callee named by
     /// the step, and one caller instance per instance binder the callee
     /// declares. Binding is a lookup per entry; nothing is searched for.
@@ -8060,6 +8092,12 @@ pub enum RuntimeError {
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
     FunctionContract(String),
+    /// A verified call may write memory for which it has no checked byte bound.
+    UnboundedWriteWithLiveView {
+        callee: String,
+        effect_source: Option<Box<ResourceFact>>,
+        protected: Option<Box<MemoryRange>>,
+    },
     /// A resource clause's value could not be evaluated for want of a value
     /// it reads: a cell, field or argument the state does not yet hold.
     /// Another clause's authority may supply it, so a contract's resource
@@ -8856,13 +8894,32 @@ impl SymbolicMemory {
     /// [`HashedOrdMap::eq_relative_to`]). Exact whatever the states share;
     /// the cost is the changed paths when both were derived from `base`.
     pub(super) fn eq_relative_to(&self, other: &Self, base: &Self) -> bool {
-        if memory_content_hash(self) != memory_content_hash(other) {
-            return false;
-        }
-        (std::sync::Arc::ptr_eq(&self.blocks, &other.blocks)
-            || self.blocks.eq_relative_to(&other.blocks, &base.blocks))
+        memory_content_hash(self) == memory_content_hash(other)
+            && self.non_cell_contents_eq_relative_to(other, base)
             && (std::sync::Arc::ptr_eq(&self.cells, &other.cells)
                 || self.cells.eq_relative_to(&other.cells, &base.cells))
+    }
+
+    /// Like `same_contents_as`, with an exact changed-path comparison when
+    /// the states share a base. Logical cells can still agree across layouts.
+    pub(super) fn same_contents_relative_to(&self, other: &Self, base: &Self) -> bool {
+        if self.same_storage_roots(other)
+            || matches!(
+                (interned_storage_of(self), interned_storage_of(other)),
+                (Some(left), Some(right)) if left.arena_id() == right.arena_id()
+            )
+        {
+            return true;
+        }
+        self.non_cell_contents_eq_relative_to(other, base)
+            && (std::sync::Arc::ptr_eq(&self.cells, &other.cells)
+                || self.cells.eq_relative_to(&other.cells, &base.cells)
+                || self.cells.same_logical_cells_by_difference(&other.cells))
+    }
+
+    fn non_cell_contents_eq_relative_to(&self, other: &Self, base: &Self) -> bool {
+        (std::sync::Arc::ptr_eq(&self.blocks, &other.blocks)
+            || self.blocks.eq_relative_to(&other.blocks, &base.blocks))
             && (std::sync::Arc::ptr_eq(&self.union_cells, &other.union_cells)
                 || self
                     .union_cells
@@ -9679,7 +9736,7 @@ pub(crate) struct CallRequirementSite {
     /// Original indirect invocation, distinct from the selected concrete target.
     pub(crate) source_callee: Option<std::sync::Arc<str>>,
     pub(crate) value_arguments: std::sync::Arc<[(String, ProgramValue)]>,
-    pub(crate) resource_arguments: std::sync::Arc<[(String, Variable, Variable)]>,
+    pub(crate) resource_arguments: std::sync::Arc<[(String, ResourceBinder, ResourceBinder)]>,
     pub(crate) interface: std::sync::Arc<str>,
     pub(crate) candidate_ordinal: usize,
     pub(crate) source_arguments: std::sync::Arc<Vec<ProgramExpression>>,
@@ -9902,6 +9959,9 @@ pub enum MemoryDerivation {
         base: SharedMemory,
         pointer: Address,
         bytes: u32,
+        /// A checked call output supplies this complete word even when
+        /// there is no known value to put in the cell.
+        call_word: bool,
     },
     /// `base` with some cached cell values forgotten at one program point:
     /// the write path narrows the cell map before storing
@@ -10053,7 +10113,9 @@ static NEXT_MEMORY_ARENA_TOKEN: std::sync::atomic::AtomicU32 = std::sync::atomic
 
 #[derive(Clone, Default)]
 struct MemoryArena {
-    identities: std::collections::HashMap<std::sync::Arc<SymbolicMemory>, (u32, u64)>,
+    /// Arena ID and content hash. The table looks up candidates by hash and
+    /// checks their exact contents, using a common base when the caller has one.
+    identities: hashbrown::HashTable<(u32, u64)>,
     shallow_identities: std::collections::HashMap<MemoryShallowIdentity, (u32, u64)>,
     /// SymbolicMemory states whose storage roots were registered in `shallow_identities`
     /// on a structural hit. Holding them keeps those roots allocated, so a
@@ -10272,7 +10334,7 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
     };
     // A state this call interns is one no query has seen yet, so filling
     // its derivation cannot change an earlier answer.
-    let next_id = C_MEMORY_ARENA.with(|arena| arena.borrow().1.identities.len());
+    let next_id = C_MEMORY_ARENA.with(|arena| arena.borrow().1.memories.len());
     let derived = intern_memory_ref_with_read_identity(result, read_identity);
     let interned_here = derived.id as usize >= next_id;
     if !result.same_storage_roots(derived.memory()) {
@@ -10432,58 +10494,7 @@ fn record_memory_structural_lookup_work() {
 /// states that cross threads still compare correctly through the content
 /// hash and structural fallback.
 pub fn intern_memory(memory: SymbolicMemory) -> SharedMemory {
-    C_MEMORY_ARENA.with(|arena| {
-        let mut arena = arena.borrow_mut();
-        let (token, arena) = &mut *arena;
-        let shallow_identity = MemoryShallowIdentity::of(&memory);
-        if let Some((id, content_hash)) = arena.shallow_identities.get(&shallow_identity).copied() {
-            return SharedMemory {
-                arena: *token,
-                id,
-                content_hash,
-                memory: arena.memories[id as usize].clone(),
-            };
-        }
-        record_memory_structural_lookup_work();
-        if let Some((stored, (id, content_hash))) = arena.identities.get_key_value(&memory) {
-            let (id, content_hash, stored) = (*id, *content_hash, stored.clone());
-            // Remember the caller's storage roots, so the next lookup of this
-            // same state is an O(1) shallow hit instead of another
-            // comparison. The pin keeps those roots alive: a registered
-            // address must never be freed and reused by different content.
-            arena
-                .shallow_identities
-                .insert(shallow_identity, (id, content_hash));
-            arena.shallow_pins.push(memory);
-            return SharedMemory {
-                arena: *token,
-                id,
-                content_hash,
-                memory: stored,
-            };
-        }
-        let id = u32::try_from(arena.identities.len()).expect("memory arena exhausted");
-        let content_hash = memory_content_hash(&memory);
-        let mut memory = memory;
-        memory.pending_steps = None;
-        let stored = std::sync::Arc::new(memory);
-        arena.identities.insert(stored.clone(), (id, content_hash));
-        arena
-            .shallow_identities
-            .insert(shallow_identity, (id, content_hash));
-        arena.memories.push(stored.clone());
-        arena.derivations.push(None);
-        arena.read_identities.push(id);
-        arena
-            .local_definedness_versions
-            .push(LocalDefinednessVersions::fresh(id));
-        SharedMemory {
-            arena: *token,
-            id,
-            content_hash,
-            memory: stored,
-        }
-    })
+    intern_memory_with(std::borrow::Cow::Owned(memory), None, None)
 }
 
 /// The interned state `memory` is the canonical storage of, found by its
@@ -10522,10 +10533,18 @@ fn intern_memory_ref_with_read_identity(
     memory: &SymbolicMemory,
     read_identity: Option<(u32, u32)>,
 ) -> SharedMemory {
+    intern_memory_with(std::borrow::Cow::Borrowed(memory), None, read_identity)
+}
+
+fn intern_memory_with(
+    memory: std::borrow::Cow<'_, SymbolicMemory>,
+    base: Option<&SymbolicMemory>,
+    read_identity: Option<(u32, u32)>,
+) -> SharedMemory {
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
         let (token, arena) = &mut *arena;
-        let shallow_identity = MemoryShallowIdentity::of(memory);
+        let shallow_identity = MemoryShallowIdentity::of(&memory);
         if let Some((id, content_hash)) = arena.shallow_identities.get(&shallow_identity).copied() {
             return SharedMemory {
                 arena: *token,
@@ -10535,8 +10554,20 @@ fn intern_memory_ref_with_read_identity(
             };
         }
         record_memory_structural_lookup_work();
-        if let Some((stored, (id, content_hash))) = arena.identities.get_key_value(memory) {
-            let (id, content_hash, stored) = (*id, *content_hash, stored.clone());
+        let content_hash = memory_content_hash(&memory);
+        if let Some(&(id, _)) = arena
+            .identities
+            .find(content_hash, |&(id, candidate_hash)| {
+                if candidate_hash != content_hash {
+                    return false;
+                }
+                let stored = &arena.memories[id as usize];
+                match base {
+                    Some(base) => memory.eq_relative_to(stored, base),
+                    None => *memory == **stored,
+                }
+            })
+        {
             // Remember the caller's storage roots, so the next lookup of this
             // same state is an O(1) shallow hit instead of another
             // comparison. The pin keeps those roots alive: a registered
@@ -10544,20 +10575,21 @@ fn intern_memory_ref_with_read_identity(
             arena
                 .shallow_identities
                 .insert(shallow_identity, (id, content_hash));
-            arena.shallow_pins.push(memory.clone());
+            arena.shallow_pins.push(memory.into_owned());
             return SharedMemory {
                 arena: *token,
                 id,
                 content_hash,
-                memory: stored,
+                memory: arena.memories[id as usize].clone(),
             };
         }
-        let id = u32::try_from(arena.identities.len()).expect("memory arena exhausted");
-        let content_hash = memory_content_hash(memory);
-        let mut stored = memory.clone();
+        let id = u32::try_from(arena.memories.len()).expect("memory arena exhausted");
+        let mut stored = memory.into_owned();
         stored.pending_steps = None;
         let stored = std::sync::Arc::new(stored);
-        arena.identities.insert(stored.clone(), (id, content_hash));
+        arena
+            .identities
+            .insert_unique(content_hash, (id, content_hash), |&(_, hash)| hash);
         arena
             .shallow_identities
             .insert(shallow_identity, (id, content_hash));
@@ -10614,7 +10646,7 @@ pub struct ExecutionState {
     /// This is not ownership and is never populated by unfolding a resource.
     pub(super) instance_field_scope: ResourceContext,
     /// Call-local formal identities; the ledger retains actual caller identities.
-    pub(super) resource_bindings: Option<std::sync::Arc<BTreeMap<Variable, Variable>>>,
+    pub(super) resource_bindings: Option<std::sync::Arc<ResourceBindings>>,
     pub(super) locals: LocalEnvironment,
     pub(super) memory: SymbolicMemory,
     /// The point this state's path has reached; not part of equality
@@ -11907,18 +11939,192 @@ impl InstanceId {
     }
 }
 
-/// The instance a binder names in a resource binding map. A binding map is
-/// keyed by binder number because it also carries named mutex-authority
-/// binders (see [`ResourceSpec::binding_identity`]); this is the one place an
-/// instance binder is looked up in it.
-pub(crate) fn bound_instance(
-    bindings: &BTreeMap<Variable, Variable>,
-    binder: InstanceId,
-) -> Option<InstanceId> {
-    bindings
-        .get(&binder.variable())
-        .copied()
-        .map(InstanceId::from_variable)
+/// The proof name of one exact mutex authority occurrence (a live, use or
+/// guard authority bound by a named resource clause). It is an alias in a
+/// state's named-authority table, never a resource instance or a value.
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct MutexAuthorityId(Variable);
+
+/// Prints as the number it is carried as, like [`InstanceId`].
+impl std::fmt::Debug for MutexAuthorityId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl MutexAuthorityId {
+    /// A mutex authority name from the binder number it is carried as.
+    pub const fn from_variable(variable: Variable) -> Self {
+        Self(variable)
+    }
+
+    /// The binder number, for call binding maps still keyed by it.
+    pub const fn variable(self) -> Variable {
+        self.0
+    }
+}
+
+/// A resource binder's number as a proof or contract writes it, before the
+/// clause that declares the binder says what it names. A named resource
+/// clause, a call map entry and a proof's resource name all carry one. It
+/// becomes an [`InstanceId`] or a [`MutexAuthorityId`] only where a clause or
+/// a use decides which ([`Self::instance`], [`Self::mutex_authority`]).
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ResourceBinderId(Variable);
+
+/// Prints as the number it is carried as, like [`InstanceId`].
+impl std::fmt::Debug for ResourceBinderId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl ResourceBinderId {
+    /// A binder number given out by the surface parser or a runtime binder
+    /// descriptor.
+    pub const fn from_variable(variable: Variable) -> Self {
+        Self(variable)
+    }
+
+    /// The number this binder is carried as, for maps still keyed by it and
+    /// for hidden binder spellings.
+    pub const fn variable(self) -> Variable {
+        self.0
+    }
+
+    /// The binder read as an instance binder: its clause declares an
+    /// exclusive instance, or its use requires one.
+    pub const fn instance(self) -> InstanceId {
+        InstanceId::from_variable(self.0)
+    }
+
+    /// The binder read as a named mutex authority: its clause names a mutex
+    /// live, use or guard authority.
+    pub const fn mutex_authority(self) -> MutexAuthorityId {
+        MutexAuthorityId::from_variable(self.0)
+    }
+
+    /// The binder read in the sort `binder` has.
+    pub const fn in_sort_of(self, binder: ResourceBinder) -> ResourceBinder {
+        match binder {
+            ResourceBinder::Instance(_) => ResourceBinder::Instance(self.instance()),
+            ResourceBinder::MutexAuthority(_) => {
+                ResourceBinder::MutexAuthority(self.mutex_authority())
+            }
+        }
+    }
+}
+
+impl ResourceBinder {
+    /// The written binder number this classified binder came from.
+    pub const fn written(self) -> ResourceBinderId {
+        match self {
+            ResourceBinder::Instance(identity) => ResourceBinderId(identity.variable()),
+            ResourceBinder::MutexAuthority(identity) => ResourceBinderId(identity.variable()),
+        }
+    }
+}
+
+/// A callee's resource binder: an exclusive instance binder or a named
+/// mutex authority binder. Which one a binder is comes from the clause that
+/// declares it ([`ResourceSpec::binding_identity`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum ResourceBinder {
+    Instance(InstanceId),
+    MutexAuthority(MutexAuthorityId),
+}
+
+/// The checked binding of a callee's resource binders to the caller's
+/// resources at one call or rewrite. Each binder maps to a caller resource
+/// of its own sort.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct ResourceBindings {
+    instances: BTreeMap<InstanceId, InstanceId>,
+    mutex_authorities: BTreeMap<MutexAuthorityId, MutexAuthorityId>,
+}
+
+impl ResourceBindings {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The caller instance an instance binder names.
+    pub fn instance(&self, binder: InstanceId) -> Option<InstanceId> {
+        self.instances.get(&binder).copied()
+    }
+
+    /// The caller authority a mutex authority binder names.
+    pub fn mutex_authority(&self, binder: MutexAuthorityId) -> Option<MutexAuthorityId> {
+        self.mutex_authorities.get(&binder).copied()
+    }
+
+    /// The caller resource a binder names, of the binder's sort.
+    pub fn get(&self, binder: ResourceBinder) -> Option<ResourceBinder> {
+        match binder {
+            ResourceBinder::Instance(binder) => self.instance(binder).map(ResourceBinder::Instance),
+            ResourceBinder::MutexAuthority(binder) => self
+                .mutex_authority(binder)
+                .map(ResourceBinder::MutexAuthority),
+        }
+    }
+
+    pub fn contains(&self, binder: ResourceBinder) -> bool {
+        self.get(binder).is_some()
+    }
+
+    /// Binds an instance binder; returns the caller instance it already named.
+    pub fn insert_instance(
+        &mut self,
+        binder: InstanceId,
+        actual: InstanceId,
+    ) -> Option<InstanceId> {
+        self.instances.insert(binder, actual)
+    }
+
+    /// Binds a mutex authority binder; returns the authority it already named.
+    pub fn insert_mutex_authority(
+        &mut self,
+        binder: MutexAuthorityId,
+        actual: MutexAuthorityId,
+    ) -> Option<MutexAuthorityId> {
+        self.mutex_authorities.insert(binder, actual)
+    }
+
+    /// Binds `binder` to the caller resource a proof's map wrote by its
+    /// binder number, read in the binder's sort. Returns whether the binder
+    /// was already bound.
+    pub fn insert_written(&mut self, binder: ResourceBinder, written: ResourceBinderId) -> bool {
+        match binder {
+            ResourceBinder::Instance(binder) => {
+                self.insert_instance(binder, written.instance()).is_some()
+            }
+            ResourceBinder::MutexAuthority(binder) => self
+                .insert_mutex_authority(binder, written.mutex_authority())
+                .is_some(),
+        }
+    }
+
+    /// Adds every binding of `other`, replacing this map's binding of the
+    /// same binder.
+    pub fn extend(&mut self, other: &Self) {
+        self.instances.extend(&other.instances);
+        self.mutex_authorities.extend(&other.mutex_authorities);
+    }
+
+    /// The caller instances bound, in binder order.
+    pub fn instances(&self) -> impl Iterator<Item = (InstanceId, InstanceId)> + '_ {
+        self.instances
+            .iter()
+            .map(|(binder, actual)| (*binder, *actual))
+    }
+
+    pub fn len(&self) -> usize {
+        self.instances.len() + self.mutex_authorities.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.instances.is_empty() && self.mutex_authorities.is_empty()
+    }
 }
 
 /// A proof-only, exclusive resource instance. Identity is independent of its
@@ -12388,7 +12594,7 @@ pub struct ResourceSpec {
     term: ResourceTerm,
     /// A proof binder for one raw mutex authority. This does not change the
     /// resource family or turn the authority into a composite instance.
-    mutex_authority_binding: Option<Arc<(Variable, String)>>,
+    mutex_authority_binding: Option<Arc<(MutexAuthorityId, String)>>,
     access: ResourceAccessMode,
     quantity: ResourceQuantity,
     quantity_state_source: ResourceStateSource,
@@ -12397,6 +12603,8 @@ pub struct ResourceSpec {
     /// A pre-state proposition controlling a conditional resource effect.
     /// `None` is the ordinary unconditional clause.
     guard: Option<SpecProposition>,
+    /// The normalized input requirement that backs this produced memory view.
+    view_source: Option<usize>,
     /// Source-level clause identity, when lowering expanded one source
     /// clause into more than one normalized specification.  Keeping this on
     /// the spec lets kernel diagnostics retain the surface clause numbering
@@ -12546,6 +12754,7 @@ impl ResourceSpec {
             role,
             state_source,
             guard: None,
+            view_source: None,
             clause_position: None,
             source_arguments: None,
         };
@@ -12772,7 +12981,7 @@ impl ResourceSpec {
 
     pub fn with_mutex_authority_binding(
         mut self,
-        identity: Variable,
+        identity: MutexAuthorityId,
         binder: String,
     ) -> Result<Self, ResourceSpecError> {
         if !matches!(
@@ -12792,7 +13001,7 @@ impl ResourceSpec {
         Ok(self)
     }
 
-    pub fn mutex_authority_binding(&self) -> Option<(Variable, &str)> {
+    pub fn mutex_authority_binding(&self) -> Option<(MutexAuthorityId, &str)> {
         self.mutex_authority_binding
             .as_ref()
             .map(|entry| (entry.0, entry.1.as_str()))
@@ -12809,10 +13018,13 @@ impl ResourceSpec {
             .or_else(|| self.mutex_authority_binding().map(|(_, name)| name))
     }
 
-    pub fn binding_identity(&self) -> Option<Variable> {
+    pub fn binding_identity(&self) -> Option<ResourceBinder> {
         self.instance_identity()
-            .map(InstanceId::variable)
-            .or_else(|| self.mutex_authority_binding().map(|(identity, _)| identity))
+            .map(ResourceBinder::Instance)
+            .or_else(|| {
+                self.mutex_authority_binding()
+                    .map(|(identity, _)| ResourceBinder::MutexAuthority(identity))
+            })
     }
 
     pub fn access(&self) -> ResourceAccessMode {
@@ -12837,6 +13049,15 @@ impl ResourceSpec {
 
     pub fn guard(&self) -> Option<&SpecProposition> {
         self.guard.as_ref()
+    }
+
+    pub(crate) fn with_view_source(mut self, source: usize) -> Self {
+        self.view_source = Some(source);
+        self
+    }
+
+    pub(crate) fn view_source(&self) -> Option<usize> {
+        self.view_source
     }
 
     pub fn with_guard(mut self, guard: SpecProposition) -> Self {
@@ -13051,6 +13272,7 @@ impl PartialEq for ResourceSpec {
             && self.role == other.role
             && self.state_source == other.state_source
             && self.guard == other.guard
+            && self.view_source == other.view_source
     }
 }
 
@@ -13067,6 +13289,7 @@ impl Hash for ResourceSpec {
         self.role.hash(state);
         self.state_source.hash(state);
         self.guard.hash(state);
+        self.view_source.hash(state);
     }
 }
 
@@ -13082,6 +13305,7 @@ impl Ord for ResourceSpec {
             self.role,
             self.state_source,
             &self.guard,
+            self.view_source,
         )
             .cmp(&(
                 &other.term,
@@ -13093,6 +13317,7 @@ impl Ord for ResourceSpec {
                 other.role,
                 other.state_source,
                 &other.guard,
+                other.view_source,
             ))
     }
 }
@@ -13141,15 +13366,23 @@ mod named_mutex_authority_spec_tests {
             let unnamed = authority(term);
             let named = unnamed
                 .clone()
-                .with_mutex_authority_binding(Variable(9), "guard".into())
+                .with_mutex_authority_binding(
+                    MutexAuthorityId::from_variable(Variable(9)),
+                    "guard".into(),
+                )
                 .unwrap();
             assert_eq!(named.term(), unnamed.term());
             assert_eq!(named.family(), unnamed.family());
-            assert_eq!(named.binding_identity(), Some(Variable(9)));
+            assert_eq!(
+                named.binding_identity(),
+                Some(ResourceBinder::MutexAuthority(
+                    MutexAuthorityId::from_variable(Variable(9))
+                ))
+            );
             assert_eq!(named.instance_identity(), None);
             assert_eq!(
                 named.mutex_authority_binding(),
-                Some((Variable(9), "guard"))
+                Some((MutexAuthorityId::from_variable(Variable(9)), "guard"))
             );
             assert_ne!(named, unnamed);
             assert_ne!(named.cmp(&unnamed), std::cmp::Ordering::Equal);
@@ -13159,11 +13392,14 @@ mod named_mutex_authority_spec_tests {
                     .with_role(ResourceTransferRole::Consume)
                     .with_state_source(ResourceStateSource::Entry)
                     .mutex_authority_binding(),
-                Some((Variable(9), "guard"))
+                Some((MutexAuthorityId::from_variable(Variable(9)), "guard"))
             );
             assert!(
                 named
-                    .with_mutex_authority_binding(Variable(10), "another".into())
+                    .with_mutex_authority_binding(
+                        MutexAuthorityId::from_variable(Variable(10)),
+                        "another".into()
+                    )
                     .is_err()
             );
         }
@@ -13174,14 +13410,20 @@ mod named_mutex_authority_spec_tests {
         let token = ResourceSpec::token(ResourceAccessMode::Own, "token".into(), vec![], vec![]);
         assert!(
             token
-                .with_mutex_authority_binding(Variable(1), "token".into())
+                .with_mutex_authority_binding(
+                    MutexAuthorityId::from_variable(Variable(1)),
+                    "token".into()
+                )
                 .is_err()
         );
         let composite =
             ResourceSpec::composite(ResourceAccessMode::Own, "state".into(), vec![], vec![]);
         assert!(
             composite
-                .with_mutex_authority_binding(Variable(1), "state".into())
+                .with_mutex_authority_binding(
+                    MutexAuthorityId::from_variable(Variable(1)),
+                    "state".into()
+                )
                 .is_err()
         );
         let mutex = Box::new(ProgramExpression::Value(ProgramValue::pointer(
@@ -15222,6 +15464,8 @@ pub struct ProofObligation {
     pub(super) assertion_failure: bool,
     /// This condition must be established before applying the statement.
     pub(super) statement_entry_required: bool,
+    /// Diagnostic metadata only. The proposition itself carries both ranges.
+    pub(super) live_view_write: bool,
     /// Source identity for a required call precondition, when this
     /// obligation was emitted while applying a selected callee contract.
     /// This is planning metadata only and is excluded from obligation

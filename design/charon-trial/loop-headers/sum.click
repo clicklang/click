@@ -9,7 +9,7 @@ fn sum(bytes: &[u8]) -> i32 {
     views bytes[0..((bytes.len() as uint32) as int32)];
     ensures to_integer(result) == old(prefix(bytes, ((bytes.len() as uint32) as int32)));
 } by {
-    step_until(region(7));
+    step_until(region(7).entry);
     have prefix(bytes, ((i as uint32) as int32)) == 0 by {
         unfold(prefix(bytes, ((i as uint32) as int32))); solve();
     }
@@ -30,7 +30,7 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant 0 <= ((i as uint32) as int32) and 1000 >= ((i as uint32) as int32);
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(((i as uint32) as int32));
         invariant to_integer(total) == prefix(bytes, ((i as uint32) as int32));
-        preserve by {
+        maintain by {
             have bytes.len() <= 2147483647u64 by {
                 normalize() using {
                     bytes.len() <= 1000u64;
@@ -52,7 +52,7 @@ fn sum(bytes: &[u8]) -> i32 {
                     to_integer(((i as uint32) as int32)) <= 1000;
                 }
             }
-            step_until(region(18));
+            step_until(region(18).entry);
             have (((i as uint32) as int32)) < ((bytes.len() as uint32) as int32) by {
                 solve() using {
                     i < bytes.len();
@@ -166,7 +166,7 @@ fn sum(bytes: &[u8]) -> i32 {
                     to_integer(total + (bytes[((i as uint32) as int32)] as int32)) == to_integer(total) + to_integer((bytes[((i as uint32) as int32)] as int32));
                 }
             }
-            step_until(region(26));
+            step_until(region(26).entry);
             step();
             have i <= bytes.len() by {
                 solve();

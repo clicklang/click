@@ -695,7 +695,9 @@ fn empty_library_file() -> Result<ClickFile, ClickError> {
         &BTreeMap::new(),
         Default::default(),
         None,
+        &Default::default(),
     )
+    .map(|(file, _)| file)
 }
 
 /// Parses each module in library order with the declarations of the modules
@@ -721,7 +723,7 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             )
             .collect::<Vec<_>>();
         let resources = context.resource_definitions().iter().collect::<Vec<_>>();
-        let module = parser::parse_file_items_for_module(
+        let (module, _) = parser::parse_file_items_for_module(
             source,
             identity,
             0,
@@ -735,6 +737,7 @@ fn load_library_modules(modules: &[(&str, &str)]) -> Result<Vec<LibraryModule>, 
             &BTreeMap::new(),
             Default::default(),
             None,
+            &Default::default(),
         )?;
         if !module.verifying_sources().is_empty()
             || !module.imports().is_empty()
@@ -1318,7 +1321,7 @@ fn expand_declared_resource_definition(
             .contains
             .iter()
             .filter_map(|clause| match clause {
-                ResourceClause::Named { binding, .. } => Some(binding.identity),
+                ResourceClause::Named { binding, .. } => Some(binding.identity.instance()),
                 _ => None,
             })
             .collect::<BTreeSet<_>>();
@@ -1329,8 +1332,12 @@ fn expand_declared_resource_definition(
                 let ResourceClause::Named { binding, .. } = parameter else {
                     unreachable!()
                 };
-                (!owned.contains(&binding.identity))
-                    .then(|| (binding.identity, SurfaceBinder::from(binding.name.clone())))
+                (!owned.contains(&binding.identity.instance())).then(|| {
+                    (
+                        binding.identity.instance(),
+                        SurfaceBinder::from(binding.name.clone()),
+                    )
+                })
             })
             .collect();
         let previous = resource_definitions
@@ -1631,7 +1638,8 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Transport { .. }
         | ProofTactic::TransportUsing { .. }
         | ProofTactic::SolveUsing(_)
-        | ProofTactic::NormalizeUsing(_)) => {
+        | ProofTactic::NormalizeUsing(_)
+        | ProofTactic::OrderChain(_)) => {
             expand_declared_resource_tactic_with_propositions(tactic, resource_definitions)
         }
         tactic @ (ProofTactic::UnfoldResource(_)
@@ -2042,6 +2050,12 @@ fn expand_declared_resource_tactic_with_propositions(
                 .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?,
         })),
+        ProofTactic::OrderChain(premises) => Ok(ProofTactic::OrderChain(
+            premises
+                .into_iter()
+                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
+                .collect::<Result<_, _>>()?,
+        )),
         ProofTactic::NormalizeUsing(premises) => Ok(ProofTactic::NormalizeUsing(
             premises
                 .into_iter()
@@ -2397,19 +2411,24 @@ fn expand_declared_resource_clause(
             // prefer what an earlier declaration fixed.
             let construction = binding.fold_fields.is_some();
             if !construction {
-                resource_definitions.refuse_ambiguous(binding.identity, &binding.name)?;
+                resource_definitions
+                    .refuse_ambiguous(binding.identity.instance(), &binding.name)?;
             }
             let parent = if construction {
                 name.clone()
             } else {
                 resource_definitions
-                    .instance_resource(binding.identity)
+                    .instance_resource(binding.identity.instance())
                     .unwrap_or_else(|| name.clone())
             };
             // Unfold syntax can still carry the parser's provisional parent
             // family for a child. Keep the family resolved above, including
             // after an explicit child fold removed its slot annotation.
-            resource_definitions.record_instance(binding.identity, &parent, construction);
+            resource_definitions.record_instance(
+                binding.identity.instance(),
+                &parent,
+                construction,
+            );
             if let Some(children) = binding.child_bindings.as_ref() {
                 let slots = resource_definitions
                     .get(&parent)
@@ -2447,7 +2466,11 @@ fn expand_declared_resource_clause(
                     // arms owns the one in the arm an enclosing proof
                     // `match` selects.
                     let Some(declared) = declared.clone().or_else(|| {
-                        resource_definitions.selected_arm_slot(binding.identity, &parent, slot)
+                        resource_definitions.selected_arm_slot(
+                            binding.identity.instance(),
+                            &parent,
+                            slot,
+                        )
                     }) else {
                         continue;
                     };
@@ -3580,6 +3603,17 @@ fn expand_declared_resource_expression_children(
             operand: Box::new(recurse(*operand)?),
             lowered,
         },
+        ContractExpression::MemoryLoad {
+            pointer,
+            value_type,
+            volatile,
+            pointee_constant,
+        } => ContractExpression::MemoryLoad {
+            pointer: Box::new(recurse(*pointer)?),
+            value_type,
+            volatile,
+            pointee_constant,
+        },
         ContractExpression::Field {
             base,
             field,
@@ -3870,7 +3904,7 @@ pub(in crate::surface) fn standard_library_theorem_index(name: &str) -> Option<u
 fn record_produced_instances(transport: &CallBinderTransport, definitions: &DeclaredResourceScope) {
     for produced in transport.produced() {
         if let Some(family) = produced.family() {
-            definitions.record_instance(produced.identity(), family, true);
+            definitions.record_instance(produced.identity().instance(), family, true);
         }
     }
 }
@@ -3892,9 +3926,9 @@ fn validate_resource_reference_arguments(
         )));
     }
     for (reference, expected) in references.iter().zip(&info.resource_parameter_families) {
-        definitions.refuse_ambiguous(reference.identity, &reference.name)?;
+        definitions.refuse_ambiguous(reference.identity.instance(), &reference.name)?;
         let actual = definitions
-            .instance_resource(reference.identity)
+            .instance_resource(reference.identity.instance())
             .ok_or_else(|| {
                 ClickError::new(format!("unknown resource argument `{}`", reference.name))
             })?;

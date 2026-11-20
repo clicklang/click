@@ -19,7 +19,7 @@ void f(struct node* p, int32 more) {
         decreases more;
         invariant 0 <= more;
         initialize by solve();
-        preserve by { step(); step(); }
+        maintain by { step(); step(); }
     }
 }
 ```

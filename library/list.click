@@ -27,7 +27,7 @@ function contains<T>(xs: List<T>, value: T) -> Bool
 theorem append_left_identity<T>(xs: List<T>) {
     ensures list::append(List<T>::Nil, xs) == xs by {
         unfold(list::append(List<T>::Nil, xs));
-        normalize();
+        known();
     }
 }
 
@@ -37,13 +37,13 @@ theorem append_right_identity<T>(xs: List<T>) {
         match xs {
             List::Nil => {
                 unfold(list::append(List<T>::Nil, List<T>::Nil));
-                normalize();
+                known();
             }
             List::Cons(head, tail) => {
                 apply(ih(tail));
                 unfold(list::append(List<T>::Cons(head, tail), List<T>::Nil));
                 rewrite(list::append(tail, List<T>::Nil), tail);
-                normalize();
+                known();
             }
         }
     }
@@ -53,7 +53,7 @@ theorem append_cons<T>(head: T, tail: List<T>, ys: List<T>) {
     ensures list::append(List<T>::Cons(head, tail), ys)
         == List<T>::Cons(head, list::append(tail, ys)) by {
         unfold(list::append(List<T>::Cons(head, tail), ys));
-        normalize();
+        known();
     }
 }
 
@@ -85,7 +85,7 @@ theorem append_associative<T>(xs: List<T>, ys: List<T>, zs: List<T>) {
 theorem contains_nil<T>(value: T) {
     ensures list::contains(List<T>::Nil, value) == false by {
         unfold(list::contains(List<T>::Nil, value));
-        normalize();
+        known();
     }
 }
 
@@ -93,7 +93,7 @@ theorem contains_cons<T>(head: T, tail: List<T>, value: T) {
     ensures list::contains(List<T>::Cons(head, tail), value)
         == if head == value { true } else { list::contains(tail, value) } by {
         unfold(list::contains(List<T>::Cons(head, tail), value));
-        normalize();
+        known();
     }
 }
 
@@ -116,14 +116,23 @@ theorem contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
                     rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value), if head == value { true } else { list::contains(list::append(tail, ys), value) });
                     apply(list::contains_cons(head, tail, value));
                     rewrite(list::contains(List<T>::Cons(head, tail), value), if head == value { true } else { list::contains(tail, value) });
-                    normalize() using { head == value; };
+                    have (if head == value { true } else { list::contains(list::append(tail, ys), value) }) == true by known();
+                    have (if head == value { true } else { list::contains(tail, value) }) == true by known();
+                    have (if (if head == value { true } else { list::contains(tail, value) }) { true } else { list::contains(ys, value) }) == true by {
+                        rewrite((if head == value { true } else { list::contains(tail, value) }), true);
+                        known();
+                    }
+                    rewrite((if (if head == value { true } else { list::contains(tail, value) }) { true } else { list::contains(ys, value) }), true);
+                    known();
                 } else {
                     apply(list::contains_cons(head, list::append(tail, ys), value));
                     rewrite(list::contains(List<T>::Cons(head, list::append(tail, ys)), value), if head == value { true } else { list::contains(list::append(tail, ys), value) });
                     apply(list::contains_cons(head, tail, value));
                     rewrite(list::contains(List<T>::Cons(head, tail), value), if head == value { true } else { list::contains(tail, value) });
                     rewrite(list::contains(list::append(tail, ys), value), if list::contains(tail, value) { true } else { list::contains(ys, value) });
-                    normalize() using { not(head == value); };
+                    have (if head == value { true } else { list::contains(tail, value) }) == list::contains(tail, value) by known();
+                    rewrite((if head == value { true } else { list::contains(tail, value) }), list::contains(tail, value));
+                    known();
                 }
             }
         }
@@ -144,14 +153,14 @@ theorem length_nil<T>(xs: List<T>) {
     ensures list::length(xs) == Nat::Zero by {
         rewrite(xs, List<T>::Nil);
         unfold(list::length(List<T>::Nil));
-        normalize();
+        known();
     }
 }
 
 theorem length_cons<T>(head: T, tail: List<T>) {
     ensures list::length(List<T>::Cons(head, tail)) == Nat::Succ(list::length(tail)) by {
         unfold(list::length(List<T>::Cons(head, tail)));
-        normalize();
+        known();
     }
 }
 
@@ -176,7 +185,7 @@ theorem length_append<T>(xs: List<T>, ys: List<T>) {
                 apply(nat::add_succ_left(list::length(tail), list::length(ys)));
                 rewrite(nat::add(Nat::Succ(list::length(tail)), list::length(ys)), Nat::Succ(nat::add(list::length(tail), list::length(ys))));
                 rewrite(list::length(list::append(tail, ys)), nat::add(list::length(tail), list::length(ys)));
-                normalize();
+                known();
             }
         }
     }

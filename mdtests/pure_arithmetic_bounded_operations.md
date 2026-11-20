@@ -29,11 +29,7 @@ theorem bounded_remainder(x: int32) {
             0 <= x;
         };
     }
-    ensures x % 4 < 4 by {
-        solve() using {
-            0 <= x;
-        };
-    }
+    ensures x % 4 < 4 by known();
 }
 
 theorem bounded_mask(x: int32) {

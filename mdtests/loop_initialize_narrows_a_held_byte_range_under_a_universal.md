@@ -44,7 +44,7 @@ int32 count_up(uint8 *a, int32 n) {
             }
             solve();
         }
-        preserve by {
+        maintain by {
             step();
             step();
             have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {

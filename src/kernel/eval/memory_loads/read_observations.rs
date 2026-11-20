@@ -2,14 +2,14 @@
 //! Capture/restore shares persistent roots; selected shared reads use an ID lookup.
 use super::*;
 
-type Key = ((u32, u32), Address, LoadKind);
+type Key = (crate::kernel::program_point::ReadKey, Address, LoadKind);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(super) struct Id(u64);
 
 #[derive(Clone)]
 struct Record {
-    memory: SharedMemory,
+    point: ProgramPoint,
     pointer: Address,
     kind: LoadKind,
     origin: SharedMemory,
@@ -25,7 +25,7 @@ pub(super) struct State {
     keys: imbl::HashMap<Key, Id>,
     records: imbl::HashMap<Id, Record>,
     terms: imbl::HashMap<u64, Id>,
-    latest: imbl::HashMap<(u64, Id), (SharedMemory, Address)>,
+    latest: imbl::HashMap<(u64, Id), (ProgramPoint, Address)>,
 }
 
 thread_local! {
@@ -45,12 +45,16 @@ pub(super) fn clear() {
 }
 
 pub(super) fn existing(memory: &SharedMemory, pointer: &Address, kind: LoadKind) -> Option<Id> {
+    existing_at(&ProgramPoint::at(memory), pointer, kind)
+}
+
+pub(super) fn existing_at(point: &ProgramPoint, pointer: &Address, kind: LoadKind) -> Option<Id> {
     crate::instrumentation::record_deterministic_work(1);
     STATE.with(|state| {
         state
             .borrow()
             .keys
-            .get(&(memory.arena_id(), pointer.clone(), kind))
+            .get(&(point.read_key(), pointer.clone(), kind))
             .copied()
     })
 }
@@ -62,7 +66,17 @@ pub(super) fn record(
     origin: &SharedMemory,
     bytes: u32,
 ) -> Id {
-    record_with_width(memory, pointer, kind, origin, bytes, true)
+    record_at(&ProgramPoint::at(memory), pointer, kind, origin, bytes)
+}
+
+pub(super) fn record_at(
+    point: &ProgramPoint,
+    pointer: &Address,
+    kind: LoadKind,
+    origin: &SharedMemory,
+    bytes: u32,
+) -> Id {
+    record_with_width(point, pointer, kind, origin, bytes, true)
 }
 
 pub(super) fn record_untyped(
@@ -72,7 +86,7 @@ pub(super) fn record_untyped(
     origin: &SharedMemory,
 ) -> Id {
     record_with_width(
-        memory,
+        &ProgramPoint::at(memory),
         pointer,
         kind,
         origin,
@@ -82,7 +96,7 @@ pub(super) fn record_untyped(
 }
 
 fn record_with_width(
-    memory: &SharedMemory,
+    point: &ProgramPoint,
     pointer: &Address,
     kind: LoadKind,
     origin: &SharedMemory,
@@ -93,7 +107,7 @@ fn record_with_width(
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        let key = (memory.arena_id(), pointer.clone(), kind);
+        let key = (point.read_key(), pointer.clone(), kind);
         if let Some(id) = state.keys.get(&key).copied() {
             refresh_record(
                 state.records.get_mut(&id).expect("recorded read"),
@@ -113,7 +127,7 @@ fn record_with_width(
         state.records.insert(
             id,
             Record {
-                memory: memory.clone(),
+                point: point.clone(),
                 pointer: pointer.clone(),
                 kind,
                 origin: origin.clone(),
@@ -152,8 +166,8 @@ pub(super) fn select(id: Id) {
     });
 }
 
-pub(super) fn selected(memory: &SharedMemory, pointer: &Address, kind: LoadKind) -> bool {
-    existing(memory, pointer, kind).is_some_and(|id| {
+pub(super) fn selected(point: &ProgramPoint, pointer: &Address, kind: LoadKind) -> bool {
+    existing_at(point, pointer, kind).is_some_and(|id| {
         STATE.with(|state| {
             state
                 .borrow()
@@ -192,15 +206,15 @@ pub(super) fn produced(read: &MachineTerm, source: &MachineTerm) {
     if *kind != LoadKind::Bits64 {
         return;
     }
-    let Some(id) = existing(memory.shared_memory(), pointer, *kind) else {
+    let Some(id) = existing_at(memory, pointer, *kind) else {
         return;
     };
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     STATE.with(|state| {
-        state.borrow_mut().latest.insert(
-            (epoch, id),
-            (origin.shared_memory().clone(), address.as_ref().clone()),
-        );
+        state
+            .borrow_mut()
+            .latest
+            .insert((epoch, id), (origin.clone(), address.as_ref().clone()));
     });
 }
 
@@ -208,7 +222,7 @@ pub(super) fn latest(read: &MachineTerm) -> Option<MachineTerm> {
     let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
         return None;
     };
-    let id = existing(memory.shared_memory(), pointer, *kind)?;
+    let id = existing_at(memory, pointer, *kind)?;
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     STATE.with(|state| {
         state
@@ -216,7 +230,7 @@ pub(super) fn latest(read: &MachineTerm) -> Option<MachineTerm> {
             .latest
             .get(&(epoch, id))
             .map(|(memory, pointer)| {
-                MachineTerm::MemoryLoad(ProgramPoint::at(memory), Box::new(pointer.clone()), *kind)
+                MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), *kind)
             })
     })
 }
@@ -239,11 +253,11 @@ pub(super) fn bytes(id: Id) -> Option<u32> {
 }
 
 pub(super) fn origin_for_cell(
-    memory: &SharedMemory,
+    point: &ProgramPoint,
     pointer: &Address,
     kind: LoadKind,
 ) -> Option<SharedMemory> {
-    let id = existing(memory, pointer, kind)?;
+    let id = existing_at(point, pointer, kind)?;
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     STATE.with(|state| {
         let state = state.borrow();
@@ -261,7 +275,7 @@ pub(super) fn observation(id: Id) -> Option<ScalarReadObservation> {
             .records
             .get(&id)
             .map(|record| ScalarReadObservation {
-                memory: record.memory.clone(),
+                point: record.point.clone(),
                 pointer: record.pointer.clone(),
                 kind: record.kind,
                 bytes: record.bytes,
@@ -284,13 +298,14 @@ pub(super) fn for_operand(
     {
         return observation(id);
     }
-    let (memory, pointer, kind) = operand.read()?;
+    let (point, pointer, kind) = operand.read_point()?;
+    let memory = point.shared_memory();
     // Inspection is not an access observation. In particular, retaining the
     // conservative width of an unseen descriptor would widen a later typed
     // producer, and retaining this state would steal its first live origin.
-    let Some(id) = existing(memory, pointer, kind) else {
+    let Some(id) = existing_at(point, pointer, kind) else {
         return Some(ScalarReadObservation {
-            memory: memory.clone(),
+            point: point.clone(),
             pointer: pointer.clone(),
             kind,
             bytes: load_term_access_width(memory, pointer, kind),
@@ -314,14 +329,15 @@ mod tests {
         let address = Address::symbolic(Variable(998_708));
         let memory = intern_memory(SymbolicMemory::new());
         let origin = intern_memory(SymbolicMemory::new().with_block("float-origin", 8));
-        record(&memory, &address, LoadKind::Float32, &origin, 4);
+        let point = ProgramPoint::at(&memory);
+        record_at(&point, &address, LoadKind::Float32, &origin, 4);
         assert_eq!(
-            origin_for_cell(&memory, &address, LoadKind::Float32),
+            origin_for_cell(&point, &address, LoadKind::Float32),
             Some(origin)
         );
-        assert_eq!(origin_for_cell(&memory, &address, LoadKind::Float64), None);
+        assert_eq!(origin_for_cell(&point, &address, LoadKind::Float64), None);
         begin_load_origin_epoch();
-        assert_eq!(origin_for_cell(&memory, &address, LoadKind::Float32), None);
+        assert_eq!(origin_for_cell(&point, &address, LoadKind::Float32), None);
     }
 
     #[test]
@@ -485,6 +501,28 @@ mod tests {
         assert_eq!(observe(&read).bytes, 4);
         assert_eq!(observe(&other_format).origin, Some(memory));
         assert_eq!(load_variable_registry_len(), 0);
+    }
+
+    #[test]
+    fn equal_memory_at_distinct_points_does_not_share_access_observations() {
+        let _session = VerificationSession::enter();
+        let memory = SymbolicMemory::new();
+        let first = ProgramPoint::starting_at(&memory).for_exact_read();
+        let second = ProgramPoint::starting_at(&memory).for_exact_read();
+        let pointer = Address::symbolic(Variable(998_707));
+        let kind = LoadKind::Bits64;
+        assert_eq!(first.shared_memory(), second.shared_memory());
+        let first_id = record_at(&first, &pointer, kind, first.shared_memory(), 4);
+        let second_id = record_at(&second, &pointer, kind, second.shared_memory(), 8);
+        assert_ne!(first_id, second_id);
+        let first_read = MachineTerm::MemoryLoad(first, Box::new(pointer.clone()), kind);
+        let second_read = MachineTerm::MemoryLoad(second, Box::new(pointer), kind);
+        let observe = |read| for_operand(MachineOperandView::Legacy(read)).unwrap().bytes;
+        assert_eq!(observe(&first_read), 4);
+        assert_eq!(observe(&second_read), 8);
+        produced(&first_read, &second_read);
+        assert_eq!(latest(&first_read), Some(second_read.clone()));
+        assert_eq!(latest(&second_read), None);
     }
 
     #[test]

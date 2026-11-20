@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+#[cfg(not(feature = "fast-gate"))]
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -17,7 +18,9 @@ use sha2::{Digest, Sha256};
 
 use super::compiler_import::PreparedCImport;
 use super::{source_map::CSourceMap, syntax};
-use crate::project::{self, Project};
+use crate::project;
+#[cfg(not(feature = "fast-gate"))]
+use crate::project::Project;
 use crate::source::SourcePosition;
 
 /// The first rejection of the complete pinned translation unit: the
@@ -69,7 +72,7 @@ const REQUIRE_TOOLCHAIN: &str = "CLICK_LINUX_RBTREE_REQUIRE_TOOLCHAIN";
 const INVENTORY: &str = "CLICK_LINUX_RBTREE_INVENTORY";
 
 /// The unit's prepared artifact and the sidecar, relative to the project.
-const ARTIFACT: &str = ".click/linux/lib/rbtree.c.i";
+const ARTIFACT: &str = ".click/captures/linux/lib/rbtree.c.i";
 const SIDECAR: &str = "rbtree.click";
 
 fn fixture() -> PathBuf {
@@ -266,6 +269,7 @@ fn toolchain_gate(manifest: &serde_json::Value, required: bool) -> Result<Option
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn linux_rbtree_gate_reports_or_refuses_another_compiler() {
     // Another compiler is simulated by recording a different identity.
@@ -307,6 +311,7 @@ fn panic_message(result: std::thread::Result<Closure>) -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn linux_rbtree_gate_refuses_a_tampered_closure() {
     let manifest = manifest();
@@ -425,6 +430,7 @@ fn linux_rbtree_closure_matches_its_manifest() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
     let manifest = manifest();
@@ -437,7 +443,7 @@ fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
         return;
     }
 
-    // The import route: `click import lock` runs the unit's vector under
+    // The import route: `click capture` runs the unit's vector under
     // the option profile and reproduces the committed lock.
     Project::load(&closure.0.join(project::FILE_NAME))
         .and_then(|project| project.lock())
@@ -527,6 +533,7 @@ fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
 /// dependency-closure projection is applied, and the projected unit parses
 /// with the optimizer-promise attributes refused.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn linux_rbtree_locked_import_loads_offline() {
     let manifest = manifest();

@@ -677,6 +677,13 @@ fn path_error(positions: &[SourcePosition], index: usize, message: String) -> Cl
     .with_kind(ClickErrorKind::Syntax)
 }
 
+/// The library references as read in the file that supplied model clauses.
+#[derive(Clone, Debug)]
+pub(super) struct ReferenceScope {
+    selected: BTreeMap<String, String>,
+    written_paths: BTreeMap<SourcePosition, WrittenPath>,
+}
+
 /// A file's symbol table: the top-level declarations of the file and of the
 /// user modules it imports, and the library modules and selectively imported
 /// names in scope. Lowering resolves file-level names here, and source
@@ -695,6 +702,7 @@ pub(super) struct SymbolTable {
     explicit_paths: BTreeSet<String>,
     /// The library paths joined into one token, by their first position.
     written_paths: BTreeMap<SourcePosition, WrittenPath>,
+    imported_reference_scopes: BTreeMap<String, std::sync::Arc<ReferenceScope>>,
 }
 
 impl SymbolTable {
@@ -822,6 +830,7 @@ impl SymbolTable {
             declared,
             explicit_paths,
             written_paths: BTreeMap::new(),
+            imported_reference_scopes: BTreeMap::new(),
         })
     }
 
@@ -833,19 +842,45 @@ impl SymbolTable {
         name: String,
         position: &SourcePosition,
     ) -> Result<String, String> {
-        if let Some(path) = self.written_paths.get(position) {
+        let (selected, written_paths) = self
+            .imported_reference_scope(position)
+            .map_or((&self.selected, &self.written_paths), |scope| {
+                (&scope.selected, &scope.written_paths)
+            });
+        if let Some(path) = written_paths.get(position) {
             return match &path.refusal {
                 Some(refusal) => Err(refusal.clone()),
                 None => Ok(name),
             };
         }
-        Ok(self.selected.get(&name).cloned().unwrap_or(name))
+        Ok(selected.get(&name).cloned().unwrap_or(name))
+    }
+
+    pub(super) fn into_reference_scope(self) -> ReferenceScope {
+        ReferenceScope {
+            selected: self.selected,
+            written_paths: self.written_paths,
+        }
+    }
+
+    pub(super) fn import_reference_scopes(
+        &mut self,
+        scopes: &BTreeMap<String, std::sync::Arc<ReferenceScope>>,
+    ) {
+        self.imported_reference_scopes = scopes.clone();
+    }
+
+    fn imported_reference_scope(&self, position: &SourcePosition) -> Option<&ReferenceScope> {
+        self.imported_reference_scopes
+            .get(position.origin.as_ref()?.filename.as_ref())
+            .map(AsRef::as_ref)
     }
 
     /// How a library path joined at `position` was written, for a reader of
     /// C and C++ declaration names.
     pub(super) fn written_path(&self, position: &SourcePosition) -> Option<&str> {
-        self.written_paths
+        self.imported_reference_scope(position)
+            .map_or(&self.written_paths, |scope| &scope.written_paths)
             .get(position)
             .map(|path| path.written.as_str())
     }

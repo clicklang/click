@@ -1,5 +1,5 @@
 //! `exact(place)` evaluation (`design/exact-reads.md`): the read is named by
-//! the selected state's own memory, with no version walk; an ordinary read
+//! the selected program point, with no version walk; an ordinary read
 //! names the cell's version point.
 
 use super::*;
@@ -20,10 +20,9 @@ fn read(point: &str, value_type: ProgramType, exact: bool) -> SpecExpression {
     }
 }
 
-fn evaluate(memory: &SymbolicMemory, read: &SpecExpression) -> ProgramValue {
-    let state = ExecutionState::new().with_memory(memory.clone());
+fn evaluate(state: &ExecutionState, read: &SpecExpression) -> ProgramValue {
     let paths = evaluate_spec_expression_paths_with_loop_entry_in(
-        &state,
+        state,
         read,
         None,
         &PureFactContext::new(),
@@ -55,24 +54,21 @@ fn an_exact_read_is_named_by_its_own_state_not_the_version_point() {
     let after = stored.clone().store(other, int32(9));
     let ordinary = read("exact-read-cell", ProgramType::Int32, false);
     let exact = read("exact-read-cell", ProgramType::Int32, true);
-    let own_read = |memory: &SymbolicMemory| {
-        int32(MachineTerm::memory_read(
-            intern_memory_ref(memory),
-            cell.clone(),
+    let stored = ExecutionState::new().with_memory(stored);
+    let after = stored.clone().with_memory(after);
+    let own_read = |state: &ExecutionState| {
+        int32(MachineTerm::MemoryLoad(
+            state.program_point().for_exact_read(),
+            Box::new(cell.clone()),
             LoadKind::Int32,
         ))
     };
 
-    // The store to another object leaves the cell's version point: the
-    // ordinary read after it is the read before it.
     assert_eq!(evaluate(&after, &ordinary), evaluate(&stored, &ordinary));
-    // The exact read is named by the later state itself.
     assert_eq!(evaluate(&after, &exact), own_read(&after));
-    assert_ne!(evaluate(&after, &exact), evaluate(&after, &ordinary));
-
-    // Where the walk is trivial, the two forms are the same read.
     assert_eq!(evaluate(&stored, &exact), own_read(&stored));
-    assert_eq!(evaluate(&stored, &exact), evaluate(&stored, &ordinary));
+    assert_ne!(evaluate(&after, &exact), evaluate(&after, &ordinary));
+    assert_ne!(evaluate(&after, &exact), evaluate(&stored, &exact));
 }
 
 #[test]
@@ -90,17 +86,23 @@ fn an_exact_pointer_read_has_its_own_read_as_provenance() {
         .with_block("exact-pointer-cell", 8)
         .with_block("exact-pointer-other", 4)
         .store(other, int32(9));
-    let state = intern_memory_ref(&after);
+    let after = ExecutionState::new().with_memory(after);
+    let state = intern_memory_ref(after.memory());
     let ProgramValue::Pointer(exact) = evaluate(
         &after,
         &read("exact-pointer-cell", ProgramType::Int32Pointer, true),
     ) else {
         panic!("a pointer read")
     };
-    let own_read = Address::loaded_value(&state.unchanged_bytes_source(), &cell);
-    assert_eq!(exact.address(), &own_read);
-    assert_eq!(exact.provenance(), &own_read);
-    assert_eq!(exact.bounds_owner(), Some(&own_read));
+    let source = exact
+        .address()
+        .as_loaded_value()
+        .expect("pointer read source");
+    assert_eq!(source.defining_address, cell);
+    assert_eq!(source.point.read_version_id(), after.program_point_id());
+    assert!(source.point.is_exact_read());
+    assert_eq!(exact.provenance(), exact.address());
+    assert_eq!(exact.bounds_owner(), Some(exact.address()));
     assert_eq!(exact.program_type(), ProgramType::Int32Pointer);
 
     // The ordinary read names the cell's version point instead.

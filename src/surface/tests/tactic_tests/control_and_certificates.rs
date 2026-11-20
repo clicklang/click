@@ -307,7 +307,7 @@ fn parses_frontier_branch_tactic() {
             then_tactics,
             else_tactics,
         }) if then_tactics == &[ProofTactic::Step]
-            && else_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit)]
+            && else_tactics == &[ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT)]
     ));
 }
 
@@ -332,7 +332,7 @@ fn parses_frontier_branch_ensuring_interface() {
             ProofAssertion::Fact(_),
             ProofAssertion::Resource(ResourceClause::OwnMemory(_)),
         ]) && then_tactics == &[ProofTactic::Step]
-            && else_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit)]
+            && else_tactics == &[ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT)]
     ));
 }
 
@@ -605,7 +605,7 @@ fn empty_proof_if_branches_contribute_only_their_case_split() {
 fn parses_execute_until_proof_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
-        "== 2 by { step_until(region(1)); step_until(function.exit); solve(); }",
+        "== 2 by { step_until(region(1).entry); step_until(function.exit); solve(); }",
     );
     let file = parse(&source).expect("execute_until explicit proof script should parse");
     let ensure = &file.function_blocks()[0].ensures()[0];
@@ -614,8 +614,11 @@ fn parses_execute_until_proof_tactic() {
         ensure.proof().tactics(),
         Some(
             [
-                ProofTactic::ExecuteUntil(CodeRegionRef::Region(1)),
-                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
+                ProofTactic::ExecuteUntil(ExecutionPoint::ProgramPoint(ProgramPointRef {
+                    region: CodeRegionRef::Region(1),
+                    kind: ProgramPointKind::Entry
+                })),
+                ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
                 ProofTactic::Solve,
             ]
             .as_slice()
@@ -637,7 +640,7 @@ fn parses_unfold_proof_tactic() {
         ensure.proof().tactics(),
         Some(
             [
-                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
+                ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
                 ProofTactic::UnfoldFunction(ClickFunctionApplication {
                     name: "sorted".into(),
                     arguments: vec![
@@ -668,7 +671,7 @@ fn parses_apply_theorem_proof_tactic() {
         ensure.proof().tactics(),
         Some(
             [
-                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
+                ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
                 ProofTactic::ApplyTheorem(TheoremApplication {
                     name: "nonnegative".to_string(),
                     arguments: vec![current_var("result")],
@@ -850,7 +853,11 @@ fn parses_and_classifies_simple_and_smart_tactics() {
         TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Execute))
     ));
     assert!(matches!(
-        ProofTactic::ExecuteUntil(CodeRegionRef::Region(1)).class(),
+        ProofTactic::ExecuteUntil(ExecutionPoint::ProgramPoint(ProgramPointRef {
+            region: CodeRegionRef::Region(1),
+            kind: ProgramPointKind::Entry
+        }))
+        .class(),
         TacticClass::Smart(SmartSite::Engine(SmartTacticKind::Execute))
     ));
 }
@@ -1152,7 +1159,7 @@ fn tactic_certificate_rejects_a_bare_invariant_closure() {
 /// Serialized evidence is admitted by the same rule as source text: a
 /// structural `loop` step whose phase was never planned is a smart proof, and
 /// `from_steps` refuses it exactly as `from_proof_tactics` refuses an omitted
-/// `preserve by`.
+/// `maintain by`.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_10")]
 fn step_certificate_rejects_a_loop_step_with_an_unplanned_phase() {
@@ -1180,7 +1187,7 @@ fn step_certificate_rejects_a_loop_step_with_an_unplanned_phase() {
     let error = ProofCertificate::from_steps(vec![ProofStep::Loop(unplanned)])
         .expect_err("an unplanned preservation phase is not a certificate");
     let message = error.message().to_string();
-    assert!(message.contains("loop `preserve`"), "{message}");
+    assert!(message.contains("loop `maintain`"), "{message}");
     assert!(message.contains("the implicit closer"), "{message}");
 }
 
@@ -1360,7 +1367,9 @@ fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
     ] {
         let source = FILL3_CLICK.replace(
             "== 2;",
-            &format!("== 2 by {{ step_until({spelling}); step_until(function.exit); solve(); }}"),
+            &format!(
+                "== 2 by {{ step_until({spelling}.entry); step_until(function.exit); solve(); }}"
+            ),
         );
         let file = parse(&source).unwrap();
         assert_eq!(
@@ -1368,12 +1377,17 @@ fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
                 .proof()
                 .tactics()
                 .unwrap()[0],
-            ProofTactic::ExecuteUntil(region)
+            ProofTactic::ExecuteUntil(ExecutionPoint::ProgramPoint(ProgramPointRef {
+                region,
+                kind: ProgramPointKind::Entry
+            }))
         );
     }
     for spelling in ["assignment(i, -1)", "assignment(i)", "assignment(, 0)"] {
-        let source =
-            FILL3_CLICK.replace("== 2;", &format!("== 2 by {{ step_until({spelling}); }}"));
+        let source = FILL3_CLICK.replace(
+            "== 2;",
+            &format!("== 2 by {{ step_until({spelling}.entry); }}"),
+        );
         assert!(parse(&source).is_err());
     }
 }
@@ -1387,7 +1401,9 @@ fn parses_execute_until_read_and_preserves_read_labels() {
     ] {
         let source = FILL3_CLICK.replace(
             "== 2;",
-            &format!("== 2 by {{step_until({spelling}); step_until(function.exit); solve();}}"),
+            &format!(
+                "== 2 by {{step_until({spelling}.entry); step_until(function.exit); solve();}}"
+            ),
         );
         let file = parse(&source).unwrap();
         assert_eq!(
@@ -1395,7 +1411,10 @@ fn parses_execute_until_read_and_preserves_read_labels() {
                 .proof()
                 .tactics()
                 .unwrap()[0],
-            ProofTactic::ExecuteUntil(region)
+            ProofTactic::ExecuteUntil(ExecutionPoint::ProgramPoint(ProgramPointRef {
+                region,
+                kind: ProgramPointKind::Entry
+            }))
         );
     }
 }

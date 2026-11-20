@@ -41,7 +41,7 @@ void round_trip(struct Box* p, int32 n) {
         decreases n;
         invariant n >= 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             match b.model {
                 Shape::Node(identity) => {
                     unfold(b);

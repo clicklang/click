@@ -124,12 +124,14 @@ fn charon_u16_remainder_guards_match_contracts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: remainder boundary and missing-premise controls take 0.75s"]
 fn charon_u32_remainder_guards_keep_unsigned_semantics() {
     check_remainder_guards("u32", "4294967295", true);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: variable-divisor and zero-divisor controls take 0.86s"]
 fn charon_narrow_remainder_keeps_variable_divisor_and_zero_checks() {
     let p = Project::from_fixture("design/charon-trial/narrow-remainder");
@@ -151,6 +153,7 @@ fn charon_narrow_remainder_keeps_variable_divisor_and_zero_checks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: narrow remainder boundary and missing-premise controls take 1.9s"]
 fn charon_narrow_remainder_guards_reject_missing_premises_and_keep_boundaries() {
     check_remainder_guards("u8", "255", true);

@@ -275,8 +275,8 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
     let reversed = match equality {
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
             return Some(Proposition::Equal(
-                Term::Algebraic(b.clone().into()),
-                Term::Algebraic(a.clone().into()),
+                Term::Algebraic(b.clone()),
+                Term::Algebraic(a.clone()),
             ));
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
@@ -607,18 +607,34 @@ fn rewrite_with_admitted_equality_reading(
                         rewrite_atomic_proposition_by_exact_equality(selected, equality)
                     };
                     match rewritten {
-                        // A rewritten comparison is rebuilt by its smart
-                        // constructor, so it has the canonical form lowering
-                        // gives the same source: `0 == 0` is `true`.
-                        Ok(Proposition::ConditionIs(condition, value)) => results.push((
-                            Proposition::condition_is(
-                                super::term_rewrite::folded_machine_condition(
-                                    condition.native_compat().clone(),
-                                ),
-                                value,
-                            ),
-                            true,
-                        )),
+                        Ok(Proposition::ConditionIs(condition, value)) => {
+                            let condition = super::term_rewrite::folded_machine_condition(
+                                condition.native_compat().clone(),
+                            );
+                            // Lowering spells a comparison with exactly one Boolean
+                            // literal as a truth claim on the other operand.
+                            let rewritten = match &condition {
+                                ConditionTerm::BoolEqual(left, right) => {
+                                    match (left.as_ref(), right.as_ref()) {
+                                        (
+                                            ConditionTerm::Constant(_),
+                                            ConditionTerm::Constant(_),
+                                        ) => None,
+                                        (ConditionTerm::Constant(literal), operand)
+                                        | (operand, ConditionTerm::Constant(literal)) => {
+                                            Some(operand.truth_claim(*literal == value))
+                                        }
+                                        _ => None,
+                                    }
+                                }
+                                _ => None,
+                            };
+                            results.push((
+                                rewritten
+                                    .unwrap_or_else(|| Proposition::condition_is(condition, value)),
+                                true,
+                            ));
+                        }
                         Ok(rewritten) => results.push((rewritten, true)),
                         Err(AtomicRewriteRefusal::Absent(_)) => {
                             results.push((atomic.clone(), false));
@@ -1056,7 +1072,7 @@ fn rewrite_read_address(term: &MachineTerm, address: Address) -> MachineTerm {
         crate::kernel::MachineOperandView::Legacy(term),
     )
     .expect("selected read");
-    crate::kernel::eval::scalar_read_for_exact_cell(&read.memory, &address, read.kind, read.bytes)
+    crate::kernel::eval::scalar_read_for_exact_cell_at(&read.point, &address, read.kind, read.bytes)
 }
 
 fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> MachineTerm {

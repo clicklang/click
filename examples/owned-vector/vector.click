@@ -152,7 +152,7 @@ int32 vector_copy(
                 contradiction(0 <= k);
             }
         }
-        preserve by {
+        maintain by {
             have i < dst_capacity by { solve(); }
             have contains(memory(dst[0..dst_capacity]), memory(dst[i])) by {
                 apply(separation::contains_element(dst, 0, dst_capacity, i)) using { 0 <= i; i < dst_capacity; };
@@ -1028,14 +1028,14 @@ int32 vector_fill(struct vector* owner, int32 value) {
     step();
     have i >= 0;
     have i <= owner->len;
-    loop as fill_cells {
+    loop fill_cells {
         decreases owner->len - i;
         invariant i >= 0 and i <= owner->len;
         invariant owner->len == old(owner->len);
         invariant owner->data == old(owner->data);
         owns owner->data[0..owner->len];
         initialize by solve();
-        preserve by {
+        maintain by {
             mark before_fill;
             have i < owner->cap;
             have contains(memory(*owner), memory(owner->data)) by { normalize(); }

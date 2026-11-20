@@ -584,6 +584,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn logical_read_address_uses_class_index_without_scanning_aliases_or_frames() {
     let samples = logical_read_alias_samples(&[4, 64, 1024]);

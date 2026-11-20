@@ -90,7 +90,7 @@ fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
 
 #[test]
 fn declared_word_read_representation_ignores_unrelated_memory() {
-    use crate::kernel::eval::declared_uint32_read_representation;
+    use crate::kernel::{ProgramPoint, eval::declared_uint32_read_representation};
     let mut samples = Vec::new();
     for size in [8, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -99,8 +99,9 @@ fn declared_word_read_representation_ignores_unrelated_memory() {
         for index in 0..size {
             memory = memory.with_block(format!("unrelated:{index}"), 4);
         }
+        let point = ProgramPoint::of_memory(&memory);
         let (equation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            declared_uint32_read_representation(&memory, &word(0), Some(ByteOrder::Little))
+            declared_uint32_read_representation(&point, &word(0), Some(ByteOrder::Little))
         });
         assert!(equation.is_some());
         samples.push(work);

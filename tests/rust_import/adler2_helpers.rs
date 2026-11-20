@@ -147,7 +147,7 @@ fn reject_compute(contract: &str, before: &str, after: &str) -> click::surface::
     let changed = contract.replacen(before, after, 1);
     assert!(changed != contract, "missing mutation: {before}");
     let invalid = compute_proof(&changed);
-    let offset = invalid.find("step_until(assignment(b, 0))").unwrap();
+    let offset = invalid.find("step_until(assignment(b, 0).entry)").unwrap();
     let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let error = click::surface::verify_sources_at(
         &invalid,
@@ -228,6 +228,7 @@ fn reject_helper_contracts(index: usize, mutations: &[(&str, &str)]) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_helpers_prove_all_lanes_and_lock_original_modules() {
     let p = adler2_helpers_project();
@@ -256,6 +257,7 @@ fn charon_adler2_helpers_prove_all_lanes_and_lock_original_modules() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.0s in the parallel gate"]
 fn charon_adler2_helpers_from_rejects_false_lanes_and_short_reads() {
     reject_helper_contracts(
@@ -274,6 +276,7 @@ fn charon_adler2_helpers_from_rejects_false_lanes_and_short_reads() {
 // The audit's retained formatter must also recognize lowered Rust method names,
 // so native claims do not fall back to repeating their original verification.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn charon_adler2_helper_expansion_uses_retained_native_certificate() {
     let p = adler2_helpers_project();
@@ -307,12 +310,14 @@ fn reject_helper_byte_bounds(lane: usize) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_0() {
     reject_helper_byte_bounds(0);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn charon_adler2_helpers_add_rejects_false_lanes_and_overflow() {
     reject_helper_contracts(
@@ -349,36 +354,42 @@ fn reject_helper_add_observations(lane: usize) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate; lane 2 reaches the same code"]
 fn charon_adler2_helpers_add_rejects_false_observations_lane_0() {
     reject_helper_add_observations(0);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate; lane 2 reaches the same code"]
 fn charon_adler2_helpers_add_rejects_false_observations_lane_1() {
     reject_helper_add_observations(1);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn charon_adler2_helpers_add_rejects_false_observations_lane_2() {
     reject_helper_add_observations(2);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate; lane 2 reaches the same code"]
 fn charon_adler2_helpers_add_rejects_false_observations_lane_3() {
     reject_helper_add_observations(3);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 11s in the parallel gate"]
 fn charon_adler2_helpers_rem_preservation_rejects_false_lane_0() {
     reject_helper_reduction_preservation(0);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: unchanged reduction rejects false mathematical observations"]
 fn charon_adler2_helpers_rem_rejects_false_integer_residue_observations() {
     let exact = "ensures to_integer(self.0[3]) == truncating_remainder(to_integer(old(self.0[3])), to_integer(quotient));";
@@ -415,6 +426,7 @@ fn reject_helper_reduction_preservation(lane: usize) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_helpers_rem_rejects_false_lanes_and_zero_divisor() {
     reject_helper_contracts(
@@ -445,30 +457,35 @@ fn reject_helper_reduction_bounds(lane: usize) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_0() {
     reject_helper_reduction_bounds(0);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_1() {
     reject_helper_reduction_bounds(1);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_2() {
     reject_helper_reduction_bounds(2);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_helpers_rem_rejects_false_reduction_bounds_lane_3() {
     reject_helper_reduction_bounds(3);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn charon_adler2_helpers_mul_rejects_false_lanes_and_overflow() {
     reject_helper_contracts(
@@ -506,24 +523,28 @@ fn reject_helper_product_observations(lane: usize) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn charon_adler2_helpers_mul_rejects_false_observations_lane_0() {
     reject_helper_product_observations(0);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn charon_adler2_helpers_mul_rejects_false_observations_lane_1() {
     reject_helper_product_observations(1);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn charon_adler2_helpers_mul_rejects_false_observations_lane_2() {
     reject_helper_product_observations(2);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn charon_adler2_helpers_mul_rejects_false_observations_lane_3() {
     reject_helper_product_observations(3);
@@ -647,6 +668,7 @@ const BOUNDS: &str = include_str!("../../design/adler32/project/adler2/bounds.cl
 const RECOMBINATION: &str = include_str!("../../design/adler32/project/adler2/recombination.click");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_recombination_bounds_verify_with_original_helpers() {
     let p = adler2_helpers_project();
@@ -694,6 +716,7 @@ fn reject_changed_theorems(original: &str, changed: &str, needle: &str) -> bool 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_adler2_recombination_bounds_reject_underflow_overflow_and_false_weights() {
     use click::surface::verify_click_theorems;
@@ -754,6 +777,7 @@ fn charon_adler2_recombination_bounds_tools_recheck_certificates() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
     use click::surface::verify_click_theorems;
@@ -805,6 +829,7 @@ fn charon_adler2_lane_bounds_prove_batch_limits_and_step_safety() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_lane_bounds_verify_with_original_helper_contracts() {
     let p = adler2_helpers_project();
@@ -917,6 +942,7 @@ fn flat_iterator_bounds() -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_iterator_bounds_prove_derived_index_and_native_preservation() {
     use click::surface::verify_click_theorems;
@@ -982,6 +1008,7 @@ fn iterator_bounds_project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_iterator_bounds_verify_with_locked_original_helpers() {
     let p = iterator_bounds_project();
@@ -1088,7 +1115,7 @@ fn reject_empty_compute(before: &str, after: &str) {
     let invalid = format!("{library}// Empty-input boundary{changed}");
     // Reject this claim without reproving unrelated helper bodies for every
     // mutation; the complete fixture is checked separately below.
-    let offset = invalid.find("step_until(assignment(b, 0))").unwrap();
+    let offset = invalid.find("step_until(assignment(b, 0).entry)").unwrap();
     let line = invalid[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let error = click::surface::verify_sources_at(
         &invalid,
@@ -1105,18 +1132,21 @@ fn reject_empty_compute(before: &str, after: &str) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original computation mutation, 16s locally; exceeded 30s in CI"]
 fn charon_adler2_empty_compute_rejects_missing_input_lock() {
     reject_empty_compute("requires bytes.len() == 0u64;", "");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original computation mutation, 12s locally"]
 fn charon_adler2_empty_compute_rejects_missing_scalar_b_premise() {
     reject_empty_compute("requires self.b == 0;", "");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original computation mutation, 21s locally; exceeded 30s in CI"]
 fn charon_adler2_empty_compute_rejects_missing_ownership() {
     reject_empty_compute("owns self.a;", "");
@@ -1124,6 +1154,7 @@ fn charon_adler2_empty_compute_rejects_missing_ownership() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete original computation boundary proof"]
 fn charon_adler2_empty_compute_proves_original_body_and_rejects_false_outputs() {
     let p = adler2_helpers_project();
@@ -1142,7 +1173,7 @@ fn charon_adler2_empty_compute_tools_recheck_original_contract() {
         assert_cli(&p, &[command]);
     }
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
-    let offset = source.find("step_until(assignment(b, 4))").unwrap();
+    let offset = source.find("step_until(assignment(b, 4).entry)").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
     let audit = Command::new(env!("CARGO_BIN_EXE_click"))
@@ -1168,6 +1199,7 @@ fn charon_adler2_empty_compute_tools_recheck_original_contract() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn charon_adler2_single_byte_compute_rejects_missing_length_and_view() {
     reject_single_byte_compute("requires bytes.len() == 1u64;", "");
@@ -1175,6 +1207,7 @@ fn charon_adler2_single_byte_compute_rejects_missing_length_and_view() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_adler2_single_byte_compute_rejects_empty_input() {
     reject_single_byte_compute(
@@ -1184,6 +1217,7 @@ fn charon_adler2_single_byte_compute_rejects_empty_input() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original single-byte computation proof and false-output rejections"]
 fn charon_adler2_single_byte_compute_proves_original_body_and_rejects_false_outputs() {
     let p = compute_project(SINGLE_BYTE_COMPUTE);
@@ -1228,9 +1262,9 @@ fn recheck_compute_tools(contract: &str, bytes: usize) {
     assert_cli(&p, &["profile"]);
     let source = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let site = if bytes == 4 {
-        "step_until(loop(4).statement(0));"
+        "step_until(loop(4).statement(0).entry);"
     } else {
-        "step_until(loop(5).statement(0));"
+        "step_until(loop(5).statement(0).entry);"
     };
     let offset = source.rfind(site).unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
@@ -1258,6 +1292,7 @@ fn recheck_compute_tools(contract: &str, bytes: usize) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn charon_adler2_short_tail_compute_rejects_missing_length_and_view() {
     for (bytes, contract) in [(2, TWO_BYTE_COMPUTE), (3, THREE_BYTE_COMPUTE)] {
@@ -1271,6 +1306,7 @@ fn charon_adler2_short_tail_compute_rejects_missing_length_and_view() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn charon_adler2_short_tail_compute_rejects_wrong_length_and_constructor() {
     for (bytes, contract) in [(2, TWO_BYTE_COMPUTE), (3, THREE_BYTE_COMPUTE)] {
@@ -1326,12 +1362,14 @@ fn check_short_tail_compute(contract: &str, bytes: usize) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original two-byte computation proof and false-result/read rejections"]
 fn charon_adler2_two_byte_compute_proves_original_body_and_rejects_false_outputs() {
     check_short_tail_compute(TWO_BYTE_COMPUTE, 2);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original three-byte computation proof and false-result/read rejections"]
 fn charon_adler2_three_byte_compute_proves_original_body_and_rejects_false_outputs() {
     check_short_tail_compute(THREE_BYTE_COMPUTE, 3);
@@ -1352,6 +1390,7 @@ fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() {
     reject_compute(
@@ -1367,6 +1406,7 @@ fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_adler2_four_byte_compute_rejects_missing_length_view_and_constructor() {
     for (before, after) in [
@@ -1379,6 +1419,7 @@ fn charon_adler2_four_byte_compute_rejects_missing_length_view_and_constructor()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original four-byte vector computation and false-result/read rejections"]
 fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_outputs() {
     let p = compute_project(FOUR_BYTE_COMPUTE);
@@ -1426,6 +1467,7 @@ fn charon_adler2_four_byte_compute_proves_original_body_and_rejects_false_output
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: wrong modulus and false remainder in the original four-byte computation"]
 fn charon_adler2_four_byte_compute_rejects_false_remainder_normalization() {
     let goal = "have b_vec.0[0] == at(reduce_b, b_vec.0[0]) % statement(13).call(0).result by";
@@ -1438,12 +1480,13 @@ fn charon_adler2_four_byte_compute_rejects_false_remainder_normalization() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checks the original Adler cursor have and its deterministic work"]
 fn charon_adler2_four_byte_cursor_have_keeps_its_pre_regression_work_bound() {
     let p = compute_project(FOUR_BYTE_COMPUTE);
     let prepared = p.prepared().unwrap();
     let source = compute_proof(FOUR_BYTE_COMPUTE);
-    let offset = source.find("step_until(assignment(b, 0))").unwrap();
+    let offset = source.find("step_until(assignment(b, 0).entry)").unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let inputs = click::surface::ProgramInputs::program(&prepared);
     let (_, samples) = click::instrumentation::collect_tactic_work(|| {
@@ -1476,6 +1519,7 @@ fn charon_adler2_four_byte_cursor_have_keeps_its_pre_regression_work_bound() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original vector-step preservation and false bound/state rejections"]
 fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     // The complete positive caller is checked by the existing computation
@@ -1508,6 +1552,7 @@ fn charon_adler2_four_byte_compute_tools_recheck_original_contract() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_rejects_missing_view_and_full_outer_batch() {
     reject_compute(SMALL_BATCH_COMPUTE, " views *bytes;", " views bytes[0..0];");
@@ -1519,26 +1564,29 @@ fn charon_adler2_small_batch_compute_rejects_missing_view_and_full_outer_batch()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: scalar-tail read must use the actual post-Next byte position"]
 fn charon_adler2_small_batch_compute_rejects_wrong_scalar_byte() {
     let count = "(((bytes.len() as u32) as i32) - ((__rust_mir_138_remaining as u32) as i32))";
     let goal =
-        format!("have to_integer(__rust_mir_144) == to_integer((bytes[({count} - 1)] as i32)) by");
+        format!("have to_integer(byte as u32) == to_integer((bytes[({count} - 1)] as i32)) by");
     reject_compute(SMALL_BATCH_COMPUTE, &goal, &goal.replace(" - 1)", " - 2)"));
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: scalar B update must include the newly added byte"]
 fn charon_adler2_small_batch_compute_rejects_stale_scalar_a() {
     let error = reject_compute(
         SMALL_BATCH_COMPUTE,
-        "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144)) by",
+        "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, byte as u32)) by",
         "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) by",
     );
     assert!(error.message().contains("`known`"), "{}", error.message());
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original 0..22207-byte vector and tail computation from canonical states"]
 fn charon_adler2_small_batch_compute_proves_original_body() {
     let p = compute_project(SMALL_BATCH_COMPUTE);
@@ -1550,6 +1598,7 @@ fn charon_adler2_small_batch_compute_proves_original_body() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: both original final fields must equal the entry-input checksum specification"]
 fn charon_adler2_small_batch_compute_rejects_false_final_checksum() {
     for field in ["a", "b"] {
@@ -1560,6 +1609,7 @@ fn charon_adler2_small_batch_compute_rejects_false_final_checksum() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original vector constructor input-position rejections"]
 fn charon_adler2_small_batch_compute_rejects_wrong_constructor_input_positions() {
     reject_compute(
@@ -1575,6 +1625,7 @@ fn charon_adler2_small_batch_compute_rejects_wrong_constructor_input_positions()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original vector-prefix A recurrence and seed rejections"]
 fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_a() {
     let total = "(((bytes.len() - bytes.len() % 4u64) as uint32) as int32)";
@@ -1608,6 +1659,7 @@ fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_a() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original vector-prefix B weights and deferred seed rejections"]
 fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_b() {
     let total = "(((bytes.len() - bytes.len() % 4u64) as uint32) as int32)";
@@ -1643,6 +1695,7 @@ fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_b() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original A lane reduction and scalar recombination rejections"]
 fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_a() {
     let total = "(((bytes.len() - bytes.len() % 4u64) as u32) as i32)";
@@ -1670,6 +1723,7 @@ fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_a() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original B reduction and weighted scalar recombination rejections"]
 fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_b() {
     let total = "(((bytes.len() - bytes.len() % 4u64) as u32) as i32)";
@@ -1696,6 +1750,7 @@ fn charon_adler2_small_batch_compute_rejects_false_recombined_prefix_b() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_requires_canonical_a() {
     reject_compute(
@@ -1706,6 +1761,7 @@ fn charon_adler2_small_batch_compute_requires_canonical_a() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_batch_compute_requires_canonical_b() {
     reject_compute(
@@ -1716,6 +1772,7 @@ fn charon_adler2_small_batch_compute_requires_canonical_b() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: arbitrary small-batch induction and final-store rejection checks"]
 fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() {
     for (before, after) in [
@@ -1733,6 +1790,7 @@ fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original scalar-tail cursor and ranking rejections"]
 fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
     for (before, after) in [
@@ -1767,6 +1825,7 @@ fn charon_adler2_small_batch_compute_tools_recheck_original_contract() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checksum lemma expansion and mutation checks"]
 fn charon_adler2_small_partition_verifies_and_expands() {
     click::surface::verify_c_sources(SMALL_PARTITION, &[]).unwrap();
@@ -1783,6 +1842,7 @@ fn charon_adler2_small_partition_verifies_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checksum lemma expansion and mutation checks"]
 fn charon_adler2_scalar_tail_bounds_verify_expand_and_reject_false_updates() {
     click::surface::verify_c_sources(TAIL_BOUNDS, &[]).unwrap();
@@ -1813,6 +1873,7 @@ fn charon_adler2_scalar_tail_bounds_verify_expand_and_reject_false_updates() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checksum contract mutation checks"]
 fn charon_adler2_small_partition_rejects_false_metadata() {
     click::surface::verify_c_sources(SMALL_PARTITION, &[])
@@ -1854,6 +1915,7 @@ fn charon_adler2_scalar_tail_bounds_verify() {
 
 // Full-width lengths must agree with four-byte prefixes and short-tail indices.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_adler2_small_partition_verifies() {
     click::surface::verify_c_sources(SMALL_PARTITION, &[]).unwrap();
@@ -1878,12 +1940,14 @@ fn adler_specifications() -> String {
 // Checks the common mathematical target independently of an imported body:
 // one/four-byte weighted order, canonical residues, empty seeds and packed bounds.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.6s in the parallel gate"]
 fn adler_common_spec_recurrences_and_bounds_verify() {
     click::surface::verify_c_sources(COMMON_ADLER_SPEC, &[]).unwrap();
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn adler_four_byte_recombination_matches_the_common_spec() {
     let source = format!("{COMMON_ADLER_SPEC}\n{FOUR_BYTE_SPEC}");
@@ -1899,6 +1963,7 @@ fn adler_four_byte_recombination_matches_the_common_spec() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn adler_four_byte_recombination_rejects_reversed_byte_weights() {
     let source = format!("{COMMON_ADLER_SPEC}\n{FOUR_BYTE_SPEC}");
@@ -1926,6 +1991,7 @@ fn adler_four_byte_recombination_rejects_reversed_byte_weights() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn adler_four_byte_recombination_rejects_off_by_one_residues() {
     for prefix in [" ensures to_integer(", "     and to_integer("] {
@@ -2032,6 +2098,7 @@ fn reject_isolated_theorem(original: &str, changed: &str, owner: &str) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: common checksum specification expansion and mutation checks"]
 fn adler_common_spec_expands_and_rejects_false_results() {
     click::surface::verify_c_sources(COMMON_ADLER_SPEC, &[]).unwrap();
@@ -2249,7 +2316,7 @@ const STORED_GUARD_PROOF: &str = r#"int adler_stored_guard(int remaining, uint64
   invariant 0 <= remaining;
   invariant remaining % 22208 == 0;
   invariant size == 22208u64;
-  preserve by {
+  maintain by {
    have 0 < remaining;
    apply(adler_outer_nonempty_remaining(remaining)) using { 0 < remaining; remaining % 22208 == 0; }
    mark head;
@@ -2272,6 +2339,7 @@ const STORED_GUARD_PROOF: &str = r#"int adler_stored_guard(int remaining, uint64
 // general partition lemmas in the unit. The native guard catches confusing its
 // captured size comparison with a literal endpoint.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.0s in the parallel gate"]
 fn charon_adler2_general_partition_and_outer_progress_verify() {
     let proof = format!(
@@ -2281,6 +2349,7 @@ fn charon_adler2_general_partition_and_outer_progress_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: general batch metadata expansion and mutation checks"]
 fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
     let guard_proof = format!(
@@ -2314,6 +2383,7 @@ fn charon_adler2_general_partition_rejects_stale_and_truncated_metadata() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: whole unchanged computation for every slice length"]
 fn charon_adler2_general_compute_proves_original_body() {
     let p = compute_project(GENERAL_COMPUTE);
@@ -2343,6 +2413,7 @@ const LANE_STATE: &str = include_str!("../../design/adler32/project/adler2/lane-
 // Proves the lane recurrence and modular reductions without an imported
 // computation summary, including signed reduction quotient witnesses.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3.2s in the parallel gate"]
 fn adler_lane_state_recurrences_and_reductions_verify() {
     let source = format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}");
@@ -2350,6 +2421,7 @@ fn adler_lane_state_recurrences_and_reductions_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: lane-state expansion and mutation checks"]
 fn adler_lane_state_expands_and_rejects_false_relations() {
     let source = format!("{COMMON_ADLER_SPEC}\n{LANE_STATE}");
@@ -2413,6 +2485,7 @@ fn adler_lane_state_expands_and_rejects_false_relations() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: exact byte-observation mutation checks"]
 fn charon_adler2_helpers_from_rejects_wrong_mathematical_bytes() {
     reject_helper_contracts(
@@ -2501,6 +2574,7 @@ fn charon_adler2_restoration_rejects_false_words_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live Charon extraction of the unchanged restoration constructor"]
 fn charon_adler2_restoration_live_refresh_checks_original_body() {
     let p = restoration_project();
@@ -2515,6 +2589,7 @@ fn charon_adler2_restoration_live_refresh_checks_original_body() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.8s in the parallel gate"]
 fn charon_adler2_checksum_packs_original_shared_fields() {
     let p = adler2_helpers_project();
@@ -2526,6 +2601,7 @@ fn charon_adler2_checksum_packs_original_shared_fields() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original checksum false-result and authority mutations"]
 fn charon_adler2_checksum_rejects_false_packing_and_missing_shared_authority() {
     let p = adler2_helpers_project();
@@ -2653,6 +2729,7 @@ fn verify_public_checksum_unit(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.3s in the parallel gate"]
 fn charon_adler2_public_checksum_matches_one_byte_spec() {
     let p = adler2_helpers_project();
@@ -2669,6 +2746,7 @@ fn charon_adler2_public_checksum_matches_one_byte_spec() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original public checksum and all helper bodies"]
 fn charon_adler2_public_checksum_checks_all_original_callee_bodies() {
     let p = adler2_helpers_project();
@@ -2766,6 +2844,7 @@ fn resumed_project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: restored Rust state and suffix updates at every supported split"]
 fn charon_adler2_resumed_client_matches_concatenated_input_and_rejects_false_claims() {
     let p = resumed_project();
@@ -2818,6 +2897,7 @@ fn charon_adler2_resumed_client_tools_check_all_original_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live Charon extraction and resumed client input closure"]
 fn charon_adler2_resumed_client_live_refresh_checks_the_input_closure() {
     let p = resumed_project();
@@ -2849,6 +2929,7 @@ fn charon_adler2_resumed_client_live_refresh_checks_the_input_closure() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: two actual Rust updates at every supported split"]
 fn charon_adler2_incremental_client_matches_concatenated_input() {
     let p = incremental_project();
@@ -2885,6 +2966,7 @@ fn charon_adler2_incremental_client_tools_check_all_original_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live Charon extraction of the real incremental client"]
 fn charon_adler2_incremental_client_live_refresh_checks_the_input_closure() {
     let p = incremental_project();
@@ -2955,6 +3037,7 @@ fn public_general_proof() -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: general public API composition with the full computation specification"]
 fn charon_adler2_general_public_checksum_matches_common_spec() {
     let t = tempfile::tempdir().unwrap();
@@ -3089,6 +3172,7 @@ fn public_boundary_proof(length: usize) -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: eight public entry-point proofs for empty and four-byte inputs"]
 fn charon_adler2_public_boundaries_match_empty_and_four_byte_spec() {
     let p = adler2_helpers_project();
@@ -3107,6 +3191,7 @@ fn charon_adler2_public_boundaries_match_empty_and_four_byte_spec() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn charon_adler2_public_empty_needs_no_input_byte_authority() {
     let p = adler2_helpers_project();
@@ -3204,6 +3289,7 @@ const SERIAL_TAIL_SPEC: &str =
     include_str!("../../design/adler32/project/adler2/serial-tail-spec.click");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.7s in the parallel gate"]
 fn adler_serial_tail_native_results_match_the_common_spec() {
     let source = format!("{COMMON_ADLER_SPEC}\n{SERIAL_TAIL_SPEC}");
@@ -3211,6 +3297,7 @@ fn adler_serial_tail_native_results_match_the_common_spec() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3.8s in the parallel gate"]
 fn charon_adler2_public_serial_tails_match_two_and_three_byte_spec() {
     let p = adler2_helpers_project();
@@ -3231,6 +3318,7 @@ fn charon_adler2_public_serial_tails_tools_check_all_original_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: serial-tail specification expansion and mutation checks"]
 fn adler_serial_tail_spec_expands_and_rejects_false_weights() {
     let source = format!("{COMMON_ADLER_SPEC}\n{SERIAL_TAIL_SPEC}");
@@ -3282,6 +3370,7 @@ fn batch_prefix_proof(source: &str) -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: native deferred full-batch B transition library"]
 fn adler_deferred_batch_b_transitions_verify() {
     click::surface::verify_c_sources(&batch_prefix_proof(BATCH_PREFIX), &[]).unwrap();
@@ -3333,6 +3422,7 @@ fn adler_deferred_batch_b_tools_expand_and_reverify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: deferred B position, weighting, overflow and reduction mutations"]
 fn adler_deferred_batch_b_rejects_false_transitions() {
     let original = batch_prefix_proof(BATCH_PREFIX);
@@ -3425,6 +3515,7 @@ fn vector_prefix_proof() -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete common specification and native vector-prefix library"]
 fn adler_native_vector_prefix_transitions_match_common_fields() {
     click::surface::verify_c_sources(&vector_prefix_proof(), &[]).unwrap();
@@ -3485,6 +3576,7 @@ fn adler_native_vector_prefix_tools_expand_and_reverify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: native vector-prefix byte, overflow, residue and cursor mutations"]
 fn adler_native_vector_prefix_rejects_false_transitions() {
     let original = vector_prefix_proof();
@@ -3556,12 +3648,14 @@ fn adler_native_vector_prefix_rejects_false_transitions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn adler_small_native_count_byte_addresses_and_observations_verify() {
     click::surface::verify_c_sources(COUNT_BRIDGE, &[]).unwrap();
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn adler_count_byte_observations_reject_wrong_positions_and_missing_guards() {
     for (before, after) in [
@@ -3593,6 +3687,7 @@ fn adler_count_byte_observations_reject_wrong_positions_and_missing_guards() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn adler_remaining_count_byte_observations_reject_wrong_positions_and_missing_guards() {
     for (before, after) in [

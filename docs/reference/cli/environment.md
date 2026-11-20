@@ -39,13 +39,13 @@ releases, and resolve `latest`, from that GitHub repository instead of
 
 ### `CLICK_CHARON`
 
-`click import lock` reads `CLICK_CHARON=PATH` when it prepares a Rust unit of a
-project ([Project units](import.md#project-units)): the pinned `charon`
+`click capture` reads `CLICK_CHARON=PATH` when it prepares a Rust unit of a
+project ([Project units](capture.md#project-units)): the pinned `charon`
 executable, with `charon-driver` beside it. Verification never reads it.
 
 ### `CLICK_CPP_EXPORTER`
 
-`CLICK_CPP_EXPORTER=PATH` overrides where `click import lock` finds the pinned
+`CLICK_CPP_EXPORTER=PATH` overrides where `click capture` finds the pinned
 C++ exporter when it prepares a C++ unit of a project; it is for development,
 with an exporter built by `scripts/build-cpp-exporter.sh`. Unset, Click uses
 the exporter installed for its own version,

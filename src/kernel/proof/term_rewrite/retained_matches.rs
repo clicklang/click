@@ -44,6 +44,23 @@ pub(super) fn collect_match_carriers(matched: &KernelMatch, variables: &mut Carr
 }
 
 impl TermRewrite<'_> {
+    pub(crate) fn reduce_known_integer_match(
+        term: &SharedIntegerTerm,
+    ) -> Option<SharedIntegerTerm> {
+        let IntegerTerm::AlgebraicMatch { scrutinee, .. } = term.as_ref() else {
+            return None;
+        };
+        if !matches!(scrutinee.node, AlgebraicTermNode::Constructor { .. }) {
+            return None;
+        }
+        let root = KernelTermImport::default().integer(term);
+        let KernelTermNode::Match(matched) = root.node() else {
+            return None;
+        };
+        let value = Self::empty().reduce_retained_match(matched).ok()??;
+        KernelTermExport::default().integer(&value).ok()
+    }
+
     pub(crate) fn retained_match(
         &mut self,
         matched: &KernelMatch,

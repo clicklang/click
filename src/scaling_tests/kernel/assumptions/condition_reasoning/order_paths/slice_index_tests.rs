@@ -5,6 +5,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn wide_order_chain_work_follows_the_chain_and_not_unrelated_facts() {
     let v = |n: u64| MachineTerm::Variable(Variable(996000 + n));
@@ -141,6 +142,7 @@ fn uint64_constant_order_strengthening_is_sound_at_full_width_and_scales() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
     let length = MachineTerm::Variable(Variable(993001));
@@ -207,6 +209,7 @@ fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
     let index = MachineTerm::Variable(Variable(991001));

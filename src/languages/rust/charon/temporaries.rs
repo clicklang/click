@@ -25,7 +25,7 @@
 //! not name that local, since the place's address is unchanged.
 
 use super::super::schema::{
-    Expression as E, MirBlock, MirStatement as S, MirTerminator as T, Place,
+    Expression as E, MirBlock, MirStatement as S, MirTerminator as T, Place, Type,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,12 +35,14 @@ pub(super) fn substitute_pure_values(
     locals: &mut Vec<Place>,
     blocks: &mut [MirBlock],
     temporaries: &BTreeSet<String>,
+    constant_initializers: &BTreeSet<String>,
 ) {
     // How each temporary is used: read by an expression, or named by a
     // statement or terminator field, which no substitution can reach.
     let mut reads = BTreeMap::<String, usize>::new();
     let mut named = BTreeSet::<String>::new();
     let mut assignments = BTreeMap::<String, usize>::new();
+    let mut predecessors = vec![0usize; blocks.len()];
     for block in blocks.iter() {
         for statement in &block.statements {
             statement_uses(statement, &mut reads, &mut named);
@@ -55,6 +57,11 @@ pub(super) fn substitute_pure_values(
         terminator_uses(&block.terminator, &mut reads, &mut named);
         if let Some(destination) = call_destination(&block.terminator) {
             named.insert(destination.clone());
+        }
+        for successor in successors(&block.terminator) {
+            if let Some(count) = predecessors.get_mut(successor) {
+                *count += 1;
+            }
         }
     }
     let substitutable = |name: &str| {
@@ -199,14 +206,288 @@ pub(super) fn substitute_pure_values(
                 value,
             });
         }
+        // Finish collapsing reborrow chains before moving their final
+        // borrow into a slice operation.
+        fold_adjacent_slice_borrows(&mut block.statements, &substitutable, &mut removed);
+        if !constant_initializers.is_empty() {
+            fold_constant_remainder_casts(
+                &mut block.statements,
+                &substitutable,
+                constant_initializers,
+                &mut removed,
+            );
+        }
     }
+    fold_scalar_successors(locals, blocks, &predecessors, &substitutable, &mut removed);
     for block in blocks.iter_mut() {
         block.statements.retain(|statement| match statement {
             S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            S::Assign {
+                target: E::Local { name },
+                ..
+            } => !removed.contains(name),
             _ => true,
         });
     }
     locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// A borrow consumed by the adjacent slice operation is the operation's
+/// input. Moving it across no statements preserves the borrowed place and,
+/// for an array coercion, its reference view and mutability.
+fn fold_adjacent_slice_borrows(
+    statements: &mut Vec<S>,
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    let mut statements_iter = std::mem::take(statements).into_iter().peekable();
+    while let Some(statement) = statements_iter.next() {
+        if let S::Assign {
+            target: E::Local { name },
+            value: borrow @ E::Borrow { place, value_type },
+        } = &statement
+            && substitutable(name)
+            && pure(place)
+            && !checked(place)
+            && let Some(consumer) = statements_iter.peek_mut()
+        {
+            let operand = match value_type {
+                Type::Reference { pointee, .. }
+                    if matches!(pointee.as_ref(), Type::Array { .. }) =>
+                {
+                    match consumer {
+                        S::Assign {
+                            target: E::Local { .. },
+                            value: E::ArrayToSlice { array, .. },
+                        } => Some(array.as_mut()),
+                        _ => None,
+                    }
+                }
+                Type::ByteSlice { mutable: false } | Type::ScalarSlice { mutable: false, .. } => {
+                    match consumer {
+                        S::Assign {
+                            target: E::Local { .. },
+                            value: E::SliceLength { slice },
+                        } => Some(slice.as_mut()),
+                        S::SharedArrayInitialize { source, .. } => Some(source),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            if let Some(operand) = operand
+                && matches!(operand, E::Local { name: read } if read == name)
+            {
+                *operand = borrow.clone();
+                removed.insert(name.clone());
+                continue;
+            }
+        }
+        statements.push(statement);
+    }
+}
+
+/// A scalar copy or intrinsic can leave a goto between the expression and
+/// its use. Rejoin the fragments of the same written statement when the
+/// successor has one entry and no intervening effect can change the value.
+fn fold_scalar_successors(
+    locals: &[Place],
+    blocks: &mut [MirBlock],
+    predecessors: &[usize],
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    let scalars: BTreeSet<_> = locals
+        .iter()
+        .filter(|local| local.value_type.is_integer() || local.value_type == Type::Bool)
+        .map(|local| local.name.as_str())
+        .collect();
+    for index in 0..blocks.len() {
+        let T::Goto { target } = blocks[index].terminator else {
+            continue;
+        };
+        if target == 0 || predecessors.get(target) != Some(&1) {
+            continue;
+        }
+        let Ok([definition, consumer]) = blocks.get_disjoint_mut([index, target]) else {
+            continue;
+        };
+        let Some((last, earlier)) = definition.statements.split_last() else {
+            continue;
+        };
+        // A loop test can compute its length after copying the index. This
+        // metadata read neither rebinds the index nor evaluates user code.
+        let previous_copy = match last {
+            S::Assign {
+                target: E::Local { name },
+                value: length @ E::SliceLength { .. },
+            } if is_movable_scalar_intrinsic(length) => {
+                earlier.last().map(|statement| (statement, Some(name)))
+            }
+            _ => None,
+        };
+        for (assignment, length_target) in std::iter::once((last, None)).chain(previous_copy) {
+            let S::Assign {
+                target: E::Local { name },
+                value: result,
+            } = assignment
+            else {
+                continue;
+            };
+            let copy = matches!(result, E::Local { name: source } if scalars.contains(name.as_str())
+                && length_target != Some(source));
+            if !substitutable(name)
+                || !(copy || (length_target.is_none() && is_movable_scalar_intrinsic(result)))
+            {
+                continue;
+            }
+            let Some(site) = definition.terminator_site else {
+                continue;
+            };
+            let definition_site =
+                definition
+                    .statements
+                    .iter()
+                    .rev()
+                    .find_map(|statement| match statement {
+                        S::Site { site } => Some(*site),
+                        _ => None,
+                    });
+            if definition_site != Some(site) {
+                continue;
+            }
+            let value = match consumer
+                .statements
+                .iter_mut()
+                .find(|statement| match statement {
+                    S::Site { site: next } => *next != site,
+                    S::BeginStorage { local } | S::EndStorage { local } => {
+                        local != name && !removed.contains(local)
+                    }
+                    _ => true,
+                }) {
+                Some(S::Assign { value, .. }) => value,
+                None if copy && consumer.terminator_site == Some(site) => {
+                    let T::If { condition, .. } = &mut consumer.terminator else {
+                        continue;
+                    };
+                    condition
+                }
+                _ => continue,
+            };
+            if !straight_line_scalar(value) {
+                continue;
+            }
+            let mut values = BTreeMap::from([(name.clone(), result.clone())]);
+            let mut pending = Pending {
+                values: &mut values,
+                refused: Vec::new(),
+            };
+            substitute(value, &mut pending, true);
+            if values.is_empty() {
+                removed.insert(name.clone());
+            }
+        }
+    }
+}
+
+/// These expressions read an existing local and have no effect of their own.
+fn is_movable_scalar_intrinsic(value: &E) -> bool {
+    match value {
+        E::SliceLength { slice } => matches!(
+            slice.as_ref(),
+            E::Borrow {
+                place,
+                value_type: Type::ByteSlice { mutable: false }
+                    | Type::ScalarSlice { mutable: false, .. },
+            } if matches!(place.as_ref(), E::Local { .. })
+        ),
+        E::IntegerFrom {
+            value,
+            source_type: Type::U8,
+            value_type: Type::U32,
+        } => {
+            matches!(value.as_ref(), E::Local { .. })
+        }
+        _ => false,
+    }
+}
+
+/// Moving a scalar intrinsic here cannot cross any effect, load, or
+/// short-circuit branch within the consumer.
+fn straight_line_scalar(value: &E) -> bool {
+    match value {
+        E::Binary {
+            operator,
+            left,
+            right,
+            ..
+        } => {
+            !matches!(operator.as_str(), "and" | "or")
+                && straight_line_scalar(left)
+                && straight_line_scalar(right)
+        }
+        E::Cast { value, .. } | E::IntegerFrom { value, .. } | E::Not { value } => {
+            straight_line_scalar(value)
+        }
+        E::SliceLength { .. } => is_movable_scalar_intrinsic(value),
+        E::Local { .. }
+        | E::Integer { .. }
+        | E::UnsignedInteger { .. }
+        | E::SignedInteger { .. }
+        | E::UsizeInteger { .. }
+        | E::Boolean { .. } => true,
+        _ => false,
+    }
+}
+
+/// Put a remainder by a checked Rust constant back into the cast that
+/// consumes it. The call to the constant initializer may panic, so it can
+/// cross only storage markers that are already going away.
+fn fold_constant_remainder_casts(
+    statements: &mut [S],
+    substitutable: &impl Fn(&str) -> bool,
+    constant_initializers: &BTreeSet<String>,
+    removed: &mut BTreeSet<String>,
+) {
+    let mut candidate: Option<(&mut String, &mut E)> = None;
+    for statement in statements {
+        if let Some((name, remainder)) = candidate.take() {
+            match statement {
+                S::BeginStorage { local } | S::EndStorage { local } if removed.contains(local) => {
+                    candidate = Some((name, remainder));
+                    continue;
+                }
+                S::Assign {
+                    value: E::Cast { value, .. },
+                    ..
+                } if matches!(value.as_ref(), E::Local { name: read } if read == name) => {
+                    std::mem::swap(remainder, value.as_mut());
+                    removed.insert(name.clone());
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        if let S::Assign {
+            target: E::Local { name },
+            value,
+        } = statement
+            && let E::Binary {
+                operator,
+                left,
+                right,
+                ..
+            } = value
+            && operator == "rem"
+            && matches!(left.as_ref(), E::Local { .. })
+            && matches!(right.as_ref(), E::Call { function, arguments }
+                if arguments.is_empty() && constant_initializers.contains(function))
+            && substitutable(name)
+        {
+            candidate = Some((name, value));
+        }
+    }
 }
 
 /// Builds a boxed record in its allocation. MIR builds `Box::new(R { a, b })`
@@ -1178,6 +1459,329 @@ pub(super) fn bind_slice_payloads(
         });
     }
     locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// Bind a copied slice element to the written pattern variable. The yielded
+/// shared reference can go when its only use is the matching dereference at
+/// the start of the sole successor, under the same source site.
+pub(super) fn bind_copied_slice_elements(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    let types: BTreeMap<_, _> = locals
+        .iter()
+        .map(|local| (local.name.as_str(), &local.value_type))
+        .collect();
+    let mut reads = BTreeMap::new();
+    let mut named = BTreeSet::new();
+    let mut yields = BTreeMap::<String, usize>::new();
+    let mut predecessors = vec![0usize; blocks.len()];
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            if let S::SharedArrayNext {
+                iterator,
+                option: None,
+                payload: Some(reference),
+                taken: Some(true),
+            } = statement
+            {
+                *yields.entry(reference.clone()).or_default() += 1;
+                named.insert(iterator.clone());
+            } else {
+                statement_uses(statement, &mut reads, &mut named);
+                if let S::Assign {
+                    target: E::Local { name },
+                    ..
+                } = statement
+                {
+                    named.insert(name.clone());
+                }
+            }
+        }
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if let Some(name) = call_destination(&block.terminator) {
+            named.insert(name.clone());
+        }
+        for successor in successors(&block.terminator) {
+            if let Some(count) = predecessors.get_mut(successor) {
+                *count += 1;
+            }
+        }
+    }
+    let mut removed = BTreeSet::new();
+    for index in 0..blocks.len() {
+        let (
+            Some(S::SharedArrayNext {
+                iterator,
+                option: None,
+                payload: Some(reference),
+                taken: Some(true),
+            }),
+            T::Goto { target },
+        ) = (blocks[index].statements.last(), &blocks[index].terminator)
+        else {
+            continue;
+        };
+        let target = *target;
+        if target == 0
+            || target == index
+            || predecessors.get(target) != Some(&1)
+            || !temporaries.contains(reference)
+            || reads.get(reference) != Some(&1)
+            || yields.get(reference) != Some(&1)
+            || named.contains(reference)
+        {
+            continue;
+        }
+        let Some(Type::SharedArrayIterator { element }) = types.get(iterator.as_str()) else {
+            continue;
+        };
+        if !element.is_integer()
+            || !matches!(types.get(reference.as_str()),
+                Some(Type::Reference { mutable: false, pointee }) if pointee == element)
+        {
+            continue;
+        }
+        let Some(site) = blocks[index].terminator_site else {
+            continue;
+        };
+        if blocks[index]
+            .statements
+            .iter()
+            .rev()
+            .find_map(|statement| match statement {
+                S::Site { site } => Some(*site),
+                _ => None,
+            })
+            != Some(site)
+        {
+            continue;
+        }
+        let Some((
+            position,
+            S::Assign {
+                target: E::Local { name },
+                value:
+                    E::Deref {
+                        reference: input,
+                        value_type,
+                    },
+            },
+        )) = blocks[target]
+            .statements
+            .iter()
+            .enumerate()
+            .find(|(_, statement)| {
+                !matches!(statement, S::Site { site: next } if *next == site)
+                    && !matches!(statement, S::BeginStorage { .. })
+            })
+        else {
+            continue;
+        };
+        let prefix = &blocks[target].statements[..position];
+        if temporaries.contains(name)
+            || *value_type != **element
+            || types.get(name.as_str()) != Some(&value_type)
+            || !matches!(input.as_ref(), E::Local { name: read } if read == reference)
+            || !prefix
+                .iter()
+                .any(|statement| matches!(statement, S::Site { site: next } if *next == site))
+            || prefix
+                .iter()
+                .any(|statement| matches!(statement, S::BeginStorage { local } if local != name))
+        {
+            continue;
+        }
+        let (reference, name) = (reference.clone(), name.clone());
+        blocks[target].statements.remove(position);
+        start_storage_at_next(blocks, index, target, [name.as_str()]);
+        let Some(S::SharedArrayNext { payload, .. }) = blocks[index].statements.last_mut() else {
+            unreachable!("yield remains the last statement")
+        };
+        *payload = Some(name);
+        removed.insert(reference);
+    }
+    if removed.is_empty() {
+        return;
+    }
+    for block in blocks {
+        block.statements.retain(|statement| match statement {
+            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
+}
+
+/// Bind the two parts of a split directly when the only use of each
+/// anonymous component is a copy to its destination in the same source
+/// statement. Keep the tuple storage when either component also escapes.
+pub(super) fn bind_split_slice_results(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    anonymous_components: &BTreeSet<String>,
+) {
+    if anonymous_components.is_empty() {
+        return;
+    }
+    let slices: BTreeSet<_> = locals
+        .iter()
+        .filter(|local| local.value_type == (Type::ByteSlice { mutable: false }))
+        .map(|local| local.name.as_str())
+        .collect();
+    let mut reads = BTreeMap::new();
+    let mut named = BTreeSet::new();
+    let mut splits = BTreeMap::<String, usize>::new();
+    let mut predecessors = vec![0; blocks.len()];
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            if let S::SliceSplit {
+                slice,
+                midpoint,
+                left,
+                right,
+            } = statement
+            {
+                expression_uses(slice, &mut reads, &mut named);
+                expression_uses(midpoint, &mut reads, &mut named);
+                for output in [left, right] {
+                    *splits.entry(output.clone()).or_default() += 1;
+                }
+            } else {
+                statement_uses(statement, &mut reads, &mut named);
+                if let S::Assign {
+                    target: E::Local { name },
+                    ..
+                } = statement
+                {
+                    named.insert(name.clone());
+                }
+            }
+        }
+        // Count other writes and uses separately from the split's outputs.
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        if let Some(destination) = call_destination(&block.terminator) {
+            named.insert(destination.clone());
+        }
+        for successor in successors(&block.terminator) {
+            if let Some(count) = predecessors.get_mut(successor) {
+                *count += 1;
+            }
+        }
+    }
+    let mut removed = BTreeSet::new();
+    for index in 0..blocks.len() {
+        let T::Goto { target } = blocks[index].terminator else {
+            continue;
+        };
+        if target == 0 || predecessors.get(target) != Some(&1) {
+            continue;
+        }
+        let Ok([definition, consumer]) = blocks.get_disjoint_mut([index, target]) else {
+            continue;
+        };
+        let Some(site) = definition.terminator_site else {
+            continue;
+        };
+        let definition_site =
+            definition
+                .statements
+                .iter()
+                .rev()
+                .find_map(|statement| match statement {
+                    S::Site { site } => Some(*site),
+                    _ => None,
+                });
+        if definition_site != Some(site)
+            || !matches!(consumer.statements.first(), Some(S::Site { site: entry }) if *entry == site)
+        {
+            continue;
+        }
+        let Some(S::SliceSplit { left, right, .. }) = definition.statements.last() else {
+            continue;
+        };
+        if left == right
+            || [left, right].into_iter().any(|output| {
+                !anonymous_components.contains(output)
+                    || reads.get(output) != Some(&1)
+                    || splits.get(output) != Some(&1)
+                    || named.contains(output)
+            })
+        {
+            continue;
+        }
+        let mut effects = consumer
+            .statements
+            .iter()
+            .enumerate()
+            .filter(|(_, statement)| {
+                !matches!(statement, S::Site { site: next } if *next == site)
+                    && !matches!(statement, S::BeginStorage { .. })
+            });
+        let mut take_copy = |output: &str| {
+            let (
+                position,
+                S::Assign {
+                    target: E::Local { name: destination },
+                    value: E::Local { name: source },
+                },
+            ) = effects.next()?
+            else {
+                return None;
+            };
+            (source == output
+                && slices.contains(destination.as_str())
+                && !anonymous_components.contains(destination))
+            .then_some((position, destination.clone()))
+        };
+        let (Some((first, left_destination)), Some((last, right_destination))) =
+            (take_copy(left), take_copy(right))
+        else {
+            continue;
+        };
+        if left_destination == right_destination
+            || consumer.statements[..last].iter().any(|statement| {
+                matches!(statement, S::BeginStorage { local }
+                    if local != &left_destination && local != &right_destination)
+            })
+        {
+            continue;
+        }
+        removed.extend([left.clone(), right.clone()]);
+        let mut starts = Vec::new();
+        let mut position = 0;
+        consumer.statements.retain(|statement| {
+            let keep = if position == first || position == last {
+                false
+            } else if position < last && matches!(statement, S::BeginStorage { .. }) {
+                starts.push(statement.clone());
+                false
+            } else {
+                true
+            };
+            position += 1;
+            keep
+        });
+        let Some(S::SliceSplit { left, right, .. }) = definition.statements.last_mut() else {
+            unreachable!("split remains the last statement");
+        };
+        *left = left_destination;
+        *right = right_destination;
+        let before_split = definition.statements.len() - 1;
+        definition
+            .statements
+            .splice(before_split..before_split, starts);
+    }
+    if !removed.is_empty() {
+        for block in blocks {
+            block.statements.retain(|statement| {
+                !matches!(statement, S::BeginStorage { local } | S::EndStorage { local }
+                    if removed.contains(local))
+            });
+        }
+        locals.retain(|local| !removed.contains(&local.name));
+    }
 }
 
 /// Starts the storage of the locals the taken `next` ending block `next`
@@ -2314,7 +2918,7 @@ mod tests {
             terminator,
         }];
         let temporaries = BTreeSet::from(["t1".to_string(), "t2".to_string()]);
-        super::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
+        super::substitute_pure_values(&mut locals, &mut blocks, &temporaries, &BTreeSet::new());
         let names = locals.into_iter().map(|local| local.name).collect();
         (names, blocks.pop().unwrap())
     }
@@ -2345,6 +2949,227 @@ mod tests {
             [S::Assign { value: E::Binary { operator, right, .. }, .. }]
                 if operator == "add" && matches!(right.as_ref(), E::Binary { .. })
         ));
+    }
+
+    #[test]
+    fn a_scalar_operand_crosses_only_its_own_straight_line_goto() {
+        let length = E::SliceLength {
+            slice: Box::new(E::Borrow {
+                place: Box::new(local("source")),
+                value_type: Type::ByteSlice { mutable: false },
+            }),
+        };
+        let conversion = E::IntegerFrom {
+            value: Box::new(local("source")),
+            source_type: Type::U8,
+            value_type: Type::U32,
+        };
+        let cast = E::Cast {
+            value: Box::new(local("t1")),
+            value_type: Type::U32,
+        };
+        for (intrinsic, source_type, temporary_type) in [
+            (length, Type::ByteSlice { mutable: false }, Type::Usize),
+            (conversion, Type::U8, Type::U32),
+            (local("source"), Type::U32, Type::U32),
+        ] {
+            for (site, storage, second_entry, folded) in [
+                (1, "t1", false, true),
+                (2, "t1", false, false),
+                (1, "source", false, false),
+                (1, "t1", true, false),
+            ] {
+                let mut blocks = vec![
+                    MirBlock {
+                        terminator_site: Some(1),
+                        statements: vec![S::Site { site: 1 }, assign("t1", intrinsic.clone())],
+                        terminator: T::Goto { target: 1 },
+                    },
+                    MirBlock {
+                        terminator_site: Some(site),
+                        statements: vec![
+                            S::Site { site },
+                            S::EndStorage {
+                                local: storage.into(),
+                            },
+                            assign("x", binary("add", local("a"), cast.clone())),
+                        ],
+                        terminator: T::Return,
+                    },
+                ];
+                if second_entry {
+                    blocks.push(MirBlock {
+                        terminator_site: Some(1),
+                        statements: Vec::new(),
+                        terminator: T::Goto { target: 1 },
+                    });
+                }
+                let mut source = place("source");
+                source.value_type = source_type.clone();
+                let mut temporary = place("t1");
+                temporary.value_type = temporary_type.clone();
+                let mut locals = vec![source, place("a"), place("x"), temporary];
+                super::substitute_pure_values(
+                    &mut locals,
+                    &mut blocks,
+                    &BTreeSet::from(["t1".into()]),
+                    &BTreeSet::new(),
+                );
+                assert_eq!(!locals.iter().any(|local| local.name == "t1"), folded);
+                assert!(matches!(
+                    blocks[1].statements.last(),
+                    Some(S::Assign { value: E::Binary { right, .. }, .. })
+                        if matches!(right.as_ref(), E::Cast { value, .. }
+                            if matches!(value.as_ref(), E::Local { name } if name == "t1") != folded)
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn the_slice_length_does_not_rebind_a_copied_loop_index() {
+        let borrow = E::Borrow {
+            place: Box::new(local("bytes")),
+            value_type: Type::ByteSlice { mutable: false },
+        };
+        for length_target in ["x", "a"] {
+            let mut locals = ["a", "x", "t1", "t2"].map(place).to_vec();
+            let mut blocks = [
+                MirBlock {
+                    terminator_site: Some(1),
+                    statements: vec![
+                        S::Site { site: 1 },
+                        assign("t1", local("a")),
+                        assign(
+                            length_target,
+                            E::SliceLength {
+                                slice: Box::new(borrow.clone()),
+                            },
+                        ),
+                    ],
+                    terminator: T::Goto { target: 1 },
+                },
+                MirBlock {
+                    terminator_site: Some(1),
+                    statements: vec![S::Site { site: 1 }],
+                    terminator: T::If {
+                        condition: E::Not {
+                            value: Box::new(binary("lt", local("t1"), local("x"))),
+                        },
+                        then_target: 2,
+                        else_target: 0,
+                    },
+                },
+                block(vec![], T::Return),
+            ];
+            super::substitute_pure_values(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into()]),
+                &BTreeSet::new(),
+            );
+            assert_eq!(
+                locals.iter().any(|local| local.name == "t1"),
+                length_target == "a"
+            );
+            assert!(
+                matches!(&blocks[1].terminator, T::If { condition: E::Not { value }, .. }
+                if matches!(value.as_ref(), E::Binary { left, .. }
+                    if matches!(left.as_ref(), E::Local { name } if name == if length_target == "a" { "t1" } else { "a" })))
+            );
+        }
+    }
+
+    #[test]
+    fn an_array_reborrow_folds_only_into_the_adjacent_coercion() {
+        let array = Type::Array {
+            element: Box::new(Type::U8),
+            length: 4,
+        };
+        let borrow = E::Borrow {
+            place: Box::new(E::Deref {
+                reference: Box::new(local("a")),
+                value_type: array.clone(),
+            }),
+            value_type: Type::Reference {
+                mutable: true,
+                pointee: Box::new(array.clone()),
+            },
+        };
+        for (chained, separated) in [(false, false), (false, true), (true, false)] {
+            let mut statements = Vec::new();
+            let operand = if chained {
+                statements.push(assign("t2", borrow.clone()));
+                E::Borrow {
+                    place: Box::new(E::Deref {
+                        reference: Box::new(local("t2")),
+                        value_type: array.clone(),
+                    }),
+                    value_type: Type::Reference {
+                        mutable: true,
+                        pointee: Box::new(array.clone()),
+                    },
+                }
+            } else {
+                borrow.clone()
+            };
+            statements.push(assign("t1", operand));
+            if separated {
+                statements.push(assign("a", local("b")));
+            }
+            statements.push(assign(
+                "x",
+                E::ArrayToSlice {
+                    array: Box::new(local("t1")),
+                    mutable: true,
+                },
+            ));
+            let (locals, block) = substituted(statements, T::Return);
+            assert_eq!(locals.iter().any(|name| name == "t1"), separated);
+            if chained {
+                assert!(!locals.iter().any(|name| name == "t2"));
+            }
+            assert!(matches!(block.statements.last(),
+                Some(S::Assign { value: E::ArrayToSlice { array, mutable: true }, .. })
+                    if matches!(array.as_ref(), E::Borrow { .. }) != separated));
+        }
+    }
+
+    #[test]
+    fn a_constant_remainder_moves_into_its_cast_across_removed_storage() {
+        let constant = E::Call {
+            function: "modulus".into(),
+            arguments: vec![],
+        };
+        let remainder = binary("rem", local("a"), constant);
+        let cast = E::Cast {
+            value: Box::new(local("t1")),
+            value_type: Type::U16,
+        };
+        for (marker, folded) in [
+            (S::EndStorage { local: "t2".into() }, true),
+            (S::EndStorage { local: "a".into() }, false),
+            (S::Site { site: 1 }, false),
+        ] {
+            let mut statements = vec![
+                assign("t1", remainder.clone()),
+                marker,
+                assign("x", cast.clone()),
+            ];
+            let mut removed = BTreeSet::from(["t2".into()]);
+            super::fold_constant_remainder_casts(
+                &mut statements,
+                &|name| name == "t1",
+                &BTreeSet::from(["modulus".into()]),
+                &mut removed,
+            );
+            assert_eq!(removed.contains("t1"), folded);
+            assert!(matches!(
+                &statements[2],
+                S::Assign { value: E::Cast { value, .. }, .. }
+                    if matches!(value.as_ref(), E::Binary { operator, .. } if operator == "rem") == folded
+            ));
+        }
     }
 
     #[test]
@@ -2467,7 +3292,7 @@ mod tests {
             terminator_site: None,
         }];
         let temporaries = BTreeSet::from(["t1".to_string()]);
-        super::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
+        super::substitute_pure_values(&mut locals, &mut blocks, &temporaries, &BTreeSet::new());
         assert!(locals.iter().all(|local| local.name != "t1"));
         assert!(blocks[0].statements.is_empty());
         assert!(matches!(
@@ -2640,6 +3465,155 @@ mod tests {
             terminator,
         }
     }
+
+    #[test]
+    fn split_bindings_keep_storage_with_another_read_or_entry() {
+        for (another_read, another_entry) in [(false, false), (true, false), (false, true)] {
+            let mut locals = ["t1", "t2", "left", "right"]
+                .map(|name| Place {
+                    value_type: Type::ByteSlice { mutable: false },
+                    ..place(name)
+                })
+                .to_vec();
+            let mut blocks = vec![
+                MirBlock {
+                    terminator_site: Some(1),
+                    ..block(
+                        vec![
+                            S::Site { site: 1 },
+                            S::SliceSplit {
+                                slice: local("bytes"),
+                                midpoint: E::UsizeInteger { value: 1 },
+                                left: "t1".into(),
+                                right: "t2".into(),
+                            },
+                        ],
+                        T::Goto { target: 1 },
+                    )
+                },
+                block(
+                    vec![
+                        S::Site { site: 1 },
+                        assign("left", local("t1")),
+                        S::BeginStorage {
+                            local: "right".into(),
+                        },
+                        assign("right", local("t2")),
+                        S::EndStorage { local: "t2".into() },
+                    ],
+                    if another_read {
+                        T::ReturnValue { value: local("t1") }
+                    } else {
+                        T::Return
+                    },
+                ),
+            ];
+            if another_entry {
+                blocks.push(block(Vec::new(), T::Goto { target: 1 }));
+            }
+
+            super::bind_split_slice_results(
+                &mut locals,
+                &mut blocks,
+                &BTreeSet::from(["t1".into(), "t2".into()]),
+            );
+
+            if another_read || another_entry {
+                assert_eq!(locals.len(), 4);
+                assert!(matches!(
+                    blocks[0].statements.last(),
+                    Some(S::SliceSplit { left, right, .. }) if left == "t1" && right == "t2"
+                ));
+            } else {
+                assert_eq!(locals.len(), 2);
+                assert!(matches!(
+                    blocks[0].statements.as_slice(),
+                    [S::Site { .. }, S::BeginStorage { local }, S::SliceSplit {
+                        left, right, ..
+                    }] if left == "left" && right == "right" && local == "right"
+                ));
+                assert!(matches!(blocks[1].statements.as_slice(), [S::Site { .. }]));
+            }
+        }
+    }
+
+    #[test]
+    fn copied_slice_payload_binds_a_written_local_at_the_yield() {
+        let iterator = Place {
+            value_type: Type::SharedArrayIterator {
+                element: Box::new(Type::U32),
+            },
+            ..place("iter")
+        };
+        let reference = Place {
+            value_type: Type::Reference {
+                mutable: false,
+                pointee: Box::new(Type::U32),
+            },
+            ..place("t1")
+        };
+        let load = E::Deref {
+            reference: Box::new(local("t1")),
+            value_type: Type::U32,
+        };
+        let temporaries = BTreeSet::from(["t1".into()]);
+        for (binding_site, used_again) in [(1, false), (2, false), (1, true)] {
+            let mut locals = vec![iterator.clone(), reference.clone(), place("value")];
+            let mut blocks = [
+                MirBlock {
+                    terminator_site: Some(1),
+                    ..block(
+                        vec![
+                            S::Site { site: 1 },
+                            S::SharedArrayNext {
+                                iterator: "iter".into(),
+                                option: None,
+                                payload: Some("t1".into()),
+                                taken: Some(true),
+                            },
+                        ],
+                        T::Goto { target: 1 },
+                    )
+                },
+                block(
+                    vec![
+                        S::Site { site: binding_site },
+                        S::BeginStorage {
+                            local: "value".into(),
+                        },
+                        assign("value", load.clone()),
+                        S::EndStorage { local: "t1".into() },
+                    ],
+                    T::Return,
+                ),
+            ];
+            if used_again {
+                blocks[1]
+                    .statements
+                    .insert(3, assign("value", load.clone()));
+            }
+
+            super::bind_copied_slice_elements(&mut locals, &mut blocks, &temporaries);
+
+            if binding_site == 1 && !used_again {
+                assert!(!locals.iter().any(|place| place.name == "t1"));
+                assert!(matches!(
+                    blocks[0].statements.as_slice(),
+                    [S::Site { .. }, S::BeginStorage { local }, S::SharedArrayNext {
+                        payload: Some(payload), ..
+                    }] if local == "value" && payload == "value"
+                ));
+                assert!(matches!(blocks[1].statements.as_slice(), [S::Site { .. }]));
+            } else {
+                assert!(locals.iter().any(|place| place.name == "t1"));
+                assert!(matches!(
+                    blocks[0].statements.last(),
+                    Some(S::SharedArrayNext { payload: Some(payload), .. }) if payload == "t1"
+                ));
+            }
+        }
+    }
+
     /// Runs the return-place pass over `blocks`, with locals `_0` and `x`.
     fn returned(mut blocks: Vec<MirBlock>) -> (Vec<String>, Vec<MirBlock>) {
         let mut locals = ["__rust_mir_0", "x"].map(place).to_vec();

@@ -93,7 +93,7 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         .map(|function| {
             if function.path.is_empty() {
                 return Err(format!(
-                    "C++ artifact names `{}` without its C++ path; refresh it with `click import lock`",
+                    "C++ artifact names `{}` without its C++ path; refresh it with `click capture`",
                     function.name
                 ));
             }
@@ -388,15 +388,14 @@ fn lower_parameter(
         )
         .with_pointee_constant(true)),
         CppType::LvalueReference { pointee }
-            if matches!(pointee.as_ref(), CppType::Record { .. }) =>
+            if let CppType::Record { name, is_const, .. } = pointee.as_ref() =>
         {
-            Ok(
-                program_parameter(binding.clone(), ProgramType::Int32Pointer)
-                    .with_pointee_constant(matches!(
-                        pointee.as_ref(),
-                        CppType::Record { is_const: true, .. }
-                    )),
-            )
+            let carrier_type = if layouts.contains_key(name) {
+                ProgramType::Int32Pointer
+            } else {
+                ProgramType::VoidPointer
+            };
+            Ok(program_parameter(binding, carrier_type).with_pointee_constant(*is_const))
         }
         CppType::FunctionPointer { .. } => Ok(program_parameter(
             binding.clone(),

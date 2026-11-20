@@ -54,7 +54,7 @@ void spin(struct cell* node, int32 n) {
         invariant c.model == Context::Link(Context::Top);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             let { rest: r } = unfold(c);
             let rebuilt = fold(context(), {
                 model: Context::Link(Context::Top),

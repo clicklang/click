@@ -311,7 +311,7 @@ For an empty mutex, initialization has no state input:
 
 <!-- verified-example: mdtests/mutex_helper_transfers_unary.md -->
 ```click
-let { lifetime: lifetime } = step(pthread_mutex_init, {});
+let { lifetime: lifetime } = step(pthread_mutex_init);
 ```
 
 An omitted state input initializes an empty mutex; it does not infer or deposit

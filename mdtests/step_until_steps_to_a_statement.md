@@ -1,6 +1,6 @@
 # `step_until` steps to a statement
 
-`step_until(statement(i))` repeats `step()` up to the selected statement, and
+`step_until(statement(i).entry)` repeats `step()` up to the selected statement, and
 the proof continues there. The removed spelling `execute_until` is refused.
 
 ```c filename=step_until_steps_to_a_statement.c
@@ -18,7 +18,7 @@ int32 add_twice(int32 x) {
     requires x < 100;
     ensures result == x + 2;
 } by {
-    step_until(statement(2));
+    step_until(statement(2).entry);
     have z == x + 2;
 }
 ```

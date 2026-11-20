@@ -2030,6 +2030,46 @@ impl PureFactContext {
         })
     }
 
+    /// Reuse the live owner already checked by the C store. This route needs
+    /// a direct parameter spelling and the same whole element checked there.
+    pub(in crate::kernel) fn checked_parameter_store_partition(
+        &self,
+        write: &Address,
+        bytes: u32,
+        authorized: &MemoryRange,
+    ) -> Option<(&ResourceContext, Address)> {
+        let AddressOffset::Add(anchor, displacement) = &write.offset else {
+            return None;
+        };
+        let owner = authorized.base();
+        if displacement.as_const().is_some()
+            || bytes != authorized.element_width()
+            || write.base != owner.base
+            || **anchor != owner.offset
+            || self
+                .equality_graph
+                .offset_has_source_dependencies(&write.offset)
+            || self.equality_graph.has_parameter_store_alias_sources(write)
+        {
+            return None;
+        }
+        let base = parameter_partition_root(owner)?;
+        if self.equality_graph.has_parameter_store_alias_sources(&base) {
+            return None;
+        }
+        let resources = self.store_owners()?.first()?;
+        let (_, member) = resources.unique_owned_memory_member_with_base(owner)?;
+        (member == authorized).then_some((resources, base))
+    }
+
+    pub(in crate::kernel) fn parameter_store_numeric_connectivity(
+        &self,
+        base: Option<&Address>,
+    ) -> Option<&crate::kernel::equality_graph::NumericAddressConnectivity> {
+        self.equality_graph
+            .parameter_store_numeric_connectivity(base)
+    }
+
     /// Cross-block equalities are filed under their exact endpoints, so a
     /// parameter follows only its own aliases rather than the shared external
     /// block's entire class. Same-block and scalar alias premises fall back.
@@ -2040,18 +2080,15 @@ impl PureFactContext {
         self.equality_graph.parameter_store_alias_bases(base)
     }
 
-    /// The objects whose addresses known 64-bit equalities connect with the
-    /// address of the object `pointer` points into. A C pointer comparison
-    /// states such an equality and not a pointer equality, and memory is
-    /// addressed, so a store through `pointer` may write the bytes of any
-    /// object returned here: separation keeps none of their cached cells.
-    /// Computed once per store; the walk follows only the equalities filed
-    /// under the objects it reaches.
-    pub(in crate::kernel) fn address_connected_objects(
+    /// Whether stated numeric-address equalities connect these object buckets.
+    /// A connection requires a byte-level check before retaining a cached value.
+    pub(in crate::kernel) fn addresses_numerically_connected(
         &self,
-        pointer: &Address,
-    ) -> BTreeSet<Address> {
-        self.equality_graph.address_connected_objects(pointer)
+        left: &Address,
+        right: &Address,
+    ) -> bool {
+        self.equality_graph
+            .addresses_numerically_connected(left, right)
     }
 
     pub(in crate::kernel) fn parameter_partition_cell_base(

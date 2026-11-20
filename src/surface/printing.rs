@@ -698,6 +698,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &prefix,
             &format!("{};", application.tactic_spelling()),
         ),
+        ProofTactic::ReleaseView(resource) => line(
+            output,
+            &prefix,
+            &format!("release_view({});", format_resource_target(resource)),
+        ),
         ProofTactic::UnfoldProposition(target) => line(
             output,
             &prefix,
@@ -1015,7 +1020,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                     "loop{}{} {{",
                     loop_clause
                         .label()
-                        .map(|label| format!(" as {label}"))
+                        .map(|label| format!(" {label}"))
                         .unwrap_or_default(),
                     if loop_clause.diverges() {
                         " diverges"
@@ -1068,7 +1073,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             }
             if let Some(proof) = loop_clause.preserve_proof() {
                 output.push_str(&body_prefix);
-                output.push_str("preserve ");
+                output.push_str("maintain ");
                 write_proof(output, proof, indent + 1);
                 output.push('\n');
             }
@@ -1163,6 +1168,9 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
         ProofTactic::NormalizeUsing(premises) => {
             write_using_premises(output, "normalize()", premises, indent)
+        }
+        ProofTactic::OrderChain(premises) => {
+            write_using_premises(output, "order_chain()", premises, indent)
         }
         ProofTactic::ArithmeticUsing(premises) => {
             write_using_premises(output, "solve()", premises, indent)

@@ -172,7 +172,7 @@ pub fn load_import(description: &Path) -> Result<PreparedCppImport, String> {
 pub fn artifact(description: &Path) -> PathBuf {
     let config = read_json(description, "import description").unwrap();
     description.parent().unwrap().join(format!(
-        ".click/{}/{}.click-cpp.json",
+        ".click/captures/{}/{}.click-cpp.json",
         unit_name(description),
         config["logical_source"].as_str().unwrap()
     ))

@@ -187,18 +187,23 @@ fn byte_output_initializes_the_concrete_storage_held_through_an_alias() {
         let mut facts = ExecutionFacts::new();
         let mut budget = ExecutionBudget::new();
         budget.install_program_byte_order(ByteOrder::Little);
-        let memory = produced_memory_initialization(
+        let mut post_state = state.clone();
+        initialize_produced_memory(
             &state,
             &state,
             function.contract_interface(),
-            state.memory().clone(),
+            &mut post_state,
             &assumptions,
             &mut facts,
             &mut budget,
+            false,
         )
         .unwrap()
         .unwrap();
-        assert_eq!(memory.has_initialized_bytes_at(&word, 4), initialized);
+        assert_eq!(
+            post_state.memory().has_initialized_bytes_at(&word, 4),
+            initialized
+        );
         assert_eq!(facts.len(), usize::from(initialized));
     }
 }

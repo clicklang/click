@@ -39,6 +39,7 @@ fn assumed_guard_lookup_does_not_scan_unrelated_resources() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn symbolic_guard_lookup_and_exchange_use_indexed_paths() {
     use super::super::super::ResourceStateSource;
@@ -84,6 +85,7 @@ fn symbolic_guard_lookup_and_exchange_use_indexed_paths() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn guard_transitions_touch_only_logarithmic_index_paths() {
     let assumptions = PureFactContext::new();
@@ -118,6 +120,7 @@ fn guard_transitions_touch_only_logarithmic_index_paths() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn lifetime_transitions_do_not_scan_unrelated_owners() {
     let assumptions = PureFactContext::new();
@@ -148,6 +151,7 @@ fn lifetime_transitions_do_not_scan_unrelated_owners() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn automatic_storage_query_does_not_scan_unrelated_initializations() {
     let mut samples = Vec::new();
@@ -179,6 +183,7 @@ fn automatic_storage_query_does_not_scan_unrelated_initializations() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn abstract_reservation_queries_do_not_scan_other_mutexes_in_one_object() {
     use super::super::super::*;
@@ -221,6 +226,7 @@ fn abstract_reservation_queries_do_not_scan_other_mutexes_in_one_object() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn reservation_index_queries_same_object_in_logarithmic_work() {
     use super::super::super::*;
@@ -271,6 +277,7 @@ fn reservation_index_queries_same_object_in_logarithmic_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn initialization_storage_lookup_is_indexed_within_one_object() {
     use super::super::super::*;
@@ -331,6 +338,7 @@ fn initialization_storage_lookup_is_indexed_within_one_object() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
     use super::super::super::*;
@@ -399,6 +407,7 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn storage_retirement_lookup_ignores_unrelated_mutex_blocks() {
     let mut samples = Vec::new();

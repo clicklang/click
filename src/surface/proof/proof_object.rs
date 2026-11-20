@@ -91,14 +91,18 @@ pub(super) struct Proof<'a> {
 /// The rebound state and guard decisions produced by the loop-state join.
 /// Closure may add facts; it does not repeat this source-state construction.
 pub(super) struct LoopBoundary {
-    state: ExecutionState,
+    edge: crate::kernel::proof::PreparedLoopInvariantEdge,
     guard: crate::kernel::LoopConditionFeasibility,
     head_compatible: bool,
 }
 
 impl LoopBoundary {
     pub(super) fn state(&self) -> &ExecutionState {
-        &self.state
+        self.edge.state()
+    }
+
+    pub(super) fn prepared_edge(&self) -> &crate::kernel::proof::PreparedLoopInvariantEdge {
+        &self.edge
     }
 
     pub(super) fn may_exit(&self) -> bool {
@@ -977,7 +981,7 @@ pub(in crate::surface::proof) struct LoopAnnotationCache {
     pub(in crate::surface::proof) start_facts: Arc<crate::surface::PureFactList>,
     pub(in crate::surface::proof) function_entry_state: Option<ExecutionState>,
     pub(in crate::surface::proof) initial_state: ExecutionState,
-    pub(in crate::surface::proof) arguments: Vec<ProgramExpression>,
+    pub(in crate::surface::proof) arguments: Arc<[ProgramExpression]>,
     /// The frontier clauses bound before the annotated loop's own clause.
     pub(in crate::surface::proof) frontier_clauses: FrontierLoopClauses,
     /// The annotated loop's own clause, bound to it.
@@ -3849,6 +3853,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofStep::Known => "known()",
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
+        ProofStep::OrderChain(_) => "order_chain() using",
         ProofStep::ArithmeticUsing(_) => "solve() using",
         ProofStep::Preserve(_) => "preserve",
 
@@ -3882,6 +3887,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::UnfoldResource(_)
         | ProofStep::UnfoldWitnesses { .. } => "unfold",
         ProofStep::FoldResource(_) => "fold",
+        ProofStep::ReleaseView(_) => "release_view",
         ProofStep::ConstructResource(_) => "construct",
         ProofStep::ObserveResource(_) | ProofStep::ObserveSavedMemory { .. } => "observe",
         ProofStep::Iterated(tactic) => tactic.name(),

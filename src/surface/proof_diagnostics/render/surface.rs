@@ -231,6 +231,19 @@ pub(super) fn source_resource(resource: &Resource, labels: &mut MemoryStateLabel
     bounded(printer(labels, Mode::Source).resource(resource))
 }
 
+pub(super) fn source_separation(
+    left: &Resource,
+    right: &Resource,
+    labels: &mut MemoryStateLabels,
+) -> String {
+    let mut printer = printer(labels, Mode::Source);
+    bounded(format!(
+        "separate({}, {})",
+        printer.resource_subject(left),
+        printer.resource_subject(right),
+    ))
+}
+
 /// The total source spelling of one C value.
 pub(super) fn source_value(
     value: &crate::kernel::ProgramValue,
@@ -2374,6 +2387,18 @@ impl Printer<'_> {
         Some(format!("record {{ {} }}", entries.join(", ")))
     }
 
+    fn resource_subject(&mut self, resource: &Resource) -> String {
+        match resource {
+            Resource::Memory(_) => format!("memory({})", self.resource(resource)),
+            Resource::Star(pair) => format!(
+                "({} * {})",
+                self.resource_subject(&pair.0),
+                self.resource_subject(&pair.1),
+            ),
+            _ => self.resource(resource),
+        }
+    }
+
     fn resource(&mut self, resource: &Resource) -> String {
         if !self.source_mode() {
             let text = super::render_resource_fact_labeled(
@@ -2665,10 +2690,17 @@ impl Printer<'_> {
             return elided;
         }
         match &value.node {
-            AlgebraicTermNode::Variable(variable) => match self.variable_name(*variable) {
-                Some(name) => Some(atom(name)),
-                None => self.placeholder(|printer| printer.unnamed_variable(*variable)),
-            },
+            AlgebraicTermNode::Variable(variable) => self
+                .variable_name(*variable)
+                .or_else(|| {
+                    // This alias is for reports. Exact modes require their
+                    // own checked source spellings.
+                    self.source_mode()
+                        .then(|| self.labels.current_algebraic_field_name(*variable, value))
+                        .flatten()
+                })
+                .map(atom)
+                .or_else(|| self.placeholder(|printer| printer.unnamed_variable(*variable))),
             AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
                 self.call(name, arguments, depth + 1)
             }

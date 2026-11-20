@@ -465,7 +465,7 @@ fn goto_slice_rejects_unknown_backward_duplicate_and_unsupported_targets() {
 }
 
 #[test]
-fn imported_variadic_prototype_is_retained_without_becoming_callable() {
+fn imported_variadic_prototype_is_retained_and_refuses_an_unmodeled_variable_argument() {
     let prototype = "# 1 \"include/linux/report.h\" 1\nvoid report(const char *format, ...);\n# 1 \"lib/tu.c\" 2\n";
     let (source, map) = source_map::CSourceMap::decode(&format!(
         "{prototype}int32 keep(int32 x) {{ return x; }}\n"
@@ -484,7 +484,7 @@ fn imported_variadic_prototype_is_retained_without_becoming_callable() {
     assert_eq!(unit.functions.len(), 1);
 
     let (source, map) = source_map::CSourceMap::decode(&format!(
-        "{prototype}void run(void) {{\n    report(\"x\");\n}}\n"
+        "{prototype}void run(void) {{\n    report(\"x\", \"y\");\n}}\n"
     ))
     .expect("line markers should decode");
     let error = match syntax::parse_translation_unit_for_import(
@@ -493,13 +493,13 @@ fn imported_variadic_prototype_is_retained_without_becoming_callable() {
         &map,
         syntax::PromiseAttributes::Accept,
     ) {
-        Ok(_) => panic!("a variadic call has no model"),
+        Ok(_) => panic!("a string variable argument has no model"),
         Err(error) => error,
     };
     let rendered = error.to_string();
     assert!(rendered.contains("lib/tu.c:2"), "{rendered}");
     assert!(
-        rendered.contains("calls to variadic function `report`"),
+        rendered.contains("argument 2 of `report` has type"),
         "{rendered}"
     );
 }
@@ -13574,6 +13574,7 @@ fn struct_wide_array_layout_and_size_overflow() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn struct_wide_array_proof_expands_and_reverifies() {
     let c = "struct words { char tag; unsigned long data[3]; }; unsigned long set(struct words *p, unsigned long value) { p->data[1] = value; return p->data[2]; }";
@@ -13875,6 +13876,7 @@ fn c_const_pointer_fields_alias_proof_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn c_const_pointer_fields_store_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; const int *set(struct holder *h, const int *p) { h->value = p; return h->value; }";
@@ -14192,6 +14194,7 @@ fn c_gnu_word_mode_preserves_signedness_and_lp64_layout() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: GNU typedef attribute rejection cases"]
 fn c_gnu_word_mode_rejects_other_modes_and_noninteger_objects() {
     for source in [
@@ -14231,6 +14234,7 @@ fn c_unused_builtin_va_list_prototypes_do_not_block_ordinary_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: declaration-only compiler type rejection cases"]
 fn c_builtin_va_list_cannot_supply_layout_values_or_call_authority() {
     let aliases = "typedef __builtin_va_list A; typedef A B;";

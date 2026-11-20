@@ -27,7 +27,7 @@ int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
 } by {
     step();
     step();
-    loop as fill {
+    loop fill {
         decreases hi - i;
         invariant lo <= i;
         invariant i <= hi;
@@ -46,7 +46,7 @@ int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
                 contradiction(lo <= k and k < i);
             }
         }
-        preserve by {
+        maintain by {
             have 0 <= i;
             have 0 <= hi;
             have 0 <= to_integer(hi - i - 1) by {

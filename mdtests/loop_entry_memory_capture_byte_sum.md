@@ -30,7 +30,7 @@ int32 walk(const uint8* p, int32 n) {
  ensures 0 <= result and result <= 3825;
  ensures forall (k: int32) { 0 <= k and k < old(n) implies old(p)[k] == old(p[k]) };
 } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  loop {
   decreases n;
   views p[0..n];
@@ -39,13 +39,13 @@ int32 walk(const uint8* p, int32 n) {
   invariant p == old(p) + (old(n) - n);
   invariant viewable(p[0..n]);
   invariant 0 <= total and total <= 255 * (old(n) - n);
-  preserve by {
+  maintain by {
    have 1 <= n by solve() using { n > 0; };
    have 0 <= to_integer(old(n) - n) by solve() using { n <= old(n); 0 <= n; old(n) <= 15; };
    have to_integer(old(n) - n + 1) <= to_integer(old(n)) by solve() using { 1 <= n; n <= old(n); 0 <= old(n); old(n) <= 15; };
    have defined(p[0]) by solve();
    mark before_pointer;
-   step_until(assignment(total, 1));
+   step_until(assignment(total, 1).entry);
    have at(before_pointer, p) == old(p) + (old(n) - n) by solve();
    have defined(at(before_pointer, p[0])) by solve();
    have at(before_pointer, viewable(p[0..1])) by solve();

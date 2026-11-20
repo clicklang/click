@@ -4075,6 +4075,7 @@ mod integer_equality_fact_index_tests {
     };
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.4s in the parallel gate"]
     fn opaque_pointer_alias_selection_ignores_unrelated_facts() {
         let read = Address::symbolic(Variable(949_001));

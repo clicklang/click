@@ -1357,6 +1357,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
             None,
             Some(observation),
             &[],
+            None,
         )
     };
     let checked = check(&facts, observation.clone()).unwrap();
@@ -2914,6 +2915,89 @@ fn interface_load_definition_rejects_wrong_variable_address_and_state() {
 }
 
 #[test]
+fn interface_successor_fact_checks_pay_for_exported_resources_once() {
+    use crate::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
+
+    let arm = PureFactStore::default();
+    let written = std::collections::BTreeSet::new();
+    let assumptions = PureFactContext::new();
+    let memory = SymbolicMemory::new();
+    for size in [4usize, 16, 64] {
+        let ranges = (0..size)
+            .map(|index| {
+                MemoryRange::new(
+                    Address {
+                        base: crate::kernel::AddressBase::ExternalArgument,
+                        offset: crate::kernel::AddressOffset::Constant(index as i64 * 8),
+                    },
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(1),
+                )
+            })
+            .collect::<Vec<_>>();
+        let intrinsic = ranges
+            .iter()
+            .map(|range| range.loadable_fact(&memory))
+            .collect::<Vec<_>>();
+        let exported = ranges
+            .into_iter()
+            .map(ResourceFact::own_memory)
+            .collect::<Vec<_>>();
+        let check = |introduced: &[Proposition]| {
+            let ((result, work), events) = collect(|| {
+                measure_deterministic_work(|| {
+                    check_interface_successor_facts(
+                        introduced,
+                        [&arm, &arm],
+                        &written,
+                        &exported,
+                        &intrinsic,
+                        &assumptions,
+                    )
+                })
+            });
+            let assemblies = events
+                .iter()
+                .filter(|event| {
+                    matches!(
+                        event,
+                        VerificationEvent::OperationFinished { name, .. }
+                            if name == "branch interface exported composition"
+                    )
+                })
+                .count();
+            (result, work, assemblies)
+        };
+        let (result, intrinsic_work, assemblies) = check(&intrinsic);
+        assert!(result.is_ok());
+        assert_eq!(assemblies, 0);
+        assert!(
+            intrinsic_work <= 8 * size,
+            "{size} facts used {intrinsic_work} work"
+        );
+
+        let resources = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_facts(exported.iter().cloned());
+        let mut introduced = intrinsic.clone();
+        introduced.extend(resources.observable_facts_assuming_valid(&assumptions));
+        assert_eq!(introduced.len(), size + 1);
+        let (result, _, assemblies) = check(&introduced);
+        assert!(result.is_ok());
+        assert_eq!(assemblies, 1);
+
+        let with_unexported = resources
+            .unchecked_with_fact(ResourceFact::own_token("unexported".to_owned(), Vec::new()));
+        introduced.extend(with_unexported.observable_facts_assuming_valid(&assumptions));
+        let (result, _, assemblies) = check(&introduced);
+        assert_eq!(
+            result,
+            Err("the interface successor contains an unchecked new fact")
+        );
+        assert_eq!(assemblies, 1);
+    }
+}
+
+#[test]
 fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
     let function = program_function(
         ProgramType::Void,
@@ -3387,4 +3471,125 @@ fn retained_condition_theorem_preserves_the_standalone_premises() {
     assert_eq!(path.theorem().proposition(), &premises);
     assert_eq!(path.theorem(), &standalone);
     assert_eq!(path.theorem().cmp(&standalone), std::cmp::Ordering::Equal);
+}
+
+#[test]
+fn resource_cell_naming_checks_the_recorded_integer_version_after_forgetting_a_name() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let start = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("other", 4));
+    let without_name = || {
+        let stored = start.clone().with_memory(
+            start
+                .memory()
+                .clone()
+                .store(slot.clone(), ProgramValue::Int32(7u32.into())),
+        );
+        let forgotten =
+            stored
+                .memory()
+                .without_possible_aliasing_cells(&slot, 4, &PureFactContext::new());
+        stored.with_memory(forgotten)
+    };
+    let before = without_name();
+    assert!(before.memory().known_value(&slot).is_none());
+    let point = before.program_point();
+    let version = point
+        .indexed_integer_version(&slot, LoadKind::Int32)
+        .unwrap();
+    let named =
+        before
+            .memory()
+            .clone()
+            .materialize_cell_at(slot.clone(), ProgramType::Int32, &point);
+    assert_eq!(
+        named.known_value(&slot),
+        Some(ProgramValue::Int32(MachineTerm::MemoryLoad(
+            version,
+            Box::new(slot.clone()),
+            LoadKind::Int32,
+        ))),
+    );
+    assert!(super::memory_only_adds_named_cells(&before, &named).is_ok());
+    let other = without_name();
+    assert_eq!(before.memory(), other.memory());
+    assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+}
+
+#[test]
+fn resource_cell_naming_checks_the_entry_point_without_a_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let before = ExecutionState::new().begin_function_entry_memory();
+    let source = before.program_point();
+    assert!(
+        source
+            .indexed_integer_version(&slot, LoadKind::Int32)
+            .is_none()
+    );
+    let version = source
+        .entry_integer_version(&slot, LoadKind::Int32)
+        .unwrap();
+    let named = before
+        .memory()
+        .clone()
+        .materialize_entry_integer_cell_at(slot.clone(), &source);
+    assert_eq!(
+        named.known_value(&slot),
+        Some(ProgramValue::Int32(MachineTerm::MemoryLoad(
+            version,
+            Box::new(slot),
+            LoadKind::Int32,
+        ))),
+    );
+    assert!(super::memory_only_adds_named_cells(&before, &named).is_ok());
+    let other = ExecutionState::new().begin_function_entry_memory();
+    assert_eq!(before.memory(), other.memory());
+    assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+}
+
+#[test]
+fn resource_run_naming_checks_the_source_without_expanding_slots() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let before = ExecutionState::new().begin_function_entry_memory();
+    let point = before.program_point();
+    let check = |count| {
+        let named = before
+            .memory()
+            .clone()
+            .with_named_cell_run(slot.clone(), 4, ProgramType::Int32, 0, count, point.clone())
+            .unwrap();
+        let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+            super::memory_only_adds_named_cells(&before, &named)
+        });
+        checked.unwrap();
+        let run = named.cells.runs().next().unwrap();
+        assert!(point.names_exact_read(run.source_point()));
+        work
+    };
+
+    let small = check(4);
+    let large = check(1024);
+    assert!(large <= small + 4, "run check work: {small} vs {large}");
+
+    let named = before
+        .memory()
+        .clone()
+        .with_named_cell_run(slot.clone(), 4, ProgramType::Int32, 0, 4, point)
+        .unwrap();
+    let other = ExecutionState::new().begin_function_entry_memory();
+    assert_eq!(before.memory(), other.memory());
+    assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+    let overwritten = named.store(slot, ProgramValue::Int32(MachineTerm::constant(7)));
+    assert!(super::memory_only_adds_named_cells(&before, &overwritten).is_err());
 }

@@ -29,7 +29,7 @@ int32 f(int32 n) {
         decreases n - i;
         invariant i >= 0;
         invariant i <= n;
-        preserve by {
+        maintain by {
             if i == 2 {
                 step();
                 step();

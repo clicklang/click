@@ -1,6 +1,6 @@
 # Linux rbtree erase
 
-See the [current focused rerun](../../../roadmap/rbtree-example.md#focused-verification-on-current-master)
+See the [focused verification evidence](../../../roadmap/rbtree-example.md#verification-evidence)
 for the general proofs' verification status.
 
 `rbtree_erase_augmented.click` contains the general proof of the unchanged

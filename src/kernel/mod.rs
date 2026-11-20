@@ -38,6 +38,7 @@ pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;
 mod fold_read_summary;
 mod functions;
+mod integer_exclusions;
 pub(crate) use functions::call_supplier_selection;
 mod owned_footprint_reach;
 mod pointer_provenance;
@@ -52,6 +53,7 @@ mod resource_description;
 mod thread_confinement;
 pub(crate) use functions::ResourceBodyClauseRecord;
 pub(crate) use functions::TacticApplicationRefusal;
+pub(crate) use functions::check_produced_view_source;
 pub(crate) use functions::interface_join_instance_fields;
 pub(crate) use functions::memory_range_is_initialized;
 #[cfg(test)]

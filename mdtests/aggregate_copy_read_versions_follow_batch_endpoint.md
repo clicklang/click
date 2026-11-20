@@ -22,7 +22,7 @@ verifying "copy.c";
 int32 copy_left(int32 left, int32 right) {
     ensures result == left;
 } by {
-    step_until(statement(5));
+    step_until(statement(5).entry);
     mark copied;
     have target.left == left;
     have target.right == right;

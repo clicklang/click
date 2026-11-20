@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use click::cli::read_click_project;
+#[cfg(not(feature = "fast-gate"))]
 use click::instrumentation::{self, VerificationEvent};
 use click::languages::cpp::PreparedCppImport;
 #[path = "support/cpp_description.rs"]
@@ -1186,6 +1187,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_fee_frac_mul_reexports_and_verifies() {
     check_upstream_fee_frac(
@@ -1196,24 +1198,28 @@ fn pinned_upstream_fee_frac_mul_reexports_and_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_fee_frac_div_imports_and_retains_native_proof_obligations() {
     check_upstream_fee_frac("FeeFrac::Div", "FeeFracDivImported", "");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn pinned_upstream_fee_frac_div_consteval_contract_reaches_runtime_string_view_boundary() {
     check_upstream_fee_frac("FeeFrac::Div", "FeeFracDivConstevalRefused", "");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn pinned_upstream_fee_frac_div_refuses_unmodelled_library_assume() {
     check_upstream_fee_frac("FeeFrac::Div", "FeeFracDivRefused", "");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn pinned_upstream_fee_frac_isempty_reexports_and_verifies() {
     check_upstream_fee_frac(
@@ -1224,6 +1230,7 @@ fn pinned_upstream_fee_frac_isempty_reexports_and_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_fee_frac_add_reexports_and_verifies() {
     check_upstream_fee_frac(
@@ -1234,6 +1241,7 @@ fn pinned_upstream_fee_frac_add_reexports_and_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn pinned_upstream_fee_frac_addself_reexports_and_verifies() {
     check_upstream_fee_frac(
@@ -1244,6 +1252,7 @@ fn pinned_upstream_fee_frac_addself_reexports_and_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn pinned_upstream_fee_frac_subtract_reexports_and_verifies() {
     check_upstream_fee_frac(
@@ -1254,6 +1263,7 @@ fn pinned_upstream_fee_frac_subtract_reexports_and_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn pinned_upstream_fee_frac_subtractself_reexports_and_verifies() {
     check_upstream_fee_frac(
@@ -1333,6 +1343,7 @@ fn pinned_span_fixture_with_exact_dependencies(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned libstdc++ by-value span proof and replay"]
 fn libstdcxx_span_by_value_caller_uses_the_verified_helper() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
@@ -1348,6 +1359,7 @@ fn libstdcxx_span_by_value_caller_uses_the_verified_helper() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 // The actual archived declaration is an empty scoped enum. Forwarding all of
 // its native values must work without inventing enumerators or backing access.
@@ -1410,6 +1422,7 @@ fn pinned_std_byte_values_verify_with_native_integer_contracts_offline() {
 // A nominal template argument must survive even if its record fields never
 // mention the enum. This closes the offline declaration-authentication gap.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn pinned_std_byte_template_record_keeps_nominal_argument() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
@@ -1430,6 +1443,7 @@ fn pinned_std_byte_template_record_keeps_nominal_argument() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned C++ construction return with two active views"]
 fn pinned_aggregate_return_separates_destination_from_views() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
@@ -1477,6 +1491,7 @@ struct Triple probe(const int32* left, const int32* right) {
 // The selected assumed interface preserves the descriptor's address and
 // length. Reading its fields requires views, but grants no backing authority.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn pinned_writable_byte_span_reference_preserves_view_offline() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
@@ -1496,6 +1511,7 @@ fn pinned_writable_byte_span_reference_preserves_view_offline() {
 // Explicit copying and return-frame links preserve the unchanged by-value
 // source and both its pointer and length claims through parameter retirement.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned C++ by-value span certificate round trip"]
 fn pinned_writable_byte_span_by_value_preserves_pointer_state() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
@@ -1544,6 +1560,7 @@ fn pinned_writable_byte_span_by_value_preserves_pointer_state() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: copied span return rejects false pointer and length claims"]
 fn pinned_writable_byte_span_return_rejects_changed_fields() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
@@ -1582,6 +1599,7 @@ fn pinned_writable_byte_span_return_rejects_changed_fields() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: repeated offline artifact and contract refusals"]
 fn pinned_byte_template_metadata_and_span_authority_are_checked() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
@@ -1701,6 +1719,7 @@ fn pinned_byte_template_metadata_and_span_authority_are_checked() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 16s in the parallel gate"]
 fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
     let manifest: serde_json::Value = serde_json::from_str(FIXTURE_MANIFEST).unwrap();
@@ -2028,6 +2047,7 @@ fn pinned_upstream_money_range_reexports_and_verifies_in_normal_gate() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn pinned_upstream_compact_size_1_reexports_and_verifies() {
     check_upstream_cpp(
@@ -2040,6 +2060,7 @@ fn pinned_upstream_compact_size_1_reexports_and_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_compact_size_3_reexports_and_verifies() {
     check_upstream_cpp(
@@ -2052,6 +2073,7 @@ fn pinned_upstream_compact_size_3_reexports_and_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_compact_size_5_reexports_and_verifies() {
     check_upstream_cpp(
@@ -2064,6 +2086,7 @@ fn pinned_upstream_compact_size_5_reexports_and_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn pinned_upstream_compact_size_9_reexports_and_verifies() {
     check_upstream_cpp(
@@ -2076,66 +2099,77 @@ fn pinned_upstream_compact_size_9_reexports_and_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_fee_frac_div_bounded_native_correction_is_safe() {
     check_bounded_upstream_rounding(RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_fee_frac_div_bounded_full_expansion_reverifies() {
     check_bounded_upstream_rounding(RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fee_frac_div_bounded_rejects_false_rounding_and_missing_guards() {
     check_bounded_upstream_rounding(RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_result_fit_div_down_verifies_native_narrowing_and_correction() {
     check_result_fit_upstream_rounding("Down", RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn upstream_result_fit_div_down_expands_and_reverifies() {
     check_result_fit_upstream_rounding("Down", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn upstream_result_fit_div_down_rejects_missing_or_inclusive_fit_guards() {
     check_result_fit_upstream_rounding("Down", RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_result_fit_div_down_rejects_false_rounding_and_missing_transport() {
     check_result_fit_upstream_rounding("Down", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_result_fit_div_up_verifies_native_narrowing_and_correction() {
     check_result_fit_upstream_rounding("Up", RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn upstream_result_fit_div_up_expands_and_reverifies() {
     check_result_fit_upstream_rounding("Up", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn upstream_result_fit_div_up_rejects_missing_or_inclusive_fit_guards() {
     check_result_fit_upstream_rounding("Up", RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_result_fit_div_up_rejects_false_rounding_and_missing_transport() {
     check_result_fit_upstream_rounding("Up", RoundingPhase::TransportRejections);
@@ -2200,22 +2234,26 @@ int64 FeeFrac::EvaluateFee{mode}(int32 at_size) const {{ {contract} }}
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_fee_evaluation_down_exports_full_graph_and_verifies_fast_case() {
     check_upstream_fee_evaluation_fast("Down", 4, RoundingPhase::Tools);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_fee_evaluation_up_exports_full_graph_and_verifies_fast_case() {
     check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_fee_evaluation_down_rejects_missing_authority_bounds_and_false_results() {
     check_upstream_fee_evaluation_fast("Down", 4, RoundingPhase::Rejections);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_fee_evaluation_up_rejects_missing_authority_bounds_and_false_results() {
     check_upstream_fee_evaluation_fast("Up", 5, RoundingPhase::Rejections);
@@ -2253,72 +2291,84 @@ fn check_upstream_result_fit_fast_fee_evaluation(mode: &str, phase: RoundingPhas
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fast_result_fit_down_verifies_beyond_size() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_fast_result_fit_down_expands_and_reverifies() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_fast_result_fit_down_rejects_missing_or_weakened_fit_bounds() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fast_result_fit_down_rejects_missing_fee_and_branch_bounds() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fast_result_fit_down_rejects_false_rounding() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::RoundingRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_fast_result_fit_down_rejects_missing_bridges_and_forged_numerator() {
     check_upstream_result_fit_fast_fee_evaluation("Down", RoundingPhase::NumeratorRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_fast_result_fit_up_verifies_beyond_size() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_fast_result_fit_up_expands_and_reverifies() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_fast_result_fit_up_rejects_missing_or_weakened_fit_bounds() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fast_result_fit_up_rejects_missing_fee_and_branch_bounds() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_fast_result_fit_up_rejects_false_rounding() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::RoundingRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_fast_result_fit_up_rejects_missing_bridges_and_forged_numerator() {
     check_upstream_result_fit_fast_fee_evaluation("Up", RoundingPhase::NumeratorRejections);
@@ -2349,47 +2399,56 @@ fn check_upstream_symbolic_fast_fee_evaluation(mode: &str, phase: RoundingPhase)
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_down_has_exact_floor_bounds() {
     check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::Tools);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_down_expands_and_reverifies() {
     check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_down_rejects_missing_authority_and_amount_bounds() {
     check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 9s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_down_rejects_missing_fee_bounds_and_false_rounding() {
     check_upstream_symbolic_fast_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_up_has_exact_ceiling_bounds() {
     check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::Tools);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_up_expands_and_reverifies() {
     check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_authority_and_amount_bounds() {
     check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 9s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_fee_bounds_and_false_rounding() {
     check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_symbolic_fast_fee_evaluation_up_rejects_missing_bridges_and_forged_numerator() {
     check_upstream_symbolic_fast_fee_evaluation("Up", RoundingPhase::NumeratorRejections);
@@ -2503,24 +2562,28 @@ fn check_upstream_result_fit_wide_fee_evaluation(mode: &str, positive: bool, pha
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_wide_result_fit_down_negative_verifies_beyond_size() {
     check_upstream_result_fit_wide_fee_evaluation("Down", false, RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_down_negative_expands_and_reverifies() {
     check_upstream_result_fit_wide_fee_evaluation("Down", false, RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_wide_result_fit_down_negative_rejects_missing_or_inclusive_fit_bounds() {
     check_upstream_result_fit_wide_fee_evaluation("Down", false, RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_wide_result_fit_down_negative_rejects_false_rounding_and_missing_transport() {
     check_upstream_result_fit_wide_fee_evaluation(
@@ -2531,72 +2594,84 @@ fn upstream_wide_result_fit_down_negative_rejects_false_rounding_and_missing_tra
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_wide_result_fit_down_positive_verifies_beyond_size() {
     check_upstream_result_fit_wide_fee_evaluation("Down", true, RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_down_positive_expands_and_reverifies() {
     check_upstream_result_fit_wide_fee_evaluation("Down", true, RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_wide_result_fit_down_positive_rejects_missing_or_inclusive_fit_bounds() {
     check_upstream_result_fit_wide_fee_evaluation("Down", true, RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_down_positive_rejects_false_rounding_and_missing_transport() {
     check_upstream_result_fit_wide_fee_evaluation("Down", true, RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_up_negative_verifies_beyond_size() {
     check_upstream_result_fit_wide_fee_evaluation("Up", false, RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_up_negative_expands_and_reverifies() {
     check_upstream_result_fit_wide_fee_evaluation("Up", false, RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_wide_result_fit_up_negative_rejects_missing_or_inclusive_fit_bounds() {
     check_upstream_result_fit_wide_fee_evaluation("Up", false, RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_wide_result_fit_up_negative_rejects_false_rounding_and_missing_transport() {
     check_upstream_result_fit_wide_fee_evaluation("Up", false, RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_up_positive_verifies_beyond_size() {
     check_upstream_result_fit_wide_fee_evaluation("Up", true, RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_wide_result_fit_up_positive_expands_and_reverifies() {
     check_upstream_result_fit_wide_fee_evaluation("Up", true, RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_wide_result_fit_up_positive_rejects_missing_or_inclusive_fit_bounds() {
     check_upstream_result_fit_wide_fee_evaluation("Up", true, RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_wide_result_fit_up_positive_rejects_false_rounding_and_missing_transport() {
     check_upstream_result_fit_wide_fee_evaluation("Up", true, RoundingPhase::TransportRejections);
@@ -2703,102 +2778,119 @@ fn check_upstream_result_fit_unified_fee_evaluation(mode: &str, phase: RoundingP
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_down_verifies_all_fee_branches_beyond_size() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_down_expands_and_reverifies() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_unified_result_fit_down_rejects_missing_field_authority() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::AuthorityRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_result_fit_down_rejects_missing_domain_bounds() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_down_rejects_missing_or_weakened_fit_bounds() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::FitRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_result_fit_down_checks_native_fee_bounds_and_branch_transport() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_result_fit_down_rejects_false_rounding() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::RoundingRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_result_fit_down_rejects_missing_bridges_and_forged_numerator() {
     check_upstream_result_fit_unified_fee_evaluation("Down", RoundingPhase::NumeratorRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_up_verifies_all_fee_branches_beyond_size() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_result_fit_up_expands_and_reverifies() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_missing_field_authority() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::AuthorityRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_missing_domain_bounds() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_missing_or_weakened_fit_bounds() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::FitRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_result_fit_up_checks_native_fee_bounds_and_branch_transport() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_false_rounding() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::RoundingRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_missing_bridges_and_forged_numerator() {
     check_upstream_result_fit_unified_fee_evaluation("Up", RoundingPhase::NumeratorRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_result_fit_up_rejects_missing_or_forged_adjusted_numerator() {
     check_upstream_result_fit_unified_fee_evaluation(
@@ -2819,41 +2911,49 @@ fn check_upstream_unified_fee_evaluation(mode: &str, phase: RoundingPhase) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_fee_evaluation_down_verifies_all_fee_branches() {
     check_upstream_unified_fee_evaluation("Down", RoundingPhase::Tools);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_fee_evaluation_up_verifies_all_fee_branches() {
     check_upstream_unified_fee_evaluation("Up", RoundingPhase::Tools);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_fee_evaluation_down_expands_and_reverifies() {
     check_upstream_unified_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_unified_fee_evaluation_up_expands_and_reverifies() {
     check_upstream_unified_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_fee_evaluation_down_rejects_missing_domain_bounds() {
     check_upstream_unified_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_unified_fee_evaluation_up_rejects_missing_domain_bounds() {
     check_upstream_unified_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_fee_evaluation_down_rejects_false_rounding_and_missing_transport() {
     check_upstream_unified_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_unified_fee_evaluation_up_rejects_false_rounding_and_missing_transport() {
     check_upstream_unified_fee_evaluation("Up", RoundingPhase::TransportRejections);
@@ -2871,44 +2971,52 @@ fn check_upstream_negative_fee_evaluation(mode: &str, phase: RoundingPhase) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_negative_fee_evaluation_down_has_symbolic_floor_bounds() {
     check_upstream_negative_fee_evaluation("Down", RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_negative_fee_evaluation_up_has_symbolic_ceiling_bounds() {
     check_upstream_negative_fee_evaluation("Up", RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_negative_fee_evaluation_down_instance_expands_and_reverifies() {
     check_upstream_negative_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_negative_fee_evaluation_up_instance_expands_and_reverifies() {
     check_upstream_negative_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_negative_fee_evaluation_down_rejects_false_bounds_and_missing_guards() {
     check_upstream_negative_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_negative_fee_evaluation_up_rejects_false_bounds_and_missing_guards() {
     check_upstream_negative_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_negative_fee_evaluation_down_rejects_forged_product_and_rounding_transport() {
     check_upstream_negative_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_negative_fee_evaluation_up_rejects_forged_product_and_rounding_transport() {
     check_upstream_negative_fee_evaluation("Up", RoundingPhase::TransportRejections);
@@ -2926,54 +3034,63 @@ fn check_upstream_positive_wide_fee_evaluation(mode: &str, phase: RoundingPhase)
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_down_has_symbolic_bounds() {
     check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_down_instance_expands_and_reverifies() {
     check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_down_rejects_false_bounds_and_missing_guards() {
     check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_down_rejects_forged_product_and_rounding_transport() {
     check_upstream_positive_wide_fee_evaluation("Down", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_up_has_symbolic_bounds() {
     check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::Tools);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_up_instance_expands_and_reverifies() {
     check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::FullExpansion);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_up_rejects_false_bounds_and_missing_guards() {
     check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::Rejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_positive_wide_fee_evaluation_up_rejects_forged_product_and_rounding_transport() {
     check_upstream_positive_wide_fee_evaluation("Up", RoundingPhase::TransportRejections);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn pinned_upstream_fee_rate_getfee_imports_converted_call_graph() {
     check_upstream_cpp_rounding_phase(
@@ -3018,6 +3135,7 @@ fn check_getfee(name: &str, phase: Option<RoundingPhase>) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_getfee_expands_and_reverifies_offline() {
     check_getfee(
@@ -3027,12 +3145,14 @@ fn upstream_getfee_expands_and_reverifies_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn upstream_getfee_retains_certificates_offline() {
     check_getfee("CFeeRateGetFeeRetained", Some(RoundingPhase::Tools));
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_modular_callers_cover_empty_negative_and_oversize_inputs() {
     let source = getfee_source();
@@ -3111,6 +3231,7 @@ theorem empty_rate_application() executes CFeeRate::GetFee(const struct CFeeRate
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_rejects_missing_fee_authority() {
     check_getfee(
@@ -3119,6 +3240,7 @@ fn upstream_getfee_rejects_missing_fee_authority() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_rejects_missing_size_authority() {
     check_getfee(
@@ -3127,6 +3249,7 @@ fn upstream_getfee_rejects_missing_size_authority() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_rejects_missing_amount_guard() {
     check_getfee(
@@ -3135,6 +3258,7 @@ fn upstream_getfee_rejects_missing_amount_guard() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_rejects_missing_size_guard() {
     check_getfee(
@@ -3143,6 +3267,7 @@ fn upstream_getfee_rejects_missing_size_guard() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_getfee_rejects_missing_lower_fit() {
     check_getfee(
@@ -3151,6 +3276,7 @@ fn upstream_getfee_rejects_missing_lower_fit() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_getfee_rejects_missing_upper_fit() {
     check_getfee(
@@ -3159,6 +3285,7 @@ fn upstream_getfee_rejects_missing_upper_fit() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_rejects_inclusive_lower_fit() {
     check_getfee(
@@ -3167,11 +3294,13 @@ fn upstream_getfee_rejects_inclusive_lower_fit() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn upstream_getfee_rejects_false_empty_result() {
     check_getfee("CFeeRateGetFeeFalseEmpty", Some(RoundingPhase::Rejections));
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn upstream_getfee_rejects_false_minimum_correction() {
     check_getfee(
@@ -3180,6 +3309,7 @@ fn upstream_getfee_rejects_false_minimum_correction() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_accepts_native_fee_observer_bounds() {
     check_getfee(
@@ -3188,6 +3318,7 @@ fn upstream_getfee_accepts_native_fee_observer_bounds() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_rejects_stale_reachable_header_offline() {
     check_getfee(
@@ -3197,6 +3328,7 @@ fn upstream_getfee_rejects_stale_reachable_header_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_composes_empty_and_nonempty_result_fit_profiles() {
     check_upstream_cpp_rounding_phase(
@@ -3235,11 +3367,13 @@ fn check_getfee_per_k(name: &str, phase: Option<RoundingPhase>) {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn upstream_getfee_per_k_verifies_unchanged_down_rounding() {
     check_getfee_per_k("CFeeRateGetFeePerK", None);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_expands_and_reverifies_offline() {
     check_getfee_per_k(
@@ -3248,11 +3382,13 @@ fn upstream_getfee_per_k_expands_and_reverifies_offline() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn upstream_getfee_per_k_retains_certificates_offline() {
     check_getfee_per_k("CFeeRateGetFeePerKRetained", Some(RoundingPhase::Tools));
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_rejects_zero_size() {
     check_getfee_per_k(
@@ -3261,6 +3397,7 @@ fn upstream_getfee_per_k_rejects_zero_size() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_rejects_missing_authority() {
     check_getfee_per_k(
@@ -3269,6 +3406,7 @@ fn upstream_getfee_per_k_rejects_missing_authority() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_rejects_missing_lower_fit() {
     check_getfee_per_k(
@@ -3277,6 +3415,7 @@ fn upstream_getfee_per_k_rejects_missing_lower_fit() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_rejects_inclusive_upper_fit() {
     check_getfee_per_k(
@@ -3285,6 +3424,7 @@ fn upstream_getfee_per_k_rejects_inclusive_upper_fit() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_rejects_false_rounding() {
     check_getfee_per_k(
@@ -3294,6 +3434,7 @@ fn upstream_getfee_per_k_rejects_false_rounding() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn upstream_getfee_per_k_modular_callers_cover_signed_and_oversize_rates() {
     let source = getfee_per_k_source();
@@ -3339,6 +3480,7 @@ fn axiomatic_span_fixture(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn axiomatic_span_refused_precondition_names_model_accessors_after_execution() {
     let (root, import) = axiomatic_span_fixture(
@@ -3377,6 +3519,7 @@ std::span<int> probe(std::span<int>& s) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5.9s in the parallel gate"]
 fn axiomatic_span_dynamic_extent_requirement_is_proved_before_view_recovery() {
     let (root, import) = axiomatic_span_fixture(
@@ -3427,6 +3570,7 @@ std::span<std::byte> probe(std::span<std::byte>& s) {{
 // contracts: libstdc++'s `size`, `back` and `first` are axioms with no
 // exported body, and every contract states the span through model accessors.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6.4s in the parallel gate"]
 fn axiomatic_span_pop_back_verifies_against_catalog_contracts() {
     let (root, import) = axiomatic_span_fixture(
@@ -3477,7 +3621,7 @@ int32& {pop_back}(std::span<int>& span) {{
     ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
 }} by {{
     apply(uint64_predecessor_below(std_span_size(span)));
-    step_until(assignment(size, 0));
+    step_until(assignment(size, 0).entry);
     step();
     have size - 1u64 <= std_span_size(span) by {{
         solve() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
@@ -3545,6 +3689,7 @@ int32& probe(std::span<int>& span) {{
 // A standard function without a Click contract is refused by name; nothing
 // about it is assumed.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn axiomatic_span_refuses_an_uncatalogued_standard_function() {
     let (root, import) = axiomatic_span_fixture(
@@ -3587,6 +3732,101 @@ const SPAN_DEPENDENCIES: &[&str] = &[
     "sysroot/usr/include/c++/12/span",
     "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h",
 ];
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: pinned libstdc++ vector and span handoff"]
+fn byte_vector_passes_its_backing_storage_to_a_span_reader() {
+    let (root, import) = axiomatic_span_fixture(
+        "byte-vector-span-reader",
+        r#"#include <span>
+#include <vector>
+
+unsigned char read_first(const std::span<const unsigned char>& bytes) noexcept {
+    return bytes[0];
+}
+
+unsigned char probe(const std::vector<unsigned char>& bytes) noexcept {
+    unsigned long length = bytes.size();
+    const unsigned char* data = bytes.data();
+    std::span<const unsigned char> view(data, length);
+    return read_first(view);
+}
+"#,
+        SPAN_DEPENDENCIES,
+    );
+    let source = r#"import click::cpp::vector_state::{vector_state};
+verifying "span-probe.cpp";
+
+resource vector_bytes() {
+    field data: uint8*;
+    field length: uint64;
+    owns data[0..length];
+}
+
+uint8 read_first(const std::span<const unsigned char>& bytes) {
+    views std_span_data(bytes);
+    views std_span_size(bytes);
+    views std_span_data(bytes)[0];
+    requires 1u64 <= std_span_size(bytes);
+    ensures result == std_span_data(bytes)[0];
+}
+
+uint8 probe(const std::vector<unsigned char>& bytes) {
+    owns state: vector_state(&bytes);
+    owns backing: vector_bytes();
+    requires state.data == backing.data;
+    requires state.length == backing.length;
+    requires 1u64 <= backing.length;
+    ensures state.length == backing.length;
+    ensures state.data == backing.data;
+} by {
+    unfold(backing);
+    step_until(function.exit);
+    fold(backing);
+}
+"#;
+    let sidecar = root.join("span.click");
+    fs::write(&sidecar, source).unwrap();
+    let parsed = read_click_project(&sidecar, source).unwrap();
+    let (summary, verification) =
+        click::surface::verify_project_with_summary(&parsed, &ProgramInputs::program(&import))
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+    verification.unwrap_or_else(|error| panic!("{}", error.report()));
+    let assumptions = &summary.assumptions["probe"];
+    for method in ["size", "data"] {
+        let name = format!("std::vector<unsigned char>::{method}");
+        assert!(
+            assumptions.iter().any(|assumption| {
+                assumption.family == click::surface::ModelFamily::CppStd
+                    && display_source_names(&assumption.name) == name
+            }),
+            "{assumptions:?}"
+        );
+    }
+
+    let (reader, _) = source.split_once("uint8 probe(").unwrap();
+    let without_backing = format!(
+        r#"{reader}uint8 probe(const std::vector<unsigned char>& bytes) {{
+    owns state: vector_state(&bytes);
+    requires 1u64 <= state.length;
+    ensures state.data == old(state.data);
+}}
+"#
+    );
+    let without_bound = source.replace("    requires 1u64 <= backing.length;\n", "");
+    for rejected in [without_backing, without_bound] {
+        let parsed = read_click_project(&sidecar, &rejected).unwrap();
+        let report = verify_program_prepared_project(&parsed, &import)
+            .unwrap_err()
+            .report();
+        assert!(
+            report.contains("read_first") && report.contains("required loan backing"),
+            "{report}"
+        );
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
 const BYTE_SPAN_DEPENDENCIES: &[&str] = &[
     "sysroot/usr/include/c++/12/cstddef",
     "sysroot/usr/include/c++/12/span",
@@ -3683,6 +3923,7 @@ fn check_generic_span_cases(cases: Vec<GenericSpanCase>) {
 // span's element, so `std::span<unsigned char>` and `std::span<unsigned int>`
 // callers verify against the same contracts as `std::span<int>`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4.8s in the parallel gate"]
 fn axiomatic_span_subviews_and_byte_size_verify_for_other_elements() {
     let window = format!(
@@ -3767,6 +4008,7 @@ theorem uint64_window_bounds(n: uint64) {{
 // The remaining generic entries for byte-sized elements: `data` and `first`
 // on `std::span<unsigned char>`, and a `std::span<std::byte>` subview.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: three more pinned C++ exports"]
 fn axiomatic_span_byte_element_entries_verify() {
     let byte_span = "std::span<std::byte>";
@@ -3824,6 +4066,7 @@ const UINT_SPAN: &str = "std::span<unsigned int>";
 // read needs a view of the element and the write needs to own it; the span
 // contracts grant neither.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8.5s in the parallel gate"]
 fn axiomatic_span_element_references_read_and_write() {
     let read = format!(
@@ -3935,6 +4178,7 @@ fn axiomatic_span_element_references_read_and_write() {
 // Returning an element reference, and `int` element reads and writes, which
 // the profile previously admitted only through a reference local.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: three more pinned C++ exports"]
 fn axiomatic_span_element_reference_returns_and_int_access() {
     let int_span = "std::span<int>";
@@ -4004,6 +4248,7 @@ fn check_refused_span_case(
 // `std::span<const T>` names its const element in the record, holds a
 // `const T*`, and uses the same generic entries with const element types.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6.2s in the parallel gate"]
 fn axiomatic_const_element_spans_verify() {
     let read = r#"uint8 probe(std::span<const unsigned char>& s) {
@@ -4038,6 +4283,7 @@ fn axiomatic_const_element_spans_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: three more pinned C++ exports"]
 fn axiomatic_const_element_span_subviews_verify() {
     check_generic_span_cases(vec![
@@ -4083,6 +4329,7 @@ fn axiomatic_const_element_span_subviews_verify() {
 // member is stateless, so the record holds only the data pointer, and the
 // contracts state the size as the literal `N`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.5s in the parallel gate"]
 fn axiomatic_static_extent_spans_verify() {
     check_generic_span_cases(vec![
@@ -4122,6 +4369,7 @@ fn axiomatic_static_extent_spans_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: a static-extent subview export"]
 fn axiomatic_static_extent_span_subviews_verify() {
     check_generic_span_cases(vec![GenericSpanCase {
@@ -4152,6 +4400,7 @@ fn axiomatic_static_extent_span_subviews_verify() {
 // passes `std::dynamic_extent` as its count, and verifies as a subview to
 // the end.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn defaulted_span_arguments_import_as_compiler_constants() {
     let (root, import) = axiomatic_span_fixture(
@@ -4193,6 +4442,7 @@ fn defaulted_span_arguments_import_as_compiler_constants() {
 // `std_array_data(a)`. Its element accessors have const and mutable
 // overloads; a read needs a view of the array and a write needs to own it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.4s in the parallel gate"]
 fn axiomatic_std_array_element_access_verifies() {
     let write = format!(
@@ -4322,6 +4572,7 @@ fn axiomatic_std_array_reference_element_resources_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: two more pinned C++ exports"]
 fn axiomatic_std_array_size_and_data_verify() {
     check_generic_span_cases(vec![
@@ -4349,6 +4600,7 @@ fn axiomatic_std_array_size_and_data_verify() {
 // needs ownership of that backing cell, which the span's contracts neither
 // grant nor need; the descriptor itself is all `back` and `first` read.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn axiomatic_span_pop_back_write_needs_backing_ownership() {
     let (root, import) = axiomatic_span_fixture(
@@ -4384,7 +4636,7 @@ int32& {pop_back}(std::span<int>& span) {{
     ensures &result == old(std_span_data(span)) + (old(std_span_size(span)) - 1u64);
 }} by {{
     apply(uint64_predecessor_below(std_span_size(span)));
-    step_until(assignment(size, 0));
+    step_until(assignment(size, 0).entry);
     step();
     have size - 1u64 <= std_span_size(span) by {{
         solve() using {{ size == std_span_size(span); std_span_size(span) - 1u64 <= std_span_size(span); }}
@@ -4422,6 +4674,7 @@ int32 probe(std::span<int>& span, int32 input) {{
 // Actual std::byte pointers retain native one-byte strides, checked nominal
 // identities and ordinary ownership across offline verification and expansion.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn pinned_std_byte_pointer_stores_verify_offline() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
@@ -4444,6 +4697,7 @@ fn pinned_std_byte_pointer_stores_verify_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn pinned_std_byte_automatic_pointer_store_initializes_offline() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
@@ -4586,6 +4840,7 @@ fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 // Allocated enum scalars can lend their exact byte owner to an ordinary helper;
 // the returned contract value must refresh the caller binding.
@@ -4604,6 +4859,7 @@ fn pinned_std_byte_modular_pointer_call_verifies_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 // Pointer reinterpretation supplies no initialization. Four concrete byte
 // stores complete the shared uint32 representation on the selected LE target.
@@ -4622,6 +4878,7 @@ fn pinned_std_byte_reinterpretation_initializes_uint32_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
@@ -4667,6 +4924,7 @@ fn pinned_std_byte_reinterpreted_call_result_preserves_pointer_identity_offline(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn pinned_std_byte_reinterpretation_does_not_initialize_partial_storage() {
     let (root, import) = pinned_span_fixture_with_exact_dependencies(
@@ -4690,6 +4948,7 @@ fn pinned_std_byte_reinterpretation_does_not_initialize_partial_storage() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 // Changing the access type cannot mint write permission over the original word.
 fn pinned_std_byte_reinterpretation_requires_original_storage_ownership() {
@@ -4717,6 +4976,7 @@ fn pinned_std_byte_reinterpretation_requires_original_storage_ownership() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: modular byte-output composition with pinned C++ source"]
 fn pinned_std_byte_modular_output_initializes_uint32_offline() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-byte-output");
@@ -4858,6 +5118,7 @@ fn check_pinned_writable_span_proof(
 // A copied span descriptor carries bounds and an address; only the explicit
 // output transfer supplies permission, initialization and the resulting word.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned C++ writable-byte span composition"]
 fn pinned_writable_byte_span_modular_output_initializes_uint32_offline() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-byte-output");
@@ -4925,6 +5186,7 @@ fn pinned_writable_byte_span_modular_output_initializes_uint32_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned C++ expired writable-byte span"]
 fn pinned_writable_byte_span_output_requires_live_backing_offline() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-byte-output");
@@ -4988,6 +5250,7 @@ fn pinned_writable_byte_span_output_requires_live_backing_offline() {
 // libstdc++ stores the dynamic extent in a nested record. Its copied
 // parameter precondition must verify in the source and expanded proofs.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned C++ nested span parameter precondition"]
 fn pinned_span_nested_parameter_precondition_expands_offline() {
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cpp-byte-output");
@@ -5055,6 +5318,7 @@ const BITCOIN_READ32_BODIES: [&str; 4] = [
 ];
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned Bitcoin read32 serialization proof"]
 fn pinned_bitcoin_read32_serialization_verifies_offline() {
     let (root, import, source) = pinned_bitcoin_read32_fixture("bitcoin-read32-ordinary");
@@ -5065,6 +5329,7 @@ fn pinned_bitcoin_read32_serialization_verifies_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: all four Bitcoin read32 source certificates generated for freshness"]
 fn pinned_bitcoin_read32_serialization_expands_all_bodies() {
     let (root, import, source) = pinned_bitcoin_read32_fixture("bitcoin-read32-expanded");
@@ -5097,6 +5362,7 @@ const BITCOIN_READ32_EXPANDED: &str =
     include_str!("fixtures/cpp-byte-output/bitcoin-read32-expanded.click");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: all four expanded Bitcoin read32 bodies checked strictly cold"]
 fn pinned_bitcoin_read32_serialization_expanded_source_checks_strict_cold() {
     let (root, import, _) = pinned_bitcoin_read32_fixture("bitcoin-read32-cold");
@@ -5140,6 +5406,7 @@ fn check_bitcoin_read32_retained(name: &str, qualified: &str) {
 macro_rules! bitcoin_read32_retained_case {
     ($name:ident, $qualified:literal) => {
         #[test]
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: one Bitcoin read32 body certificate replayed in a retained session"]
         fn $name() {
             check_bitcoin_read32_retained(stringify!($name), $qualified);
@@ -5183,6 +5450,7 @@ fn check_bitcoin_read32_control(name: &str, qualified: &str, from: &str, to: &st
 macro_rules! bitcoin_read32_control_case {
     ($name:ident, $qualified:literal, $from:literal, $to:literal) => {
         #[test]
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: Bitcoin serialization composition rejection control"]
         fn $name() {
             check_bitcoin_read32_control(stringify!($name), $qualified, $from, $to);
@@ -5321,6 +5589,7 @@ fn pinned_streams_fixture(name: &str) -> (PathBuf, PreparedCppImport) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned Bitcoin exception composition"]
 fn pinned_spanreader_ignore_verifies_both_outcomes_offline() {
     let (root, import) = pinned_streams_fixture("ignore");
@@ -5353,6 +5622,7 @@ fn spanreader_ignore_source() -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Bitcoin exceptional contract expansion and replay"]
 fn pinned_spanreader_ignore_expands_and_replays_both_functions() {
     let (root, import) = pinned_streams_fixture("ignore-replay");
@@ -5389,6 +5659,7 @@ fn pinned_spanreader_ignore_expands_and_replays_both_functions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Bitcoin exceptional contract refusal controls"]
 fn pinned_spanreader_ignore_refuses_false_states_and_opaque_inspection() {
     let (root, import) = pinned_streams_fixture("ignore-controls");
@@ -5420,6 +5691,7 @@ fn pinned_spanreader_ignore_refuses_false_states_and_opaque_inspection() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned opaque constructor and const-byte artifact controls"]
 fn pinned_spanreader_ignore_refuses_forged_constructor_and_byte_metadata() {
     let (root, _) = pinned_streams_fixture("ignore-artifacts");

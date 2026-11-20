@@ -19,7 +19,7 @@ fn sum(bytes: &[u8]) -> i32 {
     views bytes[0..bytes.len()];
     ensures result == old(prefix(bytes, bytes.len()));
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     have loop(0).iter.len() == bytes.len();
     have loop(0).iter.as_slice() == bytes;
     have bytes.len() - loop(0).iter.len() == 0u64;
@@ -39,7 +39,7 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant iter.as_slice() == bytes + (bytes.len() - iter.len());
         invariant 0 <= total and to_integer(total) <= 255 * (to_integer(bytes.len()) - to_integer(iter.len()));
         invariant total == prefix(bytes, bytes.len() - iter.len());
-        preserve by {
+        maintain by {
             if 0u64 < iter.len() {
                 mark iteration;
                 have to_integer(total) <= 255000 by {
@@ -56,11 +56,10 @@ fn sum(bytes: &[u8]) -> i32 {
                     solve();
                 }
                 have to_integer(bytes.len() - iter.len()) + 1 <= 18446744073709551615;
-                step_until(read(0));
+                step_until(loop(0).statement(0).entry);
                 have iter.len() == at(iteration, iter.len()) - 1u64;
                 have iter.as_slice() == (bytes + (bytes.len() - at(iteration, iter.len()))) + 1u64;
                 apply(pointer_association(bytes, bytes.len() - at(iteration, iter.len()), 1u64));
-                step();
                 have at(iteration, bytes[(bytes.len() - iter.len())]) == byte;
                 have defined(total + byte as i32) by {
                     solve() using { 0 <= total; to_integer(total) <= 255000; };
@@ -70,8 +69,8 @@ fn sum(bytes: &[u8]) -> i32 {
                 have 0 <= to_integer(at(before_total_write, total)) + to_integer(byte as i32) by {
                     solve() using { 0 <= total; };
                 }
-                step_until(assignment(total, 1)); step();
-                step_until(back_edge());
+                step_until(assignment(total, 1).entry); step();
+                step_until(loop.back_edge);
                 have to_integer(iter.len()) == to_integer(at(iteration, iter.len())) - 1;
                 have to_integer(iter.len()) <= to_integer(bytes.len());
                 apply(integer::uint64_subtract_to_integer(bytes.len(), iter.len()));

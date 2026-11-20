@@ -29,12 +29,12 @@ void fill(int32 *p, int32 n) {
     consumes cell(p, n);
     ensures 1 == 1;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         owns cell(p, n);
         decreases 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             unfold(cell(p, n));
             step();
             step();

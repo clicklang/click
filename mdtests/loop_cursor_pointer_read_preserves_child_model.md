@@ -38,13 +38,13 @@ void inspect(struct node* root) {
     owns tree: parent_at(root);
     ensures 1 == 1;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         owns tree: parent_at(root);
         invariant parent == root;
         decreases 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             match tree.model {
                 Parent::At(pid, child_model) => {
                     let { child: sub } = unfold(tree);

@@ -1,9 +1,8 @@
 //! Fixed-width pointers into local two-dimensional scalar arrays.
 use super::*;
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub(super) struct LocalRowPointer {
-    pub(super) storage: BindingName,
     element_type: InterfaceType,
     columns: u32,
 }
@@ -52,25 +51,23 @@ impl Parser {
             .expect("an array element has a pointer type");
         self.expect(Token::Equal)?;
 
-        // The carrier has no C source spelling. The frontend checks every
-        // use before lowering it to scalar-pointer operations on the carrier.
-        let storage = self.new_automatic_binding(
-            self.binding_function
-                .is_none()
-                .then(|| format!("__click_row_pointer_{source_name}")),
-        );
+        // Preserve canonical selectors for declarations after the former row-pointer carrier.
+        if self.binding_function.is_some() {
+            self.next_local_binding = self
+                .next_local_binding
+                .checked_add(1)
+                .expect("binding ordinal fits u32");
+        }
         let row = LocalRowPointer {
-            storage: storage.clone(),
             element_type,
             columns,
         };
         let initializer = self.parse_row_pointer_value(&row)?;
         self.expect(Token::Semicolon)?;
         self.variable_types.insert(name.clone(), interface_type);
-        self.variable_types.insert(storage.clone(), interface_type);
-        self.local_row_pointers.insert(name, row);
+        self.local_row_pointers.insert(name.clone(), row);
         Ok(CStatement::Declare {
-            name: storage.into(),
+            name: name.into(),
             interface_type,
             volatile: false,
             pointee_volatile: false,
@@ -102,7 +99,7 @@ impl Parser {
                     self.error_here("incompatible local row pointer initializer or assignment")
                 );
             }
-            CExpression::Variable(source.storage.clone())
+            CExpression::Variable(name)
         } else {
             let compatible_matrix = name.local_id().is_some()
                 && !self.variable_is_constant(&name)
@@ -144,18 +141,15 @@ impl Parser {
 
     pub(super) fn parse_row_pointer_access(
         &mut self,
-        row: &LocalRowPointer,
+        name: BindingName,
+        row: LocalRowPointer,
     ) -> Result<CExpression, CSyntaxError> {
         if self.peek() != Some(&Token::LBracket) {
             return Err(self.error_here("use a local row pointer with two subscripts or in a row pointer declaration or update"));
         }
         let index = self.parse_row_subscript()?;
-        let base = self.offset_row_pointer(
-            CExpression::Variable(row.storage.clone()),
-            index,
-            row.columns,
-            false,
-        )?;
+        let base =
+            self.offset_row_pointer(CExpression::Variable(name), index, row.columns, false)?;
         if self.peek() != Some(&Token::LBracket) {
             return Err(self.error_here("a row pointer element access requires two subscripts"));
         }
@@ -169,11 +163,12 @@ impl Parser {
 
     pub(super) fn parse_row_pointer_update(
         &mut self,
-        row: &LocalRowPointer,
+        name: BindingName,
+        row: LocalRowPointer,
         operator: Token,
     ) -> Result<CStatement, CSyntaxError> {
         let expression = match operator {
-            Token::Equal => self.parse_row_pointer_value(row)?,
+            Token::Equal => self.parse_row_pointer_value(&row)?,
             Token::PlusPlus | Token::MinusMinus | Token::PlusEqual | Token::MinusEqual => {
                 let delta = if matches!(operator, Token::PlusPlus | Token::MinusMinus) {
                     CExpression::Int32Literal(1)
@@ -181,7 +176,7 @@ impl Parser {
                     self.parse_expression()?
                 };
                 self.offset_row_pointer(
-                    CExpression::Variable(row.storage.clone()),
+                    CExpression::Variable(name.clone()),
                     delta,
                     row.columns,
                     matches!(operator, Token::MinusMinus | Token::MinusEqual),
@@ -190,7 +185,7 @@ impl Parser {
             _ => return Err(self.error_here("local row pointers support only assignment, increment, decrement, and additive updates")),
         };
         Ok(CStatement::Assign {
-            name: row.storage.clone(),
+            name,
             expression,
             prior_result: None,
             site: CSite::NONE,

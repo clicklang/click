@@ -168,7 +168,7 @@ int32 count_to(int32 n) {
         invariant i <= n;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }
@@ -399,6 +399,7 @@ int32 caller(int32 x) { ensures result == x + x; } by {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.3s in the parallel gate"]
 fn modular_call_state_anchor_checks_with_owned_resource() {
     let init_c = r#"
@@ -507,7 +508,7 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
     produces owned_box(owner);
     ensures result == value;
 } by {
-    step_until(region(3));
+    step_until(region(3).entry);
     have owner->data == data by solve();
     have owner->value == 0 by solve();
     step();
@@ -539,6 +540,7 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
 /// are the same load variable and the premise is reflexive. The expansion
 /// needs no state transport and rewrites from the remaining premise.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn state_bridged_solve_premises_expand_to_checked_offset_equality() {
     let init_c = r#"
@@ -662,6 +664,7 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn execute_until_expands_mixed_state_call_postconditions() {
     let zero_c = r#"
@@ -736,7 +739,7 @@ int32 pipeline(struct counter* owner) {
     ensures result == 1;
     ensures owner->value == 1;
 } by {
-    step_until(region(3));
+    step_until(region(3).entry);
     have owner->value == 1 by solve();
     step();
     solve();
@@ -769,17 +772,18 @@ int32 pipeline(struct counter* owner) {
     verify_c_sources(&have_expanded, &sources)
         .expect("the mixed-state frontier-local expansion should check");
 
-    let selected = click_source.find("step_until(region(3));").unwrap();
+    let selected = click_source.find("step_until(region(3).entry);").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("mixed-state smart execution should expand");
-    assert!(!expanded.contains("step_until(region(3));"));
+    assert!(!expanded.contains("step_until(region(3).entry);"));
     verify_c_sources(&expanded, &sources)
         .expect("the mixed-state smart execution expansion should check");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn execute_until_expands_vector_storage_call_postconditions() {
     let init_c = r#"
@@ -913,13 +917,13 @@ int32 buffer_pipeline(
     consumes *owner;
     consumes data[0..capacity];
     produces nonempty_buffer(owner) by {
-        step_until(region(2));
+        step_until(region(2).entry);
         unfold(empty_buffer(owner));
         have 0 <= owner->len by solve();
         have owner->len <= owner->cap by solve();
         have viewable(owner->data[0..owner->len]) by solve();
         fold(buffer_storage(owner));
-        step_until(region(3));
+        step_until(region(3).entry);
         unfold(buffer_storage(owner));
         have owner->len == 1 by solve();
         have 1 <= owner->len by {
@@ -946,7 +950,7 @@ int32 buffer_pipeline(
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("vector-shaped mixed-state smart execution should expand");
-    assert!(!expanded.contains("step_until(region(3));"));
+    assert!(!expanded.contains("step_until(region(3).entry);"));
     verify_c_sources(&expanded, &sources)
         .expect("the vector-shaped mixed-state expansion should check");
 }
@@ -977,7 +981,7 @@ int32 callee(int32 x) {
 int32 caller(int32 x) {
     ensures result == x;
 } by {
-    step_until(region(1));
+    step_until(region(1).entry);
     step_until(function.exit);
     solve();
 }
@@ -989,7 +993,7 @@ int32 caller(int32 x) {
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the endpoint call dependency should be verified before expansion");
-    assert!(!expanded.contains("step_until(region(1));"));
+    assert!(!expanded.contains("step_until(region(1).entry);"));
 }
 
 /// A reusable session restores the kernel's tables to its baseline before each
@@ -1299,7 +1303,7 @@ int32 caller(int32 x) {
     loop {
         invariant 0 == 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }
@@ -1356,7 +1360,7 @@ int32 wait_for_zero(int32 x) diverges {
     loop diverges {
         invariant 0 == 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }
@@ -1456,7 +1460,7 @@ int32 drain(int32 n) {
         decreases n;
         invariant n >= 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             have 0 <= to_integer(n - 1) by {
                 solve() using { n > 0; }
             }
@@ -1809,6 +1813,7 @@ int32 unrelated() { ensures result == 0; } by solve();
 /// facts deterministically, so repeated verification must stay green under
 /// the deterministic work budgets this test suite runs with.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn perpetual_service_example_verifies_stably_across_repeated_runs() {
     let project =
@@ -1862,6 +1867,7 @@ fn perpetual_service_example_verifies_stably_across_repeated_runs() {
 /// to let a truncated kernel derivation surface as "missing pure fact" while
 /// the available-fact list printed the very fact it claimed was missing.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn truncated_service_step_reports_the_budget_not_a_missing_fact() {
     let project =
@@ -1921,6 +1927,7 @@ fn example_project_creates_only_canonical_terms(project: &str, sidecar: &str) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn owned_split_buffer_carried_load_facts_stay_on_direct_proof_path() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -1938,24 +1945,28 @@ fn owned_split_buffer_carried_load_facts_stay_on_direct_proof_path() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn borrowed_slice_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("borrowed-slice", "borrowed_slice.click");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn input_cursor_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("input-cursor", "input_cursor.click");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn linked_list_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("linked-list", "linked_list.click");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn owned_segmented_buffer_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms(
@@ -1965,12 +1976,14 @@ fn owned_segmented_buffer_creates_only_canonical_terms() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn owned_string_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("owned-string", "owned_string.click");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn recursive_zero_list_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms(
@@ -1980,6 +1993,7 @@ fn recursive_zero_list_creates_only_canonical_terms() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn vector_push_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("vector-push", "vector_push.click");
@@ -1992,6 +2006,7 @@ fn vector_push_creates_only_canonical_terms() {
 /// project the first one's DAG derivation for a same-content call-havoc
 /// state, and the load registry its origins.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 13s in the parallel gate"]
 fn verifications_on_one_thread_are_independent() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -2113,9 +2128,9 @@ fn execute_until_assignment_checks_real_stores_and_rejects_bad_frontiers() {
     let source = "int32 f() {int32 x;int32 other;other=9;x=3;other=8;x=4;return x;}";
     let proof = r#"verifying "assignment.c";
 int32 f() {ensures result==4;} by {
-    step_until(assignment(x, 0)); step();
+    step_until(assignment(x, 0).entry); step();
     have x==3 by {solve();}
-    step_until(assignment(x, 1));
+    step_until(assignment(x, 1).entry);
     have x==3 by {solve();}
     step(); have x==4 by {solve();}
     step_until(function.exit); solve();
@@ -2148,14 +2163,14 @@ fn execute_until_assignment_stops_before_call_results_and_respects_paths() {
     let proof = r#"verifying "assignment.c";
 int32 id(int32 n) {ensures result==n; }
 int32 f() {ensures result==4;} by {
-    step_until(assignment(x, 0)); step(); have x==3 by {solve();}
-    step_until(assignment(x, 1)); have x==3 by {solve();}
+    step_until(assignment(x, 0).entry); step(); have x==3 by {solve();}
+    step_until(assignment(x, 1).entry); have x==3 by {solve();}
     step(); step_until(function.exit); solve();
 }"#;
     verify_c_sources(proof, &[("assignment.c", source)]).unwrap();
     let exited = proof.replace(
         "step(); step_until(function.exit); solve();",
-        "step(); step_until(function.exit); step_until(assignment(x, 1)); solve();",
+        "step(); step_until(function.exit); step_until(assignment(x, 1).entry); solve();",
     );
     let error = verify_c_sources(&exited, &[("assignment.c", source)]).unwrap_err();
     assert!(error.message().contains("assignment(x, 1)"), "{error:?}");
@@ -2165,7 +2180,7 @@ int32 f() {ensures result==4;} by {
         "int32 f(int32 n) {int32 x; if(0==1) {x=1;} else {x=2;} return x;}",
     ] {
         let proof = r#"verifying "assignment.c";
-int32 f(int32 n) {ensures result==1; } by {step_until(assignment(x, 0)); step(); step_until(function.exit); solve();}"#;
+int32 f(int32 n) {ensures result==1; } by {step_until(assignment(x, 0).entry); step(); step_until(function.exit); solve();}"#;
         assert!(verify_c_sources(proof, &[("assignment.c", source)]).is_err());
     }
     let retained_states = proof.replace("have x==3", "have at(assignment(x, 0).entry, x==3)");
@@ -2179,7 +2194,7 @@ fn execute_until_read_checks_access_and_retains_real_loaded_bounds() {
         "int32 f(const uint8* p) {int32 x;int32 other;other=1;x=(int32)*p;other=2;return x;}";
     let proof = r#"verifying "read.c";
 int32 f(const uint8* p) {views p[0..1]; ensures 0<=result and result<=255;} by {
-    step_until(read(0)); step(); have 0<=x and x<=255 by {solve();} step_until(function.exit); solve();
+    step_until(read(0).entry); step(); have 0<=x and x<=255 by {solve();} step_until(function.exit); solve();
 }"#;
     verify_c_sources(proof, &[("read.c", source)]).unwrap();
     for (from, to) in [
@@ -2189,7 +2204,7 @@ int32 f(const uint8* p) {views p[0..1]; ensures 0<=result and result<=255;} by {
     ] {
         assert!(verify_c_sources(&proof.replace(from, to), &[("read.c", source)]).is_err());
     }
-    let backwards = proof.replace("step(); have", "step(); step_until(read(0)); have");
+    let backwards = proof.replace("step(); have", "step(); step_until(read(0).entry); have");
     assert!(
         verify_c_sources(&backwards, &[("read.c", source)])
             .unwrap_err()
@@ -2204,7 +2219,7 @@ fn step_result_binding_names_checked_values_and_survives_overwrite() {
     let source = "int32 f(const uint8* p) {uint8 x; x=*p; x=(uint8)0; return (int32)x;}";
     let proof = r#"verifying "read.c";
 int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
-    step_until(read(0));
+    step_until(read(0).entry);
     let { result: value } = step();
     mark loaded;
     have 0<=value as int32 and 255>=value as int32 by {solve();}
@@ -2229,8 +2244,8 @@ int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
             "let { result: value } = step(); let { result: value } = step();",
         ),
         proof.replace(
-            "step_until(read(0));",
-            "step_until(read(0)); step(); step();",
+            "step_until(read(0).entry);",
+            "step_until(read(0).entry); step(); step();",
         ),
     ] {
         assert!(verify_c_sources(&invalid, &[("read.c", source)]).is_err());

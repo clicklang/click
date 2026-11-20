@@ -215,6 +215,7 @@ fn recursive_child_resources_round_trip_and_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn recursive_child_resources_independent_layers_own_memory_and_recheck() {
     let source = r#"verifying "middle.c";
@@ -289,6 +290,7 @@ fn recursive_child_resources_do_not_capture_earlier_function_names() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn recursive_child_resources_reject_bad_lifetimes_and_folds() {
     let c = [(
@@ -421,6 +423,7 @@ fn integer_resource_match_binding_verifies_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn tree_node_init_and_stored_child_links_expand() {
     let (source, c) = tree_node_init_fixture();
@@ -435,6 +438,7 @@ fn tree_node_init_and_stored_child_links_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.0s in the parallel gate"]
 fn tree_node_init_rejects_invalid_models_and_ownership() {
     let (source, c) = tree_node_init_fixture();
@@ -499,6 +503,7 @@ const INDEPENDENT_CHILDREN_C: &[(&str, &str)] = &[(
 )];
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn independent_children_construct_and_expand() {
     let source = independent_children_source();
@@ -532,6 +537,7 @@ fn independent_children_may_change_roles_in_a_new_model() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn independent_children_reject_bad_selection_and_consumed_names() {
     let source = independent_children_source();
@@ -588,6 +594,7 @@ fn independent_children_reject_bad_selection_and_consumed_names() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn conditional_explicit_folds_update_models_and_expand() {
     let source = r#"verifying "cell.c";
@@ -836,6 +843,7 @@ fn resource_match_binds_pointer_and_nested_algebraic_payloads() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn instance_return_folds_follow_distinct_program_results_after_explicit_splits() {
     let source = r#"verifying "read.c";
@@ -955,6 +963,7 @@ fn named_instance_memory_body_round_trip_preserves_fields() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn single_cell_adt_initializers_verify_and_expand() {
     let source = r#"verifying "cell.c";
@@ -1057,6 +1066,7 @@ fn single_cell_adt_initializers_reject_invalid_models() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn single_cell_adt_initializers_preserve_arbitrary_entry_models() {
     let source = r#"verifying "cell.c";
@@ -1519,11 +1529,10 @@ fn call_binder_transport_prints_and_expands_its_map_unchanged() {
     .unwrap();
 }
 
-/// A `let` naming a call's outputs is parsed only with a binder map, so a
-/// call that lends no instance prints its empty map, the spelling the source
-/// above parsed from: expansion emits exactly this printing.
+/// Outputs are independent of the optional map. Both input spellings print
+/// a named call without a map when it has no entries.
 #[test]
-fn call_output_binding_without_lent_instances_prints_its_empty_map() {
+fn call_output_binding_omits_an_empty_input_map() {
     let source = r#"
         resource Counter() { field revision: int32; }
         void make(int32* state) {
@@ -1540,9 +1549,9 @@ fn call_output_binding_without_lent_instances_prints_its_empty_map() {
             owns c: Counter();
             ensures c.revision == 1;
         } by {
-            let { made: m } = step(make, {});
-            let { result: value } = step(get, {});
-            let { made: another, result: status } = step(mixed, {});
+            let { made: m } = step(make);
+            let { result: value } = step(get);
+            let { made: another, result: status } = step(mixed);
         }
     "#;
     let file = parser::parse(source).unwrap();
@@ -1551,26 +1560,52 @@ fn call_output_binding_without_lent_instances_prints_its_empty_map() {
     };
     let printed = printing::format_proof_tactics(tactics).unwrap();
     assert!(
-        printed.contains("let { made: m } = step(make, {});"),
+        printed.contains("let { made: m } = step(make);"),
         "{printed}"
     );
     assert!(
-        printed.contains("let { result: value } = step(get, {});"),
+        printed.contains("let { result: value } = step(get);"),
         "{printed}"
     );
     assert!(
-        printed.contains("let { result: status, made: another } = step(mixed, {});"),
+        printed.contains("let { result: status, made: another } = step(mixed);"),
         "{printed}"
     );
-    let reparsed = parser::parse(&source.replace(
-        "let { made: another, result: status } = step(mixed, {});",
-        "let { result: status, made: another } = step(mixed, {});",
-    ))
-    .unwrap();
+    let with_empty_map = source.replace("step(make)", "step(make, {})").replace(
+        "let { made: another, result: status } = step(mixed);",
+        "let { result: status, made: another } = step(mixed);",
+    );
+    let reparsed = parser::parse(&with_empty_map).unwrap();
     let SourceProof::Script(again) = reparsed.function_blocks()[3].grouped_proof().unwrap() else {
         panic!("expected script")
     };
     assert_eq!(printed, printing::format_proof_tactics(again).unwrap());
+}
+
+#[test]
+fn named_contract_call_can_bind_a_result_without_an_input_map() {
+    let source = r#"verifying "call.c";
+        contract int32 Exact(int32 n) { ensures result == n; }
+        int32 run(int32 (*cb)(int32), int32 n) {
+            requires Exact(cb);
+            ensures result == n;
+        } by {
+            let { result: value } = step(Exact);
+            step_until(function.exit);
+            solve();
+        }
+    "#;
+    let inputs = [(
+        "call.c",
+        "int32 run(int32 (*cb)(int32), int32 n) { return cb(n); }",
+    )];
+    let verified = verify_c_sources(source, &inputs).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified, "run").unwrap();
+    assert!(
+        expanded.contains("let { result: value } = step(Exact);"),
+        "{expanded}"
+    );
+    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &inputs)).unwrap();
 }
 
 #[test]
@@ -1603,6 +1638,15 @@ fn call_binder_transport_rejects_a_frontier_call_to_another_function() {
             .contains("requires a call to `increment` at the current frontier"),
         "{}",
         error.message()
+    );
+
+    let missing = source.replace("step(increment, { first: c })", "step(increment)");
+    let error = verify_c_sources(&missing, &c).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("call map omits `increment` binder `first`"),
+        "{error}"
     );
 }
 
@@ -1708,7 +1752,10 @@ fn contract_application_binds_each_handle_by_name() {
             "Touch",
             "declares resource handles; write `step(Touch, { cell: ... })`",
         ),
-        ("Touch, {}", "call map omits `Touch` binder `cell`"),
+        (
+            "Touch, {}",
+            "declares resource handles; write `step(Touch, { cell: ... })`",
+        ),
         (
             "Touch, { slot: first }",
             "`Touch` declares no resource instance binder `slot`",
@@ -2752,6 +2799,7 @@ fn automatic_scope_exit_preserves_expanded_execution() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn bounded_population_increment_expands_and_checks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2813,6 +2861,7 @@ fn aggregate_parameter_symbolic_index_expands_and_checks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn resource_contract_regressions_expand_and_check() {
     for (fixture_name, function_name) in [
@@ -2999,28 +3048,28 @@ fn step_output_patterns_reject_ambiguous_and_conflicting_bindings() {
     "#;
     for (output, expected) in [
         (
-            "let value = step(scalar, {});",
+            "let value = step(scalar);",
             "step outputs require named bindings",
         ),
         (
-            "let value = step(make, {});",
+            "let value = step(make);",
             "step outputs require named bindings",
         ),
         ("let value = step();", "step outputs require named bindings"),
         (
-            "let { result: a, result: b } = step(scalar, {});",
+            "let { result: a, result: b } = step(scalar);",
             "duplicate output key",
         ),
         (
-            "let { result: a, made: a } = step(make, {});",
+            "let { result: a, made: a } = step(make);",
             "introduces name `a` twice",
         ),
         (
-            "let { result: a } = step(make, {});",
+            "let { result: a } = step(make);",
             "omits produced resource binder",
         ),
         (
-            "let { unknown: a } = step(scalar, {});",
+            "let { unknown: a } = step(scalar);",
             "does not produce named resource",
         ),
         ("let { made: a } = step();", "only the `result` output"),

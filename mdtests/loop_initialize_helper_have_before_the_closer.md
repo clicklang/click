@@ -42,7 +42,7 @@ int spin(int n) {
             have n + 0 == n by normalize();
             solve();
         }
-        preserve by {
+        maintain by {
             step();
         }
     }

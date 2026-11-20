@@ -162,6 +162,15 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     else {
         return None;
     };
+    let conversion_literal = |word: &MachineTerm| {
+        let (destination, value) =
+            crate::kernel::MachineOperandView::Legacy(word).checked_literal_integer_conversion()?;
+        destination.constant_term(value)
+    };
+    let left_literal = conversion_literal(left);
+    let right_literal = conversion_literal(right);
+    let left = left_literal.as_ref().unwrap_or(left);
+    let right = right_literal.as_ref().unwrap_or(right);
     // Wide equality reads no sign and is filed at `int64` whatever its
     // literals' signedness (`ConditionTerm::int64_equal`): compare the bits.
     if *format == MachineIntegerType::Int64
@@ -186,21 +195,15 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     {
         return None;
     }
-    match ConditionTerm::machine_compare(
-        *format,
-        *relation,
-        left.as_ref().clone(),
-        right.as_ref().clone(),
-    ) {
+    match ConditionTerm::machine_compare(*format, *relation, left.clone(), right.clone()) {
         ConditionTerm::Constant(value) => Some(value),
         _ => None,
     }
 }
 
 /// The value of a closed condition from its literal roots alone: a constant,
-/// a closed native comparison ([`literal_native_comparison_value`]), or a
-/// `bool` equality of two constants. Lowering retains the last two as
-/// written; checking and exact matching decide them here.
+/// a native machine or float comparison, or a `bool` equality of two
+/// constants. Checking and exact matching decide the retained comparisons here.
 pub(crate) fn closed_condition_value(condition: &ConditionTerm) -> Option<bool> {
     match condition {
         ConditionTerm::Constant(value) => Some(*value),
@@ -208,7 +211,8 @@ pub(crate) fn closed_condition_value(condition: &ConditionTerm) -> Option<bool> 
             (ConditionTerm::Constant(left), ConditionTerm::Constant(right)) => Some(left == right),
             _ => None,
         },
-        condition => literal_native_comparison_value(condition),
+        condition => literal_native_comparison_value(condition)
+            .or_else(|| condition.literal_float_comparison_value()),
     }
 }
 

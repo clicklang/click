@@ -3042,6 +3042,7 @@ pub(super) fn decode_crate(
     }
     // A refusal while naming or checking an item names where it is.
     let mut item_location = format!("{source}:1");
+    let mut constant_initializers = BTreeSet::new();
     (|| -> Result<(), String> {
         for (id, f) in krate.fun_decls.iter_indexed() {
             if !f.item_meta.is_local {
@@ -3201,7 +3202,9 @@ pub(super) fn decode_crate(
                 }
                 a::FunSource::VTableShim => continue,
                 a::FunSource::GlobalInitializer(reference) => {
-                    adapter.constant_initializer_name(id, f, reference)?
+                    let name = adapter.constant_initializer_name(id, f, reference)?;
+                    constant_initializers.insert(name.clone());
+                    name
                 }
                 _ => return Err(unsupported("function source")),
             };
@@ -3529,6 +3532,7 @@ pub(super) fn decode_crate(
         let plumbing = adapter.closure_plumbing(body)?;
         let mut names = BTreeMap::new();
         let mut slice_pairs = BTreeMap::new();
+        let mut anonymous_slice_components = BTreeSet::new();
         let mut parameters = Vec::new();
         let mut locals = Vec::new();
         let mut local_names = BTreeSet::new();
@@ -3610,6 +3614,9 @@ pub(super) fn decode_crate(
                     }
                     reserved.insert(component.clone());
                     local_names.insert(component.clone());
+                    if local.name.is_none() {
+                        anonymous_slice_components.insert(component.clone());
+                    }
                     locals.push(out::Place {
                         name: component.clone(),
                         value_type: Type::ByteSlice { mutable: false },
@@ -3790,12 +3797,23 @@ pub(super) fn decode_crate(
             .map(|parameter| (parameter.name.clone(), parameter.value_type.clone()))
             .collect();
         temporaries::substitute_literals(&mut locals, &mut blocks, &temporaries, &parameter_types);
-        temporaries::substitute_pure_values(&mut locals, &mut blocks, &temporaries);
+        temporaries::substitute_pure_values(
+            &mut locals,
+            &mut blocks,
+            &temporaries,
+            &constant_initializers,
+        );
         temporaries::box_initializers(&mut locals, &mut blocks, &temporaries);
         temporaries::call_steps(&mut locals, &mut blocks, &temporaries);
         temporaries::collapse_iterator_moves(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_range_payloads(&mut locals, &mut blocks, &temporaries);
         temporaries::bind_slice_payloads(&mut locals, &mut blocks, &temporaries);
+        temporaries::bind_copied_slice_elements(&mut locals, &mut blocks, &temporaries);
+        temporaries::bind_split_slice_results(
+            &mut locals,
+            &mut blocks,
+            &anonymous_slice_components,
+        );
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
         temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
         functions.push(out::Function {
@@ -4091,7 +4109,7 @@ mod tests {
     #[test]
     fn charon_plain_record_loop_starts_each_pass_with_fresh_storage() {
         let artifact = include_bytes!(
-            "../../../design/charon-trial/plain-record-loop/.click/loop/loop.rs.ullbc"
+            "../../../design/charon-trial/plain-record-loop/.click/captures/loop/loop.rs.ullbc"
         );
         let source = include_bytes!("../../../design/charon-trial/plain-record-loop/loop.rs");
         let claim = include_str!("../../../design/charon-trial/plain-record-loop/loop.click");
@@ -4110,7 +4128,7 @@ mod tests {
         let sources = BTreeMap::from([("quad.rs".into(), source.to_vec())]);
         decode_crate(
             include_bytes!(
-                "../../../design/charon-trial/loop-array-copy/.click/quad/quad.rs.ullbc"
+                "../../../design/charon-trial/loop-array-copy/.click/captures/quad/quad.rs.ullbc"
             ),
             "quad.rs",
             source,
@@ -4121,6 +4139,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 2s in the parallel gate"]
     fn charon_loop_array_copy_requires_fresh_initialized_storage() {
         let export = loop_array_copy_export();
@@ -4253,7 +4272,9 @@ mod tests {
     #[test]
     fn charon_storage_restart_cannot_erase_a_drop_record() {
         let mut export = decode(
-            include_bytes!("../../../design/charon-trial/borrowed-loop/.click/loop/loop.rs.ullbc"),
+            include_bytes!(
+                "../../../design/charon-trial/borrowed-loop/.click/captures/loop/loop.rs.ullbc"
+            ),
             "loop.rs",
             include_bytes!("../../../design/charon-trial/borrowed-loop/loop.rs"),
         )
@@ -4303,11 +4324,11 @@ mod tests {
     use super::*;
     use crate::surface::ProgramVerificationSession;
     const ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/.click/trial/trial.rs.ullbc");
+        include_bytes!("../../../design/charon-trial/.click/captures/trial/trial.rs.ullbc");
     const SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/trial.rs");
 
     const ARRAY_ARTIFACT: &[u8] = include_bytes!(
-        "../../../design/charon-trial/conversions-arrays/.click/arrays/arrays.rs.ullbc"
+        "../../../design/charon-trial/conversions-arrays/.click/captures/arrays/arrays.rs.ullbc"
     );
     const ARRAY_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/conversions-arrays/arrays.rs");
@@ -4315,7 +4336,9 @@ mod tests {
     #[test]
     fn charon_chunks_keep_state_and_owned_moves() {
         let export = decode(
-            include_bytes!("../../../design/charon-trial/chunks/.click/chunks/chunks.rs.ullbc"),
+            include_bytes!(
+                "../../../design/charon-trial/chunks/.click/captures/chunks/chunks.rs.ullbc"
+            ),
             "chunks.rs",
             include_bytes!("../../../design/charon-trial/chunks/chunks.rs"),
         )
@@ -4358,10 +4381,13 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: original chunk-iterator whole-sidecar proof measured at 16.9 s"]
     fn charon_chunks_original_sidecar_verifies() {
         let export = decode(
-            include_bytes!("../../../design/charon-trial/chunks/.click/chunks/chunks.rs.ullbc"),
+            include_bytes!(
+                "../../../design/charon-trial/chunks/.click/captures/chunks/chunks.rs.ullbc"
+            ),
             "chunks.rs",
             include_bytes!("../../../design/charon-trial/chunks/chunks.rs"),
         )
@@ -4375,7 +4401,7 @@ mod tests {
     }
 
     const OPERATOR_ARTIFACT: &[u8] = include_bytes!(
-        "../../../design/charon-trial/assignment-operators/.click/operators/operators.rs.ullbc"
+        "../../../design/charon-trial/assignment-operators/.click/captures/operators/operators.rs.ullbc"
     );
     const OPERATOR_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/assignment-operators/operators.rs");
@@ -4400,6 +4426,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: assignment-operator whole-sidecar proof measured at 13 s"]
     fn charon_assignment_operator_source_bodies_verify() {
         let export = decode(OPERATOR_ARTIFACT, "operators.rs", OPERATOR_SOURCE).unwrap();
@@ -4489,7 +4516,7 @@ mod tests {
     }
 
     const ITERATION_ARTIFACT: &[u8] = include_bytes!(
-        "../../../design/charon-trial/array-iteration/.click/iteration/iteration.rs.ullbc"
+        "../../../design/charon-trial/array-iteration/.click/captures/iteration/iteration.rs.ullbc"
     );
     const ITERATION_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/array-iteration/iteration.rs");
@@ -4497,6 +4524,7 @@ mod tests {
         include_str!("../../../design/charon-trial/array-iteration/iteration.click");
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.7s in the parallel gate"]
     fn charon_shared_array_iteration_keeps_typed_state_and_both_next_edges() {
         let export = decode(ITERATION_ARTIFACT, "iteration.rs", ITERATION_SOURCE).unwrap();
@@ -4541,6 +4569,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.7s in the parallel gate"]
     fn charon_shared_iteration_rejects_forged_declarations_signatures_and_paths() {
         for mutation in 0..8 {
@@ -4635,12 +4664,13 @@ mod tests {
     }
 
     const OWNED_ARRAY_ARTIFACT: &[u8] = include_bytes!(
-        "../../../design/charon-trial/owned-array-fields/.click/owned/owned.rs.ullbc"
+        "../../../design/charon-trial/owned-array-fields/.click/captures/owned/owned.rs.ullbc"
     );
     const OWNED_ARRAY_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/owned-array-fields/owned.rs");
-    const FIELDS_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/array-fields/.click/fields/fields.rs.ullbc");
+    const FIELDS_ARTIFACT: &[u8] = include_bytes!(
+        "../../../design/charon-trial/array-fields/.click/captures/fields/fields.rs.ullbc"
+    );
     const FIELDS_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/array-fields/fields.rs");
     #[test]
@@ -4705,7 +4735,7 @@ mod tests {
     }
 
     const ARITHMETIC_ARTIFACT: &[u8] = include_bytes!(
-        "../../../design/charon-trial/arithmetic/.click/arithmetic/arithmetic.rs.ullbc"
+        "../../../design/charon-trial/arithmetic/.click/captures/arithmetic/arithmetic.rs.ullbc"
     );
     const ARITHMETIC_SOURCE: &[u8] =
         include_bytes!("../../../design/charon-trial/arithmetic/arithmetic.rs");
@@ -4786,8 +4816,9 @@ mod tests {
         );
     }
 
-    const NESTED_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/nested/.click/nested/nested.rs.ullbc");
+    const NESTED_ARTIFACT: &[u8] = include_bytes!(
+        "../../../design/charon-trial/nested/.click/captures/nested/nested.rs.ullbc"
+    );
     const NESTED_SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/nested/nested.rs");
 
     #[test]
@@ -4992,11 +5023,13 @@ mod tests {
         );
     }
 
-    const CHUNK_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/chunks/.click/chunks/chunks.rs.ullbc");
+    const CHUNK_ARTIFACT: &[u8] = include_bytes!(
+        "../../../design/charon-trial/chunks/.click/captures/chunks/chunks.rs.ullbc"
+    );
     const CHUNK_SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/chunks/chunks.rs");
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.5s in the parallel gate"]
     fn charon_chunk_models_check_resolved_identity_and_signature() {
         for mutation in 0..7 {
@@ -5067,6 +5100,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 5 s, it verifies the whole sidecar (2026-11-11)"]
     fn charon_chunk_missing_initialization_fails_and_a_duplicate_move_copies_a_value() {
         // Under the library model an iterator is a value. One never
@@ -5116,7 +5150,7 @@ mod tests {
             // body's first byte read is one read later.
             let sidecar = include_str!("../../../design/charon-trial/chunks/chunks.click");
             let sidecar = if duplicate {
-                sidecar.replace("step_until(read(1))", "step_until(read(2))")
+                sidecar.replace("step_until(read(1).entry)", "step_until(read(2).entry)")
             } else {
                 sidecar.to_string()
             };
@@ -5163,8 +5197,9 @@ mod tests {
         assert!(error.contains("iterator Option projection"), "{error}");
     }
 
-    const SLICE_ARTIFACT: &[u8] =
-        include_bytes!("../../../design/charon-trial/slices/.click/slices/slices.rs.ullbc");
+    const SLICE_ARTIFACT: &[u8] = include_bytes!(
+        "../../../design/charon-trial/slices/.click/captures/slices/slices.rs.ullbc"
+    );
     const SLICE_SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/slices/slices.rs");
 
     #[test]
@@ -5280,7 +5315,7 @@ mod tests {
     #[test]
     fn charon_identity_from_requires_the_resolved_generic_signature() {
         const ARTIFACT: &[u8] = include_bytes!(
-            "../../../design/charon-trial/identity-from/.click/identity/identity.rs.ullbc"
+            "../../../design/charon-trial/identity-from/.click/captures/identity/identity.rs.ullbc"
         );
         const SOURCE: &[u8] =
             include_bytes!("../../../design/charon-trial/identity-from/identity.rs");
@@ -5337,7 +5372,7 @@ mod tests {
     #[test]
     fn charon_borrowed_iterator_forwarding_keeps_one_state_and_checks_declarations() {
         const ARTIFACT: &[u8] = include_bytes!(
-            "../../../design/charon-trial/borrowed-chunks/.click/chunks/chunks.rs.ullbc"
+            "../../../design/charon-trial/borrowed-chunks/.click/captures/chunks/chunks.rs.ullbc"
         );
         const SOURCE: &[u8] =
             include_bytes!("../../../design/charon-trial/borrowed-chunks/chunks.rs");
@@ -5439,6 +5474,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn charon_array_index_bounds_remain_checked_after_normalization() {
         const CLAIM: &str =
@@ -5490,7 +5526,9 @@ mod tests {
     #[test]
     fn charon_borrowed_loop_keeps_a_real_while_guard() {
         let export = decode(
-            include_bytes!("../../../design/charon-trial/borrowed-loop/.click/loop/loop.rs.ullbc"),
+            include_bytes!(
+                "../../../design/charon-trial/borrowed-loop/.click/captures/loop/loop.rs.ullbc"
+            ),
             "loop.rs",
             include_bytes!("../../../design/charon-trial/borrowed-loop/loop.rs"),
         )
@@ -5537,10 +5575,13 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.7s in the parallel gate"]
     fn charon_borrowed_loop_rejects_missing_guard_cleanup() {
         let mut export = decode(
-            include_bytes!("../../../design/charon-trial/borrowed-loop/.click/loop/loop.rs.ullbc"),
+            include_bytes!(
+                "../../../design/charon-trial/borrowed-loop/.click/captures/loop/loop.rs.ullbc"
+            ),
             "loop.rs",
             include_bytes!("../../../design/charon-trial/borrowed-loop/loop.rs"),
         )

@@ -55,7 +55,7 @@ work expands into simple tactics:
   already a fact.
 - The searches behind elided arguments, below.
 
-`step_until(target)` repeats `step()` up to its target, and each requirement
+`step_until(point)` repeats `step()` up to its target, and each requirement
 it crosses is proved as a bare `step()`'s is. It walks a loop the facts decide
 and never splits: at a C branch the facts do not decide it is refused, naming
 the proof `if` or `branch` to write there. The tactic reference classifies it

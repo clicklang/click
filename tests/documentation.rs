@@ -907,13 +907,19 @@ fn is_primitive_module(path: &Path) -> bool {
 }
 
 /// The path a sidecar library contract models, from its head: C++
-/// `template<...> <ret> <path>(...)`, `std::span<T, N>::size`, or Rust
+/// `<ret> <path>(...)` with an optional template prefix, or Rust
 /// `fn <path><T>(...)`, `Vec::push`.
 fn sidecar_contract_path(line: &str) -> Option<String> {
     if let Some(rest) = line.strip_prefix("fn ") {
         return rest.split(['<', '(']).next().map(str::to_string);
     }
-    let head = line.strip_prefix("template<")?.split_once("> ")?.1;
+    if !line.ends_with(" {") || line.starts_with("//") || line.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let head = match line.strip_prefix("template<") {
+        Some(template) => template.split_once("> ")?.1,
+        None => line,
+    };
     let head = head.split_once('(')?.0;
     // The path is the last word at angle depth 0: `std::span<T, N>::size`.
     let mut depth = 0i32;
@@ -929,7 +935,8 @@ fn sidecar_contract_path(line: &str) -> Option<String> {
             ch == ' ' && depth == 0
         })
         .map_or(0, |(index, _)| index + 1);
-    Some(head[start..].to_string())
+    let path = &head[start..];
+    path.contains("::").then(|| path.to_string())
 }
 
 /// The Click library files under `library/`, primitive modules or the
@@ -1168,6 +1175,7 @@ fn for_each_library_declaration(source: &str, mut check: impl FnMut(&str)) {
             || line.starts_with("abstract resource ")
             || line.starts_with("fn ")
             || line.starts_with("template<")
+            || sidecar_contract_path(line).is_some()
             || c_interface_function_name(line).is_some();
         if declaration.is_empty() && !starts {
             continue;
@@ -1405,6 +1413,7 @@ fn tactic_form_inventory_is_bidirectional() {
             "arithmetic" => surface == "`solve() using {}`",
             "normalize" => surface == "`normalize()`",
             "normalize-using" => surface == "`normalize() using { P; ... }`",
+            "order-chain" => surface == "`order_chain() using { P; ... }`",
             "arithmetic-using" => surface == "`solve() using { P; ... }`",
             "transport" => surface == "`transport(P, Q)`",
             "transport-using" => surface == "`transport(P, Q) using { R; ... }`",
@@ -1573,7 +1582,7 @@ fn cli_inventory_matches_argument_parsers() {
         ("profile", "src/bin/click-profile.rs"),
         ("expand", "src/bin/click-expand.rs"),
         ("audit", "src/bin/click-audit.rs"),
-        ("import", "src/bin/click-import.rs"),
+        ("capture", "src/bin/click-capture.rs"),
     ] {
         let source = fs::read_to_string(root().join(file)).expect("read CLI source");
         let parser = source
@@ -1915,7 +1924,7 @@ fn cli_synopses_are_exact_help_includes() {
         ("profile", "src/bin/click-profile.rs"),
         ("expand", "src/bin/click-expand.rs"),
         ("audit", "src/bin/click-audit.rs"),
-        ("import", "src/bin/click-import.rs"),
+        ("capture", "src/bin/click-capture.rs"),
         ("docs", "src/bin/click-docs.rs"),
     ] {
         let source = fs::read_to_string(root().join(file)).expect("read CLI source");
@@ -2175,7 +2184,7 @@ fn language_support_summaries_link_to_the_coverage_matrix() {
         "reference/language/limitations.md",
         "reference/language/c.md",
         "reference/rust.md",
-        "reference/cli/import.md",
+        "reference/cli/capture.md",
     ];
     let no_type_lists = [
         "concepts/what-click-proves.md",

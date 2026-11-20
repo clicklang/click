@@ -2811,6 +2811,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.7s in the parallel gate"]
     fn object_macro_recursion_and_amplification_are_bounded() {
         let source = "#define A B\n#define B A\nA\n";

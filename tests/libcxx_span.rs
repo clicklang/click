@@ -188,6 +188,7 @@ fn libcxx_span_binds_the_model_accessors_and_catalog() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned libc++ import, contract expansion, and negative controls"]
 fn libcxx_span_empty_checks_abstract_state() {
     let (root, import) = libcxx_fixture(
@@ -225,6 +226,7 @@ bool probe(const std::span<int>& s) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned libc++ copy assignment import, proof replay, and negative controls"]
 fn libcxx_span_assignment_carries_abstract_state() {
     let (root, import) = libcxx_fixture(
@@ -292,6 +294,7 @@ void probe(std::span<int>& dst, const std::span<int>& src) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned libc++ span constructor proof and replay"]
 fn libcxx_span_constructor_uses_the_catalogs_nonthrowing_contract() {
     let (root, import) = libcxx_fixture(
@@ -326,6 +329,7 @@ fn libcxx_span_constructor_uses_the_catalogs_nonthrowing_contract() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned libc++ span copy initialization proof and replay"]
 fn libcxx_span_copy_initialization_uses_an_opaque_contract() {
     let (root, import) = libcxx_fixture(
@@ -359,6 +363,7 @@ bool probe(const std::span<int>& s) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pinned libc++ by-value span proof and replay"]
 fn libcxx_span_by_value_caller_uses_the_verified_helper() {
     let (root, import) = libcxx_fixture(

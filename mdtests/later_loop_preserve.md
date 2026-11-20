@@ -36,7 +36,7 @@ int32 later_loop_preserve() {
     loop {
         decreases 1 - j;
         invariant j >= 0 and j <= 1;
-        preserve by {
+        maintain by {
             step();
             solve();
         }

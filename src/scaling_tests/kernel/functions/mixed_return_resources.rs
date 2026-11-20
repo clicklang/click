@@ -1492,12 +1492,8 @@ fn returned_hold_installation_ignores_equal_owned_occurrences() {
                 let _fast = crate::kernel::search::FastOperationScope::enter(
                     "selected returned hold installation",
                 );
-                install_returned_composite_hold(
-                    context,
-                    LoanViewBindings::default(),
-                    selected.clone(),
-                )
-                .unwrap()
+                install_returned_view_hold(context, LoanViewBindings::default(), selected.clone())
+                    .unwrap()
             });
         assert_eq!(
             resources.loan_dependency(selected.occurrence),

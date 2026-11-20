@@ -436,7 +436,7 @@ impl ReturnedConsumedCell {
 pub(super) struct EvaluatedReturnOccurrence {
     pub(super) source: ResourceOccurrenceId,
     pub(super) origin: ReturnOwnershipOrigin,
-    clause: Option<usize>,
+    pub(super) clause: Option<usize>,
 }
 
 pub(super) struct EvaluatedReturnResources {
@@ -1636,8 +1636,9 @@ impl PreparedReturnComposition {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) struct ProducedBorrowingPiece {
-    pub(super) support: super::super::loans::EscapingComposite,
+    pub(super) support: super::super::loans::EscapingBorrow,
     pub(super) piece: ResourceFact,
+    pub(super) input_view: Option<usize>,
     // Actual child identities issued by the producer, retained as one group.
     #[allow(dead_code)]
     pub(super) sources: Arc<Vec<ResourceOccurrenceId>>,
@@ -1665,9 +1666,10 @@ impl ProjectedReturnResource {
                 .map(|(_, source)| *source)
                 .collect::<Vec<_>>(),
         );
-        let support = super::super::loans::EscapingComposite {
+        let support = super::super::loans::EscapingBorrow {
             head: self.support.clone(),
             occurrence: self.destination,
+            root_permission: None,
         };
         self.frontier
             .iter()
@@ -1675,6 +1677,7 @@ impl ProjectedReturnResource {
             .map(|piece| ProducedBorrowingPiece {
                 support: support.clone(),
                 piece: piece.clone(),
+                input_view: None,
                 sources: sources.clone(),
             })
             .collect()

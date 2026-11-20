@@ -21,7 +21,7 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
                 contains(memory(p[0..len]), memory(p[i..i + 1]));
             };
         }
-        have contains(kept, kept) by { normalize(); }
+        have contains(kept, kept) by { apply(separation::contains_refl(kept)) using {}; }
         have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
         apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
             defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
@@ -260,7 +260,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     have contains(memory(*arena), memory(arena->live_regions)) by { normalize(); }
     mark initialize_entry;
     have arena->live_regions == 0;
-    loop as initialize_occupied {
+    loop initialize_occupied {
         decreases to_integer(capacity) - to_integer(i);
         invariant 0 <= i and i <= capacity;
         invariant forall (k: int32) {
@@ -269,7 +269,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         owns occupied[0..capacity];
 
         initialize by solve();
-        preserve by {
+        maintain by {
             mark iteration;
             step();
             step();
@@ -313,7 +313,9 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         }
     }
     have at(initialize_entry, arena->live_regions) == 0;
-    have contains(memory(occupied[0..capacity]), memory(occupied[0..capacity])) by { normalize(); }
+    have contains(memory(occupied[0..capacity]), memory(occupied[0..capacity])) by {
+        apply(separation::contains_refl(memory(occupied[0..capacity]))) using {};
+    }
     have separate(memory(occupied[0..capacity]), memory(arena->live_regions)) by {
         apply(separation::separate_restrict(memory(occupied[0..capacity]), memory(*arena), memory(occupied[0..capacity]), memory(arena->live_regions))) using {
             separate(memory(occupied[0..capacity]), memory(*arena));
@@ -484,7 +486,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
         let outcome = fold(arena_alloc_result(region), { model: ArenaAllocOutcome::Failure() });
         have result == 0 by {
-            normalize();
+            known();
         }
         have forall (k: int32) { result == 0 and 0 <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
             intro();
@@ -499,11 +501,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         known();
         have to_integer(st.live) == (to_integer(old(st.live)) + to_integer(result)) by {
-            normalize();
+            known();
         }
         known();
         have arena->capacity == old(arena->capacity) by {
-            normalize();
+            known();
         }
         known();
         have arena->capacity <= 536870911 by {
@@ -511,12 +513,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         known();
         have st.capacity == arena->capacity by {
-            normalize();
+            known();
         }
         known();
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure() by {
             intro();
-            normalize();
+            known();
         }
         known();
         have result == 1 implies outcome.model == ArenaAllocOutcome::Success(region->start, region->end) by {
@@ -554,7 +556,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -564,7 +566,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -574,7 +576,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -584,7 +586,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -601,7 +603,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
         let outcome = fold(arena_alloc_result(region), { model: ArenaAllocOutcome::Failure() });
         have result == 0 by {
-            normalize();
+            known();
         }
         have forall (k: int32) { result == 0 and 0 <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
             intro();
@@ -616,11 +618,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         known();
         have to_integer(st.live) == (to_integer(old(st.live)) + to_integer(result)) by {
-            normalize();
+            known();
         }
         known();
         have arena->capacity == old(arena->capacity) by {
-            normalize();
+            known();
         }
         known();
         have arena->capacity <= 536870911 by {
@@ -628,12 +630,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         known();
         have st.capacity == arena->capacity by {
-            normalize();
+            known();
         }
         known();
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure() by {
             intro();
-            normalize();
+            known();
         }
         known();
         have result == 1 implies outcome.model == ArenaAllocOutcome::Success(region->start, region->end) by {
@@ -671,7 +673,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -681,7 +683,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -691,7 +693,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -701,7 +703,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -745,7 +747,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         observe(old(arena->occupied)[0..old(arena->capacity)]);
     }
     let run = fold(arena_scan(arena->data, arena->occupied, arena->capacity), { lo: 0, hi: 0 });
-    loop as find_first_free_run {
+    loop find_first_free_run {
         decreases (to_integer(arena->capacity) - to_integer(i));
         owns run: arena_scan(arena->data, arena->occupied, arena->capacity);
         invariant run.hi == i;
@@ -756,15 +758,15 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         invariant arena->occupied == old(arena->occupied);
         initialize by {
             have run.hi == i by {
-                normalize();
+                known();
             }
             have (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) by {
-                normalize();
+                known();
             }
             have 0 <= run_length and run_length <= count by {
                 all {
                     0 <= run_length => {
-                        normalize();
+                        known();
                     }
                     run_length <= count => {
                         solve() using { at(function.entry, 0) < at(function.entry, count); };
@@ -775,13 +777,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             have arena->data == old(arena->data) by {
-                normalize();
+                known();
             }
             have arena->occupied == old(arena->occupied) by {
-                normalize();
+                known();
             }
         }
-        preserve by {
+        maintain by {
             mark iteration;
             let { lo: lo, hi: hi } = unfold(run);
             have hi == i by {
@@ -834,7 +836,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     }
                 }
                 have to_integer(at(iteration, i)) < (to_integer(at(iteration, i)) + 1) by {
-                    normalize();
+                    known();
                 }
                 have at(iteration, i) < i by {
                     solve() using { (at(region(13).entry, i) as int32) < (at(region(13).entry,
@@ -928,7 +930,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 let run = fold(arena_scan(arena->data, arena->occupied, arena->capacity), { lo: lo, hi: i });
                 have run.hi == i by {
-                    normalize();
+                    known();
                 }
                 have (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) by {
                     known();
@@ -970,14 +972,14 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     known();
                 }
                 have arena->data == old(arena->data) by {
-                    normalize();
+                    known();
                 }
                 have arena->occupied == old(arena->occupied) by {
-                    normalize();
+                    known();
                 }
                 have (to_integer(arena->capacity) - to_integer(i)) < at(region(13).entry, (to_integer(arena->capacity) - to_integer(i))) by {
                     rewrite(to_integer((at(iteration, i) + 1)), (to_integer(at(iteration, i)) + 1));
-                    normalize();
+                    known();
                 }
             } else {
                 if at(region(13).entry, arena->occupied[i]) == at(region(13).entry, 0) {
@@ -1045,18 +1047,18 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     known();
                 }
                 have run.hi == i by {
-                    normalize();
+                    known();
                 }
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) by {
                     intro();
-                    normalize();
+                    known();
                 }
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) implies 0 <= run_length and run_length <= count by {
                     intro();
                     intro();
                     all {
                         0 <= run_length => {
-                            normalize();
+                            known();
                         }
                         run_length <= count => {
                             solve() using { at(function.entry, 0) < at(function.entry, count); };
@@ -1074,7 +1076,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     intro();
                     intro();
                     intro();
-                    normalize();
+                    known();
                 }
                 have run.hi == i implies (to_integer(run.lo) + to_integer(run_length)) == to_integer(i) implies 0 <= run_length and run_length <= count implies forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == at(find_first_free_run.entry, arena->occupied[k]) } implies arena->data == old(arena->data) implies arena->occupied == old(arena->occupied) by {
                     intro();
@@ -1082,11 +1084,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     intro();
                     intro();
                     intro();
-                    normalize();
+                    known();
                 }
                 have (to_integer(arena->capacity) - to_integer(i)) < at(region(13).entry, (to_integer(arena->capacity) - to_integer(i))) by {
                     rewrite(to_integer((at(iteration, i) + 1)), (to_integer(at(iteration, i)) + 1));
-                    normalize();
+                    known();
                 }
             }
         }
@@ -1114,7 +1116,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         let st = fold(arena_state(arena), { live: n, capacity: arena->capacity });
         let outcome = fold(arena_alloc_result(region), { model: ArenaAllocOutcome::Failure() });
         have result == 0 by {
-            normalize();
+            known();
         }
         have forall (k: int32) { result == 0 and 0 <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
             intro();
@@ -1134,11 +1136,11 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         known();
         have to_integer(st.live) == (to_integer(old(st.live)) + to_integer(result)) by {
-            normalize();
+            known();
         }
         known();
         have arena->capacity == old(arena->capacity) by {
-            normalize();
+            known();
         }
         known();
         have arena->capacity <= 536870911 by {
@@ -1146,12 +1148,12 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         known();
         have st.capacity == arena->capacity by {
-            normalize();
+            known();
         }
         known();
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure() by {
             intro();
-            normalize();
+            known();
         }
         known();
         have result == 1 implies outcome.model == ArenaAllocOutcome::Success(region->start, region->end) by {
@@ -1189,7 +1191,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -1199,7 +1201,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -1209,7 +1211,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -1219,7 +1221,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             intro();
             have result == 1;
             have not result == 1 by {
-                normalize();
+                known();
             }
             contradiction(result == 1);
         }
@@ -1293,14 +1295,14 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         have to_integer(start) == to_integer(run_lo) by {
             rewrite(at(function.entry, to_integer(i)), at(function.entry, (to_integer(run_lo) + to_integer(count))));
-            normalize();
+            known();
         }
         have start == run_lo by {
             known();
         }
         step();
         have end == i by {
-            normalize();
+            known();
         }
         have run_lo <= arena->capacity by {
             solve() using { run_lo <= run_hi; run_hi <= at(region(0).entry, arena->capacity); };
@@ -1318,7 +1320,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         step();
         have i == start by {
-            normalize();
+            known();
         }
         have 0 <= start by {
             known();
@@ -1358,7 +1360,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             have k < end;
             have 0 <= start by { known(); }
             have 0 <= k by {
-                normalize() using { 0 <= start; start <= k; };
+                order_chain() using { 0 <= start; start <= k; };
             }
             have k < arena->capacity by {
                 solve() using { k < end; at(function.entry, end) <= at(function.entry, arena->capacity); };
@@ -1368,16 +1370,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 known();
             }
             instantiate(forall (j: int32) { 0 <= j and j < arena->capacity implies arena->occupied[j] == old(arena->occupied[j]) }, k);
-            normalize() using {
-                arena->occupied[k] == 0;
-                arena->occupied[k] == old(arena->occupied[k]);
-            };
+            known();
         }
         have viewable(arena->occupied[0..arena->capacity]) by {
             observe(old(arena->occupied)[0..old(arena->capacity)]);
         }
         let w = fold(arena_window(arena->data, arena->occupied, arena->capacity, start, end), { next: start });
-        loop as mark_free_run {
+        loop mark_free_run {
             decreases (to_integer(end) - to_integer(i));
             owns w: arena_window(arena->data, arena->occupied, arena->capacity, start, end);
             invariant w.next == i;
@@ -1387,26 +1386,26 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             invariant arena->occupied == old(arena->occupied);
             initialize by {
                 have w.next == i by {
-                    normalize();
+                    known();
                 }
                 have forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } by {
                     intro();
                     intro();
-                    normalize();
+                    known();
                 }
                 have forall (k: int32) { end <= k and k < arena->capacity implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } by {
                     intro();
                     intro();
-                    normalize();
+                    known();
                 }
                 have arena->data == old(arena->data) by {
-                    normalize();
+                    known();
                 }
                 have arena->occupied == old(arena->occupied) by {
-                    normalize();
+                    known();
                 }
             }
-            preserve by {
+            maintain by {
                 let { next: m } = unfold(w);
                 have m == i by {
                     known();
@@ -1431,7 +1430,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have 0 <= start by { known(); }
                 have 0 <= i by {
-                    normalize() using { 0 <= start; start <= i; };
+                    order_chain() using { 0 <= start; start <= i; };
                 }
                 have i < arena->capacity by {
                     solve() using { at(region(24).entry, i) < at(region(24).entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
@@ -1476,39 +1475,29 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 step();
                 have separate(statement(13).statement(0).footprint, memory(arena->occupied)) by {
-                    normalize() using {
-                        separate(memory(arena->occupied), memory(old(arena->occupied)[i]));
-                    };
+                    known();
                 }
                 have arena->occupied == at(opened, arena->occupied) by {
                     preserve(memory(arena->occupied), statement(13).statement(0));
                 }
                 have arena->occupied == old(arena->occupied) by {
-                    normalize() using {
-                        arena->occupied == at(opened, arena->occupied);
-                        at(opened, arena->occupied) == old(arena->occupied);
-                    };
+                    known();
                 }
                 have at(opened, separate(statement(13).statement(0).footprint, memory(arena->capacity))) by {
-                    normalize() using { at(opened, separate(memory(arena->capacity), memory(arena->occupied[i]))); };
+                    known();
                 }
                 have arena->capacity == at(opened, arena->capacity) by {
                     preserve(at(opened, memory(arena->capacity)), statement(13).statement(0));
                 }
                 have arena->capacity == old(arena->capacity) by { known(); }
                 have separate(statement(13).statement(0).footprint, memory(arena->data)) by {
-                    normalize() using {
-                        separate(memory(arena->data), memory(old(arena->occupied)[i]));
-                    };
+                    known();
                 }
                 have arena->data == at(opened, arena->data) by {
                     preserve(memory(arena->data), statement(13).statement(0));
                 }
                 have arena->data == old(arena->data) by {
-                    normalize() using {
-                        arena->data == at(opened, arena->data);
-                        at(opened, arena->data) == old(arena->data);
-                    };
+                    known();
                 }
                 have forall (k: int32) { (to_integer(at(opened, i)) + 1) <= to_integer(k) and k < end implies arena->occupied[k] == 0 } by {
                     intro();
@@ -1543,7 +1532,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using { at(opened, i) != k; };
                     }
                     have at(opened, separate(statement(13).statement(0).footprint, memory(arena->occupied[k]))) by {
-                        normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                        known();
                     }
                     rewrite(arena->occupied, at(opened, arena->occupied));
                     known();
@@ -1563,14 +1552,14 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             known();
                         }
                         have 0 <= k by {
-                            normalize() using { 0 <= start; start <= k; };
+                            order_chain() using { 0 <= start; start <= k; };
                         }
                         have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
                         have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
                             apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using { at(opened, i) != k; };
                         }
                         have at(opened, separate(statement(13).statement(0).footprint, memory(arena->occupied[k]))) by {
-                            normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                            known();
                         }
                         rewrite(arena->occupied, at(opened, arena->occupied));
                         known();
@@ -1607,7 +1596,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using { at(opened, i) != k; };
                     }
                     have at(opened, separate(statement(13).statement(0).footprint, memory(arena->occupied[k]))) by {
-                        normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                        known();
                     }
                     rewrite(arena->occupied, at(opened, arena->occupied));
                     known();
@@ -1639,7 +1628,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using { at(opened, i) != k; };
                     }
                     have at(opened, separate(statement(13).statement(0).footprint, memory(arena->occupied[k]))) by {
-                        normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                        known();
                     }
                     rewrite(arena->occupied, at(opened, arena->occupied));
                     known();
@@ -1702,24 +1691,18 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     intro();
                     instantiate(forall (j: int32) { i <= j and j < end implies arena->occupied[j] == 0 }, k);
                     have &arena->occupied[k] == old(&arena->occupied[k]) by {
-                        normalize() using { old(arena->occupied) == arena->occupied; };
+                        known();
                     }
-                    normalize() using {
-                        arena->occupied[k] == 0;
-                        &arena->occupied[k] == old(&arena->occupied[k]);
-                    };
+                    known();
                 }
                 have forall (k: int32) { start <= k and k < i implies load<int32>((old(arena->occupied) + k)) == 1 } by {
                     intro();
                     intro();
                     instantiate(forall (j: int32) { start <= j and j < i implies arena->occupied[j] == 1 }, k);
                     have &arena->occupied[k] == old(&arena->occupied[k]) by {
-                        normalize() using { old(arena->occupied) == arena->occupied; };
+                        known();
                     }
-                    normalize() using {
-                        arena->occupied[k] == 1;
-                        &arena->occupied[k] == old(&arena->occupied[k]);
-                    };
+                    known();
                 }
                 have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
                     have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
@@ -1749,10 +1732,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have (to_integer(end) - to_integer(i)) < (to_integer(end) - to_integer(at(opened, i))) by {
                     rewrite(to_integer(i), (to_integer(at(opened, i)) + 1));
-                    normalize();
+                    known();
                 }
                 have w.next == i by {
-                    normalize();
+                    known();
                 }
                 have w.next == i implies forall (k: int32) { 0 <= k and k < start implies arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]) } by {
                     intro();
@@ -1819,10 +1802,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             }
             have at(mark_free_run.entry, 0) <= at(mark_free_run.entry, k) and at(mark_free_run.entry, k) < at(mark_free_run.entry, arena->capacity);
             instantiate(forall (j: int32) { at(mark_free_run.entry, 0) <= at(mark_free_run.entry, j) and at(mark_free_run.entry, j) < at(mark_free_run.entry, arena->capacity) implies at(mark_free_run.entry, arena->occupied[j]) == old(arena->occupied[j]) }, k);
-            normalize() using {
-                arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]);
-                at(mark_free_run.entry, arena->occupied[k]) == old(arena->occupied[k]);
-            };
+            known();
         }
         have forall (k: int32) { end <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
             intro();
@@ -1843,10 +1823,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             }
             have at(mark_free_run.entry, 0) <= at(mark_free_run.entry, k) and at(mark_free_run.entry, k) < at(mark_free_run.entry, arena->capacity);
             instantiate(forall (j: int32) { at(mark_free_run.entry, 0) <= at(mark_free_run.entry, j) and at(mark_free_run.entry, j) < at(mark_free_run.entry, arena->capacity) implies at(mark_free_run.entry, arena->occupied[j]) == old(arena->occupied[j]) }, k);
-            normalize() using {
-                arena->occupied[k] == at(mark_free_run.entry, arena->occupied[k]);
-                at(mark_free_run.entry, arena->occupied[k]) == old(arena->occupied[k]);
-            };
+            known();
         }
         mark marked;
         step();
@@ -1870,10 +1847,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         step();
         have region->start == start by {
-            normalize();
+            known();
         }
         have region->end == end by {
-            normalize();
+            known();
         }
         have forall (k: int32) { region->start <= k and k < region->end implies arena->occupied[k] == 1 } by {
             intro();
@@ -1888,7 +1865,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             }
             have 0 <= start by { known(); }
             have 0 <= k by {
-                normalize() using { 0 <= start; start <= k; };
+                order_chain() using { 0 <= start; start <= k; };
             }
             have k < arena->capacity by {
                 solve() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
@@ -1904,7 +1881,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(region->arena), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(14));
@@ -1918,7 +1895,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(region->start), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(15));
@@ -1932,7 +1909,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(region->end), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(16));
@@ -1946,7 +1923,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(17));
@@ -1978,7 +1955,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(region->arena), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(14));
@@ -1992,7 +1969,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(region->start), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(15));
@@ -2006,7 +1983,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(region->end), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(16));
@@ -2020,7 +1997,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(17));
@@ -2055,7 +2032,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(14).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(region->arena), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(14).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(14).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(14));
@@ -2069,7 +2046,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(15).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(region->start), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(15).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(15).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(15));
@@ -2083,7 +2060,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(16).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(region->end), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(16).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(16).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(16));
@@ -2097,7 +2074,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
             }
             have separate(statement(17).footprint, memory(at(marked, arena->occupied)[k])) by {
-                normalize() using { separate(memory(arena->live_regions), memory(at(marked, arena->occupied)[k])); };
+                known();
             }
             have at(statement(17).exit, (let saved: int32* = at(marked, arena->occupied); saved[k])) == at(statement(17).entry, (let saved: int32* = at(marked, arena->occupied); saved[k])) by {
                 preserve(memory(at(marked, arena->occupied)[k]), statement(17));
@@ -2125,14 +2102,14 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         let outcome = fold(arena_alloc_result(region), { model: ArenaAllocOutcome::Success(start, end), allocated: allocated });
         step();
         have result == 1 by {
-            normalize();
+            known();
         }
         have forall (k: int32) { result == 0 and 0 <= k and k < arena->capacity implies arena->occupied[k] == old(arena->occupied[k]) } by {
             intro();
             intro();
             have result == 0;
             have not result == 0 by {
-                normalize();
+                known();
             }
             contradiction(result == 0);
         }
@@ -2155,7 +2132,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         known();
         have arena->capacity == old(arena->capacity) by {
-            normalize();
+            known();
         }
         known();
         have arena->capacity <= 536870911 by {
@@ -2163,7 +2140,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         }
         known();
         have st.capacity == arena->capacity by {
-            normalize();
+            known();
         }
         known();
         have result == 0 implies outcome.model == ArenaAllocOutcome::Failure() by {
@@ -2173,7 +2150,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
         known();
         have result == 1 implies outcome.model == ArenaAllocOutcome::Success(region->start, region->end) by {
             intro();
-            normalize();
+            known();
         }
         known();
         have result == 1 implies region->arena == arena by {
@@ -2426,7 +2403,7 @@ void arena_free(struct region* region) {
         known();
     }
     let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, region->start, region->end), { next: region->start });
-    loop as clear_occupied {
+    loop clear_occupied {
         decreases (to_integer(region->end) - to_integer(i));
         owns w: arena_clear_window(arena->data, arena->occupied, arena->capacity, region->start, region->end);
         invariant w.next == i;
@@ -2459,7 +2436,7 @@ void arena_free(struct region* region) {
                 normalize();
             }
         }
-        preserve by {
+        maintain by {
             let { next: m } = unfold(w);
             have m == i by {
                 known();
@@ -3089,28 +3066,28 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have separate(memory(*region->arena), memory(region->arena->occupied[0..region->arena->capacity])) by solve();
     mark w;
     step();
-    have separate(statement(0).footprint, memory(region->arena)) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(region->arena)) by { known(); }
     have region->arena == at(statement(0).entry, region->arena) by {
         preserve(memory(region->arena), statement(0));
     }
-    have separate(statement(0).footprint, memory(region->arena->data)) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(region->arena->data)) by { known(); }
     have region->arena->data == at(statement(0).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(0));
     }
-    have separate(statement(0).footprint, memory(region->arena->occupied)) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(region->arena->occupied)) by { known(); }
     have region->arena->occupied == at(statement(0).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(0));
     }
     step();
-    have separate(statement(1).footprint, memory(region->arena)) by { normalize() using {}; }
+    have separate(statement(1).footprint, memory(region->arena)) by { known(); }
     have region->arena == at(statement(1).entry, region->arena) by {
         preserve(memory(region->arena), statement(1));
     }
-    have separate(statement(1).footprint, memory(region->arena->data)) by { normalize() using {}; }
+    have separate(statement(1).footprint, memory(region->arena->data)) by { known(); }
     have region->arena->data == at(statement(1).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(1));
     }
-    have separate(statement(1).footprint, memory(region->arena->occupied)) by { normalize() using {}; }
+    have separate(statement(1).footprint, memory(region->arena->occupied)) by { known(); }
     have region->arena->occupied == at(statement(1).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(1));
     }
@@ -3121,20 +3098,20 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity)));
     step();
     have separate(statement(2).footprint, memory(region->arena->capacity)) by {
-        normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity))); };
+        known();
     }
     have region->arena->capacity == at(before_access, region->arena->capacity) by {
         preserve(memory(region->arena->capacity), statement(2));
     }
-    have separate(statement(2).footprint, memory(region->arena)) by { normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena))); }; }
+    have separate(statement(2).footprint, memory(region->arena)) by { known(); }
     have region->arena == at(before_access, region->arena) by {
         preserve(memory(region->arena), statement(2));
     }
-    have separate(statement(2).footprint, memory(region->arena->data)) by { normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->data))); }; }
+    have separate(statement(2).footprint, memory(region->arena->data)) by { known(); }
     have region->arena->data == at(before_access, region->arena->data) by {
         preserve(memory(region->arena->data), statement(2));
     }
-    have separate(statement(2).footprint, memory(region->arena->occupied)) by { normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->occupied))); }; }
+    have separate(statement(2).footprint, memory(region->arena->occupied)) by { known(); }
     have region->arena->occupied == at(before_access, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(2));
     }
@@ -3170,15 +3147,15 @@ void arena_write(struct region* region, int32 index, int32 value) {
             apply(separation::separate_symm(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity])));
             apply(separation::separate_restrict(memory(region->arena->data[0..region->arena->capacity]), memory(region->arena->occupied[0..region->arena->capacity]), memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]), memory(region->arena->occupied[k])));
         }
-        have separate(statement(0).footprint, memory(region->arena->occupied[k])) by { normalize() using {}; }
+        have separate(statement(0).footprint, memory(region->arena->occupied[k])) by { known(); }
         have at(statement(0).exit, region->arena->occupied[k]) == at(statement(0).entry, region->arena->occupied[k]) by {
             preserve(memory(region->arena->occupied[k]), statement(0));
         }
-        have separate(statement(1).footprint, memory(region->arena->occupied[k])) by { normalize() using {}; }
+        have separate(statement(1).footprint, memory(region->arena->occupied[k])) by { known(); }
         have at(statement(1).exit, region->arena->occupied[k]) == at(statement(1).entry, region->arena->occupied[k]) by {
             preserve(memory(region->arena->occupied[k]), statement(1));
         }
-        have separate(statement(2).footprint, memory(region->arena->occupied[k])) by { normalize() using { separate(memory(at(before_access, region->arena->data)[at(before_access, region->start + index)]), memory(region->arena->occupied[k])); }; }
+        have separate(statement(2).footprint, memory(region->arena->occupied[k])) by { known(); }
         have at(statement(2).exit, region->arena->occupied[k]) == at(statement(2).entry, region->arena->occupied[k]) by {
             preserve(memory(region->arena->occupied[k]), statement(2));
         }
@@ -3249,10 +3226,7 @@ int32 arena_read(struct region* region, int32 index) {
     }
     have to_integer(region->start + index) == to_integer(s) + to_integer(index) by {
         rewrite(region->start, s);
-        normalize() using {
-            0 <= to_integer(s) + to_integer(index);
-            to_integer(s) + to_integer(index) <= 2147483647;
-        };
+        apply(click::integer::int32_add_to_integer(s, index)) using { defined(s + index); };
     }
     have 0 <= to_integer(region->start + index) by {
         rewrite(to_integer(region->start + index), to_integer(s) + to_integer(index));
@@ -3263,28 +3237,28 @@ int32 arena_read(struct region* region, int32 index) {
     have to_integer(s + index) < to_integer(e);
     mark w;
     step();
-    have separate(statement(0).footprint, memory(region->arena)) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(region->arena)) by { known(); }
     have region->arena == at(statement(0).entry, region->arena) by {
         preserve(memory(region->arena), statement(0));
     }
-    have separate(statement(0).footprint, memory(region->arena->data)) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(region->arena->data)) by { known(); }
     have region->arena->data == at(statement(0).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(0));
     }
-    have separate(statement(0).footprint, memory(region->arena->occupied)) by { normalize() using {}; }
+    have separate(statement(0).footprint, memory(region->arena->occupied)) by { known(); }
     have region->arena->occupied == at(statement(0).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(0));
     }
     step();
-    have separate(statement(1).footprint, memory(region->arena)) by { normalize() using {}; }
+    have separate(statement(1).footprint, memory(region->arena)) by { known(); }
     have region->arena == at(statement(1).entry, region->arena) by {
         preserve(memory(region->arena), statement(1));
     }
-    have separate(statement(1).footprint, memory(region->arena->data)) by { normalize() using {}; }
+    have separate(statement(1).footprint, memory(region->arena->data)) by { known(); }
     have region->arena->data == at(statement(1).entry, region->arena->data) by {
         preserve(memory(region->arena->data), statement(1));
     }
-    have separate(statement(1).footprint, memory(region->arena->occupied)) by { normalize() using {}; }
+    have separate(statement(1).footprint, memory(region->arena->occupied)) by { known(); }
     have region->arena->occupied == at(statement(1).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(1));
     }
@@ -3375,7 +3349,7 @@ int32 arena_pipeline(
     step();
     step();
     step();
-    let { outcome: o0 } = step(arena_init, {});
+    let { outcome: o0 } = step(arena_init);
     step();
     if at(region(7).entry, initialized) == at(region(7).entry, 0) {
         step();

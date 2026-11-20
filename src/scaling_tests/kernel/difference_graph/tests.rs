@@ -224,6 +224,7 @@ fn a_bound_on_a_shared_value_costs_the_same_beside_any_number_of_dependents() {
 /// Written bounds must remain available beyond the graph walk's edge cap.
 /// Both directions and strictness use only the selected edge, not its hub.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s multi-domain high-degree bound scaling"]
 fn written_order_queries_are_flat_beside_a_high_degree_bound() {
     let order = |domain, strict, left: &MachineTerm, right: &MachineTerm| {

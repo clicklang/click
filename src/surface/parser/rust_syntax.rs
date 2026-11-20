@@ -532,10 +532,10 @@ impl Parser {
                 result = Err(self.error("a `trait` block holds `fn` interfaces"));
                 break;
             }
-            // A default method, written with its proof, is the function its
-            // default body defines; the others are external interfaces.
-            let has_body = self.rust_trait_method_has_proof();
-            match self.parse_function_block(!has_body) {
+            // A sidecar may verify the default body. An interface file
+            // only declares the method's contract.
+            let external = self.in_interface_file() || !self.rust_trait_method_has_proof();
+            match self.parse_function_block(external) {
                 // Nor does it hold any of the receiver's resources.
                 Ok(block)
                     if block.requires().iter().any(|requirement| {

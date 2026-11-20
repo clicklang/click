@@ -3,7 +3,10 @@
 pub(crate) use super::integer_affine_atoms::IntegerAffineAtom;
 use super::integer_affine_atoms::{IntegerFoldAtomRecord, intern_integer_fold_atom};
 
-use crate::kernel::{ConditionTerm, IntegerTerm, Proposition};
+use crate::kernel::{
+    ConditionTerm, IntegerTerm, KernelTerm, KernelTermNode, MachineTerm, ProgramPoint, Proposition,
+    SharedMachineIntegerTerm,
+};
 use num_bigint::BigInt;
 use num_traits::{One, Zero};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -701,6 +704,9 @@ fn collect_integer_constants(
                 }
                 Some(value.clone())
             }
+            IntegerTerm::Machine(value) => value
+                .literal_conversion_value()
+                .map(|value| value.to_integer()),
             IntegerTerm::Negate(child) => match cache.get(&child.id()).and_then(Option::as_ref) {
                 Some(value) => {
                     if crate::instrumentation::deadline_exceeded_with_work(
@@ -754,6 +760,40 @@ fn collect_integer_constants(
         cache.insert(node.id(), value);
     }
     Some(())
+}
+
+/// Integer observations use the same empty-entry compatibility as scalar
+/// congruence. The arithmetic atom may be shared with a legacy fold read;
+/// the checked proposition still retains the point on its operand.
+fn affine_machine_atom(value: &SharedMachineIntegerTerm) -> IntegerAffineAtom {
+    let reading = if let Some(root) = value.shared_operand() {
+        match root.node() {
+            KernelTermNode::MemoryLoad {
+                point,
+                address,
+                kind,
+            } if point.is_entry_read() => {
+                let entry = ProgramPoint::at(point.shared_memory());
+                let read =
+                    KernelTerm::shared_scalar_read_descriptor(value.ty(), &entry, address, *kind);
+                SharedMachineIntegerTerm::from_shared(value.ty(), read)
+            }
+            _ => None,
+        }
+    } else if let Some(MachineTerm::MemoryLoad(point, address, kind)) =
+        value.retained_written_operand()
+        && point.is_entry_read()
+    {
+        let read = MachineTerm::memory_read(
+            point.shared_memory().clone(),
+            address.as_ref().clone(),
+            *kind,
+        );
+        Some(SharedMachineIntegerTerm::intern(value.ty(), read))
+    } else {
+        None
+    };
+    IntegerAffineAtom::Machine(reading.unwrap_or_else(|| value.clone()))
 }
 
 fn collect_integer_affine_terms(
@@ -869,9 +909,7 @@ fn collect_integer_affine_terms(
                     // (rule W): `to_integer(widen(v))` and `to_integer(v)`
                     // are one atom. One cached lookup per observation.
                     IntegerTerm::Machine(source) => match source.value_reading() {
-                        Some(IntegerTerm::Machine(read)) => {
-                            IntegerAffineAtom::Machine(read.clone())
-                        }
+                        Some(IntegerTerm::Machine(read)) => affine_machine_atom(read),
                         Some(IntegerTerm::Constant(value)) => {
                             if !charge_integer_product(&weight, value) {
                                 return None;
@@ -879,7 +917,7 @@ fn collect_integer_affine_terms(
                             *constant += &weight * value;
                             continue;
                         }
-                        _ => IntegerAffineAtom::Machine(source.clone()),
+                        _ => affine_machine_atom(source),
                     },
                     IntegerTerm::AlgebraicMatch { .. } => return None,
                     // An unresolved conditional is an opaque atom by its

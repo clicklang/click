@@ -672,8 +672,40 @@ mod scaling_tests {
 }
 
 #[test]
+fn declared_word_assembly_requires_four_complete_indexed_bytes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = SymbolicMemory::local_pointer("packed");
+    let start = ExecutionState::new().with_memory(
+        SymbolicMemory::new().with_declared_scalar_block(slot.base.clone(), 4, ProgramType::UInt32),
+    );
+    let mut state = start.clone();
+    let assembled = |state: &ExecutionState, order| {
+        crate::kernel::eval::indexed_uint32_byte_read(&state.program_point(), &slot, order)
+    };
+    for (byte, bits) in [17, 128, 238, 255].into_iter().enumerate() {
+        assert!(assembled(&state, Some(ByteOrder::Little)).is_none());
+        let memory = state.memory().clone().store(
+            slot.offset_by_bytes(byte as u32),
+            crate::kernel::uint8(bits),
+        );
+        state = state.with_memory(memory);
+    }
+    let (ProgramValue::UInt32(_), facts) =
+        assembled(&state, Some(ByteOrder::Little)).expect("four complete byte stores")
+    else {
+        panic!("the packed value has uint32 type");
+    };
+    assert_eq!(facts.len(), 4);
+    assert!(assembled(&state, Some(ByteOrder::Big)).is_none());
+}
+
+#[test]
 fn declared_word_read_representation_is_typed_live_and_state_specific() {
-    use crate::kernel::eval::declared_uint32_read_representation as representation;
+    use crate::kernel::{ProgramPoint, eval::declared_uint32_read_representation};
+
+    let representation = |memory: &SymbolicMemory, address: &Address, order| {
+        declared_uint32_read_representation(&ProgramPoint::of_memory(memory), address, order)
+    };
     let _session = crate::kernel::VerificationSession::enter();
     let memory =
         SymbolicMemory::new().with_declared_scalar_block(word(0).base, 4, ProgramType::UInt32);

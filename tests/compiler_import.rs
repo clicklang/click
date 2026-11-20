@@ -177,6 +177,7 @@ impl Drop for Project {
 /// project prepared at two paths writes the same lock, so each copy's import
 /// has the same identity.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5.4s in the parallel gate"]
 fn compiler_import_project_locks_are_portable() {
     let first = Project::new();
@@ -197,6 +198,7 @@ fn compiler_import_project_locks_are_portable() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
     let project = Project::new();
@@ -262,6 +264,7 @@ fn compiler_import_fixture_verifies_targets_and_checked_expansion() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn compiler_import_define_changes_require_refresh_and_change_the_proof() {
     let project = Project::new();
@@ -278,29 +281,31 @@ fn compiler_import_define_changes_require_refresh_and_change_the_proof() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_identity_binds_invocation_even_when_c_bytes_match() {
     let project = Project::new();
     create_lock(&project.config()).unwrap();
     let first = load_imports(&project.config()).unwrap();
-    let original = fs::read(project.0.join(".click/main/main.c.i")).unwrap();
+    let original = fs::read(project.0.join(".click/captures/main/main.c.i")).unwrap();
     project.configure(1, &["-DUNUSED_CONFIGURATION_VALUE=123"]);
     assert!(load_imports(&project.config()).is_err());
     create_lock(&project.config()).unwrap();
     let second = load_imports(&project.config()).unwrap();
     assert_eq!(
         original,
-        fs::read(project.0.join(".click/main/main.c.i")).unwrap()
+        fs::read(project.0.join(".click/captures/main/main.c.i")).unwrap()
     );
     assert_ne!(first[0].identity(), second[0].identity());
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_header_and_artifact_changes_cannot_reuse_a_lock() {
     let project = Project::new();
     create_lock(&project.config()).unwrap();
-    let artifact = project.0.join(".click/main/main.c.i");
+    let artifact = project.0.join(".click/captures/main/main.c.i");
     let original = fs::read(&artifact).unwrap();
     fs::write(&artifact, "int answer(void) { return 999; }\n").unwrap();
     assert!(load_imports(&project.config()).is_err());
@@ -318,6 +323,7 @@ fn compiler_import_header_and_artifact_changes_cannot_reuse_a_lock() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_lowering_error_points_to_original_header() {
     let project = Project::new();
@@ -337,6 +343,7 @@ fn compiler_import_lowering_error_points_to_original_header() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn compiler_import_reproduces_header_existence_and_preserves_unsupported_bodies() {
     let project = Project::new();
@@ -371,6 +378,7 @@ fn compiler_import_reproduces_header_existence_and_preserves_unsupported_bodies(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_rejects_semantic_directives_and_target_options() {
     let project = Project::new();
@@ -392,6 +400,7 @@ fn compiler_import_rejects_semantic_directives_and_target_options() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_results_bind_helpers_in_other_translation_units() {
     let project = Project::new();
@@ -465,6 +474,7 @@ fn compiler_import_results_bind_helpers_in_other_translation_units() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn compiler_import_preserves_explicit_external_assumption_reporting() {
     let project = Project::new();
@@ -497,6 +507,7 @@ fn configure_userspace(project: &Project) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn userspace_compiler_import_verifies_profile_and_expansion() {
     let project = Project::new();
@@ -547,6 +558,7 @@ int answer(void) { return ANSWER; }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn userspace_and_kernel_imports_have_distinct_identity_for_identical_c() {
     let project = Project::new();
@@ -557,14 +569,14 @@ fn userspace_and_kernel_imports_have_distinct_identity_for_identical_c() {
     .unwrap();
     create_lock(&project.config()).unwrap();
     let kernel = load_imports(&project.config()).unwrap();
-    let original = fs::read(project.0.join(".click/main/main.c.i")).unwrap();
+    let original = fs::read(project.0.join(".click/captures/main/main.c.i")).unwrap();
     configure_userspace(&project);
     assert!(load_imports(&project.config()).is_err());
     create_lock(&project.config()).unwrap();
     let userspace = load_imports(&project.config()).unwrap();
     assert_eq!(
         original,
-        fs::read(project.0.join(".click/main/main.c.i")).unwrap()
+        fs::read(project.0.join(".click/captures/main/main.c.i")).unwrap()
     );
     assert_ne!(kernel[0].identity(), userspace[0].identity());
     let proof = "target \"x86_64-unknown-linux-gnu\"; verifying \"main.c\"; int answer() { ensures result == 42; }";
@@ -592,6 +604,7 @@ size_t answer(void) { return strlen("hello"); }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn userspace_compiler_import_refuses_profile_overrides_and_ambient_headers() {
     let project = Project::new();
@@ -619,10 +632,11 @@ fn userspace_compiler_import_refuses_profile_overrides_and_ambient_headers() {
     fs::write(project.0.join("main.c"), "#include <pthread.h>\n").unwrap();
     let error = create_lock(&project.config()).unwrap_err();
     assert!(error.contains("pthread.h"), "{error}");
-    assert!(!project.0.join(".click/main/main.c.i").exists());
+    assert!(!project.0.join(".click/captures/main/main.c.i").exists());
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn compiler_import_dependency_closure_projection_is_an_explicit_checked_option() {
     let project = Project::new();
@@ -671,6 +685,7 @@ fn compiler_import_dependency_closure_projection_is_an_explicit_checked_option()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1s focused; locks and checks both dependency cases"]
 fn compiler_import_projects_only_selected_functions_and_their_dependencies() {
     let project = Project::new();
@@ -690,7 +705,7 @@ fn compiler_import_projects_only_selected_functions_and_their_dependencies() {
     set_roots(&mut config, &["selected"]);
     create_lock(&project.config()).unwrap();
     let lock: serde_json::Value =
-        serde_json::from_slice(&fs::read(project.0.join("click.project.lock.json")).unwrap())
+        serde_json::from_slice(&fs::read(project.0.join(".click/captures/manifest.json")).unwrap())
             .unwrap();
     assert_eq!(
         unit_lock(&lock)["sources"][0]["functions"],
@@ -703,7 +718,7 @@ fn compiler_import_projects_only_selected_functions_and_their_dependencies() {
     set_roots(&mut config, &["sibling"]);
     let error = load_imports(&project.config()).expect_err("the root list is locked");
     assert!(error.contains("does not match its description"), "{error}");
-    assert!(error.contains("click import lock"), "{error}");
+    assert!(error.contains("click capture"), "{error}");
     set_roots(&mut config, &["selected"]);
 
     let caller = source.replace("return 42;", "struct slot value; return sibling(&value);");
@@ -828,6 +843,7 @@ fn pinned_zlib_empty_contract_verifies_offline_and_relocates() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s shared specification, expansion, and negative contracts"]
 fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -879,6 +895,7 @@ fn pinned_zlib_one_byte_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original short loop, expansion, and authority mutations"]
 fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -924,7 +941,7 @@ fn pinned_zlib_short_loop_matches_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let offset = proof.find("step_until(loop(0));").unwrap();
+    let offset = proof.find("step_until(loop(0).entry);").unwrap();
     let line = proof[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -1031,6 +1048,7 @@ fn adler_c_rust_correspondence_requires_matched_inputs() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: correspondence expansion and every shared-specification body"]
 fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
     let source = include_str!("../design/adler32/project/adler2/correspondence.click").replace(
@@ -1057,6 +1075,7 @@ fn adler_c_rust_correspondence_expands_with_checked_dependencies() {
 /// the old spec's probe that the first 2^32 bytes sum to zero no longer goes
 /// through, because a `uint64` length does not wrap to 0.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 20s full-width specification, its int32 bridge, and a wrap probe"]
 fn adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow() {
     let source = adler_specifications();
@@ -1084,6 +1103,7 @@ fn adler_uint64_specification_agrees_with_the_int32_one_and_does_not_narrow() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: unchanged DO16 checksum proof, checked helpers, and mutations"]
 fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -1123,7 +1143,7 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
             Some(imports[0].identity())
         );
     }
-    let offset = proof.find("step_until(loop(3));").unwrap();
+    let offset = proof.find("step_until(loop(3).entry);").unwrap();
     let line = proof[..offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
@@ -1157,6 +1177,7 @@ fn pinned_zlib_sixteen_block_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: repeated DO16 checksum, checked helpers, expansion, and mutations"]
 fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -1232,6 +1253,7 @@ fn pinned_zlib_repeated_blocks_match_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: NMAX batch checksum, checked helpers, expansion, and mutations"]
 fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -1311,6 +1333,7 @@ fn pinned_zlib_nmax_batch_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: symbolic DO16 count, lane, and read-bound theorem bodies"]
 fn pinned_zlib_window_lemmas_have_checked_bodies() {
     let source = include_str!("../design/adler32/project/zlib/window.click")
@@ -1339,6 +1362,7 @@ fn pinned_zlib_window_lemmas_have_checked_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: shared checksum library and native block recurrence bodies"]
 fn pinned_zlib_block_lemmas_have_checked_bodies() {
     let source = include_str!("../design/adler32/project/zlib/block.click")
@@ -1363,6 +1387,7 @@ fn pinned_zlib_block_lemmas_have_checked_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: seeded NMAX arithmetic, reduction, prefix composition, and expansion"]
 fn pinned_zlib_seeded_batch_lemmas_have_checked_bodies() {
     let source = include_str!("../design/adler32/project/zlib/seeded-batch.click")
@@ -1511,6 +1536,7 @@ int32 label_fits(const char* label) {
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s serial; the examples gate locks a modeled-header import"]
 fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
     let project = userspace_import(
@@ -1522,15 +1548,17 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
     );
     let config = project.path().join("main.import-description.json");
     create_lock(&config).expect("lock a user-space import that includes libc headers");
-    let artifact = fs::read_to_string(project.path().join(".click/main/main.c.i")).unwrap();
+    let artifact =
+        fs::read_to_string(project.path().join(".click/captures/main/main.c.i")).unwrap();
     // The artifact names Click's headers, not the private directory GCC
     // read them from, so a refresh reproduces it byte for byte.
     assert!(artifact.contains("# 1 \"<string.h>\" 1 3 4"), "{artifact}");
     assert!(!artifact.contains("click-import-headers"), "{artifact}");
     assert!(artifact.contains("size_t strlen(const char *s);"));
-    let lock: serde_json::Value =
-        serde_json::from_slice(&fs::read(project.path().join("click.project.lock.json")).unwrap())
-            .unwrap();
+    let lock: serde_json::Value = serde_json::from_slice(
+        &fs::read(project.path().join(".click/captures/manifest.json")).unwrap(),
+    )
+    .unwrap();
     assert_eq!(unit_lock(&lock)["schema"], 3);
     let opened = unit_lock(&lock)["sources"][0]["click_headers"]
         .as_object()
@@ -1567,12 +1595,13 @@ fn compiler_import_supplies_clicks_modeled_headers_beside_project_flags() {
     create_lock(&config).unwrap();
     assert_eq!(
         artifact,
-        fs::read_to_string(project.path().join(".click/main/main.c.i")).unwrap(),
+        fs::read_to_string(project.path().join(".click/captures/main/main.c.i")).unwrap(),
         "a refresh reproduces the artifact"
     );
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 9s serial; the examples gate locks a modeled-header import"]
 fn compiler_import_refuses_unmodeled_system_headers_by_name() {
     let project = userspace_import(&[("main.c", "#include <ctype.h>\nint x;\n")], &[]);
@@ -1584,7 +1613,12 @@ fn compiler_import_refuses_unmodeled_system_headers_by_name() {
             && !error.contains("click-import-headers"),
         "{error}"
     );
-    assert!(!project.path().join(".click/main/main.c.i").exists());
+    assert!(
+        !project
+            .path()
+            .join(".click/captures/main/main.c.i")
+            .exists()
+    );
 
     // `__has_include` finds a hosted header Click refuses, as it finds the C
     // library's, so the program cannot silently take the other branch.
@@ -1643,6 +1677,7 @@ fn compiler_import_refuses_unmodeled_system_headers_by_name() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 10s serial; the examples gate locks a modeled-header import"]
 fn compiler_import_project_headers_precede_clicks_in_gcc_search_order() {
     let source = "#include <limits.h>\n#ifdef PROJECT_LIMITS\nint which(void) { return PROJECT_LIMITS; }\n#else\nint which(void) { return CHAR_MAX; }\n#endif\n";
@@ -1659,7 +1694,8 @@ fn compiler_import_project_headers_precede_clicks_in_gcc_search_order() {
         write_userspace_config(project.path(), args);
         create_lock(&config).unwrap();
         let imports = load_imports(&config).unwrap();
-        let lock = fs::read_to_string(project.path().join("click.project.lock.json")).unwrap();
+        let lock =
+            fs::read_to_string(project.path().join(".click/captures/manifest.json")).unwrap();
         // GCC splits an expansion from a system header across line markers,
         // so compare the C without whitespace.
         let source = imports[0].source().split_whitespace().collect::<String>();
@@ -1689,6 +1725,7 @@ fn compiler_import_project_headers_precede_clicks_in_gcc_search_order() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s serial; the examples gate locks a modeled-header import"]
 fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
     let project = userspace_import(
@@ -1699,7 +1736,7 @@ fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
         &["-Iinclude"],
     );
     let config = project.path().join("main.import-description.json");
-    let lock_path = project.path().join("click.project.lock.json");
+    let lock_path = project.path().join(".click/captures/manifest.json");
     create_lock(&config).unwrap();
     let original = fs::read_to_string(&lock_path).unwrap();
     load_imports(&config).unwrap();
@@ -1743,6 +1780,7 @@ fn compiler_import_lock_binds_clicks_header_text_and_catalog() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: unchanged zlib multiple NMAX batches, DO16 and scalar tails, and expansion"]
 fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -1832,6 +1870,7 @@ fn pinned_zlib_stream_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full-range original zlib checksum, all paths, dependency bodies and complete expansion"]
 fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -1929,6 +1968,7 @@ fn pinned_zlib_full_stream_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full-range native count, cursor, capacity, concatenation guards and expansion"]
 fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
     let source = include_str!("../design/adler32/project/zlib/full-stream-helpers.click")
@@ -2018,6 +2058,7 @@ fn pinned_zlib_full_stream_lemmas_have_checked_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full-range original zlib checksum, all seeds and paths, dependency bodies and complete expansion"]
 fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -2119,6 +2160,7 @@ fn pinned_zlib_canonical_seed_matches_checked_shared_specification_offline() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: canonical seed, reduction, unpacking and composition and expansion"]
 fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
     let source = include_str!("../design/adler32/project/zlib/canonical-helpers.click")
@@ -2206,6 +2248,7 @@ fn pinned_zlib_canonical_seed_lemmas_have_checked_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: two actual zlib C updates, all callee and helper bodies, complete expansion"]
 fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
     let root = zlib_project();
@@ -2311,6 +2354,7 @@ fn pinned_zlib_incremental_c_matches_checked_shared_specification_offline() {
 /// tree gains no files, the committed lock still loads after the whole
 /// checkout moves, and changed inputs are refused.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn project_unit_verifies_an_external_tree_in_place() {
     assert!(
@@ -2489,8 +2533,8 @@ fn foreign_layout_tree_is_read_in_place_and_never_written() {
     );
     let project = example.join("project");
     let upstream = example.join("upstream/RingQ-1.2");
-    let committed = fs::read(project.join("click.project.lock.json")).unwrap();
-    fs::remove_file(project.join("click.project.lock.json")).unwrap();
+    let committed = fs::read(project.join(".click/captures/manifest.json")).unwrap();
+    fs::remove_file(project.join(".click/captures/manifest.json")).unwrap();
     fs::remove_dir_all(project.join(".click")).unwrap();
     let before = tree_inventory(&upstream);
     set_tree_writable(&upstream, false);
@@ -2501,7 +2545,7 @@ fn foreign_layout_tree_is_read_in_place_and_never_written() {
             .output()
             .unwrap()
     };
-    let locked = click(&["import", "lock"]);
+    let locked = click(&["capture"]);
     let verified = click(&["verify", "ringq.click"]);
     let after = tree_inventory(&upstream);
     set_tree_writable(&upstream, true);
@@ -2520,7 +2564,7 @@ fn foreign_layout_tree_is_read_in_place_and_never_written() {
         "locking and verifying changed the upstream tree"
     );
     assert_eq!(
-        fs::read(project.join("click.project.lock.json")).unwrap(),
+        fs::read(project.join(".click/captures/manifest.json")).unwrap(),
         committed,
         "a fresh lock of the copy differs from the committed one"
     );
@@ -2528,8 +2572,131 @@ fn foreign_layout_tree_is_read_in_place_and_never_written() {
     let mut bytes = fs::read(&header).unwrap();
     bytes[0] = b'#';
     fs::write(&header, bytes).unwrap();
-    let stale = click(&["verify", "ringq.click"]);
+    let stale = click(&["verify", "--locked", "ringq.click"]);
     let error = String::from_utf8_lossy(&stale.stderr);
     assert!(!stale.status.success());
     assert!(error.contains("RingQ.h"), "{error}");
+}
+
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+#[ignore = "nightly: live CLI captures of two configured sources"]
+fn capture_selects_sources_and_reuses_them_across_proof_layouts() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    fs::create_dir(root.join("src")).unwrap();
+    fs::create_dir(root.join("proofs")).unwrap();
+    fs::write(
+        root.join("click.project.json"),
+        r#"{"units":{"app":{"language":"c","compiler":"/usr/bin/gcc",
+          "env":{"PATH":"/usr/bin:/bin","LC_ALL":"C"},
+          "sources":{"src/first.c":{},"src/second.c":{}}}}}"#,
+    )
+    .unwrap();
+    fs::write(root.join("src/first.c"), "int first(void) { return 42; }").unwrap();
+    fs::write(root.join("src/second.c"), "int second(void) { return 7; }").unwrap();
+    fs::write(
+        root.join("proofs/first.click"),
+        r#"verifying "../src/first.c"; int first() { ensures result == 42; }"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/second.click"),
+        r#"verifying "second.c"; int second() { ensures result == 7; }"#,
+    )
+    .unwrap();
+    let click = |args: &[&str]| {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_click"))
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    let captures = root.join(click::project::ARTIFACT_DIRECTORY);
+    click(&["capture", "proofs/first.click"]);
+    assert!(root.join(click::project::LOCK_NAME).is_file());
+    assert!(captures.join("app/src/first.c.i").is_file());
+    assert!(!captures.join("app/src/second.c.i").exists());
+    click(&["capture", "src/second.c"]);
+    click(&["verify", "proofs/first.click"]);
+    click(&["verify", "src/second.click"]);
+    fs::write(root.join("src/second.c"), "int second(void) { return 8; }").unwrap();
+    click(&["verify", "proofs/first.click"]);
+}
+
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+#[ignore = "nightly: live capture and verification with source and header edits"]
+fn verify_refreshes_only_the_captures_it_uses() {
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path();
+    fs::write(
+        root.join("click.project.json"),
+        r#"{"units":{"app":{"language":"c","compiler":"/usr/bin/gcc",
+           "env":{"PATH":"/usr/bin:/bin","LC_ALL":"C"},
+           "sources":{"first.c":{},"second.c":{}}}}}"#,
+    )
+    .unwrap();
+    fs::write(root.join("value.h"), "#define VALUE 42\n").unwrap();
+    for name in ["first", "second"] {
+        fs::write(
+            root.join(format!("{name}.c")),
+            format!("#include \"value.h\"\nint {name}(void) {{ return VALUE; }}\n"),
+        )
+        .unwrap();
+        fs::write(
+            root.join(format!("{name}.click")),
+            format!("verifying \"{name}.c\"; int {name}() {{ ensures result >= 42; }}"),
+        )
+        .unwrap();
+    }
+    let verify = |args: &[&str], expected_success: bool| {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_click"))
+            .arg("verify")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        assert_eq!(
+            output.status.success(),
+            expected_success,
+            "{args:?}: {stderr}"
+        );
+        stderr
+    };
+    let manifest = root.join(click::project::LOCK_NAME);
+    let captures = root.join(click::project::ARTIFACT_DIRECTORY).join("app");
+    verify(&["--locked", "first.click"], false);
+    assert!(!manifest.exists());
+    assert!(verify(&["first.click"], true).contains("refreshing capture for `first.c`"));
+    assert!(!captures.join("second.c.i").exists());
+    verify(&["second.click"], true);
+
+    fs::write(
+        root.join("first.click"),
+        "verifying \"first.c\"; int first() { ensures result > 41; }",
+    )
+    .unwrap();
+    assert!(!verify(&["first.click"], true).contains("refreshing capture"));
+
+    fs::write(
+        root.join("first.c"),
+        "#include \"value.h\"\nint first(void) { return VALUE + 1; }",
+    )
+    .unwrap();
+    verify(&["--locked", "first.click"], false);
+    assert!(verify(&["first.click"], true).contains("refreshing capture for `first.c`"));
+    verify(&["--locked", "second.click"], true);
+
+    fs::write(root.join("value.h"), "#define VALUE 43\n").unwrap();
+    assert!(verify(&["first.click"], true).contains("refreshing capture for `first.c`"));
+    verify(&["--locked", "second.click"], false);
+    assert!(verify(&["second.click"], true).contains("refreshing capture for `second.c`"));
+    verify(&["--locked", "first.click"], true);
 }

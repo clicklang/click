@@ -1,12 +1,15 @@
 use super::*;
+#[cfg(not(feature = "fast-gate"))]
 use crate::surface::ProgramVerificationSession;
 
-const ARTIFACT: &[u8] =
-    include_bytes!("../../../../design/charon-trial/split-slices/.click/split/split.rs.ullbc");
+const ARTIFACT: &[u8] = include_bytes!(
+    "../../../../design/charon-trial/split-slices/.click/captures/split/split.rs.ullbc"
+);
 const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/split-slices/split.rs");
 const CLAIM: &str = include_str!("../../../../design/charon-trial/split-slices/split.click");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn charon_split_at_preserves_both_shared_slices_and_original_proofs() {
     assert_eq!(
@@ -29,7 +32,12 @@ fn charon_split_at_preserves_both_shared_slices_and_original_proofs() {
                 _ => None,
             })
             .unwrap();
-        assert_ne!(split.0, split.1);
+        assert_eq!((split.0.as_str(), split.1.as_str()), ("left", "right"));
+        assert!(
+            mir.locals.iter().all(|p| !p.name.contains("_slice_")),
+            "{} retained split tuple storage",
+            f.name
+        );
         for name in [split.0, split.1] {
             assert!(
                 mir.locals.iter().any(

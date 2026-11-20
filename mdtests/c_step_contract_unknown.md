@@ -1,6 +1,6 @@
-# Reject an unknown selected contract
+# Reject a call selector that names neither the callee nor a declared contract
 
-The selector must resolve to a declared contract.
+A name outside the declared contracts must match the call at the frontier.
 
 ```c filename=joint.c
 int32 invoke(void (*callback)(int32*, int32), int32* data, int32 count) {
@@ -30,5 +30,5 @@ int32 invoke(void (*callback)(int32*, int32), int32* data, int32 count) {
 ```
 
 ```expect
-fail: unknown call contract `Missing`
+fail: requires a call to `Missing` at the current frontier
 ```

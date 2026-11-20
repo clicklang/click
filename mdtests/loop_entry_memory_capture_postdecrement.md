@@ -23,7 +23,7 @@ uint64 post(const uint8* p, uint64 n) {
   views p[0u64..n];
   invariant to_integer(n) <= 15;
   initialize by { have to_integer(n) <= to_integer(15u64); solve(); }
-  preserve by {
+  maintain by {
    if n == 0u64 {
     step(); step();
     have at(statement(0).region(1).entry, n) == 0u64 by known();
@@ -49,7 +49,7 @@ uint64 post(const uint8* p, uint64 n) {
    have to_integer(n) <= 15 by solve() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; at(before_decrement, to_integer(n)) <= 15; };
    have 0 <= to_integer(n) by solve() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; to_integer(1u64) <= at(before_decrement, to_integer(n)); };
    have to_integer(n) < at(before_decrement, to_integer(n)) by solve() using { to_integer(n) == at(before_decrement, to_integer(n)) - 1; };
-   step_until(back_edge());
+   step_until(loop.back_edge);
    }
   }
  }

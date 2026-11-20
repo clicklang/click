@@ -443,7 +443,10 @@ impl PureFactContext {
         // A comparison of a term with itself is decided by its shape, with
         // no fact: the same one-comparison rule every `using` list applies
         // (`proposition_holds_without_facts`).
-        if let Some(value) = condition.reflexive_value() {
+        if let Some(value) = condition
+            .reflexive_value()
+            .or_else(|| condition.literal_float_comparison_value())
+        {
             return Some(value);
         }
         // A `Bool` binder that an L-Eq merge gave a truth. A binder no
@@ -1981,10 +1984,10 @@ impl PureFactContext {
         let left = crate::kernel::eval::scalar_read_observation(MachineOperandView::Legacy(left))?;
         let right =
             crate::kernel::eval::scalar_read_observation(MachineOperandView::Legacy(right))?;
-        let (left_memory, left_pointer, left_kind) = (left.memory, left.pointer, left.kind);
-        let (right_memory, right_pointer, right_kind) = (right.memory, right.pointer, right.kind);
+        let (left_point, left_pointer, left_kind) = (left.point, left.pointer, left.kind);
+        let (right_point, right_pointer, right_kind) = (right.point, right.pointer, right.kind);
         // Congruence retains the exact state and read kind.
-        if left_memory != right_memory
+        if left_point != right_point
             || left_kind != right_kind
             || left_pointer.base != right_pointer.base
         {

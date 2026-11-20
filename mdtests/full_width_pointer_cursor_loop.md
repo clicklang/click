@@ -24,7 +24,7 @@ uint64 lp(const uint8* b, uint64 n) {
     views b[0u64..n];
     ensures result == n % 4u64;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases vl;
         views b[0u64..n];
@@ -36,14 +36,14 @@ uint64 lp(const uint8* b, uint64 n) {
             have n % 4u64 <= n;
             solve();
         }
-        preserve by {
+        maintain by {
             if 4u64 <= vl {
                 have n % 4u64 <= n;
                 have to_integer((n - n % 4u64 - vl) + 4u64) <= to_integer(n);
                 have to_integer(n - n % 4u64 - vl) + 4 <= to_integer(n);
                 have to_integer(n - n % 4u64 - vl) < to_integer(n);
                 mark head;
-                step_until(loop(0).back_edge());
+                step_until(loop(0).back_edge);
                 have v == at(head, v) + 4u64;
                 have vl == at(head, vl) - 4u64;
                 have at(head, v) == b + (n - n % 4u64 - at(head, vl));

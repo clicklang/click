@@ -54,13 +54,14 @@ fn charon_loop_headers_import_unchanged_fixtures_and_retain_frontier_gaps() {
 /// input-generic one `click expand --claim` uses: the omitted phase becomes
 /// an explicit proof in the `loop` tactic, and the rewrite checks.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.4s in the parallel gate"]
 fn charon_loop_phase_expands_by_label_over_the_prepared_program() {
     let p = project("loops", true);
     let prepared = p.prepared().unwrap();
     let sidecar = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let inputs = click::surface::ProgramInputs::program(&prepared);
-    for phase in ["initialize", "preserve"] {
+    for phase in ["initialize", "maintain"] {
         let label = format!("count.loop(0).{phase}");
         let expanded = click::surface::expand_program_prepared_claim_source_by_label(
             &sidecar, &prepared, &label,
@@ -86,6 +87,7 @@ fn charon_loop_phase_expands_by_label_over_the_prepared_program() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_loop_headers_check_real_guards_final_assignments_and_false_claims() {
     for name in ["loops", "sum", "headers"] {

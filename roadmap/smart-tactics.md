@@ -85,6 +85,22 @@ For each read slice, test which point it selects, its raise/lower round trip,
 and bounded work as unrelated history grows. Use `cell_version_on_path` for
 diagnostic comparisons in tests. Keep production selection indexed.
 
+The scalar observation registry and read congruence use the retained version
+when a read has one. Reads produced from a bare memory view still use legacy
+identity. Concrete resource cells and modular byte outputs pass their source
+point into scalar read construction and use a typed index entry when present.
+Unindexed resource cells, compact runs, array and algebraic arguments, and
+opaque byte outputs still need point-based versions. Ordinary pointer reads
+through parameters also need checked stores to publish a complete pointer
+equation that raises and lowers at the same version point. Read selection
+through unrelated symbolic addresses needs a checked way to identify the
+affected storage.
+
+Array arguments can skip a recorded suffix of disjoint local stores and
+declarations. The block selector still handles other effects, and native
+array arguments still use the memory key. The scalar naming walk is a
+separate caller of the same block routine.
+
 ## Reading the inventory
 
 - **Scoped evidence:** named tests cover particular routes and growth axes;
@@ -226,10 +242,10 @@ excluding prose and Rust test strings, leaves:
 
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
-| `mdtests/` | 1 | 1 |
-| `examples/` | 12 | 93 |
+| `mdtests/` | 0 | 0 |
+| `examples/` | 7 | 42 |
 | `library/` | 0 | 0 |
-| Total | 13 | 94 |
+| Total | 7 | 42 |
 
 Positive fixtures also supply exact input text to expansion and mutation tests.
 Migrate those inputs together with their tests and keep the smart proof inputs.
@@ -237,6 +253,25 @@ Verify the full file as well, because selected-tactic expansion checks only a
 prefix. Remaining groups include historical initializedness, computed range
 bounds, loop frames, and call preservation.
 The final corpus pass and syntax/dispatcher deletion remain distinct tasks.
+
+### Migration order
+
+1. **Pure logic.** One pass for equality, conjunction, implication, and
+   same-state alias substitution. Use fact lookup, rewriting, or theorem
+   application. Keep the premise-refusal tests.
+2. **Ownership and viewability.** One PR for facts recovered from owners.
+   Split observation and folded-resource lookup if the proof changes warrant it.
+3. **Reads across writes and calls.** Start with one PR for direct stores and
+   byte-range writes, then one for calls with recorded footprints. Use explicit
+   separation and preservation.
+4. **Loops and trees.** Start with one loop-invariant batch and one tree
+   operation. Pair mirrored cases when they share a proof. Repeat for the
+   remaining invariants and tree operations.
+
+Verify whole affected claims, check that the migrated steps expand without
+legacy transport, and replay with implicit solving disabled where the whole
+claim has been migrated. Track surviving generated uses by producer and fix
+them before removing syntax and dispatcher support.
 
 ### Remaining PR-sized chunks
 
@@ -257,11 +292,9 @@ pattern is understood but the complete family has not yet been validated.
 | 18 | Insertion: field and parent-link preservation | Medium |
 | 19 | Insertion: inner/double rotations | Medium |
 | 20 | Insertion: mirrored and remaining paths | Medium |
-| 21 | Deletion: augmented-erase wrapper | Medium |
 | 22 | Deletion: primary color-fixup cases | Medium |
 | 23 | Deletion: mirrored and remaining fixups | Medium |
 | 24 | Augmented trees: basic rotation, model, propagation | Medium |
-| 25 | Augmented trees: color flips and mirrored flips | Medium |
 | 26 | Augmented trees: single/context rotations | Medium |
 | 27 | Augmented trees: local double rotations | Medium |
 | 28 | Augmented trees: context double/far rotations | Medium |
@@ -510,13 +543,13 @@ and branch boundaries, mutex writes, and direct and modular construction now
 check retained loan evidence or emit separation obligations. Automatic storage
 retirement and initialization use the object-identity index. Verified calls
 check each bounded write separately and refuse unnamed write effects with a
-live memory loan. The [rbtree insertion wrappers](rbtree-example.md#focused-verification-on-current-master)
-exercise that refusal with a recursive tree and a live callback-table view.
+live memory loan. The [recorded rbtree insertion run](rbtree-example.md#verification-evidence)
+exercised that refusal with a recursive tree and a live callback-table view.
 
-The legacy write guard has only test callers. Its bridge and search helper can
-be restricted to tests. Contract-entry own/view overlap checking still has a
-separate alias query. Cache retention independently uses indexed protection
-evidence to decide which observations survive.
+The legacy write guard and its alias search are test-only. Contract entry uses
+checked pointer coordinates to compare its selected owned/viewed ranges.
+Cache retention uses indexed protection evidence to decide which observations
+survive.
 
 ### C1: modular call framing
 
@@ -593,10 +626,15 @@ exclude unavoidable explicit path enumeration from the ambient test.
 Loop exit reconciliation uses persistent differences to select local
 initialization, local value, and cell changes. The gate's
 `a_loop_exit_join_visits_only_changed_bindings_and_cells` grows both
-shared maps at 4/16/64/256. It checks a two-exit local join and selection of a
-cell present only on a later exit. Reconstructing a residual memory witness
-can still compare equal cell maps during interning, and restating exit facts
-can substitute through an entire memory snapshot.
+shared maps at 4/16/64/256. It checks a full two-exit join with differing
+locals and one-sided cells, and selection of a cell present only on a later
+exit. Residual memory comparison and interning of the reconstructed memories
+use exact differences from shared storage. Restating scalar exit facts keeps
+memory effect summaries at their original states and ranges, including inside
+earlier disjunctions. The gate's
+`loop_exit_scalar_restatement_keeps_recorded_memory_effects` measures one
+renamed scalar at 4/16/64/256 untouched blocks. Other state-bearing facts can
+still require memory substitution.
 
 ### E1 and Q1: logical steps and evidence lifecycle — deferred evidence/gaps
 
@@ -621,6 +659,39 @@ and without ambient binder collisions. Old helper counts are historical, not
 current complete-operation results. Preserve capture avoidance and expansion.
 Both linked items retain their existing deferrals; the general constant-ish
 checking claim must disclose them until resolved.
+
+### Checking outside `step()`
+
+Keep work measured at written tactics separate from execution inside
+`step()`, and measure mandatory work outside tactics at its own phase boundary.
+For each written tactic, fix its selected input and output while growing
+the surrounding context. Then grow what the tactic actually names to check
+the cost per emitted fact, resource or proof node.
+
+- **Named `unfold`.** At `c787479ae`, a written unfold of a fixed matched
+  arm took 1,352 / 1,355 / 1,357 work units with 4 / 16 / 64 disjoint
+  sibling ownership ranges. With 4 / 16 / 64 owned ranges in the selected
+  arm itself and a fixed frame, it took 6,505 / 28,755 / 206,745 units.
+  Reusing the kernel exchange at the same predecessor cuts these to
+  3,832 / 17,466 / 160,024 units. The ownership-footprint preparation
+  events drop from 44 / 176 / 704 to 28 / 112 / 448.
+  `named_unfold_constructs_the_selected_arm_once` exercises both axes and
+  checks how many times the named arm's premises are evaluated. Trace the
+  remaining arm-size cost through body resource evaluation, memory naming,
+  and publication with the same probe. Use
+  `mdtests/loop_ascending_walk_to_root.md` as the real-proof control.
+- **Logical introduction.** The written nested `Integer` introductions at
+  depths 4 / 8 / 16 / 24 / 30 total 226 / 500 / 1,192 / 2,076 / 2,865
+  units on the same baseline. A same-spelled ambient quantifier gives the
+  same curve. Isolate retained-body work and measure a confirmed binder
+  collision separately in [the quantifier tracker](deep-quantifier-scaling.md).
+- **Mandatory work outside tactics.** A fresh dev profile of
+  `examples/ring-buffer` at the same baseline attributed about 1.2 seconds
+  to verifier core and reported zero certification paths. The trace names
+  proof-context and execution-path finishing; their nested timings can
+  overlap. Compare prepared-call, loop-exit and resource-completion
+  invocations at their producer and publication boundaries before assigning
+  that time to repeated work.
 
 ## Prevention coverage
 

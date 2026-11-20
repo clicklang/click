@@ -1,6 +1,6 @@
 # Finish a named loop's preservation region
 
-`loop(i).back_edge()` is `back_edge()` with its loop written out: inside the
+`loop(i).back_edge` is `loop.back_edge` with its loop written out: inside the
 preservation region of `loop(i)` it finishes the region's remaining steps,
 and inside any other region it is refused.
 
@@ -19,11 +19,11 @@ int32 count(int32 n) {
  requires 0 <= n and n <= 1000;
  ensures result == n;
 } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  loop {
   decreases n-i;
   invariant 0 <= i and i <= n;
-  preserve by { step_until(loop(0).back_edge()); }
+  maintain by { step_until(loop(0).back_edge); }
  }
 }
 ```

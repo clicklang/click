@@ -484,7 +484,8 @@ fn require_write_loan_separation(
         .loan_ledger()
         .and_then(|ledger| ledger.memory_access_requirement(range))
     {
-        obligations.push(ProofObligation::verification_condition(requirement));
+        obligations
+            .push(ProofObligation::verification_condition(requirement).with_live_view_write());
     }
 }
 
@@ -1158,6 +1159,9 @@ fn write_program_lvalue_paths_for_initialization(
                     None => ExecutionValue::from(written_value.clone()).retain_pointer_result(),
                 }
             };
+            let cache_owner = authorized_range.as_ref().filter(|_| {
+                written_pointer == pointer && written_value.byte_width() == value.byte_width()
+            });
             let next_memory = state.memory.clone().store_retained_classed_with_context(
                 written_pointer.clone(),
                 retained_written,
@@ -1166,6 +1170,7 @@ fn write_program_lvalue_paths_for_initialization(
                     .0
                     .as_ref()
                     .and_then(|class| class.effective_type_of_store()),
+                cache_owner,
             );
             state.set_memory_with_checked_stores(next_memory, true);
             if !iterated_plan.is_empty() {
@@ -1215,12 +1220,21 @@ fn write_program_lvalue_paths_for_initialization(
             // can use a different, proven-equal address spelling without
             // re-running store resolution at the subsequent read.
             if let ProgramValue::Pointer(stored) = &written_value {
-                facts.push(ExecutionPureFact::logical_read_equation(
+                let point = state.program_point();
+                let value_type = stored.program_type();
+                let read = if let Some(version) =
+                    point.indexed_typed_version(&written_pointer, value_type)
+                {
+                    Pointer::from_point_read(version, value_type, &written_pointer)
+                } else {
+                    Pointer::new(
+                        Address::canonical_read(point.shared_memory(), &written_pointer),
+                        value_type,
+                    )
+                };
+                facts.push(ExecutionPureFact::logical_pointer_value_equation(
                     stored.clone(),
-                    Address::canonical_read(
-                        &crate::kernel::intern_memory_ref(state.memory()),
-                        &written_pointer,
-                    ),
+                    read,
                 ));
             }
             refresh_scalar_local_after_memory_store(
@@ -3251,10 +3265,18 @@ fn execute_program_heap_free_paths(
             )
             .expect("validated live heap base should free");
         for (address, value_type) in pointer_frames {
-            let ProgramValue::Pointer(before) =
-                before_free.symbolic_pointer_version_load(&address, value_type)
-            else {
-                unreachable!("a pointer version read has pointer type");
+            let before = if let Some(version) = state
+                .program_point()
+                .indexed_typed_version(&address, value_type)
+            {
+                Pointer::from_point_read(version, value_type, &address)
+            } else {
+                let ProgramValue::Pointer(read) =
+                    before_free.symbolic_pointer_version_load(&address, value_type)
+                else {
+                    unreachable!("a pointer version read has pointer type");
+                };
+                read
             };
             let ProgramValue::Pointer(after) =
                 memory.symbolic_pointer_version_load(&address, value_type)

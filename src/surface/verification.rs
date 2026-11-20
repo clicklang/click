@@ -1829,7 +1829,13 @@ impl ProgramVerificationSession {
     ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
         let _kernel_tables = self.ensure_kernel_state_retained()?;
         instrumentation::with_default_tactic_limits(|| {
-            self.verify_at_with_limits(click_source, line, column)
+            let c_sources = self
+                .c_sources
+                .iter()
+                .map(|(name, source)| (name.as_str(), source.as_str()))
+                .collect::<Vec<_>>();
+            let sources = ProgramSourceContext::bundle(&c_sources);
+            self.verify_at_with_context(click_source, &sources, line, column)
         })
     }
 
@@ -1859,54 +1865,7 @@ impl ProgramVerificationSession {
                 ProgramSourceContext::bundle(&c_sources).with_click_project(&project)
             };
             let rewritten_file = resolve_click_project_context(&project, &sources)?;
-            let target = expansion::verification_target_at_file(
-                click_source,
-                &rewritten_file,
-                line,
-                column,
-            )?;
-            let target_exists_in_baseline = match &target {
-                VerificationTarget::Function(name) => {
-                    self.baseline_file
-                        .function_blocks()
-                        .iter()
-                        .any(|function| function.signature().name() == name)
-                        || self
-                            .baseline_file
-                            .tactic_definitions()
-                            .iter()
-                            .any(|tactic| tactic.name() == name)
-                }
-                VerificationTarget::Theorem(name) => self.baseline_file.theorem_is_selected(name),
-                VerificationTarget::Functions(_) => false,
-            };
-            if !target_exists_in_baseline {
-                return Err(ClickError::new(
-                    "rewritten source location resolves to a proof unit absent from the baseline",
-                ));
-            }
-            if changed_outside_proof_unit(&self.baseline_file, rewritten_file.clone(), &target) {
-                return Err(ClickError::new(
-                    "rewritten sidecar changed source outside the selected proof unit",
-                ));
-            }
-            let initial_environment = match &target {
-                VerificationTarget::Function(function_name) => Some(
-                    self.verified_function_environment
-                        .clone()
-                        .without_verified_function_rule(function_name),
-                ),
-                VerificationTarget::Theorem(_) | VerificationTarget::Functions(_) => None,
-            };
-            verify_program_with_context(
-                click_source,
-                &sources,
-                Some(target),
-                initial_environment,
-                None,
-                Some(rewritten_file),
-            )
-            .map(|(verified, _)| verified)
+            self.verify_rewritten_proof(click_source, &sources, rewritten_file, line, column)
         })
     }
 
@@ -1929,82 +1888,37 @@ impl ProgramVerificationSession {
                     "verification session does not contain prepared imports",
                 ));
             };
-            ensure_environment_identity(
-                &self.environment_identity,
-                &sources,
-                super::selected_c_target(click_source)?,
-                super::selected_thread_runtime(click_source)?,
-            )?;
-            let target = verification_target_at_context(click_source, &sources, line, column)?;
-            let target_exists_in_baseline = match &target {
-                VerificationTarget::Function(name) => {
-                    self.baseline_file
-                        .function_blocks()
-                        .iter()
-                        .any(|function| function.signature().name() == name)
-                        || self
-                            .baseline_file
-                            .tactic_definitions()
-                            .iter()
-                            .any(|tactic| tactic.name() == name)
-                }
-                VerificationTarget::Theorem(name) => self
-                    .baseline_file
-                    .theorem_definitions()
-                    .iter()
-                    .any(|theorem| theorem.name() == name),
-                VerificationTarget::Functions(_) => false,
-            };
-            if !target_exists_in_baseline {
-                return Err(ClickError::new(
-                    "rewritten source location resolves to a proof unit absent from the baseline",
-                ));
-            }
-            let rewritten_file = parse_click_file_with_program_sources(click_source, &sources)?;
-            if changed_outside_proof_unit(&self.baseline_file, rewritten_file, &target) {
-                return Err(ClickError::new(
-                    "rewritten sidecar changed source outside the selected proof unit",
-                ));
-            }
-            let initial_environment = match &target {
-                VerificationTarget::Function(function_name) => Some(
-                    self.verified_function_environment
-                        .clone()
-                        .without_verified_function_rule(function_name),
-                ),
-                VerificationTarget::Theorem(_) | VerificationTarget::Functions(_) => None,
-            };
-            verify_program_with_context(
-                click_source,
-                &sources,
-                Some(target),
-                initial_environment,
-                None,
-                None,
-            )
-            .map(|(verified, _)| verified)
+            self.verify_at_with_context(click_source, &sources, line, column)
         })
     }
 
-    fn verify_at_with_limits(
+    fn verify_at_with_context(
         &self,
         click_source: &str,
+        sources: &ProgramSourceContext<'_>,
         line: usize,
         column: usize,
     ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
-        let c_sources = self
-            .c_sources
-            .iter()
-            .map(|(name, source)| (name.as_str(), source.as_str()))
-            .collect::<Vec<_>>();
-        let sources = ProgramSourceContext::bundle(&c_sources);
         ensure_environment_identity(
             &self.environment_identity,
-            &sources,
+            sources,
             super::selected_c_target(click_source)?,
             super::selected_thread_runtime(click_source)?,
         )?;
-        let target = verification_target_at_context(click_source, &sources, line, column)?;
+        let rewritten_file = parse_click_file_with_program_sources(click_source, sources)?;
+        self.verify_rewritten_proof(click_source, sources, rewritten_file, line, column)
+    }
+
+    fn verify_rewritten_proof(
+        &self,
+        click_source: &str,
+        sources: &ProgramSourceContext<'_>,
+        rewritten_file: ClickFile,
+        line: usize,
+        column: usize,
+    ) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
+        let target =
+            expansion::verification_target_at_file(click_source, &rewritten_file, line, column)?;
         let target_exists_in_baseline = match &target {
             VerificationTarget::Function(name) => {
                 self.baseline_file
@@ -2017,11 +1931,14 @@ impl ProgramVerificationSession {
                         .iter()
                         .any(|tactic| tactic.name() == name)
             }
-            VerificationTarget::Theorem(name) => self
-                .baseline_file
-                .theorem_definitions()
-                .iter()
-                .any(|theorem| theorem.name() == name),
+            VerificationTarget::Theorem(name) => {
+                self.baseline_file.theorem_is_selected(name)
+                    && self
+                        .baseline_file
+                        .theorem_definitions()
+                        .iter()
+                        .any(|theorem| theorem.name() == name)
+            }
             VerificationTarget::Functions(_) => false,
         };
         if !target_exists_in_baseline {
@@ -2029,8 +1946,7 @@ impl ProgramVerificationSession {
                 "rewritten source location resolves to a proof unit absent from the baseline",
             ));
         }
-        let rewritten_file = parse_click_file_with_program_sources(click_source, &sources)?;
-        if changed_outside_proof_unit(&self.baseline_file, rewritten_file, &target) {
+        if changed_outside_proof_unit(&self.baseline_file, rewritten_file.clone(), &target) {
             return Err(ClickError::new(
                 "rewritten sidecar changed source outside the selected proof unit",
             ));
@@ -2041,16 +1957,15 @@ impl ProgramVerificationSession {
                     .clone()
                     .without_verified_function_rule(function_name),
             ),
-            VerificationTarget::Theorem(_) => None,
-            VerificationTarget::Functions(_) => None,
+            VerificationTarget::Theorem(_) | VerificationTarget::Functions(_) => None,
         };
         verify_program_with_context(
             click_source,
-            &sources,
+            sources,
             Some(target),
             initial_environment,
             None,
-            None,
+            Some(rewritten_file),
         )
         .map(|(verified, _)| verified)
     }
@@ -2778,6 +2693,7 @@ fn verify_program_in_context(
             }),
             proof: SourceProof::Tactic(SmartTactic::ImplicitTail),
             borrowed: false,
+            view_source: None,
             condition: None,
         };
         let mut claims = function_claims(&function_block);
@@ -3937,6 +3853,11 @@ fn c_statement_calls_recording(
             syntax::CExpression::ScalarUpdate { .. } => {}
             syntax::CExpression::Call { arguments, .. } => {
                 for argument in arguments {
+                    collect_function_addresses(argument, names);
+                }
+            }
+            syntax::CExpression::VariableArguments(arguments) => {
+                for (_, argument) in arguments {
                     collect_function_addresses(argument, names);
                 }
             }
@@ -5174,7 +5095,22 @@ pub(in crate::surface) fn parse_verified_sources_context_with_entry(
         .function_blocks()
         .iter()
         .filter(|function| function.is_external())
-        .map(|function| function.signature().name())
+        .map(|function| {
+            let variable_arguments =
+                function
+                    .signature()
+                    .parameters()
+                    .last()
+                    .is_some_and(|parameter| {
+                        matches!(
+                            parameter.click_type,
+                            ClickType::Program(InterfaceType::Parameter(parameter_type))
+                                if parameter_type
+                                    == crate::languages::c::variadic::variable_arguments_type()
+                        )
+                    });
+            (function.signature().name(), variable_arguments)
+        })
         .collect::<Vec<_>>();
     c_frontend::link_c_units(
         &file.verifying_sources,
@@ -5979,8 +5915,13 @@ pub(in crate::surface) fn function_resource_summary(
         .filter(|requirement| matches!(requirement, Requirement::Resource(_)))
         .count();
     let resource_positions = function_block.resource_requirement_positions();
+    let has_produced_views = function_block
+        .ensures()
+        .iter()
+        .any(|clause| clause.view_source.is_some());
+    let mut view_inputs = BTreeMap::new();
     let mut resource_clause_index = 0;
-    for requirement in function_block.requires() {
+    for (index, requirement) in function_block.requires().iter().enumerate() {
         let Requirement::Resource(resource) = requirement else {
             continue;
         };
@@ -5995,6 +5936,17 @@ pub(in crate::surface) fn function_resource_summary(
             resource_environment,
             &mut requires,
         )?;
+        if has_produced_views
+            && matches!(resource, ResourceClause::ViewMemory(_))
+            && requires.len() == first_spec + 1
+        {
+            let source = function_block
+                .requirement_source_clauses
+                .get(index)
+                .copied()
+                .unwrap_or(index);
+            view_inputs.insert(source, first_spec);
+        }
         let borrowed_index = borrowed_resources
             .iter()
             .enumerate()
@@ -6102,6 +6054,12 @@ pub(in crate::surface) fn function_resource_summary(
             // state explicit in the normalized descriptor.
             if ensure.borrowed() && spec.is_instance() {
                 spec = spec.with_state_source(ResourceStateSource::Post);
+            }
+            if let Some(source) = ensure.view_source {
+                let input = view_inputs.get(&source).ok_or_else(|| {
+                    ClickError::new("the selected input view must lower to one memory range")
+                })?;
+                spec = spec.with_view_source(*input);
             }
             if let Some(guard) = &guard {
                 spec = spec.with_guard(guard.clone());
@@ -6240,6 +6198,15 @@ pub(in crate::surface) fn composite_resource_definitions(
                     parameter.struct_name().map(str::to_string),
                 )
             })
+            .chain(definition.fields().iter().filter_map(|field| {
+                field.click_type().interface_type().map(|interface_type| {
+                    crate::languages::interface::ImportedParameter::new(
+                        interface_type,
+                        field.name().to_string(),
+                        None,
+                    )
+                })
+            }))
             .collect::<Vec<_>>();
         let contains = body
             .contains()
@@ -6675,11 +6642,14 @@ fn resource_clause_to_resource_spec_with_metadata(
                     | crate::kernel::ResourceTerm::MutexUse { .. }
             ) {
                 return inner
-                    .with_mutex_authority_binding(binding.identity.variable(), binding.name.clone())
+                    .with_mutex_authority_binding(
+                        binding.identity.mutex_authority(),
+                        binding.name.clone(),
+                    )
                     .map_err(|error| ClickError::new(error.to_string()));
             }
             ResourceSpec::instance(
-                binding.identity,
+                binding.identity.instance(),
                 binding.name.clone(),
                 binding.schema.clone().ok_or_else(|| {
                     ClickError::new("resource binding has no checked field schema")
@@ -6996,7 +6966,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 spec.with_resource_arguments(
                     resource_arguments
                         .iter()
-                        .map(|reference| reference.identity)
+                        .map(|reference| reference.identity.instance())
                         .collect(),
                 )
             })
@@ -7031,7 +7001,8 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
             )?),
         }),
         ResourceClause::Named { binding, resource } => Ok(ResourceClause::Named {
-            binding: match substitutions.instance_rename(&binding.name, binding.identity) {
+            binding: match substitutions.instance_rename(&binding.name, binding.identity.instance())
+            {
                 Some(name) => ResourceInstanceBinding {
                     name,
                     ..binding.clone()
@@ -7086,7 +7057,8 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
             resource_arguments: resource_arguments
                 .iter()
                 .map(|binding| {
-                    match substitutions.instance_rename(&binding.name, binding.identity) {
+                    match substitutions.instance_rename(&binding.name, binding.identity.instance())
+                    {
                         Some(name) => ResourceInstanceBinding {
                             name,
                             ..binding.clone()
@@ -7425,7 +7397,7 @@ pub(in crate::surface) fn validate_region_proof_clause(
     }
 
     validate_loop_phase_proof("initialize", region_proof_clause.initialize_proof())?;
-    validate_loop_phase_proof("preserve", region_proof_clause.preserve_proof())
+    validate_loop_phase_proof("maintain", region_proof_clause.preserve_proof())
 }
 
 pub(in crate::surface) fn validate_loop_phase_proof(
@@ -7435,7 +7407,7 @@ pub(in crate::surface) fn validate_loop_phase_proof(
     let Some(SourceProof::Script(tactics)) = proof else {
         return Ok(());
     };
-    if phase == "preserve" {
+    if phase == "maintain" {
         return Ok(());
     }
     validate_loop_initialization_tactics(tactics)
@@ -7463,6 +7435,7 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
             | ProofTactic::Known
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
+            | ProofTactic::OrderChain(_)
             | ProofTactic::Rewrite(_)
             | ProofTactic::Solve => {}
             ProofTactic::If(proof_if) => {
@@ -7569,6 +7542,7 @@ mod modeled_pthread_binding_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 3s in the parallel gate"]
     fn frozen_worker_proof_retains_the_runtime_assumption() {
         let fixture = include_str!("../../mdtests/fork_join_worker_direct_contract.md");
@@ -8050,13 +8024,22 @@ int32 reader(int32 p[], int32 q[]) {
 
     #[test]
     fn root_view_checks_pointer_offset_aliases() {
-        for equality in ["q == p + 1", "p == q - 1", "q == p - 1"] {
+        for (equality, separation) in [
+            ("q == p + 1", ""),
+            ("p == q - 1", ""),
+            ("q == p - 1", ""),
+            (
+                "q == p + 1",
+                "requires separate(memory(p[0..3]), memory(q[0..3]));",
+            ),
+        ] {
             let click = format!(
                 r#"
 verifying "reader.c";
 int32 reader(int32 p[], int32 q[]) {{
     requires {equality};
     requires p[1] == 3;
+    {separation}
     views p[0..3];
     consumes q[0..3];
     ensures result == 3;
@@ -8379,6 +8362,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
     /// Consuming the composite releases its hold: the loan ends, the owner
     /// is recovered, and the same write is accepted afterwards.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn consuming_the_composite_recovers_the_owner() {
         let click = format!(
@@ -8401,6 +8385,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
     /// folding it back reuses that hold: the write stays refused while the
     /// piece is out, and one consumption still releases everything.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.3s in the parallel gate"]
     fn unfold_keeps_the_escaped_borrow_held() {
         let refused = format!(
@@ -8622,9 +8607,11 @@ int read_view(const int *(*f)(const int *), const int *p) {{
 
 #[cfg(test)]
 mod retained_caller_tests {
+    #[cfg(not(feature = "fast-gate"))]
     use super::*;
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 3s in the parallel gate"]
     fn retained_session_reverifies_unchanged_static_array_caller() {
         let path =
@@ -8655,6 +8642,7 @@ mod retained_caller_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 3s in the parallel gate"]
     fn resumed_kernel_reverifies_static_array_caller_without_a_cached_environment() {
         let path =

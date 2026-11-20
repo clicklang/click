@@ -161,7 +161,7 @@ Stack<int>::~Stack() {
         decreases length(list.items);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match list.items {
                 List::Nil => { contradiction(list.items == List<int32>::Nil); },
                 List::Cons(value, rest) => {
@@ -209,7 +209,7 @@ Stack<int>::~Stack() {
 int round_trip(int x) {
     ensures result == x;
 } by {
-    step_until(region(3));
+    step_until(region(3).entry);
     let empty = fold(nodes(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
@@ -232,11 +232,11 @@ int round_trip(int x) {
 unsigned long pushed_size(int x) {
     ensures to_integer(result) == 2;
 } by {
-    step_until(region(2));
+    step_until(region(2).entry);
     let empty = fold(nodes(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
-    step_until(region(3));
+    step_until(region(3).entry);
     unfold(length(List<int32>::Cons(x, List<int32>::Nil)));
     have length(List<int32>::Cons(x, List<int32>::Nil)) < 1000000 by solve() using {
         length(List<int32>::Cons(x, List<int32>::Nil)) == length(List<int32>::Nil) + 1;

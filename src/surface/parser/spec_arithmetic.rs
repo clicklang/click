@@ -764,6 +764,7 @@ impl Parser {
                 value_type,
                 ..
             })
+            | ContractExpression::MemoryLoad { value_type, .. }
             | ContractExpression::CUnary {
                 lowered: ProgramExpression::TypedLoad { value_type, .. },
                 ..
@@ -980,9 +981,10 @@ impl Parser {
             ContractExpression::Field {
                 lowered: ProgramExpression::TypedLoad { value_type, .. },
                 ..
-            } => Some(crate::surface::generics::interface_type_from_program_type(
-                *value_type,
-            )),
+            }
+            | ContractExpression::MemoryLoad { value_type, .. } => Some(
+                crate::surface::generics::interface_type_from_program_type(*value_type),
+            ),
             _ => None,
         }
     }

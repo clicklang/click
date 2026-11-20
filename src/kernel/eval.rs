@@ -57,7 +57,8 @@ fn volatile_access_fact(
 pub(in crate::kernel) use byte_view::{ContainingIntegerCell, integer_cell_byte};
 pub(in crate::kernel) use byte_view::{
     assemble_declared_uint32_after_byte_store, byte_view_load_value, containing_integer_cell,
-    declared_uint32_read_representation, integer_cell_with_byte, known_integer_byte, mask_byte,
+    declared_uint32_read_representation, indexed_uint32_byte_read, integer_cell_with_byte,
+    known_integer_byte, mask_byte,
 };
 pub(super) use expression::*;
 #[cfg(test)]
@@ -91,6 +92,7 @@ pub(crate) use memory_loads::load_variable_for_cell_with_origin;
 pub(crate) use memory_loads::load_variable_for_exact_cell;
 pub(crate) use memory_loads::load_variable_for_term;
 pub(crate) use memory_loads::loaded_pointer_predates_block;
+pub(in crate::kernel) use memory_loads::observed_scalar_read_width;
 pub(crate) use memory_loads::offsets_have_same_canonical_form;
 pub(crate) use memory_loads::proposition_mentions_scalar_read;
 pub(crate) use memory_loads::read_over_write_program_value;
@@ -116,20 +118,24 @@ pub(crate) use memory_loads::{
     restore_load_variable_registry,
 };
 pub(crate) use memory_loads::{
-    arithmetic_comparison_form, comparison_form, holds_by_read_over_write, read_over_write_value,
+    arithmetic_comparison_form, comparison_form, comparison_identity_of_exact_read,
+    holds_by_read_over_write, read_over_write_value,
 };
 pub(in crate::kernel) use memory_loads::{
     cached_symbolic_storage_cell_value, symbolic_storage_cell_value,
 };
 pub(crate) use memory_loads::{canonical_cell_load, canonical_form_of_load};
 pub(super) use memory_loads::{
-    canonical_offset_term, evaluate_exact_logical_memory_load_paths, evaluate_indexed_integer_read,
+    canonical_offset_term, evaluate_exact_logical_memory_load_paths, evaluate_indexed_read,
     evaluate_logical_memory_load_paths, evaluate_retained_memory_load_paths,
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
+pub(in crate::kernel) use memory_loads::{
+    expected_point_named_cell_read, observe_entry_integer_cell,
+};
 pub(crate) use memory_loads::{
     is_selected_scalar_read, latest_scalar_read_observation, registered_scalar_read_term,
-    scalar_read_for_exact_cell, scalar_read_observation,
+    scalar_read_for_exact_cell, scalar_read_for_exact_cell_at, scalar_read_observation,
 };
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
 #[cfg(test)]
@@ -139,8 +145,9 @@ pub(crate) use memory_loads::{
     load_variable_registry_len, with_load_variable_range, with_load_variable_registry_capacity,
 };
 pub(crate) use memory_loads::{
-    loaded_pointer_read_heap_identities, loaded_pointer_read_predates_block, pointer_load_identity,
-    record_pointer_load_source, registered_pointer_load, typed_pointer_read_variable,
+    loaded_pointer_read_heap_identities, loaded_pointer_read_predates_block, pointer_load_at_point,
+    pointer_load_identity, record_pointer_load_source, registered_pointer_load,
+    registered_pointer_load_point, typed_pointer_read_variable,
 };
 pub(crate) use memory_loads::{
     registered_load_kind_for_variable, registered_load_origin_term_for_variable,

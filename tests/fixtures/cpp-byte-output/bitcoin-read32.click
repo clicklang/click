@@ -61,7 +61,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
             contains(memory(this->data[0..4]), memory(this->data[0..4]));
         };
     }
-    step_until(call(0));
+    step_until(call(0).entry);
     step();
     have call(0).result == old(std_span_data(dst)) + 0 by { known(); }
     have separate(memory(at(call(0).exit, call(0).result)[0]), memory(old(this->data)[0..4])) by { solve(); }
@@ -121,7 +121,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     }
     have load<uint8>(old(this->data) + 3) == old(this->data[3]) by { solve(); }
 
-    step_until(call(1));
+    step_until(call(1).entry);
     step();
     have call(1).result == old(std_span_data(dst)) + 1 by { known(); }
     have separate(memory(at(call(1).exit, call(1).result)[0]), memory(old(this->data)[0..4])) by { solve(); }
@@ -193,7 +193,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     }
     have load<uint8>(old(this->data) + 3) == old(this->data[3]) by { solve(); }
 
-    step_until(call(2));
+    step_until(call(2).entry);
     step();
     have call(2).result == old(std_span_data(dst)) + 2 by { known(); }
     have separate(memory(at(call(2).exit, call(2).result)[0]), memory(old(this->data)[0..4])) by { solve(); }
@@ -277,7 +277,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
     }
     have load<uint8>(old(this->data) + 3) == old(this->data[3]) by { solve(); }
 
-    step_until(call(3));
+    step_until(call(3).entry);
     step();
     have call(3).result == old(std_span_data(dst)) + 3 by { known(); }
     have separate(memory(at(call(3).exit, call(3).result)[0]), memory(old(this->data)[0..4])) by { solve(); }
@@ -552,14 +552,14 @@ uint32 ser_readdata32<FixtureReader>(struct FixtureReader& s) {
     ensures s.data == old(s.data) + 4;
     ensures s.remaining == old(s.remaining) - 4u64;
 } by {
-    step_until(call(1));
+    step_until(call(1).entry);
     step();
     have std_span_size(call(1).parameter(__sp)) == 1u64 by { solve(); }
     have std_span_data(call(1).parameter(__sp)) == &obj by { solve(); }
     have std_span_size(call(1).result) == std_span_size(call(1).parameter(__sp)) * 4u64 by { known(); }
     have std_span_size(call(1).result) == 4u64 by { solve(); }
     have std_span_data(call(1).result) == ((&obj) as (uint8 *)) by { solve(); }
-    step_until(call(2));
+    step_until(call(2).entry);
     step() {
         requires std_span_size(call(2).parameter(dst)) == 4u64 by { solve(); }
         requires 4u64 <= s.remaining by { solve(); }

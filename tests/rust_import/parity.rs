@@ -177,6 +177,7 @@ fn charon_parity_migrated_proof_inventory_is_explicit() {
 
 /// Canonical examples use locked native imports without starting either compiler.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 35 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_canonical_examples_use_locked_native_artifacts() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

@@ -1,5 +1,7 @@
 use super::*;
-use crate::kernel::{ProgramType, ResourceAccessMode, ResourceSpec, int32, program_function};
+use crate::kernel::{ProgramType, int32, program_function};
+#[cfg(not(feature = "fast-gate"))]
+use crate::kernel::{ResourceAccessMode, ResourceSpec};
 
 #[test]
 fn authority_named_memory_rewrite_preserves_population_ledger() {

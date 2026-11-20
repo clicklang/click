@@ -9,7 +9,7 @@ fn sum(bytes: &[u8]) -> i32 {
     views bytes[0..bytes.len()];
     ensures result == old(prefix(bytes, bytes.len()));
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     have prefix(bytes, i) == 0 by {
         unfold(prefix(bytes, i)); solve();
     }
@@ -18,14 +18,14 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant i <= bytes.len();
         invariant 0 <= total and total <= 255 * i;
         invariant total == prefix(bytes, i);
-        preserve by {
-            step_until(read(0)); step();
+        maintain by {
+            step_until(read(0).entry); step();
             have i < 18446744073709551615u64;
             have prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer(bytes[i] as i32) by {
                 unfold(prefix(bytes, i + 1u64));
                 solve();
             }
-            step_until(assignment(i, 1));
+            step_until(assignment(i, 1).entry);
             have 0 <= total;
             have to_integer(total) <= 255 * to_integer(i + 1u64);
             have total == prefix(bytes, i + 1u64);

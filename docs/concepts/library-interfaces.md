@@ -86,9 +86,9 @@ noted, and a new interface must not copy one.
 | Rust | `Option::take` is rewritten into the move its implementation makes | `src/languages/rust/charon/option_take.rs` | One generic `Option::take<T>` contract |
 | Rust | `?` checks the library's own `Try` and `FromResidual` impls, then rewrites them into the `match` they define | `src/languages/rust/charon/option_try.rs`, `src/languages/rust/charon/result_try.rs` | Contracts of `branch` and `from_residual` |
 | Rust | `Range`, `slice::Iter`, `ChunksExact` and `Enumerate` are importer statements (`RangeNext`, `ChunkNext`, ...) over the iterators' fields | `src/languages/rust/charon/`, `src/languages/rust/lowering/` | Contracts of each iterator's `next` |
-| C++ | `std::span` and `std::array` contracts read their objects' layout | `library/cpp/span.interface.click`, `library/cpp/array.interface.click` | Contracts over each object's logical state ([C++ standard library](../reference/cli/import.md#c-standard-library)) |
+| C++ | `std::span` and `std::array` contracts read their objects' layout | `library/cpp/span.interface.click`, `library/cpp/array.interface.click` | Contracts over each object's logical state ([C++ standard library](../reference/cli/capture.md#c-standard-library)) |
 | C | The allocator family is built into the C front end and the kernel | `src/languages/c/` | Justified: allocation is part of C's memory model, not a library call |
-| C | Literal formats in `snprintf`, `printf` and `fprintf` select a fixed-arity contract | `src/languages/c/formatted_output.rs`, `library/c/stream_output.interface.click.in` | Justified while formats are checked by the C front end. The stream transition is an ordinary Click contract. |
+| C | Literal formats in `snprintf`, `printf` and `fprintf` select a fixed-arity contract the front end writes for each format | `src/languages/c/formatted_output.rs`, `library/c/stream_output.interface.click.in` | One Click contract each in `library/c/stdio.click`, over the call's `List<VarArg>` ([variadic calls](../reference/language/c.md#variadic-calls)). A `%s` argument also needs an iterated read-only view of each string. |
 | C | The thread runtime is a selected specification in Rust code | `src/languages/c/thread_runtime.rs` | Justified: it models the runtime, not one function |
 
 A gap is a missing feature in an interface that follows the principles:

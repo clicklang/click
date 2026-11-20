@@ -108,6 +108,7 @@ fn assert_constant_plus_log_growth(what: &str, samples: &[(usize, usize)], slope
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3.8s in the parallel gate"]
 fn private_local_copy_ignores_unrelated_resources() {
     for pointer_copy in [false, true] {
@@ -619,6 +620,7 @@ fn unmatched_instance_body_views_ignore_unrelated_instances() {
 /// The same publication grows with the instance's own body: one evaluation
 /// of each owned clause, and nothing more.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn unmatched_instance_body_views_are_linear_in_the_body() {
     // Smaller than `SIZES`: the charged work is linear in the body, but the
@@ -776,6 +778,7 @@ fn nested_composite_body_views_ignore_unrelated_instances() {
 /// The same publication grows with the child's body: one expansion of the
 /// owned composite, and nothing more.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn nested_composite_body_views_are_linear_in_the_child_body() {
     let mut samples = Vec::new();
@@ -1908,6 +1911,7 @@ fn a_store_forgets_a_folded_instance_cell_it_does_not_open() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
     let base = symbolic_base(TARGET_HEAP);

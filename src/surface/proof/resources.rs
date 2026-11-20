@@ -2838,7 +2838,7 @@ fn materialize_composite_resource_memory(
     // not to preparing the memory in which that admission will be checked.
     // All cells exposed by this body are named from its starting view.
     // Later clauses can read the cells exposed by earlier clauses.
-    let naming_memory = state.memory().clone();
+    let naming_point = state.program_point();
     for contained in composite_body.contains() {
         if !matches!(
             contained,
@@ -2865,10 +2865,11 @@ fn materialize_composite_resource_memory(
         })?;
         let memory = materialize_composite_resource_cells_from_state(
             state.memory().clone(),
-            &naming_memory,
+            &naming_point,
             &contained,
             &lowered,
             parameter_binding.parameters,
+            names_plain_scalar_body_at_entry(composite_body),
         );
         state = state.with_materialized_memory_at_current_point(memory);
     }
@@ -2899,7 +2900,7 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
     // cells become a new load-naming epoch.  The checked resource rewrite
     // independently validates every added cell against this same entry
     // state.
-    let naming_memory = memory.clone();
+    let naming_point = state.program_point();
     for contained in composite_body.contains() {
         let contained =
             instantiate_resource_clause(contained, substitutions).map_err(|message| {
@@ -2925,10 +2926,11 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
         })?;
         memory = materialize_composite_resource_cells_from_state(
             memory,
-            &naming_memory,
+            &naming_point,
             &contained,
             &lowered,
             parameter_binding.parameters,
+            names_plain_scalar_body_at_entry(composite_body),
         );
         // This composite-body instantiation path has no fact assumptions yet.
         // Projection/packing paths check composition once assumptions are
@@ -3576,7 +3578,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     // Lower later selectors through earlier cached fields, but name every
     // exposed cell at this one rewrite's input state. Caching a read is
     // not a new program write or a new load-naming epoch.
-    let naming_memory = state.memory().clone();
+    let naming_point = state.program_point();
     for contained in contained_clauses {
         let contained = instantiate_resource_clause(contained, &substitutions).map_err(|message| {
             ClickError::new(format!(
@@ -3604,10 +3606,11 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         if materialize_memory {
             let memory = materialize_composite_resource_cells_from_state(
                 state.memory().clone(),
-                &naming_memory,
+                &naming_point,
                 &contained,
                 &lowered,
                 parameter_binding.parameters,
+                names_plain_scalar_body_at_entry(composite_body),
             );
             // Keep the program point and unrelated memory-backed views when
             // the proof rewrite gives cells names.
@@ -5467,12 +5470,21 @@ fn instantiate_contract_segment(
     })
 }
 
+fn names_plain_scalar_body_at_entry(body: &CompositeResourceBody) -> bool {
+    body.fields.is_empty()
+        && body.facts().is_empty()
+        && body.condition().is_none()
+        && body.matched.is_none()
+        && matches!(body.contains(), [ResourceClause::OwnMemory(_)])
+}
+
 fn materialize_composite_resource_cells_from_state(
     mut memory: SymbolicMemory,
-    naming_memory: &SymbolicMemory,
+    naming_point: &crate::kernel::ProgramPoint,
     resource_clause: &ResourceClause,
     lowered: &ResourceFact,
     parameters: &[crate::languages::interface::ImportedParameter],
+    name_at_entry: bool,
 ) -> SymbolicMemory {
     let Some((segment, range)) = (match resource_clause {
         ResourceClause::Conditional { .. } => None,
@@ -5498,7 +5510,6 @@ fn materialize_composite_resource_cells_from_state(
         return memory;
     }
 
-    let naming_source = crate::kernel::intern_memory(naming_memory.clone());
     // Observe complete typed fields. In particular, an eight-byte pointer read
     // cannot reuse two independently named four-byte integer observations.
     if let Some(layout) = crate::surface::lowering::object_segment_layout(parameters, segment)
@@ -5520,11 +5531,7 @@ fn materialize_composite_resource_cells_from_state(
                             } else {
                                 element_type
                             };
-                        memory = memory.materialize_cell_from_source(
-                            pointer,
-                            storage_type,
-                            naming_source.clone(),
-                        );
+                        memory = memory.materialize_cell_at(pointer, storage_type, naming_point);
                     }
                     memory
                 },
@@ -5572,14 +5579,31 @@ fn materialize_composite_resource_cells_from_state(
     } else {
         ProgramType::Int32
     };
+    let point_named = name_at_entry
+        && start == 0
+        && run_type == ProgramType::Int32
+        && element_width == ProgramType::Int32.byte_width()
+        && matches!(&segment.base,
+            ProgramExpression::Value(value) if value.program_type() == ProgramType::Int32Pointer)
+        && naming_point
+            .entry_integer_version(range.base(), crate::kernel::LoadKind::Int32)
+            .is_some();
+    if point_named && end == 1 {
+        return memory.materialize_entry_integer_cell_at(range.base().clone(), naming_point);
+    }
     if run_type.byte_width() <= element_width {
+        let source = if point_named {
+            naming_point.clone()
+        } else {
+            crate::kernel::ProgramPoint::at(naming_point.shared_memory())
+        };
         match memory.with_named_cell_run(
             range.base().clone(),
             element_width,
             run_type,
             start,
             end,
-            naming_source.clone(),
+            source,
         ) {
             Ok(seeded) => return seeded,
             Err(unchanged) => memory = unchanged,
@@ -5594,7 +5618,7 @@ fn materialize_composite_resource_cells_from_state(
         if matches!(memory.load(&pointer), ExpressionOutcome::Value(_)) {
             continue;
         }
-        memory = memory.materialize_cell_from_source(pointer, run_type, naming_source.clone());
+        memory = memory.materialize_cell_at(pointer, run_type, naming_point);
     }
     memory
 }
@@ -6169,10 +6193,11 @@ mod wide_range_reader_tests {
         let memory = SymbolicMemory::new();
         let result = materialize_composite_resource_cells_from_state(
             memory.clone(),
-            &memory,
+            &crate::kernel::ProgramPoint::of_memory(&memory),
             &ResourceClause::OwnMemory(segment),
             &ResourceFact::own_memory(wide),
             &[],
+            false,
         );
         assert_eq!(result.diagnostic_identity(), memory.diagnostic_identity());
         // The range kind also matters when the shared term representation has
@@ -6192,10 +6217,11 @@ mod wide_range_reader_tests {
         });
         let result = materialize_composite_resource_cells_from_state(
             memory.clone(),
-            &memory,
+            &crate::kernel::ProgramPoint::of_memory(&memory),
             &clause,
             &ResourceFact::own_memory(tagged),
             &[],
+            false,
         );
         assert_eq!(result.diagnostic_identity(), memory.diagnostic_identity());
     }
@@ -6208,6 +6234,28 @@ mod guarded_unmatched_materialization_tests {
     #[test]
     fn ordinary_composite_cell_naming_keeps_the_entry_point() {
         let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Address::symbolic(crate::kernel::Variable(88_026));
+        let memory = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
+        let state = ExecutionState::new().with_memory(memory);
+        check_composite_cell_naming(pointer, state, false);
+    }
+
+    #[test]
+    fn a_held_composite_names_an_unwritten_scalar_at_function_entry() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Address {
+            base: crate::kernel::AddressBase::ExternalArgument,
+            offset: crate::kernel::AddressOffset::Constant(0),
+        };
+        let state = ExecutionState::new().begin_function_entry_memory();
+        check_composite_cell_naming(pointer, state, true);
+    }
+
+    fn check_composite_cell_naming(
+        pointer: Address,
+        state: ExecutionState,
+        names_entry_version: bool,
+    ) {
         let file = crate::surface::parser::parse_file_items(
             "resource initialized_cell(p: int32*) { owns *p; }",
         )
@@ -6217,7 +6265,6 @@ mod guarded_unmatched_materialization_tests {
         let predicates = PredicateEnvironment::new(&[]);
         let specs = SpecDefinitions::new(&predicates, &functions);
         let parameters = ParameterBinding::new(&[], &[]);
-        let pointer = Address::symbolic(crate::kernel::Variable(88_026));
         let held = ResourceFact::own_composite(
             "initialized_cell".into(),
             vec![ProgramValue::typed_pointer(
@@ -6225,9 +6272,7 @@ mod guarded_unmatched_materialization_tests {
                 ProgramType::Int32Pointer,
             )],
         );
-        let state = ExecutionState::new()
-            .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4))
-            .with_resource_context(ResourceContext::new().unchecked_with_fact(held));
+        let state = state.with_resource_context(ResourceContext::new().unchecked_with_fact(held));
         let point = state.observation_point_id().unwrap();
         assert!(!matches!(
             state.memory().load(&pointer),
@@ -6253,10 +6298,16 @@ mod guarded_unmatched_materialization_tests {
         )
         .unwrap();
         for named_view in [named, projected] {
-            assert!(matches!(
-                named_view.memory().load(&pointer),
-                ExpressionOutcome::Value(_)
-            ));
+            let ExpressionOutcome::Value(value) = named_view.memory().load(&pointer) else {
+                panic!("the held resource supplies its scalar cell");
+            };
+            if names_entry_version {
+                assert!(matches!(
+                    value,
+                    ProgramValue::Int32(MachineTerm::MemoryLoad(source, _, _))
+                        if source.read_version_id() == Some(point)
+                ));
+            }
             assert_eq!(named_view.observation_point_id(), Some(point));
         }
     }
@@ -6614,7 +6665,7 @@ mod guarded_unmatched_materialization_tests {
         assert_eq!(
             named
                 .program_point()
-                .indexed_local_integer_version(&slot, crate::kernel::LoadKind::Int32)
+                .indexed_integer_version(&slot, crate::kernel::LoadKind::Int32)
                 .and_then(|version| version.read_version_id()),
             Some(point)
         );
@@ -6811,10 +6862,11 @@ mod declared_scalar_field_observation_tests {
                 let (named, work) = crate::instrumentation::measure_deterministic_work(|| {
                     materialize_composite_resource_cells_from_state(
                         memory.clone(),
-                        &memory,
+                        &crate::kernel::ProgramPoint::of_memory(&memory),
                         &clause,
                         &fact,
                         &[],
+                        false,
                     )
                 });
                 assert!(matches!(
@@ -6848,10 +6900,11 @@ mod declared_scalar_field_observation_tests {
         );
         let named = materialize_composite_resource_cells_from_state(
             memory.clone(),
-            &memory,
+            &crate::kernel::ProgramPoint::of_memory(&memory),
             &ResourceClause::OwnMemory(segment),
             &ResourceFact::own_memory(MemoryRange::new(base.clone(), 0.into(), 2.into())),
             &[],
+            false,
         );
         let ExpressionOutcome::Value(value) = named.load(&base) else {
             panic!("observed field")
@@ -6892,10 +6945,11 @@ mod declared_scalar_field_observation_tests {
             let memory = SymbolicMemory::new();
             let named = materialize_composite_resource_cells_from_state(
                 memory.clone(),
-                &memory,
+                &crate::kernel::ProgramPoint::of_memory(&memory),
                 &ResourceClause::OwnMemory(segment),
                 &ResourceFact::own_memory(range),
                 &[],
+                false,
             );
             if count > 0 {
                 assert!(matches!(

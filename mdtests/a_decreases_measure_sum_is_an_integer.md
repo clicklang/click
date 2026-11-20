@@ -37,7 +37,7 @@ int32 enters_either_way(int32 a, int32 b) {
         invariant a <= 1;
         invariant b >= 0;
         invariant b <= 1;
-        preserve by {
+        maintain by {
             have 0 < a + b by {
                 cases {
                     a > 0 => {

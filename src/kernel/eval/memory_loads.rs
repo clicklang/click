@@ -271,6 +271,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
         assumptions,
     );
     retain_indexed_scalar_cell_value(memory, &pointer, value_type, assumptions, &mut paths);
+    #[cfg(test)]
     if let [path] = paths.as_slice()
         && let ExpressionOutcome::Value(value) = &path.outcome
     {
@@ -280,20 +281,71 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
 }
 
 /// A logical integer read whose version was selected from the execution path.
-pub(in crate::kernel) fn evaluate_indexed_integer_read(
-    memory: &SymbolicMemory,
+pub(in crate::kernel) fn evaluate_indexed_read(
     version: ProgramPoint,
+    origin: &ProgramPoint,
     pointer: Address,
     value_type: ProgramType,
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> ExpressionPath {
-    let stored = version
-        .indexed_integer_store_bits()
-        .expect("an indexed integer version comes from a direct store")
-        .clone();
+    if value_type.is_pointer() {
+        let ProgramValue::Pointer(stored) = version
+            .indexed_stored_value()
+            .expect("indexed pointer store")
+            .native()
+            .numeric_value()
+        else {
+            unreachable!("indexed pointer store");
+        };
+        let stored = stored.clone();
+        record_load_access_width(version.memory(), &pointer, value_type.byte_width());
+        let read = Pointer::from_point_read(version, value_type, &pointer);
+        facts.push(ExecutionPureFact::logical_pointer_value_equation(
+            stored,
+            read.clone(),
+        ));
+        let value = ProgramValue::Pointer(read);
+        return ExpressionPath {
+            outcome: ExpressionOutcome::Value(value),
+            facts,
+            obligations,
+        };
+    }
+    if value_type == ProgramType::Bool {
+        let ProgramValue::Bool(stored) = version
+            .indexed_stored_value()
+            .expect("indexed Boolean store")
+            .native()
+            .numeric_value()
+        else {
+            unreachable!("indexed Boolean store");
+        };
+        let stored = ConditionTerm::truth_of_bool_word(stored);
+        let read = ConditionTerm::boolean_cell_read(version, pointer.clone());
+        facts.push(ExecutionPureFact {
+            logical_read_equation: true,
+            ..ExecutionPureFact::certified(Proposition::condition_is(
+                ConditionTerm::bool_equal(read.clone(), stored),
+                true,
+            ))
+        });
+        return ExpressionPath {
+            outcome: ExpressionOutcome::Value(ProgramValue::of_bool(read)),
+            facts,
+            obligations,
+        };
+    }
+    let stored = version.indexed_integer_store_bits().cloned();
     let kind = LoadKind::of_type(value_type).expect("indexed integer read");
     let format = MachineIntegerType::from_program_type(value_type).expect("indexed integer read");
+    read_observations::record_at(
+        &version,
+        &pointer,
+        kind,
+        origin.shared_memory(),
+        value_type.byte_width(),
+    );
     let read = MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind);
     let value = match value_type {
         ProgramType::Int8 => ProgramValue::Int8(read.clone()),
@@ -309,26 +361,27 @@ pub(in crate::kernel) fn evaluate_indexed_integer_read(
         _ => unreachable!("indexed integer read"),
     };
     // Retain the read and publish its exact store equation separately.
-    let equation = match value_type {
-        ProgramType::Int128 => wide_integer_comparison_condition(
-            ComparisonOperator::Equal,
-            &value,
-            &ProgramValue::Int128(stored),
-        )
-        .expect("typed signed 128-bit store"),
-        ProgramType::UInt128 => wide_integer_comparison_condition(
-            ComparisonOperator::Equal,
-            &value,
-            &ProgramValue::UInt128(stored),
-        )
-        .expect("typed unsigned 128-bit store"),
-        _ => ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored),
-    };
-    facts.push(ExecutionPureFact {
-        logical_read_equation: true,
-        ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
-    });
-    super::typed_reads::record(memory, &pointer, &value);
+    if let Some(stored) = stored {
+        let equation = match value_type {
+            ProgramType::Int128 => wide_integer_comparison_condition(
+                ComparisonOperator::Equal,
+                &value,
+                &ProgramValue::Int128(stored),
+            )
+            .expect("typed signed 128-bit store"),
+            ProgramType::UInt128 => wide_integer_comparison_condition(
+                ComparisonOperator::Equal,
+                &value,
+                &ProgramValue::UInt128(stored),
+            )
+            .expect("typed unsigned 128-bit store"),
+            _ => ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored),
+        };
+        facts.push(ExecutionPureFact {
+            logical_read_equation: true,
+            ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
+        });
+    }
     ExpressionPath {
         outcome: ExpressionOutcome::Value(value),
         facts,
@@ -344,13 +397,13 @@ pub(in crate::kernel) fn evaluate_indexed_integer_read(
 /// read's address, provenance and bounds owner are the same exact read
 /// ([`Pointer::from_read`]). It adds no facts and grants no access.
 pub(in crate::kernel) fn evaluate_exact_logical_memory_load_paths(
-    memory: &SymbolicMemory,
+    point: ProgramPoint,
     pointer: Address,
     value_type: ProgramType,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> Vec<ExpressionPath> {
-    let outcome = match exact_logical_read_value(memory, &pointer, value_type) {
+    let outcome = match exact_logical_read_value(point, &pointer, value_type) {
         Some(value) => ExpressionOutcome::Value(value),
         None => ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
             pointer,
@@ -368,8 +421,8 @@ pub(in crate::kernel) fn evaluate_exact_logical_memory_load_paths(
 /// [`evaluate_exact_logical_memory_load_paths`]'s value: the exact read
 /// constructor evaluation uses for a cell of `memory`, for the integer and
 /// pointer cells whose ordinary reads name their version.
-pub(in crate::kernel) fn exact_logical_read_value(
-    memory: &SymbolicMemory,
+fn exact_logical_read_value(
+    point: ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
@@ -377,17 +430,33 @@ pub(in crate::kernel) fn exact_logical_read_value(
         return None;
     }
     if value_type.is_pointer() {
-        record_load_access_width(memory, pointer, value_type.byte_width());
-        let state = crate::kernel::intern_memory_ref(memory);
-        // `Pointer::from_read` names its provenance by the unchanged-bytes
-        // source of `state`; the address names the same read.
-        let read = Address::loaded_value(&state.unchanged_bytes_source(), pointer);
-        return Some(ProgramValue::Pointer(Pointer::from_read(
-            read, value_type, &state, pointer,
+        record_load_access_width(point.memory(), pointer, value_type.byte_width());
+        return Some(ProgramValue::Pointer(Pointer::from_point_read(
+            point.for_exact_read(),
+            value_type,
+            pointer,
         )));
     }
-    symbolic_load_value(memory, pointer, value_type)
-        .map(|value| complete_loaded_word(value, memory, pointer))
+    let point = point.for_exact_read();
+    record_load_access_width(point.memory(), pointer, value_type.byte_width());
+    let value = if value_type == ProgramType::Bool {
+        ProgramValue::of_bool(ConditionTerm::boolean_cell_read(
+            point.clone(),
+            pointer.clone(),
+        ))
+    } else {
+        let kind = LoadKind::of_type(value_type)?;
+        read_observations::record_at(
+            &point,
+            pointer,
+            kind,
+            point.shared_memory(),
+            value_type.byte_width(),
+        );
+        let bits = MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), kind);
+        ProgramValue::from_bitvector_term(value_type, bits)?
+    };
+    Some(complete_loaded_word(value, point.memory(), pointer))
 }
 
 fn evaluate_logical_memory_load_paths_unbridged(
@@ -909,6 +978,12 @@ fn evaluate_retained_memory_load_case(
             || purpose == LoadPurpose::Logical
             || written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
             || assumptions.has_memory_read_defined_evidence(memory, &pointer, value_type));
+    // An ordinary external scalar fallback names the written state even
+    // when the alias-resolution case is examining a projection of it.
+    let reads_written_state = allow_symbolic_external_load
+        && pointer.has_symbolic_block()
+        && purpose == LoadPurpose::Program
+        && value_type.pointee_type().is_none();
     // A typed union overlay is the authoritative view for an exact typed
     // load, including in history-sensitive symbolic-load mode. Selecting
     // the raw load first would reinterpret a copied pointer member as an
@@ -1090,8 +1165,21 @@ fn evaluate_retained_memory_load_case(
             // they are visited in the whole map's order.
             let candidates = AliasCandidates::of_block(&pointer.base);
             let normalized = std::cell::OnceCell::new();
+            let point = (reads_written_state
+                && !crate::kernel::assumptions::implicit_consulted_premises_capturing()
+                && !crate::kernel::assumptions::reasoning_interrupted())
+            .then(|| {
+                let normalized = normalized.get_or_init(|| {
+                    crate::kernel::reasoning::memory_resolution::pointer_with_exact_index_constants(
+                        &pointer,
+                        assumptions,
+                    )
+                });
+                (&pointer, normalized, assumptions)
+            });
             let (found, visited) = memory.cells.find_retained_candidate_by(
                 &candidates,
+                point,
                 |stored_pointer, _| {
                     let equal = alias_cache.resolution_equal(&pointer, stored_pointer, assumptions);
                     // A bounded equality query can retain an alias guard before its
@@ -1175,7 +1263,13 @@ fn evaluate_retained_memory_load_case(
         }];
     }
 
-    if allow_symbolic_external_load && assumptions.should_prefer_symbolic_external_loads() {
+    let prefers_symbolic = assumptions.should_prefer_symbolic_external_loads();
+    if allow_symbolic_external_load && (prefers_symbolic || reads_written_state) {
+        if !prefers_symbolic {
+            // Preserve the width at the actual access spelling, as the
+            // reduction path did before naming the value at the written state.
+            record_load_access_width(memory, &pointer, value_type.byte_width());
+        }
         let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
             if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
                 written
@@ -1293,11 +1387,7 @@ fn evaluate_retained_memory_load_case(
 
     if pointer.has_symbolic_block() && allow_symbolic_external_load {
         let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
-            if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
-                written
-            } else {
-                &memory
-            },
+            &memory,
             &pointer,
             value_type,
             &mut facts,
@@ -1829,6 +1919,24 @@ fn cell_value_recorded_on_path(
         .map(|converted| retained_cell_conversion(&value, converted))
 }
 
+/// The state whose read of the whole pointer cell at `pointer` `memory`
+/// still holds: both four-byte halves are held as that state's reads of
+/// them. A held lower half alone says nothing about the upper four bytes,
+/// so it never names the pointer. This reads only the two cells' contents.
+fn held_pointer_cell_state(
+    memory: &SymbolicMemory,
+    pointer: &Address,
+    lower_state: &SharedMemory,
+) -> Option<SharedMemory> {
+    let upper = pointer.offset_by_bytes(4);
+    let ProgramValue::Int32(MachineTerm::MemoryLoad(state, address, LoadKind::Int32)) =
+        memory.known_value(&upper)?
+    else {
+        return None;
+    };
+    (state.shared_memory() == lower_state && *address == upper).then(|| lower_state.clone())
+}
+
 /// Reinterprets a cached scalar read as a pointer while retaining its selected
 /// descriptor. Complete-pointer frame evidence remains separate from the
 /// numeric prefix. Only the legacy volatile route still allocates a name.
@@ -1843,6 +1951,11 @@ fn canonicalized_pointer_value_from_int_cell(
     purpose: LoadPurpose,
 ) -> Option<ProgramValue> {
     value_type.pointee_type()?;
+    // `prefix_read`: the state and cell the cached prefix reads. A pointer
+    // covers the whole eight-byte cell, so it is never named by the prefix's
+    // own version, which a four-byte walk may select across a write to the
+    // cell's upper bytes (`held_pointer_cell_state`).
+    let mut prefix_read = None;
     let (fresh, defining_load) = match value {
         ProgramValue::Int8(bits @ MachineTerm::MemoryLoad(..)) => {
             return Some(ProgramValue::Int8(canonical_scalar_read(bits)));
@@ -1855,6 +1968,9 @@ fn canonicalized_pointer_value_from_int_cell(
                 let fresh = load_variable_for_term(bits)?.0;
                 (Some(fresh), registered_load_term_for_variable(&fresh))
             } else {
+                if let MachineTerm::MemoryLoad(state, address, _) = bits {
+                    prefix_read = Some((state.shared_memory().clone(), address.as_ref().clone()));
+                }
                 (None, Some(canonical_scalar_read(bits)))
             }
         }
@@ -1891,6 +2007,12 @@ fn canonicalized_pointer_value_from_int_cell(
             &crate::kernel::intern_memory_ref(memory).unchanged_bytes_source(),
             pointer,
         )
+    } else if let Some((state, _)) = prefix_read.as_ref().filter(|(_, cell)| cell == pointer) {
+        // The whole cell's read: the prefix's state when the memory still
+        // holds both halves as that state's reads, else this memory.
+        let from = held_pointer_cell_state(memory, pointer, state)
+            .unwrap_or_else(|| crate::kernel::intern_memory_ref(memory));
+        Address::canonical_read(&from, pointer)
     } else {
         Address::loaded(defining_load.as_ref()?).expect("selected pointer read")
     };
@@ -1940,7 +2062,21 @@ fn canonicalized_pointer_value_from_int_cell(
                 || purpose == LoadPurpose::Program && SpecificationReadScope::is_active())
             && let MachineTerm::MemoryLoad(memory, address, _) = &load
         {
-            assumptions.register_pointer_read(&loaded, memory.shared_memory(), address);
+            // The read is registered at the state that names it.
+            match loaded.as_loaded_value() {
+                Some(read)
+                    if prefix_read
+                        .as_ref()
+                        .is_some_and(|(_, cell)| cell == pointer) =>
+                {
+                    assumptions.register_pointer_read(
+                        &loaded,
+                        &read.defining_memory,
+                        &read.defining_address,
+                    )
+                }
+                _ => assumptions.register_pointer_read(&loaded, memory.shared_memory(), address),
+            }
         }
         // Volatile observations retain their legacy opaque value until their
         // event representation migrates. Ordinary descriptors need no equation.
@@ -2507,7 +2643,7 @@ thread_local! {
     /// neither a scalar load variable nor its mutable maximum access width
     /// decides membership in this registry.
     static POINTER_LOAD_REGISTRY: std::cell::RefCell<
-        std::collections::HashMap<PointerLoadId, (SharedMemory, Address)>,
+        std::collections::HashMap<PointerLoadId, (ProgramPoint, Address, Option<ProgramType>)>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// The read observation a pointer-load name was first produced from, whose
     /// epoch-scoped live origin answers what existed when the value was read
@@ -2583,7 +2719,8 @@ pub(crate) struct LoadRegistryState {
     wide_observations: imbl::HashMap<(u64, Variable), (SharedMemory, Address)>,
     variables: std::collections::HashMap<Variable, RegisteredLoad>,
     read_observations: read_observations::State,
-    pointers: std::collections::HashMap<PointerLoadId, (SharedMemory, Address)>,
+    pointers:
+        std::collections::HashMap<PointerLoadId, (ProgramPoint, Address, Option<ProgramType>)>,
     pointer_sources: std::collections::HashMap<PointerLoadId, read_observations::Id>,
     widths: std::collections::HashMap<(SharedMemory, Address), u32>,
     widths_at_address: std::collections::HashMap<Address, u32>,
@@ -2826,6 +2963,23 @@ fn decide_closed_conditions(proposition: &Proposition) -> Option<Proposition> {
 }
 
 fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
+    if let Some((condition, value)) = proposition.condition_native() {
+        if let ConditionTerm::BoolEqual(left, right) = condition {
+            let left_value = read_over_write_boolean(left);
+            let right_value = read_over_write_boolean(right);
+            if left_value.is_some() || right_value.is_some() {
+                return Some(Proposition::condition_is(
+                    ConditionTerm::bool_equal(
+                        left_value.unwrap_or_else(|| left.as_ref().clone()),
+                        right_value.unwrap_or_else(|| right.as_ref().clone()),
+                    ),
+                    *value,
+                ));
+            }
+        } else if let Some(stored) = read_over_write_boolean(condition) {
+            return Some(Proposition::condition_is(stored, *value));
+        }
+    }
     // SymbolicMemory states stay opaque: only the proposition's own terms are
     // visited, never the cells of a state a read names.
     let mut collector =
@@ -2914,6 +3068,37 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
     (&resolved != proposition).then_some(resolved)
 }
 
+/// A Boolean read gets the logical value of its recorded store. For an
+/// exact read, the selected point's index can supply that store directly.
+fn read_over_write_boolean(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::UInt8,
+        relation: CompareRelation::Equal,
+        left,
+        right,
+    } = condition.bool_negation_operand()?
+    else {
+        return None;
+    };
+    if right.bool_constant_value() != Some(false) {
+        return None;
+    }
+    let MachineTerm::MemoryLoad(point, pointer, LoadKind::UInt8) = left.as_ref() else {
+        return None;
+    };
+    let version;
+    let point = if point.is_exact_read() {
+        version = point.indexed_typed_version(pointer, ProgramType::Bool)?;
+        &version
+    } else {
+        point
+    };
+    let ProgramValue::Bool(stored) = point.indexed_stored_value()?.native() else {
+        return None;
+    };
+    Some(ConditionTerm::truth_of_bool_word(stored))
+}
+
 /// Arithmetic congruence for selected comparison queries. Unlike the
 /// read-over-write form, this is not an additional fact to publish or index.
 pub(crate) fn arithmetic_comparison_form(proposition: &Proposition) -> Option<Proposition> {
@@ -2933,6 +3118,14 @@ pub(crate) fn pointer_read_over_immediate_store(pointer: &Address) -> Option<Add
     let read = pointer.as_loaded_value()?;
     if read.displacement != AddressOffset::Constant(0) {
         return None;
+    }
+
+    if let Some(ProgramValue::Pointer(stored)) = read
+        .point
+        .indexed_stored_value()
+        .map(StoredMemoryValue::native)
+    {
+        return Some(stored.address().clone());
     }
     let source = crate::kernel::prelude::canonical_load_projection_source(
         &read.defining_memory,
@@ -2970,6 +3163,14 @@ pub(crate) fn pointer_read_over_write_program_value(pointer: &Address) -> Option
     let read = pointer.as_loaded_value()?;
     if read.displacement != AddressOffset::Constant(0) {
         return None;
+    }
+
+    if let Some(ProgramValue::Pointer(stored)) = read
+        .point
+        .indexed_stored_value()
+        .map(StoredMemoryValue::native)
+    {
+        return Some(stored.clone());
     }
     // Only a cached pointer can be the stored pointer; anything else needs no
     // walk of the cell's history, nor a run's element built to look at.
@@ -3174,7 +3375,7 @@ pub(crate) fn registered_scalar_read_term(
 
 /// A selected read's observation data, distinct from its immutable value.
 pub(crate) struct ScalarReadObservation {
-    pub memory: SharedMemory,
+    pub point: ProgramPoint,
     pub pointer: Address,
     pub kind: LoadKind,
     pub bytes: u32,
@@ -3193,11 +3394,11 @@ pub(crate) fn scalar_read_observation(
 }
 
 pub(in crate::kernel) fn scalar_read_origin_for_cell(
-    memory: &SharedMemory,
+    point: &ProgramPoint,
     address: &Address,
     kind: LoadKind,
 ) -> Option<SharedMemory> {
-    read_observations::origin_for_cell(memory, address, kind)
+    read_observations::origin_for_cell(point, address, kind)
 }
 
 /// Build an exact read and publish its typed observation. This does not
@@ -3209,17 +3410,35 @@ pub(crate) fn scalar_read_for_exact_cell(
     kind: LoadKind,
     bytes: u32,
 ) -> MachineTerm {
-    let id = read_observations::record(memory, pointer, kind, memory, bytes);
+    scalar_read_for_exact_cell_at(&ProgramPoint::at(memory), pointer, kind, bytes)
+}
+
+pub(crate) fn scalar_read_for_exact_cell_at(
+    point: &ProgramPoint,
+    pointer: &Address,
+    kind: LoadKind,
+    bytes: u32,
+) -> MachineTerm {
+    let id = read_observations::record_at(point, pointer, kind, point.shared_memory(), bytes);
     read_observations::select(id);
-    MachineTerm::memory_read(memory.clone(), pointer.clone(), kind)
+    MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), kind)
 }
 
 pub(crate) fn is_selected_scalar_read(
-    memory: &SharedMemory,
+    point: &ProgramPoint,
     pointer: &Address,
     kind: LoadKind,
 ) -> bool {
-    read_observations::selected(memory, pointer, kind)
+    read_observations::selected(point, pointer, kind)
+}
+
+/// The access width registered by a typed producer for this exact descriptor.
+pub(in crate::kernel) fn observed_scalar_read_width(
+    point: &ProgramPoint,
+    pointer: &Address,
+    kind: LoadKind,
+) -> Option<u32> {
+    read_observations::existing_at(point, pointer, kind).and_then(read_observations::bytes)
 }
 
 /// Existing observation metadata is evidence of an access width too. Merely
@@ -3245,9 +3464,19 @@ pub(crate) fn registered_load_kind_for_variable(variable: &Variable) -> Option<L
     reason = "the typed load producer migrates after this identity foundation"
 )]
 pub(crate) fn pointer_load_identity(memory: &SharedMemory, address: &Address) -> PointerLoadId {
+    pointer_load_at_point(ProgramPoint::at(memory), address, None)
+}
+
+pub(crate) fn pointer_load_at_point(
+    point: ProgramPoint,
+    address: &Address,
+    value_type: Option<ProgramType>,
+) -> PointerLoadId {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    memory.arena_id().hash(&mut hasher);
+    point.read_key().hash(&mut hasher);
+    point.is_exact_read().hash(&mut hasher);
+    value_type.hash(&mut hasher);
     address.hash(&mut hasher);
     let mut slot = hasher.finish() % POINTER_LOAD_ID_RANGE;
     POINTER_LOAD_REGISTRY.with(|registry| {
@@ -3255,8 +3484,11 @@ pub(crate) fn pointer_load_identity(memory: &SharedMemory, address: &Address) ->
         loop {
             let identity = PointerLoadId(slot);
             match registry.get(&identity) {
-                Some((known_memory, known_address))
-                    if known_memory.arena_id() == memory.arena_id() && known_address == address =>
+                Some((known_point, known_address, known_type))
+                    if known_point.read_key() == point.read_key()
+                        && known_point.is_exact_read() == point.is_exact_read()
+                        && *known_type == value_type
+                        && known_address == address =>
                 {
                     return identity;
                 }
@@ -3269,7 +3501,7 @@ pub(crate) fn pointer_load_identity(memory: &SharedMemory, address: &Address) ->
                         registry.len() < LOAD_VARIABLE_REGISTRY_CAPACITY,
                         "pointer-load registry capacity exhausted"
                     );
-                    registry.insert(identity, (memory.clone(), address.clone()));
+                    registry.insert(identity, (point, address.clone(), value_type));
                     return identity;
                 }
             }
@@ -3323,7 +3555,13 @@ thread_local! {
 }
 
 fn immediate_stored_address_base(identity: PointerLoadId) -> Option<AddressBase> {
-    let (memory, address) = registered_pointer_load(identity)?;
+    let (point, address, _) = registered_pointer_load_point(identity)?;
+    if let Some(ProgramValue::Pointer(stored)) =
+        point.indexed_stored_value().map(StoredMemoryValue::native)
+    {
+        return Some(stored.address().base.clone());
+    }
+    let memory = point.into_shared_memory();
     if !holds_pointer_cell(memory.memory(), &address) {
         return None;
     }
@@ -3338,6 +3576,13 @@ fn immediate_stored_address_base(identity: PointerLoadId) -> Option<AddressBase>
 
 /// Decode a pointer-load name without consulting scalar-load metadata.
 pub(crate) fn registered_pointer_load(identity: PointerLoadId) -> Option<(SharedMemory, Address)> {
+    let (point, address, _) = registered_pointer_load_point(identity)?;
+    Some((point.into_shared_memory(), address))
+}
+
+pub(crate) fn registered_pointer_load_point(
+    identity: PointerLoadId,
+) -> Option<(ProgramPoint, Address, Option<ProgramType>)> {
     POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().get(&identity).cloned())
 }
 
@@ -3580,7 +3825,7 @@ pub(crate) fn record_pointer_load_source(identity: PointerLoadId, read: &Machine
     let MachineTerm::MemoryLoad(memory, address, kind) = read else {
         return;
     };
-    if let Some(observation) = read_observations::existing(memory.shared_memory(), address, *kind) {
+    if let Some(observation) = read_observations::existing_at(memory, address, *kind) {
         POINTER_LOAD_SOURCES.with(|sources| {
             sources.borrow_mut().entry(identity).or_insert(observation);
         });
@@ -3588,6 +3833,13 @@ pub(crate) fn record_pointer_load_source(identity: PointerLoadId, read: &Machine
 }
 
 fn pointer_load_origin(identity: PointerLoadId) -> Option<SharedMemory> {
+    if let Some(memory) = POINTER_LOAD_REGISTRY.with(|registry| {
+        let registry = registry.borrow();
+        let (point, _, value_type) = registry.get(&identity)?;
+        value_type.is_some().then(|| point.shared_memory().clone())
+    }) {
+        return Some(memory);
+    }
     let observation =
         POINTER_LOAD_SOURCES.with(|sources| sources.borrow().get(&identity).copied())?;
     read_observations::observation(observation)?.origin
@@ -3790,15 +4042,73 @@ pub(crate) fn canonical_form_of_load(
     canonical_scalar_read(&MachineTerm::memory_read(memory, pointer, kind))
 }
 
-/// Resource cells retain structural descriptors for integers and pointers.
+/// Name a resource cell using the indexed defining store when available.
 pub(crate) fn canonical_cell_load(
-    memory: SharedMemory,
-    pointer: Address,
+    source: &ProgramPoint,
+    pointer: &Address,
     ty: ProgramType,
 ) -> MachineTerm {
+    if let Some(read) = indexed_resource_scalar_read(source, pointer, ty) {
+        record_indexed_cell_read(source, &read);
+        return read;
+    }
     let kind = LoadKind::of_type(ty).expect("scalar cell read kind");
-    let read = MachineTerm::memory_read(memory, pointer, kind);
-    canonical_scalar_read(&read)
+    canonical_form_of_load(source.shared_memory().clone(), pointer.clone(), kind)
+}
+
+fn indexed_resource_scalar_read(
+    source: &ProgramPoint,
+    pointer: &Address,
+    ty: ProgramType,
+) -> Option<MachineTerm> {
+    MachineIntegerType::from_program_type(ty)?;
+    let kind = LoadKind::of_type(ty)?;
+    let point = source.indexed_integer_version(pointer, kind)?;
+    Some(MachineTerm::MemoryLoad(
+        point,
+        Box::new(pointer.clone()),
+        kind,
+    ))
+}
+
+pub(in crate::kernel) fn expected_point_named_cell_read(
+    source: &ProgramPoint,
+    pointer: &Address,
+    ty: ProgramType,
+) -> Option<MachineTerm> {
+    indexed_resource_scalar_read(source, pointer, ty).or_else(|| {
+        let kind = LoadKind::of_type(ty)?;
+        let point = source.entry_integer_version(pointer, kind)?;
+        Some(MachineTerm::MemoryLoad(
+            point,
+            Box::new(pointer.clone()),
+            kind,
+        ))
+    })
+}
+
+pub(in crate::kernel) fn observe_entry_integer_cell(
+    source: &ProgramPoint,
+    pointer: &Address,
+) -> Option<MachineTerm> {
+    let kind = LoadKind::Int32;
+    let point = source.entry_integer_version(pointer, kind)?;
+    let read = MachineTerm::MemoryLoad(point, Box::new(pointer.clone()), kind);
+    record_indexed_cell_read(source, &read);
+    Some(read)
+}
+
+fn record_indexed_cell_read(source: &ProgramPoint, read: &MachineTerm) {
+    let MachineTerm::MemoryLoad(version, pointer, kind) = read else {
+        unreachable!("indexed resource read")
+    };
+    read_observations::record_at(
+        version,
+        pointer,
+        *kind,
+        source.shared_memory(),
+        kind.byte_width(),
+    );
 }
 
 /// The test-only audit of the creation-time invariant (see
@@ -4059,15 +4369,14 @@ fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> Machin
                         );
                     }
                     MachineTerm::MemoryLoad(memory, pointer, kind) => {
-                        term_results.push(
-                            if retain_selected
-                                && is_selected_scalar_read(memory.shared_memory(), pointer, *kind)
-                            {
-                                term.clone()
-                            } else {
-                                canonical_scalar_read(term)
-                            },
-                        );
+                        term_results.push(if memory.is_exact_read() {
+                            comparison_identity_of_exact_read(memory, pointer, *kind)
+                        } else if retain_selected && is_selected_scalar_read(memory, pointer, *kind)
+                        {
+                            term.clone()
+                        } else {
+                            canonical_scalar_read(term)
+                        });
                     }
                     MachineTerm::IntegerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {
                         term_results.push(term.clone())
@@ -4901,13 +5210,44 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Machin
     })
 }
 
+/// The equality graph can use the ordinary version of an exact read without
+/// changing the retained proof term. Local cells use their indexed receipt.
+pub(crate) fn comparison_identity_of_exact_read(
+    point: &ProgramPoint,
+    pointer: &Address,
+    kind: LoadKind,
+) -> MachineTerm {
+    match point
+        .indexed_integer_version(pointer, kind)
+        .or_else(|| point.call_output_integer_version(pointer, kind))
+    {
+        Some(version) => MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind),
+        None if let Some(entry) = point.entry_integer_version(pointer, kind) => {
+            MachineTerm::memory_read(entry.shared_memory().clone(), pointer.clone(), kind)
+        }
+        None => canonical_form_of_load(point.shared_memory().clone(), pointer.clone(), kind),
+    }
+}
+
 /// Compatibility adapter for the existing selected-version read policy.
 /// Exact construction, comparison identity selection, and observation
 /// publication are separate operations. Until exact-state lowering migrates,
 /// callers still retain the selected identity as their read term.
 pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
-    if matches!(bits, MachineTerm::MemoryLoad(point, _, _) if point.read_version_id().is_some()) {
-        return bits.clone();
+    if let MachineTerm::MemoryLoad(point, pointer, kind) = bits
+        && point.read_version_id().is_some()
+    {
+        // The retained term names the entry point. Legacy producers of
+        // the same cell compare with its empty view without projecting it.
+        return if point.is_entry_read() {
+            MachineTerm::memory_read(
+                point.shared_memory().clone(),
+                pointer.as_ref().clone(),
+                *kind,
+            )
+        } else {
+            bits.clone()
+        };
     }
     let Some(descriptor) = ScalarReadDescriptor::from_term(bits) else {
         return bits.clone();
@@ -6528,7 +6868,7 @@ mod tests {
     }
 
     #[test]
-    fn indexed_local_load_uses_proven_alias_without_inventing_initialization() {
+    fn indexed_load_uses_proven_alias_without_inventing_initialization() {
         let index = MachineTerm::Variable(Variable(839));
         let base = Address {
             base: "local:indexed".into(),
@@ -6932,6 +7272,7 @@ mod tests {
     /// file-scope array of a thousand elements overflowed the main thread's
     /// stack; a few hundred cells do the same on this small one.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn a_symbolic_load_over_many_undecided_cells_splits_without_recursing() {
         const CELLS: u32 = 400;
@@ -7124,6 +7465,61 @@ mod tests {
             path.outcome.clone()
         };
         assert_eq!(read(&facts), read(&empty));
+    }
+
+    #[test]
+    fn indexed_scalar_read_keeps_cover_hits_and_other_alias_lines() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Variable(Variable(95_010)),
+        };
+        let memory = SymbolicMemory::new()
+            .with_constant_run(owner.clone(), ProgramType::Int32, 8, int32(7))
+            .expect("compact constant cells");
+        let indexed = Address {
+            base: owner.base.clone(),
+            offset: AddressOffset::add(
+                owner.offset.clone(),
+                AddressOffset::scale_int32(MachineTerm::Variable(Variable(95_011)), 4),
+            ),
+        };
+        let alias = Address {
+            base: owner.base.clone(),
+            offset: AddressOffset::Variable(Variable(95_012)),
+        };
+        let context = PureFactContext::new()
+            .allow_symbolic_contract_loads()
+            .assume_condition(
+                ConditionTerm::equal(
+                    MachineTerm::Variable(Variable(95_011)),
+                    MachineTerm::constant(3),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::address_equal(alias.clone(), owner.offset_by_bytes(12)),
+                true,
+            );
+        for pointer in [indexed, alias] {
+            assert!(memory.known_retained_value(&pointer).is_none());
+            let paths = evaluate_memory_load_paths(
+                &memory,
+                pointer,
+                ProgramType::Int32,
+                ExecutionFacts::new(),
+                Vec::new(),
+                &context,
+                true,
+                false,
+                None,
+                None,
+            );
+            let [path] = paths.as_slice() else {
+                panic!("expected one scalar program read: {paths:?}");
+            };
+            assert_eq!(path.outcome, ExpressionOutcome::Value(int32(7)));
+        }
     }
 
     #[test]
@@ -7656,6 +8052,54 @@ mod tests {
         let changed = read(&overwritten, &field);
         assert!(changed.bounds().is_none());
         assert!(!context.pointer_provenance_match(&changed, &stored));
+    }
+
+    #[test]
+    fn a_pointer_read_through_a_cached_prefix_changes_with_its_upper_half() {
+        // A pointer is the whole eight-byte cell. When only its lower four
+        // bytes are cached, a store to the upper four bytes changes the
+        // pointer, so the read after the store is not the read before it.
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Address {
+            base: "global:prefix-pointer".into(),
+            offset: AddressOffset::Constant(0),
+        };
+        let memory = SymbolicMemory::new()
+            .materialize_symbolic_cell(field.clone(), ProgramType::Int32)
+            .materialize_symbolic_cell(field.clone().offset_by_bytes(4), ProgramType::Int32);
+        let context = PureFactContext::new();
+        let read = |memory: &SymbolicMemory| {
+            let prefix = memory.known_value(&field).expect("cached prefix");
+            let ProgramValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
+                memory,
+                &field,
+                &prefix,
+                ProgramType::Int32Pointer,
+                &mut ExecutionFacts::new(),
+                &context,
+                None,
+                LoadPurpose::Program,
+            )
+            .unwrap() else {
+                panic!("pointer read")
+            };
+            value
+        };
+        let before = read(&memory);
+        let overwritten = memory.store(
+            field.clone().offset_by_bytes(4),
+            ProgramValue::UInt32(0u32.into()),
+        );
+        assert!(
+            overwritten.known_value(&field).is_some(),
+            "the lower half stays cached"
+        );
+        let after = read(&overwritten);
+        assert_ne!(
+            after.address(),
+            before.address(),
+            "the read after the upper-half store is a different pointer"
+        );
     }
 
     #[test]

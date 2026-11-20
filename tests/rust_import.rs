@@ -205,7 +205,7 @@ impl Project {
             .find(|(_, unit)| unit["sources"].get(source).is_some())
             .expect("a unit lists the source");
         self.project
-            .join(".click")
+            .join(click::project::ARTIFACT_DIRECTORY)
             .join(unit)
             .join(format!("{source}.ullbc"))
     }
@@ -269,6 +269,7 @@ fn charon_owned_array_project() -> Project {
     p
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn charon_owned_array_fields_check_moves_states_boundaries_and_frames() {
     let p = charon_owned_array_project();
@@ -350,6 +351,7 @@ fn charon_state_project() -> Project {
     p
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_array_states_check_computed_lanes_and_copy_independence() {
     let p = charon_state_project();
@@ -417,6 +419,7 @@ fn charon_operator_project() -> Project {
     p
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 39 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_assignment_operators_check_lanes_panic_obligations_and_authority() {
     let p = charon_operator_project();
@@ -479,6 +482,7 @@ fn charon_multiply_project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn charon_symbolic_multiply_checks_general_safety_and_full_width_boundaries() {
     let p = charon_multiply_project();
@@ -661,9 +665,9 @@ fn charon_repeated_source_names_are_distinct_declarations() {
     let proof = "fn ordered(a: u32, b: u32) -> u32 {
     ensures result == ((a << 1u32) ^ b);
 } by {
-    step_until(assignment(first, 0));
+    step_until(assignment(first, 0).entry);
     have *word == a;
-    step_until(assignment(second, 0));
+    step_until(assignment(second, 0).entry);
     have *word == b;
     have *ordered.statement(3).local(word) == b;
     have *ordered.local(5) == b;
@@ -704,6 +708,7 @@ fn charon_repeated_source_names_are_distinct_declarations() {
     }
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn charon_shared_iteration_checks_order_moves_empty_arrays_and_read_authority() {
     let p = charon_iteration_project();
@@ -824,6 +829,7 @@ fn charon_shared_reference_signature_mismatch_displays_constness() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn charon_array_fields_check_bounds_authority_and_frames() {
     let p = charon_fields_project();
@@ -920,6 +926,7 @@ fn charon_arithmetic_project() -> Project {
     p
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
     let p = charon_arithmetic_project();
@@ -1029,6 +1036,7 @@ fn charon_nested_project() -> Project {
     p
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 14 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_nested_chunks_and_array_slices_check_bytes_bounds_and_claims() {
     let p = charon_nested_project();
@@ -1179,6 +1187,7 @@ fn charon_chunk_loops_bind_their_chunk_without_an_option() {
 const LIBRARY_CHUNKS: &str = "import click::integer;";
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 12 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunks_check_boundaries_authority_and_false_claims() {
     let p = charon_chunk_project();
@@ -1214,7 +1223,7 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         let offset = length - length % 4;
         let tail = length % 4;
         let claim = format!(
-            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() % 4u64 == {tail}u64; have bytes.len() - bytes.len() % 4u64 == {offset}u64; step_until(assignment(tail, 0)); step(); step(); have tail.len() == {tail}u64; have tail == bytes + {offset}u64; step_until(function.exit); solve(); }}"
+            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() % 4u64 == {tail}u64; have bytes.len() - bytes.len() % 4u64 == {offset}u64; step_until(assignment(tail, 0).entry); step(); step(); have tail.len() == {tail}u64; have tail == bytes + {offset}u64; step_until(function.exit); solve(); }}"
         );
         ProgramVerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
@@ -1265,13 +1274,14 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
     }
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expand and replay a chunk iterator proof"]
 fn charon_chunk_iterator_fields_expand_and_replay() {
     let prepared = charon_chunk_project().prepared().unwrap();
     let claim = "walk.contract";
     let sidecar = CHARON_CHUNK_SIDECAR.replacen(
-        "    step_until(loop(0));\n    loop {",
-        "    step_until(loop(0));\n    have bytes.len() % 4u64 <= bytes.len();\n    have loop(0).iter.rem.len() == bytes.len() % 4u64;\n    have loop(0).iter.rem == bytes + (bytes.len() - bytes.len() % 4u64);\n    loop {",
+        "    step_until(loop(0).entry);\n    loop {",
+        "    step_until(loop(0).entry);\n    have bytes.len() % 4u64 <= bytes.len();\n    have loop(0).iter.rem.len() == bytes.len() % 4u64;\n    have loop(0).iter.rem == bytes + (bytes.len() - bytes.len() % 4u64);\n    loop {",
         1,
     );
     assert_ne!(sidecar, CHARON_CHUNK_SIDECAR);
@@ -1352,6 +1362,7 @@ fn charon_slice_project() -> Project {
     p
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn charon_slices_preserve_metadata_permissions_and_cleanup() {
     let p = charon_slice_project();
@@ -1596,6 +1607,7 @@ fn charon_array_project() -> Project {
     p
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn charon_arrays_compose_with_resolved_conversion_and_drop() {
     let p = charon_array_project();
@@ -1705,6 +1717,7 @@ fn plain_record_loop_project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn charon_plain_record_loop_proves_symbolic_iterations_and_rejects_false_claims() {
     let p = plain_record_loop_project();
@@ -1756,6 +1769,7 @@ fn chunk_view_loop_project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn charon_chunk_view_loop_reborrows_shared_subslices_at_symbolic_heads() {
     let p = chunk_view_loop_project();
@@ -1787,6 +1801,7 @@ const SLICE_ITER_PROOF: &str = include_str!("../design/charon-trial/slice-iter/s
 /// by one element, and the loop carries where it stands as an invariant
 /// over `iter.as_slice()` and `iter.len()`. No generated local is named.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Charon slice-iterator library model"]
 fn charon_slice_iter_sums_bytes_by_its_library_contract() {
     let p = Project::from_fixture("design/charon-trial/slice-iter");
@@ -1839,6 +1854,7 @@ fn charon_slice_iter_sums_bytes_by_its_library_contract() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expand and replay the slice-iterator proof"]
 fn charon_slice_iterator_fields_expand_and_replay() {
     let p = Project::from_fixture("design/charon-trial/slice-iter");
@@ -1913,6 +1929,7 @@ fn chunk_lane_project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn charon_chunk_lane_results_survive_local_stores_at_symbolic_heads() {
     let p = chunk_lane_project();
@@ -1980,6 +1997,7 @@ fn loop_array_copy_project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 8s in the parallel gate"]
 fn charon_loop_array_copy_survives_symbolic_heads() {
     let p = loop_array_copy_project();
@@ -2004,6 +2022,7 @@ fn charon_loop_array_copy_survives_symbolic_heads() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_loop_array_copy_empty_input_never_reads_uninitialized_storage() {
     let p = loop_array_copy_project();
@@ -2013,7 +2032,7 @@ fn charon_loop_array_copy_empty_input_never_reads_uninitialized_storage() {
         .expect("the sidecar states `walk` after its helper")
         .0;
     let claim = format!(
-        "{helper} fn quad::walk(bytes: &[u8]) -> u32 {{ requires bytes.len() == 0u64; ensures result == 0u32; }} by {{ step_until(loop(0)); have loop(0).iter.v.len() == 0u64; step_until(function.exit); solve(); }}"
+        "{helper} fn quad::walk(bytes: &[u8]) -> u32 {{ requires bytes.len() == 0u64; ensures result == 0u32; }} by {{ step_until(loop(0).entry); have loop(0).iter.v.len() == 0u64; step_until(function.exit); solve(); }}"
     );
     ProgramVerificationSession::new_program_prepared(&claim, &prepared).unwrap();
 }
@@ -2050,6 +2069,7 @@ fn charon_loop_project() -> Project {
     p
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 9s in the parallel gate"]
 fn charon_borrowed_loop_checks_restoration_bounds_and_ranking() {
     let p = charon_loop_project();
@@ -2070,7 +2090,7 @@ fn charon_borrowed_loop_checks_restoration_bounds_and_ranking() {
         ),
         CHARON_LOOP_SIDECAR.replace("decreases n - i;", "decreases i;"),
         CHARON_LOOP_SIDECAR.replace("    owns value[0..1];\n", "    views value[0..0];\n"),
-        CHARON_LOOP_SIDECAR.replace("step_until(loop(0))", "step_until(loop(99))"),
+        CHARON_LOOP_SIDECAR.replace("step_until(loop(0).entry)", "step_until(loop(99).entry)"),
     ] {
         assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
@@ -2135,6 +2155,7 @@ fn charon_borrowed_loop_live_refresh_and_rejected_control_flow() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn charon_trial_checks_arithmetic_and_owned_cleanup_through_shared_engine() {
     let p = charon_project();
@@ -2294,6 +2315,7 @@ fn charon_trial_live_refresh_and_compiler_rejections() {
     .unwrap();
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate; other gate tests reach the same code"]
 fn rust_typed_import_verifies_borrow_parent_reuse_and_field_frame() {
     let p = gate_fixtures::project("basic", SOURCE);
@@ -2347,6 +2369,7 @@ fn assert_native_boundary_proof(source: &str, sidecar: &str) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_compiler_and_subset_rejections_are_distinct() {
     // u64 is supported; use u128 below to exercise the unsupported-width path.
@@ -2444,7 +2467,7 @@ fn assert_cli(p: &Project, args: &[&str]) {
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_ordinary_cli_locks_and_verifies() {
     let p = Project::new(SOURCE);
-    assert_cli(&p, &["import", "lock"]);
+    assert_cli(&p, &["capture"]);
     assert_cli(&p, &["verify"]);
 }
 #[cfg(not(feature = "fast-gate"))]
@@ -2495,6 +2518,7 @@ fn rust_cli_expansion_reverifies_through_ordinary_entry() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_checked_arithmetic_requires_a_panic_freedom_bound() {
     let p = Project::new("pub fn increment(x:i32)->i32 { x + 1 }");
@@ -2507,6 +2531,7 @@ fn rust_checked_arithmetic_requires_a_panic_freedom_bound() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_boolean_return_and_local_initialization_verify() {
     let p = Project::new("pub fn invert(x:bool)->bool { let answer = !x; answer }");
@@ -2546,6 +2571,7 @@ fn rust_a_u32_cell_read_as_i32_is_its_sign_cast() {
 /// unsigned order, which is false, and the execution could not advance. Both
 /// cases verify, and a claim of the wrong case is refused.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate (2026-10-26); the C mdtest and the integer fixture's Rust `sign_bit_set` cover it in the gate"]
 fn rust_execute_splits_a_sign_cast_order_as_a_signed_comparison() {
     let p = Project::new("pub fn sign_bit_set(u: u32) -> bool { (u as i32) < 0 }\n");
@@ -2630,6 +2656,7 @@ fn moves_project(source: &str) -> (Project, String) {
     (p, sidecar)
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn rust_moves_drop_effect_and_return_capture_verify() {
     let (p, sidecar) = moves_project(MOVE_SOURCE);
@@ -2658,6 +2685,7 @@ fn rust_moves_drop_effect_and_return_capture_verify() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_move_borrow_conflicts_and_partial_moves_fail_closed() {
     assert_native_boundary_proof(
@@ -2695,6 +2723,7 @@ fn rust_move_drop_cli_proofs_expand_and_reverify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_conditional_move_and_explicit_drop_verify() {
     let source = format!(
@@ -2708,6 +2737,7 @@ fn rust_conditional_move_and_explicit_drop_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_owned_field_loan_recovery_verifies() {
     // Preserve the ordinary Rust source that exposed fragmented ownership at
@@ -2756,6 +2786,7 @@ fn rust_owned_field_loan_cli_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_owned_field_parent_can_write_after_explicit_child_drop() {
     let source = format!(
@@ -2898,6 +2929,7 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_owned_disjoint_mutable_fields_verify() {
     let source = "pub struct Pair {pub x:i32,pub y:i32} pub fn set(left:&mut i32,right:&mut i32) {*left=7;*right=9;} pub fn fields()->i32 {let mut pair=Pair{x:1,y:2}; let left=&mut pair.x; let right=&mut pair.y; set(left,right); if pair.y == 9 {pair.x} else {0}}";
@@ -2916,6 +2948,7 @@ fn rust_owned_disjoint_mutable_fields_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_owned_field_conflicting_parent_access_is_rejected_by_compiler() {
     let prefix = MOVE_SOURCE.split("pub fn restore").next().unwrap();
@@ -2944,6 +2977,7 @@ fn rust_owned_field_conflicting_parent_access_is_rejected_by_compiler() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_moves_plain_struct_and_reads_destination() {
     let p =
@@ -2958,6 +2992,7 @@ fn rust_moves_plain_struct_and_reads_destination() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_two_guards_clean_up_in_reverse_construction_order() {
     use click::languages::rust::schema::{MirStatement as S, MirTerminator as T};
@@ -3127,6 +3162,7 @@ fn rust_enum_signed_match_explicit_split_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checked proof expansion"]
 fn rust_enum_signed_match_expansion_checks_without_search() {
     let p = signed_match_project();
@@ -3318,7 +3354,7 @@ fn charon_return_place_before_cleanup_is_named_result() {
         BOX_SIDECAR.replacen(
             contract,
             &format!(
-                "    ensures result == old(b.value);\n}} by {{\n    step_until(assignment(result, 0));\n    step();\n    have {claim};\n    step_until(function.exit);\n}}\n\nfn boxed::through"
+                "    ensures result == old(b.value);\n}} by {{\n    step_until(assignment(result, 0).entry);\n    step();\n    have {claim};\n    step_until(function.exit);\n}}\n\nfn boxed::through"
             ),
             1,
         )
@@ -3494,7 +3530,7 @@ fn charon_a_nested_call_result_is_named_by_its_call() {
         RESULT_VALUE_SIDECAR.replacen(
             "fn result_values::round(x: u32) -> u32 {\n    ensures result == x;\n}",
             &format!(
-                "fn result_values::round(x: u32) -> u32 {{\n    ensures result == x;\n}} by {{\n    step_until(call(result_values::or_zero, 0));\n    have {claim};\n}}"
+                "fn result_values::round(x: u32) -> u32 {{\n    ensures result == x;\n}} by {{\n    step_until(call(result_values::or_zero, 0).entry);\n    have {claim};\n}}"
             ),
             1,
         )
@@ -4131,7 +4167,7 @@ fn charon_generic_stack_verifies_once_for_every_type() {
 #[test]
 fn charon_rust_statements_as_written_name_their_calls() {
     let prepared = generic_stack_prepared();
-    let proof = "    step_until(statement(2).call(0));";
+    let proof = "    step_until(statement(2).call(0).entry);";
     assert!(GENERIC_STACK_SIDECAR.contains(proof), "{proof}");
     verify_rust_function(
         GENERIC_STACK_SIDECAR,
@@ -4140,7 +4176,8 @@ fn charon_rust_statements_as_written_name_their_calls() {
     )
     .unwrap_or_else(|error| panic!("{error:?}"));
     // `round_trip` has three statements.
-    let missing = GENERIC_STACK_SIDECAR.replacen(proof, "    step_until(statement(3).call(0));", 1);
+    let missing =
+        GENERIC_STACK_SIDECAR.replacen(proof, "    step_until(statement(3).call(0).entry);", 1);
     let error = verify_rust_function(&missing, &prepared, "generic_stack::round_trip")
         .expect_err("a statement the function does not have is refused");
     assert!(
@@ -4183,6 +4220,7 @@ fn generic_container_prepared() -> click::languages::rust::PreparedRustImport {
 /// clauses once for every `T`; `round_trip_dyn` proves through `&mut dyn
 /// Container<u32>`, naming `items(container)` in its proof.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: whole generic-container verification takes 17.9s locally and exceeded the gate's 30s CI limit"]
 fn charon_generic_container_verifies_through_a_dyn_container() {
     let prepared = generic_container_prepared();
@@ -4431,6 +4469,7 @@ fn rust_sidecar_signatures_in_rust_syntax_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 23 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_unsigned_panic_paths_are_rejected() {
     for (ty, expression, precondition) in [
@@ -4459,6 +4498,7 @@ fn rust_unsigned_panic_paths_are_rejected() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 13 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_unsigned_nested_checks_and_short_circuit_preserve_panics() {
     for (expression, rust_type, valid) in [
@@ -4482,6 +4522,7 @@ fn rust_unsigned_nested_checks_and_short_circuit_preserve_panics() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_unsigned_casts_bitwise_and_assignments_verify() {
     let p = Project::new(
@@ -4506,6 +4547,7 @@ fn byte_count(x: u32, n: u8) -> u32 { requires n < 32u32; ensures result == (x <
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_unsigned_references_and_byte_field_layout_verify() {
     let p = Project::new(
@@ -4534,7 +4576,7 @@ fn a_rust_pointer_local_keeps_its_c_meaning_in_arithmetic() {
 fn right_length(bytes: &[u8], mid: usize) -> usize {\n\
     requires mid <= bytes.len();\n\
     ensures result == bytes.len() - mid;\n\
-} by { step_until(assignment(right, 0)); step(); have right == bytes + mid; have right == left + mid; step_until(function.exit); solve(); }\n";
+} by { step_until(assignment(right, 0).entry); step(); have right == bytes + mid; have right == left + mid; step_until(function.exit); solve(); }\n";
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(sidecar, &prepared)
@@ -4542,6 +4584,7 @@ fn right_length(bytes: &[u8], mid: usize) -> usize {\n\
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn rust_split_at_metadata_and_reads_verify() {
     let p = gate_fixtures::project("split", include_str!("../examples/rust-split-at/split.rs"));
@@ -4580,6 +4623,7 @@ fn rust_split_at_metadata_and_reads_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_split_at_endpoints_and_full_width_lengths_verify() {
     let p = Project::new(
@@ -4604,6 +4648,7 @@ fn rust_split_at_endpoints_and_full_width_lengths_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_split_at_checks_its_bound_at_full_width() {
     let p = Project::new(
@@ -4638,6 +4683,7 @@ fn rust_split_at_checks_its_bound_at_full_width() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 14 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_split_at_rejects_unsupported_results_and_mutation() {
     assert_native_boundary_proof(
@@ -4678,6 +4724,7 @@ fn rust_split_at_rejects_unsupported_results_and_mutation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 12 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_split_at_empty_results_reject_indexing() {
     for (length, midpoint, result_slice) in [
@@ -4827,6 +4874,7 @@ fn read(bytes: &[u8], index: usize) -> u8 {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 11 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_byte_slices_reject_panics_and_missing_write_authority() {
     for (source, signature, resource, index) in [
@@ -4879,6 +4927,7 @@ fn rust_byte_slices_reject_panics_and_missing_write_authority() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_byte_slices_length_preserves_target_width_and_index_borrows_verify() {
     let p = Project::new(
@@ -4912,6 +4961,7 @@ fn shift(x: u32, n: usize) -> u32 { requires x == 1u32; requires n == 31u64; ens
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_byte_slice_unsupported_shapes_and_borrow_errors_are_refused() {
     assert_native_boundary_proof(
@@ -4941,6 +4991,7 @@ fn rust_byte_slice_unsupported_shapes_and_borrow_errors_are_refused() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn rust_fixed_array_references_indexing_and_reborrows_verify() {
     let p = gate_fixtures::project("arrays", include_str!("../examples/rust-arrays/arrays.rs"));
@@ -4960,6 +5011,7 @@ fn rust_fixed_array_references_indexing_and_reborrows_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 11 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_fixed_array_indices_reject_panics_before_narrowing() {
     for (length, index) in [(4, 4u64), (4, 4294967296), (0, 0), (4, u64::MAX)] {
@@ -5035,6 +5087,7 @@ fn rust_fixed_array_access_requires_memory_authority() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 12 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_fixed_array_unsupported_shapes_and_conflicting_borrows_are_refused() {
     assert_native_boundary_proof(
@@ -5107,6 +5160,7 @@ fn rust_local_array_construction_and_whole_value_copies_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_whole_array_copies_require_authority_for_every_element() {
     let p = Project::new(include_str!("../examples/rust-array-values/arrays.rs"));
@@ -5178,6 +5232,7 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_array_to_slice_coercions_preserve_bounds_and_borrow_checks() {
     assert_native_boundary_proof(
@@ -5213,6 +5268,7 @@ fn rust_array_to_slice_coercions_preserve_bounds_and_borrow_checks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn rust_local_array_authority_and_copies_scale_with_array_length() {
     let mut samples = Vec::new();
@@ -5239,6 +5295,7 @@ fn rust_local_array_authority_and_copies_scale_with_array_length() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_array_to_slice_calls_preserve_untouched_local_elements() {
     let p = Project::new(
@@ -5254,6 +5311,7 @@ const USIZE_SOURCE: &str = include_str!("../examples/rust-usize/arithmetic.rs");
 const USIZE_SIDECAR: &str = include_str!("../examples/rust-usize/arithmetic.click");
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_usize_arithmetic_casts_and_expansion_verify() {
     let p = gate_fixtures::project("usize", USIZE_SOURCE);
@@ -5327,6 +5385,7 @@ fn rust_usize_arithmetic_casts_and_expansion_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 18 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_usize_panic_paths_are_rejected() {
     for (expression, precondition) in [
@@ -5353,6 +5412,7 @@ fn rust_usize_panic_paths_are_rejected() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 26 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_usize_boundaries_and_nested_checks() {
     for (source, return_type, precondition, expected, valid) in [
@@ -5453,6 +5513,7 @@ fn rust_usize_boundaries_and_nested_checks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_while_loop_invariants_verify_and_expand() {
     let p = gate_fixtures::project("loops", include_str!("../examples/rust-loops/loops.rs"));
@@ -5474,6 +5535,7 @@ fn rust_while_loop_invariants_verify_and_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 18 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
     {
@@ -5528,6 +5590,7 @@ fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_while_loop_panic_paths_are_rejected() {
     for (source, signature, invariant) in [
@@ -5553,7 +5616,7 @@ fn rust_while_loop_panic_paths_are_rejected() {
             continue;
         }
         let prepared = p.prepared().unwrap();
-        let prefix = "step_until(loop(0));";
+        let prefix = "step_until(loop(0).entry);";
         let requirements = if signature.contains("bytes") {
             "requires bytes.len() <= 2147483647u64; views *bytes;"
         } else {
@@ -5582,7 +5645,7 @@ fn rust_nested_while_loop_invariants_keep_preorder_indices() {
     );
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    let sidecar = "verifying \"borrow.rs\"; fn nested() -> i32 { ensures result == 1; } by { step_until(loop(0)); loop { decreases 1-i; invariant 0<=i and i<=1; preserve by { step_until(loop(1)); loop { decreases 1-j; invariant 0<=j and j<=1; } step_until(back_edge()); } } step_until(function.exit); solve(); }";
+    let sidecar = "verifying \"borrow.rs\"; fn nested() -> i32 { ensures result == 1; } by { step_until(loop(0).entry); loop { decreases 1-i; invariant 0<=i and i<=1; maintain by { step_until(loop(1).entry); loop { decreases 1-j; invariant 0<=j and j<=1; } step_until(loop.back_edge); } } step_until(function.exit); solve(); }";
     ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     assert_cli(&p, &["expand", "--claim", "nested.contract", "--in-place"]);
@@ -5590,6 +5653,7 @@ fn rust_nested_while_loop_invariants_keep_preorder_indices() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_readable_local_names_preserve_shadowed_binding_identities() {
     let p = Project::new(
@@ -5675,6 +5739,7 @@ fn assert_slice_iterator_artifact(p: &Project) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate; other gate tests reach the same code"]
 fn rust_empty_slice_iterator_needs_no_read_authority() {
     for expression in ["bytes", "bytes.iter()"] {
@@ -5724,7 +5789,7 @@ fn take(c: &mut C) -> Option<u32> {
 fn seen(n: u32) -> u32 {
     ensures result <= n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases k;
         invariant k <= n;
@@ -5821,6 +5886,7 @@ fn rust_slice_for_sum_verifies_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 29 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_slice_for_rejects_unsupported_iteration() {
     assert_native_boundary_proof(
@@ -5919,6 +5985,7 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_chunks_exact_remainder_metadata_and_bytes() {
     let source = "pub fn tail_len(bytes: &[u8], size: usize) -> usize { let chunks = bytes.chunks_exact(size); let tail = chunks.remainder(); tail.len() }
@@ -5940,7 +6007,7 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     } by {
         have bytes.len() % 2u64 == 1u64;
         have bytes.len() - bytes.len() % 2u64 == 4u64;
-        step_until(assignment(tail, 0)); step(); step();
+        step_until(assignment(tail, 0).entry); step(); step();
         have tail.len() == 1u64;
         have tail == bytes + 4u64;
         step_until(function.exit);
@@ -5960,6 +6027,7 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
 /// and a proof reads them: the remainder from what `chunks_exact` builds,
 /// and a loop's count from what each `next()` leaves of `v`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 12s in the parallel gate"]
 fn chunks_exact_is_proved_from_its_fields() {
     let source = "pub fn tail_len(bytes: &[u8], size: usize) -> usize { let chunks = bytes.chunks_exact(size); let tail = chunks.remainder(); tail.len() }
@@ -5980,7 +6048,7 @@ fn chunks_exact_is_proved_from_its_fields() {
         ensures to_integer(result) * 4 <= to_integer(bytes.len());
         ensures to_integer(bytes.len()) < to_integer(result) * 4 + 8;
     } by {
-        step_until(loop(0));
+        step_until(loop(0).entry);
         loop {
             decreases iter.v.len();
             views bytes[0..bytes.len()];
@@ -5992,7 +6060,7 @@ fn chunks_exact_is_proved_from_its_fields() {
                 have bytes.len() % 4u64 <= bytes.len();
                 solve();
             }
-            preserve by {
+            maintain by {
                 if 4u64 <= iter.v.len() {
                     have to_integer(n) * 4 <= to_integer(bytes.len());
                     have bytes.len() % 4u64 <= bytes.len();
@@ -6002,7 +6070,7 @@ fn chunks_exact_is_proved_from_its_fields() {
                     have to_integer(bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4 <= 18446744073709551615;
                     have (bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len())) + 4u64 == bytes + ((bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4u64);
                     mark taken;
-                    step_until(loop(0).back_edge());
+                    step_until(loop(0).back_edge);
                     have to_integer(iter.v.len()) == to_integer(at(taken, iter.v.len())) - 4;
                     have (bytes.len() - bytes.len() % 4u64 - at(taken, iter.v.len())) + 4u64 == bytes.len() - bytes.len() % 4u64 - iter.v.len();
                     have iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
@@ -6100,12 +6168,14 @@ fn check_chunks_loop_tools(by_reference: bool) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 38 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_chunks_exact_loops_cover_input_and_preserve_bytes() {
     check_chunks_loop_claims(false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 40 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_chunks_exact_borrowed_loops_cover_input_and_preserve_bytes() {
     check_chunks_loop_claims(true);
@@ -6126,6 +6196,7 @@ fn rust_chunks_exact_borrowed_loop_tools_recheck_all_sites() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_chunks_exact_boundaries_and_full_width_sizes() {
     let p = Project::new(
@@ -6165,6 +6236,7 @@ fn rust_chunks_exact_boundaries_and_full_width_sizes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct() {
     let p = Project::new("pub fn size(p: &mut i32) -> usize { *p = *p + 1; 4 }
@@ -6179,7 +6251,7 @@ fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct()
         solve();
     }}
     fn shadow(bytes: &[u8]) -> usize {{ requires bytes.len() == 5u64; ensures result == 0u64; }} by {{
-        step_until(assignment(tail, 0)); step(); step();
+        step_until(assignment(tail, 0).entry); step(); step();
         have tail.len() == 1u64;
         step_until(function.exit);
         solve();
@@ -6196,6 +6268,7 @@ fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 15 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_chunks_exact_rejects_writes_and_unsupported_iterator_protocols() {
     assert_native_boundary_proof(
@@ -6270,6 +6343,7 @@ fn rust_integer_from_preserves_native_unsigned_values() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_integer_from_evaluates_nested_calls_once_in_order() {
     let p = Project::new(
@@ -6289,6 +6363,7 @@ fn rust_integer_from_evaluates_nested_calls_once_in_order() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn rust_u16_casts_truncate_and_shifts_keep_sixteen_bits() {
     let p = Project::new(
@@ -6326,6 +6401,7 @@ fn rust_u16_casts_truncate_and_shifts_keep_sixteen_bits() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 16 s, over the gate's per-test budget (2026-10-06)"]
 fn rust_u16_arithmetic_checks_its_own_width() {
     let p = Project::new(
@@ -6367,6 +6443,7 @@ fn rust_u16_arithmetic_checks_its_own_width() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live compiler/extraction checks measured at 10–20 s"]
 fn rust_integer_from_rejects_other_conversions_and_shadowed_methods() {
     assert_native_boundary_proof(
@@ -6837,7 +6914,7 @@ fn charon_project_crate_unit_serves_every_sidecar_of_the_crate() {
     )
     .unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_click"))
-        .args(["import", "lock"])
+        .args(["capture"])
         .arg(root.join("proofs"))
         .output()
         .unwrap();
@@ -6896,6 +6973,7 @@ fn rust_recursive_countdown_refuses_unchanged_argument() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checked proof expansion"]
 fn rust_recursive_countdown_expansion_checks_without_search() {
     let p = countdown_project();
@@ -6915,6 +6993,7 @@ fn rust_recursive_countdown_expansion_checks_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: selected stack transport expansion and cold replay"]
 fn charon_stack_transport_repairs_expand_and_replay() {
     for (directory, sidecar, function) in [
@@ -7098,9 +7177,9 @@ fn retarget(bytes: &[u8], left_len: usize) -> usize {
     requires left_len == 7u64;
     ensures result == 11u64;
 } by {
-    step_until(statement(1));
+    step_until(statement(1).entry);
     have left.len() == 1u64;
-    step_until(statement(3));
+    step_until(statement(3).entry);
     have left.len() == 3u64;
     have at(statement(1).entry, left.len()) == 1u64;
     have left_len == 7u64;

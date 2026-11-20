@@ -29,7 +29,7 @@ void follow_model(struct model_node* p, int32 more) {
         invariant p == old(p);
         invariant 0 <= more;
         initialize by solve();
-        preserve by {
+        maintain by {
             match held.model { PackedLink::At(q) => {
             let { word: saved_word } = unfold(held);
             have p->parent_word == address(q) by { known(); }

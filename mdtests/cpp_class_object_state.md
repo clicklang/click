@@ -28,15 +28,8 @@ int caller(const Square& square, int scale) noexcept {
 ```
 
 ```click
+import "interfaces/cpp_class_object_state.interface.click";
 verifying "shapes.cpp";
-class Shape {
-    function size(this) -> int32;
-}
-extern int Shape::area(int scale) const {
-    requires 0 <= scale and scale <= 100;
-    requires 0 <= size(this) and size(this) <= 100;
-    ensures result == size(this) + scale;
-}
 int Shape::twice(int scale) const {
     requires 0 <= scale and scale <= 100;
     requires 0 <= size(this) and size(this) <= 100;
@@ -58,8 +51,8 @@ int caller(const Square& square, int scale) {
     requires 0 <= square.side and square.side <= 100;
     ensures result == square.side + scale;
 } by {
-    step_until(call(Square__click_pack_const__Shape, 0));
-    let { __object_object: packed } = step(Square__click_pack_const__Shape, {});
+    step_until(call(Square__click_pack_const__Shape, 0).entry);
+    let { __object_object: packed } = step(Square__click_pack_const__Shape);
 }
 ```
 

@@ -54,15 +54,15 @@ Rust lock does not. C++ extraction uses the pinned exporter that
 `scripts/build-cpp-exporter.sh` and set `CLICK_CPP_EXPORTER`. See
 [installation and version selection](reference/cli/versions.md),
 [Rust setup](reference/rust.md#installed-rust-frontend), and
-[compiler imports](reference/cli/import.md).
+[compiler imports](reference/cli/capture.md).
 
-## When do I run `click import lock`?
+## When do I run `click capture`?
 
 Run it to prepare or refresh compiler-backed inputs. It records the source
 inputs, configuration, toolchain identity, and extracted artifact in the
 project lock. Ordinary verification reads the prepared inputs offline and
 refuses a stale lock; it does not refresh the lock automatically. Direct C
-parsing needs no compiler import. See [project units](reference/cli/import.md#project-units)
+parsing needs no compiler import. See [project units](reference/cli/capture.md#project-units)
 and [locked Rust imports](reference/rust.md#reproduce-the-example).
 
 ## How do I use Click with my project's build settings?
@@ -72,7 +72,7 @@ Put contracts in sidecars and describe compiler-backed sources in
 and supported build settings; Click does not discover the build's compiler
 flags for you. [Verify a function in your own project](concepts/own-project.md)
 walks through include paths, defines, locks, libc calls, and calls across files.
-The [project-unit reference](reference/cli/import.md#project-units) defines the
+The [project-unit reference](reference/cli/capture.md#project-units) defines the
 configuration shared by C, C++, and Rust units.
 
 ## Does verifying one function also verify all its callees?

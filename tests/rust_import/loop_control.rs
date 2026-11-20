@@ -44,6 +44,7 @@ fn first_stop(n: i32, limit: i32) -> i32 {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: symbolic continue proof took 4.8s in the focused gate profile"]
 fn charon_continue_loop_verifies_symbolically() {
     let p = Project::from_fixture("design/charon-trial/loop-control");

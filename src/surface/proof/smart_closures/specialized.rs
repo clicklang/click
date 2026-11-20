@@ -393,6 +393,7 @@ mod tests {
         assert!(verify_c_sources(source, &[]).is_err());
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: scalar pointer widths and native index formats with strict expansion replay"]
     fn scalar_pointer_offset_laws_expand_across_supported_widths() {
         for (ty, width) in [
@@ -432,6 +433,7 @@ mod tests {
         );
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: specialized arithmetic expansion and strict fresh replay matrix"]
     fn specialized_rules_expand_and_replay_without_certificates() {
         replay(
@@ -480,8 +482,10 @@ mod tests {
 
 #[cfg(test)]
 mod historical_read_tests {
+    #[cfg(not(feature = "fast-gate"))]
     use crate::surface::*;
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: global entry observation identity and strict replay"]
     fn historical_global_observations_expand_from_range_guards() {
         let c = "int32 counter = 3; int32 bump() { counter = counter + 1; return counter; }";
@@ -505,6 +509,7 @@ mod historical_read_tests {
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: historical loop measure expansion and strict replay"]
     fn historical_loop_measure_expands_and_replays_ordinary() {
         let c = "struct box { int32 len; }; int32 drain(struct box* box) { while (box->len > 0) { box->len = box->len - 1; } return box->len; }";
@@ -518,7 +523,7 @@ mod historical_read_tests {
                     decreases box->len;
                     invariant 0 <= box->len;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         have 0 <= to_integer(box->len - 1);
                         step();
                     }

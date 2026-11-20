@@ -52,6 +52,7 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
 // A compound word's exact address is an indexed premise. Unrelated word
 // equalities must neither be searched nor create conversion obligations.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn compound_word_address_lookup_skips_unrelated_equalities() {
     let _session = crate::kernel::VerificationSession::enter();

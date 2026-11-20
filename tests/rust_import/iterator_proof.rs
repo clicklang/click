@@ -88,9 +88,9 @@ fn audits_checked_frontiers(fixture: &str) {
     assert_cli(&p, &["verify"]);
     let proof = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     for selector in [
-        "step_until(read(0))",
-        "step_until(assignment(total, 1))",
-        "step_until(back_edge())",
+        "step_until(read(0).entry)",
+        "step_until(assignment(total, 1).entry)",
+        "step_until(loop.back_edge)",
     ] {
         let offset = proof.find(selector).unwrap();
         let line = proof[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
@@ -108,23 +108,27 @@ fn audits_checked_frontiers(fixture: &str) {
 macro_rules! iterator_checks {
     ($fixture:literal, $obligations:ident, $profile:ident, $expand:ident, $audit:ident) => {
         #[test]
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: 8s in the parallel gate"]
         fn $obligations() {
             preserves_source_and_checks_obligations($fixture);
         }
         #[test]
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: whole-example proof-tool rechecks"]
         #[cfg(not(feature = "fast-gate"))]
         fn $profile() {
             profile_agrees($fixture);
         }
         #[test]
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: whole-example proof-tool rechecks"]
         #[cfg(not(feature = "fast-gate"))]
         fn $expand() {
             expansion_rechecks($fixture);
         }
         #[test]
+        #[cfg(not(feature = "fast-gate"))]
         #[ignore = "nightly: whole-example proof-tool rechecks"]
         #[cfg(not(feature = "fast-gate"))]
         fn $audit() {

@@ -24,7 +24,7 @@
 //!   unselected in the project.
 //!
 //! The C++ and Rust imports are checked in, so the gate needs neither
-//! toolchain. After changing a source, run `click import lock` on its
+//! toolchain. After changing a source, run `click capture` on its
 //! directory, `examples/integer-languages/cpp` or `rust`, with its toolchain
 //! (`docs/internals/testing.md`, "Cross-language integer fixture").
 
@@ -318,6 +318,7 @@ fn verification_gaps_are_still_refused(language: Language) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: each gap verifies its case (0.4 to 0.8s in the parallel gate, 2026-10-26)"]
 fn verification_gaps_are_still_refused_in_every_language() {
     for language in LANGUAGES {
@@ -345,18 +346,21 @@ fn a_refused_uint32_above_int32_max_prints_as_itself(language: Language) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.65s in the parallel gate (2026-10-26)"]
 fn c_refuses_a_false_uint32_above_int32_max_as_itself() {
     a_refused_uint32_above_int32_max_prints_as_itself(Language::C);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate (2026-10-26)"]
 fn cpp_refuses_a_false_uint32_above_int32_max_as_itself() {
     a_refused_uint32_above_int32_max_prints_as_itself(Language::Cpp);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate (2026-10-26)"]
 fn rust_refuses_a_false_uint32_above_int32_max_as_itself() {
     a_refused_uint32_above_int32_max_prints_as_itself(Language::Rust);
@@ -425,6 +429,7 @@ fn unit_import(root: &Path, unit: &str, source: &str) -> BTreeMap<PathBuf, Vec<u
 
 /// The checked-in C++ import is what the pinned exporter produces now.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate (2026-10-26)"]
 fn cpp_import_matches_the_pinned_exporter() {
     let Some(exporter) = cpp_exporter() else {
@@ -442,7 +447,7 @@ fn cpp_import_matches_the_pinned_exporter() {
     let exported = unit_import(&scratch.0, "integers_cpp", artifact);
     assert!(
         cpp_imports::same_import(&checked_in, &exported),
-        "the fixture's C++ import differs from the pinned exporter's; run `click import lock examples/integer-languages/cpp`: {}",
+        "the fixture's C++ import differs from the pinned exporter's; run `click capture examples/integer-languages/cpp`: {}",
         cpp_imports::first_import_difference(&checked_in, &exported)
     );
 }
@@ -474,6 +479,7 @@ fn cpp_import_gaps_are_still_refused() {
 
 /// The checked-in Rust import is what pinned Charon extracts now.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: re-extracts the fixture with the pinned Rust compiler"]
 fn rust_import_matches_live_charon_extraction() {
     let scratch = Scratch::new("rust");
@@ -486,7 +492,7 @@ fn rust_import_matches_live_charon_extraction() {
     let extracted = unit_import(&scratch.0, "integers_rust", artifact);
     assert!(
         cpp_imports::same_import_apart_from_build(&checked_in, &extracted),
-        "the fixture's Rust import differs from live extraction; run `click import lock examples/integer-languages/rust`: {}",
+        "the fixture's Rust import differs from live extraction; run `click capture examples/integer-languages/rust`: {}",
         cpp_imports::first_import_difference(&checked_in, &extracted)
     );
 }

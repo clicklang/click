@@ -61,7 +61,7 @@ A tactic's span within a block is the range from its recorded start to
 the next one's, so expansion finds no tactic's end by scanning tokens. The
 parser also records each proof clause it reads (`ProofClauseSpan`: the `by`
 or a default clause's `;`, its last token, and for a loop's `initialize` or
-`preserve` the keyword it proves), and each declaration body's closing
+`maintain` the keyword it proves), and each declaration body's closing
 brace and `exceptional ensures` clauses. Expansion and the index read all
 of these through `ParsedBlocks` (`src/surface/expansion/parsed_blocks.rs`):
 a structured tactic's arms and a `have` or `open` body are the recorded
@@ -103,8 +103,8 @@ its file bindings once before rewriting the fragment.
 
 A written code region resolves through `CodeRegionRef::resolve`, both in
 annotation lowering and in proof execution. A loop label binds once per
-execution path, through the structural clause of the `loop as label` that
-declared it; a second `loop as label` at another loop is refused. A recorded
+execution path, through the structural clause of the `loop label` that
+declared it; a second `loop label` at another loop is refused. A recorded
 state is one entry per program point. The state map keeps the labels the
 path gave its loops, files a loop's state under its first label, and reads
 `loop(N)`, that label and any other label of the loop as the same entry, so

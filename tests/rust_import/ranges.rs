@@ -127,6 +127,7 @@ fn charon_range_loop_failures_name_the_iterator_as_the_proof_does() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: symbolic nested range proof took 5.3s in the focused gate profile"]
 fn charon_nested_range_grid_verifies_symbolically() {
     let p = Project::from_fixture("design/charon-trial/ranges");
@@ -136,6 +137,7 @@ fn charon_nested_range_grid_verifies_symbolically() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expand and replay both range iterator forms"]
 fn charon_range_bounds_expand_and_replay() {
     for (fixture, sidecar, claim) in [

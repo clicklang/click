@@ -51,7 +51,7 @@ void rotate(struct node* parent) {
     requires parent->right != 0;
     requires parent->right->left != 0;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         owns t: tree(parent);
         invariant t.model != Tree::Empty;
@@ -59,7 +59,7 @@ void rotate(struct node* parent) {
         invariant parent->right->left != 0;
         decreases 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             match t.model {
                 Tree::Empty => { contradiction(t.model == Tree::Empty); },
                 Tree::Node(id, lm, rm) => {

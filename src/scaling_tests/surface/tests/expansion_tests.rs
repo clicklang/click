@@ -27,6 +27,7 @@ fn selected_pure_expansion_does_not_check_unrelated_proof_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn partial_tactic_capture_runs_once_as_selected_sites_grow() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];

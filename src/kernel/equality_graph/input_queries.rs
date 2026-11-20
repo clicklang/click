@@ -196,6 +196,41 @@ impl EqualityGraph {
 }
 
 impl EqualityGraph {
+    pub(in crate::kernel) fn has_parameter_store_alias_sources(&self, pointer: &Address) -> bool {
+        let bucket = parameter_alias_bucket(pointer);
+        self.admitted
+            .wide_pointer_alias_endpoints_by_object
+            .contains_key(&bucket)
+            || self
+                .admitted
+                .pointer_alias_endpoints_by_object
+                .contains_key(&bucket)
+            || parameter_partition_variable(&bucket).is_some_and(|variable| {
+                self.exact_uint64_equalities(&MachineTerm::Variable(*variable))
+                    .next()
+                    .is_some()
+            })
+    }
+
+    pub(in crate::kernel) fn parameter_store_numeric_connectivity(
+        &self,
+        base: Option<&Address>,
+    ) -> Option<&super::NumericAddressConnectivity> {
+        // A write can use the numeric projection unless its own component
+        // can reach an exact pointer edge. A cache warm-up names no write.
+        let connectivity = &self.admitted.numeric_address_connectivity;
+        (!connectivity.has_raw_store_alias_endpoints()
+            && base.is_none_or(|base| {
+                self.admitted.address_base_aliases.is_empty()
+                    || (!self
+                        .admitted
+                        .pointer_alias_endpoints_by_object
+                        .contains_key(base)
+                        && !connectivity.reaches_pointer_alias(base))
+            }))
+        .then_some(connectivity)
+    }
+
     pub(in crate::kernel) fn parameter_store_alias_bases(
         &self,
         base: &Address,
@@ -263,54 +298,14 @@ impl EqualityGraph {
         Some(bases)
     }
 
-    pub(in crate::kernel) fn address_connected_objects(
+    pub(in crate::kernel) fn addresses_numerically_connected(
         &self,
-        pointer: &Address,
-    ) -> BTreeSet<Address> {
-        let mut reached_objects = BTreeSet::new();
-        if self
-            .admitted
-            .wide_pointer_alias_endpoints_by_object
-            .is_empty()
-        {
-            return reached_objects;
-        }
-        let mut pending = vec![parameter_alias_bucket(pointer)];
-        let mut seen = BTreeSet::new();
-        let mut visited_terms = BTreeSet::new();
-        while let Some(bucket) = pending.pop() {
-            if !seen.insert(bucket.clone()) {
-                continue;
-            }
-            crate::instrumentation::record_deterministic_work(1);
-            let mut terms: Vec<_> = self
-                .admitted
-                .wide_pointer_alias_endpoints_by_object
-                .get(&bucket)
-                .into_iter()
-                .flat_map(|endpoints| endpoints.iter().cloned())
-                .collect();
-            while let Some(term) = terms.pop() {
-                if !visited_terms.insert(term.clone()) {
-                    continue;
-                }
-                crate::instrumentation::record_deterministic_work(1);
-                if let Some(address) = term.address_pointer() {
-                    let reached = parameter_alias_bucket(address);
-                    reached_objects.insert(reached.clone());
-                    pending.push(reached);
-                }
-                if let Some(neighbors) = self.admitted.bitvector64_equality_facts.get(
-                    &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
-                        MachineIntegerType::UInt64,
-                        crate::kernel::MachineOperandView::Legacy(&term),
-                    ),
-                ) {
-                    terms.extend(neighbors.keys().cloned());
-                }
-            }
-        }
-        reached_objects
+        left: &Address,
+        right: &Address,
+    ) -> bool {
+        self.admitted
+            .numeric_address_connectivity
+            .connected(left, right)
     }
 }
 

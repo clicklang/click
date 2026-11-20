@@ -34,11 +34,11 @@ int32 shared_for(int32 n) {
     requires n >= 0;
     ensures result == 0;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n;
         invariant n >= 0;
-        preserve by {
+        maintain by {
             step();
             have statement(0).call(again, 0).result ==
                 (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) by solve();
@@ -96,11 +96,11 @@ int32 shared_do(int32 n) {
     requires n > 0;
     ensures result == 0;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n;
         invariant n > 0;
-        preserve by {
+        maintain by {
             step();
             have n >= 0 by solve();
             step();

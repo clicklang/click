@@ -347,6 +347,8 @@ struct FunctionResourceTransfer {
     /// dependent addresses have been checked.  It is the sole memory-effect
     /// projection used by modular call havoc and its effect fact.
     memory_effects: Vec<MemoryRange>,
+    /// The selected input that contributed an unnamed write effect, if any.
+    unbounded_write_source: Option<Box<ResourceFact>>,
     resource_effect_bound: Option<Resource>,
     post_outputs: Option<ResourceContext>,
     /// Every evaluated ensured view, kept beside the composed return
@@ -848,6 +850,11 @@ fn recover_candidate_stable_view_resources(
 > {
     let Some(plan) = &transfer.stable_view_plan else {
         if let Some(produced) = transfer.produced_borrowing_pieces.first() {
+            if produced.input_view.is_some() {
+                return Err(RuntimeError::FunctionContract(
+                    "a produced view requires a live borrow from its named input view".into(),
+                ));
+            }
             let (head, piece) = (&produced.support.head, &produced.piece);
             return Err(RuntimeError::FunctionContract(format!(
                 "produced borrowing composite `{}` packages a view `{}` that no viewed input of this call backs",
@@ -912,16 +919,66 @@ fn recover_candidate_stable_view_resources(
     // the caller write or free what the composite still reads, and an
     // ambiguous backing cannot be elided.
     let mut escaping =
-        std::collections::BTreeMap::<LoanId, Vec<super::loans::EscapingComposite>>::new();
+        std::collections::BTreeMap::<LoanId, Vec<super::loans::EscapingBorrow>>::new();
     let mut rebound_heads =
         BTreeMap::<ResourceOccurrenceId, (ResourceFact, LoanViewBinding)>::new();
     let mut escaped_occurrences = BTreeSet::new();
-    let backing_sources =
-        return_loan_backing::ReturnLoanBackings::from_plan(plan, output_assumptions);
+    let backing_sources = transfer
+        .produced_borrowing_pieces
+        .iter()
+        .any(|piece| piece.input_view.is_none())
+        .then(|| return_loan_backing::ReturnLoanBackings::from_plan(plan, output_assumptions));
+    let mut selected_inputs = BTreeMap::new();
+    if transfer
+        .produced_borrowing_pieces
+        .iter()
+        .any(|piece| piece.input_view.is_some())
+    {
+        for view in plan.stable_views() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(index) = view.requirement.section_index {
+                selected_inputs.insert(index, view);
+            }
+        }
+    }
     for produced in &transfer.produced_borrowing_pieces {
         let head = &produced.support.head;
         let piece = &produced.piece;
-        let selected = backing_sources.select(head, piece, &plan.ledger, output_assumptions);
+        if let Some(input) = produced.input_view {
+            let _checking = crate::instrumentation::CheckingWorkScope::new(
+                "select explicit returned view source",
+                1,
+            );
+            let source = selected_inputs.get(&input).ok_or_else(|| {
+                RuntimeError::FunctionContract(format!(
+                    "produced view `{}` requires a live borrow from its named input view",
+                    piece.diagnostic_summary()
+                ))
+            })?;
+            if !explicit_view_coverage(&source.requirement.fact, piece, output_assumptions) {
+                return Err(produced_view_coverage_error(
+                    &source.requirement.fact,
+                    piece,
+                ));
+            }
+            if !plan.supports_explicit_view_escape(source) {
+                return Err(RuntimeError::FunctionContract(
+                    "a bare produced view needs a direct memory borrow; use a borrowing composite for this input".into(),
+                ));
+            }
+            escaping
+                .entry(source.loan)
+                .or_default()
+                .push(super::loans::EscapingBorrow {
+                    root_permission: Some(source.requirement.fact.clone()),
+                    ..produced.support.clone()
+                });
+            continue;
+        }
+        let selected = backing_sources
+            .as_ref()
+            .expect("composite outputs have a backing index")
+            .select(head, piece, &plan.ledger, output_assumptions);
         let (backing_count, entering, selected_loan) = match selected {
             Ok(source) => (1, source.entering, Some(source.loan)),
             Err(ambiguous) => (if ambiguous { 2 } else { 0 }, None, None),
@@ -1061,8 +1118,16 @@ fn recover_candidate_stable_view_resources(
             });
         }
     }
+    let explicit_views = transfer
+        .produced_borrowing_pieces
+        .iter()
+        .filter(|piece| piece.input_view.is_some())
+        .map(|piece| &piece.piece)
+        .collect::<BTreeSet<_>>();
     for stable_view in plan.stable_views() {
-        if residual.contains_exact_representation(&stable_view.requirement.fact) {
+        if !explicit_views.contains(&stable_view.requirement.fact)
+            && residual.contains_exact_representation(&stable_view.requirement.fact)
+        {
             residual = residual
                 .without_fact(&stable_view.requirement.fact, assumptions)
                 .ok_or_else(|| {
@@ -1124,7 +1189,7 @@ fn recover_candidate_stable_view_resources(
         )
     {
         (recovered_resources, recovered_bindings) =
-            install_returned_composite_hold(recovered_resources, recovered_bindings, escaped)?;
+            install_returned_view_hold(recovered_resources, recovered_bindings, escaped)?;
     }
     Ok((
         recovered_resources,
@@ -1133,6 +1198,77 @@ fn recover_candidate_stable_view_resources(
         recovered_bindings,
         Some(loan_evidence),
     ))
+}
+
+/// Check the coverage of the named input at a function's own return. The
+/// output expression has already been lowered and the input index is fixed by
+/// the contract. The check never consults other candidate view resources.
+pub(crate) fn check_produced_view_source(
+    function: &ProgramFunction,
+    key: &FunctionContractClaimKey,
+    entry: &ExecutionState,
+    output: &[ResourceFact],
+    assumptions: &PureFactContext,
+) -> Result<(), String> {
+    let FunctionContractClaimKey::Ensure(index) = key else {
+        return Ok(());
+    };
+    let Some(claim) = function.contract_claims().get(*index) else {
+        return Ok(());
+    };
+    let FunctionContractClaimTarget::EnsureResource(output_index) = claim.target() else {
+        return Ok(());
+    };
+    let Some(input) = function
+        .resource_ensures()
+        .get(*output_index)
+        .and_then(ResourceSpec::view_source)
+    else {
+        return Ok(());
+    };
+    let _checking =
+        crate::instrumentation::CheckingWorkScope::new("check produced view coverage", 1);
+    let source = &function.resource_requires()[input];
+    let input = evaluate_function_resource_spec(
+        entry,
+        source,
+        assumptions,
+        &mut ExecutionBudget::beside_live_state(),
+    )
+    .map_err(|_| "could not evaluate the produced view's named input".to_string())?
+    .map_err(|_| "could not evaluate the produced view's named input".to_string())?;
+    for view in output {
+        if !explicit_view_coverage(&input, view, assumptions) {
+            return Err(produced_view_coverage_message(&input, view));
+        }
+    }
+    Ok(())
+}
+
+fn explicit_view_coverage(
+    input: &ResourceFact,
+    output: &ResourceFact,
+    assumptions: &PureFactContext,
+) -> bool {
+    if input == output {
+        return true;
+    }
+    assumptions.contains_assumed_exact(&Proposition::ResourceContains {
+        parent: Box::new(input.resource().clone()),
+        child: Box::new(output.resource().clone()),
+    }) || super::loans::returned_permission_covers(input, output, assumptions)
+}
+
+fn produced_view_coverage_message(input: &ResourceFact, output: &ResourceFact) -> String {
+    format!(
+        "cannot produce view `{}` from input view `{}`: prove that the input view covers the produced view using `contains(memory(input), memory(output))`",
+        output.diagnostic_summary(),
+        input.diagnostic_summary()
+    )
+}
+
+fn produced_view_coverage_error(input: &ResourceFact, output: &ResourceFact) -> RuntimeError {
+    RuntimeError::FunctionContract(produced_view_coverage_message(input, output))
 }
 
 /// A retained input hold may support one returned owner directly. Further
@@ -1166,15 +1302,14 @@ fn retain_rebound_composite_holds(
     Ok(())
 }
 
-/// Attach the hold produced by recovery to its selected returned owner.
+/// Attach the hold produced by recovery to its exact returned resource.
 /// This consumes the producer's destination identity, without a head census.
-fn install_returned_composite_hold(
+fn install_returned_view_hold(
     resources: ResourceContext,
     bindings: LoanViewBindings,
     escaped: super::loans::EscapedHold,
 ) -> Result<(ResourceContext, LoanViewBindings), RuntimeError> {
-    let _checking =
-        crate::instrumentation::CheckingWorkScope::new("install returned composite hold", 1);
+    let _checking = crate::instrumentation::CheckingWorkScope::new("install returned view hold", 1);
     if resources
         .loan_dependency(escaped.occurrence)
         .is_some_and(|existing| existing != &escaped.binding)
@@ -1205,7 +1340,7 @@ pub(crate) struct CheckedResourceFact {
     pub(crate) section_index: Option<usize>,
     /// Caller-selected exact named authority for a mutex-use loan. The
     /// planner must consume this source, never select by address instead.
-    pub(crate) selected_mutex_source: Option<std::sync::Arc<(Variable, ResourceFact)>>,
+    pub(crate) selected_mutex_source: Option<std::sync::Arc<(MutexAuthorityId, ResourceFact)>>,
     /// Byte extent formed from the evaluated mutex pointer at clause entry.
     pub(crate) mutex_storage: Option<Arc<MemoryRange>>,
 }
@@ -2642,16 +2777,35 @@ fn selected_call_binder_application(
         .filter(|resource| resource.binding_identity().is_some())
         .cloned()
         .collect::<Vec<_>>();
-    let mut inferred = BTreeMap::new();
+    // The proof's map names binders and caller resources by binder number;
+    // each binder's declaring clause, a requirement or a production, gives
+    // the sort its caller resource is read in.
+    let written = written.map(|written| {
+        let mut bindings = ResourceBindings::new();
+        for resource in interface
+            .resource_requires()
+            .iter()
+            .chain(interface.resource_ensures())
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(binder) = resource.binding_identity() else {
+                continue;
+            };
+            if let Some(actual) = written.get(&binder.written()) {
+                bindings.insert_written(binder, *actual);
+            }
+        }
+        bindings
+    });
+    let mut inferred = ResourceBindings::new();
     for parameter in &parameters {
         crate::instrumentation::record_deterministic_work(1);
-        // The binding map is keyed by binder number; see `binding_identity`.
-        let Some(identity) = parameter.instance_identity().map(InstanceId::variable) else {
+        let Some(identity) = parameter.instance_identity() else {
             continue;
         };
         if written
             .as_ref()
-            .is_some_and(|bindings| bindings.contains_key(&identity))
+            .is_some_and(|bindings| bindings.instance(identity).is_some())
         {
             continue;
         }
@@ -2672,7 +2826,7 @@ fn selected_call_binder_application(
         else {
             continue;
         };
-        inferred.insert(identity, only.identity().variable());
+        inferred.insert_instance(identity, only.identity());
     }
     // An instance the call only produces, which the proof does not name,
     // is the caller's under a fresh identity: it binds nothing the caller
@@ -2684,29 +2838,29 @@ fn selected_call_binder_application(
             .collect::<BTreeSet<_>>();
         for produced in interface.resource_ensures() {
             crate::instrumentation::record_deterministic_work(1);
-            let Some(identity) = produced.instance_identity().map(InstanceId::variable) else {
+            let Some(identity) = produced.instance_identity() else {
                 continue;
             };
-            if required.contains(&identity)
-                || inferred.contains_key(&identity)
+            if required.contains(&ResourceBinder::Instance(identity))
+                || inferred.instance(identity).is_some()
                 || written
                     .as_ref()
-                    .is_some_and(|bindings| bindings.contains_key(&identity))
+                    .is_some_and(|bindings| bindings.instance(identity).is_some())
             {
                 continue;
             }
             let fresh = budget
                 .allocate_kernel_variable()
                 .map_err(|_| "a produced instance could not be named")?;
-            inferred.insert(identity, fresh);
+            inferred.insert_instance(identity, InstanceId::from_variable(fresh));
         }
     }
     let bindings = match (written, inferred.is_empty()) {
         (None, true) => return Ok(None),
-        (Some(written), true) => written,
+        (Some(written), true) => std::sync::Arc::new(written),
         (written, false) => {
-            for (binder, instance) in written.iter().flat_map(|written| written.iter()) {
-                inferred.insert(*binder, *instance);
+            if let Some(written) = &written {
+                inferred.extend(written);
             }
             std::sync::Arc::new(inferred)
         }
@@ -3205,7 +3359,7 @@ fn execute_verified_function_applications_with_suspension(
                             return false;
                         }
                         resource.binding_identity().is_some_and(|identity| {
-                            !bindings.is_some_and(|bindings| bindings.contains_key(&identity))
+                            !bindings.is_some_and(|bindings| bindings.contains(identity))
                         })
                     })
                     .map(|resource| {
@@ -3385,16 +3539,18 @@ fn execute_verified_function_applications_with_suspension(
         // For an undecided guard, the whole span is still a safe bound.
         // An unnamed projection provides no span a caller can separate.
         let caller_loans = caller_state.loan_ledger();
-        if caller_loans.is_some_and(LoanLedger::has_active_memory_loans)
+        if let Some(ledger) = caller_loans.filter(|ledger| ledger.has_active_memory_loans())
             && transfer
                 .memory_effects
                 .iter()
                 .any(MemoryRange::is_unnamed_footprint)
         {
             paths.push(FunctionPath::new(
-                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(
-                    "call has a write effect without a checked byte range while memory loans are active".into(),
-                )),
+                FunctionOutcome::RuntimeError(RuntimeError::UnboundedWriteWithLiveView {
+                    callee: name.to_owned(),
+                    effect_source: transfer.unbounded_write_source.take(),
+                    protected: ledger.single_protected_range().map(Box::new),
+                }),
                 facts,
                 obligations,
             ));
@@ -3406,9 +3562,9 @@ fn execute_verified_function_applications_with_suspension(
             call_site,
             interface.contract_requires().len(),
             if suspended.is_some() {
-                "suspended worker write separation"
+                CallLoanEffect::WorkerWrite
             } else {
-                "verified call write separation"
+                CallLoanEffect::CallWrite
             },
         );
         // A checked mutex-use call may execute runtime lock/unlock operations.
@@ -3486,7 +3642,7 @@ fn execute_verified_function_applications_with_suspension(
                 &ranges,
                 call_site,
                 first_mutex_ordinal,
-                "verified call mutex storage write separation",
+                CallLoanEffect::MutexWrite,
             ));
             ranges.len()
         } else {
@@ -3673,7 +3829,7 @@ fn execute_verified_function_applications_with_suspension(
                 .and_then(|formal| {
                     selected_bindings
                         .as_ref()
-                        .and_then(|bindings| bound_instance(bindings, formal))
+                        .and_then(|bindings| bindings.instance(formal))
                 });
             let definition = match helper.required.resource() {
                 Resource::MutexUse(usage) => usage.protected.as_ref().and_then(|description| {
@@ -3822,7 +3978,7 @@ fn execute_verified_function_applications_with_suspension(
             }
             let Some(produced) = selected_bindings
                 .as_ref()
-                .and_then(|bindings| bound_instance(bindings, identity))
+                .and_then(|bindings| bindings.instance(identity))
             else {
                 continue;
             };
@@ -4145,16 +4301,17 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        let produced = match produced_memory_initialization(
+        match initialize_produced_memory(
             &entry_resource_state,
             &output_resource_state,
             interface,
-            post_state.memory.clone(),
+            &mut post_state,
             &effective_assumptions,
             &mut facts,
             budget,
+            application.evidence.is_none() && application.representation_copy.is_none(),
         )? {
-            Ok(memory) => memory,
+            Ok(()) => {}
             Err(error) => {
                 paths.push(FunctionPath::new(
                     FunctionOutcome::RuntimeError(error),
@@ -4163,8 +4320,7 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             }
-        };
-        post_state.set_memory_directly(produced);
+        }
         let authority_release_retires = {
             match authority_release_retires_control(
                 &entry_contract_state,
@@ -4880,7 +5036,7 @@ fn execute_verified_function_applications_with_suspension(
                 &retired_allocations,
                 call_site,
                 first_retirement_ordinal,
-                "suspended worker allocation retirement separation",
+                CallLoanEffect::WorkerRetirement,
             ));
             worker_effects.extend(retired_allocations);
             completions.push((
@@ -4967,7 +5123,7 @@ fn execute_verified_function_applications_with_suspension(
                     continue;
                 };
                 if resource.role() == ResourceTransferRole::Produce {
-                    let Some(actual) = bindings.get(&formal).copied() else {
+                    let Some(actual) = bindings.mutex_authority(formal) else {
                         paths.push(resource_call_failure(&format!(
                             "call map omits produced mutex authority binder `{binder}`"
                         )));
@@ -5005,7 +5161,7 @@ fn execute_verified_function_applications_with_suspension(
                 if resource.role() != ResourceTransferRole::Borrow {
                     continue;
                 }
-                let Some(actual) = bindings.get(&formal).copied() else {
+                let Some(actual) = bindings.mutex_authority(formal) else {
                     paths.push(resource_call_failure(&format!(
                         "call map omits returned mutex authority binder `{binder}`"
                     )));
@@ -5169,7 +5325,7 @@ fn execute_verified_function_applications_with_suspension(
             &retired_allocations,
             call_site,
             first_retirement_ordinal,
-            "verified call allocation retirement separation",
+            CallLoanEffect::CallRetirement,
         ));
         paths.push(FunctionPath {
             outcome,
@@ -5197,12 +5353,21 @@ fn execute_verified_function_applications_with_suspension(
     Ok(paths)
 }
 
+#[derive(Clone, Copy)]
+enum CallLoanEffect {
+    CallWrite,
+    WorkerWrite,
+    MutexWrite,
+    CallRetirement,
+    WorkerRetirement,
+}
+
 fn verified_call_loan_requirements(
     ledger: Option<&LoanLedger>,
     effects: &[MemoryRange],
     call_site: impl FnOnce() -> CallRequirementSite,
     first_ordinal: usize,
-    context: &str,
+    effect: CallLoanEffect,
 ) -> Vec<ProofObligation> {
     let Some(ledger) = ledger else {
         return Vec::new();
@@ -5220,9 +5385,23 @@ fn verified_call_loan_requirements(
         return Vec::new();
     }
     let site = Arc::new(call_site());
+    let context = match effect {
+        CallLoanEffect::CallWrite => "verified call write separation",
+        CallLoanEffect::WorkerWrite => "suspended worker write separation",
+        CallLoanEffect::MutexWrite => "verified call mutex storage write separation",
+        CallLoanEffect::CallRetirement => "verified call allocation retirement separation",
+        CallLoanEffect::WorkerRetirement => "suspended worker allocation retirement separation",
+    };
     requirements
         .map(|(index, requirement)| {
-            ProofObligation::verification_condition(requirement)
+            let obligation = ProofObligation::verification_condition(requirement);
+            let obligation = match effect {
+                CallLoanEffect::CallWrite
+                | CallLoanEffect::WorkerWrite
+                | CallLoanEffect::MutexWrite => obligation.with_live_view_write(),
+                CallLoanEffect::CallRetirement | CallLoanEffect::WorkerRetirement => obligation,
+            };
+            obligation
                 .with_call_requirement_site(Arc::new(CallRequirementSource::new(
                     site.clone(),
                     first_ordinal + index,
@@ -5439,7 +5618,7 @@ struct PreparedVerifiedFunctionCall<'a> {
     effective_assumptions: PureFactContext,
     /// The binder map this interface was selected with, if any. A `produces`
     /// binder reads its caller-side identity from exactly this map.
-    bindings: Option<std::sync::Arc<BTreeMap<Variable, Variable>>>,
+    bindings: Option<std::sync::Arc<ResourceBindings>>,
 }
 
 /// Finds the exact source state carried by a lowered pure requirement.
@@ -5512,7 +5691,9 @@ fn source_load_state_for_proposition(
                     crate::kernel::MachineOperandView::Legacy(term),
                 )
                 .expect("structural read observation");
-                let origin = read.origin.unwrap_or(read.memory);
+                let origin = read
+                    .origin
+                    .unwrap_or_else(|| read.point.into_shared_memory());
                 let identity = MemoryStateIdentity::of(origin.memory());
                 if memory_identity.is_some_and(|known| known != identity) {
                     return Ok(None);
@@ -5915,7 +6096,7 @@ fn prepare_verified_function_call<'a>(
             let Some((formal, _)) = parameter.mutex_authority_binding() else {
                 continue;
             };
-            let Some(actual) = application.bindings.get(&formal) else {
+            let Some(actual) = application.bindings.mutex_authority(formal) else {
                 continue;
             };
             let expected = evaluate_function_resource_spec_with_entry(
@@ -5927,10 +6108,10 @@ fn prepare_verified_function_call<'a>(
             )?;
             let error = match expected {
                 Ok(expected)
-                    if caller_state.resolve_named_mutex_authority(*actual) == Some(&expected)
+                    if caller_state.resolve_named_mutex_authority(actual) == Some(&expected)
                         || (matches!(expected.resource(), Resource::MutexUse(_))
                             && caller_state
-                                .resolve_named_mutex_authority(*actual)
+                                .resolve_named_mutex_authority(actual)
                                 .is_some_and(|source| {
                                     match (source.resource(), expected.resource()) {
                                         (Resource::MutexLive(live), Resource::MutexUse(usage)) => {
@@ -6182,7 +6363,7 @@ fn prepare_verified_function_call<'a>(
             let Some((formal, binder)) = parameter.mutex_authority_binding() else {
                 continue;
             };
-            let Some(actual) = selected.bindings.get(&formal).copied() else {
+            let Some(actual) = selected.bindings.mutex_authority(formal) else {
                 return Ok(Err(resource_call_failure(&format!(
                     "call map omits mutex authority binder `{binder}`"
                 ))));
@@ -6342,8 +6523,8 @@ fn prepare_verified_function_call<'a>(
                             .iter()
                             .filter_map(|parameter| {
                                 let identity = parameter.binding_identity()?;
-                                let actual = selected.bindings.get(&identity)?;
-                                Some((parameter.binding_name()?.to_owned(), identity, *actual))
+                                let actual = selected.bindings.get(identity)?;
+                                Some((parameter.binding_name()?.to_owned(), identity, actual))
                             })
                             .collect();
                     }
@@ -6699,7 +6880,7 @@ fn prepare_verified_function_call<'a>(
                 let passed = contract_interface
                     .resource_binder_identity(binder)
                     .and_then(|formal| {
-                        resource_application.and_then(|call| bound_instance(&call.bindings, formal))
+                        resource_application.and_then(|call| call.bindings.instance(formal))
                     })
                     .and_then(|actual| caller_state.resources().owned_instance(actual));
                 match passed {
@@ -6940,7 +7121,10 @@ fn prepare_verified_function_call<'a>(
                 })
                 .find(|(_, relation)| *relation != CandidateMemoryRangeRelation::Disjoint)
             {
-                let subject = LoanRefusalSubject::with_range(mutable_range.clone());
+                let subject = LoanRefusalSubject::for_write_and_view(
+                    mutable_range.clone(),
+                    viewed_range.clone(),
+                );
                 let diagnostic = match relation {
                     CandidateMemoryRangeRelation::Overlap => LoanRefusal::ActiveDependency
                         .proven_overlap_diagnostic(LoanRefusalOperation::MemoryAccess, subject),
@@ -6967,10 +7151,20 @@ fn prepare_verified_function_call<'a>(
     // The projection above is also retained on the transition record below;
     // no later call path reconstructs the footprint from source clauses.
     let mut transfer = transfer;
+    let retain_unbounded_source = contract_interface.resource_derived_mutable_frame()
+        && caller_state
+            .loan_ledger()
+            .is_some_and(LoanLedger::has_active_memory_loans);
     transfer.consumed_cell_returns.retain_frontier(
-        projection_range_sources
-            .iter()
-            .map(|(range, _)| range.clone()),
+        projection_range_sources.iter().map(|(range, source)| {
+            if retain_unbounded_source
+                && transfer.unbounded_write_source.is_none()
+                && range.is_unnamed_footprint()
+            {
+                transfer.unbounded_write_source = Some(Box::new(source.clone()));
+            }
+            range.clone()
+        }),
         &effective_assumptions,
     );
     if caller_state.resources().structural_witnesses.is_some() {
@@ -7213,14 +7407,14 @@ fn execute_named_contract_applications_paths(
                     "resource contract proof argument arity mismatch",
                 )]);
             }
-            let mut bindings = BTreeMap::new();
+            let mut bindings = ResourceBindings::new();
             for (parameter, argument) in contract.proof_parameters().iter().zip(arguments) {
-                let Some(identity) = parameter.instance_identity().map(InstanceId::variable) else {
+                let Some(identity) = parameter.instance_identity() else {
                     return Ok(vec![resource_call_failure(
                         "resource proof parameter must be an exclusive instance",
                     )]);
                 };
-                if bindings.insert(identity, *argument).is_some() {
+                if bindings.insert_instance(identity, *argument).is_some() {
                     return Ok(vec![resource_call_failure(
                         "duplicate exclusive resource proof argument",
                     )]);
@@ -7270,7 +7464,7 @@ fn execute_named_contract_applications_paths(
 #[derive(Debug)]
 struct ResourceCallApplication {
     parameters: std::sync::Arc<[ResourceSpec]>,
-    bindings: std::sync::Arc<BTreeMap<Variable, Variable>>,
+    bindings: std::sync::Arc<ResourceBindings>,
 }
 
 impl ResourceCallApplication {
@@ -7286,7 +7480,7 @@ impl ResourceCallApplication {
     /// checks completeness against the interface.
     fn bind(
         parameters: Vec<ResourceSpec>,
-        bindings: std::sync::Arc<BTreeMap<Variable, Variable>>,
+        bindings: std::sync::Arc<ResourceBindings>,
         caller_state: &ExecutionState,
     ) -> Result<Self, &'static str> {
         let mut actuals = BTreeSet::new();
@@ -7295,22 +7489,21 @@ impl ResourceCallApplication {
             let Some(identity) = parameter.binding_identity() else {
                 return Err("resource proof parameter must be an exclusive instance");
             };
-            let Some(actual) = bindings.get(&identity) else {
+            let Some(actual) = bindings.get(identity) else {
                 continue;
             };
-            let owned = if parameter.mutex_authority_binding().is_some() {
-                caller_state
-                    .resolve_named_mutex_authority(*actual)
-                    .is_some()
-            } else {
-                caller_state
-                    .owned_resource_instance(InstanceId::from_variable(*actual))
-                    .is_some()
+            let owned = match actual {
+                ResourceBinder::MutexAuthority(actual) => {
+                    caller_state.resolve_named_mutex_authority(actual).is_some()
+                }
+                ResourceBinder::Instance(actual) => {
+                    caller_state.owned_resource_instance(actual).is_some()
+                }
             };
             if !owned {
                 return Err("resource proof argument is not owned");
             }
-            if !actuals.insert(*actual) {
+            if !actuals.insert(actual) {
                 return Err("duplicate exclusive resource proof argument");
             }
         }
@@ -8979,14 +9172,13 @@ impl<'a> OwnedFootprintDerivation<'a> {
         let mut budget = ExecutionBudget::beside_live_state();
         // An undecided guard counts the body as active: the footprint is an
         // upper bound, and a body that is not active owns nothing extra.
-        match evaluate_composite_resource_body_condition(
+        if let Some(false) = evaluate_composite_resource_body_condition(
             definition,
             &evaluation,
             &self.evaluation_assumptions,
             &mut budget,
         ) {
-            Some(false) => return,
-            Some(true) | None => {}
+            return;
         }
         for spec in contains {
             // Abstract tokens own no memory, regardless of their quantity.
@@ -11053,13 +11245,11 @@ fn composite_definition_facts_hold(
         for load in &path.facts {
             established = established.assume_proposition(load.proposition().clone());
         }
-        // The same exact routes a fold and a reassembled composite use
-        // (`assembled_composite_body_facts_hold`): a quantified fact the
-        // caller states is the body's up to its binder and the registered
-        // loads that binder names.
+        // The written clause must already hold at the call, including up
+        // to a quantified binder and its registered loads. Proofs can
+        // establish a different spelling explicitly before the call.
         if !(contract_refinement_proves(&established, &path.proposition)
-            || established.settles_exactly(&path.proposition)
-            || resource_body_fact_is_established(&established, &path.proposition)
+            || composite_view_body_fact_is_established(&established, &path.proposition)
             || string_literal_fact_holds(&path.proposition, &mut Vec::new()))
         {
             let source = definition.fact_source_spelling(index).map(|spelling| {
@@ -11757,6 +11947,7 @@ fn prepare_contract_resource_transfer_unexplained(
             ),
             caller_resources_after_requirements: caller_state.resources().clone(),
             memory_effects: Vec::new(),
+            unbounded_write_source: None,
             resource_effect_bound: None,
             post_outputs: None,
             candidate_output_views: Vec::new(),
@@ -11831,7 +12022,7 @@ fn prepare_contract_resource_transfer_unexplained(
             let actual = input_evaluation_state
                 .resource_bindings
                 .as_ref()
-                .and_then(|bindings| bound_instance(bindings, *identity))
+                .and_then(|bindings| bindings.instance(*identity))
                 .unwrap_or(*identity);
             let Some(instance) = events.consumed_imported_instance(&description, actual) else {
                 continue;
@@ -11985,8 +12176,7 @@ fn prepare_contract_resource_transfer_unexplained(
         let Some(actual) = callee_state
             .resource_bindings
             .as_ref()
-            .and_then(|bindings| bindings.get(&formal))
-            .copied()
+            .and_then(|bindings| bindings.mutex_authority(formal))
         else {
             continue;
         };
@@ -12929,6 +13119,7 @@ fn prepare_contract_resource_transfer_unexplained(
         ),
         caller_resources_after_requirements: return_resources,
         memory_effects: Vec::new(),
+        unbounded_write_source: None,
         resource_effect_bound: None,
         post_outputs: None,
         candidate_output_views: Vec::new(),
@@ -12945,15 +13136,18 @@ fn prepare_contract_resource_transfer_unexplained(
 /// claims nothing, so the caller holds them unwritten, as it holds fresh
 /// `malloc` storage: a read needs a store or `defined` evidence first. Only
 /// produced memory clauses are evaluated again.
-fn produced_memory_initialization(
+fn initialize_produced_memory(
     entry_state: &ExecutionState,
-    post_state: &ExecutionState,
+    output_resource_state: &ExecutionState,
     interface: &FunctionContractInterface,
-    mut memory: SymbolicMemory,
+    post_state: &mut ExecutionState,
     assumptions: &PureFactContext,
     facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<SymbolicMemory, RuntimeError>> {
+    opaque_output: bool,
+) -> ExecutionResult<Result<(), RuntimeError>> {
+    let mut memory = post_state.memory().clone();
+    let mut word_outputs = Vec::new();
     for resource in interface.resource_ensures() {
         let Some(segment) = resource.term().memory_segment() else {
             continue;
@@ -12964,7 +13158,7 @@ fn produced_memory_initialization(
         if let Some(guard) = resource.guard() {
             match evaluate_guarded_contract_condition_with_loop_entry(
                 guard,
-                post_state,
+                output_resource_state,
                 Some(entry_state),
                 assumptions,
                 budget,
@@ -12981,7 +13175,7 @@ fn produced_memory_initialization(
         }
         let fact = match evaluate_function_resource_spec_with_entry(
             entry_state,
-            post_state,
+            output_resource_state,
             resource,
             assumptions,
             budget,
@@ -13031,25 +13225,37 @@ fn produced_memory_initialization(
                     }
                 }
             }
+            None if opaque_output
+                && byte_span == ProgramType::Int32.byte_width()
+                && range.element_width() == byte_span
+                && ProgramPoint::supports_local_call_word(&start) =>
+            {
+                memory = memory.with_initialized_call_word(&start);
+            }
             None => memory = memory.with_initialized_object(&start, byte_span),
         }
         // Only an explicit complete byte output needs this representation
         // equation. Ordinary scalar reads keep their retained roots and do
         // no extra byte-view work. Initialization is supplied above by the
         // checked output clause, never by the numeric equation.
-        if byte_span == 4
-            && range.element_width() == 1
-            && segment.value_runs().is_none()
-            && let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
-                &memory,
-                &start,
-                budget.program_byte_order(),
-            )
-        {
-            facts.push(ExecutionPureFact::certified(equation));
+        if byte_span == 4 && range.element_width() == 1 && segment.value_runs().is_none() {
+            word_outputs.push(start);
         }
     }
-    Ok(Ok(memory))
+    post_state.set_memory_directly(memory);
+    if !word_outputs.is_empty() {
+        let point = post_state.program_point();
+        for address in word_outputs {
+            if let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
+                &point,
+                &address,
+                budget.program_byte_order(),
+            ) {
+                facts.push(ExecutionPureFact::certified(equation));
+            }
+        }
+    }
+    Ok(Ok(()))
 }
 
 /// Evaluates the first `count` returned resources of a contract as one
@@ -13832,12 +14038,21 @@ fn evaluate_contract_return_resources(
     {
         return Ok(Err(error));
     }
-    let ensured_views = ensured_resources
-        .facts()
-        .iter()
-        .filter(|fact| fact.is_view())
-        .cloned()
-        .collect::<Vec<_>>();
+    let mut ensured_views = Vec::new();
+    let mut explicitly_produced_views = BTreeMap::new();
+    for occurrence in &evaluated.occurrences {
+        let Some(fact) = ensured_resources.view_fact_at_occurrence(occurrence.source) else {
+            continue;
+        };
+        if let Some(input) = occurrence
+            .clause
+            .and_then(|index| interface.resource_ensures()[index].view_source())
+        {
+            explicitly_produced_views.insert(occurrence.source, (input, fact));
+        } else {
+            ensured_views.push(fact.clone());
+        }
+    }
     // Every ensured view is composed into the caller and then classified by
     // where its live authority comes from. The blanket deduplication that
     // used to drop an ensured view the caller already satisfied is gone
@@ -13878,7 +14093,22 @@ fn evaluate_contract_return_resources(
     // Record their exact support so consuming that ownership removes only
     // its projections through the reverse index.
     let mut return_resources = return_resources;
-    let mut produced_borrowing_pieces = Vec::new();
+    let mut produced_borrowing_pieces = inserted_ensured_occurrences
+        .iter()
+        .filter_map(|transfer| {
+            let (input, fact) = explicitly_produced_views.get(&transfer.source)?;
+            Some(ProducedBorrowingPiece {
+                support: super::loans::EscapingBorrow {
+                    head: (*fact).clone(),
+                    occurrence: transfer.destination,
+                    root_permission: None,
+                },
+                piece: (*fact).clone(),
+                input_view: Some(*input),
+                sources: Arc::new(vec![transfer.source]),
+            })
+        })
+        .collect::<Vec<_>>();
     let origins = evaluated
         .occurrences
         .iter()
@@ -14713,6 +14943,18 @@ fn lower_selected_resource_body_clauses(
     Ok((records, retained_conditions))
 }
 
+/// The call checks an already established fact for the selected view body.
+/// A proof that needs alias substitution supplies the rewritten fact first.
+fn composite_view_body_fact_is_established(
+    established: &PureFactContext,
+    proposition: &Proposition,
+) -> bool {
+    #[cfg(test)]
+    let _fast = crate::kernel::search::FastOperationScope::enter("composite view body fact");
+    established.settles_exactly(proposition)
+        || required_obligation_is_exactly_discharged(established, proposition)
+}
+
 /// A fold body fact may name a memory load from before a disjoint call while
 /// the selected body is lowered against the post-call frame. Exact discharge
 /// remains the normal route; the checked pointer-load transport is the
@@ -15472,8 +15714,11 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     let mut child_evaluation = evaluation.clone();
     child_evaluation.resources = body.clone();
     let child_assumptions = assumptions.clone().require_owned_expression_loads();
-    let mut resource_bindings =
-        BTreeMap::from([(Variable(u64::MAX), instance.identity.variable())]);
+    let mut resource_bindings = ResourceBindings::new();
+    resource_bindings.insert_instance(
+        InstanceId::from_variable(Variable(u64::MAX)),
+        instance.identity,
+    );
     let mut introduced_children: Vec<ResourceInstance> = Vec::new();
     let mut child_read_definitions = Vec::new();
     for child in body_children {
@@ -15656,7 +15901,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             }
             child_instance = actual.clone();
         }
-        resource_bindings.insert(child.binding.variable(), identity.variable());
+        resource_bindings.insert_instance(child.binding, identity);
         introduced_children.push(child_instance.clone());
         body = body
             .try_compose_into_valid_context_delaying_normalization(
@@ -17154,8 +17399,12 @@ pub(super) fn assembled_composite_body_facts_hold(
         let established = path.facts.iter().fold(assumptions.clone(), |facts, load| {
             facts.assume_proposition(load.proposition().clone())
         });
-        established.settles_exactly(&path.proposition)
-            || resource_body_fact_is_established(&established, &path.proposition)
+        if composite.is_view() {
+            composite_view_body_fact_is_established(&established, &path.proposition)
+        } else {
+            established.settles_exactly(&path.proposition)
+                || resource_body_fact_is_established(&established, &path.proposition)
+        }
     })
 }
 

@@ -350,10 +350,7 @@ impl PartialEq for NodeKey {
                         // The interner is process-wide; states belong to arenas.
                         // Comparing their contents across arenas would walk unrelated
                         // memory while registering one selected read.
-                        a.read_version_id() == b.read_version_id()
-                            && a.shared_memory().arena_id() == b.shared_memory().arena_id()
-                            && p == q
-                            && k == l
+                        a.read_key() == b.read_key() && p == q && k == l
                     }
                     (
                         KernelTermNode::PointerRead {
@@ -366,11 +363,7 @@ impl PartialEq for NodeKey {
                             point: n,
                             address: q,
                         },
-                    ) => {
-                        m.shared_memory().arena_id() == n.shared_memory().arena_id()
-                            && a == b
-                            && p == q
-                    }
+                    ) => m.read_key() == n.read_key() && a == b && p == q,
                     (a, b) => a == b,
                 })
     }
@@ -388,7 +381,7 @@ impl NodeKey {
         if let KernelTermNode::MemoryLoad { point, .. }
         | KernelTermNode::PointerRead { point, .. } = &node
         {
-            point.shared_memory().arena_id().hash(&mut hash);
+            point.read_key().hash(&mut hash);
         }
         node.hash(&mut hash);
         // A fresh legacy identity belongs to its producer. Read observations

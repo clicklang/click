@@ -99,6 +99,7 @@ fn charon_enumerated_loops_bind_their_index_and_element_without_an_option() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expand and replay an enumerated slice proof"]
 fn charon_enumerated_slice_count_expands_and_replays() {
     let prepared = prepared_enumeration();

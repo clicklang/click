@@ -1539,6 +1539,8 @@ fn implicit_solve_sites_in_source(
                                 if tactic.tactic_name
                                     == click::instrumentation::IMPLICIT_SOLVE_TACTIC
                                     || tactic.tactic_name
+                                        == click::instrumentation::IMPLICIT_LOOP_CLOSER_TACTIC
+                                    || tactic.tactic_name
                                         == click::instrumentation::IMPLICIT_TAIL_TACTIC =>
                             {
                                 Some(tactic.claim)
@@ -1924,8 +1926,12 @@ fn format_location(location: &SourceLocation) -> String {
 
 /// Records one audit failure for the nightly report, by the location
 /// `click audit --claim` selects (or the source path, for a failure before
-/// any claim ran).
+/// any claim ran). This binary's own tests audit fixtures that are meant to
+/// fail, under the nightly's report directory too, so they record nothing.
 fn record_audit_failure(name: &str, message: &str) {
+    if cfg!(test) {
+        return;
+    }
     // Relative to where the audit ran, so the command reproduces it in
     // another checkout.
     let relative = std::env::current_dir().ok().and_then(|directory| {

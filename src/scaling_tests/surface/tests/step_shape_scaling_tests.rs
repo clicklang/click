@@ -742,6 +742,68 @@ fn band(work: usize) -> usize {
     2 + work / 256
 }
 
+#[test]
+fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
+    let measure = |size, alias_base, frame_owners, cross_block| {
+        let run = run(
+            |size| {
+                let mut parameters = "int32* p, int32* other".to_string();
+                // Each initialized ownership clause seeds a cached cell.
+                let mut frame = String::new();
+                for i in 0..frame_owners {
+                    parameters += &format!(", int32* frame{i}");
+                    frame += &format!("    owns *frame{i};\n");
+                }
+                let mut requirements = String::new();
+                let globals = if cross_block {
+                    requirements += "    requires other == &sentinel;\n";
+                    "int32 sentinel;\n"
+                } else {
+                    ""
+                };
+                for i in 0..size {
+                    parameters += &format!(", int32* alias{i}");
+                    requirements += &format!(
+                        "    requires ({alias_base} as uint64) == (alias{i} as uint64);\n"
+                    );
+                }
+                let c = format!(
+                    "{globals}void caller({parameters}) {{\n    *p = 17;\n    *p = 18;\n    *p = 19;\n    return;\n}}"
+                );
+                let click = format!(
+                    "verifying \"hunt.c\";\nvoid caller({parameters}) {{\n    owns *p;\n{frame}{requirements}}} by {{ step(); step(); step(); step(); }}"
+                );
+                (c, click)
+            },
+            size,
+        );
+        let steps = run.statement_steps("repeated numeric-address stores");
+        [steps[1].1, steps[2].1]
+    };
+    // A 16-alias star already distinguishes the old scan from the indexed
+    // check. Keep the larger source probes out of the budgeted gate.
+    for (frame_owners, cross_block) in [(0, false), (1, false), (8, false), (8, true)] {
+        let samples = [2, 8, 16].map(|size| {
+            (
+                measure(size, "p", frame_owners, cross_block),
+                measure(size, "other", frame_owners, cross_block),
+            )
+        });
+        eprintln!("repeated store work with connected and disconnected aliases: {samples:?}");
+        let connected_baseline = samples[0].0.into_iter().min().unwrap();
+        let disconnected_baseline = samples[0].1.into_iter().min().unwrap();
+        for (connected, disconnected) in samples {
+            for (connected, disconnected) in connected.into_iter().zip(disconnected) {
+                assert!(connected <= connected_baseline + 16, "{samples:?}");
+                assert!(disconnected <= disconnected_baseline + 16, "{samples:?}");
+                if !cross_block {
+                    assert!(connected <= disconnected + 16, "{samples:?}");
+                }
+            }
+        }
+    }
+}
+
 /// Whether work along successive positions drifts: its last changes (three,
 /// or two over three positions) all move the same way by more than `band`.
 /// A step whose cost depends on how many earlier statements ran changes by
@@ -861,6 +923,44 @@ fn ordered_index_stores_cost_the_same_at_every_position() {
 }
 
 #[test]
+fn checked_indexed_store_skips_a_separately_owned_array() {
+    let work = [2, 8, 16].map(|size| {
+        [false, true].map(|ordered| {
+            let sample = run(
+                |size| {
+                    let signature = "void caller(int32* a, int32* b, int32 length, int32 i, int32 j)";
+                    let (bound, order) = if ordered {
+                        ("length", "    requires i < j;\n")
+                    } else {
+                        // An upper bound that is another variable would rank
+                        // `i` even without a second order premise.
+                        ("32", "")
+                    };
+                    let filled = lines(size, |index| format!("    a[{index}] = {index};"));
+                    let c = format!("{signature} {{\n{filled}\n    b[i] = 1;\n    b[i] = 2;\n    b[i] = 3;\n    return;\n}}");
+                    let proof = steps(size + 4);
+                    let click = format!(
+                        "verifying \"hunt.c\";\n{signature} {{\n    owns a[0..{size}];\n    owns b[0..{bound}];\n    requires 0 <= i;\n    requires i < {bound};\n{order}}} by {{\n{proof}\n}}"
+                    );
+                    (c, click)
+                },
+                size,
+            );
+            let stores = sample.statement_steps("indexed store beside a separate owner");
+            [stores[size + 1].1, stores[size + 2].1]
+        })
+    });
+    eprintln!("warmed indexed stores at 2/8/16 separate cells: {work:?}");
+    for (baseline, largest) in work[0]
+        .into_iter()
+        .flatten()
+        .zip(work[2].into_iter().flatten())
+    {
+        assert!(largest <= baseline + 32, "{work:?}");
+    }
+}
+
+#[test]
 fn pointer_field_links_cost_the_same_at_every_position() {
     assert_no_drift("deep_chain", deep_chain, 12);
 }
@@ -871,6 +971,7 @@ fn straight_line_assignments_cost_the_same_at_every_position() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: compares four complete source proofs"]
 fn successful_steps_do_not_read_the_held_resource_list_for_diagnostics() {
     use crate::surface::proof::take_step_diagnostic_resource_reads;
@@ -1163,7 +1264,57 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
     );
 }
 
+/// Later loop clauses reuse the function's parameter index and annotation
+/// metadata even when the signature contains many unrelated pointers.
 #[test]
+fn later_loop_clauses_ignore_unreferenced_parameters() {
+    let work = [4, 16, 48].map(|count| {
+        let result = run(
+            |count| {
+                let mut parameters = "int32* p, int32 n, int32 m".to_owned();
+                for i in 0..count {
+                    parameters += &format!(", int32* unused{i}");
+                }
+                let c = format!(
+                    "void caller({parameters}) {{
+    while (n > 0) {{
+        n = 0;
+    }}
+    while (m > 0) {{
+        m = 0;
+    }}
+    *p = 7;
+    return;
+}}"
+                );
+                let click = format!(
+                    "verifying \"hunt.c\";
+void caller({parameters}) {{
+    owns *p;
+    requires n >= 0;
+    requires m >= 0;
+}} by {{
+    loop {{ decreases n; invariant n >= 0; initialize by known(); maintain by {{ step(); }} }}
+    loop {{ decreases m; invariant m >= 0; initialize by known(); maintain by {{ step(); }} }}
+    step();
+    step();
+}}"
+                );
+                (c, click)
+            },
+            count,
+        );
+        assert_eq!(result.loops.len(), 2);
+        result.loops[1]
+    });
+    assert!(
+        work.iter().max().unwrap() - work.iter().min().unwrap() <= 32,
+        "second loop work with 4/16/48 unrelated parameters: {work:?}"
+    );
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checks three complete writing loops at four sizes"]
 fn writing_loop_havoc_ignores_untouched_scalar_slots() {
     let costs = [4, 16, 64, 128].map(|count| {
@@ -1176,7 +1327,7 @@ fn writing_loop_havoc_ignores_untouched_scalar_slots() {
                 let c = c.replace("    int32 i;", &format!("    int32 i;\n{locals}"));
                 let proof = proof.replacen(
                     "    step();",
-                    &"    step();\n".repeat(1 + 2 * count).trim_end(),
+                    "    step();\n".repeat(1 + 2 * count).trim_end(),
                     1,
                 );
                 (c, proof)
@@ -1226,6 +1377,7 @@ fn writing_loop_havoc_ignores_untouched_scalar_slots() {
 /// neighbours: restoring the entry's blocks at each loop head once rebuilt
 /// the block table, and comparing it walked every block declared so far.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn sequential_loops_build_the_same_context_entries_each() {
     let counts = || {
@@ -1457,6 +1609,7 @@ fn a_have_ignores_unrelated_parameters() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: reduced full-proof setup took 2.8s; larger fixture hit the 30s gate limit"]
 fn saved_iterated_base_ignores_aliases_states_and_unrelated_resources() {
     let (source, sources) =
@@ -1555,6 +1708,7 @@ fn named_unfold_beside_views_scales_with_the_opened_delta() {
 /// other same-shaped owners. Parameter/lowering cost is shared by the control;
 /// this regression isolates owner selection, also measured directly in the kernel.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: same-shape observation scaling and parameter control"]
 fn observing_one_composite_ignores_same_shape_owners() {
     let mut curves = Vec::new();
@@ -1616,6 +1770,7 @@ fn observing_one_composite_ignores_same_shape_owners() {
 /// One held owner and a fixed proof: unused function parameters must not add
 /// work to each observation. Keep the selected parameter's spelling fixed.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: observation parameter scaling"]
 fn observing_one_owner_ignores_unused_parameters() {
     let mut curves = Vec::new();
@@ -1661,6 +1816,7 @@ fn observing_one_owner_ignores_unused_parameters() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: have opening composition scaling"]
 fn have_opening_does_not_copy_ambient_compositions() {
     let (source, sources) = super::expansion_tests::mdtest_sources(
@@ -1707,6 +1863,7 @@ fn have_opening_does_not_copy_ambient_compositions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: explicit pointer separation beside aliases"]
 fn explicit_pointer_separation_ignores_ambient_aliases() {
     let (source, sources) = super::expansion_tests::mdtest_sources(
@@ -1760,6 +1917,7 @@ fn explicit_pointer_separation_ignores_ambient_aliases() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: active loan alias scaling"]
 fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
     let mut curves = Vec::new();
@@ -1808,6 +1966,7 @@ fn one_write_with_a_loan_does_not_walk_unrelated_aliases() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: call composition retention at three alias counts and two borrow shapes"]
 fn retaining_call_compositions_ignores_unused_aliases() {
     for borrowed in [2, 4] {
@@ -1858,6 +2017,7 @@ fn retaining_call_compositions_ignores_unused_aliases() {
 /// Unfolding retains the opaque predicate as well as its body. Loop entry
 /// must retain that context too, rather than delete the atom and rebuild it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: sequential unfolded loops at three sizes"]
 fn unfolded_loop_predicates_retain_the_fact_context() {
     fn unfolded_loops(n: usize) -> (String, String) {
@@ -1886,6 +2046,7 @@ fn unfolded_loop_predicates_retain_the_fact_context() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: memory observation parameter and ownership scaling"]
 fn observing_one_memory_range_ignores_unrelated_parameters_and_owners() {
     for owners in [false, true] {
@@ -1938,6 +2099,7 @@ fn observing_one_memory_range_ignores_unrelated_parameters_and_owners() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: saved memory observation parameter, alias, ownership and state scaling"]
 fn observing_saved_memory_ignores_aliases_states_and_unrelated_owners() {
     for owned in [false, true] {

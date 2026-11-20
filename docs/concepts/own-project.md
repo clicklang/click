@@ -169,7 +169,7 @@ command therefore fails:
 ```
 
 ```console
-$ click import lock label.click
+$ click capture label.click
 click: unit `label`: source `label_fit.c`: unsupported compiler argument 3 `-Wall`; only -D/-U/-I/-iquote/-isystem/-include are supported
 ```
 
@@ -194,24 +194,22 @@ they match that profile. Keep only the preprocessor flags:
 }
 ```
 
-Then lock the project and verify. `click import lock` prints nothing on
-success; it writes the preprocessed `.click/label/label_fit.c.i` and
-`click.project.lock.json`. Given a sidecar, it locks the sidecar's project:
-
-```console
-$ click import lock label.click
-```
+Run verification after writing the project configuration:
 
 ```console
 $ click verify label.click
+click: refreshing capture for `label_fit.c`
 1 selected proof verified
 ```
 
-Verification now reads the locked state without running GCC, so commit the
-lock and `.click/` with the project. If you edit `label_fit.c` or
-`include/label_config.h`, verification refuses the stale lock until you run
-`click import lock` again. See
-[`click import`](../reference/cli/import.md#project-units) for every field.
+The first run captures the sidecar's source. It writes
+`.click/captures/label/label_fit.c.i` and `.click/captures/manifest.json`.
+Later runs reuse the capture until an input such as `label_fit.c` or
+`include/label_config.h` changes. Commit `.click/captures/` if others need to
+check the proof with `click verify --locked label.click` on a machine without
+GCC. Run `click capture label.click` to refresh the sidecar's source explicitly.
+See [`click capture`](../reference/cli/capture.md#project-units) for every
+project configuration field.
 
 Some details of the configuration:
 
@@ -228,11 +226,11 @@ Some details of the configuration:
 - Click does not read a `Makefile` or a C `compile_commands.json`. Copy the
   flags by hand from `make -n` output or from the entry's `arguments` or
   `command`. (A `compilation_database` field exists only for
-  [C++ imports](../reference/cli/import.md#preliminary-c-semantic-artifact).)
+  [C++ imports](../reference/cli/capture.md#preliminary-c-semantic-artifact).)
 - GCC never reads your platform's libc headers. A `#include <string.h>`
   finds Click's own header, as in direct mode, after any `-I` or `-isystem`
   directory you list; see
-  [Click's system headers](../reference/cli/import.md#clicks-system-headers).
+  [Click's system headers](../reference/cli/capture.md#clicks-system-headers).
 
 ## Write the contract and read a failure
 
@@ -368,7 +366,7 @@ uint64 label_measure(const char* src) {
 ```
 
 ```console
-$ click import lock label.click
+$ click capture label.click
 ```
 
 ```console
@@ -389,7 +387,7 @@ headers are `<stdint.h>`, `<inttypes.h>`, `<stdbool.h>`, `<limits.h>`,
 `<stdarg.h>` (`va_list`) and `<sys/types.h>` (`ssize_t`, `off_t`); the
 [system headers](../reference/language/c.md#system-headers) table has the
 details. Any other system include, such as `<ctype.h>`, stops
-`click import lock` with a message that names it. Had `label_copy.c` begun
+`click capture` with a message that names it. Had `label_copy.c` begun
 with `#include <ctype.h>`, the lock would fail with:
 
 ```text
@@ -524,7 +522,7 @@ Three kinds of report look different:
 - **The source is outside what Click reads.** Click stops before any proof
   runs, naming a file and line: an unsupported system header, `failed to parse
   C source`, or `failed to process C source includes`. A compiler import that
-  hits it fails at `click import lock` or when the locked source is loaded.
+  hits it fails at `click capture` or when the locked source is loaded.
 - **Click can't apply its model to an operation.** The proof's execution,
   named `step()` in the report, says it `could not verify C operation` and
   names the C statement. No contract change
@@ -563,7 +561,7 @@ names common gaps. Then:
 - Use direct mode when quoted includes resolve beside their includers and no
   `-D` matters; otherwise copy `-I`, `-iquote`, `-isystem`, `-D`, `-U`, and
   `-include` into a C unit of `click.project.json` that lists the files, and
-  run `click import lock`. Either way `<string.h>` and the other modeled
+  run `click capture`. Either way `<string.h>` and the other modeled
   system headers are Click's.
 - Libc calls use Click's modeled headers and contracts; calls between project
   functions use the callee's verified contract; a function outside the

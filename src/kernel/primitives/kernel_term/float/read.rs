@@ -21,15 +21,6 @@ impl KernelTerm {
             KernelTermNode::FloatRead(KernelMemoryRead::new(point, address)),
         )
     }
-
-    /// Selected native read descriptor for remaining native readers. It never
-    /// exports an enclosing expression or chooses a different state.
-    pub(crate) fn float_read_native(&self) -> Option<&MachineTerm> {
-        if !matches!(self.node(), KernelTermNode::FloatRead(_)) {
-            return None;
-        }
-        FloatOperandView::from_value(self.float_native_value()?)?.native_compat()
-    }
 }
 
 #[cfg(test)]
@@ -72,21 +63,15 @@ mod tests {
                         address.clone()
                     )
                 );
-                assert_eq!(root.float_read_native(), Some(&source));
-                let value = FloatOperandView::from_value(root.float_native_value().unwrap())
-                    .unwrap()
-                    .native_compat()
-                    .unwrap();
-                assert!(std::ptr::eq(value, root.float_read_native().unwrap()));
+                assert_eq!(
+                    root.float_native_value(),
+                    Some(&format.value(source.clone()))
+                );
                 assert!(root.0.machine_leaf.0.get().is_none());
                 assert_eq!(
                     KernelTermExport::float(&root).unwrap(),
                     format.value(source)
                 );
-                assert!(std::ptr::eq(
-                    root.float_read_native().unwrap(),
-                    root.float_read_native().unwrap()
-                ));
             }
         }
         // A malformed native carrier is preserved at its existing boundary,

@@ -3,7 +3,7 @@
 This page lists the C that Click models. Coverage is incomplete: a construct
 that is not listed here is refused with a diagnostic rather than approximated.
 The same is true of C++ and Rust, whose coverage is described in
-[`click import`](../cli/import.md) and
+[`click capture`](../cli/capture.md) and
 [Experimental Rust imports](../rust.md);
 [language coverage](../coverage.md) summarizes all three side by side. When C syntax appears inside Surface
 Click, this documentation calls that syntax a **C fragment**.
@@ -62,7 +62,7 @@ the user-space target and Click's conditional pthread model for every sidecar
 of the project; `"mode": "kernel"` selects kernel mode.
 The fields are optional. Conflicting sidecar directives are rejected. The same
 file can declare compiler-import units; see
-[Project units](../cli/import.md#project-units).
+[Project units](../cli/capture.md#project-units).
 
 Existing sidecars may also select the C target with a top-level directive
 alongside `verifying`:
@@ -179,7 +179,7 @@ declares only what Click models, and a call is checked against Click's
 specification of the function. A proof therefore assumes a C library that
 implements Click's interfaces as specified, and holds for any library that
 does. Verifying plain C needs no compiler or system headers; see the
-[interface boundary](../cli/import.md#interface-boundary).
+[interface boundary](../cli/capture.md#interface-boundary).
 
 | Header | Targets | Provides |
 | --- | --- | --- |
@@ -189,7 +189,7 @@ does. Verifying plain C needs no compiler or system headers; see the
 | `<string.h>` | user space | `memcpy`, `memcmp`, `memset`, `strlen`, and `NULL` |
 | `<stdlib.h>` | user space | `malloc`, `calloc`, `realloc`, `free`, and `NULL` |
 | `<stdio.h>` | user space | opaque `FILE` and the hosted `stdout` handle |
-| `<stdarg.h>` | user space | the `va_list` type only, so prototypes that take one parse; `va_start`, `va_arg`, `va_copy` and `va_end` are not provided, since variadic bodies are not modeled |
+| `<stdarg.h>` | user space | the `va_list` type only, so prototypes that take one parse; `va_start`, `va_arg`, `va_copy` and `va_end` are not provided, since variadic bodies are not modeled. Calls to a variadic function are modeled by its contract; see [variadic calls](#variadic-calls) |
 | `<sys/types.h>` | user space | `ssize_t` and `off_t`, both `long` on LP64 |
 | `<pthread.h>` | user space | the modeled pthread subset; see [the modeled binding](#conditional-modeled-pthread-binding) |
 | `<stdatomic.h>` | user space | the one-shot publication subset; see [publication](#one-shot-releaseacquire-publication) |
@@ -229,7 +229,7 @@ a scalar's representation directly (`mdtests/memcpy_typed_scalar_arguments.md`).
 The ordinary ownership, initialized-source, separation and destination-write
 requirements still apply.
 
-A [compiler import](../cli/import.md#clicks-system-headers) searches the same
+A [compiler import](../cli/capture.md#clicks-system-headers) searches the same
 headers, with the same text, in the place of the C library's: after the
 project's `-iquote`, `-I`, and `-isystem` directories, as GCC orders them. It
 refuses `<pthread.h>` and `<stdatomic.h>`, whose runtime does not accept
@@ -1097,15 +1097,14 @@ Supported C surface includes:
 - body-less variadic function prototypes such as
   `int report(const char *format, ...);`, with at least one named parameter
   before the trailing `...`. The prototype is retained as a declaration
-  and adds no executable code or proof facts. Its variable arguments are not
-  modeled, so a call (in statement or value position, with or without an
-  `extern` contract, and even when it passes no variable arguments) and a
-  function-address use are rejected at their own source line. A
+  and adds no executable code or proof facts. A call uses the function's
+  `extern` contract, which names the variable arguments with a last
+  parameter `...args` ([variadic calls](#variadic-calls)). A
+  function-address use is rejected at its own source line. A
   redeclaration must agree on being variadic. Variadic definitions,
   variadic function-pointer signatures, and the `<stdarg.h>` access macros
   remain unsupported; `<stdarg.h>` supplies only the `va_list` type.
-  See `mdtests/c_variadic_prototype_declared.md` and
-  `mdtests/c_variadic_call_rejected.md`.
+  See `mdtests/c_variadic_prototype_declared.md`.
 - project-local quoted `#include "header.h"` declarations supplied in the
   verifying source bundle; headers may contain supported type declarations,
   prototypes, and `static inline` or `static __always_inline` function bodies.
@@ -1484,6 +1483,16 @@ that point is rejected. GNU statement-expression blocks end after their final
 value is evaluated, so returning a literal's address from one does not extend
 its lifetime. The frontend uses existing automatic aggregate allocation and
 lifetime-end operations; it adds no kernel primitive or axiom.
+
+A proof can name the object of a struct or array compound literal with
+`f.compound_literal(i)`. The zero-based index counts compound literal
+initializers in source order within the function, independently of local
+declaration ordinals. The fully qualified spelling is
+`"file.c"::f.compound_literal(i)`. Use `&f.compound_literal(i)` for the
+address of the active object. An exact storage address can use
+`f.compound_literal(i).storage(implicit)`, `.storage(lifetime, n)`, or
+`.storage(frame, n)` as in [automatic declaration references](#automatic-declaration-references).
+An unevaluated occurrence does not give access to an initialized object.
 
 File-scope and scalar compound literals, const-qualified
 or volatile struct object types, and aligned typedef object types remain outside
@@ -1978,6 +1987,66 @@ with an empty write history. A `main` contract can name it with a single
 Other program-entry preconditions remain unsupported.
 
 <!-- verified-example: mdtests/hosted_stdout_stream_follows_file_pointer_alias.md -->
+
+## Variadic calls
+
+A call to a function declared with `...` passes its variable arguments to
+the function's `extern` contract as one value, the contract's last
+parameter, written `...args`. Its type is `List<VarArg>`, one element per
+variable argument, first argument first. `VarArg` is the `spec enum` of
+[`library/c/stdarg.click`](../library/index.md#clickcstdarg). Each argument
+is first given the default argument promotions (C11 6.5.2.2p6-7):
+
+| Argument type | `VarArg` case |
+| --- | --- |
+| `_Bool`, `char`, `signed char`, `unsigned char`, `short`, `unsigned short`, `int` | `Int(int32)`, the value converted to `int` |
+| `unsigned int` | `UInt(uint32)` |
+| `long`, `long long` | `Long(int64)` |
+| `unsigned long`, `unsigned long long` | `ULong(uint64)` |
+
+The contract states what the function requires and ensures with ordinary
+Click functions over that list:
+
+<!-- verified-example: mdtests/a_variadic_contract_reads_its_variable_arguments.md -->
+```click
+function first_int(args: List<VarArg>) -> int32 {
+    match args {
+        List::Nil => 0,
+        List::Cons(head, tail) => match head {
+            VarArg::Int(value) => value,
+            VarArg::UInt(value) => 0,
+            VarArg::Long(value) => 0,
+            VarArg::ULong(value) => 0,
+        },
+    }
+}
+
+extern int32 first(int32 count, ...args) {
+    requires first_is_int(args);
+    ensures result == first_int(args);
+}
+```
+
+At the call `first(2, a, b)`, with `int a` and `unsigned int b`, `args` is
+`List::Cons(VarArg::Int(a), List::Cons(VarArg::UInt(b), List::Nil))`. A
+precondition over the list is proved like any other; one that evaluates a
+`match` over the list is proved with `solve()` in a `have` before the step,
+or with `unfold` when the function is recursive
+(`mdtests/a_variadic_contract_reads_its_variable_arguments.md`). A call
+whose list breaks the precondition is refused with the list spelled out
+(`mdtests/a_variable_argument_that_breaks_its_contract_is_refused.md`);
+`mdtests/variable_arguments_are_promoted.md` shows each case, and a call
+with no variable arguments passes `List::Nil`.
+
+The contract has `...args` exactly when C declares the function with
+`...`; either mismatch is refused
+(`mdtests/a_variadic_contract_without_variable_arguments_is_refused.md`,
+`mdtests/variable_arguments_on_a_fixed_arity_function_are_refused.md`). A
+variable argument of another type, such as a pointer or a `double`, is
+refused at the call's line
+(`mdtests/a_variable_argument_of_an_unmodeled_type_is_refused.md`).
+`snprintf`, `printf` and `fprintf` do not use this yet: their calls have
+the per-format contracts of [formatted output](#formatted-output).
 
 ## Formatted output
 
@@ -3212,9 +3281,10 @@ These are not general C features yet:
   dereference, indexing, or arithmetic
 - extended-precision floating-point values and operations (`long double`);
   only target ABI size, alignment, and aggregate layout are recognized
-- variadic function definitions, calls to variadic functions, their
-  addresses, and variadic function-pointer signatures; only the body-less
-  prototype is retained
+- variadic function definitions, their addresses, and variadic
+  function-pointer signatures; only the body-less prototype is retained.
+  A call's variable arguments are modeled when each is an integer
+  ([variadic calls](#variadic-calls))
 - volatile forms outside the sequential scalar model described above
 - const-qualified automatic struct objects, and broader qualifier
   conversions beyond scalar globals, scalar tables, const static-storage

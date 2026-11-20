@@ -5659,7 +5659,7 @@ impl SymbolicMemory {
     ) -> Self {
         let base = intern_derivation_base(&mut self);
         if let Some((mut prepared, lost_knowledge)) =
-            self.prepare_store_cache(&pointer, 1, assumptions)
+            self.prepare_store_cache(&pointer, 1, assumptions, None)
         {
             if lost_knowledge {
                 prepared.mark_forgotten_from(&base);
@@ -5703,7 +5703,7 @@ impl SymbolicMemory {
         let base = intern_derivation_base(&mut self);
         let context = PureFactContext::new();
         if let Some((mut prepared, lost_knowledge)) =
-            self.prepare_store_cache(destination, bytes, &context)
+            self.prepare_store_cache(destination, bytes, &context, None)
         {
             if lost_knowledge {
                 prepared.mark_forgotten_from(&base);
@@ -5973,7 +5973,7 @@ impl SymbolicMemory {
             element_type,
             first,
             count,
-            source,
+            ProgramPoint::at(&source),
             RunValueMode::Load,
         )
     }
@@ -5999,7 +5999,7 @@ impl SymbolicMemory {
         element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedMemory,
+        source: ProgramPoint,
     ) -> Result<Self, Self> {
         if first >= count {
             return Ok(self);
@@ -6063,7 +6063,7 @@ impl SymbolicMemory {
             element_type,
             0,
             count,
-            source,
+            ProgramPoint::at(&source),
             RunValueMode::Constant(value),
         ))
     }
@@ -6523,12 +6523,12 @@ impl SymbolicMemory {
                             source_base: run.slot_pointer(source_index),
                         },
                     };
-                    captured_runs.push(CellRun::new_with_mode(
+                    captured_runs.push(CellRun::new_at(
                         base.offset_by_bytes(first * element.byte_width()),
                         element.byte_width(),
                         element,
                         length,
-                        run.source().clone(),
+                        run.source_point().clone(),
                         mode,
                         IndexIntervals::default(),
                     ));
@@ -6625,17 +6625,17 @@ impl SymbolicMemory {
         element_type: ProgramType,
         first: u32,
         count: u32,
-        source: SharedMemory,
+        source: ProgramPoint,
         mode: RunValueMode,
     ) -> Self {
         let mut holes = IndexIntervals::default();
         holes.insert_range(0, first);
-        let probe = CellRun::new_with_mode(
+        let probe = CellRun::new_at(
             base.clone(),
             element_width,
             element_type,
             count,
-            source.clone(),
+            source,
             mode,
             IndexIntervals::default(),
         );
@@ -6715,14 +6715,37 @@ impl SymbolicMemory {
         program_type: ProgramType,
         source: SharedMemory,
     ) -> Self {
+        self.materialize_cell_at(pointer, program_type, &ProgramPoint::at(&source))
+    }
+
+    pub(crate) fn materialize_cell_at(
+        self,
+        pointer: Address,
+        program_type: ProgramType,
+        source: &ProgramPoint,
+    ) -> Self {
         let value = if let ProgramType::Parameter(parameter) = program_type {
-            AlgebraicTermNode::parameter_load(source, pointer.clone(), parameter)
+            AlgebraicTermNode::parameter_load(
+                source.shared_memory().clone(),
+                pointer.clone(),
+                parameter,
+            )
         } else {
-            let load =
-                crate::kernel::eval::canonical_cell_load(source, pointer.clone(), program_type);
+            let load = crate::kernel::eval::canonical_cell_load(source, &pointer, program_type);
             crate::kernel::cell_run_value(program_type, load)
         };
         self.materialize_named_cell(pointer, value)
+    }
+
+    pub(crate) fn materialize_entry_integer_cell_at(
+        self,
+        pointer: Address,
+        source: &ProgramPoint,
+    ) -> Self {
+        let Some(read) = crate::kernel::eval::observe_entry_integer_cell(source, &pointer) else {
+            return self;
+        };
+        self.materialize_named_cell(pointer, ProgramValue::Int32(read))
     }
 
     /// Cache the canonical value of an already existing cell for a resource
@@ -6777,7 +6800,7 @@ impl SymbolicMemory {
         value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
-        self.store_with_effective_type(pointer, value.into(), context, None, false)
+        self.store_with_effective_type(pointer, value.into(), context, None, false, None)
     }
 
     /// [`Self::store_with_context`] for a C store through an lvalue of
@@ -6793,7 +6816,7 @@ impl SymbolicMemory {
         context: &PureFactContext,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
-        self.store_with_effective_type(pointer, value.into(), context, Some(class), true)
+        self.store_with_effective_type(pointer, value.into(), context, Some(class), true, None)
     }
 
     /// Apply a program store and its cache invalidation as one transition.
@@ -6803,11 +6826,18 @@ impl SymbolicMemory {
         value: ProgramValue,
         context: &PureFactContext,
     ) -> Self {
-        self.store_with_effective_type(pointer, value.into(), context, None, true)
+        self.store_with_effective_type(pointer, value.into(), context, None, true, None)
     }
 
     pub(in crate::kernel) fn store_retained(self, pointer: Address, value: ExecutionValue) -> Self {
-        self.store_with_effective_type(pointer, value.into(), &PureFactContext::new(), None, false)
+        self.store_with_effective_type(
+            pointer,
+            value.into(),
+            &PureFactContext::new(),
+            None,
+            false,
+            None,
+        )
     }
 
     pub(in crate::kernel) fn store_retained_with_context(
@@ -6816,7 +6846,7 @@ impl SymbolicMemory {
         value: ExecutionValue,
         context: &PureFactContext,
     ) -> Self {
-        self.store_with_effective_type(pointer, value.into(), context, None, false)
+        self.store_with_effective_type(pointer, value.into(), context, None, false, None)
     }
 
     pub(in crate::kernel) fn store_retained_classed_with_context(
@@ -6825,8 +6855,16 @@ impl SymbolicMemory {
         value: ExecutionValue,
         context: &PureFactContext,
         class: Option<crate::kernel::effective_type::CAccessClass>,
+        authorized_range: Option<&MemoryRange>,
     ) -> Self {
-        self.store_with_effective_type(pointer, value.into(), context, Some(class), true)
+        self.store_with_effective_type(
+            pointer,
+            value.into(),
+            context,
+            Some(class),
+            true,
+            authorized_range,
+        )
     }
 
     fn store_with_effective_type(
@@ -6836,6 +6874,7 @@ impl SymbolicMemory {
         context: &PureFactContext,
         effective_type: Option<Option<crate::kernel::effective_type::CAccessClass>>,
         invalidate_aliases: bool,
+        authorized_range: Option<&MemoryRange>,
     ) -> Self {
         crate::kernel::debug_assert_widths(
             "a stored value",
@@ -6849,7 +6888,7 @@ impl SymbolicMemory {
             || !self.union_cells.is_empty()
             || !self.heap.initialized.partial_map().is_empty())
             && let Some((mut prepared, lost_knowledge)) =
-                self.prepare_store_cache(&pointer, value.byte_width(), context)
+                self.prepare_store_cache(&pointer, value.byte_width(), context, authorized_range)
         {
             if lost_knowledge {
                 prepared.mark_forgotten_from(&base);
@@ -7684,12 +7723,29 @@ impl SymbolicMemory {
     /// (C11 6.7.9p21 zero-initializes whatever it does not name), or one value
     /// field guaranteed initialized by a checked construction summary. The
     /// cells describe values; this record outlives forgetting those values.
-    pub(in crate::kernel) fn with_initialized_object(
+    pub(in crate::kernel) fn with_initialized_object(self, pointer: &Address, bytes: u32) -> Self {
+        self.record_object_initialization(pointer, bytes, false)
+    }
+
+    /// The checked call has returned four initialized bytes in one local
+    /// cell. Retain its output even if the earlier call initialized it too.
+    pub(in crate::kernel) fn with_initialized_call_word(self, pointer: &Address) -> Self {
+        let word_type = ProgramType::Int32;
+        let width = word_type.byte_width();
+        let call_word = self.blocks.get(&pointer.base).is_some_and(|block| {
+            block.declared_scalar_type == Some(word_type) && block.size().as_const() == Some(width)
+        }) && self.cells.explicitly_stored_value(pointer).is_none()
+            && self.cells.exact_run_slot_type(pointer) == Ok(None);
+        self.record_object_initialization(pointer, width, call_word)
+    }
+
+    fn record_object_initialization(
         mut self,
         pointer: &Address,
         bytes: u32,
+        call_word: bool,
     ) -> Self {
-        if !self.heap.initialized.covers(pointer, bytes) {
+        if call_word || !self.heap.initialized.covers(pointer, bytes) {
             let base = intern_derivation_base(&mut self);
             std::sync::Arc::make_mut(&mut self.heap)
                 .initialized
@@ -7700,6 +7756,7 @@ impl SymbolicMemory {
                     base,
                     pointer: pointer.clone(),
                     bytes,
+                    call_word,
                 },
             );
         }
@@ -7718,8 +7775,12 @@ impl SymbolicMemory {
 
     /// Populate the derived cell partition while establishing function inputs,
     /// so the first field store pays only for its own cached cells.
-    pub(crate) fn prepare_parameter_store_partition(&self, resources: &ResourceContext) {
-        self.cells.prepare_parameter_partition(resources);
+    pub(crate) fn prepare_parameter_store_partition(
+        &self,
+        resources: &ResourceContext,
+        assumptions: &PureFactContext,
+    ) {
+        self.cells.warm_parameter_partition(resources, assumptions);
         crate::kernel::reasoning::prepare_memory_variable_index(self);
     }
 
@@ -7766,7 +7827,7 @@ impl SymbolicMemory {
         let mut source = self.clone();
         let base = intern_derivation_base(&mut source);
         let Some((mut memory, lost_knowledge)) =
-            source.prepare_store_cache(pointer, bytes, assumptions)
+            source.prepare_store_cache(pointer, bytes, assumptions, None)
         else {
             return source;
         };
@@ -7790,6 +7851,7 @@ impl SymbolicMemory {
         pointer: &Address,
         bytes: u32,
         assumptions: &PureFactContext,
+        authorized_range: Option<&MemoryRange>,
     ) -> Option<(Self, bool)> {
         let normalized_pointer = Address {
             base: pointer.base.clone(),
@@ -7841,7 +7903,6 @@ impl SymbolicMemory {
         );
         // Objects a known address equality ties to the written one may share
         // the written bytes.
-        let address_connected = assumptions.address_connected_objects(&normalized_pointer);
         let cell_fate = |cell_pointer: &Address, cell_value: &ProgramValue| {
             let normalized_cell_pointer = Address {
                 base: cell_pointer.base.clone(),
@@ -7866,10 +7927,8 @@ impl SymbolicMemory {
                     CachedValueFate::Forgotten
                 };
             }
-            if !address_connected.is_empty()
-                && address_connected.contains(&crate::kernel::assumptions::parameter_alias_bucket(
-                    &normalized_cell_pointer,
-                ))
+            if assumptions
+                .addresses_numerically_connected(&normalized_pointer, &normalized_cell_pointer)
             {
                 return if crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                     &normalized_pointer,
@@ -7934,10 +7993,8 @@ impl SymbolicMemory {
                     CachedValueFate::Forgotten
                 };
             }
-            if !address_connected.is_empty()
-                && address_connected.contains(&crate::kernel::assumptions::parameter_alias_bucket(
-                    &normalized_cell_pointer,
-                ))
+            if assumptions
+                .addresses_numerically_connected(&normalized_pointer, &normalized_cell_pointer)
             {
                 return if crate::kernel::memory_history::indexed_store_byte_separation_evidence(
                     &normalized_pointer,
@@ -7983,10 +8040,30 @@ impl SymbolicMemory {
                 CachedValueFate::Forgotten
             }
         };
-        let ordered = memory
-            .cells
-            .ordered_store_candidates(&normalized_pointer, bytes, &candidates, assumptions)
-            .map(|cells| (cells, None))
+        let ordered = authorized_range
+            .and_then(|range| {
+                memory.cells.parameter_store_candidates(
+                    &normalized_pointer,
+                    bytes,
+                    &candidates,
+                    &gap_kept,
+                    assumptions,
+                    Some(range),
+                )
+            })
+            .map(|(cells, runs)| (cells, Some(runs)))
+            .or_else(|| {
+                memory
+                    .cells
+                    .ordered_store_candidates(
+                        &normalized_pointer,
+                        bytes,
+                        &candidates,
+                        assumptions,
+                        None,
+                    )
+                    .map(|cells| (cells, None))
+            })
             .or_else(|| {
                 memory
                     .cells
@@ -7996,6 +8073,7 @@ impl SymbolicMemory {
                         &candidates,
                         &gap_kept,
                         assumptions,
+                        None,
                     )
                     .map(|(cells, runs)| (cells, Some(runs)))
             })
@@ -8704,12 +8782,6 @@ impl ExecutionState {
     /// identity. Independently built empty environments are equivalent, but
     /// nonempty environments must share persistent storage.
     pub(crate) fn shares_non_memory_storage_with(&self, other: &Self) -> bool {
-        fn same_or_empty_map<K, V>(
-            left: &std::sync::Arc<std::collections::BTreeMap<K, V>>,
-            right: &std::sync::Arc<std::collections::BTreeMap<K, V>>,
-        ) -> bool {
-            std::sync::Arc::ptr_eq(left, right) || (left.is_empty() && right.is_empty())
-        }
         fn same_or_empty_persistent_map<K: Ord, V>(
             left: &crate::persistent::PersistentMap<K, V>,
             right: &crate::persistent::PersistentMap<K, V>,
@@ -8723,7 +8795,9 @@ impl ExecutionState {
         };
         let same_bindings = match (&self.resource_bindings, &other.resource_bindings) {
             (None, None) => true,
-            (Some(left), Some(right)) => same_or_empty_map(left, right),
+            (Some(left), Some(right)) => {
+                std::sync::Arc::ptr_eq(left, right) || (left.is_empty() && right.is_empty())
+            }
             _ => false,
         };
         self.population_effects
@@ -8778,7 +8852,7 @@ impl ExecutionState {
     /// The caller instance a call-local instance binder names.
     fn bound_instance(&self, identity: InstanceId) -> Option<InstanceId> {
         match &self.resource_bindings {
-            Some(bindings) => bound_instance(bindings, identity),
+            Some(bindings) => bindings.instance(identity),
             None => Some(identity),
         }
     }
@@ -8800,7 +8874,7 @@ impl ExecutionState {
     }
     pub(crate) fn resolve_named_mutex_authority(
         &self,
-        identity: Variable,
+        identity: MutexAuthorityId,
     ) -> Option<&ResourceFact> {
         self.named_mutex_authorities
             .as_ref()?
@@ -8809,7 +8883,7 @@ impl ExecutionState {
 
     pub(in crate::kernel) fn bind_named_mutex_authority(
         mut self,
-        identity: Variable,
+        identity: MutexAuthorityId,
         fact: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
         let current = self
@@ -8824,7 +8898,7 @@ impl ExecutionState {
 
     pub(in crate::kernel) fn rebind_named_mutex_authority(
         mut self,
-        identity: Variable,
+        identity: MutexAuthorityId,
         expected: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
         let current = self
@@ -8837,7 +8911,7 @@ impl ExecutionState {
     }
     pub(in crate::kernel) fn transport_named_mutex_use(
         mut self,
-        identity: Variable,
+        identity: MutexAuthorityId,
         source: &ResourceFact,
         derived: &ResourceFact,
     ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
@@ -10312,6 +10386,17 @@ impl ExecutionState {
         self
     }
 
+    /// Install memory built from a shared base. Register its identity by
+    /// changed paths before resource invalidation or the point link looks it up.
+    pub(in crate::kernel) fn with_memory_relative_to(
+        self,
+        memory: SymbolicMemory,
+        base: &SymbolicMemory,
+    ) -> Self {
+        super::intern_memory_with(std::borrow::Cow::Borrowed(&memory), Some(base), None);
+        self.with_memory(memory)
+    }
+
     /// Replace the memory state after proof-only cell naming.
     ///
     /// Materializing a canonical load does not write program memory or
@@ -10353,7 +10438,7 @@ impl ExecutionState {
     pub(crate) fn begin_function_entry_memory(mut self) -> Self {
         self.memory.pending_steps = None;
         let memory = super::intern_memory_ref(&self.memory);
-        self.point = super::program_point::PathLink::default().after(memory, None);
+        self.point = super::program_point::PathLink::function_entry(memory);
         self
     }
 

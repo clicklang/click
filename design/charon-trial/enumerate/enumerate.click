@@ -8,7 +8,7 @@ fn last_index(bytes: &[u8]) -> usize {
     views bytes[0..bytes.len()];
     ensures bytes.len() != 0u64 implies result == bytes.len() - 1u64;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.len();
         views bytes[0..bytes.len()];
@@ -16,7 +16,7 @@ fn last_index(bytes: &[u8]) -> usize {
         invariant iter.count == bytes.len() - iter.len();
         invariant iter.as_slice() == bytes + iter.count;
         invariant iter.count != 0u64 implies last == iter.count - 1u64;
-        preserve by {
+        maintain by {
             if 0u64 < iter.len() {
                 mark taken;
                 have to_integer(iter.count) < to_integer(bytes.len());
@@ -24,7 +24,7 @@ fn last_index(bytes: &[u8]) -> usize {
                 have to_integer(iter.count + 1u64) <= to_integer(bytes.len());
                 have to_integer(iter.count) + 1 <= 18446744073709551615;
                 have (bytes + iter.count) + 1u64 == bytes + (iter.count + 1u64);
-                step_until(back_edge());
+                step_until(loop.back_edge);
                 have iter.count == at(taken, iter.count) + 1u64;
                 have iter.len() == at(taken, iter.len()) - 1u64;
                 have iter.as_slice() == bytes + iter.count;
@@ -48,7 +48,7 @@ fn last_pair(words: &[u16]) -> u32 {
     views words[0..words.len()];
     ensures result <= 65535u32;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.len();
         views words[0..words.len()];
@@ -57,7 +57,7 @@ fn last_pair(words: &[u16]) -> u32 {
         invariant iter.as_slice() == words + iter.count;
         invariant iter.count != 0u64 implies index == iter.count - 1u64;
         invariant value <= 65535u32;
-        preserve by {
+        maintain by {
             if 0u64 < iter.len() {
                 mark taken;
                 have to_integer(iter.count) < to_integer(words.len());
@@ -65,7 +65,7 @@ fn last_pair(words: &[u16]) -> u32 {
                 have to_integer(iter.count + 1u64) <= to_integer(words.len());
                 have to_integer(iter.count) + 1 <= 18446744073709551615;
                 have (words + iter.count) + 1u64 == words + (iter.count + 1u64);
-                step_until(back_edge());
+                step_until(loop.back_edge);
                 have iter.count == at(taken, iter.count) + 1u64;
                 have iter.len() == at(taken, iter.len()) - 1u64;
                 have iter.as_slice() == words + iter.count;

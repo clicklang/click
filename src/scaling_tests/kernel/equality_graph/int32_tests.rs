@@ -3,9 +3,11 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+#[cfg(not(feature = "fast-gate"))]
 use crate::kernel::binary_node;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn unsigned_congruence_registration_and_late_merges_scale_with_touched_uses() {
     for size in [16u64, 64, 256, 1024] {
@@ -368,6 +370,7 @@ fn scalar_support_tracking_does_not_compare_unrelated_state_contents_across_aren
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn offset_premise_shallow_decision_and_forks_scale() {
     let add = |v| binary_node!(Int32, Add, Box::new(v), Box::new(MachineTerm::constant(1)));

@@ -14,7 +14,7 @@ import click::separation;
 verifying "alias-nested-call.c";
 int32 read(const uint8* p) { views p[0..4]; ensures 0 <= result and result <= 255; }
 int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
- step_until(loop(0));
+ step_until(loop(0).entry);
  have viewable(bytes[0..8]) by { observe(bytes[0..8]); }
  loop {
  decreases 2 - outer;
@@ -23,10 +23,10 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
  invariant cursor == bytes + (4 * outer);
  invariant bytes == old(bytes);
  invariant viewable(bytes[0..8]);
- preserve by {
+ maintain by {
   have outer < 2;
   mark outer_head;
-  step_until(loop(1));
+  step_until(loop(1).entry);
   have chunk == bytes + (4 * outer);
   have 0 <= to_integer(4 * outer) by { solve() using { 0 <= outer; outer < 2; }; }
   have to_integer(4 * outer) <= 4 by { solve() using { 0 <= outer; outer < 2; }; }
@@ -78,7 +78,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
    invariant 0 <= inner and inner <= 1;
    invariant chunk == bytes + (4 * outer);
    invariant 0 <= outer and outer < 2;
-   preserve by { step(); step(); step(); step();
+   maintain by { step(); step(); step(); step();
     have viewable(chunk[0..4]) by { observe(chunk[0..4]); }
    }
   }

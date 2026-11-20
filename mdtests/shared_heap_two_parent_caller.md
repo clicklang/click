@@ -186,8 +186,8 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     owns child_ref(kid);
     ensures result == kid->payload;
 } by {
-    let { link: first_link } = step(parent_attach, {});
-    let { link: second_link } = step(parent_attach, {});
+    let { link: first_link } = step(parent_attach);
+    let { link: second_link } = step(parent_attach);
     let { out: first_out } = step(parent_detach, { link: first_link });
     step();
     step(parent_read_payload, { link: second_link });

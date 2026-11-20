@@ -24,7 +24,7 @@ uint64 inspect(const uint8* p, uint64 n) {
   views p[0u64..n];
   invariant to_integer(n) <= 15;
   initialize by { have to_integer(n) <= to_integer(15u64); solve(); }
-  preserve by {
+  maintain by {
    have n > 0u64 by known();
    have 0u64 < n by {
     if 0u64 < n { known(); } else {

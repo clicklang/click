@@ -873,13 +873,14 @@ pub fn read_verification_inputs_for_project(
 ) -> Result<VerificationInput, String> {
     let target =
         crate::surface::selected_project_c_target(project).map_err(|error| error.report())?;
-    read_verification_inputs_with_c_target(sidecar, click_source, target)
+    read_verification_inputs_with_c_target(sidecar, click_source, target, false)
 }
 
 fn read_verification_inputs_with_c_target(
     sidecar: &Path,
     click_source: &str,
     target: crate::languages::c::target::CTarget,
+    refresh: bool,
 ) -> Result<VerificationInput, String> {
     let name = sidecar
         .file_name()
@@ -895,11 +896,13 @@ fn read_verification_inputs_with_c_target(
         }
     }
     if let Some((project, requested)) = unit_selection {
+        let inputs = if refresh {
+            project.prepared_sources_with_refresh(&requested)
+        } else {
+            project.prepared_sources(&requested)
+        }?;
         return Ok(
-            match project
-                .prepared_sources(&requested)?
-                .expect("the project lists the selected sources")
-            {
+            match inputs.expect("the project lists the selected sources") {
                 crate::project::UnitSelection::C(imports) => VerificationInput::Prepared(imports),
                 crate::project::UnitSelection::Program(program) => {
                     VerificationInput::PreparedProgram(program)
@@ -916,10 +919,34 @@ fn read_verification_inputs_with_c_target(
 /// replacement.
 pub fn per_sidecar_config_refusal(config: &Path) -> String {
     format!(
-        "`{}` is a per-sidecar import config, which Click no longer reads; declare its sources as a unit of a `{}` at the project root, remove the config and its lock, and run `click import lock` (see docs/reference/cli/import.md#project-units)",
+        "`{}` is a per-sidecar import config, which Click no longer reads; declare its sources as a unit of a `{}` at the project root, remove the config and its lock, and run `click capture` (see docs/reference/cli/capture.md#project-units)",
         config.display(),
         crate::project::FILE_NAME
     )
+}
+
+/// Captures the configured compilations selected by a sidecar.
+pub fn capture_sidecar(sidecar: &Path) -> Result<(), String> {
+    let source = fs::read_to_string(sidecar)
+        .map_err(|error| format!("read `{}`: {error}", sidecar.display()))?;
+    let (project, requested) = project_unit_selection(sidecar, &source)?.ok_or_else(|| {
+        format!(
+            "`{}` selects no configured compiler sources",
+            sidecar.display()
+        )
+    })?;
+    let paths = requested
+        .into_iter()
+        .map(|(name, path)| {
+            path.ok_or_else(|| {
+                format!(
+                    "cannot resolve source `{name}` from `{}`",
+                    sidecar.display()
+                )
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    project.capture_sources(&paths)
 }
 
 /// The project whose units list a sidecar's `verifying` sources, found as the
@@ -1422,13 +1449,25 @@ pub fn load_sidecar_inputs(
     click_path: &Path,
     project_root: Option<&Path>,
 ) -> Result<(String, ClickProject, VerificationInput), String> {
+    load_sidecar_inputs_for_verify(click_path, project_root, true)
+}
+
+/// Loads inputs for interactive verification, optionally refreshing captures.
+pub fn load_sidecar_inputs_for_verify(
+    click_path: &Path,
+    project_root: Option<&Path>,
+    locked: bool,
+) -> Result<(String, ClickProject, VerificationInput), String> {
     let click_source = fs::read_to_string(click_path)
         .map_err(|error| format!("failed to read `{}`: {error}", click_path.display()))?;
     let project = match project_root {
         Some(root) => read_click_project_at_root(click_path, &click_source, root)?,
         None => read_click_project(click_path, &click_source)?,
     };
-    let inputs = read_verification_inputs_for_project(click_path, &click_source, &project)?;
+    let target =
+        crate::surface::selected_project_c_target(&project).map_err(|error| error.report())?;
+    let inputs =
+        read_verification_inputs_with_c_target(click_path, &click_source, target, !locked)?;
     Ok((click_source, project, inputs))
 }
 
@@ -1461,21 +1500,38 @@ pub fn load_target_inputs(
     path: &Path,
     project_root: Option<&Path>,
 ) -> Result<LoadedTarget, String> {
-    if !looks_like_mdtest(path) {
-        let (click_source, project, inputs) = load_sidecar_inputs(path, project_root)?;
-        return Ok(LoadedTarget {
-            click_source,
-            project,
-            inputs,
-            mdtest: None,
-        });
+    if looks_like_mdtest(path) {
+        return load_mdtest_target(path, false);
     }
+    load_target_inputs_for_verify(path, project_root, true)
+}
+
+/// Loads an ordinary verification target with the requested capture policy.
+pub fn load_target_inputs_for_verify(
+    path: &Path,
+    project_root: Option<&Path>,
+    locked: bool,
+) -> Result<LoadedTarget, String> {
+    if looks_like_mdtest(path) {
+        return load_mdtest_target(path, locked);
+    }
+    let (click_source, project, inputs) =
+        load_sidecar_inputs_for_verify(path, project_root, locked)?;
+    Ok(LoadedTarget {
+        click_source,
+        project,
+        inputs,
+        mdtest: None,
+    })
+}
+
+fn load_mdtest_target(path: &Path, locked: bool) -> Result<LoadedTarget, String> {
     let mdtest = read_mdtest(path)?;
     let click_source = mdtest
         .click_source
         .clone()
         .ok_or_else(|| format!("mdtest `{}` has no ```click block", path.display()))?;
-    let inputs = prepare_mdtest_inputs(&mdtest)?;
+    let inputs = prepare_mdtest_inputs_with_policy(&mdtest, locked)?;
     let project = read_mdtest_click_project(path, &mdtest, &click_source)?;
     Ok(LoadedTarget {
         click_source,
@@ -1574,7 +1630,7 @@ pub struct CppMdTestSource {
     pub templates: Vec<String>,
     pub source: String,
     /// Where the fixture's checked-in import lives: the lock and artifact
-    /// `click import lock` writes, under `cpp-imports/<stem>` beside it.
+    /// `click capture` writes, under `cpp-imports/<stem>` beside it.
     pub import_directory: Option<PathBuf>,
 }
 
@@ -1837,8 +1893,8 @@ fn cpp_mdtest_import_directory(path: &Path) -> Option<PathBuf> {
 
 /// The lock and artifacts in a C++ import, by their paths inside it.
 fn cpp_import_files(directory: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut files = vec![PathBuf::from(crate::project::LOCK_NAME)];
-    let mut pending = vec![PathBuf::from(".click")];
+    let mut files = Vec::new();
+    let mut pending = vec![PathBuf::from(crate::project::ARTIFACT_DIRECTORY)];
     while let Some(relative) = pending.pop() {
         let entries = fs::read_dir(directory.join(&relative))
             .map_err(|error| format!("failed to read `{}`: {error}", relative.display()))?;
@@ -1879,6 +1935,13 @@ fn copy_cpp_import(from: &Path, to: &Path) -> Result<(), String> {
 /// fences go through the same locked semantic import as ordinary C++ sidecars;
 /// they never fall back to the C parser.
 pub fn prepare_mdtest_inputs(mdtest: &MdTest) -> Result<VerificationInput, String> {
+    prepare_mdtest_inputs_with_policy(mdtest, false)
+}
+
+fn prepare_mdtest_inputs_with_policy(
+    mdtest: &MdTest,
+    locked: bool,
+) -> Result<VerificationInput, String> {
     let Some(cpp) = &mdtest.cpp_source else {
         return Ok(VerificationInput::Bundle(mdtest.c_sources.clone()));
     };
@@ -1889,7 +1952,7 @@ pub fn prepare_mdtest_inputs(mdtest: &MdTest) -> Result<VerificationInput, Strin
         .filter(|directory| directory.join(crate::project::LOCK_NAME).is_file());
     if let Some(checked_in) = checked_in {
         copy_cpp_import(checked_in, &fixture.directory)?;
-    } else if let Ok(exporter) = crate::languages::cpp::runtime::resolve_exporter() {
+    } else if !locked && let Ok(exporter) = crate::languages::cpp::runtime::resolve_exporter() {
         // A fixture written outside the corpus, as a command test writes one,
         // has nothing checked in; the pinned exporter imports it directly.
         fixture.project.lock_with_cpp_exporter(Some(&exporter))?;

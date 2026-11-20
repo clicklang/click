@@ -1,6 +1,94 @@
 use super::*;
 
 #[test]
+fn external_displacements_and_heap_indexes_use_only_their_selected_storage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let parameter = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(38_151)),
+    };
+    let other_parameter = Address {
+        offset: AddressOffset::Variable(Variable(38_152)),
+        ..parameter.clone()
+    };
+    let heap = Address {
+        base: AddressBase::Heap(38_153),
+        offset: AddressOffset::Constant(0),
+    };
+    let start =
+        ExecutionState::new().with_memory(SymbolicMemory::new().with_block(heap.base.clone(), 8));
+    let store = |state: &ExecutionState, address: &Address, bits| {
+        state.clone().with_memory(state.memory().clone().store(
+            address.clone(),
+            ProgramValue::Int32(MachineTerm::constant(bits)),
+        ))
+    };
+    let p_written = store(&start, &parameter, 1);
+    let h_written = store(&p_written, &heap, 2);
+    let sibling = parameter.offset_by_bytes(4);
+    let mut samples = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut state = h_written.clone();
+        for bits in 0..count {
+            state = store(&state, &sibling, bits);
+        }
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let point = state.program_point();
+            for (address, written) in [(&parameter, &p_written), (&heap, &h_written)] {
+                assert_eq!(
+                    point
+                        .indexed_integer_version(address, LoadKind::Int32)
+                        .and_then(|source| source.read_version_id()),
+                    written.program_point_id(),
+                );
+            }
+            assert!(
+                point
+                    .indexed_integer_version(&other_parameter, LoadKind::Int32)
+                    .is_none()
+            );
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+
+    let aliased = store(&h_written, &other_parameter, 3);
+    assert!(
+        aliased
+            .program_point()
+            .indexed_integer_version(&parameter, LoadKind::Int32)
+            .is_none()
+    );
+    assert!(
+        aliased
+            .program_point()
+            .indexed_integer_version(&heap, LoadKind::Int32)
+            .is_some()
+    );
+
+    let symbolic_heap = Address {
+        base: heap.base.clone(),
+        offset: parameter.offset.clone(),
+    };
+    let indexed = store(&h_written, &symbolic_heap, 4);
+    let point = indexed.program_point();
+    assert!(
+        point
+            .indexed_integer_version(&heap, LoadKind::Int32)
+            .is_none()
+    );
+    assert_eq!(
+        point
+            .indexed_integer_version(&symbolic_heap, LoadKind::Int32)
+            .and_then(|source| source.read_version_id()),
+        indexed.program_point_id(),
+    );
+}
+
+#[test]
 fn pending_successor_lookup_ignores_recorded_log_length() {
     let mut samples = Vec::new();
     for count in [4, 16, 64, 256] {
@@ -55,10 +143,10 @@ fn sealed_batch_read_lookup_ignores_the_number_of_effects() {
                 let point = sealed.program_point();
                 (
                     point
-                        .indexed_local_integer_version(&first, LoadKind::Int32)
+                        .indexed_integer_version(&first, LoadKind::Int32)
                         .unwrap(),
                     point
-                        .indexed_local_integer_version(&second, LoadKind::Int32)
+                        .indexed_integer_version(&second, LoadKind::Int32)
                         .unwrap(),
                 )
             });
@@ -112,14 +200,14 @@ fn joining_one_changed_cell_uses_shared_index_branches() {
             assert_eq!(
                 joined
                     .program_point()
-                    .indexed_local_integer_version(&slot, LoadKind::Int32)
+                    .indexed_integer_version(&slot, LoadKind::Int32)
                     .and_then(|point| point.read_version_id()),
                 original
             );
             assert!(
                 joined
                     .program_point()
-                    .indexed_local_integer_version(&changed, LoadKind::Int32)
+                    .indexed_integer_version(&changed, LoadKind::Int32)
                     .is_none()
             );
             samples.push((count, work));
@@ -186,7 +274,7 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
             for (path, memory) in [(called, &call_memory), (head, &loop_memory)] {
                 assert_eq!(
                     ProgramPoint::of_state(memory, &path)
-                        .indexed_local_integer_version(&slot, LoadKind::Int32)
+                        .indexed_integer_version(&slot, LoadKind::Int32)
                         .and_then(|point| point.read_version_id()),
                     original
                 );
@@ -198,4 +286,212 @@ fn sealing_checked_footprints_ignores_cells_in_untouched_objects() {
         samples.iter().all(|&(_, work)| work == samples[0].1),
         "{samples:?}"
     );
+}
+
+#[test]
+fn complete_parameter_pointer_reads_keep_their_write_point_across_sibling_stores() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let cell = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Variable(Variable(38_154)),
+    };
+    let target = Address::symbolic(Variable(38_155));
+    let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer)
+        .with_bounds(Some(SubobjectBounds::constant(target, 4)));
+    let state = ExecutionState::new();
+    let written = state.clone().with_memory(
+        state
+            .memory()
+            .clone()
+            .store(cell.clone(), ProgramValue::Pointer(stored.clone())),
+    );
+    let mut samples = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut state = written.clone();
+        for bits in 0..count {
+            state = state.clone().with_memory(state.memory().clone().store(
+                cell.offset_by_bytes(8),
+                ProgramValue::Int32(MachineTerm::constant(bits)),
+            ));
+        }
+        let (version, work) = crate::instrumentation::measure_deterministic_work(|| {
+            state
+                .program_point()
+                .indexed_typed_version(&cell, stored.program_type())
+                .expect("complete pointer store at the parameter cell")
+        });
+        assert_eq!(version.read_version_id(), written.program_point_id());
+        let read = Pointer::from_point_read(version, stored.program_type(), &cell);
+        assert_eq!(
+            crate::kernel::eval::pointer_read_over_write_program_value(read.address()).as_ref(),
+            Some(&stored)
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+
+    let partial = written.clone().with_memory(written.memory().clone().store(
+        cell.offset_by_bytes(4),
+        ProgramValue::Int32(MachineTerm::constant(0)),
+    ));
+    assert!(
+        partial
+            .program_point()
+            .indexed_typed_version(&cell, stored.program_type())
+            .is_none()
+    );
+}
+
+#[test]
+fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let flag = slot();
+    let object = flag.offset_by_bytes(8);
+    let callback = flag.offset_by_bytes(16);
+    let sibling = flag.offset_by_bytes(24);
+    let target = Address::symbolic(Variable(38_143));
+    let pointer = Pointer::new(target.clone(), ProgramType::Int32Pointer)
+        .with_bounds(Some(SubobjectBounds::constant(target, 4)));
+    let function = Pointer::new(
+        Address::function("callback_target"),
+        ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+    );
+    let start =
+        ExecutionState::new().with_memory(SymbolicMemory::new().with_block(flag.base.clone(), 28));
+    let written = start.clone().with_memory(
+        start
+            .memory()
+            .clone()
+            .store(flag.clone(), ProgramValue::bool_constant(true))
+            .store(object.clone(), ProgramValue::Pointer(pointer.clone()))
+            .store(callback.clone(), ProgramValue::Pointer(function.clone())),
+    );
+    let mut samples = Vec::new();
+    for count in [4, 64, 1024] {
+        let mut state = written.clone();
+        for value in 0..count {
+            state = state.clone().with_memory(state.memory().clone().store(
+                sibling.clone(),
+                ProgramValue::Int32(MachineTerm::constant(value)),
+            ));
+        }
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let point = state.program_point();
+            let flag_version = point
+                .indexed_typed_version(&flag, ProgramType::Bool)
+                .unwrap();
+            assert_eq!(flag_version.read_version_id(), written.program_point_id());
+            assert!(
+                point
+                    .indexed_integer_version(&flag, LoadKind::UInt8)
+                    .is_none()
+            );
+            for (cell, stored) in [(&object, &pointer), (&callback, &function)] {
+                let version = point
+                    .indexed_typed_version(cell, stored.program_type())
+                    .unwrap();
+                let read = Pointer::from_point_read(version, stored.program_type(), cell);
+                assert_eq!(
+                    read.address()
+                        .as_loaded_value()
+                        .unwrap()
+                        .point
+                        .read_version_id(),
+                    written.program_point_id()
+                );
+                assert_eq!(
+                    crate::kernel::eval::pointer_read_over_write_program_value(read.address())
+                        .as_ref(),
+                    Some(stored)
+                );
+            }
+        });
+        samples.push((count, work));
+    }
+    assert!(
+        samples.iter().all(|&(_, work)| work <= samples[0].1 + 8),
+        "{samples:?}"
+    );
+    let partial = written.clone().with_memory(written.memory().clone().store(
+        object.offset_by_bytes(4),
+        ProgramValue::UInt8(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 0)),
+    ));
+    assert!(
+        partial
+            .program_point()
+            .indexed_typed_version(&object, ProgramType::Int32Pointer)
+            .is_none()
+    );
+}
+
+#[test]
+fn opaque_call_word_versions_follow_checked_local_effects() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let output = slot();
+    let sibling = SymbolicMemory::local_pointer("disjoint");
+    let output_range = MemoryRange::new(output.clone(), 0.into(), 1.into());
+    let sibling_range = MemoryRange::new(sibling.clone(), 0.into(), 1.into());
+    let start = ExecutionState::new().with_memory(
+        SymbolicMemory::new()
+            .with_declared_scalar_block(output.base.clone(), 4, ProgramType::Int32)
+            .with_block(sibling.base.clone(), 4),
+    );
+    let call = |state: &ExecutionState, index, range: &MemoryRange| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().with_call_memory_havoc(
+                Variable(index),
+                std::slice::from_ref(range),
+                &PureFactContext::new(),
+                None,
+            ))
+    };
+    let output_return = |mut state: ExecutionState| {
+        state.set_memory_directly(state.memory().clone().with_initialized_call_word(&output));
+        state
+    };
+    let returned = output_return(call(&start, 38_201, &output_range));
+    let select = |state: &ExecutionState| {
+        state
+            .program_point()
+            .ordinary_typed_version(&output, ProgramType::Int32)
+    };
+    let version = select(&returned).expect("opaque output has a version");
+    assert_eq!(version.read_version_id(), returned.program_point_id());
+    assert!(version.indexed_integer_store_bits().is_none());
+    assert!(returned.memory().known_value(&output).is_none());
+    assert!(
+        returned
+            .memory()
+            .has_initialized_bytes_under(&output, 4, &PureFactContext::new())
+    );
+
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let mut state = returned.clone();
+        for i in 0..size {
+            state = call(&state, 39_000 + i, &sibling_range);
+        }
+        let (selected, work) =
+            crate::instrumentation::measure_deterministic_work(|| select(&state));
+        assert_eq!(selected, Some(version.clone()));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work == samples[0]),
+        "{samples:?}"
+    );
+
+    let changed = call(&returned, 40_000, &output_range);
+    assert!(select(&changed).is_none());
+    let returned_again = output_return(changed);
+    let new_version = select(&returned_again).expect("the new output has its own version");
+    assert_eq!(
+        new_version.read_version_id(),
+        returned_again.program_point_id()
+    );
+    assert_ne!(new_version, version);
 }

@@ -1983,7 +1983,10 @@ fn memory_resolution_graph_offsets_keep_load_states_distinct() {
 
 /// Substitute only stated scalar constants in an address, then use the
 /// cell map's exact index. Work is proportional to this address expression.
-fn pointer_with_exact_index_constants(pointer: &Address, assumptions: &PureFactContext) -> Address {
+pub(in crate::kernel) fn pointer_with_exact_index_constants(
+    pointer: &Address,
+    assumptions: &PureFactContext,
+) -> Address {
     enum Task<'a> {
         Visit(&'a AddressOffset),
         Add,
@@ -3739,12 +3742,13 @@ pub(in crate::kernel) fn run_shape_representatives(
     run: &crate::kernel::primitives::CellRun,
 ) -> Option<Vec<u32>> {
     if let crate::kernel::primitives::RunValueMode::Copy { source_base } = run.value_mode() {
-        let source_run = crate::kernel::primitives::CellRun::new(
+        let source_run = crate::kernel::primitives::CellRun::new_at(
             source_base.clone(),
             run.element_width(),
             run.element_type(),
             run.count(),
-            run.source().clone(),
+            run.source_point().clone(),
+            crate::kernel::primitives::RunValueMode::Load,
             run.holes().clone(),
         );
         if copied_source_has_observable_slots(&source_run) {

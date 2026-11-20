@@ -141,7 +141,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     }
     let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end), { next: initial_next });
     step(); step();
-    loop as clear_occupied {
+    loop clear_occupied {
         decreases end - i;
         owns w: arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end);
         invariant w.next == i;
@@ -159,7 +159,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k])
         };
         initialize by solve();
-        preserve by {
+        maintain by {
             let { next: m } = unfold(w);
             have m == i;
             have 0 <= start;

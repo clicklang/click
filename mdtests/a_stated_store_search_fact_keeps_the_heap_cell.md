@@ -32,7 +32,7 @@ int32 read_first(int32 m) {
         if q == 0 {
             step_until(function.exit);
         } else {
-            step_until(statement(3));
+            step_until(statement(3).entry);
             have ((m - 1) as int32) != 0 by solve();
             step_until(function.exit);
         }

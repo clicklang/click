@@ -182,6 +182,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4.8s in the parallel gate"]
 fn connected_condition_selection_scales_linearly_in_chain_and_context() {
     for grow_chain in [false, true] {

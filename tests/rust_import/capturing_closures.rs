@@ -12,6 +12,7 @@ fn capturing_closure_project() -> Project {
 // the values it captured, and a callee requiring a parameterized contract of
 // it is answered by refinement from that contract.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4.2s in the parallel gate"]
 fn charon_capturing_closures_meet_parameterized_contracts() {
     let p = capturing_closure_project();

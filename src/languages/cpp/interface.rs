@@ -94,7 +94,7 @@ pub(super) fn prepare(
             [record.path.last().cloned(), Some(record.path.join("::"))]
                 .into_iter()
                 .flatten()
-                .filter(|spelling| spelling != &record.name)
+                .filter(|spelling| record.is_layout_free() || spelling != &record.name)
                 .map(|spelling| (spelling, record.name.clone()))
         })
         .collect();
@@ -122,6 +122,9 @@ pub(super) fn prepare_layouts(
     let mut leaf_counts = BTreeMap::new();
     let mut total_leaves = 0usize;
     for record in super::schema::record_layout_order(&records)? {
+        if record.is_layout_free() {
+            continue;
+        }
         let mut leaves: usize = record.base.as_ref().map_or(0, |base| {
             let CppType::Record { name, .. } = &base.value_type else {
                 unreachable!("validated nominal base")
@@ -504,8 +507,13 @@ fn function_interface(
                         source.declaration_id, parameter.name
                     ));
                 };
+                let carrier_type = if layouts.contains_key(name) {
+                    InterfaceType::Int32Pointer
+                } else {
+                    InterfaceType::VoidPointer
+                };
                 let carrier = crate::languages::interface::ImportedParameter::from_binding(
-                    InterfaceType::Int32Pointer,
+                    carrier_type,
                     carried_name.clone(),
                     Some(name.clone()),
                 );

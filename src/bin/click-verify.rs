@@ -11,11 +11,13 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use crate::git::{git_commit_id, git_repo_root, git_show};
+#[cfg(test)]
+use click::cli::load_target_inputs;
 use click::cli::{
     LoadedTarget, RunLimits, SelectedProject, VerificationInput, containing_directory,
-    load_sidecar_inputs, load_target_inputs, looks_like_mdtest, looks_like_source_location,
-    parse_duration, parse_source_location, parse_work_limit, select_sidecars, sidecar_project_root,
-    source_refs, with_run_limits,
+    load_sidecar_inputs, load_sidecar_inputs_for_verify, load_target_inputs_for_verify,
+    looks_like_mdtest, looks_like_source_location, parse_duration, parse_source_location,
+    parse_work_limit, select_sidecars, sidecar_project_root, source_refs, with_run_limits,
 };
 use click::instrumentation::VerificationPhase;
 use click::languages::c::source as c_source;
@@ -31,10 +33,13 @@ use click::surface::{
 };
 
 const USAGE: &str = "\
-usage: click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
-       click verify --trace-proof <PROOF|PATH:LINE[:COLUMN]> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
-       click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
+usage: click verify [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
+       click verify [--locked] --trace-proof <PROOF|PATH:LINE[:COLUMN]> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
+       click verify [--locked] [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
        click verify --changed-since <REVISION> [--explain] <sidecar.click|directory>
+
+Compiler captures are refreshed when missing or stale. `--locked` uses
+existing captures only and refuses missing or stale inputs.
 
 Verifies proofs owned by the selected sidecar, or, when a one-based
 :LINE:COLUMN suffix is supplied, only the proof unit containing that source
@@ -78,6 +83,7 @@ type LoadedSidecar = (String, Vec<(String, String)>);
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
     target: String,
+    locked: bool,
     limits: RunLimits,
     changed_since: Option<String>,
     explain: bool,
@@ -140,11 +146,17 @@ fn run(arguments: Arguments) -> Result<(), String> {
     }
     if looks_like_source_location(&arguments.target) {
         let (click_path, line, column) = parse_source_location(&arguments.target)?;
-        return verify_location(&click_path, line, column, arguments.limits);
+        return verify_location(
+            &click_path,
+            line,
+            column,
+            arguments.limits,
+            arguments.locked,
+        );
     }
     let path = Path::new(&arguments.target);
     if path.is_dir() {
-        verify_directory(path, arguments.limits)
+        verify_directory(path, arguments.limits, arguments.locked)
     } else {
         let project_root = sidecar_project_root(path)?;
         verify_file(
@@ -153,12 +165,14 @@ fn run(arguments: Arguments) -> Result<(), String> {
             Some(&project_root),
             arguments.trace_proof.as_deref(),
             arguments.trace_to.as_ref(),
+            arguments.locked,
         )
     }
 }
 
 fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Arguments, String> {
     let mut target = None;
+    let mut locked = false;
     let mut limits = RunLimits::verify();
     let mut changed_since = None;
     let mut explain = false;
@@ -170,6 +184,8 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     while let Some(argument) = arguments.next() {
         if parse_options && argument == "--" {
             parse_options = false;
+        } else if parse_options && argument == "--locked" {
+            locked = true;
         } else if parse_options && argument == "--time-limit" {
             let value = arguments
                 .next()
@@ -236,6 +252,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         }
     }
     Ok(Arguments {
+        locked,
         target: target.ok_or_else(|| USAGE.to_string())?,
         limits,
         changed_since,
@@ -297,16 +314,16 @@ fn resolve_trace_target(
 
 /// Verifies every sidecar under a project or examples directory, reporting
 /// each one as it passes so a long run shows progress.
-fn verify_directory(path: &Path, limits: RunLimits) -> Result<(), String> {
+fn verify_directory(path: &Path, limits: RunLimits, locked: bool) -> Result<(), String> {
     let selection = select_sidecars(path)?;
     let sidecars = selection.sidecars().count();
     let projects = &selection.projects;
     for project in projects {
-        reconcile_project_externs(project, path, limits)?;
+        reconcile_project_externs(project, path, limits, locked)?;
     }
     for project in projects {
         for sidecar in &project.sidecars {
-            verify_file(sidecar, limits, Some(&project.root), None, None)?;
+            verify_file(sidecar, limits, Some(&project.root), None, None, locked)?;
             println!("verified {}", display_path(sidecar, path));
         }
     }
@@ -339,6 +356,7 @@ fn reconcile_project_externs(
     project: &SelectedProject,
     target: &Path,
     limits: RunLimits,
+    locked: bool,
 ) -> Result<(), String> {
     if project.sidecars.len() < 2 {
         return Ok(());
@@ -348,7 +366,7 @@ fn reconcile_project_externs(
         let summary = with_run_limits("click verify", limits, || {
             let (_, project, inputs) = {
                 let _phase = VerificationPhase::new("project loading");
-                load_sidecar_inputs(sidecar, Some(&project.root))?
+                load_sidecar_inputs_for_verify(sidecar, Some(&project.root), locked)?
             };
             sidecar_summary(sidecar, &project, &inputs, 0)
         })?;
@@ -389,7 +407,7 @@ fn verify_changed(
     }
     let selection = select_sidecars(path)?;
     for project in &selection.projects {
-        reconcile_project_externs(project, path, limits)?;
+        reconcile_project_externs(project, path, limits, true)?;
     }
     let mut sidecars = selection
         .projects
@@ -1426,6 +1444,7 @@ fn verify_file(
     project_root: Option<&Path>,
     trace_proof: Option<&str>,
     trace_to: Option<&TraceTo>,
+    locked: bool,
 ) -> Result<(), String> {
     // A previous failed sidecar may have left admissions behind; each file
     // reports only its own.
@@ -1434,7 +1453,7 @@ fn verify_file(
     // external-dependency summary to counting its selected proofs, runs
     // inside the run's work budget and crash-containment bound.
     with_run_limits("click verify", limits, || {
-        verify_file_within_limits(click_path, project_root, trace_proof, trace_to)
+        verify_file_within_limits(click_path, project_root, trace_proof, trace_to, locked)
     })
 }
 
@@ -1456,10 +1475,11 @@ fn verify_file_within_limits(
     project_root: Option<&Path>,
     trace_proof: Option<&str>,
     trace_to: Option<&TraceTo>,
+    locked: bool,
 ) -> Result<(), String> {
     let target = {
         let _phase = VerificationPhase::new("project loading");
-        load_target_inputs(click_path, project_root)?
+        load_target_inputs_for_verify(click_path, project_root, locked)?
     };
     let line_offset = target.line_offset();
     let LoadedTarget {
@@ -1670,10 +1690,11 @@ fn verify_location(
     line: usize,
     column: usize,
     limits: RunLimits,
+    locked: bool,
 ) -> Result<(), String> {
     // As in `verify_file`, loading is inside the run's limits.
     with_run_limits("click verify", limits, || {
-        verify_location_within_limits(click_path, line, column)
+        verify_location_within_limits(click_path, line, column, locked)
     })
 }
 
@@ -1681,11 +1702,12 @@ fn verify_location_within_limits(
     click_path: &Path,
     line: usize,
     column: usize,
+    locked: bool,
 ) -> Result<(), String> {
     let project_root = sidecar_project_root(click_path)?;
     let target = {
         let _phase = VerificationPhase::new("project loading");
-        load_target_inputs(click_path, Some(&project_root))?
+        load_target_inputs_for_verify(click_path, Some(&project_root), locked)?
     };
     let line_offset = target.line_offset();
     // An mdtest location names a line of the markdown file; the verifier
@@ -1836,7 +1858,7 @@ mod tests {
     #[test]
     fn loop_entry_refusal_bounds_unexecuted_preservation_source() {
         let source = format!(
-            "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nstep_until(loop(0));\nloop {{ invariant i == 1; preserve by {{\n{}step();\n}} }}\nstep_until(function.exit);\n}}",
+            "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nstep_until(loop(0));\nloop {{ invariant i == 1; maintain by {{\n{}step();\n}} }}\nstep_until(function.exit);\n}}",
             "have 0 == 0 by { normalize(); }\n".repeat(300)
         );
         let (root, path) = temporary_project(
@@ -1862,7 +1884,7 @@ mod tests {
         let (root, path) = temporary_project(
             "omitted-have-location",
             "int helper(void) { return 1; }\nint f(void) { int x; x = helper(); return x; }",
-            "verifying \"program.c\";\nint32 helper() { ensures result == 1; }\nint32 f() { ensures result == 1; } by {\n    step();\n    step_until(statement(2));\n    have x == 2;\n}",
+            "verifying \"program.c\";\nint32 helper() { ensures result == 1; }\nint32 f() { ensures result == 1; } by {\n    step();\n    step_until(statement(2).entry);\n    have x == 2;\n}",
         );
         let report = entry_with([path.display().to_string()]).expect_err("x is 1, not 2");
         fs::remove_dir_all(root).unwrap();
@@ -1939,7 +1961,7 @@ mod tests {
                 requires 0 <= x;
                 ensures 0 <= result;
             } by {
-                let { result: r } = step(child, {});
+                let { result: r } = step(child);
                 have r < 1 by {
                     apply(negative(r)) using { 0 <= r; }
                 }
@@ -2113,7 +2135,7 @@ void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
         decreases n - i;
         invariant 0 <= i and i <= n;
         initialize by solve();
-        preserve by {
+        maintain by {
             have i >= 0 by { known(); }
             apply(positive(0));
             step();
@@ -2171,7 +2193,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         }
         source.push_str(
             r#"        initialize by solve();
-        preserve by { step(); }
+        maintain by { step(); }
     }
     have 0 == 1 by { normalize(); }
     step_until(function.exit); solve();
@@ -2234,7 +2256,7 @@ int32 read_first(int32 m) {
         if q == 0 {
             step_until(function.exit);
         } else {
-            step_until(statement(3));
+            step_until(statement(3).entry);
             have q[0] == 7 by solve();
             step_until(function.exit);
         }
@@ -2277,7 +2299,7 @@ int32 read_first(int32 m) {
         if q == 0 {
             step_until(function.exit);
         } else {
-            step_until(statement(4));
+            step_until(statement(4).entry);
             step();
             if 0 == to_integer(m - 1) {
                 step();
@@ -2493,6 +2515,7 @@ int32 read_first(int32 m) {
         assert_eq!(
             parse_arguments(["--allow-sorry".to_string(), "example.click".to_string()]),
             Ok(Arguments {
+                locked: false,
                 target: "example.click".to_string(),
                 limits: RunLimits::verify(),
                 changed_since: None,
@@ -2518,6 +2541,7 @@ int32 read_first(int32 m) {
         assert_eq!(
             parse_arguments(["example.click".to_string()]),
             Ok(Arguments {
+                locked: false,
                 target: "example.click".to_string(),
                 limits: RunLimits::verify(),
                 changed_since: None,
@@ -2534,6 +2558,7 @@ int32 read_first(int32 m) {
                 "example.click".to_string(),
             ]),
             Ok(Arguments {
+                locked: false,
                 target: "example.click".to_string(),
                 limits: RunLimits {
                     time: Duration::from_millis(250),
@@ -2553,6 +2578,7 @@ int32 read_first(int32 m) {
                 "example.click".to_string(),
             ]),
             Ok(Arguments {
+                locked: false,
                 target: "example.click".to_string(),
                 limits: RunLimits {
                     work: 1_000,
@@ -2581,6 +2607,7 @@ int32 read_first(int32 m) {
                 "examples".to_string(),
             ]),
             Ok(Arguments {
+                locked: false,
                 target: "examples".to_string(),
                 limits: RunLimits::verify(),
                 changed_since: Some("HEAD~1".to_string()),

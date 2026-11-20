@@ -337,6 +337,30 @@ point is not visible at an opaque call site. Calling such a function reports
 that its contract cannot be exposed opaquely rather than reporting a dependency
 ordering error.
 
+### Producing a view
+
+A function can leave a bare memory view in its caller's resources:
+
+<!-- verified-example: mdtests/explicit_produced_view.md -->
+```click
+int32* first(int32* left, int32* right) {
+    views *left as left_input;
+    views *right;
+    produces view(*left) from left_input;
+    ensures result == left;
+}
+```
+
+`from left_input` selects the input view that must cover the output. The
+produced view keeps that borrow active after the call. A write through any
+pointer to the protected memory is blocked. Other disjoint memory remains
+writable. The pure postcondition relates the resource to the C result.
+
+In a caller's proof, `release_view(*p);` gives up the exact held memory view
+when `p` points to that cell. The last hold releases the borrow and restores
+any ownership the caller lent. A borrowed input of the caller still has its
+own lifetime. Releasing the view is a proof step with no C operation.
+
 ## Abstract resources
 
 You can declare an exact-match abstract resource:

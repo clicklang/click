@@ -1261,7 +1261,7 @@ fn execute_in_loop_preservation_keeps_the_function_exit_miss() {
                 decreases more;
                 invariant 0 <= more;
                 initialize by solve();
-                preserve by { step_until(function.exit); }
+                maintain by { step_until(function.exit); }
             }
             step_until(function.exit);
         }
@@ -1648,6 +1648,7 @@ fn struct_name_signature_mismatch_reports_direct_error() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn observed_cursor_facts_produce_checkable_surface_certificates() {
     let c_source = r#"
@@ -1749,6 +1750,7 @@ fn observed_cursor_facts_produce_checkable_surface_certificates() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn explicit_store_step_with_unfolded_resource_facts_verifies() {
     let c_source = r#"
@@ -1844,6 +1846,7 @@ fn explicit_store_step_with_unfolded_resource_facts_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3.0s in the parallel gate"]
 fn expanded_read_step_uses_contextual_range_separation() {
     let c_source = r#"
@@ -2245,6 +2248,7 @@ fn execute_walks_a_decided_loop_on_the_proof() {
 /// `Proof`, so a loop that never exits must exhaust a fixed step budget and
 /// name the statement it stands at, rather than run until the work limit.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
     let c_source = r#"
@@ -2284,6 +2288,7 @@ fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
 /// `step_until` shares the implicit tail's search and its step budget, so a
 /// loop that never exits before the target is refused at that budget.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
     let c_source = r#"
@@ -2302,7 +2307,7 @@ fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
         int32 spin_then() {
             ensures result == 1;
         } by {
-            step_until(region(3));
+            step_until(region(3).entry);
             step_until(function.exit);
             solve();
         }
@@ -2394,6 +2399,7 @@ fn algebraic_constructor_rejects_wrong_struct_and_scalar_fields() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: false-postcondition proof took 0.579s in parallel"]
 fn algebraic_constructor_field_metadata_cannot_prove_a_false_postcondition() {
     let (source, c_source) = struct_pointer_field_constructor_fixture();
@@ -2450,6 +2456,7 @@ fn a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name() {
 /// read may be named twice for a version the assumption-free load equality
 /// proves the same. Nightly: it verifies the corpus once more, serially.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies every C mdtest again under the read-name audit"]
 fn every_mdtest_names_each_read_once() {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
@@ -2614,6 +2621,7 @@ fn recorded_points_are_named_by_the_point_each_path_reached() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.58s in the parallel gate; source-point separation stays in the fast layout test"]
 fn a_loop_test_does_not_publish_the_whole_loops_exit_state() {
     let c_source = r#"

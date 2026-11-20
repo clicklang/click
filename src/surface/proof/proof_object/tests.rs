@@ -1,4 +1,5 @@
 use crate::kernel::binary_node;
+#[cfg(not(feature = "fast-gate"))]
 use crate::surface::planning::solve::{SolveEvidence, plan_solve_certificate};
 // These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
@@ -181,7 +182,9 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
                 pending.extend(then_proof.steps());
                 pending.extend(else_proof.steps());
             }
-            ProofStep::NormalizeUsing(premises) => count += premises.len(),
+            ProofStep::NormalizeUsing(premises) | ProofStep::OrderChain(premises) => {
+                count += premises.len();
+            }
             ProofStep::ApplyTheoremUsing {
                 application,
                 premises,
@@ -2122,6 +2125,7 @@ fn have_scope_with_no_reported_introductions_is_presentation_noop() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn smart_have_scope_and_explicit_step_scale_with_local_output() {
     let proposition = ClickProposition::Comparison {
@@ -2380,6 +2384,7 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn persistent_fact_lookup_scales_logarithmically() {
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -2436,6 +2441,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.9s in the parallel gate"]
 fn introduced_since_recovers_only_the_appended_delta() {
     for size in [16_u32, 64, 256, 1024, 4096] {
@@ -2479,6 +2485,7 @@ fn introduced_since_recovers_only_the_appended_delta() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn proof_fact_forks_share_context_and_local_insertions_are_logarithmic() {
     let mut allocation_samples = Vec::new();
@@ -2575,6 +2582,7 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn proof_fact_predicate_index_ignores_unrelated_context() {
     let name = "selected".to_string();
@@ -2645,6 +2653,7 @@ fn outcome_fact_deltas_share_ambient_universal_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
     let click_file = crate::surface::parse(
@@ -2798,6 +2807,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
     let click_file = crate::surface::parse(
@@ -2932,6 +2942,7 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_known() {
     let state = ExecutionState::new();
@@ -2995,6 +3006,7 @@ fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_known() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
@@ -3193,6 +3205,7 @@ fn fixed_state_context_have_goal_does_not_reuse_an_older_surface_lowering() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -3309,6 +3322,7 @@ fn execution_frontier_rejects_proposition_closers_transactionally() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn fixed_state_witness_refines_existential_transactionally_with_constant_local_work() {
     let state = ExecutionState::new();
@@ -3510,6 +3524,7 @@ fn universal_intro_binding_is_local_to_its_focused_sibling_branch() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
     let click_file = crate::surface::parse(
@@ -3793,6 +3808,7 @@ fn initial_entry_origins_keep_nonzero_requirement_identity_after_derived_inserti
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -3930,6 +3946,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn surface_rewrite_retains_structural_successor_and_scales() {
     let predicate_environment = PredicateEnvironment::new(&[]);
@@ -4241,6 +4258,7 @@ fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
     let parsed_function = syntax::parse_function("int32 selected(int32 x) { return x; }")
@@ -4469,6 +4487,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
 const LESS_THAN_IMPLIES_LESS_EQUAL: &str = "theorem less_than_implies_less_equal(left: int32, right: int32) { requires left < right; ensures left <= right; }";
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
     let click_file = crate::surface::parse(
@@ -4703,7 +4722,10 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
     );
     let Some((until, _)) = crate::kernel::search::ProofSearch::try_execute_until_descendant(
         &(root),
-        &CodeRegionRef::Region(1),
+        &ExecutionPoint::ProgramPoint(ProgramPointRef {
+            region: CodeRegionRef::Region(1),
+            kind: ProgramPointKind::Entry,
+        }),
     )
     .expect("execute_until should use the checked smart step route") else {
         panic!("execute_until should advance to its target");
@@ -4961,7 +4983,10 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
     );
     let Some((at_call, _)) = crate::kernel::search::ProofSearch::try_execute_until_descendant(
         &(root),
-        &CodeRegionRef::Region(1),
+        &ExecutionPoint::ProgramPoint(ProgramPointRef {
+            region: CodeRegionRef::Region(1),
+            kind: ProgramPointKind::Entry,
+        }),
     )
     .expect("declaration should advance to the need call") else {
         panic!("execution should reach the call frontier");
@@ -5484,6 +5509,7 @@ fn nested_have_accepts_trailing_known_after_closure() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
     let click_file = crate::surface::parse(
@@ -5806,6 +5832,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
     let click_file = crate::surface::parse(
@@ -5971,6 +5998,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
     let click_file = crate::surface::parse(
@@ -6070,6 +6098,7 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
     let click_file = crate::surface::parse(
@@ -6196,6 +6225,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.9s in the parallel gate"]
 fn fixed_state_transport_can_follow_another_checked_step() {
     let click_file = crate::surface::parse("")
@@ -6351,6 +6381,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.9s in the parallel gate"]
 fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates() {
     let click_file = crate::surface::parse("")
@@ -6494,6 +6525,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_updates() {
     let click_file = crate::surface::parse("")
@@ -6584,6 +6616,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     let click_file = crate::surface::parse("")
@@ -6697,6 +6730,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets() {
     let click_file = crate::surface::parse("")
@@ -6822,6 +6856,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn fixed_state_predecessor_solve_builds_checked_scope_with_logarithmic_local_updates() {
     check_fixed_state_predecessor_solve(&[16, 64, 256, 1024, 4096]);
@@ -6951,6 +6986,7 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn fixed_state_equality_solve_builds_its_recorded_path_with_logarithmic_local_updates() {
     let click_file = crate::surface::parse("")
@@ -7043,6 +7079,7 @@ fn fixed_state_equality_solve_builds_its_recorded_path_with_logarithmic_local_up
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
     let click_file = crate::surface::parse("")
@@ -7142,6 +7179,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn fixed_state_order_solve_builds_its_theorem_path_with_logarithmic_local_updates() {
     let click_file = crate::surface::parse("")
@@ -7238,6 +7276,7 @@ fn fixed_state_order_solve_builds_its_theorem_path_with_logarithmic_local_update
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 9s in the parallel gate"]
 fn fixed_state_single_premise_arithmetic_solves_retain_indexed_theorem_steps() {
     check_fixed_state_single_premise_arithmetic_solves(&LOCAL_PROOF_FACT_SIZES, None);
@@ -7625,6 +7664,7 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
     let click_file = crate::surface::parse("")
@@ -7739,6 +7779,7 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn increment_bound_family_retains_two_indexed_theorem_premises() {
     let click_file = crate::surface::parse("")
@@ -8067,6 +8108,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.9s in the parallel gate"]
 fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_step() {
     let click_file = crate::surface::parse("")
@@ -8255,6 +8297,7 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_step() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn ge_and_not_gt_equality_solve_retains_one_indexed_theorem_application() {
     let click_file = crate::surface::parse("")
@@ -8365,6 +8408,7 @@ fn ge_and_not_gt_equality_solve_retains_one_indexed_theorem_application() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_step() {
     let click_file = crate::surface::parse("")
@@ -8469,6 +8513,7 @@ fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_step() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6.2s in the parallel gate"]
 fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
     let click_file = crate::surface::parse("")
@@ -8655,6 +8700,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn selected_disjunction_solve_retains_checked_cases_and_scales() {
     let click_file = crate::surface::parse("")
@@ -8763,6 +8809,7 @@ fn selected_disjunction_solve_retains_checked_cases_and_scales() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4.3s in the parallel gate"]
 fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
     let click_file = crate::surface::parse("")
@@ -8959,6 +9006,7 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn predecessor_solves_retain_indexed_named_rule_premises() {
     let click_file = crate::surface::parse("")
@@ -9200,6 +9248,7 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
     let click_file = crate::surface::parse(LESS_THAN_IMPLIES_LESS_EQUAL)
@@ -9475,6 +9524,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
     let click_file = crate::surface::parse(
@@ -9771,6 +9821,7 @@ fn choose_body_leaves_support_have_and_reject_other_binders_and_epochs() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn execution_resource_observation_is_retained_transactional_and_logarithmic() {
     let click_file = crate::surface::parse(
@@ -9996,6 +10047,7 @@ fn observe_composite_keeps_the_defined_read_at_the_selected_point() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
     let click_file = crate::surface::parse(
@@ -10110,6 +10162,7 @@ fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
     let click_file = crate::surface::parse(
@@ -10239,6 +10292,7 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn execution_open_scope_owns_entry_body_and_close_transactionally() {
     let click_file = crate::surface::parse(
@@ -10449,6 +10503,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn execution_transport_forks_without_copying_unrelated_state() {
     let click_file = crate::surface::parse(
@@ -10567,6 +10622,7 @@ fn execution_transport_forks_without_copying_unrelated_state() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn execution_transport_search_returns_checked_successors_and_scales() {
     let click_file = crate::surface::parse(
@@ -10710,6 +10766,7 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn statement_assignment_step_ignores_unrelated_proof_facts() {
     let click_file = crate::surface::parse(
@@ -10795,6 +10852,7 @@ fn statement_assignment_step_ignores_unrelated_proof_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn contextual_store_step_scales_with_unrelated_named_facts() {
     let click_file = crate::surface::parse(
@@ -10908,6 +10966,7 @@ fn contextual_store_step_scales_with_unrelated_named_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn checked_statement_step_ignores_unrelated_proof_facts() {
     let click_file = crate::surface::parse(
@@ -11034,6 +11093,7 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3.0s in the parallel gate"]
 fn close_invariants_is_a_transactional_constant_local_proof_step() {
     let click_file = crate::surface::parse(
@@ -11193,6 +11253,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn proof_condition_split_filters_conflicts_without_rebuilding_facts() {
     let symbolic = Variable(50_000);
@@ -11298,6 +11359,7 @@ fn proof_condition_split_filters_conflicts_without_rebuilding_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
     let click_file = crate::surface::parse(
@@ -11527,6 +11589,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn execution_proof_cases_split_is_logarithmic_in_unrelated_facts() {
     let click_file = crate::surface::parse(
@@ -11640,6 +11703,7 @@ fn execution_proof_cases_split_is_logarithmic_in_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
     let click_file = crate::surface::parse(
@@ -12155,6 +12219,7 @@ fn generated_load_source_event_forks_merge_by_suffix_without_cross_path_leaks() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
     let click_file = crate::surface::parse(
@@ -12458,6 +12523,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     let click_file = crate::surface::parse(
@@ -13061,6 +13127,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
     let click_file = crate::surface::parse(
@@ -13409,6 +13476,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
     let click_file = crate::surface::parse(
@@ -13679,6 +13747,7 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.4s in the parallel gate"]
 fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
     let click_file = crate::surface::parse(
@@ -15336,6 +15405,7 @@ fn known_have_step(proposition: ClickProposition) -> ProofStep {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.77s in the parallel scaling selection; guard classification has fast scaling coverage"]
 fn loop_exit_eligibility_comes_from_the_guard_not_an_ownership_failure() {
     let file = crate::surface::parse("void boundary() { ensures true; }").unwrap();
@@ -15399,6 +15469,7 @@ fn loop_exit_eligibility_comes_from_the_guard_not_an_ownership_failure() {
             &[],
             None,
             &[],
+            false,
         );
         if consumed && may_continue {
             assert!(

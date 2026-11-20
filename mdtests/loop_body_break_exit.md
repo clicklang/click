@@ -116,7 +116,7 @@ int32 break_once(int32 n) {
         invariant i >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }
@@ -135,7 +135,7 @@ int32 stop_at(int32 n) {
         invariant i >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             if i == 3 {
                 step();
                 step();

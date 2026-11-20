@@ -43,7 +43,7 @@ void bump_n(struct cell* p, int32 n) {
         invariant c.count == old(c.count) + i;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             have c.count == i by { solve() using { c.count == old(c.count) + i; old(c.count) == 0; }; }
             unfold(c);
             step();

@@ -3,7 +3,7 @@ fn packet_walk(n: i32) -> i32 {
     requires 0 <= n and n <= 1000;
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;

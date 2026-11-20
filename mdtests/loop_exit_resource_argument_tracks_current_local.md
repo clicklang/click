@@ -31,11 +31,11 @@ void choose(int32* p, int32* q, int32* anchor, int32 flag) {
     consumes c: cursor(p, anchor);
     produces *anchor;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         owns c: cursor(cur, anchor);
         decreases 0;
-        preserve by {
+        maintain by {
             if flag != 0 {
                 unfold(c);
                 step(); step();

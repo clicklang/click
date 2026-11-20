@@ -28,7 +28,7 @@ struct pair replace(struct pair *p) {
 int32 caller() {
     ensures result == 3;
 } by {
-    step_until(statement(1).call(0));
+    step_until(statement(1).call(0).entry);
     step();
     have at(statement(1).call(0).exit, p.x == 7) by { known(); }
     have load<int32>(statement(1).call(0).result) == 3 by { known(); }

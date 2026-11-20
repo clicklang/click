@@ -283,7 +283,9 @@ mod tests {
     #[test]
     fn chunk_iterator_fields_are_distinct_from_source_locals() {
         let mut export = crate::languages::rust::charon::decode(
-            include_bytes!("../../../../design/charon-trial/chunks/.click/chunks/chunks.rs.ullbc"),
+            include_bytes!(
+                "../../../../design/charon-trial/chunks/.click/captures/chunks/chunks.rs.ullbc"
+            ),
             "chunks.rs",
             include_bytes!("../../../../design/charon-trial/chunks/chunks.rs"),
         )
@@ -309,6 +311,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: replay both chunk Option outcomes"]
     fn chunk_option_fields_expand_and_replay() {
         use crate::languages::rust::schema::{MirStatement as S, MirTerminator};
@@ -318,7 +321,9 @@ mod tests {
         };
 
         let mut export = crate::languages::rust::charon::decode(
-            include_bytes!("../../../../design/charon-trial/chunks/.click/chunks/chunks.rs.ullbc"),
+            include_bytes!(
+                "../../../../design/charon-trial/chunks/.click/captures/chunks/chunks.rs.ullbc"
+            ),
             "chunks.rs",
             include_bytes!("../../../../design/charon-trial/chunks/chunks.rs"),
         )

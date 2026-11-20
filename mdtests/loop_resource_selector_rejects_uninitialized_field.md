@@ -20,14 +20,14 @@ void probe(int32* data, int32 n) {
     requires n <= 536870911;
     owns cells(data, n);
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         owns cells(h->data, n);
         decreases n - i;
         invariant 0 <= i;
         invariant i <= n;
         initialize by solve();
-        preserve by {
+        maintain by {
             unfold(cells(h->data, n));
             step(); step();
             fold(cells(h->data, n));

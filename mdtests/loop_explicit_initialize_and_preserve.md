@@ -47,7 +47,7 @@ int32 loop_explicit_initialize_and_preserve(int32 x) diverges {
             solve();
         }
 
-        preserve by {
+        maintain by {
             step();
             apply(nonnegative_is_acceptable(x));
             solve();

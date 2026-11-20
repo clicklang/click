@@ -1,6 +1,6 @@
 # A loop body stops at the implicit tail's split limit
 
-With no written `preserve` proof, the loop closer splits at each C `if` of the
+With no written `maintain` proof, the loop closer splits at each C `if` of the
 body, as a function's implicit tail does, so eleven sequential branches give
 it 2,047 splits. Past 1,024 it stops and names the explicit join. The
 ordinary `implicit_tail_budget_errors_check_boundaries_without_exploring_paths`

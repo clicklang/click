@@ -69,7 +69,7 @@ const WIDEST_CELL: i64 = crate::kernel::MAX_SCALAR_ACCESS_BYTES;
 
 /// The constants the ranges ever name: small enough that every 32-bit byte
 /// difference the ladder computes between two of them is exact.
-const CONSTANT_LIMIT: i64 = 1 << 29;
+pub(in crate::kernel) const CONSTANT_LIMIT: i64 = 1 << 29;
 
 #[cfg(test)]
 thread_local! {
@@ -295,7 +295,7 @@ mod tests {
                 ),
                 true,
             );
-            assert!(!connected.address_connected_objects(&store).is_empty());
+            assert!(connected.addresses_numerically_connected(&store, &store));
             let memory = SymbolicMemory::new().store(field.clone(), value_of_width(8, 17));
             let full = with_store_gap_skip_disabled(|| {
                 memory.without_possible_aliasing_cells(&store, 8, &connected)
@@ -647,6 +647,7 @@ mod tests {
     /// included, after every store whether the constant-gap cells are
     /// skipped or asked.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 5s in the parallel gate"]
     fn skipping_constant_gap_cells_leaves_every_store_unchanged() {
         let anchors = anchors();

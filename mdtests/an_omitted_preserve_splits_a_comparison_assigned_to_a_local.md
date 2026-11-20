@@ -1,8 +1,8 @@
-# An omitted `preserve` splits a comparison assigned to a local
+# An omitted `maintain` splits a comparison assigned to a local
 
 A comparison whose value is stored, `_Bool odd = (i % 2 == 1);`, has two
 successors that only its condition tells apart. The implicit tail splits the
-proof on that condition and steps each case. An omitted `preserve` walks the body
+proof on that condition and steps each case. An omitted `maintain` walks the body
 the same way, so the stored comparison and the `if` that reads it need no
 written body. Rust lowers every `if` condition to such a stored `bool`.
 
@@ -29,7 +29,7 @@ int32 count_evens(int32 n) {
     requires n >= 0;
     ensures 0 <= result and result <= n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n and 0 <= evens and evens <= i;

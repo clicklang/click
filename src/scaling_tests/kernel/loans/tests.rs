@@ -747,6 +747,7 @@ fn dependency_updates_scale_with_changed_scope_entries() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn disjoint_memory_view_clustering_has_linear_overlap_work() {
     let assumptions = PureFactContext::new();
@@ -783,6 +784,7 @@ fn disjoint_memory_view_clustering_has_linear_overlap_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
     let assumptions = PureFactContext::new();
@@ -903,6 +905,7 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn loan_certificate_recheck_scales_with_explicit_transition_delta() {
     let assumptions = PureFactContext::new();
@@ -1052,6 +1055,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn joint_fragment_reservation_does_not_scan_ambient_memory_with_scalar_equalities() {
     let facts = PureFactContext::new().assume_condition(
@@ -1694,4 +1698,60 @@ fn composite_lending_checks_only_the_selected_frontier() {
             "conflicting={conflicting}: {samples:?}"
         );
     }
+}
+
+#[test]
+fn releasing_one_produced_view_ignores_unrelated_resources() {
+    let mut samples = Vec::new();
+    for size in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let owner = memory(0, 8, true);
+        let view = memory(0, 8, false);
+        let (ledger, caller, callee) = participants();
+        let plan = plan_stable_view_transfer(
+            &ResourceContext::new().unchecked_with_fact(owner.clone()),
+            &[checked(view.clone())],
+            &assumptions,
+            &ledger,
+            caller,
+            callee,
+        )
+        .unwrap();
+        let (resources, inserted) =
+            ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
+        let occurrence = inserted[0].1;
+        let escaping = BTreeMap::from([(
+            plan.stable_views()[0].loan,
+            vec![EscapingBorrow {
+                head: view.clone(),
+                occurrence,
+                root_permission: Some(view.clone()),
+            }],
+        )]);
+        let recovery = plan
+            .recover_stable_views(&assumptions, &escaping, &[])
+            .unwrap();
+        let resources = resources
+            .with_loan_dependency(occurrence, recovery.escaped_holds[0].binding.clone())
+            .unchecked_with_facts(
+                (0..size).map(|extra| owned(&format!("unrelated-release-{extra}"))),
+            );
+        let state = ExecutionState::new()
+            .with_resource_context(resources)
+            .with_loan_participant(Some(caller))
+            .with_loan_ledger(Some(recovery.ledger));
+        let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
+            state.release_produced_view(&view, &assumptions)
+        });
+        let restored = restored.unwrap();
+        assert!(restored.resources().contains_exact_representation(&owner));
+        assert!(!restored.resources().contains_exact_representation(&view));
+        assert!(!restored.loan_ledger().unwrap().has_active_memory_loans());
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
 }

@@ -7,8 +7,8 @@
 //! own description of how it is built. A unit's root may be the project
 //! itself or an external tree the user manages, such as a git submodule;
 //! Click reads it in place, imposes no layout or names on it, and never
-//! writes into it. `click import lock` prepares every unit into one lock
-//! beside the project file, with the artifacts under `.click/`, and
+//! writes into it. `click capture` prepares every unit into one lock
+//! beside the project file, with the artifacts under `.click/captures/`, and
 //! verification loads them offline.
 //!
 //! A sidecar selects a unit's source with an ordinary `verifying` path,
@@ -23,7 +23,7 @@
 //! the pinned Rust front end extracts it at lock time, and a crate's `roots`
 //! are the entry points every sidecar verifying it sees.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -38,10 +38,10 @@ use crate::languages::rust::{self as rust_import, CrateConfig};
 
 /// The project file's name.
 pub const FILE_NAME: &str = "click.project.json";
-/// The project lock's name, beside the project file.
-pub const LOCK_NAME: &str = "click.project.lock.json";
+/// The project-relative path of the capture manifest.
+pub const LOCK_NAME: &str = ".click/captures/manifest.json";
 /// The directory, beside the project file, that holds prepared artifacts.
-pub const ARTIFACT_DIRECTORY: &str = ".click";
+pub const ARTIFACT_DIRECTORY: &str = ".click/captures";
 
 const LOCK_SCHEMA: u32 = 1;
 /// The target tag a C++ or Rust unit's digest binds; see
@@ -142,6 +142,13 @@ pub struct Project {
     target: CTarget,
     optimization: COptimization,
     units: BTreeMap<String, Unit>,
+}
+
+struct SelectedSource<'a> {
+    spelling: &'a str,
+    path: &'a Path,
+    unit: &'a str,
+    relative: String,
 }
 
 impl Project {
@@ -389,18 +396,68 @@ impl Project {
     /// Prepares every unit as [`Project::lock`] does, running C++ units with
     /// `cpp_exporter` when given instead of `CLICK_CPP_EXPORTER`.
     pub fn lock_with_cpp_exporter(&self, cpp_exporter: Option<&Path>) -> Result<(), String> {
+        self.write_captures(None, cpp_exporter)
+    }
+
+    /// Captures the configured compilations of the given paths.
+    pub fn capture_sources(&self, paths: &[PathBuf]) -> Result<(), String> {
+        let mut selected = BTreeMap::<String, BTreeSet<String>>::new();
+        for path in paths {
+            let canonical = fs::canonicalize(path)
+                .map_err(|error| format!("resolve source `{}`: {error}", path.display()))?;
+            let (unit, source) = self.unit_source(&canonical).ok_or_else(|| {
+                format!(
+                    "no unit of `{}` lists `{}`",
+                    self.file.display(),
+                    path.display()
+                )
+            })?;
+            selected.entry(unit.to_owned()).or_default().insert(source);
+        }
+        self.write_captures(Some(&selected), None)
+    }
+
+    fn write_captures(
+        &self,
+        selected: Option<&BTreeMap<String, BTreeSet<String>>>,
+        cpp_exporter: Option<&Path>,
+    ) -> Result<(), String> {
         if !self.has_units() {
             return Err(format!(
                 "`{}` declares no units to prepare",
                 self.file.display()
             ));
         }
-        let mut entries = serde_json::Map::new();
+        // Serialize manifest updates by captures in the same project.
+        let config_file = fs::File::open(&self.file).map_err(|error| error.to_string())?;
+        config_file
+            .lock()
+            .map_err(|error| format!("lock capture project: {error}"))?;
+        let mut entries =
+            if selected.is_some() && self.lock_path().try_exists().map_err(|e| e.to_string())? {
+                self.read_lock()?["units"]
+                    .as_object()
+                    .cloned()
+                    .ok_or("capture manifest has no units")?
+            } else {
+                serde_json::Map::new()
+            };
+        let wanted = |name: &str, source: &str| {
+            selected.is_none_or(|units| {
+                units
+                    .get(name)
+                    .is_some_and(|sources| sources.contains(source))
+            })
+        };
         let mut artifacts = Vec::new();
         for (name, unit) in &self.units {
-            let (language, lock, unit_artifacts) = match unit.spec.language.as_str() {
+            if selected.is_some_and(|units| !units.contains_key(name)) {
+                continue;
+            }
+            let (language, mut lock, unit_artifacts) = match unit.spec.language.as_str() {
                 "c++" => {
-                    let (config, sources) = self.cpp_unit(name)?;
+                    let (config, mut sources) = self.cpp_unit(name)?;
+                    sources.retain(|source| wanted(name, &source.logical_source));
                     let exporter = match cpp_exporter {
                         Some(exporter) => exporter.as_os_str().to_owned(),
                         None => crate::languages::cpp::runtime::resolve_exporter()
@@ -423,7 +480,8 @@ impl Project {
                     ("rust", lock, artifacts)
                 }
                 _ => {
-                    let unit = self.c_unit(name)?;
+                    let mut unit = self.c_unit(name)?;
+                    unit.sources.retain(|source| wanted(name, &source.path));
                     for source in &unit.sources {
                         create_parent(&self.root.join(&source.artifact))?;
                     }
@@ -432,6 +490,13 @@ impl Project {
                     ("c", lock, artifacts)
                 }
             };
+            if let Some(previous) = entries.get(name).filter(|old| old["language"] == language) {
+                use crate::languages::envelope::Entry;
+                let next = Entry::parse(language, name, &lock)?;
+                let old = Entry::parse(language, name, &previous["lock"])?;
+                lock = serde_json::to_value(next.retain_other_sources(language, old)?)
+                    .map_err(|error| error.to_string())?;
+            }
             entries.insert(
                 name.clone(),
                 serde_json::json!({ "language": language, "lock": lock }),
@@ -448,7 +513,61 @@ impl Project {
         for (path, bytes) in &artifacts {
             crate::cli::write_file_atomically(path, bytes)?;
         }
+        create_parent(&self.lock_path())?;
         crate::cli::write_file_atomically(&self.lock_path(), &encoded)
+    }
+
+    fn selected_sources<'a>(
+        &'a self,
+        requested: &'a [(String, Option<PathBuf>)],
+    ) -> Result<Vec<SelectedSource<'a>>, String> {
+        let mut selected = Vec::with_capacity(requested.len());
+        let mut unlisted = Vec::new();
+        for (spelling, path) in requested {
+            let source = path.as_deref().and_then(|path| {
+                let (unit, relative) = self.unit_source(path)?;
+                Some(SelectedSource {
+                    spelling,
+                    path,
+                    unit,
+                    relative,
+                })
+            });
+            match source {
+                Some(source) => selected.push(source),
+                None => unlisted.push(spelling.as_str()),
+            }
+        }
+        if selected.is_empty() {
+            return Ok(selected);
+        }
+        if let Some(spelling) = unlisted.first() {
+            return Err(format!(
+                "`verifying \"{spelling}\"` names no source of a unit in `{}`, but the sidecar's other sources are unit sources; list it in a unit",
+                self.file.display()
+            ));
+        }
+        if selected.len() > 1
+            && let Some(source) = selected
+                .iter()
+                .find(|source| self.units[source.unit].spec.language != "c")
+        {
+            let SelectedSource { spelling, unit, .. } = source;
+            let language = &self.units[*unit].spec.language;
+            if language != "c++" {
+                return Err(format!(
+                    "`verifying \"{spelling}\"` selects a source of {language} unit `{unit}`, which a sidecar verifies on its own"
+                ));
+            }
+            // Several sources of one C++ unit link into one program.
+            if let Some(other) = selected.iter().find(|other| other.unit != *unit) {
+                return Err(format!(
+                    "`verifying \"{}\"` selects a source outside C++ unit `{unit}`, whose sources `verifying \"{spelling}\"` links; a sidecar links the sources of one C++ unit",
+                    other.spelling
+                ));
+            }
+        }
+        Ok(selected)
     }
 
     /// The prepared inputs a sidecar's `verifying` declarations select, given
@@ -458,85 +577,101 @@ impl Project {
         &self,
         requested: &[(String, Option<PathBuf>)],
     ) -> Result<Option<UnitSelection>, String> {
-        let mut selected = Vec::with_capacity(requested.len());
-        let mut unlisted = Vec::new();
-        for (spelling, path) in requested {
-            match path.as_deref().and_then(|path| self.unit_source(path)) {
-                Some((unit, relative)) => selected.push((spelling, unit, relative)),
-                None => unlisted.push(spelling.as_str()),
-            }
-        }
-        if selected.is_empty() {
+        let selected = self.selected_sources(requested)?;
+        self.load_selected_sources(&selected)
+    }
+
+    fn load_selected_sources(
+        &self,
+        selected: &[SelectedSource<'_>],
+    ) -> Result<Option<UnitSelection>, String> {
+        let Some(first) = selected.first() else {
             return Ok(None);
-        }
-        if let Some(spelling) = unlisted.first() {
-            return Err(format!(
-                "`verifying \"{spelling}\"` names no source of a unit in `{}`, but the sidecar's other sources are unit sources; list it in a unit",
-                self.file.display()
-            ));
-        }
+        };
         let lock = self.read_lock()?;
-        if let Some((spelling, unit, _)) = selected
-            .iter()
-            .find(|(_, unit, _)| self.units[*unit].spec.language != "c")
-            && selected.len() > 1
-            && self.units[*unit].spec.language == "c++"
-        {
-            // Several sources of one C++ unit link into one program; a
-            // source of another unit or language cannot join them.
-            if let Some((other, _, _)) = selected.iter().find(|(_, other, _)| other != unit) {
-                return Err(format!(
-                    "`verifying \"{other}\"` selects a source outside C++ unit `{unit}`, whose sources `verifying \"{spelling}\"` links; a sidecar links the sources of one C++ unit"
-                ));
+        let program: PreparedProgram = match self.units[first.unit].spec.language.as_str() {
+            "c++" if selected.len() > 1 => {
+                let sources = selected
+                    .iter()
+                    .map(|source| {
+                        Ok(self
+                            .load_cpp_unit(source.unit, &source.relative, &lock)?
+                            .named(source.spelling))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                cpp_import::LinkedCppProgram::new(sources).into()
             }
-            let sources = selected
-                .iter()
-                .map(|(spelling, unit, relative)| {
-                    Ok(self.load_cpp_unit(unit, relative, &lock)?.named(spelling))
-                })
-                .collect::<Result<Vec<_>, String>>()?;
-            return Ok(Some(UnitSelection::Program(
-                cpp_import::LinkedCppProgram::new(sources).into(),
-            )));
-        }
-        if let Some((spelling, unit, relative)) = selected
-            .iter()
-            .find(|(_, unit, _)| self.units[*unit].spec.language != "c")
-        {
-            if selected.len() != 1 {
-                return Err(format!(
-                    "`verifying \"{spelling}\"` selects a source of {} unit `{unit}`, which a sidecar verifies on its own",
-                    self.units[*unit].spec.language
-                ));
-            }
-            let program: PreparedProgram = if self.units[*unit].spec.language == "rust" {
-                self.load_rust_unit(unit, &lock)?.named(spelling).into()
-            } else {
-                self.load_cpp_unit(unit, relative, &lock)?
-                    .named(spelling)
-                    .into()
-            };
-            return Ok(Some(UnitSelection::Program(program)));
-        }
-        let mut loaded = BTreeMap::<&str, BTreeMap<String, PreparedCImport>>::new();
-        let mut prepared = Vec::with_capacity(selected.len());
-        for (spelling, unit, relative) in selected {
-            if !loaded.contains_key(unit) {
-                let imports = self.load_c_unit(unit, &lock)?;
-                loaded.insert(
-                    unit,
-                    imports
-                        .into_iter()
-                        .map(|import| (import.logical_source().to_string(), import))
+            "c++" => self
+                .load_cpp_unit(first.unit, &first.relative, &lock)?
+                .named(first.spelling)
+                .into(),
+            "rust" => self
+                .load_rust_unit(first.unit, &lock)?
+                .named(first.spelling)
+                .into(),
+            _ => {
+                let mut selected_by_unit = BTreeMap::<&str, BTreeSet<&str>>::new();
+                for source in selected {
+                    selected_by_unit
+                        .entry(source.unit)
+                        .or_default()
+                        .insert(&source.relative);
+                }
+                let mut loaded = BTreeMap::new();
+                for (unit, sources) in selected_by_unit {
+                    for import in self.load_c_unit(unit, &sources, &lock)? {
+                        loaded.insert((unit, import.logical_source().to_owned()), import);
+                    }
+                }
+                return Ok(Some(UnitSelection::C(
+                    selected
+                        .iter()
+                        .map(|source| {
+                            loaded[&(source.unit, source.relative.clone())].named(source.spelling)
+                        })
                         .collect(),
+                )));
+            }
+        };
+        Ok(Some(UnitSelection::Program(program)))
+    }
+
+    /// Loads current captures and refreshes just the requested stale inputs.
+    pub fn prepared_sources_with_refresh(
+        &self,
+        requested: &[(String, Option<PathBuf>)],
+    ) -> Result<Option<UnitSelection>, String> {
+        let selected = self.selected_sources(requested)?;
+        let original_error = match self.load_selected_sources(&selected) {
+            Ok(inputs) => return Ok(inputs),
+            Err(error) => error,
+        };
+        let mut stale = BTreeMap::<String, BTreeSet<String>>::new();
+        for source in &selected {
+            if selected.len() > 1
+                && self
+                    .load_selected_sources(std::slice::from_ref(source))
+                    .is_ok()
+            {
+                continue;
+            }
+            if stale
+                .entry(source.unit.to_owned())
+                .or_default()
+                .insert(source.relative.clone())
+            {
+                let path = source.path;
+                eprintln!(
+                    "click: refreshing capture for `{}`",
+                    path.strip_prefix(&self.root).unwrap_or(path).display()
                 );
             }
-            let import = loaded[unit].get(&relative).ok_or_else(|| {
-                format!("the project lock for unit `{unit}` has no source `{relative}`")
-            })?;
-            prepared.push(import.named(spelling));
         }
-        Ok(Some(UnitSelection::C(prepared)))
+        if stale.is_empty() {
+            return Err(original_error);
+        }
+        self.write_captures(Some(&stale), None)?;
+        self.load_selected_sources(&selected)
     }
 
     /// Whether a unit lists any of the requested sources.
@@ -570,7 +705,7 @@ impl Project {
         let path = self.lock_path();
         if !path.exists() {
             return Err(format!(
-                "project `{}` has no lock; run `click import lock {}`",
+                "project `{}` has no lock; run `click capture {}`",
                 self.root.display(),
                 self.root.display()
             ));
@@ -599,13 +734,13 @@ impl Project {
             .and_then(|units| units.get(name))
             .ok_or_else(|| {
                 format!(
-                    "the project lock has no entry for unit `{name}`; run `click import lock {}`",
+                    "the project lock has no entry for unit `{name}`; run `click capture {}`",
                     self.root.display()
                 )
             })?;
         if entry.get("language").and_then(serde_json::Value::as_str) != Some(language) {
             return Err(format!(
-                "the project lock entry for unit `{name}` is not a `{language}` unit; run `click import lock {}`",
+                "the project lock entry for unit `{name}` is not a `{language}` unit; run `click capture {}`",
                 self.root.display()
             ));
         }
@@ -617,10 +752,14 @@ impl Project {
     fn load_c_unit(
         &self,
         name: &str,
+        sources: &BTreeSet<&str>,
         lock: &serde_json::Value,
     ) -> Result<Vec<PreparedCImport>, String> {
         let unit_lock = self.lock_entry(name, "c", lock)?;
-        compiler_import::load_unit(&self.c_unit(name)?, unit_lock)
+        let mut unit = self.c_unit(name)?;
+        unit.sources
+            .retain(|source| sources.contains(source.path.as_str()));
+        compiler_import::load_unit(&unit, unit_lock)
             .map_err(|error| format!("unit `{name}`: {error}"))
     }
 
@@ -884,10 +1023,7 @@ mod tests {
         assert!(project.lists_any(&listed));
         assert!(!project.lists_any(&[("local.c".to_string(), Some(other.clone()))]));
         let error = project.prepared_sources(&listed).unwrap_err();
-        assert!(
-            error.contains("has no lock; run `click import lock"),
-            "{error}"
-        );
+        assert!(error.contains("has no lock; run `click capture"), "{error}");
         let mixed = [listed[0].clone(), ("local.c".to_string(), Some(other))];
         let error = project.prepared_sources(&mixed).unwrap_err();
         assert!(
@@ -908,7 +1044,7 @@ mod tests {
                 let path = entry.path();
                 if entry.file_type().unwrap().is_dir() {
                     visit(&path, found);
-                } else if entry.file_name() == LOCK_NAME {
+                } else if entry.path().ends_with(LOCK_NAME) {
                     found.push(path);
                 }
             }
@@ -926,18 +1062,18 @@ mod tests {
                 assert_eq!(
                     unit["lock"]["envelope"],
                     1,
-                    "unit `{name}` of `{}` is in an earlier format; run `click import lock` there",
+                    "unit `{name}` of `{}` is in an earlier format; run `click capture` there",
                     lock.display()
                 );
             }
-            if lock.ends_with("tests/fixtures/cross-host-c-import/click.project.lock.json") {
+            if lock.ends_with("tests/fixtures/cross-host-c-import/.click/captures/manifest.json") {
                 continue;
             }
             assert!(
                 !text.contains("\"/home/")
                     && !text.contains("\"/tmp/")
                     && !text.contains("\"/Users/"),
-                "`{}` names a checkout path; run `click import lock` there",
+                "`{}` names a checkout path; run `click capture` there",
                 lock.display()
             );
         }

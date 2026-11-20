@@ -25,24 +25,8 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
                 collect_common_address_carriers(&address, &mut variables);
             }
         } else if let Some(offsets) = leaf.pointer_offsets() {
-            crate::kernel::SharedAddressOffset::visit_pair(&offsets, |node| {
-                if !variables.visit() {
-                    return;
-                }
-                match node {
-                    crate::kernel::KernelAddressOffset::Variable(variable) => {
-                        variables.program_values.insert(*variable);
-                        collect_registered_load_carriers(*variable, &mut variables);
-                    }
-                    node => {
-                        if let Some(value) = node.index() {
-                            collect_machine_operand_carriers(
-                                MachineOperandView::Shared(value),
-                                &mut variables,
-                            );
-                        }
-                    }
-                }
+            SharedAddressOffset::visit_pair(&offsets, |node| {
+                collect_common_offset_node_carriers(node, &mut variables);
             });
         } else {
             collect_condition_carriers(&leaf.identity_leaf(), &mut variables);
@@ -137,22 +121,19 @@ fn collect_common_address_carriers(
     // These entry points substitute variables, not exact pointer terms.
     debug_assert!(variables.pointer_terms.is_none());
     collect_address_base_carriers(address.node().base.native_atom(), variables);
-    address.node().offset.visit_root_in_order(false, |node| {
-        if !variables.visit() {
-            return;
-        }
-        match node {
-            crate::kernel::KernelAddressOffset::Variable(variable) => {
-                variables.program_values.insert(*variable);
-                collect_registered_load_carriers(*variable, variables);
-            }
-            node => {
-                if let Some(value) = node.index() {
-                    collect_machine_operand_carriers(MachineOperandView::Shared(value), variables);
-                }
-            }
-        }
-    });
+    address
+        .node()
+        .offset
+        .visit_root_while(|node| collect_common_offset_node_carriers(node, variables));
+}
+
+fn collect_common_offset_node_carriers(
+    node: &KernelAddressOffset,
+    variables: &mut CarrierVariables,
+) -> bool {
+    collect_offset_node_carriers(node, variables, |value, variables| {
+        collect_machine_operand_carriers(MachineOperandView::Shared(value), variables);
+    })
 }
 
 impl TermRewrite<'_> {
@@ -168,25 +149,7 @@ impl TermRewrite<'_> {
             SharedAddressOffset as S,
         };
         debug_assert!(!self.resolve_registered_loads && self.conditions.is_none());
-        let original = &source.node().offset;
-        let offsets = S::try_map_pair(&[original.clone(), original.clone()], |_, node| {
-            if self.checked_work_exhausted() {
-                return Err(());
-            }
-            let (value, width, wide) = match node {
-                O::Int32Scaled { value, byte_width } => (value, byte_width, None),
-                O::Int64Scaled {
-                    value,
-                    byte_width,
-                    unsigned,
-                } => (value, byte_width, Some(unsigned)),
-                node => return node.into_shared().map_err(|_| ()),
-            };
-            let mapped = self.index_bits(&S::exact_index(&value));
-            Ok(O::import(&self.rebuilt_index(mapped, width, wide)))
-        })
-        .ok()?;
-        let offset = offsets[0].clone();
+        let offset = self.rewrite_retained_offset(&source.node().offset).ok()?;
         let block = source.node().base.native_atom();
         let replacement = self.pointer_variable.and_then(|(from, to)| match block {
             AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable)
@@ -308,46 +271,43 @@ impl TermRewrite<'_> {
         // the complete value, without rewriting the retained bounds width.
         V::new(mapped)
             .map_condition_addresses(|address| {
-                let offsets = S::try_map_pair(
-                    &[address.node().offset.clone(), address.node().offset.clone()],
-                    |_, node| {
-                        let mapped = match node {
-                            O::Add([a, b]) => return Ok::<_, ()>(S::add(a, b)),
-                            O::Int32Scaled { value, byte_width } => {
-                                let index = S::exact_index(&value);
-                                if let Some(written) = index.retained_written_operand() {
-                                    return Ok(O::import(&AddressOffset::scale_int32(
-                                        crate::kernel::eval::canonical_term(written),
-                                        byte_width,
-                                    )));
-                                }
-                                O::Int32Scaled { value, byte_width }
+                let offset = address.node().offset.try_map_root(|_, node| {
+                    let mapped = match node {
+                        O::Add([a, b]) => return Ok::<_, ()>(S::add(a, b)),
+                        O::Int32Scaled { value, byte_width } => {
+                            let index = S::exact_index(&value);
+                            if let Some(written) = index.retained_written_operand() {
+                                return Ok(O::import(&AddressOffset::scale_int32(
+                                    crate::kernel::eval::canonical_term(written),
+                                    byte_width,
+                                )));
+                            }
+                            O::Int32Scaled { value, byte_width }
+                        }
+                        O::Int64Scaled {
+                            value,
+                            byte_width,
+                            unsigned,
+                        } => {
+                            let index = S::exact_index(&value);
+                            if let Some(written) = index.retained_written_operand() {
+                                return Ok(O::import(&AddressOffset::scale_int64(
+                                    crate::kernel::eval::canonical_term(written),
+                                    byte_width,
+                                    unsigned,
+                                )));
                             }
                             O::Int64Scaled {
                                 value,
                                 byte_width,
                                 unsigned,
-                            } => {
-                                let index = S::exact_index(&value);
-                                if let Some(written) = index.retained_written_operand() {
-                                    return Ok(O::import(&AddressOffset::scale_int64(
-                                        crate::kernel::eval::canonical_term(written),
-                                        byte_width,
-                                        unsigned,
-                                    )));
-                                }
-                                O::Int64Scaled {
-                                    value,
-                                    byte_width,
-                                    unsigned,
-                                }
                             }
-                            node => node,
-                        };
-                        mapped.into_shared().map_err(|_| ())
-                    },
-                )?;
-                Ok::<_, ()>(A::new(address.node().base.clone(), offsets[0].clone()))
+                        }
+                        node => node,
+                    };
+                    mapped.into_shared().map_err(|_| ())
+                })?;
+                Ok::<_, ()>(A::new(address.node().base.clone(), offset))
             })
             .ok()
             .filter(|_| self.refusal().is_none())

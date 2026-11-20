@@ -401,7 +401,7 @@ pub(super) fn common_variables(
                         .format()
                         .load_kind();
                     collect_machine_read_variables(
-                        point.shared_memory(),
+                        point,
                         address.exact_cell_key(),
                         kind,
                         &mut leaf_variables,
@@ -423,7 +423,7 @@ pub(super) fn common_variables(
                     // The native algebraic collector uses the Bits64 read
                     // kind to follow registered origins for havoc framing.
                     collect_machine_read_variables(
-                        point.shared_memory(),
+                        point,
                         address.exact_cell_key(),
                         LoadKind::Bits64,
                         &mut leaf_variables,
@@ -620,6 +620,35 @@ pub(super) fn collect_argument(
 mod tests {
     use super::*;
     use crate::kernel::KernelTermImport;
+
+    #[test]
+    fn stored_integer_fold_collects_free_variables_without_native_output() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let accumulator = Variable(998693);
+        let item = Variable(998694);
+        let free = Variable(998695);
+        let native = IntegerTerm::RangeFold {
+            index: IntegerRangeFoldIndex::Integer {
+                start: IntegerTerm::constant_i64(0).into(),
+                end: IntegerTerm::Variable(item).into(),
+            },
+            initial: IntegerTerm::constant_i64(0).into(),
+            accumulator,
+            item,
+            body: IntegerTerm::Add(
+                IntegerTerm::Variable(accumulator).into(),
+                IntegerTerm::Variable(free).into(),
+            )
+            .into(),
+        };
+        let root = KernelTermImport::default().integer(&native.into());
+        let term =
+            Term::Integer(crate::kernel::StoredIntegerTerm::from_root(root.clone()).unwrap());
+        let mut variables = BTreeSet::new();
+        collect_term_bitvector_variables(&term, &mut variables);
+        assert_eq!(variables, BTreeSet::from([item, free]));
+        assert!(!root.has_cached_native_argument());
+    }
 
     // Each answer owns its query-local frame seen set, just like the public
     // connection/frame entry points. Never share it between the two readers.
@@ -1650,12 +1679,21 @@ pub(super) fn collect_native_fold_variables(
         return false;
     }
     let root = crate::kernel::KernelTermImport::default().integer(&term.clone().into());
+    assert!(collect_integer_scope_variables(&root, mode, variables));
+    true
+}
+
+pub(super) fn collect_integer_scope_variables(
+    root: &KernelTerm,
+    mode: FoldVariableRead,
+    variables: &mut BTreeSet<Variable>,
+) -> bool {
     match root.node() {
         KernelTermNode::Fold(fold) => collect_fold_variables(fold, mode, variables),
         KernelTermNode::Match(matched) => {
             super::retained_matches::collect_match_variables(matched, mode, variables)
         }
-        _ => unreachable!("migrated Integer scope"),
+        _ => return false,
     }
     true
 }

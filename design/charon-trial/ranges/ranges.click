@@ -7,7 +7,7 @@ verifying "ranges.rs";
 fn count_to(n: u32) -> u32 {
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.end - iter.start;
         invariant iter.end == n;
@@ -20,7 +20,7 @@ fn span(a: i32, b: i32) -> i32 {
     requires 0i32 <= a and a <= b;
     ensures result == b - a;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.end - iter.start;
         invariant iter.end == b;
@@ -33,7 +33,7 @@ fn count_signed_wide(n: i64) -> i64 {
     requires 0i64 <= n;
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.end - iter.start;
         invariant iter.end == n;
@@ -46,7 +46,7 @@ fn last_byte(bytes: &[u8]) -> u8 {
     views bytes[0..bytes.len()];
     ensures bytes.len() != 0u64 implies result == bytes[bytes.len() - 1u64];
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.end - iter.start;
         views bytes[0..bytes.len()];
@@ -63,14 +63,14 @@ fn grid(n: u32, m: u32) -> u32 {
     requires n <= 1000u32 and m <= 1000u32;
     ensures result <= 1000u32 * n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.end - iter.start;
         invariant iter.end == n;
         invariant iter.start <= n;
         invariant cells <= 1000u32 * iter.start;
-        preserve by {
-            step_until(loop(1));
+        maintain by {
+            step_until(loop(1).entry);
             loop {
                 decreases iter.end - iter.start;
                 invariant loop(0).iter.end == n;

@@ -370,7 +370,9 @@ pub struct CppRecord {
     /// Its C++ path, `["Stored<long long>"]`, as a sidecar writes it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub path: Vec<String>,
+    #[serde(default, skip_serializing_if = "record_dimension_is_absent")]
     pub size_bytes: u32,
+    #[serde(default, skip_serializing_if = "record_dimension_is_absent")]
     pub alignment_bytes: u32,
     pub fields: Vec<CppField>,
     /// Nominal standard-byte arguments, including those absent from fields.
@@ -384,6 +386,16 @@ pub struct CppRecord {
     pub polymorphic: bool,
     pub destructor: Option<CppFunctionReference>,
     pub span: CppSpan,
+}
+
+fn record_dimension_is_absent(dimension: &u32) -> bool {
+    *dimension == 0
+}
+
+impl CppRecord {
+    pub(super) fn is_layout_free(&self) -> bool {
+        self.size_bytes == 0 && self.alignment_bytes == 0
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1604,7 +1616,10 @@ impl CppExport {
         if self.exception_behavior != CppExceptionBehavior::Typed
             && self.records.iter().any(|record| {
                 crate::instrumentation::record_deterministic_work(1);
-                record.fields.is_empty() && record.base.is_none() && !record.polymorphic
+                !record.is_layout_free()
+                    && record.fields.is_empty()
+                    && record.base.is_none()
+                    && !record.polymorphic
             })
         {
             return Err("empty C++ record tags require the typed exception profile".into());
@@ -1929,7 +1944,11 @@ impl<'a> RecordIndex<'a> {
             else {
                 return Err("C++ field projection requires a record object".into());
             };
-            validate_record_reference(self, declaration_id, name)?;
+            if validate_record_reference(self, declaration_id, name)?.is_layout_free() {
+                return Err(format!(
+                    "C++ record `{name}` has no layout for a field or base projection"
+                ));
+            }
             let reference = match reference.into() {
                 ProjectionRef::Field(field) => field,
                 ProjectionRef::Base(base) => {
@@ -2066,7 +2085,10 @@ pub(super) fn record_layout_order<'a>(
                 // A polymorphic base's destructor runs from the class's own.
                 let destroyed_by_owner =
                     is_base && record.polymorphic && record.destructor.is_some();
-                if *is_const || (child.destructor.is_some() && !destroyed_by_owner) {
+                if child.is_layout_free()
+                    || *is_const
+                    || (child.destructor.is_some() && !destroyed_by_owner)
+                {
                     return Err("embedded C++ record fields require mutable, trivially destructible records".into());
                 }
                 count += 1;
@@ -2207,6 +2229,12 @@ fn validate_reachable_records(
 
 impl CppRecord {
     fn require_constructor_local_layout(&self) -> Result<(), String> {
+        if self.is_layout_free() {
+            return Err(format!(
+                "C++ record `{}` has no layout for automatic storage",
+                self.name
+            ));
+        }
         if self.polymorphic {
             return Err("automatic polymorphic C++ objects remain unsupported".into());
         }
@@ -2331,7 +2359,36 @@ impl CppRecord {
         if self.declaration_id.is_empty() || self.name.is_empty() {
             return Err("C++ record is missing declaration identity".into());
         }
-        self.span.validate_in(sources)?;
+        if self.is_layout_free() && self.span.file == "<system>" {
+            if !super::standard_library::LAYOUT_FREE_RECORDS
+                .contains(&self.path.join("::").as_str())
+                || self.span.start_line != 0
+                || self.span.start_column != 0
+                || self.span.end_line != 0
+                || self.span.end_column != 0
+            {
+                return Err(format!(
+                    "unrecognized layout-free C++ library record `{}`",
+                    self.name
+                ));
+            }
+        } else {
+            self.span.validate_in(sources)?;
+        }
+        if self.is_layout_free() {
+            if !self.fields.is_empty()
+                || self.base.is_some()
+                || self.polymorphic
+                || self.destructor.is_some()
+                || !self.byte_template_arguments.is_empty()
+            {
+                return Err(format!(
+                    "layout-free C++ record `{}` supplies storage or lifetime metadata",
+                    self.name
+                ));
+            }
+            return Ok(());
+        }
         if self.byte_template_arguments.len() > 32
             || !self
                 .name
@@ -2858,7 +2915,12 @@ impl CppFunction {
                     if let Some((declaration_id, name)) =
                         super::scalar::record_pointee(&parameter.value_type) =>
                 {
-                    validate_record_reference(records, declaration_id, name)?;
+                    let record = validate_record_reference(records, declaration_id, name)?;
+                    if record.is_layout_free() {
+                        return Err(format!(
+                            "layout-free C++ record `{name}` requires a reference parameter"
+                        ));
+                    }
                 }
                 CppType::Pointer { pointee } => {
                     require_native_pointer_element(pointee, true, "pointer pointee")?;
@@ -7579,6 +7641,12 @@ fn validate_trivial_record_value(
             continue;
         }
         crate::instrumentation::record_deterministic_work(1);
+        if record.is_layout_free() {
+            return Err(format!(
+                "C++ record `{}` has no layout for a by-value operation",
+                record.name
+            ));
+        }
         if record.base.is_some() || record.destructor.is_some() {
             return Err("C++ trivial copies require records without base subobjects or nontrivial destruction".into());
         }
@@ -7613,7 +7681,13 @@ fn require_function_return_type(
         && (matches!(value, CppType::LvalueReference { .. })
             || super::scalar::record_pointee(value).is_some())
     {
-        validate_record_reference(records, declaration_id, name).map(|_| ())
+        let record = validate_record_reference(records, declaration_id, name)?;
+        if record.is_layout_free() {
+            return Err(format!(
+                "C++ record `{name}` has no layout for a return value"
+            ));
+        }
+        Ok(())
     } else {
         require_return_value_type(value, label)
     }

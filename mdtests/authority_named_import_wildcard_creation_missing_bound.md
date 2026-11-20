@@ -20,12 +20,12 @@ void nested(int32* pool) {
     produces member: ticket(pool, 7);
     ensures member.serial == 7;
     ensures count(ticket(pool, _)) == old(count(ticket(pool, _))) + 1;
-} by { let { member: member } = step(issue, {}); }
+} by { let { member: member } = step(issue); }
 int32 run() { ensures result == 0; } by {
     step(); step();
     fold(authority(ticket(&pool, _)));
     let retained = fold(ticket(&pool, 7), { serial: 3 });
-    let { member: member } = step(nested, {});
+    let { member: member } = step(nested);
     have count(ticket(&pool, _)) == 2 by solve();
     have count(ticket(&pool, 7)) == 2 by solve();
     have member.serial == 7 by solve();

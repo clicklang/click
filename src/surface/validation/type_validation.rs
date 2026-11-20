@@ -957,6 +957,7 @@ fn contains_scoped_expression_shape(
         }
         ContractExpression::Field { base, .. }
         | ContractExpression::CUnary { operand: base, .. }
+        | ContractExpression::MemoryLoad { pointer: base, .. }
         | ContractExpression::Negate(base)
         | ContractExpression::Old(base)
         | ContractExpression::Exact(base)
@@ -3277,6 +3278,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Known
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
+            | ProofTactic::OrderChain(_)
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
@@ -3351,6 +3353,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::UnfoldResource(_)
             | ProofTactic::UnfoldWitnesses { .. }
             | ProofTactic::FoldResource(_)
+            | ProofTactic::ReleaseView(_)
             | ProofTactic::ConstructResource(_)
             | ProofTactic::Sorry => {
                 return Err(ClickError::new(format!(
@@ -3381,6 +3384,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         | ProofTactic::UnfoldResource(_)
         | ProofTactic::UnfoldWitnesses { .. } => "unfold",
         ProofTactic::FoldResource(_) => "fold",
+        ProofTactic::ReleaseView(_) => "release_view",
         ProofTactic::ConstructResource(_) => "construct",
         ProofTactic::Induct { .. } => "induct",
         ProofTactic::Match(_) => "match",
@@ -3407,6 +3411,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Known => "known",
         ProofTactic::Normalize => "normalize",
         ProofTactic::NormalizeUsing(_) => "normalize",
+        ProofTactic::OrderChain(_) => "order_chain",
         ProofTactic::ArithmeticUsing(_) => "arithmetic",
         ProofTactic::Intro | ProofTactic::IntroAs(_) | ProofTactic::IntroBinder(_) => "intro",
         ProofTactic::Enumerate => "enumerate",
@@ -3992,6 +3997,8 @@ pub(super) fn infer_contract_expression_type(
                 "sequence values are only valid as operands of `==` or `!=` in {context}"
             )))
         }
+        ContractExpression::MemoryLoad { value_type, .. } => Ok((*value_type != ProgramType::Void)
+            .then(|| generics::interface_type_from_program_type(*value_type))),
         ContractExpression::QualifiedC {
             lowered: expression,
             ..
@@ -5340,7 +5347,9 @@ fn validate_contract_expression_calls(
         }
 
         ContractExpression::IntegerLiteral(_) => Ok(()),
-        ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
+        ContractExpression::CUnary { operand: inner, .. }
+        | ContractExpression::MemoryLoad { pointer: inner, .. }
+        | ContractExpression::Negate(inner) => {
             validate_contract_expression_calls(inner, click_functions, context)
         }
         ContractExpression::ResourceField(_)

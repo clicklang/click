@@ -465,6 +465,9 @@ Lowering never folds a comparison of two literals.
   `p == q` lowers to `PointerEqual` for them, and the round trip refuses.
 - A comparison of two `bool` literals, `true == false`, retains a
   `BoolEqual` of the two constants.
+- A comparison of same-width floating-point literals retains its operator,
+  width, and both bit patterns. Checking decides the result with IEEE
+  semantics, including signed zero and unordered NaN comparisons.
 - A logical Boolean comparison with identical operands also retains its
   `BoolEqual`. `==` and `!=` record opposite polarities on that node.
   The checker decides reflexivity, including when the comparison is a guard.
@@ -549,6 +552,10 @@ Integer-congruence payloads retain their syntax; division by zero, signed
 division overflow, and invalid shifts
 remain opaque instead of acquiring an invented value.
 
+Explicit `Integer` conversions such as `to_int32(7)` retain their destination
+and operand in logical lowering. A literal must fit its destination. Checking
+may read the converted value from those two roots without changing the term.
+
 Logical object-pointer reads now retain their version names, including when
 memory stores a complete pointer at the cell. The read's complete stored value
 is related through `EqualityGraph::register_logical_read_values` and the
@@ -613,10 +620,17 @@ constructors) reconstruct the same instance when lowered. Name selection must
 include variables inside opaque call arguments and both goal binders and
 proof-local witnesses, respecting `intro` shadowing.
 Algebraic equality inside a Boolean expression raises as an ordinary comparison.
+Reflexive algebraic proposition comparisons keep both operands through
+lowering. Checking decides their truth after any operand obligations are met.
+A comparison also keeps a match that rebuilds its scrutinee. Checking verifies
+that each arm reconstructs its constructor from its own fields in order.
 Match-arm algebraic bindings retain their source names for premise synthesis,
 including list tails and C type-parameter values stored in constructors. These
 names are selected from existing proof bindings; no equality search reconstructs
 them.
+An Integer-valued match with Integer-only fields retains its scrutinee and
+scoped arms even when the scrutinee is a written constructor. Goal-local
+checking may select the constructor's arm and substitute its fields.
 A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
 not consult facts or change the Boolean term inside a larger expression.

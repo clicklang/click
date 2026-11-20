@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies ten signed countdown proofs"]
 fn signed_countdown_bounds_expand_without_normalize() {
     for (fixture, label) in [
@@ -49,6 +50,7 @@ fn signed_countdown_bounds_expand_without_normalize() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies three linked-pointer C programs"]
 fn linked_pointer_viewability_expands_without_normalize() {
     for (fixture, guards, rewrites) in [
@@ -84,6 +86,7 @@ fn linked_pointer_viewability_expands_without_normalize() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies two automatic-storage separation proofs"]
 fn automatic_object_separation_expands_without_normalize() {
     for (fixture, label) in [
@@ -106,6 +109,7 @@ fn automatic_object_separation_expands_without_normalize() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies a uint64 loop back edge"]
 fn uint64_loop_successor_bound_expands_without_normalize() {
     let (source, c_sources) =
@@ -126,6 +130,7 @@ fn uint64_loop_successor_bound_expands_without_normalize() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies read definedness in two C proofs"]
 fn read_definedness_expands_without_normalize() {
     for (fixture, label, reads) in [
@@ -158,6 +163,7 @@ fn read_definedness_expands_without_normalize() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: named-root alias proof, expansion, and cold replay"]
 fn named_root_preserves_aliased_pointer_fields_without_transport() {
     let (source, c_sources) =
@@ -177,6 +183,7 @@ fn named_root_preserves_aliased_pointer_fields_without_transport() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: ranked search proof, expansion, and cold replay"]
 fn ranked_search_preserves_its_reads_without_transport() {
     let (source, c_sources) = mdtest_sources("mdtests/search_terminates_by_unmarked_count.md");
@@ -192,6 +199,7 @@ fn ranked_search_preserves_its_reads_without_transport() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: saved-array application proof, expansion, and cold replay"]
 fn ranked_search_applies_point_update_with_a_saved_array() {
     let (source, c_sources) =
@@ -246,6 +254,7 @@ fn check_ranked_search_without_transport(source: &str, c_sources: &[(String, Str
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: explicit frame refusal after expanding its execution prefix"]
 fn explicit_frame_refusal_replays_without_transport() {
     let (source, c_sources) = mdtest_sources("mdtests/explicit_preserve_failure_is_prompt.md");
@@ -257,7 +266,7 @@ fn explicit_frame_refusal_replays_without_transport() {
     let mut expanded = source;
     for prefix_step in [
         "have to_integer(s + 1) <= to_integer(e);",
-        "step_until(statement(2));",
+        "step_until(statement(2).entry);",
     ] {
         let at = expansion::position_at_offset(&expanded, expanded.find(prefix_step).unwrap());
         expanded = expand_c_tactic_source_at(&expanded, &sources, at.line, at.column)
@@ -273,6 +282,7 @@ fn explicit_frame_refusal_replays_without_transport() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: iterated owner stable-view refusal and cold replay"]
 fn iterated_owner_borrow_still_refuses_without_transport() {
     let (source, sources) =
@@ -309,6 +319,7 @@ fn iterated_owner_borrow_still_refuses_without_transport() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: fold framing, C read authority, and cold replay"]
 fn preserved_fold_does_not_grant_c_read_authority() {
     let (source, sources) = mdtest_sources("mdtests/fold_read_transport_grants_no_c_read.md");
@@ -345,6 +356,7 @@ fn preserved_fold_does_not_grant_c_read_authority() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: helper fold preservation and cold replay"]
 fn fold_through_a_helper_survives_the_endpoint_store_without_transport() {
     let (source, sources) =
@@ -390,6 +402,7 @@ fn fold_through_a_helper_survives_the_endpoint_store_without_transport() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: viewability diagnostic and saved-premise replay"]
 fn earlier_viewable_premise_keeps_its_point_without_transport() {
     let (source, sources) =
@@ -426,6 +439,7 @@ fn earlier_viewable_premise_keeps_its_point_without_transport() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: wide element bounds, initializedness, and cold replay"]
 fn wide_viewable_element_needs_containment_and_initializedness() {
     let (source, sources) =
@@ -486,6 +500,7 @@ fn wide_viewable_element_needs_containment_and_initializedness() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: C string viewability and call authority"]
 fn cstr_viewability_without_transport_does_not_supply_call_authority() {
     let (source, sources) = mdtest_sources("mdtests/cstr_dynamic_invalidated_transport.md");
@@ -525,6 +540,7 @@ fn cstr_viewability_without_transport_does_not_supply_call_authority() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: viewability restriction expansion and cold replay"]
 fn viewable_requirement_supports_a_narrower_span_without_transport() {
     let (source, sources) =
@@ -674,6 +690,7 @@ fn symbolic_return_boundary_expands_and_replays_its_explicit_frame_proof() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: repeated entry guard provenance"]
 fn entry_requirement_provenance_survives_repeated_span_guards() {
     let sources = [("entry.c", "int32 entry(int32 a[], int32 n) { return 0; }")];
@@ -697,6 +714,7 @@ fn entry_requirement_provenance_survives_repeated_span_guards() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: symbolic loop frame verification, expansion and cold replay"]
 fn symbolic_loop_frame_expands_and_cold_replays() {
     let (source, sources) = mdtest_sources("mdtests/loop_symbolic_disjoint_array_store_frame.md");
@@ -716,6 +734,7 @@ fn symbolic_loop_frame_expands_and_cold_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: unrelated equality refusal and related-premise replay"]
 fn unrelated_equality_is_refused_without_transport() {
     let (source, sources) =
@@ -747,6 +766,7 @@ fn unrelated_equality_is_refused_without_transport() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: guarded child ownership release and preservation replay"]
 fn guarded_child_preservation_keeps_the_consumed_read_refusal() {
     let (source, sources) =
@@ -760,15 +780,18 @@ fn guarded_child_preservation_keeps_the_consumed_read_refusal() {
         let error = verify_c_sources(&source, &sources).unwrap_err();
         let trace = error.trace_context_report().unwrap();
         assert!(error.message().contains("missing resource fact"), "{error}");
-        assert!(trace.contains("step(consume_child("), "{trace}");
+        assert!(
+            trace.contains("return ((struct cell*)(void*)child)->value;"),
+            "{trace}"
+        );
     });
     // Returning the same owned child is a positive control for the original C.
     let control = source.replace(
         "    consumes state: child_value(p);",
         "    owns state: child_value(p);\n    ensures state.number == old(state.number);",
     ).replace(
-        "    step(); step(); solve();",
-        "    step();\n    let { number: returned } = unfold(restored);\n    have returned == old(child.number) by { known(); }\n    step();\n    solve();",
+        "    step(); solve();\n}",
+        "    let { number: returned } = unfold(restored);\n    have returned == old(child.number) by { known(); }\n    step();\n    solve();\n}",
     );
     assert_ne!(source, control);
     verify_c_sources(&control, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
@@ -781,6 +804,7 @@ fn guarded_child_preservation_keeps_the_consumed_read_refusal() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: negated resource-field expansion and cold replay"]
 fn negated_resource_fields_expand_and_cold_replay() {
     let sources = [(
@@ -886,6 +910,7 @@ fn fold_initializer_obligation_expands_and_replays_without_implicit_solve() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: constructor pointer prerequisite expansion and cold replay"]
 fn fold_constructor_pointer_obligations_expand_and_cold_replay() {
     let (source, sources) =
@@ -902,6 +927,7 @@ fn fold_constructor_pointer_obligations_expand_and_cold_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: initialized callback field prerequisite expansion and cold replay"]
 fn initialized_callback_field_obligations_expand_and_cold_replay() {
     let (source, sources) = mdtest_sources("mdtests/const_callback_table_abstract.md");
@@ -917,6 +943,7 @@ fn initialized_callback_field_obligations_expand_and_cold_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: callback prerequisite expansion and cold replay"]
 fn explicit_callback_contract_obligation_expands_and_cold_replays() {
     let (source, sources) = mdtest_sources("mdtests/c_named_function_contract.md");
@@ -935,6 +962,7 @@ fn explicit_callback_contract_obligation_expands_and_cold_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: explicit alias-fold obligation expansion and cold replay"]
 fn explicit_alias_fold_obligations_expand_and_cold_replay() {
     let (source, sources) = mdtest_sources("mdtests/fold_through_a_pointer_alias.md");
@@ -950,6 +978,7 @@ fn explicit_alias_fold_obligations_expand_and_cold_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: named witness fold expansion and cold replay"]
 fn named_witness_fold_obligations_expand_and_cold_replay() {
     let (source, sources) = mdtest_sources("mdtests/resource_witness_unfold_fold.md");
@@ -1007,6 +1036,7 @@ fn mirrored_implication_consequents_expand_to_checked_extraction() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn unfolded_member_quantifier_keeps_written_pointer_arguments_in_expansion() {
     let source = r#"
@@ -1044,6 +1074,7 @@ fn unfolded_member_quantifier_keeps_written_pointer_arguments_in_expansion() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: multiple frontend expansion and cold replay checks"]
 fn cases_obligation_expands_before_execution_arms() {
     let source = r#"
@@ -1095,6 +1126,7 @@ fn cases_obligation_expands_before_execution_arms() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: focused deferred match expansion and cold replay"]
 fn cases_after_execution_keep_match_bindings_in_expansion() {
     let (source, sources) =
@@ -1241,6 +1273,7 @@ fn short_circuit_boolean_returns_expand_distinct_outcome_proofs() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original branching alias proofs and expansion take one second"]
 fn alias_load_outcome_requirements_keep_recorded_value_names_in_expansion() {
     let (mut source, sources) =
@@ -1257,6 +1290,7 @@ fn alias_load_outcome_requirements_keep_recorded_value_names_in_expansion() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original recursive proof verification and expansion exceed half a second"]
 fn lexicographic_integer_measure_links_expand_and_recheck() {
     let (source, sources) = mdtest_sources("mdtests/a_recursive_decreases_sum_is_an_integer.md");
@@ -1287,6 +1321,7 @@ fn unsigned_widening_special_certificates_expand_and_recheck() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies the original descriptor proof and its rejection controls"]
 fn borrowed_resource_receipts_survive_post_return_folds() {
     let (source, sources) =
@@ -1329,6 +1364,7 @@ fn borrowed_resource_receipts_do_not_hide_an_unspent_authority_member() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: generated 256-clause outcome proof and expansion controls"]
 fn outcome_arithmetic_is_independent_of_postcondition_count() {
     let c_source = "int32 caller(int32 x) { return x; }";
@@ -1565,6 +1601,7 @@ fn member_pointer_addresses_with_equal_numeric_addresses_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.63s after reducing duplicate verification"]
 fn nonzero_member_pointer_addresses_retain_subobject_bounds_through_expansion() {
     check_member_pointer_address_expansion("model_pointer_alias_nonzero_field_load", "probe");
@@ -1637,6 +1674,7 @@ fn record_pointer_identity_local_storage_keeps_values_and_alias_requirements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pointer equality expansion and retained checks took 0.95s in parallel"]
 fn shifted_pointer_equality_rewrites_expand_and_recheck() {
     let sources = [(
@@ -1675,6 +1713,7 @@ fn shifted_pointer_equality_rewrites_expand_and_recheck() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: static refold expansion and retained-session checks take 0.9s"]
 fn static_return_refold_before_named_resource_rechecks_in_all_proof_modes() {
     let (source, sources) = mdtest_sources("mdtests/static_return_refold_before_named_resource.md");
@@ -1702,6 +1741,7 @@ fn static_return_refold_before_named_resource_rechecks_in_all_proof_modes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checks two post-return unfolds through expansion and retained verification"]
 fn call_produced_instances_unfold_after_return_in_all_proof_modes() {
     for fixture in [
@@ -1807,6 +1847,7 @@ fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: rechecks vector tactic and whole-proof certificates"]
 fn vector_field_input_pointer_certificates_round_trip() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1865,6 +1906,7 @@ fn builtin_header_null_pointer_expansion_round_trips() {
 // A synthesized read through a struct-pointer field must keep the scalar
 // stride when printed; `p->kid[1]` would advance by an entire child record.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
     let c = r#"
@@ -1897,9 +1939,9 @@ fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
             views kid->payload;
             ensures result == kid->payload;
         } by {
-            step(put, {});
+            step(put);
             step();
-            step(read, {});
+            step(read);
             have p->kid == kid;
             have observed == kid->payload;
             step_until(function.exit);
@@ -1917,6 +1959,7 @@ fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
 // Splitting a written sequence equality retains the source spelling and
 // historical selector for each generated element equality.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: targeted sequence-conjunction expansion coverage"]
 fn sequence_equality_children_retain_state_spellings() {
     for length in [3, 5] {
@@ -1958,6 +2001,7 @@ fn sequence_equality_children_retain_state_spellings() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn hidden_record_resource_expansion_round_trips() {
     for name in [
@@ -2094,6 +2138,7 @@ fn selected_tactic_batch_captures_multiple_sites_inside_one_have() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.5s in the parallel gate"]
 fn selected_tactic_batch_preserves_checked_loop_and_branch_routing() {
     for relative in [
@@ -2158,6 +2203,7 @@ fn selected_tactic_batch_retains_the_unselected_prefix_and_suffix() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn post_execution_have_expansion_preserves_later_smart_proofs() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2206,6 +2252,7 @@ fn post_execution_have_expansion_preserves_later_smart_proofs() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2339,6 +2386,7 @@ int32 caller(int32 x, int32 y) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     let c_source = r#"
@@ -2459,6 +2507,7 @@ fn exists_loadable_range_call_requirement_expands_and_deletion_rejects() {
 /// Check the complete chain and its cold proof without requiring that old
 /// nesting shape: continuing branches can now share the enclosing scope.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn nested_null_check_chain_expands_and_reverifies() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2491,6 +2540,7 @@ fn nested_null_check_chain_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: descriptor-backed loop across all proof modes"]
 fn descriptor_backing_range_loop_survives_all_proof_modes() {
     let (source, sources) =
@@ -2544,6 +2594,7 @@ pub(super) fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies conditional bounds and two fold proofs"]
 fn both_arms_prove_a_conditional_bound_without_normalize() {
     for (fixture, claims) in [
@@ -2637,6 +2688,7 @@ fn proof_cases_after_c_branch_expand_and_reverify() {
 /// independent fresh binders; the rewrite re-verifies only because
 /// `known` matches that guarded quantifier up to its binders.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn guarded_quantified_postcondition_expands_and_reverifies() {
     for (relative, function) in [
@@ -2683,6 +2735,7 @@ fn guarded_quantified_postcondition_expands_and_reverifies() {
 /// selected-premise proofs. The fixture now states an unconditional arithmetic
 /// equality, so its certificate need not extract a guarded consequent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn guarded_postcondition_consequent_expands_and_reverifies() {
     let relative = "mdtests/guarded_postcondition_closes_after_call.md";
@@ -2714,6 +2767,7 @@ fn guarded_postcondition_consequent_expands_and_reverifies() {
 /// certificates that verify. The array case can transport its entry contract
 /// directly; pointer chains use explicit rewrites.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn scope_equality_chain_and_loaded_pointer_rewrite_expand_and_reverify() {
     for (relative, function, expected) in [
@@ -2760,6 +2814,7 @@ fn scope_equality_chain_and_loaded_pointer_rewrite_expand_and_reverify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: call field requirements and contract lets expand and replay"]
 fn call_field_requirements_substitute_actual_arguments_in_expansion() {
     let (source, sources) =
@@ -2866,6 +2921,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn branch_continuation_match_expands_and_reverifies() {
     for relative in [
@@ -2894,6 +2950,7 @@ fn branch_continuation_match_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: focused pointer-history proof expansion and cold replay"]
 fn explicitly_packaged_pointer_frame_expands_without_history_search() {
     let (source, c_sources) =
@@ -2912,6 +2969,7 @@ fn explicitly_packaged_pointer_frame_expands_without_history_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: saved memory descriptor expansion and cold replay"]
 fn saved_memory_descriptors_expand_and_replay() {
     for (fixture, claim) in [
@@ -3052,7 +3110,7 @@ fn ranked_loops_with_no_invariant_expand_and_reverify() {
             expanded.contains("initialize by {\n            known();\n        }"),
             "{expanded}"
         );
-        assert!(expanded.contains("preserve by {"), "{expanded}");
+        assert!(expanded.contains("maintain by {"), "{expanded}");
     }
 }
 
@@ -3061,6 +3119,7 @@ fn ranked_loops_with_no_invariant_expand_and_reverify() {
 /// the flattened index, so the expansion printed `p->words[((1 * 2) + 1)]`,
 /// which the parser itself rejects for a two-dimensional field.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn multidimensional_array_field_expands_with_every_subscript() {
     let (click_source, c_sources) = mdtest_sources("mdtests/struct_wide_integer_arrays.md");
@@ -3219,6 +3278,7 @@ fn a_conditional_produces_clause_is_located_in_its_place() {
 /// leading `unfold` stays written once before the generated steps, and each
 /// step closes from it instead of unfolding again.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
     let anchor = "initialize by { unfold(head(box)); ";
@@ -3236,7 +3296,7 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
         "{expanded}"
     );
     let initialize = &expanded
-        [expanded.find("initialize by {").unwrap()..expanded.find("preserve by {").unwrap()];
+        [expanded.find("initialize by {").unwrap()..expanded.find("maintain by {").unwrap()];
     assert_eq!(
         initialize.matches("unfold(head(box))").count(),
         1,
@@ -3252,6 +3312,7 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
 /// every goal, and checked the bound's arithmetic step against the
 /// `viewable` body.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn initialize_closer_expansion_names_an_invariant_once_per_owed_goal() {
     let anchor = "            }\n            solve();\n        }\n        preserve";
@@ -3367,12 +3428,13 @@ fn post_execution_closer_continues_the_proof_a_witness_opened() {
     assert!(!expanded.contains("have exists (len: int32)"), "{expanded}");
 }
 
-/// The `solve()` closing the loop's `preserve` proof in `arena_init` expands
+/// The `solve()` closing the loop's `maintain` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the
 /// loop's store from the earlier cells by their indices alone, and
 /// `state_read_alignment_fact_renders_as_aligned` covers the rendering.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn entry_alignment_premise_expands_in_source_spelling() {
     let expanded = expand_mdtest_site_and_reverify(
@@ -3386,6 +3448,7 @@ fn entry_alignment_premise_expands_in_source_spelling() {
 /// Written else nesting is not recursive driver depth: a failed allocation
 /// returns, so twelve null checks can expand and re-verify just like eleven.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn expansion_reverifies_terminal_cases_past_the_old_nesting_bound() {
     let (click_source, c_sources) = mdtest_sources("mdtests/expand_sequential_null_checks.md");
@@ -3446,6 +3509,7 @@ fn symbolic_branch_direct_call_requirement_expands_and_checks_its_known_arm() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn integer_sum_range_fold_expands_and_reverifies() {
     let path =
@@ -3727,6 +3791,7 @@ theorem indexed_integer_exists(values: int32[]) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.2s in the parallel gate"]
 fn c_valued_range_fold_rejects_unsupported_carriers_before_lowering() {
     // Keep the report's original C body and proof, including its array reads.
@@ -4524,6 +4589,7 @@ fn whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms() {
 /// Whole-claim expansion rebuilds a proof `match` from the paths through its
 /// arms. Each claim here verifies, and its expansion must too.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn whole_claim_expansion_of_proof_matches_rechecks() {
     for (mdtest, claim) in [
@@ -4623,13 +4689,13 @@ fn whole_claim_expansion_keeps_tactics_before_a_nested_match() {
     );
 }
 
-/// A call step that lends no resource instance is written with an empty
-/// binder map, `step(inner, {})`. Expansion reprints the map: printed
-/// without it, the step reads as a named-contract step.
+/// Expansion removes an empty input map from a call step and the
+/// resulting named call still selects the callee.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
-fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
+fn whole_claim_expansion_omits_a_call_steps_empty_input_map() {
     let (click, sources) = mdtest_sources("mdtests/mutex_live_contract.md");
+    let click = click.replace("step(inner);", "step(inner, {});");
     let sources = sources
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
@@ -4645,10 +4711,11 @@ fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
         });
     }
     let expanded = expand_c_claim_source_by_label(&click, &sources, "keep.contract").unwrap();
-    assert!(expanded.contains("step(inner, {});"), "{expanded}");
+    assert!(expanded.contains("step(inner);"), "{expanded}");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: cold replay of two default call binding proofs"]
 fn bare_step_call_result_bindings_expand_and_replay() {
     for (fixture, binding) in [
@@ -4671,7 +4738,7 @@ fn bare_step_call_result_bindings_expand_and_replay() {
 
     let (source, owned_sources) = mdtest_sources("mdtests/call_result_discarded.md");
     let sources = crate::cli::source_refs(&owned_sources);
-    let source = source.replace("step(classify, { })", "step()");
+    let source = source.replace("step(classify)", "step()");
     let error = verify_c_sources(&source, &sources)
         .expect_err("discarding a C call result leaves no value to bind");
     assert!(
@@ -4686,6 +4753,7 @@ fn bare_step_call_result_bindings_expand_and_replay() {
 /// one. The shared rewrite search must retain that entry when spelling its
 /// selected equality, including in a cold expanded proof.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: whole loop claim expansion and cold verification"]
 fn equality_search_expands_loop_ranking_with_previous_entry_fact() {
     let (click, sources) = mdtest_sources("mdtests/loop_old_parameter_resource_argument.md");
@@ -4701,6 +4769,7 @@ fn equality_search_expands_loop_ranking_with_previous_entry_fact() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: tree rotation expansion and cold project verification"]
 fn equality_search_expands_tree_rotation() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -4716,6 +4785,7 @@ fn equality_search_expands_tree_rotation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: guarded contract refinement expansion and cold verification"]
 fn equality_search_expands_guarded_contract_refinement() {
     let (click, sources) =
@@ -4727,7 +4797,7 @@ fn equality_search_expands_guarded_contract_refinement() {
     let expanded =
         expand_c_claim_source_by_label(&click, &sources, "increment_is_guarded_progress.ensures_0")
             .unwrap_or_else(|error| panic!("{}", error.message()));
-    assert!(expanded.contains("rewrite("), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
@@ -4737,6 +4807,7 @@ fn equality_search_expands_guarded_contract_refinement() {
 /// must check it the same way; without the rigid type the proof cannot be
 /// lowered at all.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn a_tactic_in_a_generic_theorem_expands() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -4876,6 +4947,7 @@ int32 early(int32 x) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
     let (click, sources) = mdtest_sources("mdtests/sort3_sorted.md");
@@ -4932,6 +5004,7 @@ theorem choose_reflexive_arm() {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn deferred_preservation_solve_expands_at_its_original_source_site() {
     let path =
@@ -4941,7 +5014,7 @@ fn deferred_preservation_solve_expands_at_its_original_source_site() {
     let c_sources = crate::cli::source_refs(&sources);
     verify_c_sources_functions(&source, &c_sources, vec!["vector_copy".into()]).unwrap();
     let function = source.find("int32 vector_copy(").unwrap();
-    let preserve = function + source[function..].find("preserve by {").unwrap();
+    let preserve = function + source[function..].find("maintain by {").unwrap();
     let offset = preserve + source[preserve..].find("solve();").unwrap();
     let position = expansion::position_at_offset(&source, offset);
     let expanded =
@@ -4960,6 +5033,7 @@ fn deferred_preservation_solve_expands_at_its_original_source_site() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s for unsigned expansion and underflow rejection"]
 fn unsigned_difference_descent_expansion_preserves_wrapping_arithmetic() {
     let (source, _) = mdtest_sources("mdtests/solve_closes_single_unsigned_steps.md");
@@ -5029,6 +5103,7 @@ theorem unsigned_compound(n: int32) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn arithmetic_producers_retain_only_structural_certificates() {
     let pure = r#"
@@ -5090,6 +5165,7 @@ theorem pure_arithmetic_producer(n: int32) {
 // The join's exported fact must remain writable after proof-local resolution:
 // the old metadata made this valid state rewrite expand to a literal `…`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn branch_interface_model_pointer_state_rewrite_expands_and_rechecks() {
     let (source, c) = mdtest_sources("mdtests/branch_interface_keeps_model_pointer_names.md");
@@ -5103,6 +5179,7 @@ fn branch_interface_model_pointer_state_rewrite_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn branch_interface_fixture_proofs_verify_expand_and_recheck() {
     for name in [
@@ -5137,6 +5214,7 @@ fn branch_interface_fixture_proofs_verify_expand_and_recheck() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn branch_interface_service_solve_expands_and_rechecks() {
     let source = include_str!("../../../examples/perpetual-service/perpetual_service.click");
@@ -5177,6 +5255,7 @@ fn branch_interface_service_solve_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn callback_branch_ground_premises_verify_expand_and_recheck() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -5194,6 +5273,7 @@ fn callback_branch_ground_premises_verify_expand_and_recheck() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn serialized_loop_premises_reject_a_changed_state_or_polarity() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -5228,6 +5308,7 @@ fn serialized_loop_premises_reject_a_changed_state_or_polarity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5.3s in the parallel gate"]
 fn machine_population_count_rewrites_keep_their_type_in_integer_files() {
     let (source, sources) =
@@ -5249,6 +5330,7 @@ fn machine_population_count_rewrites_keep_their_type_in_integer_files() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn return_population_proofs_expand_without_effect_clauses() {
     for (fixture_name, functions) in [
@@ -5396,6 +5478,7 @@ int main() {{ ensures result == 7; }} {main}"#
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn program_entry_resource_bindings_expand_and_reverify() {
     for (interface_type, click_type, suffix) in [("unsigned int", "uint32", "u32")] {
@@ -5731,7 +5814,7 @@ fn selected_post_execution_solve_keeps_the_surviving_execution_branch() {
                 ensures result != tail implies result->value == value;
                 ensures result != tail implies result->next == tail;
             } by {
-                step_until(statement(1));
+                step_until(statement(1).entry);
                 if node == 0 {
                     step_until(function.exit);
                     solve();
@@ -5812,6 +5895,7 @@ fn returning_malloc_result_expands_to_checkable_statement_steps() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
     let callee_source = r#"
@@ -6441,6 +6525,7 @@ fn outcome_arithmetic_normalization_retains_selected_equality_paths() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn outcome_quantified_cells_retain_selected_instantiations() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -6826,7 +6911,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
                 ensures result == expected;
             } by {
                 observe(equal_cell(data, expected));
-                step_until(statement(2));
+                step_until(statement(2).entry);
                 apply(int32_equality_transitive(observed, data[0], expected));
                 step_until(function.exit);
                 solve();
@@ -6948,6 +7033,7 @@ fn source_expansion_preserves_proof_marks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn marked_constant_store_transport_expands_to_known_fact_lookup() {
     let touch_c = r#"
@@ -7327,6 +7413,7 @@ fn smart_apply_uses_ambient_loadability_only_for_argument_lowering() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s with parallel expansion tests"]
 fn selected_pure_case_split_solve_expands_by_removal() {
     // Both live C paths are explicitly closed before the selected solve. Its
@@ -7678,7 +7765,7 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_branch_arm() {
     assert_mixed_have_body_solve_expands(click_source, &[("early_exit.c", c_source)], 10, 13);
 }
 
-/// A mixed `have` in a frontier-local loop's `preserve` phase is checked by
+/// A mixed `have` in a frontier-local loop's `maintain` phase is checked by
 /// the preservation proof; its body `solve` expands on its own there.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_32")]
@@ -7703,7 +7790,7 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_loop_preserve_phase() {
         \x20       invariant i >= 0;\n\
         \x20       invariant i <= n;\n\
         \x20       initialize by solve();\n\
-        \x20       preserve by {\n\
+        \x20       maintain by {\n\
         \x20           have i <= n by {\n\
         \x20               have i == i by solve();\n\
         \x20               solve();\n\
@@ -7743,7 +7830,7 @@ fn count_up_with_initialize(phase: &str) -> String {
         \x20       initialize by {{\n\
         {phase}\
         \x20       }}\n\
-        \x20       preserve by {{\n\
+        \x20       maintain by {{\n\
         \x20           step();\n\
         \x20       }}\n\
         \x20   }}\n\
@@ -9475,6 +9562,7 @@ fn solve_expands_increment_definedness_to_ordinary_arithmetic() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3.1s per case in a parallel fast-gate batch"]
 fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
     let click_source = r#"
@@ -9517,6 +9605,7 @@ fn restricted_solve_expands_increment_lower_bound_to_ordinary_arithmetic() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4.9s per case in a parallel fast-gate batch"]
 fn restricted_solve_expands_increment_order_to_ordinary_arithmetic() {
     let click_source = r#"
@@ -9607,6 +9696,7 @@ fn restricted_solve_expands_named_successor_order() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.0s in the parallel gate"]
 fn restricted_solve_certifies_unchanged_prefix_after_indexed_store() {
     let c_source = r#"
@@ -9729,6 +9819,182 @@ fn restricted_solve_expands_adjacent_order_to_ordinary_arithmetic() {
     assert!(!expanded.contains("solve() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded theorem application should check");
+}
+
+#[test]
+fn returned_narrowing_rewrites_the_selected_literal_call_result() {
+    for fixture in [
+        "mdtests/private_state_narrowing_call.md",
+        "mdtests/a_program_entry_string_literal_provides_its_c_string_view.md",
+    ] {
+        let (source, program) = mdtest_sources(fixture);
+        let program = crate::cli::source_refs(&program);
+        let verified = verify_c_sources(&source, &program).unwrap();
+        let entry = verified
+            .iter()
+            .find(|theorem| theorem.function_block.signature().name() == "main")
+            .unwrap();
+        let proof = entry.expanded_proof_source().unwrap();
+        assert!(proof.contains("rewrite(statement(0).call("), "{proof}");
+        assert!(!proof.contains("normalize()"), "{proof}");
+        let expanded = format!("{source}\n{proof}");
+        without_implicit_solve(|| verify_c_sources(&expanded, &program))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    }
+}
+
+#[test]
+fn divergent_loop_postcondition_expands_to_known_and_rejects_a_return() {
+    let (source, program) = mdtest_sources("mdtests/infinite_loop_vacuous_ensure.md");
+    let program = crate::cli::source_refs(&program);
+    let label = "spin_with_postcondition.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &program, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    let returning = "int spin_with_postcondition(void) { while (0) {} return 0; }";
+    let returning = [(program[0].0, returning)];
+    assert!(verify_c_sources(&expanded, &returning).is_err());
+}
+
+#[test]
+fn concrete_viewability_prerequisite_expands_to_known() {
+    let (source, program) =
+        mdtest_sources("mdtests/integer_uint32_from_le_bytes_initialization.md");
+    let program = crate::cli::source_refs(&program);
+    let label = "decode.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &program, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+fn literal_constructor_field_disequality_expands_to_known() {
+    let (source, program) = mdtest_sources("mdtests/algebraic_maybe.md");
+    let program = crate::cli::source_refs(&program);
+    let written = "Maybe<int32>::Some(0) != Maybe<int32>::Some(1) by known();";
+    let smart = source.replace(written, &written.replace("known()", "solve()"));
+    assert_ne!(source, smart);
+    let label = "maybe_payloads_compare_structurally.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&smart, &program, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap();
+    let symbolic = source.replace(
+        "maybe_payloads_compare_structurally()",
+        "maybe_payloads_compare_structurally(x: int32)",
+    );
+    assert_ne!(source, symbolic);
+    let symbolic = symbolic.replace(written, &written.replace("::Some(1)", "::Some(x)"));
+    assert!(symbolic.contains("::Some(x) by known();"));
+    let error = without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&symbolic, &program).map_err(|error| error.report())
+    })
+    .expect_err("a symbolic field does not establish disequality");
+    assert!(error.contains("known"), "{error}");
+}
+
+#[test]
+fn strict_literal_remainder_bound_expands_to_known() {
+    let (source, _) = mdtest_sources("mdtests/solve_bounds_an_unsigned_quotient_by_its_operand.md");
+    let label = "remainder_below_divisor.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &[], label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let claim = expanded
+        .split_once("theorem remainder_below_divisor")
+        .unwrap()
+        .1;
+    let claim = claim.split_once("theorem uint32_shift").unwrap().0;
+    assert!(claim.contains("known();"), "{claim}");
+    assert!(!claim.contains("normalize()"), "{claim}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+    })
+    .unwrap();
+
+    let strict_reading = "theorem mirror(v: uint32) {
+        ensures 4294967295 > to_integer(v % 4294967295u32) by known();
+    }";
+    without_implicit_solve(|| verify_click_theorems(strict_reading)).unwrap();
+
+    let wrong_bound = "theorem wrong_bound(v: uint64) {
+        ensures v % 1000u64 < 999u64 by known();
+    }";
+    let negative_divisor = "theorem negative_divisor(v: int32) {
+        ensures v % -7 < -7 by known();
+    }";
+    for rejected in [wrong_bound, negative_divisor] {
+        let error = without_implicit_solve(|| verify_click_theorems(rejected))
+            .unwrap_err()
+            .report();
+        assert!(error.contains("`known` requires"), "{error}");
+    }
+}
+
+#[test]
+fn selected_mirrored_disequality_expands_to_known() {
+    let (source, _) = mdtest_sources("mdtests/int32_disequality_symmetry.md");
+    let expanded = expand_c_claim_source_by_label(&source, &[], "swap_disequality.ensures_0")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("known();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+    let unselected = source.replace("x != y; };", "x == x; };");
+    assert_ne!(unselected, source);
+    assert!(verify_click_theorems(&unselected).is_err());
+}
+
+#[test]
+fn signed_order_chain_checks_a_store_prerequisite_without_search() {
+    let (source, program) = mdtest_sources("mdtests/stores_to_ordered_indices_keep_each_other.md");
+    let program = crate::cli::source_refs(&program);
+    let label = "mark.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &program, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("order_chain() using"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+fn signed_order_chain_checks_only_the_listed_available_links() {
+    let template = r#"
+        theorem chain(a: int32, b: int32, c: int32, d: int32) {
+            requires a <= b;
+            requires b < c;
+            requires c <= d;
+            ensures a < d by { order_chain() using { LINKS }; }
+        }
+    "#;
+    for (links, expected) in [
+        ("a <= b; b < c; c <= d;", None),
+        ("a <= b; c <= d;", Some("connected int32 comparisons")),
+        ("a < b; b < c; c <= d;", Some("not exactly available")),
+        ("a <= b; b <= c; c <= d;", Some("strict link")),
+    ] {
+        let result = verify_click_theorems(&template.replace("LINKS", links));
+        if let Some(expected) = expected {
+            let error = result.expect_err("invalid certificate should fail");
+            assert!(error.message().contains(expected), "{}", error.report());
+        } else {
+            result.expect("written links should suffice");
+        }
+    }
 }
 
 #[test]
@@ -9970,10 +10236,8 @@ fn outcome_solve_closes_its_recorded_order_path_by_arithmetic() {
         position.column,
     )
     .expect("the retained outcome theorem path should expand");
-    assert!(
-        (expanded.contains("click::integer::") || expanded.contains("normalize")),
-        "{expanded}"
-    );
+    assert!(expanded.contains("order_chain() using"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     verify_c_sources(&expanded, &[("validate_chain.c", c_source)])
         .expect("the transcribed outcome theorem path should check");
@@ -11407,7 +11671,7 @@ fn linear_execute_until_inside_open_stops_on_checked_frontier() {
             ensures result == x;
         } by {
             open(marker(x)) {
-                step_until(region(2));
+                step_until(region(2).entry);
                 step();
             }
             step();
@@ -11658,6 +11922,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn linear_open_expands_known_transport_to_known() {
     let c_source = r#"
@@ -11818,6 +12083,7 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
     let c_source = r#"
@@ -12544,7 +12810,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             have selected >= 0 by {
                 apply(positive_is_nonnegative(selected));
             }
-            step_until(region(5));
+            step_until(region(5).entry);
             step();
             solve();
         }
@@ -13034,6 +13300,7 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn callback_status_proofs_expand_at_every_smart_site() {
     let markdown = include_str!("../../../mdtests/c_contract_executes_status.md");
@@ -13098,6 +13365,7 @@ fn expand_nested_callback_lift_site(source: &str, c_sources: &[(&str, &str)], so
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn nested_callback_status_cases_verify() {
     let (source, c_sources) = nested_callback_status_sources();
@@ -13143,6 +13411,7 @@ fn nested_callback_status_cases_verify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn nested_callback_status_item_zero_cases_expand_and_reverify() {
     let (source, c_sources) = nested_callback_status_sources();
@@ -13157,6 +13426,7 @@ fn nested_callback_status_item_zero_cases_expand_and_reverify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn nested_callback_status_item_branch_cases_expand_and_reverify() {
     let (source, c_sources) = nested_callback_status_sources();
@@ -13171,6 +13441,7 @@ fn nested_callback_status_item_branch_cases_expand_and_reverify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn nested_callback_status_closer_cases_expand_and_reverify() {
     let (source, c_sources) = nested_callback_status_sources();
@@ -13185,6 +13456,7 @@ fn nested_callback_status_closer_cases_expand_and_reverify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn acquired_callback_ownership_expands_at_every_smart_site() {
     let markdown = include_str!("../../../mdtests/c_contract_executes_acquire.md");
@@ -13216,6 +13488,7 @@ fn acquired_callback_ownership_expands_at_every_smart_site() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn callback_pool_cycle_expands_at_every_smart_site() {
     let markdown = include_str!("../../../mdtests/c_callback_pool_cycle.md");
@@ -13247,6 +13520,7 @@ fn callback_pool_cycle_expands_at_every_smart_site() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn callback_counter_refinement_expands_at_every_smart_site() {
     let markdown = include_str!("../../../mdtests/c_contract_executes_counter.md");
@@ -13278,6 +13552,7 @@ fn callback_counter_refinement_expands_at_every_smart_site() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn const_callback_contract_expands_at_every_smart_site() {
     let markdown = include_str!("../../../mdtests/const_callback_contract.md");
@@ -14017,6 +14292,7 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn outcome_predicate_unfold_evidence_survives_nested_have_expansion() {
     let c_source = r#"
@@ -14206,6 +14482,7 @@ fn successive_post_execution_ifs_stay_on_one_proof() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn bound_universal_outcome_retains_instantiation_and_transport() {
     let c_source = r#"
@@ -14248,7 +14525,7 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                     unfold(all_le_range(p, 0, j, p[j]));
                     solve();
                 }
-                preserve by {
+                maintain by {
                     branch ensuring {
                         fact p[j] <= p[j + 1];
                         fact all_le_range(p, 0, j, p[j + 1]);
@@ -14352,6 +14629,7 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn bound_universal_bubble_pass3_max_suffix_has_no_outcome_fallbacks() {
     let (filename, function) = BOUND_UNIVERSAL_FIXTURE_CASES[0];
@@ -14359,6 +14637,7 @@ fn bound_universal_bubble_pass3_max_suffix_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn bound_universal_bubble_sort3_two_pass_sorted_has_no_outcome_fallbacks() {
     let (filename, function) = BOUND_UNIVERSAL_FIXTURE_CASES[1];
@@ -14366,6 +14645,7 @@ fn bound_universal_bubble_sort3_two_pass_sorted_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn matched_resource_quantified_fact_expands_and_reverifies() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -14447,6 +14727,7 @@ fn matched_resource_dependent_clauses_expand_and_reverify() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn early_return_postcondition_path_selection_expands_and_reverifies() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -14480,6 +14761,7 @@ fn early_return_postcondition_path_selection_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn state_and_post_call_transport_fixtures_have_no_outcome_fallbacks() {
     for (filename, function, claim, retained_step, corrupted_step) in [
@@ -14786,6 +15068,7 @@ fn assert_resource_example_pipeline_has_no_outcome_fallbacks(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn linked_list_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[0];
@@ -14798,6 +15081,7 @@ fn linked_list_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 13s in the parallel gate"]
 fn input_cursor_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[1];
@@ -14810,6 +15094,7 @@ fn input_cursor_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 10s in the parallel gate"]
 fn owned_segmented_buffer_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[2];
@@ -14822,6 +15107,7 @@ fn owned_segmented_buffer_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: whole-pipeline expansion rechecks measured 12s"]
 fn owned_string_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[3];
@@ -14834,6 +15120,7 @@ fn owned_string_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn recursive_zero_list_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[4];
@@ -14846,6 +15133,7 @@ fn recursive_zero_list_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn vector_push_pipeline_has_no_outcome_fallbacks() {
     let (project, sidecar, function, retained_step) = RESOURCE_EXAMPLE_PIPELINE_CASES[5];
@@ -14858,6 +15146,7 @@ fn vector_push_pipeline_has_no_outcome_fallbacks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -14906,6 +15195,7 @@ fn smart_have_expansion_plans_against_the_ordinary_surface_goal() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn negative_outcome_diagnostic_manifests_have_no_fallbacks() {
     let manifests = [
@@ -14997,6 +15287,7 @@ fn negative_outcome_diagnostic_manifests_have_no_fallbacks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn branch_continuation_claims_retain_their_selected_outcome_step() {
     for (filename, function, claim, _) in [
@@ -15172,6 +15463,7 @@ fn outcome_solve_transports_loadability_on_the_checked_proof() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn outcome_solve_retains_checked_unchanged_old_equality_on_the_proof() {
     let c_source = r#"
@@ -15273,6 +15565,7 @@ fn outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn outcome_solve_materializes_selected_composite_separation_on_the_checked_proof() {
     let c_source = r#"
@@ -15334,6 +15627,7 @@ fn outcome_solve_materializes_selected_composite_separation_on_the_checked_proof
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_proof() {
     let c_source = r#"
@@ -15402,6 +15696,7 @@ fn quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_pro
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: explicit guarded read preservation expansion and cold replay"]
 fn guarded_definedness_preservation_expands_and_cold_replays() {
     let (source, sources) =
@@ -15442,6 +15737,7 @@ fn guarded_definedness_preservation_expands_and_cold_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn quantified_old_transport_expands_to_one_quantified_frame() {
     let c_source = r#"
@@ -15832,7 +16128,7 @@ fn source_expander_recalls_a_fact_at_a_recorded_statement_entry() {
                 ensures result == 1;
             } by {
                 observe(one(p));
-                step_until(region(2));
+                step_until(region(2).entry);
                 have at(region(1).entry, p[0]) == 1 by solve();
                 step_until(function.exit);
                 solve();
@@ -15864,6 +16160,7 @@ fn source_expander_recalls_a_fact_at_a_recorded_statement_entry() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn source_expander_derives_separation_from_call_postconditions() {
     let init_c_source = r#"
@@ -15933,7 +16230,7 @@ fn source_expander_derives_separation_from_call_postconditions() {
                 views data[0..length];
                 ensures result == 0;
             } by {
-                step_until(region(2));
+                step_until(region(2).entry);
                 have separate(
                     memory(*right),
                     memory(left->data[0..left->len])
@@ -16095,6 +16392,7 @@ fn source_expander_replaces_and_checks_grouped_proof() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn qualified_static_ownership_verifies_and_expands() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -16120,6 +16418,7 @@ fn qualified_static_ownership_verifies_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn qualified_function_statics_verify_and_expand() {
     for (fixture_name, functions) in [
@@ -16175,6 +16474,7 @@ fn qualified_function_statics_reject_invalid_declarations() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn qualified_function_statics_do_not_grant_ownership() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -16299,6 +16599,7 @@ void clear() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn qualified_static_struct_startup_and_expansion() {
     let path =
@@ -16372,36 +16673,43 @@ fn check_private_state_expansion(fixture_name: &str, name: &str) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn private_state_bump_expands() {
     check_private_state_expansion("private_state_mutation_reset.md", "bump");
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn private_state_reset_expands() {
     check_private_state_expansion("private_state_mutation_reset.md", "reset");
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn private_state_left_expands() {
     check_private_state_expansion("private_state_mutation_reset.md", "left");
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn private_state_right_expands() {
     check_private_state_expansion("private_state_mutation_reset.md", "right");
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn private_state_reset_left_expands() {
     check_private_state_expansion("private_state_mutation_reset.md", "reset_left");
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn private_state_main_expands() {
     check_private_state_expansion("private_state_mutation_reset.md", "main");
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn private_state_wide_return_expands() {
     check_private_state_expansion("private_state_wide_return.md", "main");
@@ -16423,6 +16731,7 @@ fn wide_unsigned_low_word_narrowing_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.0s in the parallel gate"]
 fn private_state_wrappers_reject_invalid_ownership_and_effects() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -16495,6 +16804,7 @@ fn wide_values_narrow_to_their_low_word_without_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.8s in the parallel gate"]
 fn grouped_residual_normalization_expansion_checks_original_claims() {
     let path =
@@ -16837,6 +17147,7 @@ fn outcome_predecessor_bound_solve_expands_to_arithmetic_steps() {
 /// `data + start` inside the composite buffer's owned range through the
 /// contract bounds without encoding them in the emitted statement step.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 6s in the parallel gate"]
 fn expanded_step_uses_the_whole_context_for_frame_evidence() {
     let click_source = include_str!("../../../examples/borrowed-slice/borrowed_slice.click");
@@ -16905,7 +17216,7 @@ fn loop_preservation_case_after_step_expands_in_place() {
                 invariant i >= 0;
                 invariant i <= 1;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     step();
                     if flag == i {
                         have flag == i by { known(); }
@@ -16925,7 +17236,7 @@ fn loop_preservation_case_after_step_expands_in_place() {
         expand_checked_grouped_claim(click_source, &verified_for_expansion, "count_once")
             .expect("the loop proof expands");
     let preserve = expanded
-        .find("preserve by")
+        .find("maintain by")
         .expect("the expansion keeps the preservation proof");
     let body = &expanded[preserve..];
     let step = body.find("step();").expect("the body step is retained");
@@ -16964,7 +17275,7 @@ fn loop_preservation_case_before_step_expands_in_place() {
                 invariant i >= 0;
                 invariant i <= 1;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     if flag == i {
                         have flag == i by { known(); }
                     } else {
@@ -16984,7 +17295,7 @@ fn loop_preservation_case_before_step_expands_in_place() {
         expand_checked_grouped_claim(click_source, &verified_for_expansion, "count_once")
             .expect("the loop proof expands");
     let preserve = expanded
-        .find("preserve by")
+        .find("maintain by")
         .expect("the expansion keeps the preservation proof");
     let body = &expanded[preserve..];
     let case = body
@@ -17001,6 +17312,7 @@ fn loop_preservation_case_before_step_expands_in_place() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn loop_preservation_if_retains_its_enclosing_match_binding() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -17024,7 +17336,7 @@ fn loop_preservation_if_retains_its_enclosing_match_binding() {
     let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "count_to")
         .expect("the loop proof should expand");
     let preserve = expanded
-        .find("preserve by")
+        .find("maintain by")
         .expect("the expansion should retain the preservation phase");
     let body = &expanded[preserve..];
     assert!(
@@ -17037,6 +17349,7 @@ fn loop_preservation_if_retains_its_enclosing_match_binding() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn loop_entry_logical_read_expands_without_hidden_introductions() {
     let c_source = r#"
@@ -17063,7 +17376,7 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
                 invariant i >= 0 and i <= 3;
                 invariant forall (k: int32) { 0 <= k and k < i implies p[k] == k };
                 initialize by solve();
-                preserve by solve();
+                maintain by solve();
             }
             step();
             solve();
@@ -17079,7 +17392,7 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
         .find("initialize by")
         .expect("the expansion keeps the initialization proof");
     let preserve = expanded
-        .find("preserve by")
+        .find("maintain by")
         .expect("the expansion keeps the preservation proof");
     assert!(initialize < preserve, "{expanded}");
     assert!(
@@ -17289,6 +17602,7 @@ void object_retain_many(struct object* obj, int32 amount) {
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn grouped_closer_with_a_produced_resource_claim_expands_and_reverifies() {
     // Reduced from `pool_transfer` in `examples/bounded-pool` and
@@ -17377,6 +17691,7 @@ int read(int* p) {
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expansion and recheck took 1.09s in isolation"]
 fn match_arm_closer_anchors_the_case_fact_at_entry_and_reverifies() {
     // The arm's case fact is a statement about the scrutinee at unchanged
@@ -17443,6 +17758,7 @@ int32 contains3(int32 values[], int32 target) {
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.7s in the parallel gate"]
 fn grouped_leaf_implications_preserve_constant_false_premises() {
     let (source, sources) = mdtest_sources("mdtests/leaf_flag_grouped_solve.md");
@@ -17457,6 +17773,7 @@ fn grouped_leaf_implications_preserve_constant_false_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.56s after reducing duplicate verification"]
 fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     // Every path but the first reported no surface branch path, because the
@@ -17517,6 +17834,7 @@ struct node* unpack(struct node* node) {
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
     let sources = [("unpack.c", WITNESS_RESOURCE_C)];
@@ -17544,6 +17862,45 @@ fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
 
 #[test]
 fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
+    // Unknown inputs keep both sibling branches and their four paths reachable.
+    let c_source = r#"
+        int32 two_ifs(int32 x, int32 y) {
+            int32 i = 0;
+            while (i == 0) {
+                if (x == 0) {
+                    x = 1;
+                }
+                if (y == 0) {
+                    y = 1;
+                }
+                i = 1;
+            }
+            return i;
+        }
+    "#;
+    let click_source = r#"
+        verifying "two_ifs.c";
+
+        int32 two_ifs(int32 x, int32 y) {
+            ensures result >= 0;
+        } by {
+            step();
+            step();
+            loop {
+                decreases 1 - i;
+                invariant i >= 0;
+            }
+            step();
+            solve();
+        }
+    "#;
+    check_sibling_if_preservation_expansion(click_source, c_source);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: symbolic countdown plus four preservation paths took 11.6s in the parallel gate"]
+fn omitted_preservation_over_two_sibling_c_ifs_with_symbolic_bound() {
     // The automatic preservation the `loop` keyword owns walks this body as
     // a function's implicit tail does: each of the two sibling C `if`s
     // splits into its own proof case, so the rest of the body runs on four
@@ -17589,10 +17946,11 @@ fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
             solve();
         }
     "#;
-    let sources = [("two_ifs.c", c_source)];
-    verify_c_sources(click_source, &sources)
-        .expect("an omitted-phase preservation over two sibling `if`s should verify");
+    check_sibling_if_preservation_expansion(click_source, c_source);
+}
 
+fn check_sibling_if_preservation_expansion(click_source: &str, c_source: &str) {
+    let sources = [("two_ifs.c", c_source)];
     let loop_offset = click_source
         .find("loop {")
         .expect("the proof should contain the loop tactic");
@@ -17638,7 +17996,7 @@ int spin(int n) {
             have i <= n by solve();
             known();
         }
-        preserve by solve();
+        maintain by solve();
     }
     step();
     solve();
@@ -17663,7 +18021,7 @@ int spin(int n) {
             have n + 0 == n by { normalize(); }
             solve();
         }
-        preserve by {
+        maintain by {
             step();
         }
     }
@@ -17673,6 +18031,7 @@ int spin(int n) {
 "#;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expansion and recheck took 3.96s in isolation"]
 fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
     // Reduced from the insert fixup loop in `examples/rbtree/rbtree-model`. The
@@ -17707,20 +18066,21 @@ fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expansion and recheck took 3.55s in isolation"]
 fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
-    // `preserve by solve();` is one smart tactic standing for the whole phase,
+    // `maintain by solve();` is one smart tactic standing for the whole phase,
     // like `initialize by solve();`. Every driver step under it is generated, so
     // none claimed the source occurrence and audit reported
     // `Grouped proof has no source tactic 4`.
     let sources = [("spin.c", LOOP_INITIALIZE_PHASE_C)];
-    for phase in ["preserve by solve();", "preserve by { solve(); }"] {
-        let source = LOOP_INITIALIZE_SMART_HAVE_CLICK.replace("preserve by solve();", phase);
+    for phase in ["maintain by solve();", "maintain by { solve(); }"] {
+        let source = LOOP_INITIALIZE_SMART_HAVE_CLICK.replace("maintain by solve();", phase);
         let offset = source.find(phase).expect("the proof contains the phase");
         let position =
             expansion::position_at_offset(&source, offset + phase.find("solve").unwrap());
         let expanded = expand_c_tactic_source_at(&source, &sources, position.line, position.column)
-            .expect("a smart `preserve` phase should expand");
+            .expect("a smart `maintain` phase should expand");
         assert!(
             !expanded.contains(phase),
             "the smart preserve phase should be replaced by its certificate: {expanded}"
@@ -17732,6 +18092,7 @@ fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expansion and recheck took 2.99s in isolation"]
 fn a_helper_have_in_a_loop_initialize_script_is_expanded_once() {
     // The entry planner nested every sibling step inside every invariant's
@@ -17806,7 +18167,7 @@ fn loop_initialization_duplicate_clauses_keep_distinct_bodies() {
         .split("initialize by")
         .nth(1)
         .unwrap()
-        .split("preserve by")
+        .split("maintain by")
         .next()
         .unwrap();
     assert_eq!(initialize.matches("have i >= 0").count(), 2, "{expanded}");
@@ -17862,6 +18223,7 @@ fn a_consumed_arm_instance_equation_is_cited_at_entry_after_its_unfold() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn local_job_views_expand_and_reverify_without_ownership_annotations() {
     let path =
@@ -17885,6 +18247,7 @@ fn local_job_views_expand_and_reverify_without_ownership_annotations() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: two-hop loop frame verification, expansion and cold replay"]
 fn two_hop_loop_frame_expands_and_cold_replays() {
     let (source, sources) =
@@ -17921,6 +18284,7 @@ fn two_hop_loop_frame_expands_and_cold_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn an_unfold_bound_scalar_field_expands_and_reverifies() {
     // `let { prefix: p } = unfold(before)` names the folded field value that
@@ -17957,6 +18321,7 @@ fn an_unfold_bound_scalar_field_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
     // The certificate records the decided C branch as a logical `if` with an
@@ -18000,6 +18365,7 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and replays an entire loop contract"]
 fn retained_int32_addition_expands_with_ordinary_bounds() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(
@@ -18080,6 +18446,7 @@ fn retained_int32_addition_expands_with_ordinary_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and replays an entire loop contract"]
 fn retained_int32_sum_result_bounds_expand_with_rewrite() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -18116,6 +18483,7 @@ fn retained_int32_sum_result_bounds_expand_with_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and replays an entire loop contract"]
 fn retained_int32_subtraction_expands_with_ordinary_bounds() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -18211,6 +18579,7 @@ fn expand_iterated_ownership_claim(fixture: &str, claim: &str, kept: &[&str]) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn the_iterated_ownership_allocation_protocol_expands_and_reverifies() {
     // Indexed `unfold` is a simple step: the expansion prints it unchanged, and the
@@ -18223,6 +18592,7 @@ fn the_iterated_ownership_allocation_protocol_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn the_iterated_ownership_claim_loop_expands_and_reverifies() {
     // The loop takes one element per iteration from the iterated fact inside
@@ -18235,6 +18605,7 @@ fn the_iterated_ownership_claim_loop_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn the_iterated_ownership_release_loop_expands_and_reverifies() {
     expand_iterated_ownership_claim(
@@ -18245,6 +18616,7 @@ fn the_iterated_ownership_release_loop_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn conditional_call_witness_expansion_keeps_empty_binder_map() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -18266,7 +18638,7 @@ fn conditional_call_witness_expansion_keeps_empty_binder_map() {
     )
     .expect("the let-bound call must remain parseable");
     assert!(
-        expanded.contains("let { result: r } = step(child, {});"),
+        expanded.contains("let { result: r } = step(child);"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).expect("the expanded witness proof certifies");
@@ -18583,6 +18955,7 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn normalize_using_int32_loads_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -18646,6 +19019,7 @@ fn normalize_using_int32_loads_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn normalize_using_transported_int32_loads_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -18801,6 +19175,7 @@ fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn authority_named_parent_keeps_actual_fields_across_unrelated_owned_call() {
     let source = r#"
@@ -18841,7 +19216,7 @@ void caller(struct parent* p, struct child* kid) {
     ensures link.link == ParentLink::Linked(kid);
     ensures p->kid == kid;
 } by {
-    let { link: link } = step(attach, {});
+    let { link: link } = step(attach);
     have p->kid == kid by solve();
     step();
     have p->kid == kid by solve();
@@ -18981,6 +19356,7 @@ void put(int32* p, int32 i, int32 n) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn published_aliased_symbolic_owner_store_expands_and_rechecks() {
     let c = "void put(int32* p, int32* q, int32 i, int32 n) { q[i] = 7; }";
@@ -19030,7 +19406,7 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
         \x20   loop {\n\
         \x20       decreases x;\n\
         \x20       initialize by { solve(); }\n\
-        \x20       preserve by {\n\
+        \x20       maintain by {\n\
         \x20           step();\n\
         \x20       }\n\
         \x20   }\n\
@@ -19112,6 +19488,7 @@ fn the_implicit_grouped_proof_expands_after_the_contract_and_reverifies() {
 /// `if`, and inside one arm of a C `if`, every proof shape of every claim
 /// expands to source that re-verifies.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn throwing_call_forks_expand_and_reverify_in_every_position() {
     let c_source = r#"
@@ -19189,6 +19566,7 @@ fn throwing_call_forks_expand_and_reverify_in_every_position() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: live and exit-time call payload expansion and replay"]
 fn call_outcome_payload_bindings_expand_and_replay() {
     let (source, owned_sources) = mdtest_sources("mdtests/outcomes_payload_bindings.md");
@@ -19233,6 +19611,7 @@ fn call_outcome_payload_bindings_expand_and_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() {
     for (c_source, expected) in [
@@ -19261,6 +19640,7 @@ fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn uint32_mul_observations_and_true_disjunction_expand_and_recheck() {
     let (guarded, _) =
@@ -19289,6 +19669,7 @@ fn uint32_mul_observations_and_true_disjunction_expand_and_recheck() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn integer_observed_product_identity_rewrites_expand_and_recheck() {
     let (source, _) = mdtest_sources("mdtests/integer_observed_product_identity_rewrite.md");
@@ -19419,42 +19800,67 @@ int64 identity(int64 x, int64 y) {
 
 #[test]
 fn symbolic_upper_difference_expands_and_cold_rechecks() {
-    check_symbolic_upper_expansion("difference", "to_integer(a) <= to_integer(1000 - b)", "");
+    check_symbolic_upper_expansion(
+        "difference",
+        "to_integer(a) <= to_integer(1000 - b)",
+        &["b <= 1000"],
+    );
 }
 
 #[test]
 fn symbolic_upper_equality_expands_and_cold_rechecks() {
-    check_symbolic_upper_expansion("equality", "to_integer(a) == to_integer(1000 - b)", "");
+    check_symbolic_upper_expansion(
+        "equality",
+        "to_integer(a) == to_integer(1000 - b)",
+        &["b <= 1000"],
+    );
 }
 
 #[test]
 fn symbolic_upper_sum_expands_and_cold_rechecks() {
+    // Supply the machine sum's definedness directly so the replay focuses on
+    // isolating a symbolic operand from the sum bound.
+    check_symbolic_upper_expansion("sum", "to_integer(a + b) <= 1000", &["defined(a + b)"]);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: the sum replay also derives machine-addition definedness from four range bounds"]
+fn symbolic_upper_sum_with_range_bounds_expands_and_cold_rechecks() {
     check_symbolic_upper_expansion(
         "sum",
         "to_integer(a + b) <= 1000",
-        "requires a >= 0; requires a <= 1000;",
+        &["b <= 1000", "a >= 0", "a <= 1000"],
     );
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: the combined two-root replay took 9.1s in the parallel gate"]
 fn symbolic_upper_both_roots_expand_and_cold_recheck() {
     check_symbolic_upper_expansion(
         "both_roots",
         "to_integer(a + b) <= to_integer(999 + b)",
-        "requires a >= 0; requires a <= 1000;",
+        &["b <= 1000", "a >= 0", "a <= 1000"],
     );
 }
 
-fn check_symbolic_upper_expansion(name: &str, premise: &str, extra: &str) {
-    let extra_using = if extra.is_empty() {
-        ""
-    } else {
-        "a >= 0; a <= 1000;"
-    };
+fn check_symbolic_upper_expansion(name: &str, premise: &str, extra: &[&str]) {
+    let bounds = ["b >= 1"].into_iter().chain(extra.iter().copied());
+    let requirements = bounds
+        .clone()
+        .chain([premise])
+        .map(|fact| format!("requires {fact};"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let listed = std::iter::once(premise)
+        .chain(bounds)
+        .collect::<Vec<_>>()
+        .join("; ");
     let source = format!(
         "theorem {name}(a: int32, b: int32) {{
-        requires b >= 1; requires b <= 1000; {extra} requires {premise};
-        ensures a <= 999 by {{ solve() using {{ {premise}; b >= 1; b <= 1000; {extra_using} }} }}
+        {requirements}
+        ensures a <= 999 by {{ solve() using {{ {listed}; }} }}
     }}"
     );
     // Expansion verifies this source's sole theorem and claim.
@@ -19535,12 +19941,14 @@ fn check_counted_pthread_whole_claim_expansion(fixture: &str, claim: &str) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn counted_pthread_whole_claim_expansion_join() {
     check_counted_pthread_whole_claim_expansion("modeled_pthread_counted_join", "run.contract");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn counted_pthread_whole_claim_expansion_reverse_join() {
     check_counted_pthread_whole_claim_expansion(
@@ -19550,6 +19958,7 @@ fn counted_pthread_whole_claim_expansion_reverse_join() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn counted_pthread_whole_claim_expansion_shared_forward_join() {
     check_counted_pthread_whole_claim_expansion(
@@ -19559,6 +19968,7 @@ fn counted_pthread_whole_claim_expansion_shared_forward_join() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn counted_pthread_whole_claim_expansion_shared_join() {
     check_counted_pthread_whole_claim_expansion(
@@ -19568,6 +19978,7 @@ fn counted_pthread_whole_claim_expansion_shared_join() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn counted_pthread_whole_claim_expansion_partial_then_create() {
     check_counted_pthread_whole_claim_expansion(
@@ -19577,6 +19988,7 @@ fn counted_pthread_whole_claim_expansion_partial_then_create() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn counted_pthread_whole_claim_expansion_retained() {
     check_counted_pthread_whole_claim_expansion(
@@ -19586,6 +19998,7 @@ fn counted_pthread_whole_claim_expansion_retained() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn counted_pthread_whole_claim_expansion_symbolic() {
     check_counted_pthread_whole_claim_expansion(
@@ -19604,6 +20017,7 @@ fn counted_pthread_whole_claim_expansion_retire() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn counted_pthread_whole_claim_expansion_mutex() {
     check_counted_pthread_whole_claim_expansion(
@@ -19707,6 +20121,7 @@ int32 f(int32 n) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn pruned_empty_c_arm_expansion_walks_the_tail_iteratively() {
     for count in [4, 16, 64] {
@@ -19905,6 +20320,7 @@ fn fold_map_resolves_imported_fields_and_children_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn loaded_struct_field_loop_expansion_names_fields_and_reverifies() {
     let (source, sources) =
@@ -19935,6 +20351,7 @@ fn loaded_struct_field_loop_expansion_names_fields_and_reverifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn padded_struct_field_loop_expansion_reverifies() {
     let (source, sources) =
@@ -20030,6 +20447,7 @@ fn unfolded_empty_fold_differences_keep_checked_integer_spelling() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: empty-fold result mutation"]
 fn unfolded_empty_fold_differences_reject_nonzero_results() {
     let source = empty_fold_difference_source();
@@ -20075,6 +20493,7 @@ fn unfolded_empty_fold_order_keeps_its_checked_conclusion() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: empty-fold order and expanded-proof mutations"]
 fn unfolded_empty_fold_order_rejects_false_comparisons() {
     let source = empty_fold_order_source();
@@ -20119,6 +20538,7 @@ fn signed_bounded_subtraction_preserves_generated_child_sum() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: whole-proof arithmetic mutations and certificate rechecks"]
 fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
     let (source, sources) = mdtest_sources("mdtests/signed_arithmetic_bounded_subtraction.md");
@@ -20193,6 +20613,7 @@ fn line_containing(source: &str, text: &str) -> usize {
 /// certificate. The rest of the contract proof, including the other phase
 /// and the `solve()` after the loop, is untouched.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
     let (click, sources) = mdtest_sources("mdtests/loop_entry_guard_before_written_implication.md");
@@ -20201,18 +20622,18 @@ fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let function = "loop_entry_guard_before_written_implication";
-    let label = format!("{function}.loop(0).preserve");
+    let label = format!("{function}.loop(0).maintain");
     let expanded = expand_c_claim_source_by_label(&click, &sources, &label).unwrap();
     // Arithmetic steps need no additional import; only the selected
     // phase changes, and the surrounding source stays byte-for-byte intact.
     let body = expanded.as_str();
-    let written = "preserve by solve();";
+    let written = "maintain by solve();";
     let start = click.find(written).unwrap();
     let end = start + written.len();
     assert!(body.starts_with(&click[..start]), "{expanded}");
     assert!(body.ends_with(&click[end..]), "{expanded}");
     let phase = &body[start..body.len() - (click.len() - end)];
-    assert!(phase.starts_with("preserve by {"), "{phase}");
+    assert!(phase.starts_with("maintain by {"), "{phase}");
     assert!(!phase.contains("solve"), "{phase}");
     verify_c_sources(&expanded, &sources).unwrap();
 
@@ -20296,7 +20717,7 @@ fn an_omitted_loop_phase_expands_to_an_explicit_phase_proof() {
     let sources = [("omitted.c", OMITTED_PHASE_C)];
     verify_c_sources(OMITTED_PHASE_CLICK, &sources).unwrap();
     let insertion = OMITTED_PHASE_CLICK.find("}\n    step();").unwrap();
-    for phase in ["initialize", "preserve"] {
+    for phase in ["initialize", "maintain"] {
         let expanded = expand_c_claim_source_by_label(
             OMITTED_PHASE_CLICK,
             &sources,
@@ -20320,7 +20741,7 @@ fn an_omitted_loop_phase_expands_to_an_explicit_phase_proof() {
         assert!(inserted.ends_with("        }\n    "), "{inserted}");
         verify_c_sources(&expanded, &sources).unwrap();
     }
-    let error = expand_c_claim_source_by_label(OMITTED_PHASE_CLICK, &sources, "f.loop(1).preserve")
+    let error = expand_c_claim_source_by_label(OMITTED_PHASE_CLICK, &sources, "f.loop(1).maintain")
         .unwrap_err();
     assert!(
         error
@@ -20343,7 +20764,7 @@ fn a_loop_phase_expands_by_label_over_a_prepared_c_import() {
     let sources = [("omitted.c", OMITTED_PHASE_C)];
     let imports = [PreparedCImport::for_test("omitted.c", OMITTED_PHASE_C)];
     let inputs = ProgramInputs::Prepared(&imports);
-    for phase in ["initialize", "preserve"] {
+    for phase in ["initialize", "maintain"] {
         let label = format!("f.loop(0).{phase}");
         let bundled = expand_c_claim_source_by_label(OMITTED_PHASE_CLICK, &sources, &label)
             .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
@@ -20361,6 +20782,7 @@ fn a_loop_phase_expands_by_label_over_a_prepared_c_import() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn early_return_arms_expand_to_explicit_result_proofs() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -20382,6 +20804,7 @@ fn early_return_arms_expand_to_explicit_result_proofs() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn guarded_resource_disjoint_store_and_unconditional_control_expand_and_recheck() {
     let c = r#"struct base { struct base* left; struct base* right; uint64 padding; };
@@ -20461,6 +20884,7 @@ fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
 /// replay. Expansion must emit a proof that replays without a duplicate
 /// `requires` entry, while a false bound must still be refused.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: literal call expansion and cold replay"]
 fn literal_call_bounds_expand_without_duplicate_obligation_entries() {
     let source = r#"
@@ -20676,6 +21100,7 @@ void set(int32* p, int32* q, int32 x) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-replays two closing outcomes"]
 fn open_scope_closing_facts_replay_after_both_returns() {
     let c_source = "int32 f(int32* p, int32 x, int32 y) {
@@ -20739,6 +21164,7 @@ fn without_first_step_obligation_proofs(expanded: &str) -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checks whole global object ownership through expansion and retained verification"]
 fn whole_global_objects_keep_their_size_and_field_types() {
     let (source, sources) =
@@ -20784,6 +21210,7 @@ fn whole_global_objects_keep_their_size_and_field_types() {
 /// Qualified pointer slots must select the same memory in fresh, expanded,
 /// and retained proofs, including entry reads after a store.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checks global and static pointer states across proof modes"]
 fn qualified_pointer_slots_keep_selected_memory_in_all_proof_modes() {
     for (fixture, functions) in [
@@ -20829,6 +21256,7 @@ fn qualified_pointer_slots_keep_selected_memory_in_all_proof_modes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checks global field coverage through expansion and retained verification"]
 fn whole_object_call_effects_combine_global_fields_in_all_proof_modes() {
     let (source, sources) =
@@ -20864,6 +21292,7 @@ fn whole_object_call_effects_combine_global_fields_in_all_proof_modes() {
 /// Keep the original rotation's imported struct-pointer/model applications
 /// through a selected smart-tactic expansion and a retained project session.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full rotation theorem across fresh, expanded, and retained proofs"]
 fn returned_struct_pointer_lemmas_survive_expansion_and_retained_verification() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -20946,6 +21375,7 @@ uint32 dec(uint32 x) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: checks byte-field ownership through expansion and retained verification"]
 fn whole_struct_byte_fields_reassemble_in_all_proof_modes() {
     for fixture in [
@@ -20983,6 +21413,7 @@ fn whole_struct_byte_fields_reassemble_in_all_proof_modes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: callback read across fresh, expanded, and retained proofs"]
 fn callback_reads_keep_the_initialized_target_contract_in_all_proof_modes() {
     let (source, sources) =
@@ -21006,6 +21437,7 @@ fn callback_reads_keep_the_initialized_target_contract_in_all_proof_modes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: unknown-pointer bounds across fresh, expanded, and retained proofs"]
 fn unknown_pointer_bounds_survive_expansion_and_retained_verification() {
     for (fixture, claim, postcondition) in [
@@ -21073,6 +21505,7 @@ fn unknown_pointer_bounds_survive_expansion_and_retained_verification() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: packed-pointer contracts across fresh, expanded, and retained proofs"]
 fn packed_pointer_cast_contracts_survive_expansion_and_retained_verification() {
     for (fixture, claim, postcondition) in [
@@ -21134,6 +21567,7 @@ fn packed_pointer_cast_contracts_survive_expansion_and_retained_verification() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: array-bound call across expansion and retained verification"]
 fn call_step_keeps_state_bound_through_expansion_and_retained_check() {
     let (source, sources) = mdtest_sources("mdtests/call_step_retains_old_array_bound.md");
@@ -21243,6 +21677,7 @@ theorem untouched() { ensures 1 == 1 by { normalize(); } }
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: string resource expansion and retained rechecking"]
 fn expanded_string_witness_survives_retained_and_cold_rechecking() {
     let (source, sources) = mdtest_sources("mdtests/cstr_readable_witness_stated_before_call.md");
@@ -21264,6 +21699,7 @@ fn expanded_string_witness_survives_retained_and_cold_rechecking() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: signed byte conditions across fresh, expanded, and retained proofs"]
 fn known_unsigned_byte_decides_signed_comparison_in_all_proof_modes() {
     for (fixture, claim) in [
@@ -21297,6 +21733,7 @@ fn known_unsigned_byte_decides_signed_comparison_in_all_proof_modes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: modular buffer ranges across fresh, expanded, and retained proofs"]
 fn modular_buffer_ranges_rejoin_in_all_proof_modes() {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -21350,6 +21787,7 @@ fn modular_buffer_ranges_rejoin_in_all_proof_modes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: repeated-retain whole-proof and four selected-call expansions took 11.4s in parallel"]
 fn repeated_retains_expand_with_checked_count_bounds() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -21367,7 +21805,7 @@ fn repeated_retains_expand_with_checked_count_bounds() {
         .expect("retain bounds should expand as checked obligation proofs");
     verify_expanded_function_source(source, &expanded, &sources, "retain_many")
         .expect("the expanded retain proof rechecks");
-    for (offset, _) in source.match_indices("step(child_retain, {});") {
+    for (offset, _) in source.match_indices("step(child_retain);") {
         let position = expansion::position_at_offset(source, offset);
         let expanded = expand_c_tactic_source_at(source, &sources, position.line, position.column)
             .expect("each retained call's implicit proof should expand");
@@ -21494,6 +21932,7 @@ fn tidied_expansion_closers_leave_other_closers_alone() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original C fixture expansion and checking take 0.9s"]
 fn integer_count_authority_retirement_expands_and_rechecks() {
     let (source, sources) =
@@ -21551,6 +21990,7 @@ fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.715s in parallel focused validation"]
 fn signed_loop_certificate_keeps_its_native_type_in_integer_default_source() {
     let (source, inputs) =
@@ -21596,6 +22036,7 @@ fn relinked_node_empty_check_requires_distinct_addresses() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies the original mutex worker claim"]
 fn early_return_expansion_keeps_resource_call_outputs_in_scope() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -21615,6 +22056,7 @@ fn early_return_expansion_keeps_resource_call_outputs_in_scope() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies the original C-valued contract let"]
 fn integer_arithmetic_contract_let_expansion_preserves_the_integer_body() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -21635,6 +22077,7 @@ fn integer_arithmetic_contract_let_expansion_preserves_the_integer_body() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies a pass-count loop"]
 fn historical_integer_algebra_leaves_expand_without_normalize() {
     let (source, sources) = mdtest_sources("mdtests/a_loop_is_ranked_by_its_pass_count.md");
@@ -21650,6 +22093,7 @@ fn historical_integer_algebra_leaves_expand_without_normalize() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies a memory predicate proof"]
 fn sign_changes_in_integer_certificates_expand_without_normalize() {
     let (source, sources) = mdtest_sources("mdtests/memory_predicate_explicit_frame.md");
@@ -21670,6 +22114,7 @@ fn sign_changes_in_integer_certificates_expand_without_normalize() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies all sort3 paths"]
 fn sequential_sort_branches_keep_their_expanded_continuations_in_scope() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/sort3_sorted.md");
@@ -21688,6 +22133,7 @@ fn sequential_sort_branches_keep_their_expanded_continuations_in_scope() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies replacement with nonempty children"]
 fn replacement_with_children_preserves_pointer_values_across_stores() {
     let (source, sources) = mdtest_sources("mdtests/rb_replace_node_with_children.md");
@@ -21710,6 +22156,7 @@ fn replacement_with_children_preserves_pointer_values_across_stores() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original, expanded, and hostile read-over-write proofs"]
 fn grouped_rewritten_claims_close_ownership_in_contract_order() {
     let (source, sources) = mdtest_sources("mdtests/a_read_of_a_stored_cell_stays_a_read.md");
@@ -21912,6 +22359,7 @@ fn retained_loop_metadata_transport_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original arena_free proof takes about eight seconds"]
 fn original_arena_free_expands_and_rechecks_without_implicit_search() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -21934,6 +22382,7 @@ fn original_arena_free_expands_and_rechecks_without_implicit_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original arena initialization expansion and replay"]
 fn original_arena_init_expands_without_transport_and_rechecks() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -21960,6 +22409,7 @@ fn original_arena_init_expands_without_transport_and_rechecks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original arena write expansion and replay"]
 fn original_arena_write_expands_without_transport_and_rechecks() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -22010,6 +22460,7 @@ fn scoped_conversion_requirements_expand_before_the_have() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s selected signed-byte swap expansion"]
 fn signed_byte_swap_selected_frame_expands_without_search() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -22079,6 +22530,7 @@ fn contract_claim_requirements_expand_as_ordinary_have_proofs() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s selected crowded-ownership proof expansion"]
 fn crowded_store_ownership_explicit_transport_expands_without_search() {
     let (source, sources) =
@@ -22092,6 +22544,7 @@ fn crowded_store_ownership_explicit_transport_expands_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: selected store-frame repair expansion corpus"]
 fn store_ownership_frame_repairs_expand_without_search() {
     for (fixture, claim) in [
@@ -22118,6 +22571,7 @@ fn store_ownership_frame_repairs_expand_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original pool and ring store-frame expansion"]
 fn original_pool_and_ring_store_frames_expand_without_search() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -22154,6 +22608,7 @@ fn original_pool_and_ring_store_frames_expand_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: explicit store byte-gap expansion"]
 fn explicit_store_byte_gap_expands_without_search() {
     let (source, sources) = mdtest_sources("mdtests/store_byte_gap_uses_explicit_order.md");
@@ -22213,6 +22668,7 @@ fn loop_guard_paths_expand_distinct_nested_proofs() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies, expands and rechecks three arithmetic proof fixtures"]
 fn machine_subtraction_fact_bridges_expand_without_implicit_search() {
     for (fixture, function) in [
@@ -22266,12 +22722,78 @@ void stamp(int* p, int* q) {
 "#;
     let sources = [("restrict.c", c)];
     let label = "stamp.contract";
+    let missing_separation = source.replace(
+        "have separate(memory(p[1]), memory(q[0..1])) by { solve(); }\n            step();",
+        "step();",
+    );
+    let report = without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&missing_separation, &sources).map_err(|error| error.concise_report())
+    })
+    .expect_err("the store needs separation from the view");
+    assert!(
+        report.contains("prove this write is separate from the live views"),
+        "{report}"
+    );
+    assert!(
+        report.contains("goal: separate(memory(p[1]), memory(q[0]))"),
+        "{report}"
+    );
     let expanded = expand_c_claim_source_by_label(source, &sources, label)
         .unwrap_or_else(|error| panic!("{}", error.report()));
     assert!(
         expanded.contains("separate_restrict(memory((id as (int32 *))[0..4])"),
         "{expanded}"
     );
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+fn composite_view_assembly_requires_the_rewritten_body_fact() {
+    let c = r#"
+void read_tagged(int *cell, int *p);
+void caller(int *cell, int *p, int *q) { read_tagged(cell, p); }
+"#;
+    let source = r#"verifying "tagged.c";
+function tag(p: int32*) -> int32 {
+    if p == 0 { 1 } else { 7 }
+}
+resource tagged(cell: int32*, formal: int32*) {
+    owns *cell;
+    fact forall (k: int32) { k == 1 implies tag(formal) == 7 };
+}
+extern void read_tagged(int32* cell, int32* p) { views tagged(cell, p); }
+void caller(int32* cell, int32* p, int32* q) {
+    owns *cell;
+    requires p == q;
+    requires forall (k: int32) { k == 1 implies tag(q) == 7 };
+} by {
+    have forall (k: int32) { k == 1 implies tag(p) == 7 } by { rewrite(p, q); solve(); }
+    step();
+    step();
+}
+"#;
+    let sources = [("tagged.c", c)];
+    let missing = source.replace(
+        "    have forall (k: int32) { k == 1 implies tag(p) == 7 } by { rewrite(p, q); solve(); }\n",
+        "",
+    );
+    let refusal = verify_c_sources(&missing, &sources)
+        .expect_err("the call must check the body fact in its own spelling")
+        .concise_report();
+    assert!(
+        refusal.contains("missing pure fact")
+            && refusal.contains("`forall (k: int32) { k == 1 implies tag(formal) == 7 }`"),
+        "{refusal}"
+    );
+    assert!(refusal.contains("formal = p"), "{refusal}");
+
+    let label = "caller.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("rewrite(p, q)"), "{expanded}");
     without_implicit_solve_for_claim(label, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
@@ -22309,6 +22831,7 @@ fn store_index_separation_expands_and_replays() {
 // fact `((n - 1u64) as uint64) != 0u64`. The program is the one function of
 // `a_store_at_the_last_size_t_heap_element_keeps_the_first.md` it replays.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s; the int32 store expansion and the size_t fixtures run in the gate"]
 fn wide_store_index_separation_expands_and_replays() {
     let c = "#include <stddef.h>\n#include <stdlib.h>\nint read_first(size_t n) {\n    int *q = malloc(n * sizeof(int));\n    if (q == 0) {\n        return 0;\n    }\n    q[0] = 7;\n    q[n - 1] = 1;\n    int r = q[0];\n    free(q);\n    return r;\n}\n";
@@ -22353,6 +22876,7 @@ int32 distinct(int32* q, int32 j) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: element address disequality variants expand and cold replay"]
 fn element_address_disequality_variants_expand_and_replay() {
     for (fixture, functions) in [
@@ -22399,6 +22923,7 @@ fn element_address_disequality_replays(source: &str, sources: &[(&str, &str)], f
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: store index separation variants expand and cold replay"]
 fn store_index_separation_variants_expand_and_replay() {
     for (fixture, function, claim) in [
@@ -22473,6 +22998,7 @@ fn single_store_definedness_transport_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: explicit scalar framing expansion and replay"]
 fn atomic_store_scalar_framing_expands_and_replays() {
     for (fixture, function) in [
@@ -22508,6 +23034,7 @@ fn atomic_store_scalar_framing_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: explicit pointer aliases across full expansion and cold replay"]
 fn explicit_pointer_alias_repairs_expand_and_cold_replay() {
     let mut failures = Vec::new();
@@ -22717,6 +23244,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: explicit store geometry expansion"]
 fn explicit_store_geometry_expands_without_search() {
     let (source, sources) =
@@ -22733,6 +23261,7 @@ fn explicit_store_geometry_expands_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original fork/join store-frame expansion"]
 fn fork_join_store_frame_expands_without_search() {
     let directory =
@@ -22746,6 +23275,7 @@ fn fork_join_store_frame_expands_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: compact-store proof repairs expand and cold replay"]
 fn compact_store_proof_repairs_expand_and_replay() {
     for (fixture, function) in [
@@ -22786,6 +23316,7 @@ fn compact_store_proof_repairs_expand_and_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: symbolic ownership endpoint proof expansion and replay"]
 fn symbolic_ownership_window_endpoint_expands_and_replays() {
     let (source, c_sources) = mdtest_sources("mdtests/a_callee_owns_a_window_of_a_64_bit_range.md");
@@ -23147,7 +23678,7 @@ test_batches! {
         whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms,
         whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm,
         whole_claim_expansion_keeps_tactics_before_a_nested_match,
-        whole_claim_expansion_keeps_a_call_steps_empty_binder_map,
+        whole_claim_expansion_omits_a_call_steps_empty_input_map,
     ],
     expansion_batch_19: [
         whole_claim_expansion_keeps_a_proof_if_after_execution,
@@ -23561,6 +24092,7 @@ test_batches! {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: repaired call and fold obligations expand and cold replay"]
 fn repaired_step_fold_obligations_expand_and_cold_replay() {
     for (fixture, function) in [
@@ -23731,6 +24263,7 @@ fn outcome_apply_obligations_retain_each_return_and_fold_evidence() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: population obligation expansion and cold replay"]
 fn empty_population_application_expands_its_obligation() {
     let (source, sources) = mdtest_sources("mdtests/an_empty_population_counts_no_member.md");
@@ -23748,6 +24281,7 @@ fn empty_population_application_expands_its_obligation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: range-fold guard expansion and cold replay"]
 fn bare_range_fold_application_expands_its_guards() {
     let (source, _) = mdtest_sources("mdtests/fold_law_accepts_a_defined_endpoint.md");
@@ -23770,6 +24304,7 @@ fn bare_range_fold_application_expands_its_guards() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: empty-fold guard expansion and cold replay"]
 fn bare_empty_range_fold_application_expands_its_guard() {
     let source = r#"
@@ -23915,6 +24450,7 @@ fn rewritten_concrete_range_fold_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: native view expansion, cold replay, and missing-bound controls"]
 fn native_byte_count_view_restrictions_expand_to_resource_laws() {
     for (element, proof) in [
@@ -24035,6 +24571,7 @@ fn instantiated_indexed_read_expands_without_transport() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: explicit fold preservation expands and cold replays"]
 fn explicit_fold_preservation_expands_without_legacy_transport() {
     for (fixture, function) in [
@@ -24076,6 +24613,7 @@ fn explicit_fold_preservation_expands_without_legacy_transport() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: initialized input and explicit read preservation cold replay"]
 fn initialized_input_and_preserved_reads_expand_without_legacy_transport() {
     for (fixture, function) in [
@@ -24117,6 +24655,7 @@ fn initialized_input_and_preserved_reads_expand_without_legacy_transport() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original pointer-field resource fold, expansion and retained replay"]
 fn pointer_field_resource_fold_preserves_match_binders_across_proof_modes() {
     let (source, sources) = mdtest_sources("mdtests/rb_produces_through_the_root_cell.md");
@@ -24174,6 +24713,7 @@ fn contract_unfold_rejects_another_application() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: byte-copy predicate expansion and independent replay"]
 fn local_byte_predicate_unfolds_expand_and_replay() {
     let (source, sources) =
@@ -24192,6 +24732,7 @@ fn local_byte_predicate_unfolds_expand_and_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original arena allocation expansion and replay"]
 fn original_arena_alloc_expands_without_transport_and_rechecks() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -24223,6 +24764,7 @@ fn original_arena_alloc_expands_without_transport_and_rechecks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: exceptional claims, routed throws, and grouped outcomes expand and cold replay"]
 fn typed_contract_exceptions_expand_and_recheck() {
     for (fixture, claim) in [
@@ -24263,6 +24805,7 @@ fn typed_contract_exceptions_expand_and_recheck() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: scalar, pointer, and aggregate contract-result expansion and cold replay"]
 fn typed_contract_results_expand_and_recheck() {
     for (fixture, claim) in [
@@ -24290,6 +24833,7 @@ fn typed_contract_results_expand_and_recheck() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: multi-byte bit-field update expansion and replay"]
 fn bit_field_pointer_and_value_capture_expand_and_replay() {
     let (source, sources) = mdtest_sources("mdtests/c_bit_field_multiword_update_and_copy.md");
@@ -24298,7 +24842,7 @@ fn bit_field_pointer_and_value_capture_expand_and_replay() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let source = format!(
-        "{source}\nby {{ step_until(statement(2)); have p != 0; step_until(function.exit); solve(); }}"
+        "{source}\nby {{ step_until(statement(2).entry); have p != 0; step_until(function.exit); solve(); }}"
     );
     let claim = "answer.contract";
     let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
@@ -24331,7 +24875,7 @@ fn bit_field_declarations_keep_later_local_ordinals() {
     let click = r#"
         verifying "fields.c";
         int32 answer() { ensures result == 1; } by {
-            step_until(statement(3));
+            step_until(statement(3).entry);
             have answer.local(4) == 1;
             step_until(function.exit);
             solve();
@@ -24341,6 +24885,7 @@ fn bit_field_declarations_keep_later_local_ordinals() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: partially initialized bit-field copy expansion and replay"]
 fn bit_field_record_storage_expands_and_replays() {
     let (source, sources) = mdtest_sources("mdtests/c_bit_field_memcpy_roundtrip.md");
@@ -24349,7 +24894,7 @@ fn bit_field_record_storage_expands_and_replays() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let source = format!(
-        "{source}\nby {{ step_until(statement(3)); have &source != 0; step_until(function.exit); solve(); }}"
+        "{source}\nby {{ step_until(statement(3).entry); have &source != 0; step_until(function.exit); solve(); }}"
     );
     let claim = "answer.contract";
     let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
@@ -24364,6 +24909,85 @@ fn bit_field_record_storage_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: compound literal expansion and replay takes about one second"]
+fn compound_literal_source_reference_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/c_struct_compound_literal_argument.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = format!("{source}\nby {{ step_until(function.exit); solve(); }}");
+    let claim = "answer.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("answer.compound_literal(0)"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("answer.local(0)"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: row-pointer expansion and replay"]
+fn row_pointer_source_binding_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/c_local_row_pointer_offset.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = format!(
+        "{source}\nby {{
+            step_until(statement(4).entry);
+            have row != 0;
+            step_until(statement(5).entry);
+            have next != 0;
+            step_until(function.exit);
+            solve();
+        }}"
+    );
+    let claim = "select_rows.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert_ne!(expanded, source);
+    assert!(expanded.contains("have row != 0"), "{expanded}");
+    assert!(expanded.contains("have next != 0"), "{expanded}");
+    assert!(!expanded.contains("__click_row_pointer_"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+fn row_pointer_declaration_keeps_later_local_ordinals() {
+    let c = r#"
+        int select_rows(void) {
+            int matrix[2][3] = {{11, 12, 13}, {21, 22, 23}};
+            int (*row)[3] = matrix;
+            int after = row[1][0];
+            return after;
+        }
+    "#;
+    let click = r#"
+        verifying "matrix.c";
+        int32 select_rows() { ensures result == 21; } by {
+            step_until(statement(3).entry);
+            have select_rows.local(3) == 21;
+            step_until(function.exit);
+            solve();
+        }
+    "#;
+    verify_c_sources(click, &[("matrix.c", c)]).unwrap();
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: saved-memory and member-address expansion with cold replay"]
 fn specification_member_addresses_expand_and_recheck() {
     for (fixture, claim) in [
@@ -24396,6 +25020,7 @@ fn specification_member_addresses_expand_and_recheck() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: original arena pipeline expansion and replay"]
 fn original_arena_pipeline_return_expands_without_transport_and_rechecks() {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/arena");
@@ -24489,6 +25114,7 @@ fn refuted_match_arm_retains_its_bridge_proof_from_propagated_false() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: member-domain resource fold, expansion and strict cold/retained replay"]
 fn returned_member_domain_access_expands_and_replays() {
     let (source, sources) =
@@ -24528,6 +25154,7 @@ fn returned_member_domain_access_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: consumed field refusal, preservation expansion and cold replay"]
 fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
     let (source, sources) =
@@ -24564,6 +25191,7 @@ fn consumed_field_refusal_keeps_an_ordinary_preservation_repair() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: fold model expansion and replay"]
 fn integer_fold_zero_contribution_expansion_replays_without_search() {
     use crate::surface::{verify_c_sources, without_implicit_solve};
@@ -24586,12 +25214,52 @@ fn integer_fold_zero_contribution_expansion_replays_without_search() {
 
 #[test]
 fn whole_iterated_clause_expands_and_rechecks() {
+    // Supply the map fact at entry to isolate whole-clause fold and unfold.
+    let source = r#"
+        verifying "cells.c";
+
+        resource arena_cells(data: int32*, occupied: int32*, capacity: int32) {
+            owns occupied[0..capacity];
+            forall (k: int32) where 0 <= k and k < capacity {
+                if occupied[k] == 0 {
+                    owns data[k..k + 1];
+                }
+            }
+        }
+
+        void init_cells(int32* data, int32* occupied, int32 capacity) {
+            requires 0 <= capacity;
+            requires forall (k: int32) { 0 <= k and k < capacity implies occupied[k] == 0 };
+            consumes occupied[0..capacity];
+            consumes data[0..capacity];
+            produces arena_cells(data, occupied, capacity);
+        } by {
+            step();
+            fold(arena_cells(data, occupied, capacity)[..]);
+            mark clause_args;
+            unfold(at(clause_args, arena_cells(data, occupied, capacity))[..]);
+            fold(arena_cells(data, occupied, capacity)[..]);
+            fold(arena_cells(data, occupied, capacity));
+        }
+    "#;
+    let c_source = "void init_cells(int32* data, int32* occupied, int32 capacity) {}";
+    check_whole_iterated_clause_expansion(source, &[("cells.c", c_source)]);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: deriving the map through a loop before replay took 11.2s in the parallel gate"]
+fn whole_iterated_clause_expands_and_rechecks_after_initialization_loop() {
     let (source, sources) = mdtest_sources("mdtests/iterated_ownership_whole_clause.md");
     let sources = sources
         .iter()
         .map(|(name, body)| (name.as_str(), body.as_str()))
         .collect::<Vec<_>>();
-    let expanded = expand_c_claim_source_by_label(&source, &sources, "init_cells.contract")
+    check_whole_iterated_clause_expansion(&source, &sources);
+}
+
+fn check_whole_iterated_clause_expansion(source: &str, sources: &[(&str, &str)]) {
+    let expanded = expand_c_claim_source_by_label(source, sources, "init_cells.contract")
         .unwrap_or_else(|error| panic!("{}", error.report()));
     assert!(
         expanded.contains("fold(arena_cells(data, occupied, capacity)[..]);")
@@ -24600,7 +25268,7 @@ fn whole_iterated_clause_expands_and_rechecks() {
         "{expanded}"
     );
     without_implicit_solve_for_claim("init_cells.contract", || {
-        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        verify_c_sources(&expanded, sources).map_err(|error| error.report())
     })
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
@@ -24676,6 +25344,7 @@ theorem increment_domain(x: int32) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: three expansion and strict replay controls took 4.3s locally"]
 fn expanded_call_names_the_folded_supplier() {
     let c = "void update(int *p) { *p = 7; } void caller(int *p) { update(p); }";
@@ -24727,4 +25396,20 @@ fn expanded_call_names_the_folded_supplier() {
         })
         .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
     }
+}
+
+#[test]
+fn explicit_produced_view_release_expands_and_reverifies() {
+    let (source, c_sources) = mdtest_sources("mdtests/explicit_produced_view_restores_owner.md");
+    let c_sources = c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &c_sources, "update")
+        .expect("expand the caller's proof");
+    assert!(expanded.contains("release_view("), "{expanded}");
+    without_implicit_solve_for_claim("update.contract", || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("replay the explicit view release");
 }

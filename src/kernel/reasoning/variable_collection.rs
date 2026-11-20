@@ -746,7 +746,17 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
             collect_condition_bitvector_variables(condition.native_compat(), variables)
         }
         Term::Bitvector32(bits) => collect_bitvector_variables(bits.native_compat(), variables),
-        Term::Integer(integer) => collect_integer_variables(integer.native_compat(), variables),
+        Term::Integer(integer) => {
+            if !integer.root().is_some_and(|root| {
+                retained_folds::collect_integer_scope_variables(
+                    root,
+                    retained_folds::FoldVariableRead::ExpressionFree,
+                    variables,
+                )
+            }) {
+                collect_integer_variables(integer.native_compat(), variables);
+            }
+        }
         Term::PointerOffset(offset) => {
             if let Some(root) = offset.root() {
                 root.visit_root_in_order(false, |node| match node {
@@ -3296,17 +3306,17 @@ fn collect_stored_load_connection_variables(
 }
 
 fn collect_machine_read_variables(
-    memory: &SharedMemory,
+    point: &crate::kernel::ProgramPoint,
     pointer: &Address,
     kind: LoadKind,
     variables: &mut BTreeSet<Variable>,
 ) {
+    let memory = point.shared_memory();
     collect_shared_memory_bitvector_variables(memory, variables);
     collect_pointer_bitvector_variables(pointer, variables);
     collect_stored_load_connection_variables(memory, pointer, variables);
     if COLLECTING_HAVOC_RANGES.with(std::cell::Cell::get)
-        && let Some(origin) =
-            crate::kernel::eval::scalar_read_origin_for_cell(memory, pointer, kind)
+        && let Some(origin) = crate::kernel::eval::scalar_read_origin_for_cell(point, pointer, kind)
         && origin != *memory
     {
         // A structural version can precede the live DAG whose changed
@@ -3402,7 +3412,7 @@ pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BT
             }
         }
         MachineTerm::MemoryLoad(memory, pointer, kind) => {
-            collect_machine_read_variables(memory.shared_memory(), pointer, *kind, variables);
+            collect_machine_read_variables(memory, pointer, *kind, variables);
         }
         MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_bitvector_variables(pointer, variables);

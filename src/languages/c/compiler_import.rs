@@ -650,7 +650,7 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
         return Err(match &config.origin {
             ConfigOrigin::File => "import lock does not match the import config".into(),
             ConfigOrigin::ProjectUnit(name) => format!(
-                "the project lock for unit `{name}` does not match its description in `click.project.json`; run `click import lock` to prepare it again"
+                "the project lock for unit `{name}` does not match its description in `click.project.json`; run `click capture` to prepare it again"
             ),
         });
     }
@@ -673,7 +673,7 @@ fn load_locked(config: &Config, lock: &Lock) -> Result<Vec<PreparedCImport>, Str
         && *catalog != system_headers::catalog_digest(config.c_target())
     {
         return Err(format!(
-            "Click's system headers for {} changed since this import lock was prepared; run `click import lock` to prepare the import against them",
+            "Click's system headers for {} changed since this import lock was prepared; run `click capture` to prepare the import against them",
             config.target.name()
         ));
     }
@@ -1090,7 +1090,7 @@ fn validate_locked_source(
         for (name, digest) in &locked.click_headers {
             if current.get(name.as_str()) != Some(digest) {
                 return Err(format!(
-                    "Click's <{name}> changed since the import lock for `{}` was prepared; run `click import lock` to prepare it again",
+                    "Click's <{name}> changed since the import lock for `{}` was prepared; run `click capture` to prepare it again",
                     source.logical_source
                 ));
             }
@@ -1713,6 +1713,13 @@ fn canonicalize_roots(roots: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
 
 fn output_exclusions(config: &Config) -> Result<BTreeSet<PathBuf>, String> {
     let mut result = BTreeSet::new();
+    if matches!(config.origin, ConfigOrigin::ProjectUnit(_)) {
+        result.insert(path_identity(
+            &config
+                .config_directory
+                .join(crate::project::ARTIFACT_DIRECTORY),
+        )?);
+    }
     result.insert(path_identity(&lock_path_from_config(config))?);
     for source in &config.sources {
         result.insert(path_identity(&resolve_artifact(config, &source.artifact)?)?);
@@ -2146,15 +2153,12 @@ fn unique_temp_path(prefix: &str, suffix: &str) -> Result<PathBuf, String> {
 fn validate_lock_shape(lock: &Lock, config: &Config) -> Result<(), String> {
     if lock.target != CTarget::TRIPLE || lock.mode != config.target.mode() {
         return Err(format!(
-            "the import lock was not prepared for target {}; run `click import lock` to prepare it again",
+            "the import lock was not prepared for target {}; run `click capture` to prepare it again",
             config.target.name()
         ));
     }
     if lock.schema != LOCK_SCHEMA || lock.click_header_catalog_sha256.is_none() {
         return Err("import lock schema or target does not match config".into());
-    }
-    if lock.sources.len() != config.sources.len() {
-        return Err("import lock source count does not match config".into());
     }
     let mut names = HashSet::new();
     for source in &lock.sources {
@@ -2269,13 +2273,13 @@ mod tests {
         let proofs = root.join("proofs");
         fs::create_dir_all(&upstream).unwrap();
         fs::create_dir_all(proofs.join("checks")).unwrap();
-        fs::create_dir_all(proofs.join(".click/up")).unwrap();
+        fs::create_dir_all(proofs.join(".click/captures/up")).unwrap();
         let source = b"#include \"local.h\"\nint answer(void) { return VALUE; }\n";
         let header = b"#define VALUE 42\n";
         let artifact = b"int answer(void) { return 42; }\n";
         fs::write(upstream.join("main.c"), source).unwrap();
         fs::write(upstream.join("local.h"), header).unwrap();
-        fs::write(proofs.join(".click/up/main.c.i"), artifact).unwrap();
+        fs::write(proofs.join(".click/captures/up/main.c.i"), artifact).unwrap();
         let sidecar = proofs.join("checks/main.click");
         let proof = "target \"x86_64-unknown-linux-gnu\"; mode \"kernel\"; verifying \"../../upstream/main.c\"; int answer() { ensures result == 42; }";
         fs::write(&sidecar, proof).unwrap();
@@ -2392,7 +2396,7 @@ mod tests {
                 &b"int answer(void) { return 43; }\n"[..],
             ),
             (
-                proofs.join(".click/up/main.c.i"),
+                proofs.join(".click/captures/up/main.c.i"),
                 &artifact[..],
                 &b"int answer(void) { return 43; }\n"[..],
             ),
@@ -2433,7 +2437,7 @@ mod tests {
         fs::write(&lock_file, serde_json::to_vec(&altered).unwrap()).unwrap();
         let error = load().unwrap_err();
         assert!(
-            error.contains("is in an earlier format; run `click import lock`"),
+            error.contains("is in an earlier format; run `click capture`"),
             "{error}"
         );
         fs::write(&lock_file, original_lock).unwrap();
@@ -2473,7 +2477,7 @@ mod tests {
             "main.click",
             crate::project::FILE_NAME,
             crate::project::LOCK_NAME,
-            ".click/main/main.c.i",
+            ".click/captures/main/main.c.i",
         ] {
             let destination = fixture.0.join(name);
             fs::create_dir_all(destination.parent().unwrap()).unwrap();
@@ -2545,7 +2549,7 @@ mod tests {
         fs::write(&header, "#define LOCAL_OFFSET 35\n").unwrap();
         assert!(crate::cli::read_verification_inputs(&sidecar, &proof).is_err());
         fs::copy(original.join("local.h"), &header).unwrap();
-        let artifact = fixture.0.join(".click/main/main.c.i");
+        let artifact = fixture.0.join(".click/captures/main/main.c.i");
         fs::write(&artifact, "int answer(void) { return 43; }\n").unwrap();
         assert!(crate::cli::read_verification_inputs(&sidecar, &proof).is_err());
     }
@@ -2848,7 +2852,7 @@ mod tests {
     #[test]
     fn kbuild_profile_matches_its_documented_classification() {
         let docs = fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/reference/cli/import.md"),
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/reference/cli/capture.md"),
         )
         .unwrap();
         let heading = "### Option profile `linux-6.8-x86_64-kbuild`";
@@ -2935,6 +2939,7 @@ mod tests {
     // macOS `/usr/bin/gcc` is Apple Clang and has no GNU `cc1` executable.
     #[cfg(not(target_os = "macos"))]
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 3s in the parallel gate"]
     fn real_gcc_round_trip_uses_fixed_c_profile() {
         let root = std::env::temp_dir().join(format!("click-import-test-{}", std::process::id()));

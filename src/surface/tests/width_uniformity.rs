@@ -575,6 +575,7 @@ macro_rules! format_tests {
     ($($test:ident => $ty:expr),* $(,)?) => {
         $(
             #[test]
+            #[cfg(not(feature = "fast-gate"))]
             #[ignore = "nightly: 0.4s to 1.3s each, about 6s for all ten"]
             fn $test() {
                 prove_by_omitted_proof(stringify!($test), &proved_theorems(FAMILIES.iter(), &[$ty]));

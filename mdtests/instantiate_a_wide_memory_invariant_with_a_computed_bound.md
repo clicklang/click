@@ -19,7 +19,7 @@ void f(int32* p, uint64 end, uint64 count, uint64 k) {
     ensures end == old(end);
     requires count <= end;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases to_integer(start) - to_integer(k);
         invariant forall (j: uint64) { j < start implies p[j] == old(p[j]) };
@@ -28,7 +28,7 @@ void f(int32* p, uint64 end, uint64 count, uint64 k) {
                 intro(); intro(); normalize();
             }
         }
-        preserve by {
+        maintain by {
             have forall (x: uint64) { x < start implies p[x] == old(p[x]) } by {
                 intro(); intro();
                 instantiate(forall (j: uint64) { j < start implies p[j] == old(p[j]) }, x);

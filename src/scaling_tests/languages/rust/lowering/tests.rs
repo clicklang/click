@@ -7,7 +7,7 @@ fn narrow_remainder_lowering_has_bounded_selected_and_linear_total_work() {
     let mut export = super::super::charon::decode(
         include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/design/charon-trial/narrow-remainder/.click/widths/widths.rs.ullbc"
+            "/design/charon-trial/narrow-remainder/.click/captures/widths/widths.rs.ullbc"
         )),
         "widths.rs",
         include_bytes!(concat!(

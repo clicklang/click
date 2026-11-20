@@ -130,7 +130,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant old(state.phase) == SizedInsertDoublePhase::Before(g, p);
                 invariant state.model == sized_double_before(g, p, node);
                 initialize by solve();
-                preserve by {
+                maintain by {
                     let { tree: loop_tree } = unfold(state);
                     unfold(sized_double_before(g, p, node));
                     have loop_tree.model == SizedTree::Node(g, 0, Color::Black, 3,

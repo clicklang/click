@@ -41,7 +41,7 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
         decreases n - i;
         invariant i >= 0 and i <= n;
         invariant p == arr + i;
-        preserve by {
+        maintain by {
             step();
             step();
             have p == arr + i by {

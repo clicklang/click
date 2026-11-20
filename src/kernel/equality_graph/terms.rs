@@ -13,9 +13,10 @@
 //! Shallow keys preserve widths, signedness, and machine-term state identity.
 
 use super::{Address, AddressBase, AddressOffset, AffineOffset, MachineAtom, OffsetAtom, Variable};
+use crate::kernel::program_point::ReadKey;
 use crate::kernel::unary_node;
 use crate::kernel::unary_term;
-use crate::kernel::{MachineBinaryOp, MachineIntegerType};
+use crate::kernel::{MachineBinaryOp, MachineIntegerType, ProgramPoint};
 use crate::kernel::{bits32_constant, constant_i64, constant_u64, int64_constant, uint64_constant};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
@@ -231,29 +232,26 @@ pub(super) fn uint64_binary(
 
 /// The same registered four-byte read accepted by `enqueue_int32_load`.
 /// A scalar variable without this typed producer metadata stays opaque.
-pub(super) fn int32_read(
-    term: &crate::kernel::MachineTerm,
-) -> Option<(crate::kernel::SharedMemory, Address)> {
+pub(super) fn int32_read(term: &crate::kernel::MachineTerm) -> Option<(ProgramPoint, Address)> {
     let read = crate::kernel::eval::scalar_read_observation(
         crate::kernel::MachineOperandView::Legacy(term),
     )?;
-    (read.kind.is_word32() && read.bytes == 4).then_some((read.memory, read.pointer))
+    (read.kind.is_word32() && read.bytes == 4).then_some((read.point, read.pointer))
 }
 
-pub(super) fn uint64_read(
-    term: &crate::kernel::MachineTerm,
-) -> Option<(crate::kernel::SharedMemory, Address)> {
+pub(super) fn uint64_read(term: &crate::kernel::MachineTerm) -> Option<(ProgramPoint, Address)> {
     use crate::kernel::{LoadKind, MachineTerm as T};
     match term {
         T::MemoryLoad(memory, pointer, LoadKind::Bits64) => {
-            Some((memory.shared_memory().clone(), pointer.as_ref().clone()))
+            Some((memory.clone(), pointer.as_ref().clone()))
         }
         T::Variable(variable)
             if crate::kernel::registered_load_kind_for_variable(variable)
                 == Some(LoadKind::Bits64)
                 && crate::kernel::registered_load_bytes_for_variable(variable) == Some(8) =>
         {
-            crate::kernel::registered_load_for_variable(variable)
+            let (memory, address) = crate::kernel::registered_load_for_variable(variable)?;
+            Some((ProgramPoint::at(&memory), address))
         }
         _ => None,
     }
@@ -317,16 +315,16 @@ enum Node {
     UInt64(MachineAtom),
     UInt64Binary(UInt64Binary, u64, u64),
     UInt64Address(u64),
-    UInt64Read((u32, u32), u64),
+    UInt64Read(ReadKey, u64),
     Address(u64, u64),
     AddressShift(u64, i64),
     AddressOffset(u64, u64),
-    PointerRead((u32, u32), u64, crate::kernel::LoadKind),
+    PointerRead(ReadKey, u64, crate::kernel::LoadKind),
     Footprint(u64, u64),
     Int32(MachineAtom),
-    Int32Read((u32, u32), u64),
+    Int32Read(ReadKey, u64),
     /// An 8- or 16-bit read of a state at an address, of its load kind.
-    NarrowRead((u32, u32), u64, crate::kernel::LoadKind),
+    NarrowRead(ReadKey, u64, crate::kernel::LoadKind),
     Int32Add(u64, u64),
     Int32Binary(Int32Binary, u64, u64),
     Int32Unary(Int32Unary, u64),
@@ -355,11 +353,11 @@ enum Application {
     Condition(congruence::ConditionKind, u64, u64),
     UInt64Binary(UInt64Binary, u64, u64),
     UInt64Address(u64),
-    UInt64Read((u32, u32), u64),
+    UInt64Read(ReadKey, u64),
     Address(u64, u64),
     AddressShift(u64, i64),
     AddressOffset(u64, u64),
-    PointerRead((u32, u32), u64, crate::kernel::LoadKind),
+    PointerRead(ReadKey, u64, crate::kernel::LoadKind),
     Footprint(u64, u64),
     Add(u64, u64),
     Int32Add(u64, u64),
@@ -369,11 +367,11 @@ enum Application {
     Int64Scaled(u64, i64, bool),
     // Defining state, exact storage block ID, offset node/class ID.
     // Only registered four-byte loads in the int32 interpretation enter here.
-    Int32Load((u32, u32), u64),
+    Int32Load(ReadKey, u64),
     // A registered 8- or 16-bit read: its defining state, its address
     // class, and its kind. Two reads of one state and kind at equal
     // addresses are one value.
-    NarrowLoad((u32, u32), u64, crate::kernel::LoadKind),
+    NarrowLoad(ReadKey, u64, crate::kernel::LoadKind),
 }
 
 impl Application {
@@ -676,17 +674,17 @@ pub(super) struct TermClasses {
     registered_int32_loads: PersistentSet<u64>,
     // Registration dependencies are drained before any public answer. Keeping
     // this worklist iterative handles loads used as indices of further loads.
-    pending_loads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Address)>,
+    pending_loads: Vec<(u64, ProgramPoint, crate::kernel::Address)>,
     // Signed byte reads still to be related to their unsigned read (R-mem).
-    pending_signed_byte_reads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Address)>,
+    pending_signed_byte_reads: Vec<(u64, ProgramPoint, crate::kernel::Address)>,
     // `uint32` reads still to be related to their cell's `int32` read by σ
     // (R-mem at 32 bits).
-    pending_unsigned_word_reads: Vec<(u64, crate::kernel::SharedMemory, crate::kernel::Address)>,
+    pending_unsigned_word_reads: Vec<(u64, ProgramPoint, crate::kernel::Address)>,
     // 8- and 16-bit reads whose load application is still to be registered
     // (`enqueue_narrow_load`).
     pending_narrow_loads: Vec<(
         u64,
-        crate::kernel::SharedMemory,
+        ProgramPoint,
         crate::kernel::Address,
         crate::kernel::LoadKind,
     )>,
@@ -908,7 +906,7 @@ impl TermClasses {
     /// address merges without enumerating aliases or unrelated reads.
     pub(super) fn pointer_read(
         &mut self,
-        retained_state: (u32, u32),
+        retained_state: ReadKey,
         address: u64,
         kind: crate::kernel::LoadKind,
         value: u64,
@@ -1825,10 +1823,10 @@ impl TermClasses {
         self.registered_int32_loads = self.registered_int32_loads.with_value(id);
         if read.kind == crate::kernel::LoadKind::UInt32 {
             self.pending_unsigned_word_reads
-                .push((id, read.memory, read.pointer));
+                .push((id, read.point, read.pointer));
             return;
         }
-        self.pending_loads.push((id, read.memory, read.pointer));
+        self.pending_loads.push((id, read.point, read.pointer));
     }
 
     fn enqueue_narrow_load(&mut self, id: u64, node: &Node) {
@@ -1852,7 +1850,7 @@ impl TermClasses {
         }
         self.registered_int32_loads = self.registered_int32_loads.with_value(id);
         self.pending_narrow_loads
-            .push((id, read.memory, read.pointer, read.kind));
+            .push((id, read.point, read.pointer, read.kind));
     }
 
     fn enqueue_signed_byte_read(&mut self, id: u64, node: &Node) {
@@ -1866,7 +1864,7 @@ impl TermClasses {
             return;
         }
         self.pending_signed_byte_reads
-            .push((id, read.memory, read.pointer));
+            .push((id, read.point, read.pointer));
     }
 
     fn register_pending_loads(&mut self) {
@@ -1904,10 +1902,10 @@ impl TermClasses {
             // R-mem at 32 bits: a `uint32` read is σ of its cell's `int32`
             // read, whose own registration makes it the cell's word load
             // application. One read interned, one σ node, one union.
-            if let Some((unsigned, memory, pointer)) = self.pending_unsigned_word_reads.pop() {
+            if let Some((unsigned, point, pointer)) = self.pending_unsigned_word_reads.pop() {
                 crate::instrumentation::record_deterministic_work(1);
-                let signed = crate::kernel::eval::scalar_read_for_exact_cell(
-                    &memory,
+                let signed = crate::kernel::eval::scalar_read_for_exact_cell_at(
+                    &point,
                     &pointer,
                     crate::kernel::LoadKind::Int32,
                     4,
@@ -1923,10 +1921,10 @@ impl TermClasses {
                 self.close(vec![(unsigned, cast)]);
                 continue;
             }
-            if let Some((signed, memory, pointer)) = self.pending_signed_byte_reads.pop() {
+            if let Some((signed, point, pointer)) = self.pending_signed_byte_reads.pop() {
                 crate::instrumentation::record_deterministic_work(1);
-                let unsigned = crate::kernel::eval::scalar_read_for_exact_cell(
-                    &memory,
+                let unsigned = crate::kernel::eval::scalar_read_for_exact_cell_at(
+                    &point,
                     &pointer,
                     crate::kernel::LoadKind::UInt8,
                     1,
@@ -1941,27 +1939,33 @@ impl TermClasses {
                 self.close(vec![(signed, cast)]);
                 continue;
             }
-            if let Some((id, memory, pointer, kind)) = self.pending_narrow_loads.pop() {
+            if let Some((id, point, pointer, kind)) = self.pending_narrow_loads.pop() {
                 crate::instrumentation::record_deterministic_work(1);
                 let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
                 let address = self.read_address(address);
                 self.register_application(
                     id,
-                    Application::NarrowLoad(memory.read_identity(), address, kind),
+                    Application::NarrowLoad(point.congruence_read_key(), address, kind),
                 );
                 // The read's recorded projection source at the same address,
                 // as for a four-byte read: one indexed edge, no history walk.
-                if let Some(source) =
-                    crate::kernel::prelude::canonical_load_projection_source(&memory, &pointer)
+                if point.read_version_id().is_none()
+                    && let Some(source) = crate::kernel::prelude::canonical_load_projection_source(
+                        point.shared_memory(),
+                        &pointer,
+                    )
                 {
-                    let source_read =
-                        self.intern_node(Node::NarrowRead(source.read_identity(), address, kind));
+                    let source_read = self.intern_node(Node::NarrowRead(
+                        ReadKey::Memory(source.read_identity()),
+                        address,
+                        kind,
+                    ));
                     self.close_with_affine_definition(vec![(id, source_read)], true);
                 }
                 // Value equalities come from explicit producer equations.
                 continue;
             }
-            let Some((id, memory, pointer)) = self.pending_loads.pop() else {
+            let Some((id, point, pointer)) = self.pending_loads.pop() else {
                 break;
             };
             crate::instrumentation::record_deterministic_work(1);
@@ -1970,16 +1974,24 @@ impl TermClasses {
             // must reindex this read even when no affine block relabel exists.
             let address = self.address(pointer.base.clone(), pointer.offset.clone()).0;
             let address = self.read_address(address);
-            self.register_application(id, Application::Int32Load(memory.read_identity(), address));
+            self.register_application(
+                id,
+                Application::Int32Load(point.congruence_read_key(), address),
+            );
             // Canonicalization recorded this exact cell projection when it
             // constructed the read. Retain both applications: the named read
             // and its source at the same address. This is one indexed edge,
             // not the mutable observation origin or a walk through history.
-            if let Some(source) =
-                crate::kernel::prelude::canonical_load_projection_source(&memory, &pointer)
+            if point.read_version_id().is_none()
+                && let Some(source) = crate::kernel::prelude::canonical_load_projection_source(
+                    point.shared_memory(),
+                    &pointer,
+                )
             {
-                let source_read =
-                    self.intern_node(Node::Int32Read(source.read_identity(), address));
+                let source_read = self.intern_node(Node::Int32Read(
+                    ReadKey::Memory(source.read_identity()),
+                    address,
+                ));
                 self.close_with_affine_definition(vec![(id, source_read)], true);
             }
             // The store's explicit equation supplies a word read's value.

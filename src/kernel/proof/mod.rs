@@ -42,11 +42,11 @@ pub(crate) use execution::{
     CheckedCallOutcomeSplit, CheckedExecutionEvent, CheckedProofCasePartition,
     CompletedExecutionFacts, ContractEntryAuthority, EvidenceRefusal, ExceptionalContinuation,
     ExceptionalEntry, ExecutionEvidence, ExecutionFrontier, ExecutionProofCore,
-    ExecutionRegionKind, FrontierPosition, LoopControlExit, LoopPhaseSource, OpenedContractEntry,
-    OpenedEntryFactSource, OutcomeEvidenceFork, ProofExecutionContinuation, ProofExecutionState,
-    RejectedResourceRewriteFact, ResourceObservationInput, ResourceRewriteCheckError,
-    UnestablishedInterfaceGoal, checked_branch_fact_is_available, exceptional_region,
-    old_reference_state, take_unestablished_interface_goal,
+    ExecutionRegionKind, FrontierPosition, InstanceUnfoldError, LoopControlExit, LoopPhaseSource,
+    OpenedContractEntry, OpenedEntryFactSource, OutcomeEvidenceFork, ProofExecutionContinuation,
+    ProofExecutionState, RejectedResourceRewriteFact, ResourceObservationInput,
+    ResourceRewriteCheckError, UnestablishedInterfaceGoal, checked_branch_fact_is_available,
+    exceptional_region, old_reference_state, take_unestablished_interface_goal,
 };
 pub(crate) use execution::{CheckedReturnSeed, OutcomeForkArm};
 #[allow(unused_imports)]
@@ -66,9 +66,9 @@ pub(crate) use facts::take_fact_entry_counts;
 pub(crate) use facts::{PropositionSource, PureFactStore, is_definedness_guard};
 pub(in crate::kernel) use facts::{clear_rewritten_load_syntax_cache, clear_selected_atom_cache};
 pub(crate) use object::{
-    ExecutionUpdateError, FrontierSplitError, ProofFocusError, ProofJoinError, ProofObject,
-    ProofState, PropositionCloseError, PropositionIntroduction, PropositionKnownContext,
-    PropositionSplitError,
+    ExecutionUpdateError, FrontierSplitError, PreparedLoopInvariantEdge, ProofFocusError,
+    ProofJoinError, ProofObject, ProofState, PropositionCloseError, PropositionIntroduction,
+    PropositionKnownContext, PropositionSplitError,
 };
 pub(crate) use obligations::{
     CheckedProposition, ClaimGoalError, ClaimGoalEvidence, ClaimResourceReceipt,

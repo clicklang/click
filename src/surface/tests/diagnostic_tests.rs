@@ -425,7 +425,7 @@ fn implicit_loop_closure_is_smart() {
     let source = r#"
         verifying "f.c";
         int32 f(int32 n) { requires n == 2; ensures result == 0; } by {
-            loop { invariant n == 2; preserve by { step(); } }
+            loop { invariant n == 2; maintain by { step(); } }
             step_until(function.exit); solve();
         }
     "#;
@@ -434,8 +434,8 @@ fn implicit_loop_closure_is_smart() {
     assert!(
         events.iter().any(|event| matches!(event,
             VerificationEvent::TacticStarted(tactic)
-                if tactic.tactic_name == crate::instrumentation::IMPLICIT_SOLVE_TACTIC
-                    && tactic.class == "smart" && tactic.source_index == 0
+                if tactic.tactic_name == crate::instrumentation::IMPLICIT_LOOP_CLOSER_TACTIC
+                    && tactic.class == "smart" && tactic.source_index == 1
         )),
         "missing smart implicit closer at the owning loop: {events:?}"
     );
@@ -2149,6 +2149,7 @@ int32 last(int32* data, uint64 length) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4.3s in the parallel gate"]
 fn callback_script_tails_report_missing_authority_and_complete_valid_steps() {
     for (fixture_name, expected) in [
@@ -2218,6 +2219,7 @@ fn callback_script_tails_report_missing_authority_and_complete_valid_steps() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn callback_script_tails_complete_or_report_a_bounded_failure() {
     for fixture_name in [
@@ -2407,6 +2409,7 @@ fn pure_theorem_arithmetic_obeys_its_tactic_budget() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn wide_conjunction_expansion_stays_parseable_and_checked() {
     let conjuncts: Vec<_> = (1..=40).map(|i| format!("x <= {i}")).collect();
@@ -2456,6 +2459,7 @@ fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: wide uint64 theorem tactic attribution and bounded work"]
 fn pure_theorem_wide_arithmetic_has_attributed_work_at_growing_sizes() {
     use crate::instrumentation::{VerificationEvent, collect};
@@ -2496,7 +2500,7 @@ void run(int32 n, int32 x) { requires n >= 0; requires x == 7; ensures x == 7; }
         decreases n;
         invariant n >= 0;
         invariant x == 7;
-        preserve by {
+        maintain by {
             step();
             have n >= 0 by { solve(); }
             have x == 7 by { known(); }
@@ -2537,7 +2541,7 @@ void run(int32 total) {{ requires 0 <= total; requires total <= 1000; ensures 0 
   invariant 0 <= remaining;
   invariant remaining <= total;
   {invariants}
-  preserve by {{ step();  }}
+  maintain by {{ step();  }}
  }}
  step_until(function.exit); solve();
 }}
@@ -2547,6 +2551,7 @@ void run(int32 total) {{ requires 0 <= total; requires total <= 1000; ensures 0 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 14s whole wide loop expansion and negative recheck"]
 fn wide_loop_invariant_bundle_expands_without_dropping_members() {
     // Stay above both the parser limit and the short-bundle cutoff of 24.
@@ -2920,6 +2925,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
 /// Long checked paths retain their beginning, late target, and added facts.
 /// Multiple sizes exercise both former aggregate caps without timing thresholds.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete traces above the former step/text caps and lineage scaling"]
 fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
     // Keep a complete path above the former 2048-step and 64-KiB caps.
@@ -3079,23 +3085,25 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
         let source = format!(
             "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; requires defined(value * 2); ensures cell[0] == value; }} by {{ step(); have to_integer(cell[0]) < to_integer(value) by {{ {body} }} step_until(function.exit); solve(); }}"
         );
+        let c = [("f.c", "void f(int32 *cell, int32 value) { *cell = value; }")];
+        let (baseline, work) = with_proof_trace("f", || {
+            crate::instrumentation::collect_tactic_work(|| verify_c_sources(&source, &c))
+        });
+        baseline.expect_err("the comparison cannot be proved with the default allowance");
+        let have_work = work
+            .iter()
+            .find(|sample| sample.tactic.tactic_name == "have")
+            .expect("the outer have is measured")
+            .work;
         with_proof_trace("f", || {
             let error = crate::instrumentation::with_tactic_work_limits(
                 crate::instrumentation::TacticWorkLimits {
-                    simple: 1_000_000,
-                    // Enough for the `have`, whose nested script searches
-                    // and so is charged to the smart budget, to lower its
-                    // read of the stored cell by name before `solve` exhausts
-                    // the budget.
-                    smart: if nested { 160 } else { 128 },
-                    control: if nested { 160 } else { 1_000_000 },
+                    // Exhaust the allowance during the search, after lowering
+                    // and any earlier proof steps in the have body.
+                    smart: have_work.checked_sub(1).expect("the have consumes work"),
+                    ..crate::instrumentation::TacticWorkLimits::default()
                 },
-                || {
-                    verify_c_sources(
-                        &source,
-                        &[("f.c", "void f(int32 *cell, int32 value) { *cell = value; }")],
-                    )
-                },
+                || verify_c_sources(&source, &c),
             )
             .expect_err("the bounded false comparison must fail");
             assert!(
@@ -3131,7 +3139,7 @@ fn loop_have_budget_refusal_retains_checked_store_trace() {
             loop {
                 invariant i >= 0;
                 initialize by { normalize(); }
-                preserve by {
+                maintain by {
                     step();
                     have cell[0] == value + 1 by { solve(); }
                 }
@@ -3221,7 +3229,7 @@ uint64 drain(uint64 len) {
   invariant len == 0u64 or len == 16u64;
   invariant len == 16u64;
   initialize by { solve(); }
-  preserve by {
+  maintain by {
    step();
    have len == 0u64 by solve();
    have to_integer(len) == 0 by solve() using { len == 0u64; };
@@ -3345,7 +3353,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
             loop {
                 invariant len == 16u64;
                 initialize by known();
-                preserve by {
+                maintain by {
                     if flag == 0 {
                         step();
                         step();
@@ -3909,7 +3917,7 @@ fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
             loop {
                 invariant true;
                 initialize by { normalize(); }
-                preserve by {
+                maintain by {
                     mark before_write; step();
                     transport(at(before_write, p[0] == 7), p[0] == 7) using {
                         separate(memory(p[0]), memory(q[0]));
@@ -3987,6 +3995,7 @@ mod scaling_tests {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: repeated-retain source diagnostic took 0.63s in parallel"]
 fn a_failed_retain_names_the_population_count_requirement() {
     for (name, call_line) in [
@@ -4062,7 +4071,7 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
                 invariant p[0] == 7;
                 decreases 0;
                 initialize by { known(); }
-                preserve by {
+                maintain by {
                     mark before;
                     step();
                     transport(at(before, p[0] == 7), p[0] == 7);
@@ -4343,7 +4352,7 @@ fn failed_invariant_after_branch_join_reports_the_join() {
                 loop {
                     invariant len == 16u64;
                     initialize by known();
-                    preserve by { branch { true => { step(); } false => { step(); } } }
+                    maintain by { branch { true => { step(); } false => { step(); } } }
                 }
                 step_until(function.exit); solve();
             }
@@ -4735,6 +4744,7 @@ fn explicit_call_constant_proofs_reject_changed_values() {
 /// shows where its history stopped, and the refusal names the statement and
 /// the fact the store search spelled.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.71s alone; the failing implicit tail's closing search dominates"]
 fn trace_marks_a_dropped_cell_and_the_read_history_stop() {
     let source = r#"verifying "f.c";

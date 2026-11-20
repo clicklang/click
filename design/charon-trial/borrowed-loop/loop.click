@@ -20,10 +20,10 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
     ensures result == n;
     ensures value[0] == old(value[0]);
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
-        preserve by {
+        maintain by {
             apply(integer::int32_nonnegative_subtract_within_value_is_defined(n, i)) using {
                 0 <= i;
                 i <= n;
@@ -31,7 +31,7 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
             have 0 < n - i by { solve() using { 0 <= i; i < n; }; }
             apply(integer::int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
             apply(integer::int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
-            step_until(back_edge());
+            step_until(loop.back_edge);
         }
         owns value[0..1];
         views guard.slot;
@@ -48,10 +48,10 @@ fn final_header(n: i32) -> i32 {
     requires n >= 0;
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
-        preserve by {
+        maintain by {
             apply(integer::int32_nonnegative_subtract_within_value_is_defined(n, i)) using {
                 0 <= i;
                 i <= n;
@@ -59,7 +59,7 @@ fn final_header(n: i32) -> i32 {
             have 0 < n - i by { solve() using { 0 <= i; i < n; }; }
             apply(integer::int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
             apply(integer::int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
-            step_until(back_edge());
+            step_until(loop.back_edge);
         }
         invariant 0 <= i and i <= n;
     }

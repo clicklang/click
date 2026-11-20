@@ -19,7 +19,7 @@ fn adler2::adler32_slice(data: &[u8]) -> u32 {
 } by {
  apply(adler_spec_empty_u64(data, 1, 0));
  unfold(adler_spec_checksum_u64(data, 0u64, 1, 0));
- step_until(assignment(__rust_mir_0, 0));
+ step_until(assignment(__rust_mir_0, 0).entry);
  have to_integer(h.a) == old(adler_spec_a_u64(data, 0u64, 1)) by {
   rewrite(old(adler_spec_a_u64(data, 0u64, 1)), 1);
   rewrite(h.a, 1);

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 /// The proof scope a loop's phase proofs are written in.
 ///
-/// `initialize` and `preserve` bodies are written where the `loop` tactic
+/// `initialize` and `maintain` bodies are written where the `loop` tactic
 /// was written: inside whatever proof `match` arm, `let { ... } = unfold(...)` binding,
 /// or call-result binder reached that frontier. Their sub-proofs are built
 /// from fresh roots, so the scope has to be attached explicitly or a `have`
@@ -421,10 +421,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         &claim_label,
         0,
         &context.pure_facts,
-        ParameterBinding::new(
-            environment.parsed_function.parameters(),
-            environment.arguments,
-        ),
+        environment.parameter_binding(),
         FixedStateFrame::new(
             environment.initial_state,
             &context.state,
@@ -553,10 +550,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                     let owed =
                         crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
                             obligation.proposition(),
-                            ParameterBinding::new(
-                                environment.parsed_function.parameters(),
-                                environment.arguments,
-                            ),
+                            environment.parameter_binding(),
                             &context.state,
                         )
                         .map(|surface| crate::surface::printing::source_click_proposition(&surface))
@@ -676,7 +670,7 @@ impl CheckedLoopInitialization {
 }
 
 /// The body the automatic closer planned for a loop with no written
-/// `preserve` proof.
+/// `maintain` proof.
 pub(in crate::surface::proof) struct AutomaticLoopBody {
     pub(in crate::surface::proof) certificate: ProofCertificate,
 }
@@ -731,6 +725,8 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
         source_layout,
         function_entry_state: Some(environment.initial_state.clone()),
         function_source_registry: environment.function_source_registry.clone(),
+        parameter_index: environment.parent_constants.parameter_index.clone(),
+        parameter_naming: environment.parent_constants.parameter_naming.clone(),
         ..ExecutionProofConstants::default()
     };
     record_statement_program_state(
@@ -999,7 +995,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     if first_generated_tactic_index < tactics.len() {
         // Automatic preservation appends planned body steps and a closer
         // after the source-written unfold prefix. They are owned by the loop
-        // tactic, not additional source occurrences after `preserve`.
+        // tactic, not additional source occurrences after `maintain`.
         // Detach them so a later nested clause cannot be mistaken for one of
         // these generated tactics by expand.
         detach_generated_suffix_from_source_indices(&mut program, first_generated_tactic_index);
@@ -1081,6 +1077,8 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         source_layout,
         function_entry_state: Some(environment.initial_state.clone()),
         function_source_registry: environment.function_source_registry.clone(),
+        parameter_index: environment.parent_constants.parameter_index.clone(),
+        parameter_naming: environment.parent_constants.parameter_naming.clone(),
         ..ExecutionProofConstants::default()
     };
     let mut surface_propositions = environment.surface_propositions.clone();
@@ -1128,10 +1126,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         && let Ok(lowered) = lower_fixed_state_proposition(
             &loop_condition,
             pure_facts,
-            ParameterBinding::new(
-                environment.parsed_function.parameters(),
-                environment.arguments,
-            ),
+            environment.parameter_binding(),
             FixedStateFrame::new(
                 environment.initial_state,
                 preservation.state(),
@@ -1182,7 +1177,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     body_execution
         .core
         .advance_kernel_variable_mark(preservation.next_kernel_variable())
-        .map_err(|message| ClickError::new(format!("`{claim_label}`.preserve: {message}")))?;
+        .map_err(|message| ClickError::new(format!("`{claim_label}`.maintain: {message}")))?;
     let root = Proof::for_execution_frontier(
         &claim_label,
         internal_proof_first_index(&program).unwrap_or(0),
@@ -1345,12 +1340,14 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 // The implicit bundle closer plans a default `solve` body.
                 // Its premise selection is smart work even when the first
                 // checked member happens to close by `known()`.
-                (
-                    tactics.len(),
-                    source.loop_source_index,
-                    crate::instrumentation::IMPLICIT_SOLVE_TACTIC,
-                    "smart",
-                )
+                let (at, name) = match source.preserve_source_index {
+                    Some(at) => (at, crate::instrumentation::IMPLICIT_LOOP_CLOSER_TACTIC),
+                    None => (
+                        source.loop_source_index,
+                        crate::instrumentation::IMPLICIT_SOLVE_TACTIC,
+                    ),
+                };
+                (tactics.len(), at, name, "smart")
             };
         let _timing = crate::instrumentation::enabled().then(|| {
             if crate::instrumentation::starts_enabled() {
@@ -1432,6 +1429,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     preservation.binders(),
                     structural_measure,
                     environment.function.composite_resource_definitions(),
+                    false,
                 )
                 .map_err(|error| {
                     error.with_context(format!("`{claim_label}` (loop {loop_index} state join)"))
@@ -1653,6 +1651,14 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 .to_proof_tactics()
                 .to_vec()
         };
+        if closer_name == crate::instrumentation::IMPLICIT_LOOP_CLOSER_TACTIC
+            && !closer_tactics.is_empty()
+            && crate::instrumentation::enabled()
+        {
+            crate::instrumentation::emit(
+                crate::instrumentation::VerificationEvent::LoopCloserProof,
+            );
+        }
         let omitted_frontier_preservation = environment
             .frontier_loop_source
             .preserve_source_index

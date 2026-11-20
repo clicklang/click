@@ -21,7 +21,7 @@ fn separately_declared_guarded_invariants_close_at_the_back_edge() {
                 invariant x == 0 or x == 1;
                 invariant y == 0 or y == 1;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     step();
                     have x == 0 or x == 1 by { known(); }
                     have y == 0 or y == 1 by { known(); }
@@ -50,7 +50,7 @@ fn loop_metadata_sees_address_escape_after_the_loop() {
             decreases n - i;
             invariant i >= 0;
             initialize by solve();
-            preserve by { step(); }
+            maintain by { step(); }
         }
         solve();
     }"#;
@@ -95,20 +95,21 @@ fn loop_clauses_in(tactics: &[ProofTactic], clauses: &mut Vec<StructuralClause>)
 }
 
 /// A loop's retained phase proofs are certificates: expanding a loop fixture
-/// must leave `initialize` and `preserve` bodies that contain no smart tactic,
+/// must leave `initialize` and `maintain` bodies that contain no smart tactic,
 /// so nothing in them is a leaf `ProofCertificate` refuses. In particular the
 /// automatic preservation planner's own closer is expanded before the phase is
 /// retained; a trailing `solve()` would be rejected here exactly as
 /// `ProofCertificate::from_proof_tactics` rejects it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn expanded_loop_phase_proofs_are_certificates() {
     for (filename, function) in [
         // Automatically planned initialization and preservation.
         ("count_to_n_loop_invariant", "count_to_n_loop_invariant"),
-        // A ranked loop whose explicit `preserve by` ends at the back edge.
+        // A ranked loop whose explicit `maintain by` ends at the back edge.
         ("c_decreases_count_up", "count_to_n"),
-        // A `preserve by` that proves a member in a `have` first.
+        // A `maintain by` that proves a member in a `have` first.
         ("loop_invariant_body", "count"),
         // Guarded entry judgments survive more than two declarations.
         ("loop_three_invariant_initialization", "probe_fill"),
@@ -122,6 +123,7 @@ fn expanded_loop_phase_proofs_are_certificates() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: verifies and replays two complete loop fixtures"]
 fn numeric_descent_exit_expansion_replays() {
     for fixture in [
@@ -167,7 +169,7 @@ fn assert_loop_phase_expansion_replays(filename: &str, function: &str) {
     for clause in &clauses {
         for (phase, proof) in [
             ("initialize", clause.initialize_proof()),
-            ("preserve", clause.preserve_proof()),
+            ("maintain", clause.preserve_proof()),
         ] {
             let proof = proof.unwrap_or_else(|| panic!("{filename}: `{phase}` was not expanded"));
             let tactics = proof.tactics().unwrap_or_else(|| {
@@ -229,6 +231,7 @@ fn borrowed_sources(sources: &[(String, String)]) -> Vec<(&str, &str)> {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn natural_goto_exits_retain_checked_paths_and_expand() {
     for (filename, function) in [
@@ -261,6 +264,7 @@ fn natural_goto_exits_retain_checked_paths_and_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn natural_goto_mixed_return_retains_paths_and_expands() {
     let (click, sources) = loop_fixture("natural_goto_forward_exit_and_return");
@@ -327,6 +331,7 @@ fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
 /// ordinary proof per arithmetic member. The printed source
 /// must reverify through the ordinary entry point without replanning.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Integer ranking expansion exceeds 0.5s in the parallel gate"]
 fn smart_ranking_closure_expands_to_explicit_bundle_members() {
     let (click, sources) = loop_fixture("c_decreases_count_up");
@@ -334,7 +339,7 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
     let expanded = expand_function_proof_source(&click, &sources, "count_to_n")
         .unwrap_or_else(|error| panic!("count-up expansion failed: {}", error.message()));
     let closer = expanded
-        .find("preserve by {")
+        .find("maintain by {")
         .expect("the expansion spells the preservation proof");
     let closer = &expanded[closer..];
     assert!(
@@ -345,7 +350,6 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
         closer.contains("have i >= 0 implies i <= n by {"),
         "the expanded closer must prove each bundle member in a `have`: {expanded}"
     );
-    assert!(closer.contains("normalize"), "{expanded}");
     let (result, planning) = crate::surface::proof::count_planning_statement_transitions(|| {
         verify_c_sources(&expanded, &sources)
     });
@@ -361,18 +365,20 @@ fn smart_ranking_closure_expands_to_explicit_bundle_members() {
 /// The generated Integer ranking keeps the increment's range proof and
 /// operation identity, including when its goal is anchored at loop entry.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Integer ranking expansion exceeds 0.5s in the parallel gate"]
 fn unsigned_integer_ranking_expands_without_search() {
     let (click, sources) = loop_fixture("back_edge_closes_an_unsigned_bound_from_the_guard");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "count").unwrap();
-    assert!(expanded.contains("normalize"), "{expanded}");
+    assert!(!expanded.contains("solve("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }
 
 /// A stored byte counter also needs its narrowing's range; the generated
 /// proof spells the promoted operation, `(x as int32)`, at iteration entry.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: Integer ranking expansion exceeds 0.5s in the parallel gate"]
 fn promoted_integer_ranking_expands_without_search() {
     let (click, sources) = loop_fixture("a_uint8_loop_counter_ranks_as_a_promoted_int32");
@@ -391,7 +397,7 @@ fn promoted_integer_ranking_expands_without_search() {
 fn smart_ranking_closure_expands_its_pivot_arm() {
     let (click, sources) = loop_fixture("c_decreases_nested_loop");
     let sources = borrowed_sources(&sources);
-    // The fixture's `preserve` scripts end at the back edge, where the
+    // The fixture's `maintain` scripts end at the back edge, where the
     // implicit closer, the smart ranking closure, closes each member.
     let expanded = expand_function_proof_source(&click, &sources, "nested_count")
         .unwrap_or_else(|error| panic!("nested-loop expansion failed: {}", error.message()));
@@ -470,6 +476,7 @@ fn migrated_negative_loop_fixtures_reach_the_decrease_check() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn remaining_loop_migration_fixtures_expand_and_recheck() {
     for (filename, function) in [
@@ -522,10 +529,12 @@ fn loop_preservation_have_resolves_entry_label_and_expands() {
         verify_c_sources(&click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "drain_to_zero")
         .unwrap_or_else(|e| panic!("{}", e.message()));
+    assert!(expanded.contains("loop drain {"), "{expanded}");
     verify_c_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn pointer_loop_increment_emits_checked_equality_proof() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -597,6 +606,7 @@ fn symbolic_alignment_expands_to_ordinary_proof_and_rechecks_without_planning() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
     for (filename, function) in [
@@ -769,7 +779,7 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
                 invariant p[0] <= p[2];
                 invariant p[1] <= p[2];
                 initialize by solve();
-                preserve by {{
+                maintain by {{
                     have j == 0 by {{
                         solve() using {{ j < 1; j >= 0; }}
                     }}
@@ -791,6 +801,7 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn explicit_swap_loop_preserves_both_entry_bounds_and_expands() {
     let (c, click) = explicit_swap_loop_fixture(true);
@@ -808,6 +819,7 @@ fn explicit_swap_loop_preserves_both_entry_bounds_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn explicit_swap_loop_rejects_missing_entry_bounds() {
     let (c, missing_entry_bounds) = explicit_swap_loop_fixture(false);
@@ -823,6 +835,7 @@ fn explicit_swap_loop_rejects_missing_entry_bounds() {
 /// Exact observations leave the completed bundle available as a fact. The
 /// back edge should retain that direct proof and recheck explicitly.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn observed_member_closure_expands_to_direct_assumptions() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -845,6 +858,7 @@ fn observed_member_closure_expands_to_direct_assumptions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn explicit_invariant_body_quantified_bubble_census() {
     let path =
@@ -865,6 +879,7 @@ fn explicit_invariant_body_quantified_bubble_census() {
 
 /// The old/current state body verifies and expands on the ordinary stack.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
 fn explicit_invariant_body_copy3_checks_and_expands() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/copy3_array_demo.md");
@@ -903,12 +918,12 @@ fn frontier_local_loop_verifies_and_advances_to_exit() {
             } by {
                 step();
                 step();
-                loop as count {
+                loop count {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -945,12 +960,12 @@ fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
             ensures result == 3 by {
                 step();
                 step();
-                loop as count {
+                loop count {
                     decreases 3 - i;
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -1025,7 +1040,7 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
                         apply(nonnegative_is_acceptable(x));
                         solve();
                     }
-                    preserve by {
+                    maintain by {
                         step();
                         apply(nonnegative_is_acceptable(x));
                         solve();
@@ -1091,7 +1106,7 @@ fn loop_initialization_solve_retains_checked_fixed_state_proof() {
                 loop diverges {
                     invariant x >= 0;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -1237,7 +1252,7 @@ fn frontier_loop_preservation_reports_a_rest_that_does_not_run() {
                 step();
                 loop {
                     invariant i >= 0;
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -1280,7 +1295,7 @@ fn frontier_local_loop_verifies_a_lowered_c_for_loop() {
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                         step();
                     }
@@ -1327,7 +1342,7 @@ fn frontier_local_loop_verifies_at_a_branch_local_frontier() {
                         invariant i >= 0;
                         invariant i <= 2;
                         initialize by solve();
-                        preserve by {
+                        maintain by {
                             step();
                         }
                     }
@@ -1357,7 +1372,7 @@ fn frontier_loop_binding_replaces_scope_without_merging_declarations() {
                 invariant i >= bound;
                 invariant i >= bound;
                 initialize by solve();
-                preserve by solve();
+                maintain by solve();
             }
         }
     "#,
@@ -1404,6 +1419,7 @@ fn frontier_loop_binding_replaces_scope_without_merging_declarations() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
     let c_source = r#"
@@ -1435,14 +1451,14 @@ fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
                     invariant i >= 0;
                     invariant i <= 2;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                         loop {
                             decreases 2 - j;
                             invariant j >= 0;
                             invariant j <= 2;
                             initialize by solve();
-                            preserve by {
+                            maintain by {
                                 step();
                             }
                         }
@@ -1494,7 +1510,7 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
                     decreases n - i;
                     invariant i >= 0 and i <= n;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                         step();
                     }
@@ -1504,7 +1520,7 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
             }
         "#;
     let preserve_step = click_source
-        .find("preserve by {")
+        .find("maintain by {")
         .and_then(|offset| {
             click_source[offset..]
                 .find("step();")
@@ -1560,7 +1576,7 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
                     decreases n;
                     invariant n >= 0;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         have 0 <= to_integer(n - 1) by {
                             solve() using { n > 0; }
                         }
@@ -1628,7 +1644,7 @@ fn frontier_local_loop_keyword_expands_omitted_phases() {
             .expect("the loop keyword should expand all omitted phase automation");
 
     assert!(expanded.contains("initialize by {"), "{expanded}");
-    assert!(expanded.contains("preserve by {"), "{expanded}");
+    assert!(expanded.contains("maintain by {"), "{expanded}");
     verify_c_sources(&expanded, &[("count_to_n.c", c_source)]).unwrap_or_else(|error| {
         panic!(
             "the expanded frontier-local loop should freshly check: {}\n{expanded}",
@@ -1793,7 +1809,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -1842,7 +1858,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
     .expect("explicit initialization tactic should expand at its own source location");
 
     assert!(!expanded.contains("initialize by solve()"), "{expanded}");
-    assert!(expanded.contains("preserve by {"), "{expanded}");
+    assert!(expanded.contains("maintain by {"), "{expanded}");
     verify_c_sources(&expanded, &[("count_to_three.c", c_source)])
         .expect("expanded explicit initialization tactic should freshly check");
 }
@@ -1870,7 +1886,7 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
                     decreases n;
                     invariant n >= 0;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         have 0 <= to_integer(n - 1) by {
                             solve() using { n > 0; }
                         }
@@ -1928,7 +1944,7 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -1937,7 +1953,7 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
             }
         "#;
     let preserve_step = click_source
-        .find("preserve by {")
+        .find("maintain by {")
         .and_then(|offset| {
             click_source[offset..]
                 .find("step();")
@@ -1997,7 +2013,7 @@ fn explicit_loop_closer_cannot_bypass_proof_owned_bundle_check() {
                     invariant i >= 0;
                     invariant i <= 1;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -2066,7 +2082,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
         "#;
     let explicit = template.replace(
         "{preserve}",
-        r#"preserve by {
+        r#"maintain by {
                         step();
                         branch ensuring { fact parity >= 0 and parity <= 1; } { true => { step(); } false => { step(); } }
                     }"#,
@@ -2087,7 +2103,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
 
     let broken = template.replace(
         "{preserve}",
-        r#"preserve by {
+        r#"maintain by {
                         step();
                         branch ensuring { fact parity >= 0 and parity <= 1; } { true => { step(); } false => { step(); } }
                     }"#,
@@ -2136,7 +2152,7 @@ fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
                     invariant i >= 0;
                     invariant i <= 3;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -2188,7 +2204,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
                         invariant x >= 1;
                         invariant x <= 2;
                         initialize by solve();
-                        preserve by {
+                        maintain by {
                             have marker() != Marker::Inactive by {
                                 unfold(marker());
                                 normalize();
@@ -2227,6 +2243,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
 fn loop_exit_duplicate_invariants_verify_and_reject_false_claims() {
     let c = r#"int32 count(int32 n) {
@@ -2381,6 +2398,7 @@ fn conditional_loop_resources_reject_unsupported_binding_and_body_items() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn loop_return_closers_expand_in_their_preservation_arms() {
     for (fixture, function) in [
@@ -2427,6 +2445,7 @@ fn loop_return_closers_expand_in_their_preservation_arms() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn nested_loop_return_keeps_the_inner_arms_closer() {
     let c = "int32 f(int32 n) { while (1) { while (1) { return 7; } } }";
@@ -2437,9 +2456,9 @@ int32 f(int32 n) {
     ensures result == 7;
 } by {
     loop { decreases 1; invariant n == 5;
-        preserve by {
+        maintain by {
             loop { decreases 1; invariant n == 5;
-                preserve by { step(); have result == 7 by solve(); solve(); }
+                maintain by { step(); have result == 7 by solve(); solve(); }
             }
         }
     }
@@ -2501,6 +2520,7 @@ fn loop_return_closers_do_not_require_distinct_result_values() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn loop_return_inside_branch_retains_its_fact_ancestry() {
     let c = "int32 f(int32 n) { if (n > 0) { int32 i = 0; while (i < n) { if (i == 2) return 7; i++; } return i; } else { return 7; } }";
@@ -2539,6 +2559,7 @@ fn loop_local_pointer_invariants_retain_declared_element_types() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: local pointer bounds mutation and expansion"]
 fn loop_local_pointer_invariants_refuse_short_wide_views_and_expand() {
     let (click, sources) = loop_fixture("loop_local_pointer_element_types");
@@ -2606,6 +2627,7 @@ fn native_read_aliases_do_not_supply_missing_authority_or_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: native read alias expansion"]
 fn native_read_aliases_expand_and_reverify() {
     let (click, sources) = loop_fixture("native_read_retains_wide_index_beside_narrow_alias");
@@ -2635,6 +2657,7 @@ fn theorem_application_expands_with_a_recorded_historical_byte_premise() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: readable pointer alias mutations and expansion"]
 fn byte_pointer_view_alias_rewrites_refuse_missing_authority_and_expand() {
     let (click, sources) = loop_fixture("byte_pointer_view_alias_rewrite");
@@ -2653,6 +2676,7 @@ fn byte_pointer_view_alias_rewrites_refuse_missing_authority_and_expand() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: pointer cursor invariant expansion and cold replay"]
 fn pointer_cursor_invariant_expands_and_replays() {
     let (click, sources) = loop_fixture("pointer_cursor_loop_expansion");
@@ -2679,6 +2703,7 @@ fn pointer_cursor_invariant_expands_and_replays() {
 // Loop resource selection must use the same checked pointer-alias graph as
 // calls; an abstract outer cursor is not the input's syntactic block.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn nested_loop_cursor_alias_retains_enclosing_input_view() {
     let (click, sources) = loop_fixture("nested_loop_cursor_view_authority");
@@ -2686,6 +2711,7 @@ fn nested_loop_cursor_alias_retains_enclosing_input_view() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: nested cursor authority mutations and expansion"]
 fn nested_loop_cursor_views_refuse_forged_ranges_and_expand() {
     let (click, sources) = loop_fixture("nested_loop_cursor_view_authority");
@@ -2799,8 +2825,8 @@ fn indexed_structural_clauses_agree_with_the_clause_list_walks() {
         r#"
         verifying "count.c";
         int32 count(int32 i) { ensures result >= 0; } by {
-            loop as a { invariant i >= 0; }
-            loop as b { invariant i >= 0; }
+            loop a { invariant i >= 0; }
+            loop b { invariant i >= 0; }
             loop { invariant i >= bound; }
         }
     "#,
@@ -2963,6 +2989,7 @@ test_batches! {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s focused, expansion and false-result control"]
 fn shared_post_test_after_switch_continue_expands_and_rejects_a_false_result() {
     let (click, sources) = loop_fixture("do_while_switch_continue");
@@ -2982,6 +3009,7 @@ fn shared_post_test_after_switch_continue_expands_and_rejects_a_false_result() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2.3s focused, expands and rechecks two ranked shared-phase proofs"]
 fn shared_test_and_update_ranking_expands_and_rechecks() {
     let (click, sources) = loop_fixture("shared_loop_test_and_update");
@@ -2995,6 +3023,7 @@ fn shared_test_and_update_ranking_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s focused, live and expired inline-reader storage controls"]
 fn shared_post_test_scope_retires_storage_after_a_switch_continue() {
     let (click, sources) = loop_fixture("shared_loop_post_test_ends_body_scope");

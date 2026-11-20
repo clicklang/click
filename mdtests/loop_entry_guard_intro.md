@@ -46,7 +46,7 @@ int32 loop_entry_guard_intro(int32 p[3]) {
                 enumerate();
             }
         }
-        preserve by solve();
+        maintain by solve();
     }
     step();
     solve();

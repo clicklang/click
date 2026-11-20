@@ -1,6 +1,6 @@
 # a loop-body `match` arm must restore the loop binder
 
-Each arm of a proof `match` inside `preserve` reaches the loop's back edge on
+Each arm of a proof `match` inside `maintain` reaches the loop's back edge on
 its own path, so each arm must hand the loop binder back on its own. This
 `Sign::Pos` arm unfolds the instance and never folds it again, so the back edge
 finds no `cell` at the binder's arguments even though the sibling arm does.
@@ -53,7 +53,7 @@ void spin(struct cell* node, int32 n) {
         invariant c.model == old(c.model);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Sign::Neg(value) => {
                     have Sign::Neg(value) == old(c.model) by {

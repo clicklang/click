@@ -29,7 +29,7 @@ struct pair make_pair() {
 int32 consume() {
     ensures result == 7;
 } by {
-    step_until(statement(0).call(0));
+    step_until(statement(0).call(0).entry);
     step();
     have load<int32>(statement(0).call(0).result) == 3 by { known(); }
     step();

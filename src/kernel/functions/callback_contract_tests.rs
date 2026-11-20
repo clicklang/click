@@ -84,7 +84,7 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
         );
     let environment = ExecutionEnvironment::new()
         .with_selected_call_contract("Touch")
-        .with_selected_call_resource_arguments(vec![Variable(10)]);
+        .with_selected_call_resource_arguments(vec![InstanceId::from_variable(Variable(10))]);
     let run = |state: &ExecutionState,
                contract: &FunctionContract,
                environment: &ExecutionEnvironment| {
@@ -127,14 +127,19 @@ fn resource_call_arguments_are_checked_in_kernel_and_fields_are_fresh() {
                 .with_proof_parameters(vec![parameter(0), parameter(1)]),
             environment
                 .clone()
-                .with_selected_call_resource_arguments(vec![Variable(10), Variable(10)]),
+                .with_selected_call_resource_arguments(vec![
+                    InstanceId::from_variable(Variable(10)),
+                    InstanceId::from_variable(Variable(10)),
+                ]),
         ),
         (
             state.clone(),
             contract.clone(),
             environment
                 .clone()
-                .with_selected_call_resource_arguments(vec![Variable(99)]),
+                .with_selected_call_resource_arguments(vec![InstanceId::from_variable(Variable(
+                    99,
+                ))]),
         ),
     ] {
         assert!(matches!(
@@ -192,7 +197,12 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
             0,
             pairs
                 .iter()
-                .map(|(binder, instance)| (Variable(*binder), Variable(*instance)))
+                .map(|(binder, instance)| {
+                    (
+                        ResourceBinderId::from_variable(Variable(*binder)),
+                        ResourceBinderId::from_variable(Variable(*instance)),
+                    )
+                })
                 .collect(),
         );
         selected_call_binder_application(
@@ -882,7 +892,7 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
         .with_proof_parameters(vec![instance_spec]);
     let instance_environment = ExecutionEnvironment::new()
         .with_selected_call_contract("ParityInstance")
-        .with_selected_call_resource_arguments(vec![identity.variable()]);
+        .with_selected_call_resource_arguments(vec![identity]);
     let (direct, callback) = direct_and_callback_resource_transition(
         &instance_function,
         &instance_state,

@@ -35,7 +35,7 @@ int32 stuck_phase(int32 n) {
         invariant j >= 0;
         invariant j <= 2;
         initialize by solve();
-        preserve by {
+        maintain by {
             if j > 0 {
                 step();
                 step();

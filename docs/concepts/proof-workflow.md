@@ -155,18 +155,19 @@ expansion output.
   available condition fact selects and enters one arm. At a loop head, it
   evaluates the condition once and enters one iteration or advances past the
   loop.
-- `step_until(target)`: repeat `step()` up to a target. It walks a loop the
+- `step_until(point)`: repeat `step()` up to a target. It walks a loop the
   facts decide and never splits: at a C branch the facts do not decide it is
   refused, and names the proof `if` or `branch` to write there. The targets
-  are `statement(i)` and its chains such as `statement(i).statement(j)` and
-  `statement(i).call(f, j)`, `region(N)`, `loop(N)`, `assignment(x, N)`,
-  `read(N)`, `back_edge()`, `loop(i).back_edge()`, and `function.exit`. The
+  are entries such as `statement(i).entry`, `statement(i).call(f, j).entry`,
+  `region(N).entry`, `loop(N).entry`, `assignment(x, N).entry`, and
+  `read(N).entry`. Also available are `loop.back_edge`, `loop(i).back_edge`,
+  and `function.exit`. The
   target must be forward and reachable on the current execution path.
 - `loop { ... }`: verify the loop exactly at the current frontier and advance
-  to its checked abstract exit. Its nested `initialize`, `preserve`, invariant,
+  to its checked abstract exit. Its nested `initialize`, `maintain`, invariant,
   invariant, and resource clauses construct the kernel rule; it never seeks to a
   numbered source loop.
-- The back edge of a `preserve by { ... }` script closes each member of the
+- The back edge of a `maintain by { ... }` script closes each member of the
   loop's invariant bundle with `solve()`, as a function's exit closes each
   `ensures`; prove a member `solve()` misses with `have` before the back edge.
   The retired `close_invariants` tactic is rejected.
@@ -348,7 +349,7 @@ symbolic state, and enclosing continuation stack. Proof scripts can start at
 function entry, advance by one statement with `step();`, unpack a C `if` at the
 current frontier with `branch`, replace scoped paths with an explicit abstract
 interface using `branch ensuring`, pause at a statement entry with
-`step_until(region(N));`, and step to function exit with
+`step_until(region(N).entry);`, and step to function exit with
 `step_until(function.exit);`. The implicit tail runs whatever C the script
 leaves.
 Resource steps such as `observe`, `unfold`, and `fold` can happen between those
@@ -447,7 +448,7 @@ by {
     have i == 0 by {
         solve();
     }
-    loop as fill {
+    loop fill {
         decreases n - i;
         owns p[0..n];
         invariant i >= 0;
@@ -461,7 +462,7 @@ resources established by preceding `step()`, `unfold`, `fold`, and other
 ordinary proof tactics. It proves its proposition on the current path and
 adds the resulting fact to the following context.
 
-`step_until(assignment(local, N))` selects the zero-based static occurrence
+`step_until(assignment(local, N).entry)` selects the zero-based static occurrence
 of an ordinary local assignment, local compound update, or call-result assignment in the executable
 layout. It pauses before that store. Declarations and stores to other locals
 do not count, so unrelated compiler temporaries do not shift the selection.
@@ -473,7 +474,7 @@ does not move the frontier before those helpers. Use `loop(N)` to stop before
 a loop's header/body work and `mark` to name a reached state. Assignment
 selectors currently serve `step_until`, not `at(...)` expressions.
 
-`step_until(read(N))` stops before the zero-based Nth statement containing
+`step_until(read(N).entry)` stops before the zero-based Nth statement containing
 an explicit scalar memory load, in executable preorder. A statement counts
 once even when its expression contains several loads; repeated iterations
 reuse the same static occurrence. This selects the whole statement, so a
@@ -489,7 +490,7 @@ order for execution targets and `at(...)` points:
 
 <!-- verified-example: mdtests/frontier_have_execute_until_and_mark.md -->
 ```click
-step_until(region(4));
+step_until(region(4).entry);
 have y >= 0 by {
     solve();
 }
@@ -499,7 +500,7 @@ have at(region(4).entry, y) >= 0 by {
 }
 ```
 
-`loop as name { ... }` names the entry and exit points of the loop at
+`loop name { ... }` names the entry and exit points of the loop at
 the current frontier; the name is not a selector and never moves the frontier.
 
 A code region is a static source construct with extent, such as a function,
@@ -531,7 +532,7 @@ The mark names the point the path is at now. It does not advance or rewind the
 frontier and cannot be passed to `step_until`.
 
 `loop_name.entry` is available in invariants on that loop and in its explicit
-`preserve` proof. Once the loop tactic succeeds, `loop_name.exit` is available
+`maintain` proof. Once the loop tactic succeeds, `loop_name.exit` is available
 to the enclosing proof.
 
 Statement entry and exit points are currently recorded by deterministic
@@ -541,7 +542,7 @@ memory, reassigned parameters, and declared scalar, pointer, or array locals
 at the selected point. `at(point, proposition)` instead reads the complete
 proposition there; use this form for state-relative facts such as
 `viewable(...)`, where wrapping only the segment expression would leave the
-memory component at the current point. A branch entry can be a recorded point. An explicit loop `preserve` proof binds
+memory component at the current point. A branch entry can be a recorded point. An explicit loop `maintain` proof binds
 `at(loop_name.entry, ...)` to its fresh arbitrary iteration state. Executing a
 verified loop records its unique abstract exit as `at(loop_name.exit, ...)`.
 Earlier concrete iterations have no point of their own: a path checks a loop
@@ -549,7 +550,7 @@ once, as one abstract iteration.
 
 `invariant` declarations generate obligations at loop points. The
 loop-level `initialize` proof establishes the complete invariant set before the
-first iteration. The `preserve` proof assumes that set and the loop condition,
+first iteration. The `maintain` proof assumes that set and the loop condition,
 executes one body iteration, and reestablishes the set:
 
 <!-- verified-example: mdtests/count_to_loop_initialize_by_solve_and_preserve.md -->
@@ -559,7 +560,7 @@ loop {
     invariant i >= 0;
     invariant i <= n;
 
-    preserve by {
+    maintain by {
         step();
         solve();
     }
@@ -585,7 +586,7 @@ enclosing execution proof with the loop's abstract exit rule. Later and nested
 loops are therefore checked in their actual enclosing proof context; Click does not
 reconstruct their entry states by executing the function prefix again.
 
-Explicit `initialize` and `preserve` proofs directly supply the two premises for
+Explicit `initialize` and `maintain` proofs directly supply the two premises for
 that abstract exit rule. After initialization establishes every entry invariant
 and every preservation branch reaches the back edge with the invariants and
 effects reestablished, the kernel constructs the loop exit without proving

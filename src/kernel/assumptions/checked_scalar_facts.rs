@@ -1,6 +1,7 @@
 //! Endpoint-selected equalities and contiguous excluded-value runs.
 //! Admission changes only the written endpoints; queries never enumerate facts.
 use super::*;
+use crate::kernel::integer_exclusions::ExcludedIntegers;
 use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
 use crate::kernel::{MachineOperandView, equality_graph::MachineAtom};
 use crate::persistent::{PersistentMap, PersistentSet};
@@ -118,44 +119,10 @@ fn selected_call_expression(root: MachineOperandView<'_>) -> bool {
 }
 
 #[derive(Clone, Debug, Default)]
-struct Exclusions {
-    values: PersistentSet<i64>,
-    runs: PersistentMap<i64, i64>,
-}
-
-impl Exclusions {
-    fn containing(&self, value: i64) -> Option<(i64, i64)> {
-        self.runs
-            .get_key_value(&value)
-            .or_else(|| self.runs.get_less_than(&value))
-            .filter(|(_, end)| **end >= value)
-            .map(|(start, end)| (*start, *end))
-    }
-
-    fn adjust(&mut self, value: i64) {
-        if self.values.contains(&value) {
-            return;
-        }
-        self.values = self.values.with_value(value);
-        let mut start = value;
-        let mut end = value;
-        if let Some((left, _)) = self.containing(value - 1) {
-            start = left;
-            self.runs = self.runs.without_key(&left);
-        }
-        if let Some(right) = self.runs.get(&(value + 1)).copied() {
-            end = right;
-            self.runs = self.runs.without_key(&(value + 1));
-        }
-        self.runs = self.runs.with_inserted(start, end);
-    }
-}
-
-#[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct CheckedScalarFacts {
     literals: PersistentMap<ScalarOperandKey, PersistentSet<(ConditionTerm, bool)>>,
     equalities: PersistentMap<MachineTerm, PersistentSet<ConditionTerm>>,
-    exclusions: PersistentMap<ScalarOperandKey, Exclusions>,
+    exclusions: PersistentMap<ScalarOperandKey, ExcludedIntegers>,
 }
 
 impl CheckedScalarFacts {
@@ -224,12 +191,8 @@ impl CheckedScalarFacts {
                 };
                 for key in std::iter::once(key).chain(alias) {
                     let mut excluded = self.exclusions.get(&key).cloned().unwrap_or_default();
-                    excluded.adjust(number);
-                    self.exclusions = if excluded.values.is_empty() {
-                        self.exclusions.without_key(&key)
-                    } else {
-                        self.exclusions.with_inserted(key, excluded)
-                    };
+                    excluded.insert(i128::from(number));
+                    self.exclusions.insert(key, excluded);
                 }
             }
         }
@@ -268,11 +231,13 @@ impl CheckedScalarFacts {
             return (lower, upper);
         };
         let lower = excluded
-            .containing(lower)
-            .map_or(lower, |(_, end)| (end + 1).min(upper));
+            .containing(i128::from(lower))
+            .map_or(lower, |(_, end)| (end + 1).min(i128::from(upper)) as i64);
         let upper = excluded
-            .containing(upper)
-            .map_or(upper, |(start, _)| (start - 1).max(lower));
+            .containing(i128::from(upper))
+            .map_or(upper, |(start, _)| {
+                (start - 1).max(i128::from(lower)) as i64
+            });
         (lower, upper)
     }
 }

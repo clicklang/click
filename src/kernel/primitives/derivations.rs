@@ -1265,7 +1265,7 @@ impl LoadAddressCongruenceEvidence {
             return false;
         };
         let (left_pointer, right_pointer) = (&left.pointer, &right.pointer);
-        left.memory == right.memory
+        left.point == right.point
             && left.kind == right.kind
             && *left_pointer == self.left_pointer
             && *right_pointer == self.right_pointer

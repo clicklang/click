@@ -31,6 +31,17 @@ theorem integer_constant_round_trips() {
     ensures to_integer(to_uint64(18446744073709551615)) == 18446744073709551615 by solve();
 }
 
+theorem literal_after_rewrite(n: Integer) {
+    requires n == 7;
+    requires -2147483648 <= n and n <= 2147483647;
+    ensures to_integer(to_int32(n)) + 1 == 8 by {
+        rewrite(n, 7);
+        solve();
+    }
+    ensures n + to_integer(to_int32(7)) == n + 7 by known();
+    ensures to_int32(7) == 7 by known();
+}
+
 theorem typed_integer_observations(a: int16, b: uint8, c: uint16,
         d: int32, e: uint32, f: int64, g: uint64) {
     ensures to_integer(a) == to_integer(a) by solve();

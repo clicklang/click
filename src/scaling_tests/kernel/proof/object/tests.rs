@@ -57,20 +57,22 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
             },
         );
         let frontier = root(facts.clone(), core);
-        let ((body, scope), opening_work) =
+        let ((body, scope, edge), opening_work) =
             crate::instrumentation::measure_deterministic_work(|| {
-                frontier
-                    .open_invariant_body(
+                let edge = frontier
+                    .prepare_loop_invariant_edge(
                         &entry,
                         &entry,
                         &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
                         &checks,
                         &[],
-                        &[],
-                        &[],
-                        |_, _| (),
+                        Some(&[]),
                     )
-                    .unwrap()
+                    .unwrap();
+                let (body, scope) = frontier
+                    .open_prepared_invariant_body(&edge, &[], |_, _| ())
+                    .unwrap();
+                (body, scope, edge)
             });
         assert!(
             frontier
@@ -129,6 +131,11 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
                 assert!(
                     stale
                         .retain_invariant_body(scope.clone(), &complete)
+                        .is_err()
+                );
+                assert!(
+                    stale
+                        .open_prepared_invariant_body(&edge, &[], |_, _| ())
                         .is_err()
                 );
             }
@@ -576,6 +583,156 @@ fn known_computation_work_ignores_related_and_unrelated_facts() {
     for costs in [hits, misses] {
         assert!(
             costs[0] > 0 && costs.iter().all(|work| *work == costs[0]),
+            "{costs:?}"
+        );
+    }
+}
+
+#[test]
+fn literal_constructor_field_known_work_scales_with_the_goal() {
+    use crate::kernel::{
+        AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValue,
+        AlgebraicValueType, AlgebraicVariantType, ConditionTerm, ProgramType, ProgramValue,
+        VerificationSession,
+    };
+    let mut costs = Vec::new();
+    for count in [4, 16, 64] {
+        let _session = VerificationSession::enter();
+        let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+            name: "Wrap".into(),
+            fields: vec![AlgebraicValueType::Program(ProgramType::Int32); count],
+        }]
+        .into();
+        let ty = AlgebraicType {
+            rigid: false,
+            name: "LiteralFields".into(),
+            arguments: vec![],
+            variants: variants.clone(),
+            schemas: std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from(
+                [(
+                    AlgebraicValueType::Algebraic {
+                        name: "LiteralFields".into(),
+                        arguments: vec![],
+                    },
+                    variants,
+                )],
+            ))),
+        };
+        let field = |value| AlgebraicValue::Program(ProgramValue::Int32(value));
+        let constructor = |last| {
+            let mut fields = vec![field(MachineTerm::constant(0)); count - 1];
+            fields.push(field(last));
+            AlgebraicTerm {
+                algebraic_type: ty.clone(),
+                node: AlgebraicTermNode::Constructor {
+                    variant: "Wrap".into(),
+                    fields,
+                },
+            }
+        };
+        let goal = |last| {
+            Proposition::condition_is(
+                ConditionTerm::AlgebraicEqual(
+                    Box::new(constructor(MachineTerm::constant(0))),
+                    Box::new(constructor(last)),
+                ),
+                false,
+            )
+        };
+        let distinct = goal(MachineTerm::constant(1));
+        let symbolic = goal(MachineTerm::Variable(Variable(970103)));
+        let mut samples = [Vec::new(), Vec::new()];
+        for size in [0, 16, 64, 256] {
+            let facts = (0..size)
+                .flat_map(|index| {
+                    [
+                        goal(MachineTerm::Variable(Variable(970104 + index))),
+                        Proposition::Predicate {
+                            name: format!("unrelated_{index}"),
+                            arguments: vec![],
+                        },
+                    ]
+                })
+                .collect::<Vec<_>>();
+            let facts = PureFactStore::from_ordered(&facts);
+            for ((goal, expected), costs) in [(&distinct, true), (&symbolic, false)]
+                .into_iter()
+                .zip(&mut samples)
+            {
+                let proof = known_computation_proof(goal.clone(), facts.clone());
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    proof.apply_known(PropositionKnownContext::Exact)
+                });
+                assert_eq!(result.is_ok(), expected);
+                costs.push(work);
+            }
+        }
+        // The empty store skips indexed fact lookups. Compare populated
+        // stores to bound the additional work as those indexes grow.
+        for work in &samples {
+            let populated = &work[1..];
+            assert!(
+                populated.iter().all(|sample| *sample <= populated[0] + 16),
+                "{work:?}"
+            );
+        }
+        costs.push(samples[0][0]);
+    }
+    assert!(
+        costs[0] > 0 && costs.windows(2).all(|pair| pair[1] <= pair[0] * 5),
+        "{costs:?}"
+    );
+}
+
+#[test]
+fn strict_literal_remainder_bound_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    let mut samples = [Vec::new(), Vec::new()];
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let dividend = MachineTerm::Variable(Variable(970500));
+        let strict_bound = |left, right| {
+            Proposition::condition_is(
+                ConditionTerm::machine_compare(format, CompareRelation::LessThan, left, right),
+                true,
+            )
+        };
+        let remainder = MachineTerm::Binary {
+            format,
+            op: MachineBinaryOp::Remainder,
+            left: Box::new(dividend.clone()),
+            right: Box::new(MachineTerm::uint64_constant(1000)),
+        };
+        let facts = (0..size)
+            .flat_map(|index| {
+                [
+                    strict_bound(
+                        dividend.clone(),
+                        MachineTerm::Variable(Variable(971000 + index)),
+                    ),
+                    Proposition::Predicate {
+                        name: format!("unrelated_{index}"),
+                        arguments: vec![],
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactStore::from_ordered(&facts);
+        for ((bound, expected), costs) in [(1000, true), (999, false)].into_iter().zip(&mut samples)
+        {
+            let goal = strict_bound(remainder.clone(), MachineTerm::uint64_constant(bound));
+            let proof = known_computation_proof(goal, facts.clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), expected);
+            costs.push(work);
+        }
+    }
+    for costs in samples {
+        assert!(
+            costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 16),
             "{costs:?}"
         );
     }

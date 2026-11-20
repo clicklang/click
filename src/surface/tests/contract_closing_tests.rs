@@ -317,6 +317,7 @@ fn reassigned_numeric_parameter_descent_expands_into_ordinary_steps() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: anonymous resource verification, expansion, and cold recheck"]
 fn anonymous_resource_descent_completes_and_expands_without_a_source_walk() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

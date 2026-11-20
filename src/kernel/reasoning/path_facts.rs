@@ -343,6 +343,8 @@ fn algebraic_terms_equal(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
     // Reflexivity applies to opaque applications and symbolic matches too.
     // This checks exact terms, not injectivity or evaluation of pure calls.
     left.node == right.node
+        || algebraic_match_rebuilds_scrutinee(left, right)
+        || algebraic_match_rebuilds_scrutinee(right, left)
         || match (&left.node, &right.node) {
             (
                 AlgebraicTermNode::PureFunctionApplication {
@@ -360,6 +362,39 @@ fn algebraic_terms_equal(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
             _ => false,
         }
 }
+
+/// The equality checker has already checked both operands' types and schemas.
+fn algebraic_match_rebuilds_scrutinee(matched: &AlgebraicTerm, other: &AlgebraicTerm) -> bool {
+    let AlgebraicTermNode::Match { scrutinee, arms } = &matched.node else {
+        return false;
+    };
+    scrutinee.as_ref() == other
+        && arms.iter().all(|arm| {
+            let AlgebraicTermNode::Constructor { variant, fields } = &arm.body.node else {
+                return false;
+            };
+            crate::instrumentation::record_deterministic_work(arm.bindings.len() + 1);
+            if variant != &arm.variant || fields != &arm.bindings {
+                return false;
+            }
+            let mut variables = std::collections::HashSet::with_capacity(arm.bindings.len());
+            arm.bindings.iter().all(|binding| {
+                let variable = match binding {
+                    AlgebraicValue::Program(
+                        ProgramValue::Int128(MachineTerm::Variable(variable))
+                        | ProgramValue::UInt128(MachineTerm::Variable(variable)),
+                    ) => Some(*variable),
+                    _ => crate::kernel::proof::term_rewrite::typed_declaration_variable(binding)
+                        .map(|(_, variable)| variable),
+                };
+                variable.is_some_and(|variable| variables.insert(variable))
+            })
+        })
+}
+
+#[cfg(test)]
+#[path = "../../scaling_tests/kernel/reasoning/path_facts/algebraic_reconstruction.rs"]
+mod algebraic_reconstruction_scaling_tests;
 
 fn algebraic_terms_definitely_distinct(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
     if !left.is_well_formed() || !right.is_well_formed() {
@@ -435,7 +470,10 @@ fn sequence_terms_definitely_distinct(left: &SequenceTerm, right: &SequenceTerm)
     }
 }
 
-fn program_values_definitely_distinct(left: &ProgramValue, right: &ProgramValue) -> bool {
+pub(in crate::kernel) fn program_values_definitely_distinct(
+    left: &ProgramValue,
+    right: &ProgramValue,
+) -> bool {
     fn constant(bits: &MachineTerm) -> Option<u64> {
         match bits {
             bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
@@ -1665,9 +1703,11 @@ pub(in crate::kernel) fn add_required_proof_obligation_with_context(
         introductions,
         None,
         false,
+        false,
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_required_proof_obligation_with_context_and_site(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -1676,6 +1716,7 @@ fn add_required_proof_obligation_with_context_and_site(
     introductions: Option<&std::sync::Arc<LoweringIntroductions>>,
     call_site: Option<&std::sync::Arc<CallRequirementSource>>,
     statement_entry_required: bool,
+    live_view_write: bool,
 ) {
     // Suppression is the exact index, the frozen condition checker for a
     // proposition that is already one bare condition, or the retained atomic
@@ -1691,6 +1732,7 @@ fn add_required_proof_obligation_with_context_and_site(
     let mut obligation = ProofObligation::verification_condition(proposition)
         .with_shared_introductions(introductions)
         .with_statement_entry_required(statement_entry_required);
+    obligation.live_view_write = live_view_write;
     if let Some(call_site) = call_site {
         obligation = obligation.with_call_requirement_site(call_site.clone());
     }
@@ -1741,6 +1783,7 @@ pub(in crate::kernel) fn add_required_proof_obligation_without_search(
         introductions,
         None,
         false,
+        false,
     );
 }
 
@@ -1769,6 +1812,7 @@ fn selected_obligation_is_stated(assumptions: &PureFactContext, proposition: &Pr
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_required_proof_obligation_without_search_and_site(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -1777,6 +1821,7 @@ fn add_required_proof_obligation_without_search_and_site(
     introductions: Option<&std::sync::Arc<LoweringIntroductions>>,
     call_site: Option<&std::sync::Arc<CallRequirementSource>>,
     statement_entry_required: bool,
+    live_view_write: bool,
 ) {
     if !statement_entry_required
         && !assumptions.retains_required_obligations()
@@ -1791,6 +1836,7 @@ fn add_required_proof_obligation_without_search_and_site(
     }
     .with_shared_introductions(introductions)
     .with_statement_entry_required(statement_entry_required);
+    obligation.live_view_write = live_view_write;
     if let Some(call_site) = call_site {
         obligation = obligation.with_call_requirement_site(call_site.clone());
     }
@@ -1835,6 +1881,7 @@ pub(in crate::kernel) fn append_required_proof_obligations(
             obligation.shared_introductions(),
             obligation.call_requirement_site(),
             obligation.statement_entry_required,
+            obligation.live_view_write,
         );
     }
 }
@@ -1853,6 +1900,7 @@ pub(in crate::kernel) fn append_required_proof_obligations_without_search(
             obligation.shared_introductions(),
             obligation.call_requirement_site(),
             obligation.statement_entry_required,
+            obligation.live_view_write,
         );
     }
 }
@@ -1886,6 +1934,7 @@ pub(in crate::kernel) fn append_required_proof_obligations_under_path_context(
             introductions.as_ref(),
             obligation.call_requirement_site(),
             obligation.statement_entry_required,
+            obligation.live_view_write,
         );
     }
 }
@@ -2518,6 +2567,7 @@ mod mandatory_integer_obligation_tests {
             Some("incoming context"),
             Some(&incoming_introductions),
             Some(&incoming_source),
+            false,
             false,
         );
         assert_eq!(tuple_obligations.len(), 1);

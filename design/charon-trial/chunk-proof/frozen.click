@@ -16,7 +16,7 @@ fn cover(bytes: &[u8]) -> usize {
     have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= 1000 by { solve(); }
     have bytes.len() <= 2147483647u64 by { normalize() using { bytes.len() <= 1000u64; } }
     have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= ((bytes.len() as uint32) as int32) by { normalize() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 2147483647u64; } }
-    step_until(region(22));
+    step_until(region(22).entry);
     have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
         transport(at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)])) using {
             at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)]));
@@ -46,7 +46,7 @@ fn cover(bytes: &[u8]) -> usize {
         invariant chunks_remaining % 4 == 0;
         invariant chunks_cursor == bytes + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining);
         invariant 0 <= ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) and ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) <= 1000;
-        preserve by {
+        maintain by {
             have 4 <= chunks_remaining by { solve(); }
             mark iteration;
             have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4 <= ((bytes.len() as uint32) as int32) by {
@@ -58,7 +58,7 @@ fn cover(bytes: &[u8]) -> usize {
                     0 <= (((bytes.len() - bytes.len() % 4u64) as uint32) as int32);
                 }
             }
-            step_until(region(42)); step();
+            step_until(region(42).entry); step();
             have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
                 transport(at(iteration, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)])) using {
                     at(iteration, viewable(bytes[0..((bytes.len() as uint32) as int32)]));

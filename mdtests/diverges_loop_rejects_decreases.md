@@ -23,7 +23,7 @@ int32 drain(int32 n) diverges {
         decreases n;
         invariant n >= 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

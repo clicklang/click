@@ -103,6 +103,7 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn checked_transition_projection_ignores_unrelated_caller_frame() {
     let pointer = Address {
@@ -284,6 +285,7 @@ fn checked_wrapper_projection_scales_with_used_members() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
     fn callback_fact(name: &str, pointer: Address, state: ExecutionState) -> Proposition {

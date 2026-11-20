@@ -14,14 +14,14 @@ and adds nothing to it.
   header, setting `RQ_CAPACITY`. It lives in the project, not in the tree.
 - `ringq.click` verifies the library's functions, naming the source by its
   path in the tree.
-- `click.project.lock.json` and `.click/` hold the lock and the prepared
+- `.click/captures/manifest.json` and `.click/captures/` hold the lock and the prepared
   source. Upstream files are recorded relative to the unit root (`$unit/...`)
   and the build header relative to the project (`$project/...`), so the lock
   is portable.
 
 ```sh
 cd examples/foreign-layout/project
-click import lock      # runs GCC; reads the tree, writes only in project/
+click capture      # runs GCC; reads the tree, writes only in project/
 click verify ringq.click
 ```
 

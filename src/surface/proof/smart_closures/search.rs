@@ -124,6 +124,35 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Ok(closed);
             }
         }
+        // A cited literal result of a completed call can replace the wide
+        // operand of a returning conversion before direct computation.
+        if let Some(
+            [
+                equality @ ClickProposition::Comparison {
+                    left: ContractExpression::RegionResult(_),
+                    operator: ComparisonOperator::Equal,
+                    right: ContractExpression::ProgramExpression(ProgramExpression::Value(_)),
+                },
+            ],
+        ) = premises.as_deref()
+            && let Some(rewritten) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_step(ProofStep::Rewrite(equality.clone())),
+            )?
+        {
+            if rewritten.focused_discharged() {
+                return Ok(rewritten);
+            }
+            if rewritten
+                .goal()
+                .is_some_and(crate::surface::planning::solve::computes_with_known)
+                && let Some(closed) =
+                    attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known))?
+            {
+                return Ok(closed);
+            }
+        }
         let step = match premises {
             Some(premises) => ProofStep::NormalizeUsing(premises),
             None => ProofStep::Normalize,
@@ -3456,7 +3485,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 attempt::candidate_outcome(
                     search_input
                         .driver()
-                        .apply_step(ProofStep::NormalizeUsing(premises)),
+                        .apply_step(ProofStep::OrderChain(premises)),
                 )?
             };
             if let Some(closed) = closed {
@@ -10983,17 +11012,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Fixed-state obligations can lack a source presentation. Retain a
         // spelled have first; its ordinary child proof has a source goal and
         // follows the same selected-premise path as an authored proof.
-        //
-        // The spelled `have` must state this goal itself. `defined(p->f + 1)`
-        // also states that its read is defined, so for the overflow half of
-        // that conjunction it opens the whole conjunction, whose search
-        // splits it and reaches this half again without end.
         if search_input.surface_goal().is_none()
             && crate::kernel::proof::arithmetic_special::signed_definedness_query(goal).is_some()
             && let Some(spelled) = spell_signed_goal(goal, premise_pairs)
-            && let Ok(scope) = search_input.driver().open_have(spelled)
-            && scope.goal() == Some(goal)
         {
+            let scope = search_input.driver().open_have(spelled).ok()?;
             let selected = premise_pairs
                 .iter()
                 .map(|(_, p)| p.clone())
@@ -11330,12 +11353,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 })
                 .collect::<Option<Vec<_>>>()?;
             let Some(surface_goal) = base.surface_goal() else {
-                // As above: only a spelled `have` stating this goal itself.
                 let spelled = spell_signed_goal(goal, &pairs)?;
                 let scope = base.driver().open_have(spelled).ok()?;
-                if scope.goal() != base.goal() {
-                    return None;
-                }
                 let closed = scope.driver().try_restricted_solve_closure(listed)?;
                 return closed
                     .join()

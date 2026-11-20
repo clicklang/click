@@ -91,13 +91,13 @@ uint8 last(const uint8* bytes, uint64 length) {
     views bytes[0..length];
     ensures result == result;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases length - i;
         views bytes[0..length];
         invariant length <= 2147483647u64;
         invariant i <= length;
-        preserve by {
+        maintain by {
             have to_integer(i + 2u64) <= to_integer(length) by {
                 apply(step_two(i, length));
             }

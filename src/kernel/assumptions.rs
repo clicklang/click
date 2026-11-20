@@ -887,7 +887,10 @@ pub(in crate::kernel) fn load_state_and_pointer(
     // Checking follows the recorded observation, even when structural version
     // selection retained an earlier representative state in the term.
     Some((
-        (*read.origin.unwrap_or(read.memory)).clone(),
+        (*read
+            .origin
+            .unwrap_or_else(|| read.point.into_shared_memory()))
+        .clone(),
         read.pointer,
         read.kind,
     ))
@@ -2468,6 +2471,14 @@ fn collect_scoped_leaf_memory_load_keys(
     }
 }
 
+fn collect_float_read_load_keys(pointer: &Address, keys: &mut BTreeSet<(AddressBase, u64)>) {
+    keys.insert((
+        pointer.base.clone(),
+        memory_blind_pointer_fingerprint(pointer),
+    ));
+    collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
+}
+
 fn collect_bitvector_memory_load_keys(term: &MachineTerm, keys: &mut BTreeSet<(AddressBase, u64)>) {
     match term {
         MachineTerm::ThreadHandle(_) => {}
@@ -2486,11 +2497,7 @@ fn collect_bitvector_memory_load_keys(term: &MachineTerm, keys: &mut BTreeSet<(A
             if !matches!(kind, LoadKind::Float32 | LoadKind::Float64) {
                 return;
             }
-            keys.insert((
-                pointer.base.clone(),
-                memory_blind_pointer_fingerprint(pointer),
-            ));
-            collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
+            collect_float_read_load_keys(pointer, keys);
         }
         MachineTerm::IntegerAddress(pointer, _) => {
             collect_pointer_offset_memory_load_keys(&pointer.offset, keys);
@@ -2649,12 +2656,23 @@ fn collect_term_memory_loads(
         Term::Integer(term) => {
             collect_integer_memory_loads(term.native_compat(), current_memory, loads, seen_integers)
         }
-        Term::PointerOffset(offset) => collect_pointer_offset_memory_loads(
-            offset.native_compat(),
-            current_memory,
-            loads,
-            seen_integers,
-        ),
+        Term::PointerOffset(offset) => {
+            if let Some(root) = offset.root() {
+                retained_folds::collect_offset_memory_loads(
+                    root,
+                    current_memory,
+                    loads,
+                    seen_integers,
+                )
+            } else {
+                collect_pointer_offset_memory_loads(
+                    offset.native_compat(),
+                    current_memory,
+                    loads,
+                    seen_integers,
+                )
+            }
+        }
         Term::ProgramValue(value) => {
             if let Some(root) = value.root()
                 && root.is_shared_machine_operand()
@@ -2834,19 +2852,28 @@ fn collect_memory_read_descriptor(
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
-    let (memory, pointer, kind) = operand.read().expect("read descriptor");
+    let (point, pointer, kind) = operand.read_point().expect("read descriptor");
     // Produced reads own an access width and observation point. Their numeric
     // interpretation can be wider (byte promotion) without widening the read.
     // Explicit unmaterialized descriptors retain their caller-supplied width.
-    let observation = crate::kernel::eval::is_selected_scalar_read(memory, pointer, kind)
+    let observation = crate::kernel::eval::is_selected_scalar_read(point, pointer, kind)
         .then(|| crate::kernel::eval::scalar_read_observation(operand).expect("selected read"));
     let memory = observation
         .as_ref()
-        .map(|read| read.origin.as_ref().unwrap_or(&read.memory))
-        .unwrap_or(memory);
-    let width = observation.as_ref().map(|read| read.bytes).or(width);
+        .map(|read| read.origin.as_ref().unwrap_or(read.point.shared_memory()))
+        .unwrap_or(point.shared_memory());
     if MemoryStateIdentity::of(memory.memory()) == MemoryStateIdentity::of(current_memory) {
-        let width = width
+        // A point-named read can have a typed access width even when it did
+        // not go through legacy comparison selection. In particular, a
+        // byte read can occur inside a four-byte comparison carrier.
+        let width = observation
+            .as_ref()
+            .map(|read| read.bytes)
+            .or_else(|| {
+                point.read_version_id()?;
+                crate::kernel::eval::observed_scalar_read_width(point, pointer, kind)
+            })
+            .or(width)
             .ok_or_else(|| "current memory load has no statically known byte width".to_string())?;
         loads.push((pointer.clone(), width));
     }
@@ -3284,9 +3311,20 @@ fn collect_shared_machine_memory_loads(
             seen_integers,
         );
     };
+    collect_shared_machine_root_memory_loads(root, current_memory, loads, width, seen_integers)
+}
+
+fn collect_shared_machine_root_memory_loads(
+    root: &KernelTerm,
+    current_memory: &SymbolicMemory,
+    loads: &mut Vec<(Address, u32)>,
+    width: Option<u32>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
+    let operand = MachineOperandView::Shared(root);
     // A selected root leaf has no shared arithmetic to summarize. Resolve it
     // directly using the existing width/state/registry rules.
-    if let Some(leaf) = value.operand_view().read_source() {
+    if let Some(leaf) = operand.read_source() {
         return collect_bitvector_memory_loads_with_width(
             &leaf,
             current_memory,
@@ -3295,7 +3333,7 @@ fn collect_shared_machine_memory_loads(
             seen_integers,
         );
     }
-    if value.operand_view().literal().is_some() {
+    if operand.literal().is_some() {
         return Ok(());
     }
     collect_shared_read_memory_loads(root, current_memory, loads, width, seen_integers)?;
@@ -3575,7 +3613,7 @@ fn decided_algebraic_if(proposition: &Proposition) -> Option<(ConditionTerm, boo
         value,
         Proposition::Equal(
             Term::Algebraic(selected.as_ref().clone().into()),
-            Term::Algebraic(constructor.clone().into()),
+            Term::Algebraic(constructor.clone()),
         ),
     ))
 }
@@ -3912,6 +3950,12 @@ impl PureFactContext {
                     .without_key(key)
             };
             let bucket = memory_reasoning::parameter_alias_bucket(key);
+            if filed {
+                self.equality_graph
+                    .admitted
+                    .numeric_address_connectivity
+                    .mark_pointer_alias_bucket(&bucket);
+            }
             let endpoints = self
                 .equality_graph
                 .admitted
@@ -4810,6 +4854,7 @@ impl PureFactContext {
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.wide_load_sources = Default::default();
         self.equality_graph.admitted.wide_constant_sources = Default::default();
+        self.equality_graph.admitted.numeric_address_connectivity = Default::default();
         self.equality_graph
             .admitted
             .wide_pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
@@ -4860,6 +4905,10 @@ impl PureFactContext {
         self.equality_graph
             .admitted
             .pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
+        self.equality_graph
+            .admitted
+            .numeric_address_connectivity
+            .clear_pointer_alias_marks();
         self.equality_graph.clear_condition_pointer_facts();
         self.equality_graph.reset_closure();
         self.equality_graph.admitted.algebraic_graph_equalities = Default::default();
@@ -5242,14 +5291,22 @@ impl PureFactContext {
             }
         }
 
-        for (endpoint, other) in [
-            (left.as_ref(), right.as_ref()),
-            (right.as_ref(), left.as_ref()),
-        ] {
-            let key = checked_scalar_facts::ScalarOperandKey::for_format(
+        let [left_key, right_key] = [left.as_ref(), right.as_ref()].map(|endpoint| {
+            checked_scalar_facts::ScalarOperandKey::for_format(
                 MachineIntegerType::UInt64,
                 MachineOperandView::Legacy(endpoint),
-            );
+            )
+        });
+        let admitted = &mut *self.equality_graph.admitted;
+        let pointer_alias_endpoints = &admitted.pointer_alias_endpoints_by_object;
+        admitted.numeric_address_connectivity.record(
+            [(&left_key, left.as_ref()), (&right_key, right.as_ref())],
+            |bucket| pointer_alias_endpoints.contains_key(bucket),
+        );
+        for (key, endpoint, other) in [
+            (left_key, left.as_ref(), right.as_ref()),
+            (right_key, right.as_ref(), left.as_ref()),
+        ] {
             let neighbors = self
                 .equality_graph
                 .admitted
@@ -7387,25 +7444,7 @@ impl PureFactContext {
             Proposition::ConditionIs(condition, value) => {
                 self.knows_condition_or_stated_separation(condition.native_compat(), *value)
             }
-            Proposition::ResourceSeparate { left, right } => {
-                let (Resource::Memory(left_range), Resource::Memory(right_range)) =
-                    (left.as_ref(), right.as_ref())
-                else {
-                    return false;
-                };
-                if self.resource_separation_conflicts_with_equalities(left, right) {
-                    return false;
-                }
-                let Some(source) = self.separated_address_classes.exact_spans(
-                    left_range,
-                    right_range,
-                    &self.equality_graph,
-                ) else {
-                    return false;
-                };
-                record_implicit_consulted_premises(self, &source);
-                true
-            }
+            Proposition::ResourceSeparate { .. } => self.states_memory_separation(proposition),
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::ConditionIs(condition, value) => {
                     self.knows_condition_or_stated_separation(condition.native_compat(), !*value)
@@ -7414,6 +7453,31 @@ impl PureFactContext {
             },
             _ => false,
         }
+    }
+
+    /// Read the stated separation for these exact physical byte spans. This
+    /// proves only separation, without transferring either range's authority.
+    pub(crate) fn states_memory_separation(&self, proposition: &Proposition) -> bool {
+        let Proposition::ResourceSeparate { left, right } = proposition else {
+            return false;
+        };
+        let (Resource::Memory(left_range), Resource::Memory(right_range)) =
+            (left.as_ref(), right.as_ref())
+        else {
+            return false;
+        };
+        if self.resource_separation_conflicts_with_equalities(left, right) {
+            return false;
+        }
+        let Some(source) = self.separated_address_classes.exact_spans(
+            left_range,
+            right_range,
+            &self.equality_graph,
+        ) else {
+            return false;
+        };
+        record_implicit_consulted_premises(self, &source);
+        true
     }
 
     fn knows_condition_or_stated_separation(&self, condition: &ConditionTerm, value: bool) -> bool {
@@ -10254,6 +10318,7 @@ impl ProofObligation {
             evaluation_domain: false,
             assertion_failure: false,
             statement_entry_required: false,
+            live_view_write: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10270,6 +10335,7 @@ impl ProofObligation {
             evaluation_domain: false,
             assertion_failure: false,
             statement_entry_required: false,
+            live_view_write: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -10377,6 +10443,23 @@ impl ProofObligation {
         self.context.as_deref()
     }
 
+    pub(in crate::kernel) fn with_live_view_write(mut self) -> Self {
+        self.live_view_write = true;
+        self
+    }
+
+    /// For a write diagnostic, distinguish known concrete overlap from an
+    /// unresolved separation. Only inspect the proposition's two exact ranges.
+    pub(crate) fn live_view_write_overlap(&self) -> Option<bool> {
+        let Proposition::ResourceSeparate { left, right } = &self.proposition else {
+            return None;
+        };
+        self.live_view_write.then(|| {
+            matches!((left.as_ref(), right.as_ref()), (Resource::Memory(write), Resource::Memory(protected))
+                if super::loans::protected_ranges_constant_overlap(write, protected) == Some(true))
+        })
+    }
+
     pub(super) fn map_proposition(self, f: impl FnOnce(Proposition) -> Proposition) -> Self {
         Self {
             proposition: f(self.proposition),
@@ -10385,6 +10468,7 @@ impl ProofObligation {
             evaluation_domain: self.evaluation_domain,
             assertion_failure: self.assertion_failure,
             statement_entry_required: self.statement_entry_required,
+            live_view_write: self.live_view_write,
             call_requirement_site: None,
             // The chain describes the head nodes of the proposition it was
             // recorded for. A rewrite adds or removes head nodes, so the

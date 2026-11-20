@@ -2,7 +2,7 @@
 
 The body has two C `if`s in a row and then the increment. Each `if` stores
 to `found` when its guard holds and does nothing otherwise. With no written
-`preserve` proof, the loop closer splits at each `if` as a function's implicit
+`maintain` proof, the loop closer splits at each `if` as a function's implicit
 tail does, so the increment runs on four paths, and each closes the
 invariant, which no arm's store touches.
 

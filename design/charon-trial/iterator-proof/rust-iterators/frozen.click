@@ -9,7 +9,7 @@ fn sum(bytes: &[u8]) -> i32 {
     views bytes[0..((bytes.len() as uint32) as int32)];
     ensures to_integer(result) == old(prefix(bytes, ((bytes.len() as uint32) as int32)));
 } by {
-    step_until(region(9));
+    step_until(region(9).entry);
     have 0 <= ((bytes.len() as uint32) as int32) by { solve(); }
     have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
         transport(at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)])) using {
@@ -42,7 +42,7 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant 0 <= (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) and 1000 >= (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining);
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining));
         invariant to_integer(total) == prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining));
-        preserve by {
+        maintain by {
             have 0 < __rust_iter_3_5_remaining by { solve() using { 0 <= __rust_iter_3_5_remaining; not (__rust_iter_3_5_remaining == 0); } }
             have 0 <= __rust_iter_3_5_remaining - 1 by { solve() using { 0 < __rust_iter_3_5_remaining; } }
             have 0 <= to_integer((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)) by {
@@ -67,7 +67,7 @@ fn sum(bytes: &[u8]) -> i32 {
                     __rust_iter_3_5_remaining <= ((bytes.len() as uint32) as int32);
                 }
             }
-            step_until(region(15));
+            step_until(region(15).entry);
             have 0 <= __rust_iter_3_5_remaining by { solve(); }
             have __rust_iter_3_5_remaining <= ((bytes.len() as uint32) as int32) by { solve(); }
             have (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) < ((bytes.len() as uint32) as int32) by { solve() using {
@@ -95,7 +95,7 @@ fn sum(bytes: &[u8]) -> i32 {
                 rewrite((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1), at(region(10).entry, ((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining));
                 solve();
             }
-            step_until(region(23));
+            step_until(region(23).entry);
             have bytes + (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining - 1) == __rust_iter_3_5_item by { solve(); }
             have 0 <= __rust_checked_1 and 255 >= __rust_checked_1 by { solve(); }
             have 0 <= (load<uint8>(__rust_iter_3_5_item) as int32) and 255 >= (load<uint8>(__rust_iter_3_5_item) as int32) by { solve(); }

@@ -69,6 +69,7 @@ pub(super) fn expand_generic_resources(
     positions: Vec<SourcePosition>,
     written: BTreeSet<usize>,
     concrete: fn(&str) -> bool,
+    object_instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
 ) -> Result<(Vec<Token>, Vec<SourcePosition>, BTreeSet<usize>), ClickError> {
     let source: Vec<Spanned> = tokens.into_iter().zip(positions).collect();
     let mut blocks = BTreeMap::<String, Block>::new();
@@ -96,7 +97,7 @@ pub(super) fn expand_generic_resources(
             _ => {}
         }
     }
-    if blocks.is_empty() {
+    if blocks.is_empty() && object_instances.is_empty() {
         let (tokens, positions) = source.into_iter().unzip();
         return Ok((tokens, positions, written));
     }
@@ -104,7 +105,11 @@ pub(super) fn expand_generic_resources(
     // its body once for every type, and at each list a use names.
     let mut instances = blocks
         .iter()
-        .map(|(name, block)| (name.clone(), BTreeSet::from([block.names.clone()])))
+        .map(|(name, block)| {
+            let mut arguments = BTreeSet::from([block.names.clone()]);
+            arguments.extend(object_instances.get(name).into_iter().flatten().cloned());
+            (name.clone(), arguments)
+        })
         .collect::<BTreeMap<_, _>>();
     let inside_block = |index: usize| {
         blocks
@@ -113,23 +118,28 @@ pub(super) fn expand_generic_resources(
     };
     let mut uses = BTreeMap::<usize, (String, Vec<String>, usize)>::new();
     for index in 0..source.len() {
-        let Some((name, arguments, after)) = use_at(&source, index, &blocks) else {
+        let Some((name, arguments, after)) = use_at(&source, index, &blocks, object_instances)
+        else {
             continue;
         };
-        if blocks[&name].names.len() != arguments.len() {
+        let arity = blocks
+            .get(&name)
+            .map(|block| block.names.len())
+            .or_else(|| object_instances.get(&name)?.first().map(Vec::len))
+            .expect("a use names a generic resource");
+        if arity != arguments.len() {
             return Err(error_at(
                 &source[index].1,
                 format!(
                     "the generic resource `{name}` takes {} type arguments",
-                    blocks[&name].names.len()
+                    arity
                 ),
             ));
         }
-        if !inside_block(index) {
-            instances
-                .get_mut(&name)
-                .expect("a use names a generic resource")
-                .insert(arguments.clone());
+        if !inside_block(index)
+            && let Some(local) = instances.get_mut(&name)
+        {
+            local.insert(arguments.clone());
         }
         uses.insert(index, (name, arguments, after));
     }
@@ -151,10 +161,8 @@ pub(super) fn expand_generic_resources(
                 .iter()
                 .map(|argument| substitution.get(argument).map_or(argument, |a| a).clone())
                 .collect::<Vec<_>>();
-            if instances
-                .get_mut(used)
-                .expect("a use names a generic resource")
-                .insert(used_arguments.clone())
+            if let Some(local) = instances.get_mut(used)
+                && local.insert(used_arguments.clone())
             {
                 pending.push((used.clone(), used_arguments));
             }
@@ -280,12 +288,16 @@ fn use_at(
     source: &[Spanned],
     index: usize,
     blocks: &BTreeMap<String, Block>,
+    object_instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
 ) -> Option<(String, Vec<String>, usize)> {
     let (Token::Ident(name), _) = source.get(index)? else {
         return None;
     };
-    let block = blocks.get(name)?;
-    if index == block.keyword + 1 {
+    if let Some(block) = blocks.get(name) {
+        if index == block.keyword + 1 {
+            return None;
+        }
+    } else if !object_instances.contains_key(name) {
         return None;
     }
     if source.get(index + 1)?.0 != Token::LessThan {

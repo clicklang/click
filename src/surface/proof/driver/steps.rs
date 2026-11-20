@@ -459,6 +459,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::NormalizeUsing(premises) => {
                 Some(driver_proof.apply_normalize_using(premises))
             }
+            ProofStep::OrderChain(premises) => Some(driver_proof.apply_order_chain(premises)),
             ProofStep::ArithmeticUsing(_) => {
                 return Err(driver_proof
                     .step_error("arithmetic search must expand into ordinary proof steps"));
@@ -535,6 +536,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::UnfoldWitnesses { resource, names } => {
                 let resource = &driver_proof.resolve_proof_resource_arguments(resource)?;
                 driver_proof.apply_execution_resource_unfold_naming_witnesses(resource, names)
+            }
+            ProofStep::ReleaseView(resource) => {
+                let resource = driver_proof.resolve_proof_resource_arguments(resource)?;
+                driver_proof.apply_release_view(&resource)
             }
             ProofStep::FoldResource(_) => {
                 unreachable!("fold was routed through obligation generation")

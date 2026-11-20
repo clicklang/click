@@ -7,21 +7,36 @@ use crate::languages::interface::RustLoopIterator;
 #[derive(Default)]
 pub(super) struct RustLoopSpelling {
     iterators: std::sync::Arc<[Option<RustLoopIterator>]>,
-    chunk_fields: std::collections::BTreeSet<crate::kernel::BindingName>,
+    /// The bindings that hold a loop iterator's own fields, each of which a
+    /// proof names through an `iter` accessor.
+    iterator_fields: std::collections::BTreeSet<crate::kernel::BindingName>,
 }
 
 impl RustLoopSpelling {
     pub(super) fn of(signature: &super::FunctionSignature) -> Self {
         let iterators = signature.rust_loop_iterators().clone();
-        let chunk_fields = iterators
+        let iterator_fields = iterators
             .iter()
             .flatten()
-            .filter_map(|iterator| iterator.chunk_fields.as_ref())
-            .flat_map(|fields| fields.bindings().into_iter().cloned())
+            .flat_map(|iterator| {
+                iterator
+                    .chunk_fields
+                    .iter()
+                    .flat_map(|fields| fields.bindings().into_iter().cloned())
+                    .chain(
+                        iterator
+                            .slice_fields
+                            .iter()
+                            .flat_map(|fields| [fields.pointer.clone(), fields.length.clone()]),
+                    )
+                    .chain(iterator.count_binding.iter().cloned())
+                    .chain(iterator.range_bounds.iter().flatten().cloned())
+                    .collect::<Vec<_>>()
+            })
             .collect();
         Self {
             iterators,
-            chunk_fields,
+            iterator_fields,
         }
     }
 }
@@ -343,14 +358,15 @@ pub(crate) fn rust_binding_spelling(name: &crate::kernel::BindingName) -> Option
 }
 
 /// Only the loop's iterator fields have selectors. Raise the values held
-/// by iterator copies and the private Option fields structurally.
+/// by iterator copies, such as a slice iterator an `enumerate` wraps, and
+/// the private Option fields structurally.
 pub(crate) fn has_surface_iterator_binding(name: &crate::kernel::BindingName) -> bool {
     let Some(id) = name.local_id() else {
         return true;
     };
     !id.is_iterator_option_field()
-        && (!id.is_chunk_iterator_field()
-            || with_rust_loop_spelling(|loops| loops.chunk_fields.contains(name)))
+        && (!id.is_iterator_field()
+            || with_rust_loop_spelling(|loops| loops.iterator_fields.contains(name)))
 }
 
 /// The Rust name of the scalar type `interface_type`, `u32` for `uint32`.

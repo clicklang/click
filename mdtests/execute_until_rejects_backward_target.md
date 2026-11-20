@@ -14,11 +14,11 @@ verifying "execute_until_backward.c";
 int32 execute_until_backward(int32 x) {
     ensures result == x by {
         step();
-        step_until(region(0));
+        step_until(region(0).entry);
     }
 }
 ```
 
 ```expect
-fail: `step_until(region(0))` cannot move backward from region(1)
+fail: `step_until(region(0).entry)` cannot move backward from region(1)
 ```

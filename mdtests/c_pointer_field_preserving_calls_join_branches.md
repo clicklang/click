@@ -104,7 +104,7 @@ int32 vector_replace_if(
 
     ensures replace != 0 implies result == replacement;
 } by {
-    step_until(statement(3));
+    step_until(statement(3).entry);
     branch {
         true => {
             step();

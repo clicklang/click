@@ -2831,6 +2831,7 @@ fn resource_join_drops_projection_when_memory_footprints_diverge() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn resource_common_descendant_visits_only_branch_local_changes() {
     let left_path = ResourceFact::own_token("left_path".to_string(), Vec::new());
@@ -2972,6 +2973,7 @@ fn resource_common_descendant_visits_only_branch_local_changes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn resource_memory_block_and_interval_indexes_update_logarithmically() {
     for size in [16_usize, 64, 256, 1024, 4096] {
@@ -4934,6 +4936,7 @@ fn observed_wide_footprint_and_unknown_loop_barrier_are_invalidated() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn supported_projection_interval_updates_scale_with_index_height() {
     let mut samples = Vec::new();

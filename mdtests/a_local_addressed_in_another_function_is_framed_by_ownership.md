@@ -67,7 +67,7 @@ int32 read_literal() {
     ensures result == 'k' + 3;
 } by {
     step(); step();
-    let { result: r } = step(literal_source, {});
+    let { result: r } = step(literal_source);
     step();
     have r[1] == 'k' by { known(); }
     have message == r by { normalize(); }

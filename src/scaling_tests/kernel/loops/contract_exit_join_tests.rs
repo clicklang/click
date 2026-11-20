@@ -5,8 +5,59 @@
 use super::*;
 
 #[test]
+fn loop_exit_scalar_restatement_keeps_recorded_memory_effects() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let held = int32(MachineTerm::Variable(Variable(927_020)));
+    let fresh = int32(MachineTerm::Variable(Variable(927_021)));
+    let guard = |value| {
+        program_value_comparison_proposition(value, ComparisonOperator::Equal, &int32(3)).unwrap()
+    };
+    let range = MemoryRange::new_with_element_width(
+        Address::symbolic(Variable(927_022)),
+        MachineTerm::constant(0),
+        MachineTerm::Variable(Variable(927_020)),
+        4,
+    );
+    let slot = SymbolicMemory::local_pointer("counter");
+    let work = [4u32, 16, 64, 256].map(|size| {
+        let mut before = SymbolicMemory::new().with_block(slot.base.clone(), 4);
+        for index in 0..size {
+            before = before.with_block(format!("untouched{index}").as_str(), 4);
+        }
+        let after = before.clone().store(slot.clone(), held.clone());
+        let effect = Proposition::MemoryEffectSummary {
+            before,
+            after,
+            mutable_ranges: vec![range.clone()],
+        };
+        let original = Proposition::And(Box::new(effect.clone()), Box::new(guard(&held)));
+        let facts = [
+            ExecutionPureFact::new(effect.clone()),
+            ExecutionPureFact::new(original.clone()),
+        ]
+        .into_iter()
+        .collect();
+        let mut restatement = LoopExitRestatement::default();
+        restatement.pin(&fresh, &held);
+        let (exit, work) = crate::instrumentation::measure_deterministic_work(|| {
+            restatement.restate(facts, vec![], empty_checked_loan_evidence_sequence())
+        });
+        assert!(exit.stated.contains_proposition(&original));
+        let nested = Proposition::And(Box::new(effect.clone()), Box::new(guard(&fresh)));
+        assert_eq!(exit.disjunct, [effect, nested]);
+        assert!(exit.successor_equations.is_empty());
+        work
+    });
+    assert!(
+        work.iter().all(|units| *units == work[0]),
+        "loop exit restatement work with 4/16/64/256 untouched blocks: {work:?}"
+    );
+}
+
+#[test]
 fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
     let _session = crate::kernel::VerificationSession::enter();
+    let left_only = SymbolicMemory::global_pointer("left-exit-only");
     let right_only = SymbolicMemory::global_pointer("exit-only");
     let work = [4u32, 16, 64, 256].map(|size| {
         let mut shared = ExecutionState::new()
@@ -22,8 +73,14 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
             memory = memory.store(pointer, int32(index));
         }
         let shared = shared.with_memory(memory.clone());
-        let left = shared.clone().with_local("counter", int32(1));
-        let mut right = shared.clone().with_local("counter", int32(2));
+        let left = shared
+            .clone()
+            .with_local("counter", int32(1))
+            .with_memory(memory.clone().store(left_only.clone(), int32(11)));
+        let mut right = shared
+            .clone()
+            .with_local("counter", int32(2))
+            .with_memory(memory.clone().store(right_only.clone(), int32(12)));
         assert!(right.locals.forget_initialization("maybe_initialized"));
         let head = LoopHead {
             top: shared.clone(),
@@ -65,8 +122,8 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
         assert!(restatements.iter().all(|exit| exit.equations.len() == 1));
 
         // A later exit may hold a cache entry the successor never had.
-        // Measure candidate selection without interning a reconstructed
-        // memory for the residual witness comparison.
+        // Also measure selection on its own when only the later exit has a
+        // cell to set aside.
         let exits = [
             joined.clone(),
             joined
@@ -98,6 +155,9 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
         assert!(requirements.is_empty());
         (work, cell_work)
     });
+    eprintln!(
+        "(exit join, cell selection) work at 4/16/64/256 shared bindings and cells: {work:?}"
+    );
     assert!(
         work.iter().all(|&(join, cells)| {
             join > 0 && cells > 0 && join <= work[0].0 + 64 && cells <= work[0].1 + 16

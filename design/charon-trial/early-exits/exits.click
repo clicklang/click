@@ -10,7 +10,7 @@ fn has_zero(xs: &[u8]) -> bool {
     views xs[0..xs.len()];
     ensures result implies xs.len() != 0u64;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases xs.len() - i;
         views xs[0..xs.len()];
@@ -23,7 +23,7 @@ fn position(xs: &[u8], v: u8) -> usize {
     ensures result <= xs.len();
     ensures result < xs.len() implies xs[result] == v;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.end - iter.start;
         views xs[0..xs.len()];
@@ -36,12 +36,12 @@ fn find_pair(n: u32, m: u32) -> u32 {
     requires n <= 1000u32 and m <= 1000u32;
     ensures result <= n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
         invariant i <= n;
-        preserve by {
-            step_until(loop(1));
+        maintain by {
+            step_until(loop(1).entry);
             loop {
                 decreases m - j;
                 invariant i < n;
@@ -54,13 +54,13 @@ fn find_pair(n: u32, m: u32) -> u32 {
 fn first_hit(n: u32, m: u32) -> u32 {
     ensures result <= n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
         invariant i <= n;
         invariant found <= n;
-        preserve by {
-            step_until(loop(1));
+        maintain by {
+            step_until(loop(1).entry);
             loop {
                 decreases m - j;
                 invariant i < n;
@@ -74,14 +74,14 @@ fn first_hit(n: u32, m: u32) -> u32 {
 fn first_row(n: u32, m: u32) -> u32 {
     ensures result <= n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.end - iter.start;
         invariant iter.end == n;
         invariant iter.start <= n;
         invariant row <= n;
-        preserve by {
-            step_until(loop(1));
+        maintain by {
+            step_until(loop(1).entry);
             loop {
                 decreases iter.end - iter.start;
                 invariant loop(0).iter.end == n;
@@ -96,13 +96,13 @@ fn first_row(n: u32, m: u32) -> u32 {
 fn skip_rows(n: u32, m: u32) -> u32 {
     ensures result <= m;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
         invariant i <= n;
         invariant count <= m;
-        preserve by {
-            step_until(loop(1));
+        maintain by {
+            step_until(loop(1).entry);
             loop {
                 decreases m - j;
                 invariant 1u32 <= i and i <= n;

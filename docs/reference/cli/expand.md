@@ -41,7 +41,7 @@ Replace the following:
 
 The location form selects one smart tactic by where it is written, at any
 nesting depth: in a proof `branch`, `if`, `cases`, or `match` arm, a call's
-`outcomes` arm, a loop's `initialize` or `preserve` phase, or the body of a
+`outcomes` arm, a loop's `initialize` or `maintain` phase, or the body of a
 `have`. Coordinates in an mdtest refer to the Markdown file, not to the
 extracted Click block.
 
@@ -100,9 +100,9 @@ source from the clause keyword (`ensures`, `owns`, `produces`, `exceptional
 ensures`) through the end of its `by`, a loop phase's proof, or a function's
 grouped proof; a clause without its own `by` that the grouped proof covers
 selects that grouped proof, `f.contract`. A loop phase's proof written in a
-`loop` tactic, from its `initialize` or `preserve` keyword through the end of
+`loop` tactic, from its `initialize` or `maintain` keyword through the end of
 its `by`, is a claim inside the proof that writes it, and a location there
-selects the phase, `f.loop(N).initialize` or `f.loop(N).preserve`, rather than
+selects the phase, `f.loop(N).initialize` or `f.loop(N).maintain`, rather than
 that proof. Without a column the line must touch exactly one claim, not
 counting a claim around another one the line touches; otherwise the command
 fails and lists each claim as a `PATH:LINE:COLUMN` location to rerun with. A
@@ -113,7 +113,7 @@ verification path.
 A loop phase claim rewrites only that phase: its written `by` clause becomes
 the phase's checked certificate, and a phase the `loop` tactic leaves to
 automation is written out as an explicit `initialize by { ... }` or
-`preserve by { ... }` at the end of the tactic's body. The rest of the proof is
+`maintain by { ... }` at the end of the tactic's body. The rest of the proof is
 left as written, and the proof that writes the `loop` tactic is verified with
 the rewrite. A `loop` tactic does not write which C loop it proves; checked
 execution binds it, so resolving a phase label or a phase location checks that
@@ -137,7 +137,7 @@ theorem, or user-defined tactic name before the dot.
 | `f.exceptional_ensures_N` | The `N`th `exceptional ensures` clause. |
 | `f.owns_N` | The return obligation of the `N`th `owns` clause: the function gives back what it was lent. |
 | `f.produces_N` | The `N`th `produces` clause, counting those inside a contract `if`. |
-| `f.loop(N).initialize`, `f.loop(N).preserve` | A loop phase's proof: the `initialize` or `preserve` proof, written or left to automation, of the `loop` tactic that proves C loop `N` of `f`, counting its loops from 0 in source order. |
+| `f.loop(N).initialize`, `f.loop(N).maintain` | A loop phase's proof: the `initialize` or `maintain` proof, written or left to automation, of the `loop` tactic that proves C loop `N` of `f`, counting its loops from 0 in source order. |
 | `f.body_safety` | The body-safety obligation of a contract that states no claim, as diagnostics name it. |
 
 Each clause kind counts separately, so adding an `owns` clause does not

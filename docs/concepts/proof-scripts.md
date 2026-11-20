@@ -174,7 +174,7 @@ An execution proof carries a C frontier. The execution vocabulary is:
 
 - `mark name;` to name the current state for later `at(name, ...)` expressions;
 - `step()` for one simple deterministic transition;
-- `step_until(target)` for a forward prefix, up to a statement, region,
+- `step_until(point)` for a forward prefix, up to a statement, region,
   loop, assignment, read, back edge, or `function.exit`, never splitting;
 - `branch ensuring { ... } { true => { ... } false => { ... } }` for the C `if` at
   the frontier and its single joined continuation; and
@@ -214,7 +214,7 @@ frontier, and naming it is refused by naming the local
 into one arm per constructor, with the constructor equation and fresh field
 bindings on each arm's path. It may run at any frontier the proof has reached:
 at unchanged function entry, after executed statements, and inside a loop's
-`preserve` body.
+`maintain` body.
 
 An arm's bindings are in scope in every term the arm writes: `have` goals,
 theorem arguments and `using` premises, `instantiate`, `have`, `rewrite`,
@@ -222,7 +222,7 @@ theorem arguments and `using` premises, `instantiate`, `have`, `rewrite`,
 inside a `have` body (`mdtests/have_body_solve_using_names_an_arm_binding.md`),
 the clauses of a `loop` written inside the arm
 (`mdtests/loop_clause_reads_arm_bindings.md`), and that loop's `initialize` and
-`preserve` bodies (`mdtests/loop_phase_body_reads_arm_bindings.md`). A name that a `have` goal can see is a theorem
+`maintain` bodies (`mdtests/loop_phase_body_reads_arm_bindings.md`). A name that a `have` goal can see is a theorem
 argument at the same point; `mdtests/theorem_argument_arm_binding.md` and
 `mdtests/theorem_argument_arm_binding_algebraic.md` pin the pointer, integer,
 and model cases.
@@ -300,7 +300,7 @@ result form names the call's value:
 
 <!-- verified-example: mdtests/call_result_in_condition.md -->
 ```click
-let { result: r } = step(classify, { });
+let { result: r } = step(classify);
 ```
 
 `r` is then an ordinary value name in `have`, `rewrite`, `normalize() using`,

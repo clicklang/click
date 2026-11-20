@@ -849,15 +849,22 @@ int32 identity(int32 x) {
         .expect("the contract should expand and recheck");
         let _ = fs::remove_dir_all(&directory);
 
-        // The two Integer length claims need the `+ 1` identity and are
-        // restated; the rest close in goal order with one closer each.
-        assert!(
-            expanded.ends_with(
-                "    }\n    known();\n    known();\n    known();\n    normalize();\n    normalize();\n    normalize();\n}\n"
-            ),
-            "{expanded}"
+        // These top-level facts establish the postconditions in declaration
+        // order. The tactics used to close the resulting goals may vary.
+        let proved_claims = expanded
+            .lines()
+            .filter_map(|line| line.strip_prefix("    have ")?.strip_suffix(" by {"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            proved_claims,
+            [
+                "to_integer(result) == (to_integer(old(owner->len)) + 1)",
+                "to_integer(owner->len) == (to_integer(old(owner->len)) + 1)",
+                "owner->data[old(owner->len)] == value",
+                "owner->cap == old(owner->cap)",
+                "owner->data == old(owner->data)",
+            ]
         );
-        assert!(!expanded.contains("have owner->cap =="), "{expanded}");
     }
 
     #[test]
@@ -1019,10 +1026,10 @@ int32 bad(int32 x) {
         let markdown = fs::read_to_string(&path).unwrap();
         let have_line = markdown
             .lines()
-            .position(|line| line == "        have st.live == 1 by {")
+            .position(|line| line == "            have st.live == 1 by {")
             .unwrap()
             + 1;
-        let from_have = run_location(&path, &format!("{have_line}:9")).unwrap();
+        let from_have = run_location(&path, &format!("{have_line}:13")).unwrap();
         assert_eq!(
             run_location(&path, &format!("{}", have_line + 1)).unwrap(),
             from_have
@@ -1033,7 +1040,7 @@ int32 bad(int32 x) {
                 .contains("to_integer(st.live) == to_integer(at(m, st.live) + got)")
         );
         assert_eq!(
-            run_location(&path, &format!("{premise_line}:20")).unwrap(),
+            run_location(&path, &format!("{premise_line}:24")).unwrap(),
             from_have
         );
         let error = run_location(&path, &format!("{premise_line}"))
@@ -1318,12 +1325,12 @@ int32 f(int32 a, int32 b) {
         assert_eq!(fs::read_to_string(output).unwrap(), by_label);
 
         let insertion = click_source.find("}\n    step();").unwrap();
-        let omitted = expand("f.loop(0).preserve".to_string())
+        let omitted = expand("f.loop(0).maintain".to_string())
             .expect("the omitted phase should expand and check");
         assert!(omitted.starts_with(&click_source[..insertion]), "{omitted}");
         assert!(omitted.ends_with(&click_source[insertion..]), "{omitted}");
         assert!(
-            omitted[insertion..].starts_with("    preserve by {\n"),
+            omitted[insertion..].starts_with("    maintain by {\n"),
             "{omitted}"
         );
         fs::remove_dir_all(directory).unwrap();

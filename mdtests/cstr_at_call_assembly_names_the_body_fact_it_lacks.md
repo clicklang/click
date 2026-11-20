@@ -26,7 +26,7 @@ uint64 fixed_string_length(uint8 bytes[]) {
     requires bytes[2] == '\0';
     ensures result == 2u64;
 } by {
-    step_until(region(1));
+    step_until(region(1).entry);
     step(strlen, { n: 2u64 });
 }
 ```

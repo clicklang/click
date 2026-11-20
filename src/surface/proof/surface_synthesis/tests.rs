@@ -488,6 +488,72 @@ fn definedness_round_trips_at_distinct_points_after_unfold_names_a_cell() {
 }
 
 #[test]
+fn ordinary_entry_cell_read_round_trips_after_overwrite() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(981_302)), 4),
+    };
+    let entry = ExecutionState::new()
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
+        )
+        .begin_function_entry_memory();
+    let post = entry.clone().with_memory(entry.memory().clone().store(
+        pointer.clone(),
+        ProgramValue::Int32(MachineTerm::constant(7)),
+    ));
+    let parsed =
+        crate::surface::parse("theorem probe(p: int32*) { requires old(*p) < 6; ensures true; }")
+            .unwrap();
+    let Requirement::Proposition(written) = &parsed.theorem_definitions()[0].requires()[0] else {
+        panic!("expected a proposition");
+    };
+    let points = RecordedStates::new();
+    let original = relower_written_proposition_with_states(written, &entry, &post, &points)
+        .expect("the historical read lowers");
+    let read = MachineTerm::MemoryLoad(
+        entry
+            .program_point()
+            .ordinary_typed_version(&pointer, ProgramType::Int32)
+            .expect("the read has an entry version"),
+        Box::new(pointer),
+        crate::kernel::LoadKind::Int32,
+    );
+    let Proposition::ConditionIs(condition, true) = &original else {
+        panic!("expected the read comparison");
+    };
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
+        condition.native_compat(),
+    )
+    .unwrap();
+    assert_eq!(
+        crate::kernel::KernelTerm::retained_machine_operand(
+            view.format,
+            view.operands[0].operand_view(),
+        ),
+        crate::kernel::KernelTerm::retained_machine_operand(
+            view.format,
+            crate::kernel::MachineOperandView::Legacy(&read),
+        ),
+    );
+    let raised = synthesize_surface_proposition_at_entry_and_post(
+        &original,
+        ParameterBinding::default(),
+        &entry,
+        &post,
+    )
+    .expect("the entry version has a spelling");
+    let spelling = crate::surface::printing::source_click_proposition(&raised);
+    assert!(spelling.contains("old("), "{spelling}");
+    assert_eq!(
+        relower_written_proposition_with_states(&raised, &entry, &post, &points),
+        Ok(original),
+    );
+}
+
+#[test]
 fn old_read_shortcut_identifies_points_instead_of_equal_snapshots() {
     let _session = crate::kernel::VerificationSession::enter();
     let entry = ExecutionState::new().with_memory(SymbolicMemory::new());
@@ -4248,6 +4314,60 @@ fn local_read_test_claim(value_type: ProgramType) -> ClickProposition {
 }
 
 #[test]
+fn exact_read_raises_at_its_own_point_when_another_point_has_equal_memory() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = local_read_test_address("slot");
+    let state = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().with_block("local:slot", 4))
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(slot.clone(), ProgramType::Int32Pointer),
+        );
+    let first = local_read_test_store(&state, &slot, ProgramType::Int32, 7);
+    let second = local_read_test_store(&first, &slot, ProgramType::Int32, 7);
+    assert_eq!(first.memory(), second.memory());
+
+    let mut claim = local_read_test_claim(ProgramType::Int32);
+    let ClickProposition::Comparison { left, .. } = &mut claim else {
+        unreachable!("test comparison");
+    };
+    *left = ContractExpression::Exact(Box::new(left.clone()));
+    let exact = relower_written_proposition(&claim, &first).unwrap();
+    let read = local_test_read_operand(&exact, ProgramType::Int32);
+    let MachineTerm::MemoryLoad(point, ..) = read else {
+        panic!("expected exact read: {read:?}");
+    };
+    assert!(point.is_exact_read());
+    assert_eq!(point.read_version_id(), first.program_point_id());
+    assert_ne!(exact, relower_written_proposition(&claim, &second).unwrap());
+
+    let selector = ProgramPointSelector::Mark("first".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), first);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let root = crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, read);
+    let raised = raise_kernel_term(
+        &root,
+        ParameterBinding::default(),
+        &second,
+        &BTreeMap::new(),
+    )
+    .expect("the exact read has a recorded point");
+    assert!(
+        matches!(&raised, ContractExpression::At { selector: at, expression }
+        if at == &selector && matches!(expression.as_ref(), ContractExpression::Exact(_)))
+    );
+    let ClickProposition::Comparison { left, .. } = &mut claim else {
+        unreachable!("test comparison");
+    };
+    *left = raised;
+    assert_eq!(
+        relower_written_proposition_with_states(&claim, &second, &second, &points),
+        Ok(exact)
+    );
+}
+
+#[test]
 fn ordinary_indexed_integer_reads_select_the_write_on_their_own_path() {
     check_local_read_versions(ProgramType::Int8, ProgramType::UInt8);
     check_local_read_versions(ProgramType::UInt8, ProgramType::Int8);
@@ -4354,7 +4474,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     assert_eq!(
         repeated
             .program_point()
-            .indexed_local_integer_version(&slot, load_kind)
+            .indexed_integer_version(&slot, load_kind)
             .unwrap()
             .id(),
         repeated.program_point_id()
@@ -4363,7 +4483,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     assert!(
         mismatched
             .program_point()
-            .indexed_local_integer_version(&slot, load_kind)
+            .indexed_integer_version(&slot, load_kind)
             .is_none(),
         "a write with a different load kind ends the prior version"
     );
@@ -4373,7 +4493,7 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
     assert!(
         possibly_aliasing
             .program_point()
-            .indexed_local_integer_version(&slot, load_kind)
+            .indexed_integer_version(&slot, load_kind)
             .is_none(),
         "an unclassified store cannot keep an indexed version"
     );
@@ -4797,6 +4917,7 @@ fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: complete ten-format call reconstruction sweep"]
 fn common_machine_calls_round_trip_source_with_all_native_formats() {
     check_common_machine_call_formats(&[
@@ -5192,6 +5313,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: literal raising round trips through a verified C function"]
 fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
     let identity = crate::kernel::StringLiteralId::new("text", 1).with_source("literal_raising.c");
@@ -7413,6 +7535,7 @@ fn narrow_symbolic_comparisons_keep_their_existing_normal_forms() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: retained pthread value parse/lower round trip"]
 fn pthread_handle_words_use_c_names_and_retained_states() {
     use crate::kernel::{KernelTermImport, ThreadHandleId};
@@ -9013,6 +9136,171 @@ fn reflexive_boolean_comparisons_round_trip_after_exact_rewrite() {
             synthesize_surface_proposition(expected, ParameterBinding::default(), &fixture.state)
                 .unwrap();
         let text = crate::surface::printing::source_click_proposition(&raised);
+        assert_eq!(
+            relower_written_proposition(&raised, &fixture.state).unwrap(),
+            *expected,
+            "{text}"
+        );
+        assert_eq!(fixture.lower(&text), *expected, "{text}");
+    }
+}
+
+#[test]
+fn literal_float_comparisons_preserve_ieee_truth_and_round_trip() {
+    use crate::kernel::{ComparisonOperator as C, KernelFloatType as F};
+    let fixture = ConditionalRoundTrip::new(MachineIntegerType::Int32, "int32");
+    for (format, width, negative_zero, nan, negative_one, one) in [
+        (
+            F::Float32,
+            32,
+            0x80000000,
+            0x7fc00123,
+            0xbf800000,
+            0x3f800000,
+        ),
+        (
+            F::Float64,
+            64,
+            0x8000000000000000,
+            0x7ff8000000000123,
+            0xbff0000000000000,
+            0x3ff0000000000000,
+        ),
+    ] {
+        let literal = |bits: u64| format!("float{width}_from_bits(0x{bits:x}u{width})");
+        for (left, operator, right, token, truth) in [
+            (negative_zero, C::Equal, 0, "==", true),
+            (nan, C::Equal, nan, "==", false),
+            (nan, C::NotEqual, nan, "!=", true),
+            (nan, C::LessEqual, one, "<=", false),
+            (negative_one, C::LessThan, one, "<", true),
+            (one, C::GreaterThan, 0, ">", true),
+            (negative_zero, C::GreaterEqual, 0, ">=", true),
+        ] {
+            let written = format!("{} {token} {}", literal(left), literal(right));
+            let Proposition::ConditionIs(condition, true) = fixture.lower(&written) else {
+                panic!("expected a comparison: {written}");
+            };
+            let (actual_format, actual_operator, operands) =
+                condition.operand_view().float_comparison().expect(&written);
+            assert_eq!(actual_format, format, "{written}");
+            assert_eq!(actual_operator, operator, "{written}");
+            assert_eq!(
+                operands.map(|operand| operand.literal_bits()),
+                [Some(left), Some(right)],
+                "{written}"
+            );
+            assert_eq!(
+                PureFactContext::new().decide(condition.native_compat()),
+                Some(truth),
+                "{written}"
+            );
+            for polarity in [true, false] {
+                let expected = Proposition::condition_is(condition.clone(), polarity);
+                let raised = synthesize_surface_proposition(
+                    &expected,
+                    ParameterBinding::default(),
+                    &fixture.state,
+                )
+                .unwrap();
+                let text = crate::surface::printing::source_click_proposition(&raised);
+                assert_eq!(
+                    relower_written_proposition(&raised, &fixture.state).unwrap(),
+                    expected,
+                    "{text}"
+                );
+                assert_eq!(fixture.lower(&text), expected, "{text}");
+            }
+        }
+    }
+}
+
+#[test]
+fn integer_match_on_written_constructor_round_trips() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = ExecutionState::new();
+    let declarations = "spec enum Choice { Empty, Full(Integer) }";
+    let written = "(match Choice::Full(7) { Choice::Empty => 0, Choice::Full(n) => n + 1 }) == 8";
+    let parse = |text: &str| {
+        parser::parse(&format!(
+            "{declarations} theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap()
+    };
+    let file = parse(written);
+    let functions = ClickFunctionEnvironment::with_algebraic_types(
+        file.click_function_definitions(),
+        file.algebraic_type_definitions(),
+    );
+    let lower = |proposition: &ClickProposition| {
+        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+            proposition,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+            SpecDefinitions::new(&PredicateEnvironment::new(&[]), &functions),
+            FixedStateLoweringOptions::default(),
+        )
+        .unwrap()
+        .0
+    };
+    let Requirement::Proposition(proposition) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("expected a proposition");
+    };
+    let original = lower(proposition);
+    assert!(matches!(
+        original.condition_native(),
+        Some((ConditionTerm::IntegerEqual(left, _), true))
+            if matches!(left.as_ref(), crate::kernel::IntegerTerm::AlgebraicMatch { .. })
+    ));
+    let raised =
+        synthesize_surface_proposition(&original, ParameterBinding::default(), &state).unwrap();
+    let text = crate::surface::printing::source_click_proposition(&raised);
+    assert!(text.contains("match Choice::Full"), "{text}");
+    assert!(
+        crate::kernel::proof::propositions_are_alpha_equal(&lower(&raised), &original),
+        "{text}"
+    );
+    let reparsed = parse(&text);
+    let Requirement::Proposition(proposition) = &reparsed.theorem_definitions()[0].requires()[0]
+    else {
+        panic!("expected a proposition: {text}");
+    };
+    assert!(
+        crate::kernel::proof::propositions_are_alpha_equal(&lower(proposition), &original),
+        "{text}"
+    );
+}
+
+#[test]
+fn literal_integer_conversions_round_trip_after_exact_rewrite() {
+    use crate::kernel::proof::PureFactStore;
+    let fixture = ConditionalRoundTrip::new(MachineIntegerType::Int32, "int32");
+    for (conversion, literal, incremented) in [
+        ("to_int32", "7", "8"),
+        ("to_uint32", "4294967295", "4294967296"),
+        ("to_uint64", "18446744073709551615", "18446744073709551616"),
+    ] {
+        let input = "to_integer(y) + 1";
+        let equality = fixture.lower(&format!("{input} == {literal}"));
+        let original = fixture.lower(&format!(
+            "to_integer({conversion}({input})) + 1 == {incremented}"
+        ));
+        let proof = PureFactStore::from_ordered(std::slice::from_ref(&equality))
+            .check_equality_rewrite(&original, &equality)
+            .unwrap();
+        let expected = proof.proposition();
+        let written = format!("to_integer({conversion}({literal})) + 1 == {incremented}");
+        assert_eq!(fixture.lower(&written), *expected, "{written}");
+        assert!(
+            crate::kernel::proof::fact_reasoning::computes_leaf(expected),
+            "{written}"
+        );
+        let raised =
+            synthesize_surface_proposition(expected, ParameterBinding::default(), &fixture.state)
+                .unwrap();
+        let text = crate::surface::printing::source_click_proposition(&raised);
+        assert!(text.contains(conversion), "{text}");
         assert_eq!(
             relower_written_proposition(&raised, &fixture.state).unwrap(),
             *expected,

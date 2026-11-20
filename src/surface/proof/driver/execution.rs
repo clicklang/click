@@ -379,7 +379,7 @@ fn checked_execution_arm_tactics_end(
         };
         if matches!(
             tactic,
-            ProofTactic::SmartExecute | ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit)
+            ProofTactic::SmartExecute | ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT)
         ) {
             at_function_exit = true;
             continue;
@@ -1114,7 +1114,7 @@ fn checked_structural_execution_branch_supported(
 
 /// Applies one written tactic at an execution frontier that has not reached
 /// the function exit. The linear continuation, a focused execution arm and a
-/// loop's `preserve` body all run their frontier tactics through this one
+/// loop's `maintain` body all run their frontier tactics through this one
 /// function, so a tactic means the same thing in each; the contexts differ
 /// only in which tactics they admit (`SourceContext::ExecutionFrontier`) and in what they do
 /// at the function exit. `Ok(None)` declines the proof shape.
@@ -1217,8 +1217,8 @@ fn apply_frontier_source_tactic<'a>(
                 )
             })?;
         selected.join()?
-    } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
-        match crate::kernel::search::ProofSearch::try_execute_until(&(proof), region)? {
+    } else if let ProofTactic::ExecuteUntil(point) = &indexed.tactic {
+        match crate::kernel::search::ProofSearch::try_execute_until(&(proof), point)? {
             Some(executed) => executed,
             None => {
                 // An arm of `branch` that does not return ends at the C
@@ -3074,7 +3074,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                 )?
                 else {
                     return Err(ClickError::new(format!(
-                        "`{claim_label}` tactic {index}: the arms of this `cases` in a loop body do not rejoin; in a `preserve` proof each arm must end at the same program point in the same state"
+                        "`{claim_label}` tactic {index}: the arms of this `cases` in a loop body do not rejoin; in a `maintain` proof each arm must end at the same program point in the same state"
                     )));
                 };
                 proof = joined;
@@ -3153,7 +3153,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
     }
 }
 
-/// A `preserve` path that stopped inside the loop body because its script
+/// A `maintain` path that stopped inside the loop body because its script
 /// ran out of tactics. The region keeps traversing its other paths after
 /// meeting one, so a finished arm's back edge is still checked, and the
 /// first of these is reported once those checks pass.
@@ -3192,7 +3192,7 @@ impl UnfinishedPreservationPath<'_> {
     }
 }
 
-/// The report an unfinished `preserve` gets in place of the one-iteration
+/// The report an unfinished `maintain` gets in place of the one-iteration
 /// refusal: where in the loop body this path stopped, which tactic left it
 /// there, what the body still holds ahead of it, and what the script's other
 /// paths have already closed.
@@ -3262,12 +3262,12 @@ fn describe_unfinished_preservation(
         }
     }
     if closed.is_empty() {
-        message.push_str(". No path of this `preserve` is complete yet");
+        message.push_str(". No path of this `maintain` is complete yet");
     } else {
         message.push_str(&format!(". Already complete: {}", join_list(&closed)));
     }
     message.push_str(
-        ". Every path a `preserve` opens must end at the body's end, a `continue`, a `break`, or the loop's test when it is false",
+        ". Every path a `maintain` opens must end at the body's end, a `continue`, a `break`, or the loop's test when it is false",
     );
     Some(message)
 }
@@ -5031,9 +5031,9 @@ fn advance_linear_open_scope<'a>(
             }
             continue;
         }
-        if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
+        if let ProofTactic::ExecuteUntil(point) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
-            let Some(executed) = (scope).driver().try_execute_until(region)? else {
+            let Some(executed) = (scope).driver().try_execute_until(point)? else {
                 return decline();
             };
             scope = executed;
@@ -5574,9 +5574,9 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
         ProofTactic::StepCall(transport) => transport.to_string(),
         ProofTactic::UserTactic(application) => application.tactic_spelling(),
         ProofTactic::SmartExecute => "the implicit tail".to_string(),
-        ProofTactic::ExecuteUntil(region) => format!(
+        ProofTactic::ExecuteUntil(point) => format!(
             "step_until({})",
-            crate::surface::diagnostics::describe_code_region_ref(region)
+            crate::surface::diagnostics::describe_execution_point(point)
         ),
         // These act on the frontier's memory and program points, which a
         // function outcome no longer has.
@@ -5703,6 +5703,7 @@ mod tests {
 
     /// Completed null-check cases retain join records, not recursive frames.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.1s in the parallel gate"]
     fn terminal_proof_if_cases_do_not_charge_recursive_depth() {
         for count in [1, 4, 12] {

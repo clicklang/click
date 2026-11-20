@@ -1,4 +1,4 @@
-//! The common shape of a unit's entry in `click.project.lock.json`. Every
+//! The common shape of a unit's entry in `.click/captures/manifest.json`. Every
 //! language records the same fields: the digest of the unit's description,
 //! the front end that prepared it, and for each logical source its input
 //! digests, its artifact, and its import identity. What only one language
@@ -97,6 +97,71 @@ impl Entry {
         entry
     }
 
+    /// Combines a new partial capture with other sources captured under the
+    /// same unit and frontend settings. Recompute identities after merging
+    /// because they also bind the language section.
+    pub(crate) fn retain_other_sources(
+        mut self,
+        language: &str,
+        old: Self,
+    ) -> Result<Self, String> {
+        if self.unit != old.unit || self.frontend != old.frontend || language == "rust" {
+            return Ok(self);
+        }
+        let mut section = self.section(language).expect("language section").clone();
+        let mut previous = old.section(language).expect("language section").clone();
+        let next_sources = section.as_object_mut().and_then(|s| s.remove("sources"));
+        let old_sources = previous.as_object_mut().and_then(|s| s.remove("sources"));
+        if section != previous {
+            return Ok(self);
+        }
+        let sources = match (next_sources, old_sources) {
+            (Some(serde_json::Value::Object(next)), Some(serde_json::Value::Object(mut old))) => {
+                old.extend(next);
+                serde_json::Value::Object(old)
+            }
+            (Some(serde_json::Value::Array(next)), Some(serde_json::Value::Array(old))) => {
+                let mut by_name = BTreeMap::new();
+                for record in old.into_iter().chain(next) {
+                    let name = record["logical_source"]
+                        .as_str()
+                        .ok_or("C capture record has no source name")?
+                        .to_owned();
+                    by_name.insert(name, record);
+                }
+                serde_json::Value::Array(by_name.into_values().collect())
+            }
+            _ => return Err("capture manifest has incompatible language records".into()),
+        };
+        for name in old.sources.keys() {
+            if !self.sources.contains_key(name) {
+                old.checked_identity(language, name)?;
+            }
+        }
+        for (name, source) in old.sources {
+            self.sources.entry(name).or_insert(source);
+        }
+        section["sources"] = sources;
+        Ok(Self::new(
+            language,
+            self.unit,
+            self.frontend,
+            self.sources
+                .into_iter()
+                .map(|(name, source)| {
+                    (
+                        name,
+                        SourceParts {
+                            inputs: source.inputs,
+                            artifact: source.artifact,
+                        },
+                    )
+                })
+                .collect(),
+            section,
+        ))
+    }
+
     /// Reads a unit's entry, refusing one in an earlier shape or for another
     /// language.
     pub(crate) fn parse(
@@ -106,7 +171,7 @@ impl Entry {
     ) -> Result<Self, String> {
         if value.get("envelope").is_none() {
             return Err(format!(
-                "the project lock entry for unit `{unit_name}` is in an earlier format; run `click import lock` to prepare it again"
+                "the project lock entry for unit `{unit_name}` is in an earlier format; run `click capture` to prepare it again"
             ));
         }
         let entry = Self::deserialize(value).map_err(|error| {
@@ -114,7 +179,7 @@ impl Entry {
         })?;
         if entry.envelope != ENVELOPE_SCHEMA {
             return Err(format!(
-                "the project lock entry for unit `{unit_name}` has envelope schema {}, not {ENVELOPE_SCHEMA}; run `click import lock` to prepare it again",
+                "the project lock entry for unit `{unit_name}` has envelope schema {}, not {ENVELOPE_SCHEMA}; run `click capture` to prepare it again",
                 entry.envelope
             ));
         }
@@ -178,7 +243,7 @@ impl Entry {
     /// changed input is named before a mismatched identity.
     pub(crate) fn checked_identity(&self, language: &str, logical: &str) -> Result<String, String> {
         let source = self.sources.get(logical).ok_or_else(|| {
-            format!("the project lock has no source `{logical}`; run `click import lock`")
+            format!("the project lock has no source `{logical}`; run `click capture`")
         })?;
         if source.identity != self.identity_of(language, logical, &source.inputs, &source.artifact)
         {
@@ -207,7 +272,7 @@ mod tests {
                 SourceParts {
                     inputs: BTreeMap::from([("a.c".to_string(), "1".to_string())]),
                     artifact: Artifact {
-                        path: ".click/u/a.c.i".into(),
+                        path: ".click/captures/u/a.c.i".into(),
                         sha256: "2".into(),
                         bytes: 3,
                     },
@@ -251,7 +316,7 @@ mod tests {
         assert!(error.contains("exactly its `rust` section"), "{error}");
         let error = Entry::parse("c", "u", &serde_json::json!({"schema": 3})).unwrap_err();
         assert!(
-            error.contains("earlier format; run `click import lock`"),
+            error.contains("earlier format; run `click capture`"),
             "{error}"
         );
     }

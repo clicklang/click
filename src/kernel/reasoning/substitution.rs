@@ -69,15 +69,34 @@ trait VariableSubstitution {
     ) -> (Variable, Proposition);
     /// Held across one whole proposition.
     fn proposition_scope(&self) -> Option<SubstitutedMemoryScope>;
+
+    fn keeps_memory_effects(&self) -> bool {
+        false
+    }
 }
 
 struct BitvectorSubstitution<'a> {
     from: Variable,
     to: &'a MachineTerm,
+    keep_memory_effects: bool,
+}
+
+impl<'a> BitvectorSubstitution<'a> {
+    fn new(from: Variable, to: &'a MachineTerm) -> Self {
+        Self {
+            from,
+            to,
+            keep_memory_effects: false,
+        }
+    }
 }
 
 impl VariableSubstitution for BitvectorSubstitution<'_> {
     const SUBSTITUTES_CONDITION_EVIDENCE: bool = false;
+
+    fn keeps_memory_effects(&self) -> bool {
+        self.keep_memory_effects
+    }
 
     fn from(&self) -> Variable {
         self.from
@@ -236,7 +255,24 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
     from: Variable,
     to: &MachineTerm,
 ) -> Proposition {
-    walk_proposition(proposition, &BitvectorSubstitution { from, to })
+    walk_proposition(proposition, &BitvectorSubstitution::new(from, to))
+}
+
+/// Restate an exit fact using a scalar equality from that exit. An effect
+/// summary already describes a checked transition between recorded memory
+/// states. Retain that entire fact, even within a previous exit disjunction.
+pub(in crate::kernel) fn restate_loop_exit_scalar(
+    proposition: &Proposition,
+    from: Variable,
+    to: &MachineTerm,
+) -> Proposition {
+    walk_proposition(
+        proposition,
+        &BitvectorSubstitution {
+            keep_memory_effects: true,
+            ..BitvectorSubstitution::new(from, to)
+        },
+    )
 }
 
 fn substitute_bitvector_variable_in_algebraic_value(
@@ -244,7 +280,7 @@ fn substitute_bitvector_variable_in_algebraic_value(
     from: Variable,
     to: &MachineTerm,
 ) -> AlgebraicValue {
-    walk_algebraic_value(value, &BitvectorSubstitution { from, to })
+    walk_algebraic_value(value, &BitvectorSubstitution::new(from, to))
 }
 
 fn substitute_bitvector_variable_in_pure_function_argument(
@@ -252,7 +288,7 @@ fn substitute_bitvector_variable_in_pure_function_argument(
     from: Variable,
     to: &MachineTerm,
 ) -> PureFunctionArgument {
-    walk_pure_function_argument(argument, &BitvectorSubstitution { from, to })
+    walk_pure_function_argument(argument, &BitvectorSubstitution::new(from, to))
 }
 
 fn substitute_bitvector_variable_in_sequence(
@@ -260,7 +296,7 @@ fn substitute_bitvector_variable_in_sequence(
     from: Variable,
     to: &MachineTerm,
 ) -> SequenceTerm {
-    walk_sequence(sequence, &BitvectorSubstitution { from, to })
+    walk_sequence(sequence, &BitvectorSubstitution::new(from, to))
 }
 
 #[cfg(test)]
@@ -269,7 +305,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_execution_statement(
     from: Variable,
     to: &MachineTerm,
 ) -> ProgramStatement {
-    walk_execution_statement(statement, &BitvectorSubstitution { from, to })
+    walk_execution_statement(statement, &BitvectorSubstitution::new(from, to))
 }
 
 fn substitute_bitvector_variable_in_execution_state(
@@ -277,7 +313,7 @@ fn substitute_bitvector_variable_in_execution_state(
     from: Variable,
     to: &MachineTerm,
 ) -> ExecutionState {
-    walk_execution_state(state, &BitvectorSubstitution { from, to })
+    walk_execution_state(state, &BitvectorSubstitution::new(from, to))
 }
 
 #[cfg(test)]
@@ -286,7 +322,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_resource(
     from: Variable,
     to: &MachineTerm,
 ) -> Resource {
-    walk_resource(resource, &BitvectorSubstitution { from, to })
+    walk_resource(resource, &BitvectorSubstitution::new(from, to))
 }
 
 #[cfg(test)]
@@ -295,7 +331,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_program_function(
     from: Variable,
     to: &MachineTerm,
 ) -> ProgramFunction {
-    walk_program_function(function, &BitvectorSubstitution { from, to })
+    walk_program_function(function, &BitvectorSubstitution::new(from, to))
 }
 
 #[cfg(test)]
@@ -304,7 +340,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
     from: Variable,
     to: &MachineTerm,
 ) -> ResourceSpec {
-    walk_resource_spec(resource, &BitvectorSubstitution { from, to })
+    walk_resource_spec(resource, &BitvectorSubstitution::new(from, to))
 }
 
 pub(crate) fn substitute_pointer_variable_in_proposition(
@@ -1456,6 +1492,7 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
                 .map(|(pointer, bytes)| (s.pointer(pointer), *bytes))
                 .collect(),
         },
+        Proposition::MemoryEffectSummary { .. } if s.keeps_memory_effects() => proposition.clone(),
         Proposition::MemoryEffectSummary {
             before,
             after,
@@ -2594,7 +2631,16 @@ fn collect_term_bound_variables(term: &Term, variables: &mut BTreeSet<Variable>)
             collect_bitvector_bound_variables(bits.native_compat(), variables)
         }
         Term::Integer(integer) => {
-            collect_integer_bound_variables(integer.native_compat(), variables)
+            if integer
+                .root()
+                .is_some_and(|root| matches!(root.node(), KernelTermNode::Match(_)))
+            {
+                // Integer match freshness uses the same carrier-aware walk
+                // as the native match, including its scrutinee and arm scopes.
+                super::variable_collection::collect_term_bitvector_variables(term, variables);
+            } else {
+                collect_integer_bound_variables(integer.native_compat(), variables);
+            }
         }
         Term::PointerOffset(offset) => {
             if let Some(root) = offset.root() {
@@ -6454,12 +6500,13 @@ fn run_slot_named_by_load_variable(
     from: Variable,
 ) -> Option<u32> {
     if let crate::kernel::primitives::RunValueMode::Copy { source_base } = run.value_mode() {
-        let source_run = crate::kernel::primitives::CellRun::new(
+        let source_run = crate::kernel::primitives::CellRun::new_at(
             source_base.clone(),
             run.element_width(),
             run.element_type(),
             run.count(),
-            run.source().clone(),
+            run.source_point().clone(),
+            crate::kernel::primitives::RunValueMode::Load,
             run.holes().clone(),
         );
         return run_slot_named_by_load_variable(&source_run, from);

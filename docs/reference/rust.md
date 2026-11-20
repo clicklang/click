@@ -49,7 +49,7 @@ Rust project units use this frontend automatically. `CLICK_CHARON` is a
 contributor override: a bundle directory selects that bundle, while an
 executable selects the existing source-build path and its rustup-managed pinned
 toolchain. The project schema and lock format are described
-in [`click import`](cli/import.md#project-units) and
+in [`click capture`](cli/capture.md#project-units) and
 [project configuration](../concepts/own-project.md).
 
 The release workflow builds Charon with `scripts/build-charon.sh --release`
@@ -109,8 +109,8 @@ library, with no other inputs:
 {"units": {"borrow": {"language": "rust", "sources": {"borrow.rs": {}}}}}
 ```
 
-`click import lock` runs the compiler with a bounded process and writes
-`.click/<unit>/<source>.ullbc` and `click.project.lock.json`. Ordinary
+`click capture` runs the compiler with a bounded process and writes
+`.click/captures/<unit>/<source>.ullbc` and `.click/captures/manifest.json`. Ordinary
 verification loads those files without executing the compiler. Source, unit
 description, artifact, or profile changes require refresh, and a changed
 source is named. The lock includes the compiler/extractor identity; after
@@ -119,7 +119,7 @@ normal example gate checks locked native inputs offline, while the nightly
 gate's live Charon tests refresh and verify all 16 original Rust fixtures.
 
 A Rust unit's lock entry uses the envelope shared with C and C++, and its
-import identity the shared formula ([import.md](cli/import.md)); the `rust`
+import identity the shared formula ([import.md](cli/capture.md)); the `rust`
 section records the lock schema, the source and the front end. Legacy
 configurations still accept `"charon-trial"` as a backend compatibility alias.
 Historical single-file crate/output labels inside serialized artifacts remain
@@ -137,7 +137,7 @@ crate paths remain relative to the unit root.
 
 A schema-8 section, from releases before the `frontend` record, names the
 exporter and Charon driver digests and the semantic profile it was prepared
-under; it loads only while that profile is current. `click import lock`
+under; it loads only while that profile is current. `click capture`
 refreshes it into schema 9; a Click release or semantic-profile change also
 requires refresh. Normal verification never rewrites a lock.
 
@@ -638,15 +638,17 @@ method-interface rules below
 ### Trait method interfaces
 
 A method of a crate trait, `pub trait Shape { fn area(&self, scale: i32) ->
-i32; }`, has an interface: the sidecar's `trait` block states it, with the
-trait named by its path and no proof, as an `extern fn` is declared,
+i32; }`, has a contract in a `trait` block. Put required methods in an
+imported `.interface.click` file and name the trait by its path, as in
 `trait trait_methods::Shape { fn area(&self, scale: i32) -> i32 { requires 0
 <= scale and scale <= 1000; ensures scale < result and result <= 3001; } }`.
+A sidecar verifying a default method declares that method separately in
+its own `trait` block.
 
 A call through a trait bound, `shape.area(scale)` for `shape: &T` and
-`T: Shape`, or through a `&dyn Shape`, is checked against the interface, as
-a call of an `extern fn` is: its caller establishes the `requires` and has
-only the `ensures`. The head writes a bound parameter as the source does,
+`T: Shape`, or through a `&dyn Shape`, uses that contract. The caller
+establishes the `requires` and may use the `ensures`. The head writes a
+bound parameter as the source does,
 `fn trait_methods::total<T: trait_methods::Shape>(shape: &T, scale: i32)`
 or `shape: &dyn trait_methods::Shape`. A call on a known type,
 `square.area(scale)`, is a call of that type's implementation, under its
@@ -670,9 +672,9 @@ refused, naming both, as is one with no contract. Without a `trait` block,
 a call through the trait has no contract.
 
 A default method, `fn twice(&self, scale: i32) -> i32 { self.area(scale) +
-self.area(scale) }` in the trait, has its interface written in the `trait`
-block with the proof of its default body: `fn twice(&self, scale: i32) ->
-i32 { requires ...; ensures result <= 6002; }`, with the proof omitted.
+self.area(scale) }` in the trait, can be verified with its contract in a
+sidecar `trait` block: `fn twice(&self, scale: i32) ->
+i32 { requires ...; ensures result <= 6002; } by { ... }`.
 The body is verified once, for every type: a call of `area` in it is a call
 through the trait, under `area`'s interface, and with object state it holds
 the object as any method of the trait does. A call of `twice` through a
@@ -846,7 +848,11 @@ it, so the caller still knows `size(x)` after the call, and an `ensures`
 reads it as it was at entry. A mutable one may change it: an `ensures`
 reads the new state, `size(self) == half + half`, and `old(size(self))` the
 state at entry, and the caller knows only what the `ensures` say. No proof
-folds or unfolds the object: it has no body.
+folds or unfolds the object: it has no body. A trait's model declarations
+and required method contracts can live in an imported `.interface.click`
+file. The sidecar's
+`impl` blocks define the model functions and verify the methods against
+those contracts.
 
 Each `impl` of such a trait defines every function from its type's
 fields, `function size(self) -> i32 { self.side }`; an `impl` that omits
@@ -1287,7 +1293,7 @@ exit as a C `return` does, so the loop's invariants are not owed on that path
 and the contract is checked there. A labeled `break 'outer` or `continue
 'outer` from an inner loop leaves each loop it crosses: the inner loop exits
 and the enclosing loop takes the corresponding `break` or `continue` path.
-Click keeps the routing state private. In a written `preserve`, a body branch that returns is a proof-level `if` whose
+Click keeps the routing state private. In a written `maintain`, a body branch that returns is a proof-level `if` whose
 returning arm steps to
 `function.exit`
 ([`design/charon-trial/early-exits`](https://github.com/clicklang/click/blob/master/design/charon-trial/early-exits/exits.click)).
@@ -1370,7 +1376,7 @@ to_integer(bytes.len())` and `to_integer(k + 1u64) <= to_integer(bytes.len())`,
 and the invariant is carried by regrouping `(bytes + k) + 1u64` as
 `bytes + (k + 1u64)` from `to_integer(k) + 1 <= 18446744073709551615`
 ([full-width pointer association](tactics/index.md#normalization-with-selected-premises)).
-A `preserve` script splits on `0u64 < iter.len()` with a proof `if`; the
+A `maintain` script splits on `0u64 < iter.len()` with a proof `if`; the
 empty arm steps to the exit
 ([`examples/rust-iterators/sum.click`](https://github.com/clicklang/click/blob/master/examples/rust-iterators/sum.click)).
 
@@ -1510,7 +1516,7 @@ and `iter.chunk_size`, and `iter.len()` is `iter.v.len() / iter.chunk_size`,
 Rust's `ExactSizeIterator::len`. `loop(i).iter` names them outside the loop.
 Inside a loop, `iter` is the loop's iterator even where the function has a
 local of that name. A pass's `next()` splits on `iter.chunk_size <=
-iter.v.len()`, so a `preserve` script splits the same way with a proof `if`;
+iter.v.len()`, so a `maintain` script splits the same way with a proof `if`;
 the other arm takes the exit with three `step()`s. A chunk is still `chunk`
 and `chunk_len`, and the remainder `tail` and `tail_len`.
 
@@ -1551,7 +1557,7 @@ loop's iterator, and that `next` is the crate's local, non-generic
 The `Option` that `next` returns is no local. The loop tests the call's
 result for `Some` without ending it, and the `Some` arm's payload read binds
 the loop variable and ends it. A pass is decided by `next`'s contract. When
-the contract's cases are stated over the iterator's fields, a `preserve`
+the contract's cases are stated over the iterator's fields, a `maintain`
 script splits on the same fields with a proof `if` and states the case's
 premise in the contract's own form before the call:
 
@@ -1559,16 +1565,16 @@ premise in the contract's own form before the call:
 fn count(n: u32) -> u32 {
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases iter.n;
         invariant to_integer(passes) + to_integer(iter.n) == to_integer(n);
-        preserve by {
+        maintain by {
             if 0u32 < iter.n {
                 mark iteration;
                 have iter.n != 0u32;
                 have passes <= 4294967294u32;
-                step_until(back_edge());
+                step_until(loop.back_edge);
                 have to_integer(iter.n) == to_integer(at(iteration, iter.n)) - 1;
             } else {
                 have iter.n == 0u32;

@@ -603,7 +603,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
         let mut field_bindings = Vec::new();
         for field in child_definition.fields() {
             let candidates = equations
-                .get(&(binding.identity, field.name()))
+                .get(&(binding.identity.instance(), field.name()))
                 .ok_or_else(|| {
                     ClickError::new(format!(
                         "child `{}` needs an equation for field `{}`",
@@ -666,7 +666,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
         children.push(ResourceChildBody {
             name: binding.name.clone(),
             resource: name.clone(),
-            identity: binding.identity,
+            identity: binding.identity.instance(),
             arguments,
             field_bindings,
         });
@@ -3125,6 +3125,7 @@ fn validate_algebraic_expression_node(
         }
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CUnary { .. }
+        | ContractExpression::MemoryLoad { .. }
         | ContractExpression::ProgramExpression(_)
         | ContractExpression::ArrayIndex { .. }
         | ContractExpression::Field { .. }
@@ -3849,6 +3850,7 @@ fn infer_generic_expression_type(
         )) => Ok(variables.get(name).cloned()),
         ContractExpression::QualifiedC { .. }
         | ContractExpression::CUnary { .. }
+        | ContractExpression::MemoryLoad { .. }
         | ContractExpression::ProgramExpression(_) => infer_contract_expression_type(
             expression,
             &variables.program_value_types,

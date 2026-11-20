@@ -752,6 +752,19 @@ fn certified_transitions_from_execution(
                     &prerequisite_assumptions
                 };
                 let proposition = obligation.proposition();
+                // The call can ask for a different descriptor for the same
+                // physical byte spans. Check that entry fact before collecting
+                // an internal prerequisite whose descriptor may not raise.
+                // Keep collecting obligations already stated as written so
+                // explicit step proofs keep their existing obligation list.
+                if !rejected_contract_call
+                    && obligation.call_requirement_site().is_some()
+                    && obligation.live_view_write_overlap() == Some(false)
+                    && !executed_under.contains_assumed_exact(proposition)
+                    && executed_under.states_memory_separation(proposition)
+                {
+                    continue;
+                }
                 // An allocation step can establish this exact separation
                 // before the temporary has a Surface name. Its predecessor
                 // fact is checked here, without opening a source proof.
@@ -766,11 +779,16 @@ fn certified_transitions_from_execution(
                     && !obligation.is_assumable()
                     && !established_temporary_separation
                 {
-                    let description = crate::surface::diagnostics::describe_proof_obligation_context(obligation)
-                        .map(|description| format!(" ({description})"))
-                        .unwrap_or_default();
+                    let description = crate::surface::diagnostics::describe_proof_obligation_context(obligation);
+                    let message = match description {
+                        Some(description) if obligation.live_view_write_overlap() == Some(true) => {
+                            format!("{context_label} cannot proceed: {description}")
+                        }
+                        Some(description) => format!("{context_label} requires an explicit prerequisite proof ({description})"),
+                        None => format!("{context_label} requires an explicit prerequisite proof"),
+                    };
                     refuse_or_probe(prerequisite_policy, ClickError::new(format!(
-                        "{context_label} requires an explicit prerequisite proof{description}{}",
+                        "{message}{}",
                         crate::surface::diagnostics::describe_execution_statement_site()
                     )).with_unresolved_requirement(obligation)
                         .with_assertion_condition(

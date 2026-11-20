@@ -42,7 +42,7 @@ void give(int32* p, int32* q, int32 flag) {
         owns p[0..1];
         owns q[0..1];
 
-        preserve by {
+        maintain by {
             if flag == 0 {
                 step();
                 step();

@@ -3,6 +3,68 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::sync::Arc;
 
+/// Persistent union by size. A fork shares the maps, and a root lookup
+/// follows at most a logarithmic number of parent links.
+#[derive(Clone, Debug)]
+pub(crate) struct PersistentComponents<K: Ord> {
+    parents: PersistentMap<K, K>,
+    sizes: PersistentMap<K, usize>,
+}
+
+impl<K: Ord> Default for PersistentComponents<K> {
+    fn default() -> Self {
+        Self {
+            parents: PersistentMap::default(),
+            sizes: PersistentMap::default(),
+        }
+    }
+}
+
+impl<K: Ord + Clone> PersistentComponents<K> {
+    pub(crate) fn root<'a>(&'a self, mut key: &'a K) -> &'a K {
+        while let Some(parent) = self.parents.get(key) {
+            crate::instrumentation::record_deterministic_work(1);
+            key = parent;
+        }
+        key
+    }
+
+    pub(crate) fn parent(&self, key: &K) -> Option<&K> {
+        self.parents.get(key)
+    }
+
+    /// The changed links between two snapshots of the union forest.
+    pub(crate) fn parent_changes<'a>(
+        &'a self,
+        newer: &'a Self,
+    ) -> impl Iterator<Item = (&'a K, Option<&'a K>, Option<&'a K>)> + 'a
+    where
+        K: PartialEq,
+    {
+        self.parents.diff(&newer.parents)
+    }
+
+    /// Return the surviving root and the absorbed root when two classes join.
+    pub(crate) fn join(&mut self, left: &K, right: &K) -> Option<(K, K)> {
+        let mut left = self.root(left);
+        let mut right = self.root(right);
+        if left == right {
+            return None;
+        }
+        let mut a = self.sizes.get(left).copied().unwrap_or(1);
+        let mut b = self.sizes.get(right).copied().unwrap_or(1);
+        if a < b {
+            std::mem::swap(&mut left, &mut right);
+            std::mem::swap(&mut a, &mut b);
+        }
+        let (left, right) = (left.clone(), right.clone());
+        self.parents.insert(right.clone(), left.clone());
+        self.sizes.remove(&right);
+        self.sizes.insert(left.clone(), a + b);
+        Some((left, right))
+    }
+}
+
 #[cfg(test)]
 thread_local! {
     static NODE_ALLOCATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };

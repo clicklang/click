@@ -1,7 +1,7 @@
 # A retained view still excludes a callee write
 
 The call's folded owner projects the same cell the caller views. The
-entry separation obligation for that cell cannot be proved.
+diagnostic identifies the write as a proven conflict with the view.
 
 ```c filename=overlap.c
 void mutate(int32 *p) { *p = 1; }
@@ -24,5 +24,5 @@ int32 observe(int32* p) {
 ```
 
 ```expect
-fail: verified call write separation
+fail: the write by `mutate` overlaps a live view
 ```

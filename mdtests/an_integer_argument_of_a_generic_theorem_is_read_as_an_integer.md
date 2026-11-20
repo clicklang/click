@@ -45,12 +45,12 @@ theorem at_a_literal(b: Box<uint64>) {
 unsigned long count(unsigned long n) {
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
         invariant i <= n;
         invariant to_integer(i) == iterations;
-        preserve by {
+        maintain by {
             have shifted(Box<uint64>::Box(i), iterations) == iterations + 1 by {
                 apply(shifted_is_next(Box<uint64>::Box(i), iterations));
             }

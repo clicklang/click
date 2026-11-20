@@ -13,6 +13,7 @@ fn impl_fn_project() -> Project {
 // capture-free closure and a function item are their functions' addresses,
 // and a callee's contract requirement is answered by refinement.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5.9s in the parallel gate"]
 fn charon_impl_fn_arguments_meet_named_contracts() {
     let p = impl_fn_project();

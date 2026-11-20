@@ -6,7 +6,7 @@ language. A tactic is either **smart**, **simple**, or **control**:
 - Smart tactics search. The written one is `solve()`, with its `using` form
   and `step_until`, which steps to a target and proves what each step needs;
   the rest are the implicit closer that ends every proof, including each loop
-  `preserve` script at its back edge, and finishes a `step()` or `fold`, and
+  `maintain` script at its back edge, and finishes a `step()` or `fold`, and
   the elided forms whose search fills one argument a simple form writes:
   `apply(theorem(args))`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
   are the tactics that `click profile` may recommend expanding. The parser
@@ -47,7 +47,7 @@ remains supported.
   every path. See [Automation and search](#automation-and-search).
 - `step()`: run one C statement, to put proof steps between statements. See
   [Execution](#execution).
-- `step_until(target)`: run to one statement, loop, or `function.exit`
+- `step_until(point)`: run to one statement, loop, or `function.exit`
   without splitting. See [Execution](#execution).
 - `branch { true => { ... } false => { ... } }`: prove each arm of the C `if` at the
   frontier. See [Execution](#execution).
@@ -346,9 +346,9 @@ the one execution transition that fails.
 | `mark name;` | simple | Specialized | Name the current execution state. | [Reference](#proof-marks) |
 | `step()` | simple | Core | Execute one checked statement transition. | [Reference](#single-statements) |
 | `let { result: name } = step()` | simple | Specialized | Bind a checked assignment, call, or scalar step result. | [Reference](#binding-a-statement-result) |
-| `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
+| `step_until(statement(i).entry)` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
 | `branch [ensuring { ... }] { true => { ... } false => { ... } }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
-| `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
+| `loop [name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
 | `step(callee, { binder: instance })` | simple | Specialized | Map a call's instance binders and value parameters, and name what it produces. | [Reference](#calls-with-binder-maps) |
 | `step(Contract, { handle: instance, ... })`; `step(Contract, { binder: instance })` | simple | Specialized | Select a contract and map its resource instances. | [Reference](#named-contracts-with-resource-bindings) |
@@ -364,7 +364,7 @@ after its arm states have joined.
 
 Marks are local to one proof and their names cannot be rebound. They remember
 an already-reached state; they are not source labels, execution targets, or
-saved states that can be restored. In particular, `step_until(name)` does
+saved states that can be restored. In particular, `step_until(name.entry)` does
 not target a proof mark.
 
 Expansion of execution automation emits one `step();` line per executed
@@ -381,14 +381,14 @@ path is at now a proof-local name without advancing C.
 
 **Accepts** a name not yet marked on the current path, at a live frontier of a
 C function's execution script: the claim's top-level script, a `branch` arm, a
-proof `if` or `cases` arm, or a loop's `preserve` proof. It records the current
+proof `if` or `cases` arm, or a loop's `maintain` proof. It records the current
 state under that name and changes nothing else:
 
 - From then on `at(name, e)` reads `e` in the recorded state. It can appear in
   a `have`, a `branch ensuring` interface, or the `ensures` clause the script
   proves (`ensures result == at(after_first_write, x) + 1 by { ... }`).
 - The name stays visible after later steps and after a `branch` join, and
-  inside nested loop `preserve` proofs.
+  inside nested loop `maintain` proofs.
 - The two arms of one `branch` or proof `if` may each mark the same name.
 
 **Outside it**, with what to write instead:
@@ -398,15 +398,15 @@ state under that name and changes nothing else:
 - A name that is not yet marked, used in `at(name, ...)` before its `mark` or
   never marked, fails with `unknown proof mark`. Put the `mark` where the proof
   reaches that state.
-- A mark made inside a `preserve` proof, read outside that proof, also fails
+- A mark made inside a `maintain` proof, read outside that proof, also fails
   with `unknown proof mark`. Loop invariants use `at(loop(n).entry, e)`.
 - At function exit (after the last `step()` or `step_until(function.exit)`), `mark` is refused.
   Mark before the last step, or name the final values directly.
 - Inside a `have ... by { ... }` body or a pure theorem, `mark` is refused.
   Write the mark in the execution script.
 - A mark names a point the path has already reached, not a point in the C
-  region tree that execution can be sent to. `step_until(name)` does not target
-  a mark; use `step_until(statement(i))`.
+  region tree that execution can be sent to. `step_until(name.entry)` does not target
+  a mark; use `step_until(statement(i).entry)`.
 
 **Failure, checking, and tools:**
 
@@ -660,7 +660,7 @@ leaves an open claim to the report that names it
 
 ### Execution to a point
 
-**Form:** `step_until(statement(i))`
+**Form:** `step_until(statement(i).entry)`
 
 `step_until` repeats `step()` up to the target, walking any loop the facts
 decide, and never splits: an undecided branch before the target refuses it, as
@@ -669,12 +669,13 @@ and names `step_until`.
 
 **Specialized.** Write it to stop execution at a chosen statement, loop, or read
 and do proof work there, instead of a run of `step();` lines. From a live
-frontier, execute forward to the selected region's entry without creating a
-proof interface. Any statement region names a target:
-`step_until(statement(i).statement(j))` stops before a nested statement and
-`step_until(statement(i).call(f, j))` stops just before one of its calls
-(`mdtests/step_until_runs_to_a_statement_region.md`);
-`.assignment(x, j)` and `.read(j)` end a chain the same way, at the
+frontier, execute forward to the written program point. An entry uses the
+same spelling as in `at(point, expression)`. Append `.entry` to a
+statement or one of its subregions:
+`step_until(statement(i).statement(j).entry)` stops before a nested statement and
+`step_until(statement(i).call(f, j).entry)` stops just before one of its calls
+(`mdtests/execute_until_runs_to_a_statement_region.md`);
+`.assignment(x, j).entry` and `.read(j).entry` end a chain the same way, at the
 statement's `j`th own store to `x` or memory load
 (`mdtests/a_chained_region_ends_in_an_assignment_or_read.md`).
 An ordinary scalar C call assignment has a call-result step followed by an
@@ -682,17 +683,17 @@ assignment step. A C aggregate call with a declared return type similarly has
 a call-result step followed by a destination-copy step. Their `.call(...).exit`
 and `.assignment(...).exit` name distinct points, even when both effects come
 from one C statement (`mdtests/aggregate_call_and_destination_copy_have_separate_points.md`).
-`step_until(region(N))` stops before the `N`th atomic region;
-`step_until(loop(N))` selects the indexed loop entry;
-`step_until(assignment(local, N))` selects the Nth static local assignment
+`step_until(region(N).entry)` stops before the `N`th atomic region;
+`step_until(loop(N).entry)` selects the indexed loop entry;
+`step_until(assignment(local, N).entry)` selects the Nth static local assignment
 of the function before it executes.
 
-`step_until(read(N))` stops before the Nth statement of the function
-containing an explicit scalar memory read. `step_until(back_edge())`
+`step_until(read(N).entry)` stops before the Nth statement of the function
+containing an explicit scalar memory read. `step_until(loop.back_edge)`
 finishes the current loop preservation region with checked steps; invariant
-and ranking closure are separate. `step_until(loop(i).back_edge())` does the
+and ranking closure are separate. `step_until(loop(i).back_edge)` does the
 same and is refused outside `loop(i)`'s preservation region
-(`mdtests/step_until_refuses_another_loop_s_back_edge.md`).
+(`mdtests/execute_until_refuses_another_loop_s_back_edge.md`).
 
 A construction-return proof may use `&result` before the return to name the
 destination object. Its address alone supplies neither initialized field
@@ -716,7 +717,7 @@ The indexed source layout resolves loop entries. Click checks every crossed
 transition; expansion prints those steps, and profiling reports the selected
 site.
 
-**Checked examples:** [`step_until_runs_to_a_statement_region.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_runs_to_a_statement_region.md), [`step_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_current_frontier.md), [`step_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_selects_loop_entry.md), [`step_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_assignment.md), [`step_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_read.md), [`step_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_back_edge.md), [`step_until_back_edge_of_a_named_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_back_edge_of_a_named_loop.md), [`a_chained_region_ends_in_an_assignment_or_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_chained_region_ends_in_an_assignment_or_read.md), [`step_until_steps_to_function_exit.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_steps_to_function_exit.md)
+**Checked examples:** [`execute_until_runs_to_a_statement_region.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_runs_to_a_statement_region.md), [`execute_until_current_frontier.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_current_frontier.md), [`execute_until_selects_loop_entry.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_selects_loop_entry.md), [`execute_until_assignment.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_assignment.md), [`execute_until_read.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_read.md), [`execute_until_back_edge.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_back_edge.md), [`execute_until_back_edge_of_a_named_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/execute_until_back_edge_of_a_named_loop.md), [`a_chained_region_ends_in_an_assignment_or_read.md`](https://github.com/clicklang/click/blob/master/mdtests/a_chained_region_ends_in_an_assignment_or_read.md), [`step_until_steps_to_function_exit.md`](https://github.com/clicklang/click/blob/master/mdtests/step_until_steps_to_function_exit.md)
 
 ### Source branches
 
@@ -768,7 +769,7 @@ through local pointers keep their declared element types.
 
 ### Loop transitions
 
-**Form:** `loop [as name] { ... }`
+**Form:** `loop [name] [diverges] { ... }`
 
 **Core.** At a C loop frontier, prove initialization and one arbitrary
 iteration, construct the loop rule, and advance to its abstract exit. One
@@ -777,7 +778,7 @@ function `return`: a `continue` is the back edge; a `break` closes no invariant
 and joins the loop's ordinary exits; and a `return` is terminal for the function
 and owes neither the invariant nor ranking bundle.
 
-A `preserve by { ... }` script works like a function proof. When it ends, or
+A `maintain by { ... }` script works like a function proof. When it ends, or
 when its tactics stop inside the body and the rest of the body runs implicitly
 to the back edge (splitting at C `if`s like a function's implicit tail,
 [`preserve_runs_the_rest_of_the_body.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_runs_the_rest_of_the_body.md)),
@@ -792,7 +793,7 @@ function's exit closes each `ensures`; this closes, for example, an unsigned or
 To help a member `solve()` misses, prove it, or a fact it needs, with
 `have <invariant> by { ... }` before the back edge. `click expand` prints the
 closure as one `have <member> by { ... }` per member at the end of the
-`preserve` script, omitting members already available as facts. The retired
+`maintain` script, omitting members already available as facts. The retired
 `close_invariants` tactic is rejected by the parser
 ([`close_invariants_is_retired.md`](https://github.com/clicklang/click/blob/master/mdtests/close_invariants_is_retired.md)).
 
@@ -870,8 +871,9 @@ binders:
 - A contract that is not established for this pointer fails with `is not
   established for this callback`, even when another pointer has it. Establish
   it with `requires` or `apply`.
-- An unknown name fails with `unknown call contract`.
-- A contract that declares resource binders: use `step(Contract, { ... })`.
+- A name outside the declared contracts must match the call's callee.
+- Supply required input bindings in the map and name produced resources in the
+  `let` pattern.
 - A second call, including one in the same C statement, gets no selection.
   Write another `step(Contract)` for it.
 - `step(Contract(...))` is retired, and `step(A, B)` is a parse error.
@@ -887,19 +889,18 @@ There is no fallback to another contract. Expansion preserves the selection.
 
 ### Calls with binder maps
 
-**Form:** `step(callee, { binder: instance, n: value, ... })`;
-`let { result: name, binder: name, ... } = step(callee, { ... })`
+**Forms:** `step(callee)` and `step(callee, { binder: instance, n: value, ... })`.
+Either can use a `let { result: name, binder: name, ... }` output pattern.
 
 **Specialized.** Write it at a call whose callee declares instance binders,
 to say which owned instance each binder takes; or `let` value parameters, to
 give a value the caller cannot supply by holding an instance, such as the
 length of the string a local array holds; or `produces` binders, to name the
-instances the call creates. The step names the callee's contract, not the
-call: the arguments are the call at the frontier's, so it works for calls
-whose arguments a proof expression cannot write, such as `cond ? "" : " "`.
-The name gives the map its binders, and the produced instances their
-resources, before the step runs. `result: name` in the `let` pattern names
-the C value.
+instances the call creates. A declared named contract takes precedence. Other
+names select the callee, which can be qualified, as in `step(unit::callee)`.
+The C arguments come from the call at the frontier. The optional map supplies
+contract inputs, and the `let` pattern names outputs such as
+`let { result: value, output: instance } = step(callee);`.
 
 **Accepts** a frontier whose next lowered statement calls `callee`, when:
 
@@ -924,8 +925,8 @@ the C value.
 - The `let` pattern names every `produces` binder. A produced instance's
   resource arguments are the call's arguments
   ([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
-- An explicitly named callee without binders takes the empty map `{ }`.
-  This form also names a call result when the proof names the callee
+- Omit the input map when there are no entries. An empty map is equivalent,
+  and expansion uses the shorter spelling. Either form can bind a call result
   ([`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md)).
   `name` must not be a C variable. A proof name may be rebound.
 
@@ -957,7 +958,7 @@ produced instances.
 **Failure, checking, and tools:**
 
 The input map and output pattern are the only sources of bindings; nothing is
-searched or inferred. Expansion reprints both unchanged.
+searched or inferred. Expansion retains the bindings and omits empty maps.
 
 A call publishes the callee's postconditions. It does not search memory history
 to turn symbolic reads in those postconditions into extra constant equalities.
@@ -969,16 +970,16 @@ when it crosses a memory effect. Already-available equalities remain usable by
 
 ### Named contracts with resource bindings
 
-**Form:** `step(Contract, { handle: instance, ... })`; `step(Contract, { binder: instance })`
+**Forms:** `step(Contract)` and `step(Contract, { handle: instance, ... })`.
 
 **Specialized.** Write it to choose a named contract and map its resource
 binders in one call step. Select an established named contract for the current C
 call and map its resource binders. The same `let { result: value, output:
 resource }` pattern binds its C value and produced resources.
 
-The two syntaxes in **Form** are the same form. A handle is a named resource
-clause (`owns model: Ledger();`, `consumes input: Dirty(p);`) of the
-contract.
+A handle is a named resource clause such as `owns model: Ledger();` or
+`consumes input: Dirty(p);`. The map is optional when there are no input
+entries, including when the proof names produced instances in a `let` pattern.
 
 **Accepts** a call frontier with `Contract(f)` established for the called
 pointer or function, with the call's signature, as for `step(Contract)`, when:
@@ -1005,13 +1006,12 @@ resource-free guarantees of other applicable contracts.
 - A contract that is not established for this pointer fails with `is not
   established for this callback with its call signature`. Establish it as for
   `step(Contract)`.
-- A contract with binders written without a map, `step(Contract)`, is refused.
-- A contract without binders: write `step(Contract)`.
+- A contract that requires an input binder still needs that entry in its map.
 
 **Failure, checking, and tools:**
 
 Preconditions and ownership transitions use the existing call checker.
-Expansion reprints the map and pattern unchanged.
+Expansion retains the bindings and omits empty maps.
 
 **Checked examples:** [`named_contract_call_output_bindings.md`](https://github.com/clicklang/click/blob/master/mdtests/named_contract_call_output_bindings.md), [`c_step_contract_resource_count_is_model_local.md`](https://github.com/clicklang/click/blob/master/mdtests/c_step_contract_resource_count_is_model_local.md)
 
@@ -1110,6 +1110,7 @@ step is still checked.
 | `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
+| `order_chain() using { P; ... }` | simple | Expansion output | Check a listed signed order chain. | [Reference](#signed-order-chains) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
@@ -1582,12 +1583,21 @@ available when one of these holds:
 
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
+- It is a viewability goal for a concrete byte span within the exact block
+  recorded in the goal's memory state. The check uses the written base
+  identity, offset, and span size.
+- The completed execution path diverges and the goal is a return
+  postcondition.
 - It is a typed read-definedness goal whose memory state holds a compatible
   cell or one unambiguous live slot of the requested type at the exact
   address. It also accepts the whole read of a declared local `uint32` when
   all four bytes are recorded initialized. These checks use the goal's
   memory state and decline if its lifetime or initialization needs further
   evidence.
+- It separates a complete recorded statement footprint from the named
+  resource. For each recorded member, the checker tests intrinsic
+  separation or looks up the exact member separation. A sequence with
+  multiple effects needs individually checked steps.
 - It is a separation of memory ranges on two distinct automatic objects,
   or between an automatic object and storage incoming to the function.
   The check uses the exact block identities in the goal. Forming the
@@ -1633,6 +1643,10 @@ and symbolic matches are opaque operands; their identical occurrences may
 cancel, but this check never unfolds a call or resolves a read. It does not
 invoke the general atomic prover.
 
+Two values of the same constructor are unequal if a corresponding field
+holds a different machine-integer literal of the same type. The check
+visits only the immediate fields and uses their literal values.
+
 Direct computation also recognizes the neutral bitwise identities `0 & x == 0`
 and `0 | x == x` at a native word's own format, in either operand order. Intrinsic
 alignment of a null, heap, global or static address reads only that address's
@@ -1640,8 +1654,9 @@ block registration and constant byte offset. It does not search alignment facts
 or infer alignment for a symbolic offset.
 
 The same fixed local check accepts intrinsic machine type ranges and
-constant-divisor quotient, remainder, and right-shift bounds. A written
-machine `+`, `-`, or `*` observation equals its exact Integer expression when
+constant-divisor quotient, remainder, and right-shift bounds. This includes
+`x % d < d` and its exact Integer reading for a positive machine literal `d`.
+A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.
 Each check reads the named operands and at most two exact bound keys; it does
@@ -1704,6 +1719,17 @@ Exact propagated consequences are already available facts. Expansion leaves
 this step unchanged, and profiling charges one simple leaf.
 
 **Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`known_computes_fast_leaves.md`](https://github.com/clicklang/click/blob/master/mdtests/known_computes_fast_leaves.md), [`known_closes_an_evaluated_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/known_closes_an_evaluated_goal.md), [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md)
+
+### Signed order chains
+
+`order_chain() using { P; ... }` closes a signed `int32` comparison by
+checking the listed comparisons in their written order. The list must be
+nonempty and every premise must be available. Adjacent endpoints must be
+the same term or connected by a comparison of signed literals. A strict
+goal requires a strict premise or literal comparison. Checking work scales
+with the written list and uses exact premise lookups.
+
+[Checked example](https://github.com/clicklang/click/blob/master/mdtests/order_chain_explicit.md)
 
 ### Context-free normalization
 
@@ -2161,7 +2187,7 @@ For equality goals, use an ordinary `have` to establish the equality, then
 `rewrite` and `known` to carry a proposition across the change. The tactic remains
 `preserve(...)` in expansion. Unavailable separation, an unsupported observation,
 or mismatched endpoints is a local refusal. This tactic is distinct from a
-loop's `preserve by { ... }` proof block.
+loop's `maintain by { ... }` proof block.
 
 - Read equality. [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md) and [`memcpy_then_terminator_keeps_copied_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_then_terminator_keeps_copied_bytes.md)
 - Resource field equality across two statements. [`multi_write_resource_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/multi_write_resource_transport_expansion.md)
@@ -2858,7 +2884,7 @@ layer, and any implicit guard proofs.
 
 **Core.** In a pure proposition proof (including structural-induction arms), or
 at any execution frontier the proof has reached — unchanged function entry,
-after executed statements, or a loop's `preserve` body — split an ADT of any
+after executed statements, or a loop's `maintain` body — split an ADT of any
 width into exhaustive execution proofs, one arm per constructor.
 
 The live arms are joined by a balanced tree of frontier splits, so three or more
@@ -2876,7 +2902,7 @@ after the `match`, each live arm must reach function exit and the arms are
 joined there; with tactics written after it, every live arm must end at the same
 point in the same state, and the arms rejoin there so those tactics are
 checked once, without the constructor facts or fields of any arm; in a loop's
-`preserve` body with nothing written after the `match`, each live arm must
+`maintain` body with nothing written after the `match`, each live arm must
 execute one complete iteration on its own path — restoring the loop binder,
 closing the invariants and satisfying the structural descent at the body's end
 or at a `continue`, or leaving through a `break`, which owes none of those.
@@ -2899,14 +2925,14 @@ A `match` with `ensuring`, or with an arm that is a lone `contradiction`,
 splits once at the exit frontier instead, on the path's facts, and so does a
 `match` whose scrutinee has no checked value there.
 
-Tactics written after a `match` in a `preserve` body are checked once:
+Tactics written after a `match` in a `maintain` body are checked once:
 straight-line arms that end in one state rejoin as in a function body, and two
 arms still live at one point that end apart are refused
 (`mdtests/loop_body_proof_match_shared_continuation.md`). With `ensuring`, arms
 that end apart rejoin inside the body, as the arms of a `branch` do, and those
 tactics are checked once on the one path that leaves the `match`
 (`mdtests/loop_body_proof_match_ensuring_rejoins.md`); a proof `if ... ensuring`
-in a `preserve` body rejoins the same way.
+in a `maintain` body rejoins the same way.
 
 The constructor equation is an entry assumption of the whole function only when
 the `match` ran before any C step. Pure arms prove the same current goal under
@@ -3224,7 +3250,7 @@ states or at different points are refused when tactics follow the `if`
 those tactics belong to the other arm and run once, in it
 (`mdtests/proof_if_one_arm_returns_and_the_other_continues.md`).
 
-In a loop's `preserve` body the rule is the same, except that arms reaching
+In a loop's `maintain` body the rule is the same, except that arms reaching
 those tactics at different points are different paths of the C and each
 is finished its own way.
 
@@ -3261,7 +3287,7 @@ arm proved, or the `cases` is refused
 (`mdtests/cases_arms_rejoin_with_the_facts_every_arm_proved.md`,
 `mdtests/cases_arms_that_do_not_rejoin_are_refused.md`); an arm that reaches
 function exit finishes its own path
-(`mdtests/cases_at_a_frontier_finishes_each_arm.md`). In a loop's `preserve`
+(`mdtests/cases_at_a_frontier_finishes_each_arm.md`). In a loop's `maintain`
 proof its arms must rejoin: each arm closes its own back edge, and the
 rejoined path's back edge is then closed again with only the facts every arm
 proved, so an arm that needs its own fact there proves the invariants at the
@@ -3444,6 +3470,7 @@ mathematical product.
 | `unfold(predicate(args))` | simple | Core | Open one selected predicate application. | [Reference](#unfolding-predicates) |
 | `unfold(resource(args))` | simple | Core | Open an owned resource instance. | [Reference](#unfolding-resources) |
 | `fold(resource)` | simple | Core | Assemble a resource from its body and children. | [Reference](#folding-resources) |
+| `release_view(range)` | simple | Specialized | Give up one directly held produced view. | [Reference](#releasing-a-view) |
 | `fold(...) by { ... }` | control | Expansion output | Supply a proof for one fold obligation. | [Reference](#folding-with-one-obligation) |
 | `fold(...) { requires P by ...; }` | control | Expansion output | Supply proofs for selected fold obligations. | [Reference](#folding-with-several-obligations) |
 | `construct(resource)` | simple | Specialized | Create an abstract token authorized by a `constructs` clause. | [Reference](#constructing-resources) |
@@ -3761,6 +3788,14 @@ profiling charges the produced body.
 
 **Checked examples:** [`composite_resource_composes_token.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_composes_token.md), [`unfold_names_its_pieces_on_the_left.md`](https://github.com/clicklang/click/blob/master/mdtests/unfold_names_its_pieces_on_the_left.md), [`conditional_resource_unfold_requires_decided_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/conditional_resource_unfold_requires_decided_guard.md), [`composite_resource_once_flag.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_once_flag.md)
 
+### Releasing a view
+
+`release_view(*p);` gives up a directly held memory view produced by a
+call. Write the whole range held by the view. If this ends the borrow,
+write access the caller lent becomes available again. The tactic runs at
+the current C frontier without advancing it. See
+[Producing a view](../../concepts/resources.md#producing-a-view).
+
 ### Folding resources
 
 **Form:** `fold(resource)`
@@ -4006,7 +4041,8 @@ the tactic itself, for recursion), when:
   resource that the proof holds. The map is left out only when the tactic
   declares no such binder; an instance of the binder's own name is not
   picked up without it.
-- Every `produces` binder is named by the `let { binder: name }` pattern.
+- Every `produces` binder is named by the `let { binder: name }` pattern,
+  including when the tactic produces just one resource.
 - Each `requires`, at the arguments, is an available fact or a condition the
   kernel's condition decision settles (`n == 3` and `n >= 3` both discharge
   `requires t > 0;` at `t = n`). A recursive application also owes its

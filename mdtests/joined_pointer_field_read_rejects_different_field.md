@@ -64,13 +64,13 @@ void inspect(struct node* parent) {
     requires parent == parent_identity(tree_context.model);
     ensures 1 == 1;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         owns tree_context: parent_at(root);
         invariant parent == parent_identity(tree_context.model);
         decreases 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             match tree_context.model {
                 Parent::At(pid, sm, fm) => {
                     have parent == parent_identity(Parent::At(pid, sm, fm)) by { rewrite(Parent::At(pid, sm, fm), tree_context.model); known(); }

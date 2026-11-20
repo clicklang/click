@@ -293,7 +293,7 @@ pub(super) fn checked_returned_instance_body_facts(
 
 pub(super) fn selected_resource_instance_case_facts(
     state: &ExecutionState,
-    bound_instances: Option<&BTreeMap<Variable, Variable>>,
+    bound_instances: Option<&ResourceBindings>,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
 ) -> Vec<Proposition> {
@@ -308,8 +308,8 @@ pub(super) fn selected_resource_instance_case_facts(
             Resource::Instance(instance)
                 if fact.is_own()
                     && bound_instances
-                        .values()
-                        .any(|id| *id == instance.identity.variable()) =>
+                        .instances()
+                        .any(|(_, id)| id == instance.identity) =>
             {
                 Some(instance)
             }
@@ -374,11 +374,8 @@ pub(super) fn selected_instance_resource_load_values(
     let mut values = BTreeMap::new();
     let mut conflicting = BTreeSet::new();
     let mut seen = BTreeSet::new();
-    for identity in bindings.values().copied().filter(|id| seen.insert(*id)) {
-        let Some(instance) = state
-            .resources()
-            .owned_instance(InstanceId::from_variable(identity))
-        else {
+    for (_, identity) in bindings.instances().filter(|(_, id)| seen.insert(*id)) {
+        let Some(instance) = state.resources().owned_instance(identity) else {
             continue;
         };
         let Ok(index) = definitions.binary_search_by(|definition| {
@@ -929,10 +926,12 @@ pub(in crate::kernel) fn instance_body_evaluation(
         // never incidental locals of the function currently opening it.
         evaluation.locals = LocalEnvironment::default();
     }
-    evaluation.resource_bindings = Some(std::sync::Arc::new(BTreeMap::from([(
-        Variable(u64::MAX),
-        instance.identity.variable(),
-    )])));
+    let mut bindings = ResourceBindings::new();
+    bindings.insert_instance(
+        InstanceId::from_variable(Variable(u64::MAX)),
+        instance.identity,
+    );
+    evaluation.resource_bindings = Some(std::sync::Arc::new(bindings));
     // A C-typed field is stable model data of this instance, so the body may
     // name it wherever it may name a matched constructor payload: as a memory
     // endpoint or a child argument. The binding is the instance's own field

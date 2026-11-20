@@ -19,7 +19,7 @@ theorem rb_erase_only_right_child(node: struct rb_node*, parent: struct rb_node*
     ensures color == Color::Black by {
         have rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))
             == RbMinimum::Found(node, color, child) by {
-            unfold(rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))); normalize();
+            unfold(rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))); known();
         }
         apply(rb_minimum_nonempty_child_parent_color(
             RbTree::Node(node, parent, color, RbTree::Empty, child), node, color, child));
@@ -28,7 +28,7 @@ theorem rb_erase_only_right_child(node: struct rb_node*, parent: struct rb_node*
     ensures is_rb_root(plug(up, rb_reparent(rb_recolor(child, Color::Black), parent))) == 1 by {
         have rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))
             == RbMinimum::Found(node, color, child) by {
-            unfold(rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))); normalize();
+            unfold(rb_minimum(RbTree::Node(node, parent, color, RbTree::Empty, child))); known();
         }
         apply(rb_minimum_child_blackens_without_deficit(
             RbTree::Node(node, parent, color, RbTree::Empty, child), up, node, color, child, parent));
@@ -89,7 +89,7 @@ theorem rb_swap_children_valid(node: struct rb_node*, parent: struct rb_node*, c
         apply(black_height_node_frame(node, parent, color, left, right));
         rewrite(black_height(RbTree::Node(node, parent, color, right, left)), frame_black_height(color, black_height(right)));
         rewrite(black_height(RbTree::Node(node, parent, color, left, right)), frame_black_height(color, black_height(left)));
-        rewrite(black_height(right), black_height(left)); normalize();
+        rewrite(black_height(right), black_height(left)); known();
     }
 }
 
@@ -105,7 +105,7 @@ theorem rb_erase_only_left_child(node: struct rb_node*, parent: struct rb_node*,
         have rb_color(RbTree::Node(node, parent, color, RbTree::Empty, child))
             == rb_color(RbTree::Node(node, parent, color, child, RbTree::Empty)) by {
             unfold(rb_color(RbTree::Node(node, parent, color, RbTree::Empty, child)));
-            unfold(rb_color(RbTree::Node(node, parent, color, child, RbTree::Empty))); normalize();
+            unfold(rb_color(RbTree::Node(node, parent, color, child, RbTree::Empty))); known();
         }
         have ctx_rb(up, black_height(RbTree::Node(node, parent, color, RbTree::Empty, child)),
             rb_color(RbTree::Node(node, parent, color, RbTree::Empty, child))) == 1 by {

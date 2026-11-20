@@ -22,7 +22,7 @@ verifying "fields.c";
 int32 read_right(int32 value) {
     ensures result == value;
 } by {
-    step_until(statement(2));
+    step_until(statement(2).entry);
     mark written;
     step();
     have pair.right == value by solve();

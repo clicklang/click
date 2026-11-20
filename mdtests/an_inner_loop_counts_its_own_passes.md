@@ -35,7 +35,7 @@ int32 grid(int32 n) {
         invariant 0 <= i and i <= n;
         invariant i == iterations;
         invariant 0 <= j and j <= n;
-        preserve by {
+        maintain by {
             step();
             loop {
                 decreases n - j;

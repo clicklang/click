@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: composite native arithmetic proofs and missing-definedness controls"]
 fn solve_composite_machine_equalities_require_defined_operations() {
     let fixture = crate::cli::parse_mdtest(
@@ -446,7 +447,7 @@ fn parses_local_have_proof_tactic() {
     assert_eq!(
         &tactics[1..],
         &[
-            ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
+            ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
             ProofTactic::Solve
         ]
     );
@@ -601,8 +602,8 @@ fn parses_proof_if_tactic() {
             then_tactics,
             else_tactics,
             ..
-        }) if then_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Solve]
-            && else_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Solve]
+        }) if then_tactics == &[ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT), ProofTactic::Solve]
+            && else_tactics == &[ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT), ProofTactic::Solve]
     ));
 }
 
@@ -619,7 +620,7 @@ fn parses_existential_proof_tactics() {
     let tactics = ensure.proof().tactics().expect("expected tactics");
     assert!(matches!(
         tactics[0],
-        ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit)
+        ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT)
     ));
     assert!(matches!(&tactics[1], ProofTactic::LetSatisfy(binding)
         if binding.bindings == [("k".to_string(), ClickType::Program(InterfaceType::Int32))]));
@@ -1152,7 +1153,7 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
         verified[0].proof_tactics(),
         Some(
             [
-                ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit),
+                ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
                 ProofTactic::UnfoldFunction(ClickFunctionApplication {
                     name: "sorted_pair".into(),
                     arguments: vec![ContractExpression::ProgramExpression(
@@ -3101,7 +3102,7 @@ fn parses_outcomes_arms_in_either_order() {
             payload_bindings: _,
             returned_tactics,
             threw_tactics,
-        }) if returned_tactics == &[ProofTactic::ExecuteUntil(CodeRegionRef::FunctionExit), ProofTactic::Solve]
+        }) if returned_tactics == &[ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT), ProofTactic::Solve]
             && threw_tactics == &[ProofTactic::Solve]
     ));
 
@@ -3146,6 +3147,7 @@ fn pure_machine_witness_instantiates_supported_c_binders() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: mixed-type witness expansion, alpha-renaming, and cold replay"]
 fn positional_witnesses_preserve_mixed_types_and_cold_replay() {
     for proof in [
@@ -3320,6 +3322,7 @@ fn pure_machine_witness_rejects_different_widths_and_signedness() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
     for (ty, annotation) in [
@@ -3447,13 +3450,13 @@ const TERMINAL_BINDINGS_CLICK: &str = r#"
             ensures returned: result == n;
         } by {
             if n >= 0 {
-                let { result: positive } = step(identity, {});
+                let { result: positive } = step(identity);
                 have positive == n;
                 step_until(function.exit);
                 have result == positive;
                 solve();
             } else {
-                let { result: negative } = step(identity, {});
+                let { result: negative } = step(identity);
                 have negative == n;
                 step_until(function.exit);
                 have result == negative;

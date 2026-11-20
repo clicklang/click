@@ -36,7 +36,7 @@ int32 run(const int32 *p) {
     views p[0..1];
     ensures result == 7;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     have c.n == 0;
     have separate(memory((&c as (uint8*))[0..4]), memory(p[0..1])) by { solve(); }
     loop {

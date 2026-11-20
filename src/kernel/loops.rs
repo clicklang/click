@@ -514,12 +514,14 @@ fn execute_modeled_pthread_mutex_paths(
             transport.function.as_ref() == contract.function_name
                 && transport.arity == contract.arity
                 && transport.bindings.keys().all(|identity| {
-                    contract
-                        .implemented_binders()
-                        .any(|binder| *identity == Variable(binder.identity))
+                    contract.implemented_binders().any(|binder| {
+                        *identity == ResourceBinderId::from_variable(Variable(binder.identity))
+                    })
                 })
                 && contract.implemented_binders().all(|binder| {
-                    transport.bindings.contains_key(&Variable(binder.identity))
+                    transport
+                        .bindings
+                        .contains_key(&ResourceBinderId::from_variable(Variable(binder.identity)))
                         || (initializing && binder.role == MutexResourceRole::State)
                 })
                 && transport
@@ -602,9 +604,15 @@ fn execute_modeled_pthread_mutex_paths(
                     .binder_by_role(MutexResourceRole::State)
                     .expect("initialization declares its optional state input");
                 let state_identity = selected
-                    .and_then(|transport| transport.bindings.get(&Variable(state_binder.identity)))
+                    .and_then(|transport| {
+                        transport
+                            .bindings
+                            .get(&ResourceBinderId::from_variable(Variable(
+                                state_binder.identity,
+                            )))
+                    })
                     .copied()
-                    .map(InstanceId::from_variable);
+                    .map(ResourceBinderId::instance);
                 let context = if let Some(identity) = state_identity {
                     super::mutexes::MutexContext::new(state.clone())
                         .publish_declared(
@@ -638,7 +646,9 @@ fn execute_modeled_pthread_mutex_paths(
                         .descriptor()
                         .binder_by_role(MutexResourceRole::Lifetime)
                         .expect("initialization declares its lifetime output");
-                    let output = transport.bindings[&Variable(lifetime.identity)];
+                    let output = transport.bindings
+                        [&ResourceBinderId::from_variable(Variable(lifetime.identity))]
+                        .mutex_authority();
                     let live = super::mutexes::live_resource(&next, mutex.address(), false)
                         .expect("successful initialization establishes lifetime authority");
                     next.bind_named_mutex_authority(output, &live)
@@ -671,20 +681,24 @@ fn execute_modeled_pthread_mutex_paths(
                             .descriptor()
                             .binder_by_role(role)
                             .expect("runtime binder role");
-                        transport.bindings[&Variable(binder.identity)]
+                        transport.bindings
+                            [&ResourceBinderId::from_variable(Variable(binder.identity))]
                     })
                 };
                 let usage = state.resources.mutex_use_candidate_at(mutex.address());
-                let access_matches =
-                    selected_role(MutexResourceRole::Access).is_none_or(|identity| {
+                let access_matches = selected_role(MutexResourceRole::Access)
+                    .map(ResourceBinderId::mutex_authority)
+                    .is_none_or(|identity| {
                         state.resolve_named_mutex_authority(identity) == usage && usage.is_some()
                     });
                 let guard_matches = acquiring
-                    || selected_role(MutexResourceRole::Guard).is_none_or(|identity| {
-                        matches!((state.resolve_named_mutex_authority(identity),
+                    || selected_role(MutexResourceRole::Guard)
+                        .map(ResourceBinderId::mutex_authority)
+                        .is_none_or(|identity| {
+                            matches!((state.resolve_named_mutex_authority(identity),
                         super::mutexes::guard_resource(state, mutex.address(), false)),
                         (Some(actual), Some(expected)) if actual == &expected)
-                    });
+                        });
                 if !access_matches {
                     Err(RuntimeError::MissingMutexUse {
                         mutex: mutex.address().clone(),
@@ -711,7 +725,7 @@ fn execute_modeled_pthread_mutex_paths(
                         &current,
                         definition,
                         &environment.modeled_mutex_definition_list,
-                        selected_role(MutexResourceRole::State).map(InstanceId::from_variable),
+                        selected_role(MutexResourceRole::State).map(ResourceBinderId::instance),
                         budget,
                     )
                     .map_err(|error| error.into_runtime_error(mutex.address()))
@@ -719,7 +733,9 @@ fn execute_modeled_pthread_mutex_paths(
                         if !acquiring {
                             return Ok((next, evidence));
                         }
-                        let Some(output) = selected_role(MutexResourceRole::Guard) else {
+                        let Some(output) = selected_role(MutexResourceRole::Guard)
+                            .map(ResourceBinderId::mutex_authority)
+                        else {
                             return Ok((next, evidence));
                         };
                         let guard = super::mutexes::guard_resource(&next, mutex.address(), false)
@@ -778,7 +794,9 @@ fn execute_modeled_pthread_mutex_paths(
                             .descriptor()
                             .binder_by_role(MutexResourceRole::Lifetime)
                             .expect("destruction declares its lifetime input");
-                        transport.bindings[&Variable(lifetime.identity)]
+                        transport.bindings
+                            [&ResourceBinderId::from_variable(Variable(lifetime.identity))]
+                            .mutex_authority()
                     });
                     if selected_live.is_some_and(|identity| {
                         !matches!(
@@ -3007,12 +3025,10 @@ impl LoopExitRestatement {
     /// This exit's contribution to the join: what it states, and the same
     /// path restated about the successor's fresh names for its disjunct.
     ///
-    /// The restated reading never replaces what the path stated — the loop
-    /// may retain historical facts under the names the head stated them —
-    /// but the disjunct is built from the restated reading
-    /// alone, because a name the loop left behind is one no proof after the
-    /// loop can spell, and a `cases` over the exported disjunction has to
-    /// spell it.
+    /// Keep the original facts available for the intersection across exits.
+    /// For the disjunct, use the successor's scalar names where they replace
+    /// exit-only names. Effect summaries keep the states and ranges of the
+    /// transitions that established them.
     fn restate(
         self,
         facts: ExecutionFacts,
@@ -3026,7 +3042,7 @@ impl LoopExitRestatement {
             self.renamings
                 .iter()
                 .fold(proposition.clone(), |proposition, (from, to)| {
-                    substitute_bitvector_variable_in_proposition(&proposition, *from, to)
+                    crate::kernel::reasoning::restate_loop_exit_scalar(&proposition, *from, to)
                 })
         };
         let mut restated = Vec::new();
@@ -3040,9 +3056,7 @@ impl LoopExitRestatement {
         }
         let mut successor_equations = Vec::new();
         for equation in &self.equations {
-            // An equation the renaming covers is dropped: every fact this exit
-            // stated about the renamed value was restated about the
-            // successor's name above, so keeping it would state nothing.
+            // A pin reduced to a reflexive equality states nothing.
             let renamed = rename(equation);
             if equation_states_nothing(&renamed) {
                 continue;
@@ -3883,7 +3897,9 @@ fn abstract_loop_exit_memory(
                 .collect(),
             Vec::new(),
         );
-        *successor = successor.clone().with_memory(memory);
+        *successor = successor
+            .clone()
+            .with_memory_relative_to(memory, successor.memory());
     }
     Ok(abstracted)
 }
@@ -4109,10 +4125,10 @@ fn loop_exit_residual_difference(
             vec![seated.memory.clone(), witness.memory.clone()],
             cells.iter().cloned().map(ProgramValue::pointer).collect(),
         );
-        witness = witness.with_memory(memory);
-        seated = seated.with_memory(exit_memory);
+        witness = witness.with_memory_relative_to(memory, successor.memory());
+        seated = seated.with_memory_relative_to(exit_memory, successor.memory());
     }
-    loop_exit_state_difference(&witness, &seated, assumptions)
+    loop_exit_state_difference(&witness, &seated, successor.memory(), assumptions)
 }
 
 /// Whether two exits hold the same resources: structurally, or after each
@@ -4159,27 +4175,26 @@ fn loop_exit_resources_agree(
 fn loop_exit_state_difference(
     left: &ExecutionState,
     right: &ExecutionState,
+    memory_base: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<String> {
+    let same_memory = left
+        .memory()
+        .same_contents_relative_to(right.memory(), memory_base);
+    let mut aligned = right.clone();
     // Creation ledgers that record the same state differ only in their
     // fresh names: a local one exit created and retired leaves none behind.
-    if left.equal_up_to_creation_ledger_identity(right) {
-        return None;
+    if same_memory {
+        // Reuse the already compared memory in the state equality check.
+        aligned.memory = left.memory.clone();
+        if left.equal_up_to_creation_ledger_identity(&aligned) {
+            return None;
+        }
     }
-    let same_memory = left.memory().same_contents_as(right.memory());
     let same_resources =
         loop_exit_resources_agree(left.resources(), right.resources(), assumptions);
-    if same_memory || same_resources {
-        // The fields are assigned directly: the setters also refresh what
-        // they mirror elsewhere in the state, and nothing but the component
-        // just shown equivalent may change before the comparison.
-        let mut aligned = right.clone();
-        if same_memory {
-            aligned.memory = left.memory.clone();
-        }
-        if same_resources {
-            aligned.resources = left.resources.clone();
-        }
+    if same_memory && same_resources {
+        aligned.resources = left.resources.clone();
         if left.equal_up_to_creation_ledger_identity(&aligned) {
             return None;
         }

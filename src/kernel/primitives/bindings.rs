@@ -90,6 +90,7 @@ enum LocalBindingKind {
     IteratorOption(IteratorOptionField),
     RangeStart,
     RangeEnd,
+    CompoundLiteral,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -142,14 +143,19 @@ impl LocalBindingId {
     }
     /// A frontend temporary is distinct from all source declaration ordinals.
     pub(crate) fn temporary(owner: LocalFunctionId, ordinal: u32) -> Self {
-        Self::frontend_temporary(owner, ordinal, LocalBindingKind::Temporary)
+        Self::new_unnamed(owner, ordinal, LocalBindingKind::Temporary)
     }
 
     pub(crate) fn prepared_argument(owner: LocalFunctionId, ordinal: u32) -> Self {
-        Self::frontend_temporary(owner, ordinal, LocalBindingKind::PreparedArgument)
+        Self::new_unnamed(owner, ordinal, LocalBindingKind::PreparedArgument)
     }
 
-    fn frontend_temporary(owner: LocalFunctionId, ordinal: u32, kind: LocalBindingKind) -> Self {
+    /// An unnamed C object identified by its written compound literal occurrence.
+    pub(crate) fn compound_literal(owner: LocalFunctionId, ordinal: u32) -> Self {
+        Self::new_unnamed(owner, ordinal, LocalBindingKind::CompoundLiteral)
+    }
+
+    fn new_unnamed(owner: LocalFunctionId, ordinal: u32, kind: LocalBindingKind) -> Self {
         Self(Arc::new(LocalDeclaration {
             owner,
             parameter: false,
@@ -296,10 +302,6 @@ impl LocalBindingId {
         )
     }
 
-    pub(crate) fn is_chunk_iterator_field(&self) -> bool {
-        matches!(self.0.kind, LocalBindingKind::ChunkIterator(_))
-    }
-
     pub(crate) fn is_iterator_option_field(&self) -> bool {
         matches!(self.0.kind, LocalBindingKind::IteratorOption(_))
     }
@@ -344,6 +346,9 @@ impl LocalBindingId {
     }
     pub fn is_parameter(&self) -> bool {
         self.0.parameter
+    }
+    pub(crate) fn is_compound_literal(&self) -> bool {
+        self.0.kind == LocalBindingKind::CompoundLiteral
     }
     pub fn spelling(&self) -> Option<&str> {
         self.0.spelling.as_deref()
@@ -422,6 +427,7 @@ impl Hash for LocalBindingId {
             }
             LocalBindingKind::RangeStart => (&self.0.owner, 11u8, self.0.ordinal).hash(state),
             LocalBindingKind::RangeEnd => (&self.0.owner, 12u8, self.0.ordinal).hash(state),
+            LocalBindingKind::CompoundLiteral => (&self.0.owner, 13u8, self.0.ordinal).hash(state),
         }
     }
 }
@@ -524,7 +530,9 @@ impl std::fmt::Display for CanonicalLocalBinding<'_> {
             f,
             "{}.{}({})",
             id.function(),
-            if id.is_parameter() {
+            if id.is_compound_literal() {
+                "compound_literal"
+            } else if id.is_parameter() {
                 "parameter"
             } else {
                 "local"

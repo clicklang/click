@@ -88,12 +88,14 @@ fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
         let after = before
             .clone()
             .materialize_named_cell(target.clone(), ProgramValue::Int32(name));
+        let before_state = crate::kernel::ExecutionState::new().with_memory(before.clone());
         let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
-            super::super::memory_only_adds_named_cells(&before, &after)
+            super::super::memory_only_adds_named_cells(&before_state, &after)
         });
         checked.unwrap();
         samples.push(work);
-        assert!(super::super::memory_only_adds_named_cells(&after, &before).is_err());
+        let after_state = crate::kernel::ExecutionState::new().with_memory(after);
+        assert!(super::super::memory_only_adds_named_cells(&after_state, &before).is_err());
     }
     assert!(
         samples.windows(2).all(|pair| pair[1] <= pair[0] + 32),
@@ -899,6 +901,7 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
 // Interface re-lowering must use the checked arm's address aliases without
 // acquiring read authority, leaking an arm fact, or scanning its history.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
     use crate::kernel::{ConditionTerm, Pointer, SpecPoint};

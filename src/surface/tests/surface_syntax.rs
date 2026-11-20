@@ -562,6 +562,7 @@ fn representative_surface_depths_survive_consumption() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: full supported-depth validation, verification, printing and destruction audit"]
 fn supported_surface_depth_boundaries_survive_consumption() {
     surface_depths_survive_consumption(
@@ -1510,6 +1511,7 @@ fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
     let depth = 40;
@@ -3546,7 +3548,7 @@ fn loop_diverges_round_trips_through_expansion() {
                 return 0;
             }
         "#;
-    let body = "loop diverges { invariant 0 == 0; initialize by solve(); preserve by { step(); } } solve();";
+    let body = "loop spinning diverges { invariant 0 == 0; initialize by solve(); maintain by { step(); } } solve();";
     let click_source = format!(
         r#"verifying "spin.c";
 
@@ -3561,7 +3563,7 @@ fn loop_diverges_round_trips_through_expansion() {
         .expanded_proof_source()
         .expect("a checked proof expands");
     assert!(
-        expanded.contains("loop diverges {"),
+        expanded.contains("loop spinning diverges {"),
         "expansion must reprint the loop marker:\n{expanded}"
     );
     verify_c_sources(
@@ -3619,7 +3621,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                     decreases n;
                     invariant n >= 0;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         have 0 <= to_integer(n - 1) by {
                             solve() using { n > 0; }
                         }
@@ -3629,7 +3631,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
                 loop diverges {
                     invariant n == 0;
                     initialize by solve();
-                    preserve by {
+                    maintain by {
                         step();
                     }
                 }
@@ -3779,6 +3781,33 @@ fn typed_loads_lower_and_raise_back_to_the_same_term() {
 }
 
 #[test]
+fn selected_memory_load_keeps_the_written_pointer_and_qualifiers() {
+    let parse = |text: &str| {
+        let file = parser::parse_file_items(&format!(
+            "function read(p: uint64*) -> Integer {{ {text} }}"
+        ))
+        .unwrap();
+        file.click_function_definitions()[0].body().unwrap().clone()
+    };
+    let read = parse("load<const uint8*>(old(p))");
+    assert!(matches!(
+        &read,
+        ContractExpression::MemoryLoad {
+            pointer,
+            value_type: ProgramType::UInt8Pointer,
+            volatile: false,
+            pointee_constant: true,
+        } if matches!(pointer.as_ref(), ContractExpression::Old(_))
+    ));
+    assert_eq!(
+        parse(&crate::surface::diagnostics::describe_contract_expression(
+            &read
+        )),
+        read
+    );
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_27")]
 fn resource_array_size_excludes_struct_padding() {
     let c_source = "struct packet { uint8 bytes[3]; int64 aligned; }; uint8 read(struct packet* p) { return p->bytes[2]; }";
@@ -3841,7 +3870,7 @@ fn an_invariant_label_names_it_in_a_failure() {
     let sidecar = |invariant: &str| {
         format!(
             "verifying \"count.c\"; int32 count(int32 n) {{ requires 0 <= n; ensures result == result; }} by {{ \
-             step_until(loop(0)); loop {{ decreases n - i; invariant {invariant} i <= n - 1; \
+             step_until(loop(0).entry); loop {{ decreases n - i; invariant {invariant} i <= n - 1; \
              }} step_until(function.exit); solve(); }}"
         )
     };

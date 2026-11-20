@@ -550,6 +550,7 @@ impl Analysis<'_> {
                 checked?;
             }
             ContractExpression::CUnary { operand: inner, .. }
+            | ContractExpression::MemoryLoad { pointer: inner, .. }
             | ContractExpression::Negate(inner)
             | ContractExpression::BitwiseNot(inner)
             | ContractExpression::Old(inner)

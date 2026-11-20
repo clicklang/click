@@ -21,9 +21,9 @@ splits, and non-byte splits remain unsupported.
 To refresh and verify from the repository root, with the pinned tools active:
 
 ```sh
-target/debug/click import lock design/charon-trial/split-slices/split.click
+target/debug/click capture design/charon-trial/split-slices/split.click
 target/debug/click verify design/charon-trial/split-slices/split.click
-target/debug/click import lock design/charon-trial/split-slices/copies.click
+target/debug/click capture design/charon-trial/split-slices/copies.click
 target/debug/click verify design/charon-trial/split-slices/copies.click
 ```
 

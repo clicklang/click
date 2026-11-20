@@ -51,7 +51,7 @@ int32 drain_to_zero(int32 value) {
         decreases value;
         invariant value >= 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             have 0 <= to_integer(value - 1);
             step();
         }

@@ -39,12 +39,12 @@ unsigned count(int n) {
     requires n >= 0;
     ensures to_integer(result) == to_integer(n);
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases to_integer(n) - to_integer(c);
         invariant left >= 0;
         invariant to_integer(c) + to_integer(left) == to_integer(n);
-        preserve by {
+        maintain by {
             step();
             have statement(2).call(take, 0).result
                 == (if at(statement(2).call(take, 0).entry, left) == 0 { 0 } else { 1 }) by solve();

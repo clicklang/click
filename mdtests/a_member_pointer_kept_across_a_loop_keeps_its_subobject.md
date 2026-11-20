@@ -30,7 +30,7 @@ int32 probe(struct Pair* p, int32 n) {
         decreases n - i;
         invariant i >= 0 and i <= n;
         invariant q == &p->first;
-        preserve by {
+        maintain by {
             step();
             step();
         }

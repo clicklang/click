@@ -9,20 +9,20 @@ theorem splice_black_leaf_facts(node: struct rb_node*, parent: struct rb_node*) 
         unfold(splice_black_leaf(node, parent));
         unfold(is_rb(RbTree::Node(node, parent, Color::Black, RbTree::Empty, RbTree::Empty)));
         unfold(is_rb(RbTree::Empty));
-        normalize();
+        known();
     }
 
     ensures black_height(splice_black_leaf(node, parent)) == Nat::Succ(Nat::Zero) by {
         unfold(splice_black_leaf(node, parent));
         unfold(black_height(RbTree::Node(node, parent, Color::Black, RbTree::Empty, RbTree::Empty)));
         unfold(black_height(RbTree::Empty));
-        normalize();
+        known();
     }
 
     ensures rb_root_black(splice_black_leaf(node, parent)) == 1 by {
         unfold(splice_black_leaf(node, parent));
         unfold(rb_root_black(RbTree::Node(node, parent, Color::Black, RbTree::Empty, RbTree::Empty)));
-        normalize();
+        known();
     }
 
     ensures rb_parent_consistent(splice_black_leaf(node, parent), parent) == 1 by {
@@ -31,7 +31,7 @@ theorem splice_black_leaf_facts(node: struct rb_node*, parent: struct rb_node*) 
             parent));
         unfold(rb_parent_consistent(RbTree::Empty, node));
         unfold(rb_node_is(parent, parent));
-        normalize();
+        known();
     }
 }
 
@@ -45,7 +45,7 @@ theorem immediate_successor(erased: struct rb_node*, successor: struct rb_node*,
             erased)) by {
             rewrite(black_height(splice_black_leaf(l, erased)), Nat::Succ(Nat::Zero));
             rewrite(black_height(splice_black_leaf(successor, erased)), Nat::Succ(Nat::Zero));
-            normalize();
+            known();
         }
         apply(is_rb_black_node(erased, above, splice_black_leaf(l, erased), splice_black_leaf(successor,
             erased)));
@@ -58,7 +58,7 @@ theorem immediate_successor(erased: struct rb_node*, successor: struct rb_node*,
             unfold(ctx_rb(Context::Top, black_height(RbTree::Node(erased, above, Color::Black,
                 splice_black_leaf(l, erased), splice_black_leaf(successor, erased))), Color::Black));
             unfold(color_black(Color::Black));
-            normalize();
+            known();
         }
         apply(rb_node_is_reflexive(above));
         apply(rb_parent_consistent_node(erased, above, Color::Black, splice_black_leaf(l, erased),
@@ -69,7 +69,7 @@ theorem immediate_successor(erased: struct rb_node*, successor: struct rb_node*,
             RbTree::Empty) by {
             unfold(splice_black_leaf(successor, erased));
             unfold(rb_minimum(RbTree::Node(successor, erased, Color::Black, RbTree::Empty, RbTree::Empty)));
-            normalize();
+            known();
         }
         apply(rb_erase_black_successor_splice(erased, successor, above, Color::Black,
             splice_black_leaf(l, erased), splice_black_leaf(successor, erased), Context::Top, above));
@@ -87,7 +87,7 @@ theorem immediate_successor(erased: struct rb_node*, successor: struct rb_node*,
         unfold(rb_min_context(RbTree::Node(successor, successor, Color::Black, RbTree::Empty,
             RbTree::Empty), Context::Right(successor, above, Color::Black, rb_reparent(splice_black_leaf(l,
             erased), successor), Context::Top)));
-        normalize();
+        known();
     }
 }
 
@@ -110,7 +110,7 @@ theorem deep_red_right_subtree(erased: struct rb_node*, successor: struct rb_nod
             unfold(black_height(RbTree::Node(r, erased, Color::Red, splice_black_leaf(successor, r),
                 splice_black_leaf(far, r))));
             rewrite(black_height(splice_black_leaf(successor, r)), Nat::Succ(Nat::Zero));
-            normalize();
+            known();
         }
         apply(is_rb_black_node(erased, above, splice_black_leaf(l, erased), RbTree::Node(r, erased,
             Color::Red, splice_black_leaf(successor, r), splice_black_leaf(far, r))));
@@ -126,7 +126,7 @@ theorem deep_red_right_subtree(erased: struct rb_node*, successor: struct rb_nod
                 splice_black_leaf(l, erased), RbTree::Node(r, erased, Color::Red,
                 splice_black_leaf(successor, r), splice_black_leaf(far, r)))), Color::Black));
             unfold(color_black(Color::Black));
-            normalize();
+            known();
         }
         apply(rb_node_is_reflexive(above));
         apply(rb_parent_consistent_node(erased, above, Color::Black, splice_black_leaf(l, erased),
@@ -142,7 +142,7 @@ theorem deep_red_right_subtree(erased: struct rb_node*, successor: struct rb_nod
                 RbTree::Node(successor, r, Color::Black, RbTree::Empty, RbTree::Empty),
                     splice_black_leaf(far, r))));
             unfold(rb_minimum(RbTree::Node(successor, r, Color::Black, RbTree::Empty, RbTree::Empty)));
-            normalize();
+            known();
         }
         apply(rb_erase_black_successor_splice(erased, successor, above, Color::Black,
             splice_black_leaf(l, erased), RbTree::Node(r, erased, Color::Red, splice_black_leaf(successor,
@@ -168,7 +168,7 @@ theorem deep_red_right_subtree(erased: struct rb_node*, successor: struct rb_nod
         unfold(rb_min_context(RbTree::Node(successor, r, Color::Black, RbTree::Empty, RbTree::Empty),
             Context::Left(r, successor, Color::Red, splice_black_leaf(far, r), Context::Right(successor,
             above, Color::Black, rb_reparent(splice_black_leaf(l, erased), successor), Context::Top))));
-        normalize();
+        known();
     }
 }
 
@@ -184,7 +184,7 @@ theorem immediate_successor_rejects_zero_height(erased: struct rb_node*,
         have not(black_height(rb_reparent(splice_black_leaf(l, erased), successor)) == Nat::Zero) by {
             rewrite(black_height(rb_reparent(splice_black_leaf(l, erased), successor)), black_height(splice_black_leaf(l, erased)));
             rewrite(black_height(splice_black_leaf(l, erased)), Nat::Succ(Nat::Zero));
-            normalize();
+            known();
         }
         apply(rb_reparent_preserves_is_rb(splice_black_leaf(l, erased), successor));
         have is_rb(rb_reparent(splice_black_leaf(l, erased), successor)) == 1;
@@ -229,20 +229,20 @@ theorem splice_red_leaf_facts(node: struct rb_node*, parent: struct rb_node*) {
         unfold(is_rb(RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty)));
         unfold(is_rb(RbTree::Empty));
         unfold(rb_root_black(RbTree::Empty));
-        normalize();
+        known();
     }
 
     ensures black_height(splice_red_leaf(node, parent)) == Nat::Zero by {
         unfold(splice_red_leaf(node, parent));
         unfold(black_height(RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty)));
         unfold(black_height(RbTree::Empty));
-        normalize();
+        known();
     }
 
     ensures rb_root_black(splice_red_leaf(node, parent)) == 0 by {
         unfold(splice_red_leaf(node, parent));
         unfold(rb_root_black(RbTree::Node(node, parent, Color::Red, RbTree::Empty, RbTree::Empty)));
-        normalize();
+        known();
     }
 
     ensures rb_parent_consistent(splice_red_leaf(node, parent), parent) == 1 by {
@@ -251,7 +251,7 @@ theorem splice_red_leaf_facts(node: struct rb_node*, parent: struct rb_node*) {
             parent));
         unfold(rb_parent_consistent(RbTree::Empty, node));
         unfold(rb_node_is(parent, parent));
-        normalize();
+        known();
     }
 }
 
@@ -265,7 +265,7 @@ theorem immediate_red_successor(erased: struct rb_node*, successor: struct rb_no
             {
             rewrite(black_height(splice_red_leaf(l, erased)), Nat::Zero);
             rewrite(black_height(splice_red_leaf(successor, erased)), Nat::Zero);
-            normalize();
+            known();
         }
         apply(is_rb_black_node(erased, above, splice_red_leaf(l, erased), splice_red_leaf(successor,
             erased)));
@@ -277,7 +277,7 @@ theorem immediate_red_successor(erased: struct rb_node*, successor: struct rb_no
             unfold(ctx_rb(Context::Top, black_height(RbTree::Node(erased, above, Color::Black,
                 splice_red_leaf(l, erased), splice_red_leaf(successor, erased))), Color::Black));
             unfold(color_black(Color::Black));
-            normalize();
+            known();
         }
         apply(rb_node_is_reflexive(above));
         apply(rb_parent_consistent_node(erased, above, Color::Black, splice_red_leaf(l, erased),
@@ -288,7 +288,7 @@ theorem immediate_red_successor(erased: struct rb_node*, successor: struct rb_no
             RbTree::Empty) by {
             unfold(splice_red_leaf(successor, erased));
             unfold(rb_minimum(RbTree::Node(successor, erased, Color::Red, RbTree::Empty, RbTree::Empty)));
-            normalize();
+            known();
         }
         apply(rb_erase_red_successor_splice(erased, successor, above, Color::Black, splice_red_leaf(l,
             erased), splice_red_leaf(successor, erased), Context::Top, above));
@@ -329,7 +329,7 @@ theorem deep_red_successor(erased: struct rb_node*, successor: struct rb_node*, 
             unfold(is_rb(RbTree::Empty));
             unfold(black_height(RbTree::Empty));
             unfold(rb_root_black(RbTree::Empty));
-            normalize();
+            known();
         }
         have rb_parent_consistent(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
             Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
@@ -351,7 +351,7 @@ theorem deep_red_successor(erased: struct rb_node*, successor: struct rb_node*, 
             unfold(rb_node_is(r, r));
             unfold(rb_node_is(erased, erased));
             unfold(rb_node_is(above, above));
-            normalize();
+            known();
         }
         apply(ctx_consistent_top_frame(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased,
             Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,
@@ -372,7 +372,7 @@ theorem deep_red_successor(erased: struct rb_node*, successor: struct rb_node*, 
             unfold(rb_color(RbTree::Node(erased, above, Color::Black, RbTree::Node(l, erased, Color::Black,
                 RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black, RbTree::Node(successor,
                 r, Color::Red, RbTree::Empty, RbTree::Empty), RbTree::Empty))));
-            unfold(color_black(Color::Black)); normalize();
+            unfold(color_black(Color::Black)); known();
         }
         have rb_minimum(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r, Color::Red,
             RbTree::Empty, RbTree::Empty), RbTree::Empty)) == RbMinimum::Found(successor, Color::Red,
@@ -380,7 +380,7 @@ theorem deep_red_successor(erased: struct rb_node*, successor: struct rb_node*, 
             unfold(rb_minimum(RbTree::Node(r, erased, Color::Black, RbTree::Node(successor, r, Color::Red,
                 RbTree::Empty, RbTree::Empty), RbTree::Empty)));
             unfold(rb_minimum(RbTree::Node(successor, r, Color::Red, RbTree::Empty, RbTree::Empty)));
-                normalize();
+                known();
         }
         apply(rb_erase_red_successor_splice(erased, successor, above, Color::Black, RbTree::Node(l, erased,
             Color::Black, RbTree::Empty, RbTree::Empty), RbTree::Node(r, erased, Color::Black,

@@ -1,6 +1,7 @@
 use super::*;
-use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, LoopEffectOrigin};
+use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, LoopEffectOrigin, SpecIntegerExpression};
 use crate::kernel::{bits32_constant, constant_u32};
+use std::sync::Arc;
 
 // The lowerers share these two finite bands. Refusing at each ceiling keeps
 // quantifiers, algebraic binders, pointer identities, and spec fold binders
@@ -147,6 +148,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         | ContractExpression::ProgramBinding(_)
         | ContractExpression::ProgramExpression(_)
         | ContractExpression::CUnary { .. }
+        | ContractExpression::MemoryLoad { .. }
         | ContractExpression::ResourceWildcard => None,
         ContractExpression::AlgebraicConstructor { arguments, .. }
         | ContractExpression::Call { arguments, .. } => {
@@ -481,7 +483,7 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
             crate::kernel::model_fields::register_model_field_variable(
                 variable,
                 crate::kernel::model_fields::ModelFieldOrigin {
-                    identity: binding.identity,
+                    identity: binding.identity.instance(),
                     field: std::sync::Arc::from(field.as_str()),
                     field_index,
                     minted_by: crate::kernel::model_fields::ModelMint::ContractEntry,
@@ -502,7 +504,10 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         } else {
             binding.name.clone()
         };
-        crate::kernel::model_fields::register_instance_spelling(binding.identity, &spelling);
+        crate::kernel::model_fields::register_instance_spelling(
+            binding.identity.instance(),
+            &spelling,
+        );
     }
 }
 
@@ -516,23 +521,63 @@ fn contract_expression_is_sequence(expression: &ContractExpression) -> bool {
         _ => false,
     }
 }
-/// Match payloads are lexical values. Keep their declared carrier available
-/// without asking the C-local environment to invent a slot for generated IDs.
-fn bind_match_program_value(
+/// A match binding shadows same-named values in the other carriers.
+fn bind_match_value(
     environment: &mut SpecElaborationContext,
     binding: &SurfaceBinder,
-    value_type: ProgramType,
+    value: SpecAlgebraicValue,
 ) {
-    environment.integer_values.remove(binding);
-    environment.algebraic_values.remove(binding);
-    let value =
-        SpecExpression::ProgramExpression(ProgramExpression::Variable(binding.kernel_name()));
-    let value = if matches!(binding, SurfaceBinder::Generated(_)) {
-        SpecExpression::Cast(Box::new(value), value_type)
-    } else {
-        value
-    };
-    environment.values.insert(binding, value);
+    match value {
+        SpecAlgebraicValue::Program(value) => {
+            environment.integer_values.remove(binding);
+            environment.algebraic_values.remove(binding);
+            environment.values.insert(binding, value);
+        }
+        SpecAlgebraicValue::Algebraic(value) => {
+            environment.values.remove(binding);
+            environment.integer_values.remove(binding);
+            environment.algebraic_values.insert(binding.clone(), value);
+        }
+        SpecAlgebraicValue::Integer(value) => {
+            environment.values.remove(binding);
+            environment.algebraic_values.remove(binding);
+            environment.integer_values.insert(binding.clone(), value);
+        }
+    }
+}
+
+fn constructor_match_scope(
+    environment: &SpecElaborationContext,
+    bindings: &[SurfaceBinder],
+    fields: &[SpecAlgebraicValue],
+) -> SpecElaborationContext {
+    let mut scope = environment.clone();
+    for (binding, field) in bindings.iter().zip(fields) {
+        bind_match_value(&mut scope, binding, field.clone());
+    }
+    scope
+}
+
+fn match_binding_variables(
+    scope: &SpecElaborationContext,
+    bindings: &[SurfaceBinder],
+    field_types: &[AlgebraicValueType],
+) -> Vec<Option<Variable>> {
+    bindings
+        .iter()
+        .zip(field_types)
+        .map(
+            |(binding, field_type)| match (field_type, scope.integer_values.get(binding)) {
+                (
+                    AlgebraicValueType::Integer,
+                    Some(SpecIntegerExpression::Term(crate::kernel::IntegerTerm::Variable(
+                        variable,
+                    ))),
+                ) => Some(*variable),
+                _ => None,
+            },
+        )
+        .collect()
 }
 
 fn contract_expression_is_algebraic(
@@ -668,9 +713,9 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             spec_definitions,
             entry_state: &entry_state,
             result_type: ProgramType::Int32,
-            entry_values: ProgramValueBindings::new(),
-            aggregate_parameters: BTreeSet::new(),
-            program_parameter_types: BTreeMap::new(),
+            entry_values: Default::default(),
+            aggregate_parameters: Default::default(),
+            program_parameter_types: Default::default(),
             local_type_state: None,
             pointer_element_types: definition
                 .parameters()
@@ -681,11 +726,13 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
                         click_array_element_type(parameter.click_type().interface_type()?)?,
                     ))
                 })
-                .collect(),
+                .collect::<BTreeMap<_, _>>()
+                .into(),
             parameter_pointer_element_widths: click_parameter_pointer_element_widths_with_layouts(
                 definition.parameters(),
                 struct_layouts,
-            ),
+            )
+            .into(),
             quantified_values: BinderMap::new(),
             algebraic_variables: BinderMap::new(),
             algebraic_types: BTreeMap::new(),
@@ -735,9 +782,9 @@ pub(in crate::surface) fn lower_composite_resource_condition(
         spec_definitions,
         entry_state: &entry_state,
         result_type: ProgramType::Int32,
-        entry_values: ProgramValueBindings::new(),
-        aggregate_parameters: BTreeSet::new(),
-        program_parameter_types: BTreeMap::new(),
+        entry_values: Default::default(),
+        aggregate_parameters: Default::default(),
+        program_parameter_types: Default::default(),
         local_type_state: None,
         pointer_element_types: definition
             .parameters()
@@ -748,11 +795,13 @@ pub(in crate::surface) fn lower_composite_resource_condition(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: click_parameter_pointer_element_widths_with_layouts(
             definition.parameters(),
             struct_layouts,
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -823,9 +872,9 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
         spec_definitions,
         entry_state: &entry_state,
         result_type: ProgramType::Int32,
-        entry_values: ProgramValueBindings::new(),
-        aggregate_parameters: BTreeSet::new(),
-        program_parameter_types: BTreeMap::new(),
+        entry_values: Default::default(),
+        aggregate_parameters: Default::default(),
+        program_parameter_types: Default::default(),
         local_type_state: None,
         pointer_element_types: definition
             .parameters()
@@ -836,11 +885,13 @@ pub(in crate::surface) fn lower_composite_resource_body_with_bindings(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: click_parameter_pointer_element_widths_with_layouts(
             definition.parameters(),
             struct_layouts,
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -1195,6 +1246,13 @@ pub(in crate::surface) fn kernel_loop_replacement_steps() -> usize {
 /// clauses: what the walk saw at each loop, and the contract's lowered
 /// write footprint a loop without a resource clause inherits.
 struct LoopAnnotationShape {
+    // The parameter image and source types belong to the function's checked
+    // entry. A later annotation reads them through the same maps.
+    entry_values: Arc<ProgramValueBindings>,
+    aggregate_parameters: Arc<BTreeSet<String>>,
+    program_parameter_types: Arc<BTreeMap<String, ProgramType>>,
+    pointer_element_types: Arc<BTreeMap<String, ProgramType>>,
+    parameter_pointer_element_widths: Arc<BTreeMap<String, u32>>,
     records: Vec<LoopLoweringRecord>,
     contract_mutable: Vec<MemorySegment>,
     resource_derived_mutable_frame: bool,
@@ -1296,7 +1354,6 @@ pub(in crate::surface) fn annotated_loop_function_extending(
     arguments: &[ProgramExpression],
     spec_definitions: SpecDefinitions<'_>,
     frame_entry: Option<ResourceFrameEntry<'_>>,
-    pointer_element_types: Option<&BTreeMap<String, ProgramType>>,
     loop_index: usize,
 ) -> Result<Option<LoopAnnotation>, ClickError> {
     let shape = &previous.shape;
@@ -1343,43 +1400,12 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         } else {
             parsed_function.return_type().to_kernel_type()
         },
-        entry_values: parameter_values(ParameterBinding::new(
-            parsed_function.parameters(),
-            arguments,
-        ))?,
-        aggregate_parameters: parsed_function
-            .parameters()
-            .iter()
-            .filter(|p| p.is_struct_value())
-            .map(|p| p.name().to_string())
-            .collect(),
-        program_parameter_types: parsed_function
-            .parameters()
-            .iter()
-            .map(|parameter| {
-                (
-                    parameter.name().to_string(),
-                    parameter.interface_type().to_kernel_type(),
-                )
-            })
-            .collect(),
+        entry_values: shape.entry_values.clone(),
+        aggregate_parameters: shape.aggregate_parameters.clone(),
+        program_parameter_types: shape.program_parameter_types.clone(),
+        pointer_element_types: shape.pointer_element_types.clone(),
+        parameter_pointer_element_widths: shape.parameter_pointer_element_widths.clone(),
         local_type_state: None,
-        pointer_element_types: parsed_function
-            .parameters()
-            .iter()
-            .filter_map(|parameter| {
-                if parameter.is_struct_value() {
-                    return Some((parameter.name().to_string(), ProgramType::Int32));
-                }
-                Some((
-                    parameter.name().to_string(),
-                    click_array_element_type(parameter.interface_type())?,
-                ))
-            })
-            .collect(),
-        parameter_pointer_element_widths: parameter_pointer_element_widths(
-            parsed_function.parameters(),
-        ),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -1390,12 +1416,6 @@ pub(in crate::surface) fn annotated_loop_function_extending(
         retained_states: None,
         loop_records: None,
     };
-    match pointer_element_types {
-        Some(types) => lowerer
-            .pointer_element_types
-            .extend(types.iter().map(|(name, element)| (name.clone(), *element))),
-        None => return Ok(None),
-    }
     let lowered = lowerer.lower_statement(loop_statement, parsed_function.control_targets())?;
     let quantifiers_after = lowerer.next_quantifier_variable;
     let bindings_empty_after =
@@ -1875,13 +1895,15 @@ fn annotate_function(
         entry_values: parameter_values(ParameterBinding::new(
             parsed_function.parameters(),
             arguments,
-        ))?,
+        ))?
+        .into(),
         aggregate_parameters: parsed_function
             .parameters()
             .iter()
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
-            .collect(),
+            .collect::<BTreeSet<_>>()
+            .into(),
         program_parameter_types: parsed_function
             .parameters()
             .iter()
@@ -1891,7 +1913,8 @@ fn annotate_function(
                     parameter.interface_type().to_kernel_type(),
                 )
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         local_type_state: None,
         pointer_element_types: parsed_function
             .parameters()
@@ -1905,10 +1928,12 @@ fn annotate_function(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: parameter_pointer_element_widths(
             parsed_function.parameters(),
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -1921,12 +1946,11 @@ fn annotate_function(
     };
     let parsed_kernel_function = parsed_function.to_kernel_function();
     match pointer_element_types {
-        Some(types) => lowerer
-            .pointer_element_types
+        Some(types) => Arc::make_mut(&mut lowerer.pointer_element_types)
             .extend(types.iter().map(|(name, element)| (name.clone(), *element))),
         None => collect_local_pointer_element_types(
             parsed_kernel_function.body(),
-            &mut lowerer.pointer_element_types,
+            Arc::make_mut(&mut lowerer.pointer_element_types),
         ),
     }
     // Loop-level resource declarations are lowered once, before the body, so
@@ -1973,10 +1997,21 @@ fn annotate_function(
         body
     };
     let no_loop_resources = lowerer.loop_resources.is_empty();
-    let recorded = lowerer
+    let shape = lowerer
         .loop_records
         .take()
-        .map(|records| (records, contract_mutable.clone()));
+        .map(|records| LoopAnnotationShape {
+            loops_lower_alone: !natural_control_loop && !prelowered && no_loop_resources,
+            records,
+            contract_mutable: contract_mutable.clone(),
+            resource_derived_mutable_frame,
+            entry_values: lowerer.entry_values,
+            aggregate_parameters: lowerer.aggregate_parameters,
+            program_parameter_types: lowerer.program_parameter_types,
+            pointer_element_types: lowerer.pointer_element_types,
+            parameter_pointer_element_widths: lowerer.parameter_pointer_element_widths,
+            c_loops: std::sync::OnceLock::new(),
+        });
     let source_body = parsed_kernel_function.body().clone();
     let mut function = program_function(
         if parsed_function.return_struct_name().is_some() {
@@ -2140,15 +2175,10 @@ fn annotate_function(
             "by-value aggregate parameter `{parameter}` is modified, but a postcondition reads its current state"
         )));
     }
-    let shape = recorded.map(|(records, contract_mutable)| LoopAnnotationShape {
-        loops_lower_alone: !natural_control_loop
-            && !prelowered
-            && no_loop_resources
-            && count_kernel_loops(function.body()) == records.len(),
-        records,
-        contract_mutable,
-        resource_derived_mutable_frame,
-        c_loops: std::sync::OnceLock::new(),
+    let shape = shape.map(|mut shape| {
+        shape.loops_lower_alone =
+            shape.loops_lower_alone && count_kernel_loops(function.body()) == shape.records.len();
+        shape
     });
     Ok((function, shape))
 }
@@ -2198,12 +2228,13 @@ pub(in crate::surface) fn lower_branch_interface_fact(
         } else {
             parsed_function.return_type().to_kernel_type()
         },
-        entry_values: parameter_values_named(parameter_binding, &names)?,
+        entry_values: parameter_values_named(parameter_binding, &names)?.into(),
         aggregate_parameters: parameters
             .iter()
             .filter(|p| p.is_struct_value())
             .map(|p| p.name().to_string())
-            .collect(),
+            .collect::<BTreeSet<_>>()
+            .into(),
         program_parameter_types: parameters
             .iter()
             .map(|parameter| {
@@ -2212,7 +2243,8 @@ pub(in crate::surface) fn lower_branch_interface_fact(
                     parameter.interface_type().to_kernel_type(),
                 )
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         local_type_state: Some(current_state),
         pointer_element_types: parameters
             .iter()
@@ -2222,10 +2254,12 @@ pub(in crate::surface) fn lower_branch_interface_fact(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: parameter_pointer_element_widths(
             parameters.iter().copied(),
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -2269,12 +2303,12 @@ fn fixed_state_elaboration<'a>(
         result_type: result
             .map(ProgramValue::program_type)
             .unwrap_or(ProgramType::Int32),
-        entry_values,
-        aggregate_parameters: BTreeSet::new(),
-        program_parameter_types: BTreeMap::new(),
+        entry_values: entry_values.into(),
+        aggregate_parameters: Default::default(),
+        program_parameter_types: Default::default(),
         local_type_state: None,
-        pointer_element_types: array_element_types,
-        parameter_pointer_element_widths,
+        pointer_element_types: array_element_types.into(),
+        parameter_pointer_element_widths: parameter_pointer_element_widths.into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -2737,8 +2771,8 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         spec_definitions,
         entry_state,
         result_type: ProgramType::Int32,
-        entry_values: ProgramValueBindings::new(),
-        aggregate_parameters: BTreeSet::new(),
+        entry_values: Default::default(),
+        aggregate_parameters: Default::default(),
         program_parameter_types: parameters
             .iter()
             .map(|parameter| {
@@ -2747,7 +2781,8 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
                     parameter.interface_type().to_kernel_type(),
                 )
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         local_type_state: None,
         pointer_element_types: parameters
             .iter()
@@ -2757,10 +2792,12 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: parameter_pointer_element_widths(
             parameters.iter().copied(),
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -2812,8 +2849,8 @@ pub(in crate::surface) fn function_contract_summary(
         spec_definitions,
         entry_state: &entry_state,
         result_type: parsed_function.return_type().to_kernel_type(),
-        entry_values: ProgramValueBindings::new(),
-        aggregate_parameters: BTreeSet::new(),
+        entry_values: Default::default(),
+        aggregate_parameters: Default::default(),
         program_parameter_types: parsed_function
             .parameters()
             .iter()
@@ -2823,7 +2860,8 @@ pub(in crate::surface) fn function_contract_summary(
                     parameter.interface_type().to_kernel_type(),
                 )
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         local_type_state: None,
         pointer_element_types: parsed_function
             .parameters()
@@ -2834,10 +2872,12 @@ pub(in crate::surface) fn function_contract_summary(
                     click_array_element_type(parameter.interface_type())?,
                 ))
             })
-            .collect(),
+            .collect::<BTreeMap<_, _>>()
+            .into(),
         parameter_pointer_element_widths: parameter_pointer_element_widths(
             parsed_function.parameters(),
-        ),
+        )
+        .into(),
         quantified_values: BinderMap::new(),
         algebraic_variables: BinderMap::new(),
         algebraic_types: BTreeMap::new(),
@@ -2957,7 +2997,8 @@ pub(in crate::surface) fn function_contract_summary(
         .iter()
         .filter(|parameter| parameter.is_struct_value())
         .map(|parameter| parameter.name().to_string())
-        .collect();
+        .collect::<BTreeSet<_>>()
+        .into();
     let mut ensures = Vec::new();
     // A postcondition is read in the exit state, where `result` is the
     // contract result.
@@ -3300,7 +3341,7 @@ fn loop_resource_declarations(
         for spec in &mut declaration.specs {
             *spec = spec
                 .clone()
-                .with_captured_entry_parameters(&lowerer.entry_values);
+                .with_captured_entry_parameters(lowerer.entry_values.as_ref());
         }
     }
     Ok(declarations)
@@ -3375,22 +3416,22 @@ struct AnnotationLowerer<'a> {
     spec_definitions: SpecDefinitions<'a>,
     entry_state: &'a ExecutionState,
     result_type: ProgramType,
-    entry_values: ProgramValueBindings,
+    entry_values: Arc<ProgramValueBindings>,
     /// Live declaration types for state-parametric branch facts; values remain symbolic.
     /// Each referenced name uses the state's existing index, without a body/history scan.
     local_type_state: Option<&'a ExecutionState>,
     /// Declared C types of the function's parameters, where a function is
     /// in scope: a clause's range over a `size_t` parameter is a `size_t`
     /// range.
-    program_parameter_types: BTreeMap<String, ProgramType>,
+    program_parameter_types: Arc<BTreeMap<String, ProgramType>>,
     /// Declared pointee types of parameters and encountered automatic locals.
     /// Local names are the frontend's distinct kernel bindings.
-    pointer_element_types: BTreeMap<String, ProgramType>,
-    aggregate_parameters: BTreeSet<String>,
+    pointer_element_types: Arc<BTreeMap<String, ProgramType>>,
+    aggregate_parameters: Arc<BTreeSet<String>>,
     /// Source-side pointee widths which are not representable in the kernel's
     /// nominal `ProgramType` (notably pointers to structs, which use the compatible
     /// `int32*` carrier).  Pointer arithmetic must retain this physical width.
-    parameter_pointer_element_widths: BTreeMap<String, u32>,
+    parameter_pointer_element_widths: Arc<BTreeMap<String, u32>>,
     quantified_values: BinderMap<ProgramValue>,
     algebraic_variables: BinderMap<SpecAlgebraicExpression>,
     algebraic_types: BTreeMap<(String, Vec<AlgebraicValueType>), AlgebraicType>,
@@ -3881,7 +3922,10 @@ impl AnnotationLowerer<'_> {
                     // its element type, as a fixed-state proof reads it.
                     .or_else(|| state.locals().array_object_element_type(&name))
             })
-            .or_else(|| name.metadata_in(&self.pointer_element_types).copied())
+            .or_else(|| {
+                name.metadata_in(self.pointer_element_types.as_ref())
+                    .copied()
+            })
     }
 
     /// Attach the same checked loop clauses to compiler-lowered statements.
@@ -5794,10 +5838,10 @@ impl AnnotationLowerer<'_> {
         if name.unresolved_name().is_none() {
             return name.program_type();
         }
-        name.metadata_in(&self.program_parameter_types)
+        name.metadata_in(self.program_parameter_types.as_ref())
             .copied()
             .or_else(|| {
-                name.metadata_in(&self.entry_values)
+                name.metadata_in(self.entry_values.as_ref())
                     .map(ProgramValue::program_type)
             })
             .or_else(|| {
@@ -6228,43 +6272,8 @@ impl AnnotationLowerer<'_> {
                         arm.variant
                     ));
                 }
-                let mut body_environment = environment.clone();
-                for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
-                    match binding_type {
-                        AlgebraicValueType::Program(value_type)
-                        | AlgebraicValueType::ObjectPointer(value_type, _) => {
-                            bind_match_program_value(&mut body_environment, binding, *value_type);
-                        }
-                        AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_) => {
-                            body_environment.values.remove(binding);
-                            body_environment.integer_values.remove(binding);
-                            body_environment.algebraic_values.insert(
-                                binding.clone(),
-                                crate::kernel::SpecAlgebraicExpression {
-                                    algebraic_type: self
-                                        .cached_algebraic_kernel_type_from_value_type(
-                                            binding_type,
-                                        )?,
-                                    node: crate::kernel::SpecAlgebraicExpressionNode::Binding(
-                                        binding.kernel_name(),
-                                    ),
-                                },
-                            );
-                        }
-                        AlgebraicValueType::Integer => {
-                            body_environment.values.remove(binding);
-                            body_environment.algebraic_values.remove(binding);
-                            let variable =
-                                allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
-                            body_environment.integer_values.insert(
-                                binding.clone(),
-                                crate::kernel::SpecIntegerExpression::Term(
-                                    crate::kernel::IntegerTerm::var(variable),
-                                ),
-                            );
-                        }
-                    }
-                }
+                let body_environment =
+                    self.symbolic_match_scope(environment, &arm.bindings, &variant.fields)?;
                 let body = self.lower_contract_integer_to_spec(&arm.body, &body_environment)?;
                 lowered_arms.push(crate::kernel::SpecIntegerMatchArm {
                     variant: arm.variant.clone(),
@@ -6274,23 +6283,11 @@ impl AnnotationLowerer<'_> {
                         .map(SurfaceBinder::kernel_name)
                         .collect(),
                     binding_types: variant.fields.clone(),
-                    binding_variables: arm
-                        .bindings
-                        .iter()
-                        .zip(&variant.fields)
-                        .map(|(binding, binding_type)| {
-                            if binding_type == &AlgebraicValueType::Integer {
-                                match body_environment.integer_values.get(binding) {
-                                    Some(crate::kernel::SpecIntegerExpression::Term(
-                                        crate::kernel::IntegerTerm::Variable(variable),
-                                    )) => Some(*variable),
-                                    _ => None,
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .collect(),
+                    binding_variables: match_binding_variables(
+                        &body_environment,
+                        &arm.bindings,
+                        &variant.fields,
+                    ),
                     body: Box::new(body),
                 });
             }
@@ -6853,6 +6850,16 @@ impl AnnotationLowerer<'_> {
                 self.lower_contract_expression_to_spec(&reduced, environment)
             }
 
+            ContractExpression::MemoryLoad {
+                pointer,
+                value_type,
+                ..
+            } => Ok(SpecExpression::MemoryLoad {
+                point: environment.current_point.clone(),
+                pointer: Box::new(self.lower_contract_expression_to_spec(pointer, environment)?),
+                value_type: *value_type,
+                exact: false,
+            }),
             ContractExpression::CUnary { operand, lowered } => {
                 let value = self.lower_contract_expression_to_spec(operand, environment)?;
                 match lowered {
@@ -7063,32 +7070,8 @@ impl AnnotationLowerer<'_> {
                         .iter()
                         .find(|arm| arm.variant == *variant)
                         .ok_or_else(|| format!("missing match arm for `{variant}`"))?;
-                    let mut body_environment = environment.clone();
-                    for (binding, field) in arm.bindings.iter().zip(fields.iter()) {
-                        match field {
-                            SpecAlgebraicValue::Program(field) => {
-                                body_environment.integer_values.remove(binding);
-                                body_environment.algebraic_values.remove(binding);
-                                body_environment
-                                    .values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                            SpecAlgebraicValue::Algebraic(field) => {
-                                body_environment.values.remove(binding);
-                                body_environment.integer_values.remove(binding);
-                                body_environment
-                                    .algebraic_values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                            SpecAlgebraicValue::Integer(field) => {
-                                body_environment.values.remove(binding);
-                                body_environment.algebraic_values.remove(binding);
-                                body_environment
-                                    .integer_values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                        }
-                    }
+                    let body_environment =
+                        constructor_match_scope(environment, &arm.bindings, fields);
                     return self.lower_contract_expression_to_spec(&arm.body, &body_environment);
                 }
                 let lowered_arms = arms
@@ -7100,48 +7083,8 @@ impl AnnotationLowerer<'_> {
                             .iter()
                             .find(|variant| variant.name == arm.variant)
                             .ok_or_else(|| format!("unknown match variant `{}`", arm.variant))?;
-                        let mut body_environment = environment.clone();
-                        for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
-                            match binding_type {
-                                AlgebraicValueType::Program(value_type)
-                                | AlgebraicValueType::ObjectPointer(value_type, _) => {
-                                    bind_match_program_value(
-                                        &mut body_environment,
-                                        binding,
-                                        *value_type,
-                                    );
-                                }
-                                AlgebraicValueType::Algebraic { .. }
-                                | AlgebraicValueType::Parameter(_) => {
-                                    body_environment.values.remove(binding);
-                                    body_environment.algebraic_values.insert(
-                                        binding.clone(),
-                                        SpecAlgebraicExpression {
-                                            algebraic_type: self
-                                                .cached_algebraic_kernel_type_from_value_type(
-                                                    binding_type,
-                                                )?,
-                                            node: SpecAlgebraicExpressionNode::Binding(
-                                                binding.kernel_name(),
-                                            ),
-                                        },
-                                    );
-                                }
-                                AlgebraicValueType::Integer => {
-                                    body_environment.values.remove(binding);
-                                    body_environment.algebraic_values.remove(binding);
-                                    let variable = allocate_quantifier_variable(
-                                        &mut self.next_quantifier_variable,
-                                    )?;
-                                    body_environment.integer_values.insert(
-                                        binding.clone(),
-                                        crate::kernel::SpecIntegerExpression::Term(
-                                            crate::kernel::IntegerTerm::var(variable),
-                                        ),
-                                    );
-                                }
-                            }
-                        }
+                        let body_environment =
+                            self.symbolic_match_scope(environment, &arm.bindings, &variant.fields)?;
                         Ok(crate::kernel::SpecAlgebraicMatchArm {
                             variant: arm.variant.clone(),
                             bindings: arm
@@ -7760,10 +7703,10 @@ impl AnnotationLowerer<'_> {
         if name.is_named("result") {
             Some(self.result_type)
         } else {
-            name.metadata_in(&self.program_parameter_types)
+            name.metadata_in(self.program_parameter_types.as_ref())
                 .copied()
                 .or_else(|| {
-                    name.metadata_in(&self.entry_values)
+                    name.metadata_in(self.entry_values.as_ref())
                         .map(ProgramValue::program_type)
                         .or_else(|| {
                             self.local_type_state
@@ -7899,6 +7842,31 @@ impl AnnotationLowerer<'_> {
                 .get(name)
                 .cloned()
                 .ok_or_else(|| format!("`{name}` is not an algebraic binding in this scope")),
+            // A program's constructor of a `spec enum`, such as the
+            // `List<VarArg>` a variadic C call passes, is that constructor
+            // applied to its fields, each the program value it names.
+            ContractExpression::ProgramExpression(ProgramExpression::EnumConstruct {
+                enum_type,
+                variant,
+                fields,
+            }) => {
+                let algebraic_type = AlgebraicTypeApplication::of_enum_interface_type(
+                    InterfaceType::Parameter(*enum_type),
+                )
+                .ok_or_else(|| "a program constructor of a type that is not a `spec enum`")?;
+                self.lower_contract_algebraic_to_spec(
+                    &ContractExpression::AlgebraicConstructor {
+                        algebraic_type,
+                        variant: variant.clone(),
+                        arguments: fields
+                            .iter()
+                            .cloned()
+                            .map(ContractExpression::ProgramExpression)
+                            .collect(),
+                    },
+                    environment,
+                )
+            }
             ContractExpression::AlgebraicConstructor {
                 algebraic_type,
                 variant,
@@ -8033,32 +8001,8 @@ impl AnnotationLowerer<'_> {
                         .iter()
                         .find(|arm| arm.variant == *variant)
                         .ok_or_else(|| format!("missing match arm for `{variant}`"))?;
-                    let mut body_environment = environment.clone();
-                    for (binding, field) in arm.bindings.iter().zip(fields.iter()) {
-                        match field {
-                            SpecAlgebraicValue::Program(field) => {
-                                body_environment.integer_values.remove(binding);
-                                body_environment.algebraic_values.remove(binding);
-                                body_environment
-                                    .values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                            SpecAlgebraicValue::Algebraic(field) => {
-                                body_environment.values.remove(binding);
-                                body_environment.integer_values.remove(binding);
-                                body_environment
-                                    .algebraic_values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                            SpecAlgebraicValue::Integer(field) => {
-                                body_environment.values.remove(binding);
-                                body_environment.algebraic_values.remove(binding);
-                                body_environment
-                                    .integer_values
-                                    .insert(binding.clone(), field.clone());
-                            }
-                        }
-                    }
+                    let body_environment =
+                        constructor_match_scope(environment, &arm.bindings, fields);
                     return self.lower_contract_algebraic_to_spec(&arm.body, &body_environment);
                 }
                 let mut lowered_arms = Vec::new();
@@ -8070,48 +8014,8 @@ impl AnnotationLowerer<'_> {
                         .iter()
                         .find(|variant| variant.name == arm.variant)
                         .ok_or_else(|| format!("unknown match variant `{}`", arm.variant))?;
-                    let mut body_environment = environment.clone();
-                    for (binding, binding_type) in arm.bindings.iter().zip(&variant.fields) {
-                        match binding_type {
-                            AlgebraicValueType::Program(value_type)
-                            | AlgebraicValueType::ObjectPointer(value_type, _) => {
-                                bind_match_program_value(
-                                    &mut body_environment,
-                                    binding,
-                                    *value_type,
-                                );
-                            }
-                            AlgebraicValueType::Algebraic { .. }
-                            | AlgebraicValueType::Parameter(_) => {
-                                body_environment.values.remove(binding);
-                                body_environment.algebraic_values.insert(
-                                    binding.clone(),
-                                    SpecAlgebraicExpression {
-                                        algebraic_type: self
-                                            .cached_algebraic_kernel_type_from_value_type(
-                                                binding_type,
-                                            )?,
-                                        node: SpecAlgebraicExpressionNode::Binding(
-                                            binding.kernel_name(),
-                                        ),
-                                    },
-                                );
-                            }
-                            AlgebraicValueType::Integer => {
-                                body_environment.values.remove(binding);
-                                body_environment.algebraic_values.remove(binding);
-                                let variable = allocate_quantifier_variable(
-                                    &mut self.next_quantifier_variable,
-                                )?;
-                                body_environment.integer_values.insert(
-                                    binding.clone(),
-                                    crate::kernel::SpecIntegerExpression::Term(
-                                        crate::kernel::IntegerTerm::var(variable),
-                                    ),
-                                );
-                            }
-                        }
-                    }
+                    let body_environment =
+                        self.symbolic_match_scope(environment, &arm.bindings, &variant.fields)?;
                     let body =
                         self.lower_contract_algebraic_to_spec(&arm.body, &body_environment)?;
                     result_type.get_or_insert_with(|| body.algebraic_type.clone());
@@ -8123,23 +8027,11 @@ impl AnnotationLowerer<'_> {
                             .map(SurfaceBinder::kernel_name)
                             .collect(),
                         binding_types: variant.fields.clone(),
-                        binding_variables: arm
-                            .bindings
-                            .iter()
-                            .zip(&variant.fields)
-                            .map(|(binding, ty)| {
-                                if ty == &AlgebraicValueType::Integer {
-                                    match body_environment.integer_values.get(binding) {
-                                        Some(crate::kernel::SpecIntegerExpression::Term(
-                                            crate::kernel::IntegerTerm::Variable(variable),
-                                        )) => Some(*variable),
-                                        _ => None,
-                                    }
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect(),
+                        binding_variables: match_binding_variables(
+                            &body_environment,
+                            &arm.bindings,
+                            &variant.fields,
+                        ),
                         body: Box::new(body),
                     });
                 }
@@ -8296,6 +8188,47 @@ impl AnnotationLowerer<'_> {
         let algebraic_type = algebraic_kernel_type(self.spec_definitions.functions, application)?;
         self.algebraic_types.insert(key, algebraic_type.clone());
         Ok(algebraic_type)
+    }
+
+    fn symbolic_match_scope(
+        &mut self,
+        environment: &SpecElaborationContext,
+        bindings: &[SurfaceBinder],
+        field_types: &[AlgebraicValueType],
+    ) -> Result<SpecElaborationContext, String> {
+        let mut scope = environment.clone();
+        for (binding, field_type) in bindings.iter().zip(field_types) {
+            let value = match field_type {
+                AlgebraicValueType::Program(value_type)
+                | AlgebraicValueType::ObjectPointer(value_type, _) => {
+                    let value = SpecExpression::ProgramExpression(ProgramExpression::Variable(
+                        binding.kernel_name(),
+                    ));
+                    let value = if matches!(binding, SurfaceBinder::Generated(_)) {
+                        SpecExpression::Cast(Box::new(value), *value_type)
+                    } else {
+                        value
+                    };
+                    SpecAlgebraicValue::Program(value)
+                }
+                AlgebraicValueType::Algebraic { .. } | AlgebraicValueType::Parameter(_) => {
+                    SpecAlgebraicValue::Algebraic(SpecAlgebraicExpression {
+                        algebraic_type: self
+                            .cached_algebraic_kernel_type_from_value_type(field_type)?,
+                        node: SpecAlgebraicExpressionNode::Binding(binding.kernel_name()),
+                    })
+                }
+                AlgebraicValueType::Integer => {
+                    let variable =
+                        allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
+                    SpecAlgebraicValue::Integer(SpecIntegerExpression::Term(
+                        crate::kernel::IntegerTerm::var(variable),
+                    ))
+                }
+            };
+            bind_match_value(&mut scope, binding, value);
+        }
+        Ok(scope)
     }
 
     fn cached_algebraic_kernel_type_from_value_type(
@@ -8766,7 +8699,7 @@ impl AnnotationLowerer<'_> {
                 .byte_width());
         }
         if let ProgramExpression::Variable(name) = &segment.base
-            && let Some(width) = name.metadata_in(&self.parameter_pointer_element_widths)
+            && let Some(width) = name.metadata_in(self.parameter_pointer_element_widths.as_ref())
         {
             return Ok(*width);
         }
@@ -10338,6 +10271,9 @@ impl AnnotationLowerer<'_> {
                     })
                 })
                 .unwrap_or(ProgramType::Int32),
+            ContractExpression::MemoryLoad { value_type, .. } => {
+                value_type.pointee_type().unwrap_or(ProgramType::Int32)
+            }
             ContractExpression::CUnary { operand, lowered } => match lowered {
                 ProgramExpression::Cast { target_type, .. } => {
                     target_type.pointee_type().unwrap_or(ProgramType::Int32)
@@ -10493,6 +10429,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<ProgramType> {
         match expression {
+            ContractExpression::MemoryLoad { value_type, .. } => value_type.pointee_type(),
             ContractExpression::CUnary { operand, lowered } => match lowered {
                 ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
                 ProgramExpression::PointerOffsetBytes { .. } => {
@@ -10617,7 +10554,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
         if let ProgramExpression::Variable(name) = expression
-            && let Some(width) = name.metadata_in(&self.parameter_pointer_element_widths)
+            && let Some(width) = name.metadata_in(self.parameter_pointer_element_widths.as_ref())
         {
             return Some(*width);
         }
@@ -10658,7 +10595,7 @@ impl AnnotationLowerer<'_> {
                 target_type.pointee_type().map(ProgramType::byte_width)
             }
             ProgramExpression::Variable(name) => name
-                .metadata_in(&self.parameter_pointer_element_widths)
+                .metadata_in(self.parameter_pointer_element_widths.as_ref())
                 .copied()
                 .or_else(|| {
                     name.named_in(&environment.array_refs)

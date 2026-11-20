@@ -237,7 +237,7 @@ template<class T> Stack<T>::~Stack() {
         decreases length(list.items);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match list.items {
                 List::Nil => { contradiction(list.items == List<T>::Nil); },
                 List::Cons(value, rest) => {
@@ -335,7 +335,7 @@ int round_trip_virtual(Container<int>& container, int x) {
 int through(int x) {
     ensures result == x;
 } by {
-    step_until(region(2));
+    step_until(region(2).entry);
     let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };

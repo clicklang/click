@@ -12,12 +12,12 @@ mod version_manager;
 
 #[path = "click-audit.rs"]
 mod audit;
+#[path = "click-capture.rs"]
+mod capture;
 #[path = "click-docs.rs"]
 mod docs;
 #[path = "click-expand.rs"]
 mod expand;
-#[path = "click-import.rs"]
-mod import;
 #[path = "click-profile.rs"]
 mod profile;
 #[path = "click-verify.rs"]
@@ -30,7 +30,7 @@ commands:\n  \
   profile  measure verification and identify slow tactics\n  \
   expand   replace one smart tactic with its checked simple certificate\n  \
   audit    check expansion across a project or repository\n  \
-  import   prepare and lock compiler-selected sources\n  \
+  capture  record compiler output for verification\n  \
   docs     print the documentation for a tactic or topic\n  \
   upgrade  install the latest Click and make it the default\n  \
   add      add a language front end (cpp, rust); `languages` lists them\n  \
@@ -84,7 +84,7 @@ fn entry(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
         "profile" => profile::entry_with(arguments),
         "expand" => expand::entry_with(arguments),
         "audit" => audit::entry_with(arguments),
-        "import" => import::entry_with(arguments),
+        "capture" => capture::entry_with(arguments),
         "docs" => docs::entry_with(arguments),
         "version" | "upgrade" | "add" | "remove" | "languages" => {
             version_manager::entry_with(&command, arguments.collect())
@@ -338,11 +338,11 @@ mod tests {
             "{error}"
         );
 
-        write_proof(" preserve by { step(); step(); solve(); }");
+        write_proof(" maintain by { step(); step(); solve(); }");
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "proof error:\n  `f.contract` tactic 3 (`loop`), `preserve` tactic 0\n{bound}"
+                "proof error:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
             )),
             "{error}"
         );
@@ -461,13 +461,13 @@ uint64 spell(const uint8* b, uint64 n) {
     views b[0u64..n];
     ensures result < 4u64;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases vl;
         views b[0u64..n];
         invariant vl <= n;
         invariant v == b + (n - vl);
-        preserve by {
+        maintain by {
             if 4u64 <= vl {
                 step();
                 step();
@@ -852,7 +852,7 @@ uint64 spell(const uint8* b, uint64 n) {
         };
         let count_up = |phase: &str| {
             format!(
-                "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n        }}\n    }}\n    step();\n    solve();\n}}\n"
+                "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        maintain by {{\n            step();\n        }}\n    }}\n    step();\n    solve();\n}}\n"
             )
         };
         // Give each selected `known()` a false goal, so improvements to
@@ -1256,7 +1256,7 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
     requires cur < 2;
     ensures result == 1;
 } by {
-    let { result: r } = step(child, { });
+    let { result: r } = step(child);
     have r != 0 by { solve(); }
     have defined(a[cur]) by { solve(); }
     have exists (z: int32) { z == a[cur] } by {
@@ -1389,7 +1389,7 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     ensures result == result;
 } by {
     mark before_call;
-    let { result: r } = step(child, {});
+    let { result: r } = step(child);
     have defined(at(before_call, a[i])) by { solve(); }
     have exists (path: Path) {
         pick(at(before_call, a[i]), path) == at(before_call, a[i])
@@ -1761,7 +1761,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
 
     #[test]
     fn dispatches_import_help_without_spawning() {
-        entry(["import".to_string(), "--help".to_string()]).unwrap();
+        entry(["capture".to_string(), "--help".to_string()]).unwrap();
     }
 
     #[test]

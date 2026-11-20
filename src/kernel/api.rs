@@ -4071,7 +4071,7 @@ fn install_borrowed_contract_inputs(
         owned_input_ranges
             .iter()
             .find(|owned| {
-                crate::kernel::loans::protected_range_proven_overlapping_ignoring_separation(
+                crate::kernel::primitives::contract_entry_memory_overlap(
                     owned,
                     viewed_range,
                     assumptions,
@@ -5802,6 +5802,7 @@ pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
         | CheckedExecutionEvent::Call(_)
         | CheckedExecutionEvent::LoopEntry { .. } => None,
         CheckedExecutionEvent::AutomaticLifetimeEnd(end) => Some(end.before_state()),
+        CheckedExecutionEvent::ViewRelease(release) => Some(release.before_state()),
         CheckedExecutionEvent::ResourceObservation(observation) => Some(observation.before_state()),
         CheckedExecutionEvent::ResourceRewrite(rewrite) => Some(rewrite.before_state()),
         CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) => Some(rewrite.before_state()),
@@ -5878,6 +5879,7 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                 | CheckedExecutionEvent::CompletedContext(_)
                 | CheckedExecutionEvent::StatementEffects(_)
                 | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
+                | CheckedExecutionEvent::ViewRelease(_)
                 | CheckedExecutionEvent::ResourceObservation(_)
                 | CheckedExecutionEvent::ResourceRewrite(_)
                 | CheckedExecutionEvent::PopulationAuthorityRewrite(_)

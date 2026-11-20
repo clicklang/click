@@ -1,6 +1,6 @@
-# A `preserve` cases rejoin keeps only the facts every arm proved
+# A `maintain` cases rejoin keeps only the facts every arm proved
 
-In a loop's `preserve` proof, a `cases` rejoins its arms. Each arm closes its
+In a loop's `maintain` proof, a `cases` rejoins its arms. Each arm closes its
 own back edge, and then the rejoined path's back edge is closed again with
 only the facts every arm proved. Here each arm proves a different bound on `b
 / 1000`, so the rejoined path has none, and its closure fails. The error
@@ -26,13 +26,13 @@ uint64 f(uint64 b) {
     requires b <= 18446744073709u64;
     ensures true;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases b;
         invariant 1u64 <= b;
         invariant (i == 0 and b <= 18446744073709u64) or (i == 1 and b <= 18446744073u64) or (i == 2 and b <= 18446744u64);
         initialize by solve();
-        preserve by {
+        maintain by {
             have (b >> 32) != 0u64;
             have 4294967296u64 <= b;
             have (i == 0 and b <= 18446744073709u64) or (i == 1 and b <= 18446744073u64) by {
@@ -48,7 +48,7 @@ uint64 f(uint64 b) {
             cases {
                 i == 0 and b <= 18446744073709u64 => {
                     mark head;
-                    step_until(back_edge());
+                    step_until(loop.back_edge);
                     have 4294967296u64 <= at(head, b);
                     have at(head, b) <= 18446744073709u64 by { solve(); }
                     have 1u64 <= at(head, b) / 1000u64;
@@ -58,7 +58,7 @@ uint64 f(uint64 b) {
                 }
                 i == 1 and b <= 18446744073u64 => {
                     mark head;
-                    step_until(back_edge());
+                    step_until(loop.back_edge);
                     have 4294967296u64 <= at(head, b);
                     have at(head, b) <= 18446744073u64 by { solve(); }
                     have 1u64 <= at(head, b) / 1000u64;

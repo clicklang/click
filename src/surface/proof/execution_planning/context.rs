@@ -30,6 +30,7 @@ pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
     pub(in crate::surface::proof) loop_source: &'a ProgramFunction,
     pub(in crate::surface::proof) loop_owner: Option<&'a crate::kernel::WholeContractRoot>,
     pub(in crate::surface::proof) arguments: &'a [ProgramExpression],
+    pub(in crate::surface::proof) parent_constants: &'a ExecutionProofConstants,
     pub(in crate::surface::proof) surface_propositions: &'a SurfacePropositionMap,
     pub(in crate::surface::proof) source_layout: &'a SourceExecutionLayout,
     pub(in crate::surface::proof) function_source_registry: Arc<FunctionSourceRegistry>,
@@ -41,6 +42,13 @@ pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
     /// The planners resolve them into the loop's written clauses before
     /// lowering, as a `have` goal at that point would.
     pub(in crate::surface::proof) proof_locals: BinderMap<ContractExpression>,
+}
+
+impl<'a> ExecutionProofEnvironment<'a> {
+    pub(in crate::surface::proof) fn parameter_binding(&self) -> ParameterBinding<'a> {
+        self.parent_constants
+            .parameter_binding(self.parsed_function.parameters(), self.arguments)
+    }
 }
 
 #[derive(Clone, Default)]
@@ -142,9 +150,9 @@ impl FrontierLoopProofSource {
 /// Which part of a `loop` tactic a phase proof is.
 #[derive(Clone, Copy)]
 pub(in crate::surface::proof) enum LoopPhasePlace {
-    /// The body steps Click plans for a loop without a written `preserve`.
+    /// The body steps Click plans for a loop without a written `maintain`.
     PlannedPreservation,
-    /// A written `initialize` or `preserve` script.
+    /// A written `initialize` or `maintain` script.
     Script(&'static str),
 }
 
@@ -468,7 +476,7 @@ pub(in crate::surface::proof) fn certificate_leaf_for_case_path(
                     // C `if` consumed on this one path, not a case the
                     // validation path split at. Keep it whole and charge no
                     // case (A26, gap 57a); without this a `branch` in a
-                    // `preserve` arm is refused as a certificate that
+                    // `maintain` arm is refused as a certificate that
                     // disagrees with its validation path.
                     let matched_case = case_path.get(*next_case).filter(|choice| {
                         choice.match_arm.is_none()

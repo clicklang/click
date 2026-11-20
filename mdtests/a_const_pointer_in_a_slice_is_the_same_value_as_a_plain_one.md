@@ -24,7 +24,7 @@ unsigned long walk(const unsigned char *p, unsigned long n) {
     requires forall (j: uint64) { j < n implies slice::from_raw_parts(p + j, n).as_ptr() == p + j };
     ensures result == n;
 } by {
-    step_until(loop(0));
+    step_until(loop(0).entry);
     loop {
         decreases n - i;
         invariant i <= n;

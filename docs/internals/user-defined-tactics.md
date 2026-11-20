@@ -116,7 +116,7 @@ the resource operations that supply their calls.
 ## Application
 
 - **Where.** Anywhere a proof has a current state: a C function proof before
-  and after its exit, loop `initialize` and `preserve`, `branch` and proof
+  and after its exit, loop `initialize` and `maintain`, `branch` and proof
   `if` arms, other tactic bodies, and pure theorem proofs when the tactic has
   no resource clauses.
 - **What it checks.** Every `requires`, and every consumed or owned binder

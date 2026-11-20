@@ -41,33 +41,32 @@ impl adler2::algo::U32X4 {
         apply(adler_helper_byte_observation(bytes[1]));
         apply(adler_helper_byte_observation(bytes[2]));
         apply(adler_helper_byte_observation(bytes[3]));
-        step_until(assignment(__rust_mir_12, 0));
+        step_until(assignment(__rust_mir_12, 0).entry);
         step();
-        // The array literal uses fresh backing. Restrict the backing's
-        // separation from the input to each checked lane store.
-        have separate(memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4])) by { known(); }
-        have separate(memory(((__rust_mir_2 as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])) by {
+        // The lanes are stored into the result. Restrict its separation
+        // from the input to each checked lane store.
+        have separate(memory((((&result as (void *)) as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])) by {
             apply(separation::separate_restrict(
-                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
-                memory(((__rust_mir_2 as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])
+                memory(result[0..1]), memory(bytes[0..4]),
+                memory((((&result as (void *)) as (uint32 *)) + 0u64)[0..1]), memory(bytes[0..4])
             ));
         }
-        have separate(memory(((__rust_mir_2 as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])) by {
+        have separate(memory((((&result as (void *)) as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])) by {
             apply(separation::separate_restrict(
-                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
-                memory(((__rust_mir_2 as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])
+                memory(result[0..1]), memory(bytes[0..4]),
+                memory((((&result as (void *)) as (uint32 *)) + 1u64)[0..1]), memory(bytes[0..4])
             ));
         }
-        have separate(memory(((__rust_mir_2 as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])) by {
+        have separate(memory((((&result as (void *)) as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])) by {
             apply(separation::separate_restrict(
-                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
-                memory(((__rust_mir_2 as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])
+                memory(result[0..1]), memory(bytes[0..4]),
+                memory((((&result as (void *)) as (uint32 *)) + 2u64)[0..1]), memory(bytes[0..4])
             ));
         }
-        have separate(memory(((__rust_mir_2 as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])) by {
+        have separate(memory((((&result as (void *)) as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])) by {
             apply(separation::separate_restrict(
-                memory((__rust_mir_2 as (uint8 *))[0..16]), memory(bytes[0..4]),
-                memory(((__rust_mir_2 as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])
+                memory(result[0..1]), memory(bytes[0..4]),
+                memory((((&result as (void *)) as (uint32 *)) + 3u64)[0..1]), memory(bytes[0..4])
             ));
         }
         step_until(function.exit);
@@ -283,21 +282,21 @@ impl adler2::Adler32 {
     } by {
      // The empty chunk iterators execute no body. Prove the scalar reduction
      // from its checked transition before following lane recombination.
-     step_until(assignment(b, 0)); step();
+     step_until(assignment(b, 0).entry); step();
      have a == 1u32 by { known(); }
      have b == 0u32;
      // Neither chunk iterator has any bytes available to yield.
-     step_until(loop(0));
+     step_until(loop(0).entry);
      have loop(0).iter.v.len() == 0u64;
      have remainder_chunk.len() == 0u64;
-     step_until(loop(2));
+     step_until(loop(2).entry);
      have loop(2).iter.v.len() == 0u64;
-     step_until(assignment(b, 3));
+     step_until(assignment(b, 3).entry);
      have b == 0u32;
-     have __rust_mir_78 == 0u64;
+     have remainder_chunk.len() == 0u64;
      step();
      have b == 0u32;
-     step_until(assignment(b, 4));
+     step_until(assignment(b, 4).entry);
      mark scalar_mod;
      have at(scalar_mod, b) == 0u32;
      step();
@@ -322,16 +321,16 @@ impl adler2::Adler32 {
      have b_vec.0[2] <= 1073741823u32 by solve() using { b_vec.0[2] == 0u32; };
      have b_vec.0[3] <= 1073741823u32 by solve() using { b_vec.0[3] == 0u32; };
      // The three corrections add MOD, twice MOD, and three times MOD.
-     step_until(statement(16));
+     step_until(statement(16).entry);
      have b_vec.0[0] == 0u32;
      have b_vec.0[1] == 0u32;
      have b_vec.0[2] == 0u32;
      have b_vec.0[3] == 0u32;
-     step_until(statement(17));
+     step_until(statement(17).entry);
      have b_vec.0[1] == 65521u32;
-     step_until(statement(18));
+     step_until(statement(18).entry);
      have b_vec.0[2] == 131042u32;
-     step_until(loop(3));
+     step_until(loop(3).entry);
      have a == 1u32;
      have b == 0u32;
      have a_vec.0[0] == 0u32;
@@ -349,7 +348,7 @@ impl adler2::Adler32 {
      have at(before_sum_a, a_vec.0[1]) == 0u32;
      have at(before_sum_a, a_vec.0[2]) == 0u32;
      have at(before_sum_a, a_vec.0[3]) == 0u32;
-     step_until(loop(4));
+     step_until(loop(4).entry);
      have a == at(before_sum_a, a) + at(before_sum_a, a_vec.0[0]) + at(before_sum_a, a_vec.0[1]) + at(before_sum_a, a_vec.0[2]) + at(before_sum_a, a_vec.0[3]);
      have a == 1u32 by {
      rewrite(a, at(before_sum_a, a) + at(before_sum_a, a_vec.0[0]) + at(before_sum_a, a_vec.0[1]) + at(before_sum_a, a_vec.0[2]) + at(before_sum_a, a_vec.0[3]));
@@ -366,7 +365,7 @@ impl adler2::Adler32 {
      have at(before_sum_b, b_vec.0[1]) == 65521u32;
      have at(before_sum_b, b_vec.0[2]) == 131042u32;
      have at(before_sum_b, b_vec.0[3]) == 196563u32;
-     step_until(loop(5));
+     step_until(loop(5).entry);
      have b == at(before_sum_b, b) + at(before_sum_b, b_vec.0[0]) + at(before_sum_b, b_vec.0[1]) + at(before_sum_b, b_vec.0[2]) + at(before_sum_b, b_vec.0[3]) by {
      rewrite(at(before_sum_b, b), 0u32);
      rewrite(at(before_sum_b, b_vec.0[0]), 0u32);
@@ -385,10 +384,10 @@ impl adler2::Adler32 {
      solve();
      }
      // The serial tail is empty. Reduce the two sums before narrowing.
-     step_until(statement(22));
+     step_until(statement(22).entry);
      mark output_a;
      have at(output_a, a) == 1u32;
-     step_until(statement(23));
+     step_until(statement(23).entry);
      have self.a == 1;
      mark output_b;
      have at(output_b, b) == 393126u32;

@@ -546,6 +546,14 @@ fn render_accounting(output: &mut String, profiles: &[ProjectProfile]) {
             }
         )
         .expect("writing a String cannot fail");
+        if let Some(elapsed) = profile.report_preparation {
+            writeln!(
+                output,
+                "  Report preparation: {}",
+                format_fractional_duration(elapsed)
+            )
+            .expect("writing a String cannot fail");
+        }
         for (label, part) in [
             ("FRONTEND", accounting.frontend),
             ("ENVIRONMENT", accounting.environment),
@@ -1031,6 +1039,8 @@ fn render_category(
         )
         .expect("writing a String cannot fail");
         if !step.failed
+            && (step.key.tactic_name != click::instrumentation::IMPLICIT_LOOP_CLOSER_TACTIC
+                || step.loop_closer_has_proof)
             && let (TacticCategory::Smart, Some(position)) =
                 (section.category, step.key.position.clone())
             && !blocked_expansion_sources.contains(&step.key.source_path)
@@ -1081,7 +1091,9 @@ pub(super) fn render_expansion_command(
             shell_quote(&key.claim),
             shell_quote(&key.source_path.display().to_string())
         )
-    } else if key.expand_enclosing_claim {
+    } else if key.expand_enclosing_claim
+        || key.tactic_name == click::instrumentation::IMPLICIT_LOOP_CLOSER_TACTIC
+    {
         format!(
             "--claim {} {}",
             shell_quote(&format!(

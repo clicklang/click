@@ -200,6 +200,7 @@ fn smart_step_starts_each_source_tactic_with_an_empty_step_delta() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn clone_field_stores_with_observed_source_resource_verify() {
     let c_source = r#"
@@ -823,7 +824,7 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
             int32 zero() {
                 ensures result == 0;
             } by {
-                step_until(region(2));
+                step_until(region(2).entry);
                 step_until(function.exit);
                 normalize();
             }

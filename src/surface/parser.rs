@@ -124,7 +124,7 @@ const CONTRACT_LET_RECURSION_LIMIT: usize = 8;
 /// `guarded_by` associated a resource with a mutex field by declaration. A
 /// mutex's protected resource now comes from its checked initialization, so
 /// the spelling is refused with that direction.
-const RETIRED_CLOSE_INVARIANTS: &str = "`close_invariants` is retired: a `preserve` script closes the loop's invariants and `decreases` when it reaches the back edge, as a function proof closes its `ensures` at the exit, each by `solve()`; prove one that needs help with `have <invariant> by { ... }` before the back edge";
+const RETIRED_CLOSE_INVARIANTS: &str = "`close_invariants` is retired: a `maintain` script closes the loop's invariants and `decreases` when it reaches the back edge, as a function proof closes its `ensures` at the exit, each by `solve()`; prove one that needs help with `have <invariant> by { ... }` before the back edge";
 const RETIRED_GUARDED_BY: &str = "`guarded_by` is retired: a mutex protects the resource its checked `pthread_mutex_init` step deposits, so remove the clause and pass the resource to that step";
 /// The index shape and scalar element type of a C global or static array
 /// visible to one function's contract. Resource lowering only knows parameter
@@ -355,7 +355,7 @@ pub(in crate::surface) struct ProofClauseSpan {
     /// default clause's `;`.
     pub(in crate::surface) last: SourcePosition,
     /// The keyword the clause proves, where its reader named one: a loop's
-    /// `initialize` or `preserve`.
+    /// `initialize` or `maintain`.
     pub(in crate::surface) owner: Option<SourcePosition>,
 }
 
@@ -430,8 +430,14 @@ pub(super) fn parse_with_interface_catalog(
     library_contracts: &str,
 ) -> Result<ClickFile, ClickError> {
     let contracts = layouts.take_interface_catalog(library_contracts);
-    Parser::with_program_layouts_and_catalog(source, layouts, None, contracts.as_deref())?
-        .parse_file()
+    Parser::with_program_layouts_and_catalog(
+        source,
+        layouts,
+        None,
+        contracts.as_deref(),
+        &ObjectModels::default(),
+    )?
+    .parse_file()
 }
 
 impl ProgramLayouts {
@@ -530,6 +536,55 @@ pub(in crate::surface) enum ImportedCallee<'a> {
     Contract(&'a ContractDefinition),
 }
 
+/// Object models contributed by a Click module. Their contracts retain the
+/// source scope used to parse references when inherited by an implementation.
+#[derive(Default)]
+pub(super) struct ObjectModels {
+    cpp: BTreeMap<String, cpp_class_objects::ObjectClass>,
+    rust: BTreeMap<String, rust_trait_objects::ObjectTrait>,
+    scopes: BTreeMap<String, std::sync::Arc<names::ReferenceScope>>,
+}
+
+impl ObjectModels {
+    fn resource_instances(&self, imported: &Self) -> BTreeMap<String, BTreeSet<Vec<String>>> {
+        let instances = self
+            .cpp
+            .values()
+            .chain(imported.cpp.values())
+            .filter_map(cpp_class_objects::ObjectClass::resource_instance)
+            .chain(
+                self.rust
+                    .values()
+                    .chain(imported.rust.values())
+                    .filter_map(rust_trait_objects::ObjectTrait::resource_instance),
+            );
+        let mut families = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
+        for (family, arguments) in instances {
+            families
+                .entry(family.to_string())
+                .or_default()
+                .insert(arguments.to_vec());
+        }
+        families
+    }
+
+    pub(super) fn import(&mut self, models: &Self) {
+        for (name, model) in &models.cpp {
+            self.cpp
+                .entry(name.clone())
+                .and_modify(|existing| existing.import_methods(model))
+                .or_insert_with(|| model.clone());
+        }
+        for (name, model) in &models.rust {
+            self.rust
+                .entry(name.clone())
+                .and_modify(|existing| existing.import_methods(model))
+                .or_insert_with(|| model.clone());
+        }
+        self.scopes.extend(models.scopes.clone());
+    }
+}
+
 pub(super) fn parse_file_items_for_module(
     source: &str,
     identity: &str,
@@ -544,12 +599,14 @@ pub(super) fn parse_file_items_for_module(
     imported_integer_parameters: &BTreeMap<String, Vec<usize>>,
     layouts: ProgramLayouts,
     catalog: Option<&str>,
-) -> Result<ClickFile, ClickError> {
+    imported_models: &ObjectModels,
+) -> Result<(ClickFile, ObjectModels), ClickError> {
     let mut parser = Parser::with_program_layouts_and_catalog(
         source,
         layouts,
         Some(&crate::source::SourceContainer::new(identity, line_offset)),
         catalog,
+        imported_models,
     )?;
     parser.symbols.import_declarations(imported_declarations)?;
     let imported_tactics = parser
@@ -654,7 +711,15 @@ pub(super) fn parse_file_items_for_module(
             );
         }
     }
-    parser.parse_file_items(imported_callees)
+    let file = parser.parse_file_items(imported_callees)?;
+    let mut models = parser.object_models;
+    if !models.cpp.is_empty() || !models.rust.is_empty() {
+        models.scopes.insert(
+            identity.to_string(),
+            parser.symbols.into_reference_scope().into(),
+        );
+    }
+    Ok((file, models))
 }
 
 /// Whether `name` is the leading word of a built-in tactic or proof form, which
@@ -961,7 +1026,7 @@ struct Parser {
     /// resource is declared by the parent's matched arm, which may not be
     /// parsed yet, so the recorded family is the parent's and every family
     /// comparison against these instances is left to declaration expansion.
-    child_slot_identities: BTreeSet<InstanceId>,
+    child_slot_identities: BTreeSet<crate::kernel::ResourceBinderId>,
     in_resource_definition: bool,
     /// The fields of each resource declared so far, hidden ones included.
     declared_resource_fields: BTreeMap<String, Vec<ResourceFieldDefinition>>,
@@ -1048,6 +1113,7 @@ struct Parser {
     /// The importer names of the methods of C++ classes whose objects carry
     /// state: an override of one is stated on its own memory.
     cpp_object_methods: cpp_class_objects::ObjectMethods,
+    object_models: ObjectModels,
     /// See [`ProgramLayouts::record_spellings`].
     record_spellings: BTreeMap<String, String>,
     /// See [`ProgramLayouts::c_typedefs`].
@@ -1191,7 +1257,7 @@ struct Parser {
 /// block, recorded so a caller's call step can bind it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct CalleeResourceBinder {
-    pub(in crate::surface) identity: InstanceId,
+    pub(in crate::surface) identity: crate::kernel::ResourceBinderId,
     // None denotes a supplied resource assertion parameter. Its concrete
     // family is checked by the instantiated runtime contract in the kernel.
     pub(in crate::surface) family: Option<String>,
@@ -1683,6 +1749,7 @@ impl Parser {
             &BTreeMap::new(),
             None,
             None,
+            &ObjectModels::default(),
         )
     }
 
@@ -1693,7 +1760,13 @@ impl Parser {
         layouts: ProgramLayouts,
         container: Option<&crate::source::SourceContainer>,
     ) -> Result<Self, ClickError> {
-        Self::with_program_layouts_and_catalog(source, layouts, container, None)
+        Self::with_program_layouts_and_catalog(
+            source,
+            layouts,
+            container,
+            None,
+            &ObjectModels::default(),
+        )
     }
 
     fn with_program_layouts_and_catalog(
@@ -1701,6 +1774,7 @@ impl Parser {
         layouts: ProgramLayouts,
         container: Option<&crate::source::SourceContainer>,
         catalog: Option<&str>,
+        imported_models: &ObjectModels,
     ) -> Result<Self, ClickError> {
         let mut parser = Self::new_with_layouts_and_aggregate_objects(
             source,
@@ -1714,6 +1788,7 @@ impl Parser {
             &layouts.record_spellings,
             catalog,
             layouts.language,
+            imported_models,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.local_bindings = layouts.local_bindings;
@@ -1791,6 +1866,7 @@ impl Parser {
                 positions,
                 written,
                 rust_generic_resources::rust_concrete,
+                &parser.object_models.resource_instances(imported_models),
             )?;
             // A reference parameter's type grants the authority a safe
             // caller holds over its referent.
@@ -1817,11 +1893,14 @@ impl Parser {
                     std::mem::take(&mut parser.tokens),
                     std::mem::take(&mut parser.positions),
                 );
-                let (tokens, positions, methods) = cpp_class_objects::rewrite_class_objects(
-                    tokens,
-                    positions,
-                    &layouts.record_spellings,
-                )?;
+                let (tokens, positions, methods, models) =
+                    cpp_class_objects::rewrite_class_objects(
+                        tokens,
+                        positions,
+                        &layouts.record_spellings,
+                        &imported_models.cpp,
+                    )?;
+                parser.object_models.cpp = models;
                 parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
                 parser.tokens = tokens;
                 parser.positions = positions;
@@ -1875,6 +1954,7 @@ impl Parser {
                 positions,
                 written,
                 rust_generic_resources::cpp_concrete,
+                &parser.object_models.resource_instances(imported_models),
             )?;
             parser.matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
             parser.tokens = tokens;
@@ -1900,6 +1980,7 @@ impl Parser {
         record_spellings: &BTreeMap<String, String>,
         catalog: Option<&str>,
         import_language: Option<SourceLanguage>,
+        imported_models: &ObjectModels,
     ) -> Result<Self, ClickError> {
         let (mut tokens, mut positions) = tokenize(source, container)?;
         if let Some(catalog) = catalog {
@@ -1921,12 +2002,13 @@ impl Parser {
             tokens,
             positions,
             path_modules: path_library_modules,
-            symbols,
+            mut symbols,
         } = names::resolve_library_paths(
             tokens,
             positions,
             container.map(|container| &*container.filename),
         )?;
+        symbols.import_reference_scopes(&imported_models.scopes);
         // A cited theorem the file does not declare is a library theorem,
         // named by its qualified identity. A library module cites every
         // library theorem that way, its own included.
@@ -1988,25 +2070,38 @@ impl Parser {
         // A Rust sidecar's trait object state is rewritten into contracts
         // over abstract resources before anything is parsed.
         // Its generic crate traits are written out at each instance first.
-        let (tokens, positions, rust_object_traits) = if language == SourceLanguage::Rust {
-            let (tokens, positions) = rust_generic_traits::expand_generic_traits(
+        let (tokens, positions, rust_object_traits, rust_models) =
+            if language == SourceLanguage::Rust {
+                let (tokens, positions) = rust_generic_traits::expand_generic_traits(
+                    tokens,
+                    positions,
+                    rust_trait_instances,
+                )?;
+                rust_trait_objects::rewrite_trait_objects(
+                    tokens,
+                    positions,
+                    rust_trait_instances,
+                    &imported_models.rust,
+                )?
+            } else {
+                (tokens, positions, BTreeSet::new(), BTreeMap::new())
+            };
+        // So is a C++ sidecar's class object state.
+        let (tokens, positions, cpp_object_methods, cpp_models) = if language == SourceLanguage::Cpp
+        {
+            let (tokens, positions) = cpp_syntax::rewrite_function_references(tokens, positions);
+            cpp_class_objects::rewrite_class_objects(
                 tokens,
                 positions,
-                rust_trait_instances,
-            )?;
-            rust_trait_objects::rewrite_trait_objects(tokens, positions, rust_trait_instances)?
-        } else {
-            (tokens, positions, BTreeSet::new())
-        };
-        // So is a C++ sidecar's class object state.
-        let (tokens, positions, cpp_object_methods) = if language == SourceLanguage::Cpp {
-            let (tokens, positions) = cpp_syntax::rewrite_function_references(tokens, positions);
-            cpp_class_objects::rewrite_class_objects(tokens, positions, record_spellings)?
+                record_spellings,
+                &imported_models.cpp,
+            )?
         } else {
             (
                 tokens,
                 positions,
                 cpp_class_objects::ObjectMethods::default(),
+                BTreeMap::new(),
             )
         };
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
@@ -2016,6 +2111,11 @@ impl Parser {
             string_literal_owners: Default::default(),
             rust_object_traits,
             cpp_object_methods,
+            object_models: ObjectModels {
+                cpp: cpp_models,
+                rust: rust_models,
+                scopes: BTreeMap::new(),
+            },
             record_spellings: BTreeMap::new(),
             c_typedefs: BTreeMap::new(),
             source_aliases: BTreeMap::new(),
@@ -2582,16 +2682,13 @@ impl Parser {
             }
         }
         // A crate trait method's implementation, or a C++ override, inherits
-        // its interface, which the sidecar may declare before or after it: a
-        // trait's method, external or a default method with its proof, or the
-        // virtual method overridden, whose contract a call through it assumes.
+        // its interface from the current module or its imports. A call
+        // through a trait or a virtual method uses that same contract.
         let cpp = self.language == SourceLanguage::Cpp;
         // Imported blocks are already parsed in their own module's scope.
-        let imported_cpp_method = |name: &str| {
+        let imported_method = |name: &str| {
             imported_callees.iter().find_map(|callee| match callee {
-                ImportedCallee::Function(block) if cpp && block.signature().name() == name => {
-                    Some(*block)
-                }
+                ImportedCallee::Function(block) if block.signature().name() == name => Some(*block),
                 _ => None,
             })
         };
@@ -2607,7 +2704,8 @@ impl Parser {
                 // no contract, which verification refuses.
                 let class = crate::languages::cpp::names::cpp_display_name(&implementation)
                     .and_then(|path| Some(path.rsplit_once("::")?.0.to_string()));
-                if !self.cpp_object_methods.on_memory.contains(&implementation)
+                if !verifying_sources.is_empty()
+                    && !self.cpp_object_methods.on_memory.contains(&implementation)
                     && !class.is_some_and(|class| self.cpp_object_methods.defining.contains(&class))
                 {
                     let overridden = if self.cpp_object_methods.on_memory.contains(&interface) {
@@ -2627,7 +2725,7 @@ impl Parser {
             let Some(interface) = function_blocks
                 .iter()
                 .find(|block| block.signature().name() == interface)
-                .or_else(|| imported_cpp_method(&interface))
+                .or_else(|| imported_method(&interface))
                 .cloned()
             else {
                 continue;
@@ -3994,7 +4092,7 @@ impl Parser {
                 left: ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: binding.name.clone(),
                     resource_name: child.clone(),
-                    identity: binding.identity,
+                    identity: binding.identity.instance(),
                     children: vec![],
                     field: child_field.name.clone(),
                     field_index: 0,
@@ -4749,6 +4847,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: true,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -4794,6 +4893,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: false,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -5191,6 +5291,7 @@ impl Parser {
         let mut contract_lets = Vec::new();
         let mut contract_let_names = BTreeSet::new();
         let mut requires = Vec::new();
+        let mut view_inputs = BTreeMap::new();
         let mut decreases = None;
         let mut constructs = Vec::new();
         let mut ensures = Vec::new();
@@ -5439,6 +5540,7 @@ impl Parser {
                                     ensure: Ensure::Resource(resource),
                                     proof,
                                     borrowed: false,
+                                    view_source: None,
                                     condition: Some(condition.clone()),
                                 },
                                 &contract_lets,
@@ -5533,6 +5635,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: true,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -5546,6 +5649,16 @@ impl Parser {
                         return Err(self.value_binder_refusal(true));
                     }
                     let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                    if self.peek_ident() == Some("as") {
+                        self.position += 1;
+                        if !matches!(resource, ResourceClause::ViewMemory(_)) {
+                            return Err(self.error("a named input view must name one memory range"));
+                        }
+                        let name = self.expect_ident("input view name")?;
+                        if view_inputs.insert(name.clone(), requires.len()).is_some() {
+                            return Err(self.error(format!("duplicate input view name `{name}`")));
+                        }
+                    }
                     self.expect(Token::Semicolon)?;
                     requires.push(
                         apply_contract_lets_to_requirement(
@@ -5581,6 +5694,42 @@ impl Parser {
                 }
                 Some("produces") => {
                     self.position += 1;
+                    if self.peek_ident() == Some("view")
+                        && self.peek_next() == Some(&Token::LParen)
+                        && self.matching_parentheses[self.position + 1]
+                            .is_some_and(|close| matches!(self.tokens.get(close + 1), Some(Token::Ident(keyword)) if keyword == "from"))
+                    {
+                        self.position += 2;
+                        let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                        if matches!(resource, ResourceClause::ViewMemory(_)) {
+                            self.expect(Token::RParen)?;
+                            self.expect_ident_spelling("from")?;
+                            let name = self.expect_ident("input view name")?;
+                            let source = view_inputs.get(&name).copied().ok_or_else(|| {
+                                self.error(format!("unknown input view `{name}`"))
+                            })?;
+                            let proof = self.parse_proof_clause_or_default()?;
+                            ensure_kinds.push(ClaimClauseKind::Produces);
+                            clause_positions.push(clause_start.clone());
+                            ensures.push(
+                                apply_contract_lets_to_ensure_clause(
+                                    EnsureClause {
+                                        proof_bindings: Vec::new(),
+                                        name: None,
+                                        ensure: Ensure::Resource(resource),
+                                        proof,
+                                        borrowed: false,
+                                        view_source: Some(source),
+                                        condition: None,
+                                    },
+                                    &contract_lets,
+                                )
+                                .map_err(|message| self.error(message))?,
+                            );
+                            continue;
+                        }
+                        return Err(self.error("a produced view must name one memory range"));
+                    }
                     let resource = self.parse_function_contract_memory_binding()?;
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
@@ -5602,6 +5751,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: false,
+                                view_source: None,
                                 condition: None,
                             },
                             &contract_lets,
@@ -6184,10 +6334,15 @@ impl Parser {
                 self.position += 1;
             }
             receiver_constant = constant;
+            let interface_type = if self.struct_layouts.contains_key(&record) {
+                InterfaceType::Int32Pointer
+            } else {
+                InterfaceType::VoidPointer
+            };
             let this = self.parse_parameter_array_suffix(
                 "this".into(),
                 ParsedType {
-                    interface_type: InterfaceType::Int32Pointer,
+                    interface_type,
                     struct_name: Some(record.clone()),
                     struct_pointer: true,
                     constant: false,
@@ -6425,6 +6580,37 @@ impl Parser {
         }
 
         loop {
+            // `...args`: a C variadic function's variable arguments, one
+            // `List<VarArg>` (`crate::languages::c::variadic`). It is the
+            // last parameter.
+            if self.peek() == Some(&Token::DotDot) && self.peek_next() == Some(&Token::Dot) {
+                self.position += 2;
+                let name = self.expect_ident("variable-argument parameter name after `...`")?;
+                self.implied_library_modules
+                    .insert(crate::languages::c::variadic::STDARG_MODULE);
+                parameters.push(FunctionParameter {
+                    slice_length: None,
+                    click_type: ClickType::Program(InterfaceType::Parameter(
+                        crate::languages::c::variadic::variable_arguments_type(),
+                    )),
+                    name,
+                    struct_name: None,
+                    function_pointer_signature: None,
+                    constant: false,
+                    pointee_constant: false,
+                    reference: false,
+                });
+                if self.peek() != Some(&Token::RParen) {
+                    return Err(self.error("`...args` must be the last parameter"));
+                }
+                return Ok(ParsedParameters {
+                    parameters,
+                    struct_params,
+                    struct_array_params,
+                    reference_params,
+                    declared_loadable_bytes,
+                });
+            }
             // `const std::function<int(int)>& f` or `std::function<int(int)> f`:
             // a callable value, as a function pointer is; so is `unary f` for a
             // C function-pointer typedef.
@@ -6666,7 +6852,9 @@ impl Parser {
             None => self.expect_ident("type")?,
         };
         let cpp_record = qualified_record.is_some()
-            || (self.verifies_cpp() && self.struct_layouts.contains_key(&spelling));
+            || (self.verifies_cpp()
+                && (self.struct_layouts.contains_key(&spelling)
+                    || self.record_spellings.contains_key(&spelling)));
         // A function head may write a typedef name of the verified C source
         // for the type it stands for, where the name is not a standard
         // spelling; a specification writes Click's type.
@@ -6693,7 +6881,10 @@ impl Parser {
             let struct_name = if let Some((name, _, _)) = typedef_struct {
                 name
             } else if cpp_record {
-                spelling
+                self.record_spellings
+                    .get(&spelling)
+                    .cloned()
+                    .unwrap_or(spelling)
             } else {
                 self.expect_ident("struct name")?
             };
@@ -6704,8 +6895,14 @@ impl Parser {
             }
             if self.peek() == Some(&Token::Amp) && alias_pointer.is_none() {
                 self.position += 1;
+                let interface_type =
+                    if self.verifies_cpp() && !self.struct_layouts.contains_key(&struct_name) {
+                        InterfaceType::VoidPointer
+                    } else {
+                        InterfaceType::Int32Pointer
+                    };
                 return Ok(ParsedType {
-                    interface_type: InterfaceType::Int32Pointer,
+                    interface_type,
                     struct_name: Some(struct_name),
                     struct_pointer: true,
                     constant: false,
@@ -7624,7 +7821,7 @@ impl Parser {
         {
             let subject = ResourceSubject::Instance {
                 name: name.to_string(),
-                identity: *identity,
+                identity: identity.instance(),
                 at: None,
             };
             self.position += 1;
@@ -7756,81 +7953,25 @@ impl Parser {
         ))
     }
 
-    /// A `step(` argument that opens the chunk-5 call form: an identifier, a
-    /// parenthesized argument list, and a comma introducing the binder map.
-    /// The closing parenthesis comes from the precomputed nesting table, so
-    /// the decision costs one lookup rather than a scan.
-    /// Whether `step(Name, { ... })` follows: a contract or function name, a
-    /// C++ or Rust path `a::b` and a Rust instance's type arguments `<u32>`
-    /// included, then the comma before the map.
-    fn named_step_follows(&self) -> bool {
-        let mut at = self.position;
-        if !matches!(self.tokens.get(at), Some(Token::Ident(_))) {
-            return false;
-        }
-        at += 1;
-        while self.tokens.get(at) == Some(&Token::ColonColon)
-            && matches!(self.tokens.get(at + 1), Some(Token::Ident(_)))
+    fn parse_named_call_step(
+        &mut self,
+        output: Option<CallOutputPattern>,
+    ) -> Result<ProofTactic, ClickError> {
+        let call = self.parse_call_binder_transport(output, false)?;
+        if call.is_named_contract()
+            && call.binders.is_empty()
+            && call.produced.is_empty()
+            && call.type_arguments.is_empty()
+            && call.value_arguments.is_empty()
+            && call.result.is_none()
         {
-            at += 2;
+            return Ok(ProofTactic::StepContract(call.callee.into()));
         }
-        if self.tokens.get(at) == Some(&Token::LessThan) {
-            while !matches!(self.tokens.get(at), Some(Token::GreaterThan) | None) {
-                at += 1;
-            }
-            at += 1;
-        }
-        self.tokens.get(at) == Some(&Token::Comma)
+        Ok(ProofTactic::StepCall(call))
     }
 
-    fn call_binder_transport_follows(&self) -> bool {
-        if !matches!(self.peek(), Some(Token::Ident(_))) {
-            return false;
-        }
-        let open = if self.verifies_rust() {
-            // A Rust callee's path, `a::b::f`, and a generic function
-            // instance's type arguments, `<u32>`.
-            let mut at = self.position + 1;
-            while self.tokens.get(at) == Some(&Token::ColonColon)
-                && matches!(self.tokens.get(at + 1), Some(Token::Ident(_)))
-            {
-                at += 2;
-            }
-            if self.tokens.get(at) == Some(&Token::LessThan) {
-                at += 1;
-                while matches!(self.tokens.get(at), Some(Token::Ident(_)))
-                    && matches!(self.tokens.get(at + 1), Some(Token::Comma))
-                {
-                    at += 2;
-                }
-                if !matches!(self.tokens.get(at), Some(Token::Ident(_)))
-                    || self.tokens.get(at + 1) != Some(&Token::GreaterThan)
-                {
-                    return false;
-                }
-                at += 2;
-            }
-            at
-        } else if self.peek_next() == Some(&Token::ColonColon) {
-            if !matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_))) {
-                return false;
-            }
-            self.position + 3
-        } else {
-            self.position + 1
-        };
-        if self.tokens.get(open) != Some(&Token::LParen) {
-            return false;
-        }
-        let Some(close) = self.matching_parentheses.get(open).cloned().flatten() else {
-            return false;
-        };
-        self.tokens.get(close + 1) == Some(&Token::Comma)
-    }
-
-    /// `callee(arguments), { binder: instance, ... }`, positioned after the
-    /// opening parenthesis of `step(`. Produced instances are named by the
-    /// surrounding `let` output pattern.
+    /// Parse a selected call with an optional input map, or a user tactic
+    /// application. The surrounding `let` pattern introduces outputs.
     fn parse_call_binder_transport(
         &mut self,
         output: Option<CallOutputPattern>,
@@ -7851,40 +7992,41 @@ impl Parser {
             callee.push_str("::");
             callee.push_str(&self.expect_ident("C function name")?);
         }
-        // The binder map is the last argument in both forms, as a fold's
-        // field map is: a call step writes `step(callee, { ... })` and a
-        // tactic application writes `name(..., { ... })`, where the map is
-        // optional when the tactic supplies no binder.
         let form = if tactic { "name(...)" } else { "step(...)" };
-        // `step(Name, { ... })` names a named contract or a C function by
-        // its contract; the call's arguments come from the call at the
-        // frontier, which the step is checked against when it runs.
-        let name_only = !tactic && self.peek() == Some(&Token::Comma);
-        let named_contract = name_only && self.contract_resource_binders.contains_key(&callee);
-        let named_function = name_only && !named_contract;
-        if !tactic && !name_only {
-            return Err(self.error(format!(
-                "`step({callee}(...), {{ ... }})` is retired: write `step({callee}, {{ ... }})`; the call's arguments come from the call at the frontier"
-            )));
-        }
-        if !name_only {
-            self.expect(Token::LParen)?;
+        // Select the declared named contract when present. Otherwise the name
+        // must match the call at the frontier, which supplies the arguments.
+        let named_contract = !tactic && self.contract_resource_binders.contains_key(&callee);
+        let named_function = !tactic && !named_contract;
+        if !tactic && self.peek() == Some(&Token::LParen) {
+            let followed_by_map = self.matching_parentheses[self.position]
+                .is_some_and(|close| self.tokens.get(close + 1) == Some(&Token::Comma));
+            return Err(self.error(if followed_by_map {
+                format!(
+                    "`step({callee}(...), {{ ... }})` is retired: write `step({callee}, {{ ... }})`; the call's arguments come from the call at the frontier"
+                )
+            } else {
+                format!(
+                    "`step({callee}(...))` is retired; select a named contract with `step({callee})`, or `step({callee}, {{ handle: instance }})` when its body declares resource handles"
+                )
+            }));
         }
         let mut arguments = Vec::new();
-        let mut has_map = !tactic;
-        while !name_only && self.peek() != Some(&Token::RParen) {
-            if self.peek() == Some(&Token::LBrace) {
-                has_map = true;
-                break;
+        let mut has_map = !tactic && self.peek() == Some(&Token::Comma);
+        if tactic {
+            self.expect(Token::LParen)?;
+            while self.peek() != Some(&Token::RParen) {
+                if self.peek() == Some(&Token::LBrace) {
+                    has_map = true;
+                    break;
+                }
+                arguments.push(self.parse_contract_expression()?);
+                if self.peek() != Some(&Token::Comma) {
+                    break;
+                }
+                self.position += 1;
             }
-            arguments.push(self.parse_contract_expression()?);
-            if self.peek() != Some(&Token::Comma) {
-                break;
-            }
+        } else if has_map {
             self.position += 1;
-        }
-        if !tactic {
-            self.expect(Token::Comma)?;
         }
         let mut declared = if named_contract {
             &self.contract_resource_binders
@@ -8016,12 +8158,17 @@ impl Parser {
         if callee == "pthread_mutex_init" && !bound.contains("state") {
             declared.remove("state");
         }
-        if let Some((missing, _)) = declared.iter().find(|(name, entry)| {
-            matches!(
-                entry.kind,
-                CalleeResourceBinderKind::Supplied | CalleeResourceBinderKind::Type
-            ) && !bound.contains(*name)
-        }) {
+        // An unbound named-contract step uses the ordinary contract checker,
+        // which can give a combined input-map and output-pattern hint.
+        let plain_contract_step = named_contract && output.is_none() && bound.is_empty();
+        if !plain_contract_step
+            && let Some((missing, _)) = declared.iter().find(|(name, entry)| {
+                matches!(
+                    entry.kind,
+                    CalleeResourceBinderKind::Supplied | CalleeResourceBinderKind::Type
+                ) && !bound.contains(*name)
+            })
+        {
             return Err(self.error(format!("call map omits `{callee}` binder `{missing}`")));
         }
         // Instantiate the runtime's ordinary state output from the resource
@@ -8072,6 +8219,7 @@ impl Parser {
         let mut produced = Vec::new();
         match (output, produced_declarations.as_slice()) {
             (None, []) => {}
+            (None, _) if plain_contract_step => {}
             (None, _) => {
                 let names = produced_declarations
                     .iter()
@@ -8082,13 +8230,10 @@ impl Parser {
                     "`{callee}` produces named resource instance(s) `{names}`; bind them with `let {{ ... }} = {form}`"
                 )));
             }
-            (Some(CallOutputPattern::Single(name)), [(produced_name, declaration)]) if tactic => {
-                produced.push(self.bind_produced_call_instance(
-                    &name,
-                    produced_name,
-                    declaration,
-                    &arguments,
-                )?);
+            (Some(CallOutputPattern::Single(_)), _) if tactic => {
+                return Err(self.error(format!(
+                    "user-defined tactic outputs require named bindings: write `let {{ binder: name }} = {callee}(...)`"
+                )));
             }
             (Some(CallOutputPattern::Single(_)), _) => {
                 return Err(self.error(
@@ -8222,10 +8367,7 @@ impl Parser {
                 }
                 *identity
             }
-            None => {
-                let identity = self.fresh_resource_identity();
-                identity
-            }
+            None => self.fresh_resource_identity(),
         };
         self.names
             .bind_instance(name.to_string(), (identity, family.clone()));
@@ -8296,7 +8438,9 @@ impl Parser {
                 let resource = family.map(|family| ResourceClause::Named {
                     binding: ResourceInstanceBinding {
                         name: binder.name().to_string(),
-                        identity: InstanceId::from_variable(Variable(binder.identity)),
+                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(
+                            binder.identity,
+                        )),
                         children: vec![],
                         schema: None,
                         fields: None,
@@ -8319,7 +8463,9 @@ impl Parser {
                 binders.insert(
                     binder.name().to_string(),
                     CalleeResourceBinder {
-                        identity: InstanceId::from_variable(Variable(binder.identity)),
+                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(
+                            binder.identity,
+                        )),
                         family: family.map(str::to_string),
                         resource,
                         parameter_names: vec!["mutex".to_string(), "attributes".to_string()],
@@ -8342,7 +8488,9 @@ impl Parser {
             .insert(
                 "payload".to_string(),
                 CalleeResourceBinder {
-                    identity: InstanceId::from_variable(Variable(ATOMIC_INIT_PAYLOAD_BINDER_ID)),
+                    identity: crate::kernel::ResourceBinderId::from_variable(Variable(
+                        ATOMIC_INIT_PAYLOAD_BINDER_ID,
+                    )),
                     family: None,
                     resource: None,
                     parameter_names: vec!["object".to_string(), "value".to_string()],
@@ -8378,7 +8526,7 @@ impl Parser {
     /// name it: the map gives its value.
     fn value_parameter_callee_binder() -> CalleeResourceBinder {
         CalleeResourceBinder {
-            identity: InstanceId::from_variable(Variable(0)),
+            identity: crate::kernel::ResourceBinderId::from_variable(Variable(0)),
             family: None,
             resource: None,
             parameter_names: Vec::new(),
@@ -8533,10 +8681,7 @@ impl Parser {
                 }
                 identity
             }
-            None => {
-                let identity = self.fresh_resource_identity();
-                identity
-            }
+            None => self.fresh_resource_identity(),
         };
         self.names
             .bind_instance(name.clone(), (identity, resource_name.clone()));
@@ -8688,7 +8833,7 @@ impl Parser {
                 let proposition = self.parse_proposition()?;
                 if self.peek_ident() == Some("by") {
                     return Err(self.error(
-                        "invariant proofs belong to the loop; use `initialize by ...` and `preserve by ...`",
+                        "invariant proofs belong to the loop; use `initialize by ...` and `maintain by ...`",
                     ));
                 }
                 self.expect(Token::Semicolon)?;
@@ -8764,6 +8909,7 @@ impl Parser {
                 ensure,
                 proof,
                 borrowed: false,
+                view_source: None,
                 condition: None,
             },
             introduced,
@@ -10038,8 +10184,9 @@ impl Parser {
     /// The refusal for a name that binds no resource instance here: one
     /// whose binding block has ended is refused as out of scope.
     /// A fresh identity for a resource binder this file introduces.
-    fn fresh_resource_identity(&mut self) -> InstanceId {
-        let identity = InstanceId::from_variable(Variable(self.next_resource_identity));
+    fn fresh_resource_identity(&mut self) -> crate::kernel::ResourceBinderId {
+        let identity =
+            crate::kernel::ResourceBinderId::from_variable(Variable(self.next_resource_identity));
         self.next_resource_identity += 1;
         identity
     }
@@ -10251,7 +10398,7 @@ impl Parser {
                 }
                 let identity = self.fresh_resource_identity();
                 self.names.insert(NameKind::ProofBinder, name.clone());
-                result.push((slot, name, identity));
+                result.push((slot, name, identity.instance()));
                 continue;
             }
             let existing = self.names.resource_bindings.get(&name).cloned();
@@ -10261,8 +10408,7 @@ impl Parser {
                 // expansion checks the supplied instance against it.
                 *identity
             } else if introduce {
-                let identity = self.fresh_resource_identity();
-                identity
+                self.fresh_resource_identity()
             } else {
                 return Err(self.unknown_instance(&name, "child resource"));
             };
@@ -10303,7 +10449,7 @@ impl Parser {
                     },
                 );
             }
-            result.push((slot, name, identity));
+            result.push((slot, name, identity.instance()));
         }
         Ok(result)
     }
@@ -10451,14 +10597,9 @@ impl Parser {
                     "`step({ ... })` is retired: name the function or contract the map fills in, `step(callee, { ... })`",
                 ));
             }
-            if !self.call_binder_transport_follows() && !self.named_step_follows() {
-                return Err(self.error(
-                            "a call output binding requires a binder map: `let { result: name } = step(callee, { binder: instance })`",
-                        ));
-            }
-            let transport = self.parse_call_binder_transport(Some(output), false)?;
+            let step = self.parse_named_call_step(Some(output))?;
             self.expect(Token::RParen)?;
-            return self.parse_step_proof(ProofTactic::StepCall(transport));
+            return self.parse_step_proof(step);
         }
         if let Some(name) = self.peek_ident()
             && self.tactic_names.contains(name)
@@ -10567,8 +10708,7 @@ impl Parser {
             }
             *identity
         } else {
-            let identity = self.fresh_resource_identity();
-            identity
+            self.fresh_resource_identity()
         };
         let declared = self
             .declared_resource_fields
@@ -11108,13 +11248,16 @@ impl Parser {
             }));
         }
         if name == "loop" {
-            let label = if self.peek_ident() == Some("as") {
-                self.position += 1;
-                let label = self.expect_ident("loop label")?;
-                self.refuse_cast_type_binder(&label)?;
-                Some(label)
-            } else {
-                None
+            let label = match self.peek_ident() {
+                Some("as") => {
+                    return Err(self.error("write a named loop as `loop name { ... }`"));
+                }
+                Some("diverges") | None => None,
+                Some(_) => {
+                    let label = self.expect_ident("loop label")?;
+                    self.refuse_cast_type_binder(&label)?;
+                    Some(label)
+                }
             };
             // A loop has no signature, so its `diverges` marker sits on the
             // head, where the signature marker sits for a function.
@@ -11231,10 +11374,13 @@ impl Parser {
                     continue;
                 }
                 if self.peek_ident() == Some("preserve") {
+                    return Err(self.error("the loop phase is now `maintain by ...`"));
+                }
+                if self.peek_ident() == Some("maintain") {
                     self.proof_clause_owner = self.here();
                     self.position += 1;
                     if preserve_proof.is_some() {
-                        return Err(self.error("duplicate `preserve` proof"));
+                        return Err(self.error("duplicate `maintain` proof"));
                     }
                     preserve_proof = Some(self.parse_loop_phase_proof(&items)?);
                     continue;
@@ -11308,51 +11454,8 @@ impl Parser {
                     return Err(self.error(
                     "`step({ ... })` is retired: name the function or contract the map fills in, `step(callee, { ... })`",
                 ));
-                } else if self.call_binder_transport_follows() || self.named_step_follows() {
-                    ProofTactic::StepCall(self.parse_call_binder_transport(None, false)?)
                 } else {
-                    let name = self.expect_ident("call contract name")?;
-                    if self.peek() == Some(&Token::LParen) {
-                        return Err(self.error(format!(
-                            "`step({name}(...))` is retired; select a named contract with \
-                             `step({name})`, or `step({name}, {{ handle: instance }})` \
-                             when its body declares resource handles"
-                        )));
-                    }
-                    let mut arguments = Vec::new();
-                    if self.peek() == Some(&Token::Comma) {
-                        self.position += 1;
-                        if self.peek() != Some(&Token::LBrace) {
-                            return Err(self.error(format!(
-                                "`step({name}, ...)` selects one contract; after the comma it \
-                                 takes a handle map, `{{ handle: instance }}`"
-                            )));
-                        }
-                        self.position += 1;
-                        while self.peek() != Some(&Token::RBrace) {
-                            let handle = self.expect_ident("contract resource handle")?;
-                            self.expect(Token::Colon)?;
-                            let name = self.expect_ident("resource instance")?;
-                            let (identity, resource_name) = self
-                                .names
-                                .resource_bindings
-                                .get(&name)
-                                .cloned()
-                                .ok_or_else(|| self.unknown_instance(&name, "resource instance"))?;
-                            arguments.push(ContractResourceArgument {
-                                handle,
-                                name,
-                                resource_name,
-                                identity,
-                            });
-                            if self.peek() != Some(&Token::Comma) {
-                                break;
-                            }
-                            self.position += 1;
-                        }
-                        self.expect(Token::RBrace)?;
-                    }
-                    ProofTactic::StepContract(ContractApplication { name, arguments })
+                    self.parse_named_call_step(None)?
                 };
                 self.expect(Token::RParen)?;
                 return self.parse_step_proof(step);
@@ -11362,17 +11465,18 @@ impl Parser {
             }
             "step_until" => {
                 self.expect(Token::LParen)?;
-                let region_ref = if self.peek_ident() == Some("function")
-                    && self.peek_next() == Some(&Token::Dot)
-                    && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(kind)) if kind == "exit")
-                {
-                    self.position += 3;
-                    CodeRegionRef::FunctionExit
-                } else {
-                    self.parse_code_region_ref()?
-                };
+                let point = self.parse_execution_point()?;
                 self.expect(Token::RParen)?;
-                ProofTactic::ExecuteUntil(region_ref)
+                ProofTactic::ExecuteUntil(point)
+            }
+            "release_view" => {
+                self.expect(Token::LParen)?;
+                let resource = self.parse_resource_target(ResourceAccessMode::View)?;
+                if !matches!(resource, ResourceClause::ViewMemory(_)) {
+                    return Err(self.error("release_view requires one memory view"));
+                }
+                self.expect(Token::RParen)?;
+                ProofTactic::ReleaseView(resource)
             }
             "unfold" => {
                 self.expect(Token::LParen)?;
@@ -11581,6 +11685,12 @@ impl Parser {
                     ));
                 }
                 ProofTactic::Sorry
+            }
+            "order_chain" => {
+                self.expect_empty_tactic_args(&name)?;
+                let premises = self.parse_exact_premises()?;
+                self.skip_redundant_semicolon();
+                return Ok(ProofTactic::OrderChain(premises));
             }
             "normalize" => {
                 self.expect_empty_tactic_args(&name)?;
@@ -11804,10 +11914,7 @@ impl Parser {
                     "interface binder `{name}` rebinds an instance of resource `{family}`, not `{resource_name}`"
                 )));
             }
-            None => {
-                let identity = self.fresh_resource_identity();
-                identity
-            }
+            None => self.fresh_resource_identity(),
         };
         self.names
             .bind_instance(name.clone(), (identity, resource_name.clone()));
@@ -12392,13 +12499,6 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let index = self.expect_index("loop index")?;
                 self.expect(Token::RParen)?;
-                if self.chained_region_follows(&["back_edge"]) {
-                    self.expect(Token::Dot)?;
-                    self.expect_ident("back_edge")?;
-                    self.expect(Token::LParen)?;
-                    self.expect(Token::RParen)?;
-                    return Ok(CodeRegionRef::BackEdge(Some(index)));
-                }
                 if self.source_path_step_follows() {
                     return self.parse_source_path(vec![SourcePathStep::Loop(index)]);
                 }
@@ -12419,11 +12519,6 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 self.parse_source_path(vec![SourcePathStep::Statement(index)])
             }
-            Some(Token::Ident(kind)) if kind == "back_edge" && self.peek() == Some(&Token::LParen) => {
-                self.expect(Token::LParen)?;
-                self.expect(Token::RParen)?;
-                Ok(CodeRegionRef::BackEdge(None))
-            }
             Some(Token::Ident(kind)) if kind == "read" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
                 let occurrence = self.expect_index("read occurrence")?;
@@ -12440,10 +12535,10 @@ impl Parser {
             }
             Some(Token::Ident(label)) => Ok(CodeRegionRef::Label(label)),
             Some(token) => Err(self.error(format!(
-                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got {token}"
+                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, or label, got {token}"
             ))),
             None => Err(self.error(
-                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, `back_edge()`, or label, got end of input",
+                "expected code region `function`, `loop(N)`, `region(N)`, `assignment(local, N)`, `read(N)`, or label, got end of input",
             )),
         }
     }
@@ -13262,7 +13357,7 @@ impl Parser {
                 && self.rust_slice_params.contains(name)
             {
                 let length = ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    crate::kernel::BindingName::slice_length(&name),
+                    crate::kernel::BindingName::slice_length(name),
                 ));
                 let end_expression = length;
                 let end = contract_expression_as_program_expression(&end_expression)
@@ -15223,7 +15318,7 @@ impl Parser {
                         expression = ContractExpression::ResourceField(ResourceFieldAccess {
                             owner,
                             resource_name,
-                            identity,
+                            identity: identity.instance(),
                             children: vec![],
                             field,
                             field_index: 0,
@@ -15707,12 +15802,19 @@ impl Parser {
             self.position = start;
             return Ok(None);
         }
-        let parameter = match (self.peek(), self.peek_next()) {
-            (Some(Token::Dot), Some(Token::Ident(selector))) if selector == "local" => false,
+        let (parameter, compound_literal) = match (self.peek(), self.peek_next()) {
+            (Some(Token::Dot), Some(Token::Ident(selector))) if selector == "local" => {
+                (false, false)
+            }
             (Some(Token::Dot), Some(Token::Ident(selector)))
                 if selector == "parameter" && path.is_empty() =>
             {
-                true
+                (true, false)
+            }
+            (Some(Token::Dot), Some(Token::Ident(selector)))
+                if selector == "compound_literal" && path.is_empty() =>
+            {
+                (false, true)
             }
             _ => {
                 self.position = start;
@@ -15745,15 +15847,31 @@ impl Parser {
                 .clone()
         };
         let id = if path.is_empty() {
-            let ordinal = u32::try_from(self.expect_index("declaration ordinal")?)
-                .map_err(|_| self.error("declaration ordinal exceeds u32"))?;
+            let ordinal_kind = if compound_literal {
+                "compound literal ordinal"
+            } else {
+                "declaration ordinal"
+            };
+            let ordinal = u32::try_from(self.expect_index(ordinal_kind)?)
+                .map_err(|_| self.error(format!("{ordinal_kind} exceeds u32")))?;
             let owner = crate::kernel::LocalFunctionId::new(source, function);
-            let query = crate::kernel::LocalBindingId::new(owner, parameter, ordinal, None);
+            let query = if compound_literal {
+                crate::kernel::LocalBindingId::compound_literal(owner, ordinal)
+            } else {
+                crate::kernel::LocalBindingId::new(owner, parameter, ordinal, None)
+            };
             self.local_bindings
                 .declarations
                 .get_key_value(&query)
                 .map(|(id, _)| id.clone())
-                .ok_or_else(|| self.error(format!("unknown C declaration `{query}`")))?
+                .ok_or_else(|| {
+                    let kind = if compound_literal {
+                        "compound literal"
+                    } else {
+                        "declaration"
+                    };
+                    self.error(format!("unknown C {kind} `{query}`"))
+                })?
         } else {
             let name = self.expect_ident("local declaration name")?;
             self.local_bindings
@@ -16306,17 +16424,11 @@ impl Parser {
             // The operand remains authoritative during spec lowering. A
             // historical pointer selects an address, while this load uses
             // the surrounding clause's memory state.
-            let pointer = ProgramExpression::Value(int32(0));
-            return Ok(ContractExpression::CUnary {
-                operand: Box::new(source_pointer),
-                lowered: ProgramExpression::TypedLoad {
-                    pointer: Box::new(pointer),
-                    value_type,
-                    volatile,
-                    pointee_constant,
-                    access_class: None,
-                    source: Default::default(),
-                },
+            return Ok(ContractExpression::MemoryLoad {
+                pointer: Box::new(source_pointer),
+                value_type,
+                volatile,
+                pointee_constant,
             });
         }
 
@@ -16384,7 +16496,7 @@ impl Parser {
                 return Ok(ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: crate::surface::diagnostics::describe_contract_expression(&call),
                     resource_name: name,
-                    identity,
+                    identity: identity.instance(),
                     children: vec![],
                     field: path.join("."),
                     field_index: 0,
@@ -16984,6 +17096,44 @@ impl Parser {
 
     fn parse_program_point_ref(&mut self) -> Result<ProgramPointRef, ClickError> {
         let region = self.parse_code_region_ref()?;
+        self.parse_program_point_after_region(region)
+    }
+
+    fn parse_execution_point(&mut self) -> Result<ExecutionPoint, ClickError> {
+        // Bare `loop` in this spelling means the active iteration.
+        if self.peek_ident() == Some("loop")
+            && self.peek_next() == Some(&Token::Dot)
+            && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(name)) if name == "back_edge")
+        {
+            self.position += 3;
+            return Ok(ExecutionPoint::BackEdge(None));
+        }
+        let region = self.parse_code_region_ref()?;
+        if let CodeRegionRef::Loop(index) = &region
+            && self.peek() == Some(&Token::Dot)
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "back_edge")
+        {
+            self.position += 2;
+            return Ok(ExecutionPoint::BackEdge(Some(*index)));
+        }
+        if self.peek() == Some(&Token::RParen) {
+            return Err(self.error("`step_until` requires an explicit program point, such as `loop(0).entry` or `function.exit`"));
+        }
+        let point = self.parse_program_point_after_region(region)?;
+        if point.kind != ProgramPointKind::Entry
+            && !(point.region == CodeRegionRef::Function && point.kind == ProgramPointKind::Exit)
+        {
+            return Err(self.error(
+                "`step_until` supports entry points, `function.exit`, and loop back edges",
+            ));
+        }
+        Ok(ExecutionPoint::ProgramPoint(point))
+    }
+
+    fn parse_program_point_after_region(
+        &mut self,
+        region: CodeRegionRef,
+    ) -> Result<ProgramPointRef, ClickError> {
         self.expect(Token::Dot)?;
         let kind = match self.expect_ident("program point kind")?.as_str() {
             "entry" => ProgramPointKind::Entry,
@@ -17778,6 +17928,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
         ensure,
         proof,
         borrowed,
+        view_source,
         condition,
     } = clause;
     match ensure {
@@ -17789,6 +17940,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
                 ensure: Ensure::Resource(resource),
                 proof: proof.clone(),
                 borrowed,
+                view_source,
                 condition: condition.clone(),
             })
             .collect(),
@@ -17798,6 +17950,7 @@ fn expand_aggregate_ensure_clause(clause: EnsureClause) -> Vec<EnsureClause> {
             ensure,
             proof,
             borrowed,
+            view_source,
             condition,
         }],
     }
@@ -18533,7 +18686,7 @@ mod tactic_classification_tests {
         ("mark", "mark name;"),
         ("step", "step();"),
         ("step-result", "let { result: value } = step();"),
-        ("step-contract", "step(Contract);"),
+        ("step-contract", "step(Plain);"),
         ("step-contract-application", "step(Contract, { cell: c });"),
         ("step-call", "step(f, { cell: c });"),
         (
@@ -18546,11 +18699,12 @@ mod tactic_classification_tests {
             "step() { requires x == 1 by { normalize(); }; }",
         ),
         ("user-tactic", "name(x, { cell: c });"),
-        ("step-until", "step_until(label);"),
+        ("step-until", "step_until(label.entry);"),
         ("unfold-predicate", "unfold(predicate(x));"),
         ("unfold-function", "unfold(f(x));"),
         ("unfold-resource", "unfold(reference(p));"),
         ("fold-resource", "fold(reference(p));"),
+        ("release-view", "release_view(*p);"),
         ("unfold-slot", "unfold(reference(p)[0]);"),
         ("fold-slot", "fold(reference(p)[0]);"),
         ("fold-iterated-clause", "fold(reference(p)[..]);"),
@@ -18594,7 +18748,7 @@ mod tactic_classification_tests {
         ),
         (
             "loop",
-            "loop { invariant x == 1; initialize by { normalize(); } preserve by { normalize(); } }",
+            "loop { invariant x == 1; initialize by { normalize(); } maintain by { normalize(); } }",
         ),
         ("observe-resource", "observe(reference(p));"),
         ("witness", "witness(1);"),
@@ -18602,6 +18756,7 @@ mod tactic_classification_tests {
         ("known", "known();"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
+        ("order-chain", "order_chain() using { x < y; };"),
         ("preserve", "preserve(memory(*p), statement(0));"),
         ("intro", "intro();"),
         ("intro-as", "let name = intro();"),
@@ -18677,7 +18832,7 @@ mod tactic_classification_tests {
                 let cell = BTreeMap::from([(
                     "cell".to_string(),
                     CalleeResourceBinder {
-                        identity: InstanceId::from_variable(Variable(1)),
+                        identity: crate::kernel::ResourceBinderId::from_variable(Variable(1)),
                         family: Some("reference".to_string()),
                         resource: None,
                         parameter_names: Vec::new(),
@@ -18693,10 +18848,14 @@ mod tactic_classification_tests {
                 parser
                     .contract_resource_binders
                     .insert("Contract".to_string(), cell);
+                parser
+                    .contract_resource_binders
+                    .entry("Plain".into())
+                    .or_default();
                 parser.names.resource_bindings.insert(
                     "c".to_string(),
                     (
-                        InstanceId::from_variable(Variable(2)),
+                        crate::kernel::ResourceBinderId::from_variable(Variable(2)),
                         "reference".to_string(),
                     ),
                 );
@@ -18778,8 +18937,8 @@ mod loop_name_tests {
             ("owns p[0..bogus];", "owns"),
             ("owns bogus[0..1];", "owns"),
             (
-                "invariant i <= n; preserve by { have bogus == i; }",
-                "preserve",
+                "invariant i <= n; maintain by { have bogus == i; }",
+                "maintain",
             ),
             (
                 "invariant i <= n; initialize by { have bogus == i; }",
@@ -18787,8 +18946,8 @@ mod loop_name_tests {
             ),
             ("if bogus == 0 { views p[0..1]; }", "if"),
             (
-                "invariant i <= n; preserve by { if i == 0 { let { result: bogus } = step(); } else { step(); } have bogus == n; }",
-                "preserve",
+                "invariant i <= n; maintain by { if i == 0 { let { result: bogus } = step(); } else { step(); } have bogus == n; }",
+                "maintain",
             ),
         ] {
             let error = parse_loop(body).unwrap_err();
@@ -18803,35 +18962,59 @@ mod loop_name_tests {
     }
 
     #[test]
+    fn retired_loop_label_syntax_names_its_replacement() {
+        let source = "int32 f() { ensures result == 0; } by { loop as scan { invariant 0 == 0; } }";
+        let error = Parser::with_program_layouts(source, ProgramLayouts::default(), None)
+            .unwrap()
+            .parse_file_items(&[])
+            .unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("write a named loop as `loop name { ... }`")
+        );
+    }
+
+    #[test]
+    fn retired_loop_phase_names_its_replacement() {
+        let error = parse_loop("invariant i <= n; preserve by { step(); }").unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("the loop phase is now `maintain by ...`")
+        );
+    }
+
+    #[test]
     fn loop_names_keep_program_locals_quantifiers_and_phase_binders() {
-        parse_loop("decreases n - i; invariant forall (k: int32) { k == k }; invariant i <= n; views p[0..n]; preserve by { have forall (saved: int32) { saved == saved } by { intro(); have saved == saved; } }").unwrap();
+        parse_loop("decreases n - i; invariant forall (k: int32) { k == k }; invariant i <= n; views p[0..n]; maintain by { have forall (saved: int32) { saved == saved } by { intro(); have saved == saved; } }").unwrap();
     }
 
     #[test]
     fn loop_range_binders_and_invariant_proof_binders_are_recognized() {
-        parse_loop("invariant (0..n).all(|k| { k >= 0 }); invariant (0..n).fold(0, |acc, k| { acc + k }) >= 0; invariant forall (v: int32) { v == v }; preserve by { intro(); have v == v; }").unwrap();
+        parse_loop("invariant (0..n).all(|k| { k >= 0 }); invariant (0..n).fold(0, |acc, k| { acc + k }) >= 0; invariant forall (v: int32) { v == v }; maintain by { intro(); have v == v; }").unwrap();
     }
 
     #[test]
     fn loop_phase_proofs_recognize_binders_from_predicate_goals() {
-        parse_loop("invariant alias(); initialize by { intro(); have introduced == introduced; } preserve by { have alias() by { intro(); have introduced == introduced; } }").unwrap();
+        parse_loop("invariant alias(); initialize by { intro(); have introduced == introduced; } maintain by { have alias() by { intro(); have introduced == introduced; } }").unwrap();
     }
 
     #[test]
     fn loop_proof_values_remain_visible_in_nested_blocks() {
-        parse_loop("invariant i <= n; preserve by { let { result: saved } = step(); if i == 0 { have forall (k: int32) { saved == saved } by { intro(); have saved == saved; } } else { have saved == n; } }").unwrap();
+        parse_loop("invariant i <= n; maintain by { let { result: saved } = step(); if i == 0 { have forall (k: int32) { saved == saved } by { intro(); have saved == saved; } } else { have saved == n; } }").unwrap();
     }
 
     #[test]
     fn nested_loop_restores_the_enclosing_phase_name_context() {
         let error = parse_loop(
-            "invariant i <= n; preserve by { loop { invariant i <= n; } have bogus == i; }",
+            "invariant i <= n; maintain by { loop { invariant i <= n; } have bogus == i; }",
         )
         .unwrap_err();
         assert!(
             error
                 .message()
-                .contains("unknown name `bogus` in loop preserve clause"),
+                .contains("unknown name `bogus` in loop maintain clause"),
             "{error}"
         );
     }
@@ -18845,7 +19028,10 @@ mod preserve_syntax_tests {
         let mut parser = Parser::new(source).unwrap();
         parser.names.resource_bindings.insert(
             "r".into(),
-            (InstanceId::from_variable(Variable(123)), "Node".into()),
+            (
+                crate::kernel::ResourceBinderId::from_variable(Variable(123)),
+                "Node".into(),
+            ),
         );
         parser.resource_parameters.insert("R".into(), 0);
         parser

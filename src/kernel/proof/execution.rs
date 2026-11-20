@@ -114,6 +114,7 @@ pub(crate) enum CheckedExecutionEvent {
     ProofCaseJoin(Box<CheckedProofCaseJoin>),
     ResourceObservation(Box<CheckedResourceObservation>),
     AutomaticLifetimeEnd(Box<CheckedAutomaticLifetimeEnd>),
+    ViewRelease(Box<CheckedViewRelease>),
     ResourceRewrite(Box<CheckedResourceRewrite>),
     ReturnProposition(Box<CheckedReturnProposition>),
     PopulationAuthorityRewrite(Box<CheckedPopulationAuthorityRewrite>),
@@ -167,6 +168,9 @@ impl ExecutionEvidence {
                     };
                     self.presented = None;
                 }
+            }
+            CheckedExecutionEvent::ViewRelease(release) => {
+                self.retained = Some(Arc::new(release.after_state.clone()));
             }
             CheckedExecutionEvent::AutomaticLifetimeEnd(end) => {
                 self.retained = Some(Arc::new(end.after_state.clone()));
@@ -1102,9 +1106,10 @@ impl CheckedPopulationMemberRewrite {
 /// naming the offending cell, so the caller can report which cell or field a
 /// rejected rewrite changed.
 fn memory_only_adds_named_cells(
-    before: &crate::kernel::SymbolicMemory,
+    before_state: &ExecutionState,
     after: &crate::kernel::SymbolicMemory,
 ) -> Result<(), String> {
+    let before = before_state.memory();
     let mut rebased = after.clone();
     rebased.cells = before.cells.clone();
     if rebased != *before {
@@ -1121,8 +1126,9 @@ fn memory_only_adds_named_cells(
         };
         return Err(format!("changed non-cell memory state ({changed})"));
     }
-    let base = crate::kernel::intern_memory(before.clone());
-    for change in before.cells.diff(&after.cells) {
+    let source = before_state.program_point();
+    let base = source.shared_memory();
+    for change in before.cells.diff_after_naming(&after.cells, &source)? {
         let crate::kernel::HashedOrdMapChange::Added(pointer) = change else {
             return Err("removed or rewrote an existing cell".into());
         };
@@ -1143,11 +1149,28 @@ fn memory_only_adds_named_cells(
         let Some(kind) = LoadKind::of_value(&value) else {
             return Err("added a cell no load reads".into());
         };
+        if let Some(MachineTerm::MemoryLoad(point, _, _)) =
+            crate::kernel::spec::program_value_bitvector_term(&value)
+            && point.read_version_id().is_some()
+        {
+            let expected = crate::kernel::eval::expected_point_named_cell_read(
+                &source,
+                pointer,
+                value.program_type(),
+            );
+            if expected
+                .as_ref()
+                .is_none_or(|load| !cell_value_is_exactly_load(&value, load))
+            {
+                return Err(format!(
+                    "added a cell at {pointer:?} without its indexed source read"
+                ));
+            }
+            continue;
+        }
         let load = crate::kernel::canonical_form_of_load(base.clone(), pointer.clone(), kind);
         if !cell_value_is_exactly_load(&value, &load) {
-            return Err(describe_unnamed_cell_addition(
-                &base, pointer, &value, &load,
-            ));
+            return Err(describe_unnamed_cell_addition(base, pointer, &value, &load));
         }
     }
     Ok(())
@@ -1256,6 +1279,8 @@ fn cell_value_is_exactly_load(value: &ProgramValue, load: &MachineTerm) -> bool 
         | ProgramValue::UInt32(term)
         | ProgramValue::Int64(term)
         | ProgramValue::UInt64(term)
+        | ProgramValue::Int128(term)
+        | ProgramValue::UInt128(term)
         | ProgramValue::Float32(term)
         | ProgramValue::Float64(term) => term == load,
         ProgramValue::Bool(term) => {
@@ -1284,6 +1309,11 @@ pub(crate) struct RejectedResourceRewriteFact {
 pub(crate) struct ResourceRewriteCheckError {
     pub(crate) message: String,
     pub(crate) rejected_fact: Option<Arc<RejectedResourceRewriteFact>>,
+}
+
+pub(crate) enum InstanceUnfoldError {
+    Construction(crate::kernel::ResourceRewriteRefusal),
+    Recording(ResourceRewriteCheckError),
 }
 
 impl From<String> for ResourceRewriteCheckError {
@@ -1507,7 +1537,7 @@ impl CheckedResourceRewrite {
             return Err("authority control has the wrong resource exchange".into());
         }
         if exposing {
-            memory_only_adds_named_cells(before_state.memory(), after_state.memory())?;
+            memory_only_adds_named_cells(before_state, after_state.memory())?;
         } else if !crate::kernel::api::contract_certification::memories_definitionally_equal(
             before_state.memory(),
             after_state.memory(),
@@ -1867,6 +1897,7 @@ impl CheckedResourceRewrite {
             selected_children,
             None,
             loan_holds,
+            None,
         )
     }
 
@@ -1919,6 +1950,7 @@ impl CheckedResourceRewrite {
         selected_children: Option<Arc<[(String, InstanceId)]>>,
         return_observation: Option<Arc<ReturnResourceObservation>>,
         loan_holds: &[crate::kernel::CheckedLoanTransition],
+        prepared_instance: Option<&crate::kernel::functions::ResourceInstanceRewriteResult>,
     ) -> Result<Self, ResourceRewriteCheckError> {
         let mut rejected_fact = None;
         Self::check_with_children_recording(
@@ -1933,6 +1965,7 @@ impl CheckedResourceRewrite {
             &mut rejected_fact,
             return_observation,
             loan_holds,
+            prepared_instance,
         )
         .map_err(|message| ResourceRewriteCheckError {
             message,
@@ -1953,6 +1986,7 @@ impl CheckedResourceRewrite {
         rejected_fact: &mut Option<Arc<RejectedResourceRewriteFact>>,
         return_observation: Option<Arc<ReturnResourceObservation>>,
         loan_holds: &[crate::kernel::CheckedLoanTransition],
+        prepared_instance: Option<&crate::kernel::functions::ResourceInstanceRewriteResult>,
     ) -> Result<Self, String> {
         if !loan_holds.is_empty() {
             // Check the hold on its own, then check the fold as a
@@ -1978,6 +2012,7 @@ impl CheckedResourceRewrite {
                 rejected_fact,
                 return_observation,
                 &[],
+                None,
             )?;
             checked.before_state = before_state.clone();
             return Ok(checked);
@@ -2255,7 +2290,7 @@ impl CheckedResourceRewrite {
                     return Err("member body access has the wrong resource exchange".into());
                 }
                 if now_open {
-                    memory_only_adds_named_cells(before_state.memory(), after_state.memory())?;
+                    memory_only_adds_named_cells(before_state, after_state.memory())?;
                 } else if !crate::kernel::api::contract_certification::memories_definitionally_equal(
                     before_state.memory(),
                     after_state.memory(),
@@ -2352,18 +2387,24 @@ impl CheckedResourceRewrite {
                 .resources()
                 .owned_instance(instance.identity())
                 .is_some();
-            let rewrite = crate::kernel::rewrite_resource_instance_selecting_children(
-                before_state,
-                instance,
-                definition,
-                function.composite_resource_definitions(),
-                assumptions,
-                unfold,
-                selected_children.as_deref(),
-            )
-            .map_err(|refusal| refusal.describe())?;
-            let expected = rewrite.state;
-            let allowed = rewrite.semantic_facts.into_iter().chain(
+            let checked;
+            let rewrite = if let Some(prepared) = prepared_instance {
+                prepared
+            } else {
+                checked = crate::kernel::rewrite_resource_instance_selecting_children(
+                    before_state,
+                    instance,
+                    definition,
+                    function.composite_resource_definitions(),
+                    assumptions,
+                    unfold,
+                    selected_children.as_deref(),
+                )
+                .map_err(|refusal| refusal.describe())?;
+                &checked
+            };
+            let expected = &rewrite.state;
+            let allowed = rewrite.semantic_facts.iter().cloned().chain(
                 rewrite
                     .body_clauses
                     .iter()
@@ -2388,8 +2429,7 @@ impl CheckedResourceRewrite {
                 // each added cell must hold the canonical load form of its own
                 // pointer at the pre-rewrite state. That is a definitional
                 // identity, checked here per added cell with no search.
-                if let Err(detail) =
-                    memory_only_adds_named_cells(&before_state.memory, &after_state.memory)
+                if let Err(detail) = memory_only_adds_named_cells(before_state, &after_state.memory)
                 {
                     return Err(if unfold {
                         format!(
@@ -2633,6 +2673,25 @@ impl CheckedAutomaticLifetimeEnd {
     }
 }
 
+/// State transition constructed by giving up a selected, held memory view.
+#[derive(Clone)]
+pub(crate) struct CheckedViewRelease {
+    before_state: ExecutionState,
+    after_state: ExecutionState,
+}
+
+impl CheckedViewRelease {
+    pub(crate) fn before_state(&self) -> &ExecutionState {
+        &self.before_state
+    }
+
+    fn advance_checked(&self, state: &ExecutionState) -> Option<&ExecutionState> {
+        (state.memory.same_storage_roots(&self.before_state.memory)
+            && state.shares_non_memory_storage_with(&self.before_state))
+        .then_some(&self.after_state)
+    }
+}
+
 /// One iterated guarded-ownership step, retained with the exact state it
 /// started from and the fact context it was decided under. Construction is
 /// private to the kernel: `record_iterated_step` applies the step itself, and
@@ -2836,7 +2895,7 @@ impl CheckedResourceObservation {
                 (after_state, false)
             }
         };
-        if memory_only_adds_named_cells(before_state.memory(), after_state.memory()).is_err()
+        if memory_only_adds_named_cells(before_state, after_state.memory()).is_err()
             && !crate::kernel::api::contract_certification::memories_definitionally_equal(
                 before_state.memory(),
                 after_state.memory(),
@@ -4346,6 +4405,57 @@ fn interface_join_resources(
     })
 }
 
+/// Accept only the facts supplied by the arms and the written interface.
+fn check_interface_successor_facts(
+    introduced: &[Proposition],
+    arm_facts: [&PureFactStore; 2],
+    interface_propositions: &std::collections::BTreeSet<&Proposition>,
+    exported_resources: &[ResourceFact],
+    intrinsic_facts: &[Proposition],
+    assumptions: &PureFactContext,
+) -> Result<(), &'static str> {
+    let _timing =
+        crate::instrumentation::OperationTiming::new("", "", "branch interface successor facts");
+    let intrinsic_facts = intrinsic_facts
+        .iter()
+        .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut composition_facts = None;
+    for fact in introduced {
+        crate::instrumentation::record_deterministic_work(1);
+        if arm_facts
+            .iter()
+            .all(|facts| checked_branch_fact_is_available(facts, fact))
+            || interface_propositions.contains(fact)
+            || intrinsic_facts.contains(fact)
+        {
+            continue;
+        }
+        // The observable projection can supply a composition of the exports.
+        // Build it lazily, since ordinary facts only need the indexes above.
+        if matches!(fact, Proposition::ResourceComposition(_))
+            && composition_facts
+                .get_or_insert_with(|| {
+                    let _timing = crate::instrumentation::OperationTiming::new(
+                        "",
+                        "",
+                        "branch interface exported composition",
+                    );
+                    ResourceContext::new_with_equalities(assumptions)
+                        .unchecked_with_facts(exported_resources.iter().cloned().inspect(|_| {
+                            crate::instrumentation::record_deterministic_work(1);
+                        }))
+                        .observable_facts_assuming_valid(assumptions)
+                })
+                .contains(fact)
+        {
+            continue;
+        }
+        return Err("the interface successor contains an unchecked new fact");
+    }
+    Ok(())
+}
+
 /// What an explicit join interface makes of two concrete arms: the
 /// abstraction both agree on, the interface resources each arm gives up, the
 /// facts the successor gains, and the checked lowering of every interface
@@ -4527,21 +4637,14 @@ fn construct_interface_abstraction(
     let introduced = successor_facts
         .introduced_since(root_facts)
         .ok_or("the interface successor facts do not descend from the branch root")?;
-    for fact in &introduced {
-        let common_arm_fact = arm_facts
-            .iter()
-            .all(|facts| checked_branch_fact_is_available(facts, fact));
-        let interface_fact = interface_propositions.contains(fact);
-        let interface_resource_fact =
-            ResourceContext::new_with_equalities(successor_facts.assumptions())
-                .unchecked_with_facts(successor_interface_resources.clone())
-                .observable_facts_assuming_valid(successor_facts.assumptions())
-                .contains(fact)
-                || successor_interface_resource_facts.contains(fact);
-        if !common_arm_fact && !interface_fact && !interface_resource_fact {
-            return Err("the interface successor contains an unchecked new fact");
-        }
-    }
+    check_interface_successor_facts(
+        &introduced,
+        arm_facts,
+        &interface_propositions,
+        &successor_interface_resources,
+        &successor_interface_resource_facts,
+        successor_facts.assumptions(),
+    )?;
 
     // A named interface instance carries a model the arms need not agree on.
     // The successor must hold it with the fresh model this join mints, so
@@ -6472,7 +6575,7 @@ pub(crate) struct ExecutionProofCore {
     pub(crate) has_structured_branch_history: bool,
 }
 
-#[cfg_attr(test, derive(Clone))]
+#[derive(Clone)]
 pub(crate) struct CheckedLoopInvariantLowerings {
     pub(super) body: Option<super::object::CheckedInvariantBody>,
     pub(super) retained_state: SharedValue<ExecutionState>,
@@ -6483,6 +6586,18 @@ pub(crate) struct CheckedLoopInvariantLowerings {
     pub(super) ranking_measures: Vec<crate::kernel::RankingComponent>,
     pub(super) facts: super::PureFactStore,
     pub(super) effects: crate::kernel::ExecutionFacts,
+}
+
+impl CheckedLoopInvariantLowerings {
+    pub(super) fn matches_context(
+        &self,
+        core: &ExecutionProofCore,
+        facts: &super::PureFactStore,
+    ) -> bool {
+        self.retained_state.shares_storage_with(&core.state)
+            && self.facts.shares_premises_with(facts)
+            && self.effects.shares_storage_with(&core.effect_facts)
+    }
 }
 
 #[cfg(test)]
@@ -6678,6 +6793,7 @@ fn collect_retained_call_events<'e>(
             | CheckedExecutionEvent::StatementEffects(_)
             | CheckedExecutionEvent::ProofCase(_)
             | CheckedExecutionEvent::ResourceObservation(_)
+            | CheckedExecutionEvent::ViewRelease(_)
             | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::ReturnProposition(_)
             | CheckedExecutionEvent::ResourceRewrite(_)
@@ -7167,6 +7283,10 @@ fn check_evidence_events(
                 state = rewrite.after_state.clone();
                 continue;
             }
+            CheckedExecutionEvent::ViewRelease(release) => {
+                state = release.advance_checked(&state)?.clone();
+                continue;
+            }
             CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) => {
                 state = rewrite.after_state.clone();
                 continue;
@@ -7276,6 +7396,7 @@ fn check_evidence_events(
             | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
             | CheckedExecutionEvent::PopulationMemberRewrite(_)
             | CheckedExecutionEvent::IteratedStep(_)
+            | CheckedExecutionEvent::ViewRelease(_)
             | CheckedExecutionEvent::TacticApplication(_) => {
                 unreachable!("handled before source advance")
             }
@@ -7588,6 +7709,12 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                         .advance_checked(state)
                         .ok_or("population authority rewrite failed certificate check")?
                         .clone();
+                }
+            }
+            CheckedExecutionEvent::ViewRelease(_) => {
+                fallthrough = None;
+                if completed.is_some() {
+                    return Err("release_view must precede function exit");
                 }
             }
             CheckedExecutionEvent::PopulationMemberRewrite(_) => {
@@ -7938,6 +8065,7 @@ fn events_use_the_function_definitions<E: std::borrow::Borrow<CheckedExecutionEv
                         .all(|events| check(function, events, checked_entries))
             }
             CheckedExecutionEvent::LoopEntry { .. }
+            | CheckedExecutionEvent::ViewRelease(_)
             | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::IteratedStep(_)
             | CheckedExecutionEvent::Statement(_)
@@ -8066,6 +8194,7 @@ fn validate_checked_event_shapes_after<'e>(
                 continue;
             }
             CheckedExecutionEvent::LoopEntry { .. }
+            | CheckedExecutionEvent::ViewRelease(_)
             | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::ResourceObservation(_)
             | CheckedExecutionEvent::ReturnProposition(_)
@@ -10352,6 +10481,43 @@ impl ExecutionProofCore {
         Ok(())
     }
 
+    pub(crate) fn record_view_release(
+        &mut self,
+        segment: &crate::kernel::MemorySegment,
+        assumptions: &PureFactContext,
+    ) -> Result<ExecutionState, String> {
+        if self.evidence_completed || self.frontier.is_at_function_entry() {
+            return Err("release_view requires an active function body".into());
+        }
+        let before_state = self.reached_state().clone();
+        let segment = crate::kernel::loops::evaluate_loop_effect_segment(
+            &before_state,
+            segment,
+            assumptions,
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .map_err(|error| {
+            format!(
+                "release_view could not evaluate its operand: {}",
+                error.describe()
+            )
+        })?
+        .map_err(|error| format!("release_view could not evaluate its operand: {error}"))?;
+        let view = ResourceFact::view_memory(segment.into_range());
+        let after_state = before_state.release_produced_view(&view, assumptions)?;
+        let release = CheckedViewRelease {
+            before_state,
+            after_state: after_state.clone(),
+        };
+        self.evidence_state = Some(after_state.clone());
+        for trace in self.execution_evidence.iter_mut() {
+            trace.push(CheckedExecutionEvent::ViewRelease(Box::new(
+                release.clone(),
+            )));
+        }
+        Ok(after_state)
+    }
+
     pub(crate) fn record_automatic_lifetime_end(
         &mut self,
         state: &ExecutionState,
@@ -10921,6 +11087,106 @@ impl ExecutionProofCore {
         )
     }
 
+    /// Construct and retain the selected unfold once. Surface may name the
+    /// exposed cells at that point; the ordinary observation checks validate
+    /// that presentation against this exact exchange.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn unfold_resource_instance_with_children(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        before_facts: &PureFactStore,
+        instance: &crate::kernel::ResourceInstance,
+        selected_children: Option<Arc<[(String, InstanceId)]>>,
+        materialize: impl FnOnce(
+            &crate::kernel::functions::ResourceInstanceRewriteResult,
+            &PureFactStore,
+        ) -> ExecutionState,
+    ) -> Result<
+        (
+            crate::kernel::functions::ResourceInstanceRewriteResult,
+            PureFactStore,
+        ),
+        InstanceUnfoldError,
+    > {
+        if self.evidence_completed {
+            return Err(InstanceUnfoldError::Recording(
+                "a resource rewrite was recorded after the trace completed".into(),
+            ));
+        }
+        let definition = function
+            .proof_composite_resource_definition(instance.name())
+            .ok_or_else(|| {
+                InstanceUnfoldError::Construction(
+                    "instance definition is not registered on the function".into(),
+                )
+            })?;
+        let mut result = crate::kernel::rewrite_resource_instance_selecting_children(
+            &self.state,
+            instance,
+            definition,
+            function.composite_resource_definitions(),
+            before_facts.assumptions(),
+            true,
+            selected_children.as_deref(),
+        )
+        .map_err(InstanceUnfoldError::Construction)?;
+        let after_facts = result
+            .semantic_facts
+            .iter()
+            .fold(before_facts.clone(), |facts, fact| {
+                facts.with_kernel_checked_fact(fact.clone())
+            });
+        let after_state = materialize(&result, &after_facts);
+        // A proof view can differ from the state reached by the trace. The
+        // retained exchange is reusable only at its exact input.
+        let before_state = self.reached_state();
+        let state = &*self.state;
+        let same_pending_steps = match (
+            &before_state.memory.pending_steps,
+            &state.memory.pending_steps,
+        ) {
+            (None, None) => true,
+            (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+            _ => false,
+        };
+        let prepared = (same_pending_steps
+            && before_state
+                .path_link()
+                .shares_point_and_view(state.path_link())
+            && before_state
+                .resources()
+                .shares_projection_inputs_with(state.resources())
+            && before_state == state)
+            .then_some(&result);
+        let selected = ResourceFact::own(Resource::Instance(instance.clone()));
+        let checked = CheckedResourceRewrite::check_with_return_observation(
+            function,
+            before_state,
+            before_facts,
+            &selected,
+            &after_state,
+            &after_facts,
+            &self.checked_call_events,
+            selected_children,
+            None,
+            &[],
+            prepared,
+        )
+        .map_err(InstanceUnfoldError::Recording)?;
+        self.retain_resource_rewrite(
+            function,
+            arguments,
+            before_facts,
+            &after_facts,
+            checked,
+            false,
+        )
+        .map_err(InstanceUnfoldError::Recording)?;
+        result.state = after_state;
+        Ok((result, after_facts))
+    }
+
     /// A proof `fold` whose owned head packages a loan-backed view places one
     /// hold on that loan's scope. The rewrite check applies that exact hold
     /// transition to the input ledger rather than accepting any ledger change.
@@ -10942,7 +11208,7 @@ impl ExecutionProofCore {
                 .to_string()
                 .into());
         }
-        let mut rewrite = CheckedResourceRewrite::check_with_children_diagnostic(
+        let rewrite = CheckedResourceRewrite::check_with_children_diagnostic(
             function,
             self.reached_state(),
             before_facts,
@@ -10953,6 +11219,25 @@ impl ExecutionProofCore {
             selected_children,
             loan_holds,
         )?;
+        self.retain_resource_rewrite(
+            function,
+            arguments,
+            before_facts,
+            after_facts,
+            rewrite,
+            defer,
+        )
+    }
+
+    fn retain_resource_rewrite(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        before_facts: &PureFactStore,
+        after_facts: &PureFactStore,
+        mut rewrite: CheckedResourceRewrite,
+        defer: bool,
+    ) -> Result<(), ResourceRewriteCheckError> {
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
             rewrite.before_state = crate::kernel::program_function_entry_state(
                 &rewrite.before_state,
