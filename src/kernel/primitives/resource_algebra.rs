@@ -10600,6 +10600,41 @@ mod zero_quantity_graph_tests {
     }
 
     #[test]
+    fn separately_retained_units_are_consumed_together_without_normalizing() {
+        let assumptions = PureFactContext::new();
+        let one = required(MachineTerm::constant(1));
+        let two = required(MachineTerm::constant(2));
+        let three = required(MachineTerm::constant(3));
+        let pair = ResourceContext::new().unchecked_with_facts([one.clone(), one.clone()]);
+        assert!(
+            pair.clone()
+                .without_fact_delaying_normalization(&two, &assumptions)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            pair.clone()
+                .without_fact_delaying_normalization(&three, &assumptions)
+                .is_none()
+        );
+        // The merged unit keeps its residual.
+        let left = ResourceContext::new()
+            .unchecked_with_facts([one.clone(), one.clone(), one.clone()])
+            .without_fact_delaying_normalization(&two, &assumptions)
+            .unwrap();
+        assert!(left.satisfies_fact(&one, &assumptions));
+        assert!(!left.satisfies_fact(&two, &assumptions));
+        // A view of the resource is not a unit of it.
+        let viewed = ResourceContext::new()
+            .unchecked_with_facts([ResourceFact::View(one.resource().clone()), one.clone()]);
+        assert!(
+            viewed
+                .without_fact_delaying_normalization(&two, &assumptions)
+                .is_none()
+        );
+    }
+
+    #[test]
     fn zero_ownership_uses_graph_with_state_scope() {
         let _session = crate::kernel::VerificationSession::enter();
         let before =

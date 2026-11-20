@@ -49,3 +49,68 @@ fn zero_ownership_graph_queries_scale_without_fact_index() {
         assert!(work < 300 * size as usize, "size={size}, work={work}");
     }
 }
+
+#[test]
+fn merged_unit_consumption_is_flat_in_unrelated_resources() {
+    let assumptions = PureFactContext::new();
+    let one = required(MachineTerm::constant(1));
+    let two = required(MachineTerm::constant(2));
+    let unrelated = |index: u32| {
+        ResourceFact::own_quantity(
+            Resource::Composite {
+                name: format!("unrelated-{index}"),
+                arguments: Vec::new().into(),
+            },
+            MachineTerm::constant(1),
+        )
+    };
+    let samples = [16_u32, 64, 256, 1024].map(|size| {
+        let context = ResourceContext::new().unchecked_with_facts(
+            (0..size)
+                .map(unrelated)
+                .chain([one.clone(), one.clone()]),
+        );
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(
+                context
+                    .clone()
+                    .without_fact_delaying_normalization(&two, &assumptions)
+                    .is_some()
+            );
+        });
+        work
+    });
+    assert!(samples[0] > 0, "{samples:?}");
+    for work in samples {
+        assert_eq!(work, samples[0], "{samples:?}");
+    }
+}
+
+#[test]
+fn merged_unit_consumption_is_linear_in_the_units_it_merges() {
+    let assumptions = PureFactContext::new();
+    let samples = [8_u32, 32, 128, 512].map(|size| {
+        let context = ResourceContext::new()
+            .unchecked_with_facts((0..size).map(|_| required(MachineTerm::constant(1))));
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(
+                context
+                    .clone()
+                    .without_fact_delaying_normalization(
+                        &required(MachineTerm::constant(size)),
+                        &assumptions,
+                    )
+                    .unwrap()
+                    .is_empty()
+            );
+        });
+        (size, work)
+    });
+    let (base_size, base_work) = samples[0];
+    for (size, work) in samples {
+        assert!(
+            work <= base_work * (size / base_size) as usize + 64,
+            "{samples:?}"
+        );
+    }
+}
