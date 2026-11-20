@@ -304,8 +304,8 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
             let mut calls = Vec::new();
             contract_expression_reads_memory(expression, &mut calls)
         }
-        // Liveness of storage the body itself owns is stable under a loan:
-        // a live loan over any of those bytes forbids freeing the
+        // Liveness of storage the body itself owns is stable under a borrow:
+        // a live borrow over any of those bytes forbids freeing the
         // allocation. Liveness of anything else is not.
         ClickProposition::Loadable { segment } => {
             !owned_bases.iter().any(|base| **base == segment.base)

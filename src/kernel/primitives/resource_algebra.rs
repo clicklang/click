@@ -2500,7 +2500,7 @@ impl ResourceContext {
     /// Only changed keys are visited. Derived projections are not independent
     /// authority: remove affected cached projections and let later reads derive
     /// them again from the surviving supports. Keep direct occurrences so the
-    /// exit's checked loan bindings still name exactly the same authority.
+    /// exit's checked borrow bindings still name exactly the same authority.
     pub(crate) fn restore_frame_after_exchange(
         &self,
         body: &Self,
@@ -2661,11 +2661,11 @@ impl ResourceContext {
         fact.is_view().then_some(fact)
     }
 
-    /// Retire the exact principal view installed for a checked loan. General
+    /// Retire the exact principal view installed for a checked borrow. General
     /// resource consumption leaves views in place because descriptions are
     /// copyable; closing an escrow instead removes its particular occurrence
     /// before returning the owner. The dependency ties this removal to the
-    /// same live binding the loan recovery just discharged.
+    /// same live binding the borrow recovery just discharged.
     pub(crate) fn without_bound_view_occurrence(
         mut self,
         occurrence: ResourceOccurrenceId,
@@ -3059,9 +3059,9 @@ impl ResourceContext {
                 }
             }
         }
-        // Only an occurrence that carried a loan dependency changes the
+        // Only an occurrence that carried a borrow dependency changes the
         // dependency state. Minting a new identity for an unchanged map would
-        // detach this context from the loan-binding mirror its state keeps
+        // detach this context from the borrow-binding mirror its state keeps
         // beside it, which is checked by pointer identity.
         if removed_occurrences
             .iter()
@@ -3799,7 +3799,7 @@ impl ResourceContext {
 
     /// Select a deterministic owned candidate from the pointer index. Multiple
     /// returned sibling shares are legitimate. This lookup grants no authority:
-    /// callers must still check the selected loan, initialization, and type.
+    /// callers must still check the selected borrow, initialization, and type.
     pub(crate) fn mutex_use_candidate_at(&self, pointer: &Address) -> Option<&ResourceFact> {
         let entries = self
             .storage
@@ -4459,7 +4459,7 @@ impl ResourceContext {
     }
 
     /// One indexed observation witness for refusal classification and the
-    /// loan coalescing prepass. This grants no loan authority and does not
+    /// borrow coalescing prepass. This grants no borrow authority and does not
     /// search another candidate if the nominated entry is unsuitable.
     pub(crate) fn has_indexed_view_witness(
         &self,
@@ -4497,7 +4497,7 @@ impl ResourceContext {
     /// Resolve an authored input against the checked partition. An exact
     /// principal occurrence wins over other views covering the same bytes.
     /// After normalization a single covering principal may represent several
-    /// clauses, in which case they install one loan for that occurrence.
+    /// clauses, in which case they install one borrow for that occurrence.
     pub(crate) fn principal_input_view_occurrence(
         &self,
         required: &ResourceFact,
@@ -4523,7 +4523,7 @@ impl ResourceContext {
 
     /// Return indexed view occurrences that entail `required`. The caller
     /// resolves each occurrence through an explicit checked-state binding;
-    /// this method never searches the loan ledger or unrelated frame entries.
+    /// this method never searches the borrow ledger or unrelated frame entries.
     pub(crate) fn view_occurrences_for_fact(
         &self,
         required: &ResourceFact,
@@ -4640,7 +4640,7 @@ impl ResourceContext {
 
     /// The live owned support a projected view occurrence was published
     /// from, when `occurrence` is such a projection. A projection carries no
-    /// loan of its own: its authority is the exact owned occurrence it is
+    /// borrow of its own: its authority is the exact owned occurrence it is
     /// indexed under, so a read it covers is a read of that owner's memory.
     /// Answered by the occurrence's own entry, without scanning the frame.
     pub(crate) fn owned_projection_support(
@@ -5444,7 +5444,7 @@ impl ResourceContext {
     }
 
     /// Find one exposed member through address keys, never through ambient
-    /// resources. Borrowed members require an occurrence-bound checked loan;
+    /// resources. Borrowed members require an occurrence-bound checked borrow;
     /// an owner's ordinary read observation is deliberately ineligible.
     pub(in crate::kernel) fn partition_memory_member_at(
         &self,
@@ -5491,7 +5491,7 @@ impl ResourceContext {
     }
 
     /// A checked live borrow and a separately held owner belong to disjoint
-    /// custody partitions. The loan binding follows checked composite
+    /// custody partitions. The borrow binding follows checked composite
     /// projections; observation alone never manufactures such a binding.
     pub(in crate::kernel) fn proves_borrow_partition_separate(
         &self,
@@ -8032,7 +8032,7 @@ impl ResourceContext {
         }
         if fact.is_view() {
             // Observing a view preserves the supplier, including its occurrence
-            // and loan identities. Joining fragments requires explicit proof.
+            // and borrow identities. Joining fragments requires explicit proof.
             let supported = self
                 .directly_supporting_memory_fact(fact, range, assumptions)
                 .is_some();
@@ -8226,7 +8226,7 @@ impl ResourceContext {
         }
     }
 
-    /// Join only the suppliers selected for the explicit footprint. Loan-bound
+    /// Join only the suppliers selected for the explicit footprint. Borrow-bound
     /// observations keep their original occurrences and cannot be coalesced.
     /// This is proportional to selected input, never the ambient context.
     fn normalized_memory_suppliers(
@@ -8649,7 +8649,7 @@ impl ResourceContext {
     /// Forget the read authority an owned instance publishes for the cells
     /// its body owns. It is an observation of that instance, derived again
     /// wherever the instance is made, and carries no capability beyond
-    /// holding it. Loan-bound views stay. The work is the supported entries
+    /// holding it. Borrow-bound views stay. The work is the supported entries
     /// this context holds.
     pub(in crate::kernel) fn without_owned_instance_read_views(mut self) -> Self {
         if self.storage.supported_by.is_empty() {
@@ -8674,7 +8674,7 @@ impl ResourceContext {
     }
 
     /// Forget only observations and identity expansions of a memory owner.
-    /// Neither carries a capability beyond that same owner. Live loan-bound
+    /// Neither carries a capability beyond that same owner. Live borrow-bound
     /// views and nontrivial supported descriptions remain distinct.
     pub(in crate::kernel) fn without_redundant_owned_memory_views(mut self) -> Self {
         let entries = self
@@ -8720,7 +8720,7 @@ impl ResourceContext {
 
     /// Coalesce only the written neighbors reached by this insertion. Every
     /// successful iteration consumes one changed occurrence; unrelated facts,
-    /// aliases, projections, and loan dependencies retain their identities.
+    /// aliases, projections, and borrow dependencies retain their identities.
     pub(in crate::kernel) fn normalized_delta(
         mut self,
         inserted: Vec<(ResourceFact, ResourceOccurrenceId)>,
@@ -8932,8 +8932,8 @@ impl ResourceContext {
             index.insert(position, fact);
         }
         // A merged fact is a new authority with no occurrence, so merging a
-        // loan-bound view would silently discard the dependency that
-        // authorizes reading it. Under stable-loan semantics the split
+        // borrow-bound view would silently discard the dependency that
+        // authorizes reading it. Under stable-borrow semantics the split
         // representation is the checked one; keep it. The map is empty under
         // legacy semantics, so this costs nothing and changes nothing there.
         let loan_bound = |occurrence: &Option<ResourceOccurrenceId>| {
@@ -9176,7 +9176,7 @@ enum ResourceNormalizationKey {
 
 /// Written normalization candidates are maintained with each resource delta.
 /// Querying a key nominates at most two entries (one may be the query itself).
-/// A missed or loan-bound nominee leaves the split representation intact.
+/// A missed or borrow-bound nominee leaves the split representation intact.
 #[derive(Clone, Debug, Default)]
 pub(super) struct WrittenNormalizationIndex {
     entries: PersistentMap<(ResourceNormalizationKey, bool), ResourceEntryIds>,
@@ -10115,7 +10115,7 @@ fn consume_memory_resource_fact(
         // read and inspect what it owns without lending to itself.
         //
         // It is not how a call's `views` requirement is met. That takes an
-        // escrowed owner and an opened loan, which only the stable-view
+        // escrowed owner and an opened borrow, which only the stable-view
         // planner does, and the planner reserves and lends before any
         // requirement it planned can reach consumption: a call transfer sends
         // exactly the requirements the plan did not reserve down the
@@ -10615,7 +10615,7 @@ fn consume_exact_resource_fact(
 /// A **bound** view — one whose occurrence carries a live `loan_dependency` —
 /// must never be absorbed: the merged fact is a new authority with no
 /// occurrence, so the dependency that authorizes reading it would vanish and
-/// the loan would disappear with it. `ResourceContext::normalized` is the
+/// the borrow would disappear with it. `ResourceContext::normalized` is the
 /// only caller, and its `loan_bound` guard skips both sides of every pair
 /// whose occurrence has a live dependency, and detaches supported projections
 /// before normalizing at all. That guard, not this function, is what makes
@@ -10645,7 +10645,7 @@ fn combine_exact_resource_facts(
 /// The owner-observation rule (docs/internals/stable-views.md).
 ///
 /// An owner may read what it owns and inspect its composite without issuing a
-/// stable loan to itself, so a positive owned fact exposes a viewed
+/// stable borrow to itself, so a positive owned fact exposes a viewed
 /// description of the same resource. That description is an *observation* of
 /// ownership the same context holds: it mints no access share, no scope, and
 /// no recovery right, and it is only as good as the ownership it is read off.
@@ -10660,7 +10660,7 @@ fn combine_exact_resource_facts(
 ///   description a checked lend transition hands the callee.
 ///
 /// It never answers a *call's* `views` requirement on its own. Meeting one
-/// escrows the owner and opens a loan, and only the stable-view planner does
+/// escrows the owner and opens a borrow, and only the stable-view planner does
 /// that; a call transfer never routes a view requirement into consumption.
 /// The projection is not authority the callee could carry: it is read off
 /// ownership that stays where it is, so nothing survives the observing
@@ -11543,7 +11543,7 @@ fn pointer_offsets_equal_with_load_bridging(
 ///
 /// This is the shared spelling-independent form of a memory footprint (D6).
 /// [`MemoryRange::byte_footprint`] already derives the pointer and the byte
-/// length, and `protected_range_proven_overlapping` in the loan oracle asks
+/// length, and `protected_range_proven_overlapping` in the borrow oracle asks
 /// its question in exactly these terms; this helper keeps the memory family's
 /// relations on that one normalization rather than inventing a second.
 // Coverage, splitting and overlap all dispatch wide ranges before normalization.
@@ -13189,7 +13189,7 @@ fn memory_ranges_proven_overlapping_without_aliases(
     // Footprints are bytes (D6): two spellings of overlapping bytes at
     // different element widths overlap, so the memory family's validity check
     // refuses two owners of them. Rewrite both sides to width-1 footprints
-    // before deciding, exactly as the loan oracle does
+    // before deciding, exactly as the borrow oracle does
     // (`protected_range_proven_overlapping`).
     if left.element_width() != right.element_width() {
         let left = byte_normalized_memory_range(left);

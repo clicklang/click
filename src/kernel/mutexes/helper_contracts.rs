@@ -357,7 +357,10 @@ pub(in crate::kernel) fn check_call_access(
             let holder = state
                 .loan_participant
                 .ok_or("missing mutex use participant")?;
-            let loans = state.loan_ledger.as_ref().ok_or("missing mutex use loan")?;
+            let loans = state
+                .loan_ledger
+                .as_ref()
+                .ok_or("missing mutex use borrow")?;
             let binding = usage.binding.ok_or("missing rooted mutex use authority")?;
             if loans.mutex_use_resource(binding, holder).ok().as_ref() != Some(source) {
                 return Err(MutexTransitionError::MissingUse(required.mutex.clone()));

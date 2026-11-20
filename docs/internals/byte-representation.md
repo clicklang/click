@@ -113,7 +113,7 @@ its source as a view while lending the overlapping destination as owned. A desti
 reader (`mdtests/byte_representation_borrowed_destination_rejected.md`, a
 modeled-pthread worker viewing heap bytes, with the after-join control
 `mdtests/byte_representation_borrowed_destination_after_join.md`) fails
-`owns uninitialized(destination[0..bytes])`. A loan escrows the owner's write authority, as
+`owns uninitialized(destination[0..bytes])`. A borrow escrows the owner's write authority, as
 described in [Stable views](stable-views.md). A `static const` destination
 never reaches the call: the C frontend refuses discarding its `const`
 qualification (`mdtests/byte_representation_const_destination_rejected.md`).

@@ -2,7 +2,7 @@
 //!
 //! The loop rule checks resource custody at entry and every backedge. This
 //! module changes only protocol metadata; neither abstraction nor resolving
-//! its heldness creates an owned guard. Payloads and loan-backed guards are
+//! its heldness creates an owned guard. Payloads and borrow-backed guards are
 //! deliberately excluded until the loop rule can account for their custody.
 use super::*;
 
@@ -117,7 +117,7 @@ impl MutexLedger {
 
     /// The caller has independently checked that each listed mutex's returned
     /// loop resource accounts for its actual heldness. All other entries keep
-    /// the strict protocol comparison, including acquisition and loan identity.
+    /// the strict protocol comparison, including acquisition and borrow identity.
     pub(in crate::kernel) fn check_loop_protocol_state_since(
         &self,
         next: &Self,

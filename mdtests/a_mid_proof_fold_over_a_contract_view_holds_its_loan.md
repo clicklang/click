@@ -1,8 +1,8 @@
-# A mid-proof fold over a contract's view holds its loan
+# A mid-proof fold over a contract's view holds its borrow
 
 `first` receives `views p[0..1]` by contract. Folding `cell(p)`, whose body
 views that cell, packages the borrowed view into an owned head, and the fold
-places a hold on the view's loan so the head's body cannot outlive the
+places a hold on the view's borrow so the head's body cannot outlive the
 borrow. The fold is allowed anywhere in the proof, not only at a `produces`
 return: `first` folds and unfolds before executing, and `lend` folds, lends
 the head to a callee that views `cell(p)`, and unfolds it after the call.

@@ -37,7 +37,7 @@ removed, so it has to stay small.
 | Fact store | Hold the path's facts in persistent indexes, with the equality closure and the difference graph | fast | `PureFactStore` in `src/kernel/proof/facts.rs`, its `PureFactContext` component in `src/kernel/assumptions.rs`, `src/kernel/equality_graph*`, `src/kernel/difference_graph.rs` |
 | Condition decision | Decide one condition (order, overflow, equality, consistency) from the facts | fast | `PureFactContext::decide`, `src/kernel/assumptions/condition_reasoning/` |
 | Memory | Memory states, the memory derivation DAG, and load and store resolution | fast | `src/kernel/primitives/cell_store.rs`, `src/kernel/reasoning/memory_resolution.rs`, `src/kernel/memory_history.rs` |
-| Resources | Ownership, views, loans, folds, and separation | fast | `src/kernel/primitives/resource_algebra.rs`, `src/kernel/resource_tracker/`, `src/kernel/loans.rs` |
+| Resources | Ownership, views, borrows, folds, and separation | fast | `src/kernel/primitives/resource_algebra.rs`, `src/kernel/resource_tracker/`, `src/kernel/loans.rs` |
 | Simple tactics | Apply one checked step to a persistent proof state | fast | `src/kernel/proof/object.rs`, `src/surface/proof/proof_object/`, `src/surface/proof/checked_drivers/` |
 | Proof construction | Construct ordinary proof steps and check local arithmetic primitives | fast | `src/kernel/proof/{object,fact_reasoning,arithmetic_special}.rs`, `src/surface/proof_certificate.rs` |
 | Termination | Plan recursion heights over the call graph, then check them | fast | `src/kernel/termination.rs` |
@@ -335,7 +335,7 @@ common mechanism names belong to.
 | memory derivation DAG, state, cell store | How memory states and their cells are stored and related | Memory (fast) |
 | DAG bridging | Relating a load at one state to cells of an earlier one | Memory (fast) |
 | carriers, compositions, separation | How owned resources and their disjointness are represented | Resources (fast) |
-| fold, unfold, views, loans | Building, opening, and borrowing resources | Resources (fast) |
+| fold, unfold, views, borrows | Building, opening, and borrowing resources | Resources (fast) |
 | proof object, proof step | The persistent proof state and one checked change to it | Simple tactics (fast) |
 | certificate | An explicit derivation the kernel checks without search | Certificates (fast) |
 | planner (signed, `Integer` affine, special, simplex refutation) | Chooses an ordinary arithmetic proof plan | Smart tactics (slow) |
@@ -490,7 +490,7 @@ the build boundary rejects the removed search and per-slot routes.
 Named `unfold` publishes the constructed successor composition so explicit
 separation can use the existing checked-borrow partition rule. This publication
 follows body evaluation; temporary body assumptions must not index the caller
-frame. Incoming loans remain distinct from ordinary read observations, and a
+frame. Incoming borrows remain distinct from ordinary read observations, and a
 caller cannot lend the owner it transfers. The named-unfold alias-call and
 two-view refusal fixtures pin these restrictions.
 
@@ -537,7 +537,7 @@ memory queries for other ownership quantities retain separate routes.
 
 Incremental memory-view consumption uses the same single-supplier check.
 Observing a view returns the original context, preserving supplier occurrences,
-loan bindings and split origins. It does not consume an owner or construct a
+borrow bindings and split origins. It does not consume an owner or construct a
 normalized resource context. A view spanning adjacent fragments needs explicit
 composition before this check; a failed lookup does not search for a partition.
 Scaling controls cover cold and repeated misses and exact early/late hits for
@@ -555,7 +555,7 @@ identity. The map changes only with the selected split output and is discarded
 after planning; ordinary resource contexts acquire no history or new facts.
 Boundary checks forbid the removed search and context-history reconstruction;
 scaling controls grow incident bounds, observations, and successive splits.
-Loan bindings retain persistent indexes of bound occurrences, keyed by exact
+Borrow bindings retain persistent indexes of bound occurrences, keyed by exact
 view and by written memory base or nonmemory resource shape. Updates touch
 only the changed occurrences. Exact requests nominate the first indexed bound
 identity; nonexact requests nominate through a singleton bucket or binding
@@ -571,7 +571,7 @@ or replacement updates only that branch.
 Call planning uses this selection for parent and callee bindings; boundary
 guards forbid observation enumeration and implicit fragment coalescing in
 `loans.rs`. Refusal classification may consult one indexed
-observation witness; that lookup grants no loan authority and never retries. When lending a selected owner, consumption receives that occurrence
+observation witness; that lookup grants no borrow authority and never retries. When lending a selected owner, consumption receives that occurrence
 directly, aligns the requested slice and consumes only it, retaining split
 origins with the successor. It does not rediscover a supplier or join other
 fragments on failure. Scaling controls measure both selection and complete
@@ -707,7 +707,7 @@ axiom or pure fact. The complete fold/unfold scaling control measures successful
 mixed-width composition and a fixed early gap beside growing rejected fragments,
 including repeated work and persistent-map visits. A native-request fold control
 also measures a whole owner, two-piece composition, and a fixed early gap.
-Loan planning itself does not perform that composition automatically.
+Borrow planning itself does not perform that composition automatically.
 
 Declared-resource lowering selects parameter values from the names in its
 explicit arguments, including quantities and nested resource-type arguments.

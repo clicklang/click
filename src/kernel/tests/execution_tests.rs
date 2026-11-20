@@ -153,10 +153,10 @@ fn active_memory_loan(range: MemoryRange) -> BorrowLedger {
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
         .lend(owner, reader, support, fact)
-        .expect("memory loan");
+        .expect("memory borrow");
     ledger
         .apply(&opening.transition)
-        .expect("memory loan apply")
+        .expect("memory borrow apply")
 }
 
 fn normal_state(paths: &[StatementExecutionPath]) -> ExecutionState {
@@ -174,7 +174,7 @@ fn normal_state(paths: &[StatementExecutionPath]) -> ExecutionState {
 
 fn assert_loan_write_rejected(outcome: &StatementOutcome) {
     let StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)) = outcome else {
-        panic!("expected a loan refusal, got {outcome:?}");
+        panic!("expected a borrow refusal, got {outcome:?}");
     };
     assert_eq!(
         diagnostic.category(),
@@ -197,7 +197,7 @@ fn loan_write_separation(path: &StatementExecutionPath) -> (&Resource, &Resource
     };
     let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
         panic!(
-            "expected loan separation, got {:?}",
+            "expected borrow separation, got {:?}",
             obligation.proposition()
         );
     };
@@ -2276,7 +2276,7 @@ fn prerequisite_loop_rule_fixture() -> (ProgramStatement, VerifiedLoopRule) {
 }
 
 /// R23's back-edge case. A loop head that holds a stable-view root can only
-/// close its back edge at the *same* loan authority. Two body paths that a
+/// close its back edge at the *same* borrow authority. Two body paths that a
 /// term-level comparison would call equal are refused here: one that handed
 /// the live share away, and one that built a fresh root over the same support
 /// occurrence instead of carrying the head's. The resource context, the
@@ -2366,7 +2366,10 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
         definitions,
     )
     .expect_err("a back edge cannot regenerate the head's root");
-    assert!(refusal.contains("stable-view loan authority"), "{refusal}");
+    assert!(
+        refusal.contains("stable-view borrow authority"),
+        "{refusal}"
+    );
 
     // A body path that handed the live share to someone else.
     let reader = head_ledger
@@ -2386,7 +2389,10 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
         definitions,
     )
     .expect_err("a back edge cannot discard the share the head holds");
-    assert!(refusal.contains("stable-view loan authority"), "{refusal}");
+    assert!(
+        refusal.contains("stable-view borrow authority"),
+        "{refusal}"
+    );
 }
 
 #[test]

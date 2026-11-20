@@ -13,6 +13,11 @@ The campaign that landed it, "fix-views", ran from 2026-09-11 to
 
 ## Meaning
 
+A **view** is the read-only resource a proof can hold. A **borrow** keeps
+its backing resource stable for a **borrow scope**. In a return clause,
+`from` names the **borrow source**, the input clause that supplies the
+backing. A **reborrow** takes its authority from an existing borrow.
+
 `owns memory(R)` is exclusive usable authority over the selected range; a
 direct read needs no separate view. `views memory(R)` is shared, read-only
 authority for a borrow scope: the covered contents and the allocation
@@ -32,7 +37,7 @@ never retargets when a pointer-valued field changes; a view of a pointer
 cell does not protect the pointee unless the resource body includes it. An
 empty range grants no dereference, protects nothing, and proves neither
 nonnullness nor a live allocation. A call requirement whose range endpoints
-are equal under the checked context needs no backing or loan transition,
+are equal under the checked context needs no backing or borrow transition,
 matching the resource algebra's empty-range entailment. Unknown endpoints
 continue through ordinary backing checks.
 
@@ -42,7 +47,7 @@ Every transition below preserves these laws with an arbitrary compatible
 frame present.
 
 1. Authority conservation: a byte range's write authority is usable in one
-   component, suspended in a loan, or transferred. Suspending it leaves no
+   component, suspended in a borrow, or transferred. Suspending it leaves no
    usable copy in a folded owner, an implicit stack capability, a callback
    frame, or a remembered composition.
 2. Reader stability: while a view has valid access authority, no compatible
@@ -52,12 +57,12 @@ frame present.
    entailment, a normalization, a fold, or a theorem.
 4. Descriptor/authority separation: copying, dropping, or deduplicating a
    description changes no live share and no recovery entitlement.
-5. Exact identity: scope, loan, allocation lifetime, resource occurrence, and
+5. Exact identity: scope, borrow, allocation lifetime, resource occurrence, and
    support generation are semantic identities; equal written forms and equal
    values do not identify them.
 6. Supported facts retain support: an owner-supported observation is usable
-   only through its current support; a loan-supported one also needs the
-   active loan; a fact about an old state is history, not authority.
+   only through its current support; a borrow-supported one also needs the
+   active borrow; a fact about an old state is history, not authority.
 7. Locality: rule checking touches the named authority and its indexed
    dependencies, never the whole frame.
 8. No authority from unknown aliasing: a lending partition needs checked
@@ -71,7 +76,7 @@ frame present.
 
 ## State
 
-The loan ledger (`src/kernel/loans.rs`) lives in the checked state root
+The borrow ledger (`src/kernel/loans.rs`) lives in the checked state root
 beside the resource context and is shared by ordinary evaluation, modular
 calls, proof execution, and certification. It is persistent, indexed, and
 opaque: every transition produces evidence bound to the exact predecessor
@@ -80,16 +85,21 @@ state identity, and identity changes only on authority-changing transitions.
 | Record | Holds |
 | --- | --- |
 | Scope | Fresh identity, active flag, root share, close entitlement, parent scope and pinned parent share, dependent child scopes, holds. |
-| Loan | Scope, supporting occurrence, escrow (the suspended owned pieces), permitted descriptions, origin (escrowed, reborrowed, or borrowed contract input), memory backing. |
+| Borrow | Scope, supporting occurrence, escrow (the suspended owned pieces), permitted descriptions, origin (escrowed, reborrowed, or borrowed contract input), memory backing. |
 | Share | A node of a binary split/join tree for one scope: holder, parent, children, pinning child scope. |
-| Binding | Per resource occurrence in the resource context: loan, scope, share, support, the viewed description, and an optional hold. |
-| Indexes | Concrete active memory intervals (dyadic), symbolic protected ranges per block, and the count of loans that protect memory. |
+| Binding | Per resource occurrence in the resource context: borrow, scope, share, support, the viewed description, and an optional hold. |
+| Indexes | Concrete active memory intervals (dyadic), symbolic protected ranges per block, and the count of borrows that protect memory. |
 
 Descriptions are copyable; shares are conserved; the close entitlement is
 unique; recovery happens once per escrow. Only the reconstructed root share
 can end a scope. A binding is what carries authority into a resource
 occurrence; the resource context's dependency root is the canonical copy
 and the state mirrors it.
+
+A **hold** keeps a borrow scope open. A **share** tracks a participant's
+authority in that scope. **Escrow** is ownership reserved for restoration.
+Use *release a view* for giving up the selected resource, *end a borrow*
+for closing its scope, and *restore ownership* for returning the escrow.
 
 ## Transitions
 
@@ -100,7 +110,7 @@ and the state mirrors it.
 | Borrowed contract input | A contract `views` clause at function entry | A root with no close right: the lender lives outside the modular proof |
 | Reborrow | A live parent binding | A child scope pinning the parent share; the child carries only the description that authorized it and the backing under it |
 | Split, join, transfer | Exact siblings and holders | Conserved shares |
-| Project | The kernel's one-level expansion of a permitted composite view | A derived description on the same loan, identity unchanged |
+| Project | The kernel's one-level expansion of a permitted composite view | A derived description on the same borrow, identity unchanged |
 | Hold, release | A live binding | A restriction on the scope that End refuses while it exists; each change mints a fresh ledger identity |
 | End | Close entitlement, full root share, no dependents, no holds | The scope ended, the parent share unpinned |
 | Recover | An ended scope and the unique entitlement | The escrow restored exactly once |
@@ -161,7 +171,7 @@ compositions: structural separation already protects them, and unrelated local
 declarations must not restate the pointer frame. Addressable locals remain in
 those compositions. A view
 of other live caller-local storage with indexed evidence of no explicit memory
-resource is backed by a checked local-storage loan. Classification checks the
+resource is backed by a checked local-storage borrow. Classification checks the
 allocation's memory-fact bucket, not whether fragments jointly cover the view.
 Any partial owner or view selects the explicit route. Nonconcrete memory
 allocation identities, or pointer-alias facts alongside memory resources,
@@ -170,10 +180,10 @@ count of nonconcrete memory facts updates with each persistent resource edit;
 classification does not scan that frame. Its byte
 range must fit inside the live allocation. Checked entry storage includes
 fresh by-value aggregate parameter copies as well as the caller's original
-locals. The loan grants a callee share and a caller close right, but escrows
+locals. The borrow grants a callee share and a caller close right, but escrows
 no owned fact; closing it restores implicit access without adding an ownership
 resource. Opening a root checks the retained allocation and byte range
-against indexed live loans. Ambiguous coordinates require a separation
+against indexed live borrows. Ambiguous coordinates require a separation
 proof at call entry. Worker reborrows use the selected existing binding.
 Read-only storage retains intrinsic read authority and is neither
 lent nor recovered. So does a view of a composite whose checked one-level
@@ -183,7 +193,7 @@ as `cstr_at` of a literal; a contract value parameter such as its `len` takes
 the one value the bytes leave (`string_literal_instance_values`). A view of a
 composite, restricted the same way, whose checked one-level expansion is only
 unsupplied caller-local storage, such as `cstr_at` of a local `char` array, is
-backed by those pieces: each is lent as a checked local-storage loan, as a
+backed by those pieces: each is lent as a checked local-storage borrow, as a
 plain view of it would be, and the composite needs no owner
 (`local_storage_composite_pieces`). Its body facts must hold at the call; a
 `defined(...)` read at a constant offset holds when the state stores a
@@ -198,14 +208,14 @@ indexes the owners removed by reservation. The check visits the explicit
 frontier and uses indexed boundary queries. An undecided boundary retains
 its ordinary separation obligation. A view adapter that materializes a head
 from the caller's own pieces carries the partition established by consuming
-those pieces into the loan.
+those pieces into the borrow.
 
 A declared mutable effect is a consequence of the transferred authority.
 Each effect range is compared with the full checked view frontier; an effect
 and a view reserved from distinct caller occurrences are disjoint by the
 partition invariant, while the same occurrence needs an arithmetic proof.
 An ordinary verified call with exact write ranges requires those ranges to
-be separate from the caller's pre-existing live loans. The proof uses the
+be separate from the caller's pre-existing live borrows. The proof uses the
 ranges selected at call entry. The standard-library `memcpy` uses its
 checked destination byte range for this obligation. Its source view still
 participates in the call's resource partition.
@@ -216,43 +226,43 @@ constructor. Undecided guards, unresolved arms, and unnamed memory keep a
 conservative footprint. The projection retains decisions for body guards
 and explicitly guarded write segments. A false guard contributes no range.
 Call retirement requires the full input allocation to be separate from the
-entry ledger, including loans opened by the call. This applies to a definite
+entry ledger, including borrows opened by the call. This applies to a definite
 free and to an output that leaves the allocation's continuity undecided.
 Scope exits, function returns and throws, and temporary cleanup check the
-ledger by automatic object identity. A live loan pins its backing object until the loan ends,
+ledger by automatic object identity. A live borrow pins its backing object until the borrow ends,
 including when its protected bytes have symbolic bounds. Retained proof
 events repeat the same check.
 
 A loop head with a checked write set requires separation from the
-active loan footprint. An explicit proof can state this fact with `have`
-before `loop`. A memory-writing loop with active loans needs a usable write
+active borrow footprint. An explicit proof can state this fact with `have`
+before `loop`. A memory-writing loop with active borrows needs a usable write
 bound. When several exits join, any memory cell the successor drops or
-abstracts also needs separation from the shared exit loan footprint. Its
+abstracts also needs separation from the shared exit borrow footprint. Its
 proof belongs at loop entry, where it cannot depend on the joined state's
 fresh values or exit equations. A `branch ensuring` join likewise checks
-the byte spans of cells that differ across its arms against the common loan
+the byte spans of cells that differ across its arms against the common borrow
 footprint. Establish those separations before the split. A join with active
-memory loans still requires the arms to agree on allocation and block state.
+memory borrows still requires the arms to agree on allocation and block state.
 
 Population member exchanges and opening or closing a private body or an
 authority wrapper check each owned memory range in the selected body against
-the live loan footprint. State the separation before the rewrite with
+the live borrow footprint. State the separation before the rewrite with
 `have separate(...)`. The rewrite checks the same premise when validating
 the ownership exchange.
 
 Direct scalar assignments to address-taken locals and stores through their
 addresses require separation from the ledger's live memory footprint,
-including same-value writes. A nested reader reborrows the local loan through
+including same-value writes. A nested reader reborrows the local borrow through
 its exact resource binding.
 
 Direct modeled pthread operations and verified calls with mutex effects
-require the mutex representation bytes to be separate from the live loan
+require the mutex representation bytes to be separate from the live borrow
 footprint. The obligation uses the evaluated mutex pointer at entry and the
 modeled representation size, so the caller can name a field's byte range
 even when the protocol identifies the storage by another spelling. Modular
 construction checks the destination fields, or the complete result span for
 a construction return. Fresh aggregate result temporaries cannot have a
-prior loan. Automatic initialization checks the active-loan index for the
+prior borrow. Automatic initialization checks the active-borrow index for the
 storage identity.
 
 For a suspended modeled-pthread worker borrowing a parent view, the checked
@@ -267,13 +277,13 @@ than opening another root. The thread ledger indexes the parent's local share
 by the exact viewed fact, without adding a resource fact to the parent. Each
 join returns its own share; the final join closes the root and restores
 implicit access. The thread ledger also retains the checked sequence's origin
-and current loan roots across function return for contract certification.
+and current borrow roots across function return for contract certification.
 For an explicitly owned memory piece, the first worker escrows that piece in
 a parent-held root. Its checked view remains in the parent resource context;
 later workers split that view's retained share. The final join removes that
 exact bound view occurrence before recovering the owner. Ordinary resource
 consumption cannot remove a view description, so this removal requires the
-loan binding and occurrence identity checked at recovery.
+borrow binding and occurrence identity checked at recovery.
 
 At return, obligations are validated before recovery: the callee's shares
 are transferred back, call-created scopes end, escrows are recovered, and the
@@ -291,8 +301,8 @@ handles any joins a later proof needs.
 
 ### Escaping borrows
 
-A composite whose body packages a loan-backed view carries a hold on the
-loan's scope. Folding moves the hold onto the head. Unfolding passes it to
+A composite whose body packages a borrow-backed view carries a hold on the
+borrow's scope. Folding moves the hold onto the head. Unfolding passes it to
 its viewed children. Refolding all remaining pieces reuses their hold.
 Refolding selected pieces while siblings remain gives the new head its own
 hold on the same borrow. The siblings keep their original hold, so consuming
@@ -317,34 +327,34 @@ symmetric form, or a stated separation indexed by the exact fixed-width byte
 spans. Proofs of symbolic containment and separation use ordinary proof
 tactics. The old alias-enumerating write guard is used only in tests.
 
-A nonempty subrange loan prevents freeing or reallocating its allocation.
-Plain `free` with live memory loans requires separation of the allocation's
-complete byte range from the retained active-loan footprint. The proof
+A nonempty subrange borrow prevents freeing or reallocating its allocation.
+Plain `free` with live memory borrows requires separation of the allocation's
+complete byte range from the retained active-borrow footprint. The proof
 prerequisite uses the argument at the free's entry point. `free(NULL)`
 leaves the state alone.
 
-A pending `realloc` retains the loan footprint at the call. A successful
+A pending `realloc` retains the borrow footprint at the call. A successful
 result requires separation from the full old allocation before retiring it.
-A failed result leaves its old allocation and loan ledger intact.
+A failed result leaves its old allocation and borrow ledger intact.
 
 A `static const` block is read-only storage with permanent read support and
-cannot give mutable memory an unbounded loan. Loop-head and interface havocs
-keep a cell only when a loan protects it and drop zero-width cells.
+cannot give mutable memory an unbounded borrow. Loop-head and interface havocs
+keep a cell only when a borrow protects it and drop zero-width cells.
 
 ## Facts, observations, and composites
 
 An owner may read directly and observe its composite without lending to
 itself: the observation is a projection recorded against the owner's
 occurrence and disappears with it. A borrowed composite's observations keep
-the loan identity through projection, fold, unfold, `with`, `close`,
+the borrow identity through projection, fold, unfold, `with`, `close`,
 normalization, range splitting, and callback-fact extraction. Three outcomes
 stay distinct: a copied value or a state proposition may remain true
-after a loan ends; a claim about the current cell needs checked framing;
+after a borrow ends; a claim about the current cell needs checked framing;
 permission to load needs current authority.
 
 A composite body's facts may be covered by a stable view when they depend
-only on memory the loan stabilizes; a fact that counts a population or
-claims allocation liveness is not loan-stable and such a composite cannot be
+only on memory the borrow stabilizes; a fact that counts a population or
+claims allocation liveness is not borrow-stable and such a composite cannot be
 lent. A fold whose body has facts cannot view memory the folding context
 itself owns: that view is only an observation, the owner could still write
 the bytes, and the folded facts would outlive the values they describe
@@ -359,31 +369,31 @@ observation or unfolding when the existing facts do not establish the frame.
 The separate store path may open selected live instances through its cached-cell
 argument index. The
 viewed pieces of an observed population family, or of more than one unit, are
-observations rather than escaping loans.
+observations rather than escaping borrows.
 
 ## Loops and branches
 
-An outer view stays active through loops; per-call loans close before the
-backedge, and the loop's loan identity, participant, and bindings must match
+An outer view stays active through loops; per-call borrows close before the
+backedge, and the loop's borrow identity, participant, and bindings must match
 at the head. A join requires identical ledger identity, participant, and
-bindings across arms, so a loan ended on one arm cannot join into
-unconditional ownership. Proof rebases require identical loan authority.
+bindings across arms, so a borrow ended on one arm cannot join into
+unconditional ownership. Proof rebases require identical borrow authority.
 
 ## Certificates, diagnostics, and complexity
 
-Loan transitions are part of the proof object; expansion, profile, and
+Borrow transitions are part of the proof object; expansion, profile, and
 audit run under the same rules and agree with verification. Refusals carry
 a category, the operation, a bounded subject, identifiers, and the origin;
 proven overlap is distinguished from unproved separation. Artifacts carry a
 resource-semantics version so no artifact minted under the retired
 interpretation certifies a claim. Version 3 includes checked implicit-local
-loans and automatic lifetime retirement.
+borrows and automatic lifetime retirement.
 
-Shares, loans, and support are indexed by identity; memory by allocation
+Shares, borrows, and support are indexed by identity; memory by allocation
 and range; dependencies by their immediate parent. Persistent edits are
 logarithmic. The known violation of the
-[efficiency contract](verification-efficiency.md) is the loan-preserving
-havoc, whose cost is cells times symbolic loans in one block; it is pinned
+[efficiency contract](verification-efficiency.md) is the borrow-preserving
+havoc, whose cost is cells times symbolic borrows in one block; it is pinned
 as a measurement.
 
 ## Suspended worker recovery (internal checkpoint)
@@ -394,14 +404,14 @@ postconditions in an opaque completion registry. Spawn requires termination
 evidence for the exact verified function. Failed creation preserves the
 parent; an empty or ambiguous summary refuses rather than removing its path.
 Creation requires entry separation for each exact worker write range against
-existing loans. A whole-allocation retirement also covers loans opened by the
+existing borrows. A whole-allocation retirement also covers borrows opened by the
 worker transfer. Both conditions are checked at `pthread_create`, before
 either runtime outcome can be used. Successful creation exposes the write
 and retirement effects to the parent. An unresolved write projection keeps
 its conservative admission check.
 
 Join composes the explicit worker output delta into the current parent frame
-and closes just that worker's loans against the current ledger. It never
+and closes just that worker's borrows against the current ledger. It never
 restores the saved parent ledger or memory. This permits two disjoint workers
 to join in either order while the other worker's job view stays protected.
 A registry entry is consumed once; a foreign handle or a user resource token
@@ -411,15 +421,15 @@ is explicit and scoped to this parent's live, terminating child.
 The modeled pthread C binding uses this checkpoint. Resource definitions carry
 a thread-confinement property computed when they are built. An authority
 control, whose body owns a population authority, is confined: moving the
-control alone would not transfer the authority's loans or mutex custody. A
+control alone would not transfer the authority's borrows or mutex custody. A
 resource containing a confined resource inherits that property. Bodyless
 members and ordinary exclusive resources are not confined by their
 definitions; a worker handoff still needs a checked resource partition and
-stable loan plan.
+stable borrow plan.
 
 The binding admits exclusive transfer of external memory and stable views,
 including views backed by live local storage without an ownership annotation.
-The local loan remains active from spawn to join, so the parent cannot write
+The local borrow remains active from spawn to join, so the parent cannot write
 its viewed bytes or end the allocation lifetime early. Exclusive transfers of
 caller stack/global/static storage are refused until ordinary accesses to that
 storage enforce thread authority; dropping an ownership fact alone would not
@@ -451,7 +461,7 @@ for tests and the remaining local-reference lifetime boundary.
 `src/kernel/tests/loan_model_tests.rs` is an executable model with a
 bounded search that checks, beside the production rules, two-context
 partition and transfer, shared readers across contexts, shared and exclusive
-reborrows, a returned field loan, a mutex handle with an invariant-owned
+reborrows, a returned field borrow, a mutex handle with an invariant-owned
 payload and one guard, and a thread-local cell confined to its context.
 These are checks of the abstraction boundaries for later threading and Rust
 work, not verified mutex or atomic C operations: scheduling, atomics, Rust's
@@ -471,8 +481,8 @@ between compiler-checked borrow legality and Click's functional claims.
 | Shares and scopes | `splitting_and_joining_require_exact_linear_siblings`, `shared_reader_recovery_rejects_wrong_sibling_reuse_and_stale_branch`, `nested_reborrow_must_rejoin_each_parent_before_scope_end`, `an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource`, `checked_call_evidence_rejects_stale_or_swapped_recovery` |
 | Aliased views and nested readers | `candidate_joint_planner_reuses_one_escrow_for_two_aliases`, `candidate_rejects_new_output_view`, `mdtests/stable_view_nested_reader.md` |
 | Partial borrows and widths | `mdtests/stable_view_partial_borrow.md`, `bytewise_overlap_is_decided_across_mismatched_element_widths`, `memory_entailment_relates_two_spellings_of_one_byte_footprint` |
-| Free and realloc under a loan | `heap_free_requires_separation_from_an_interior_loan_until_it_ends`, `realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation`, `call_retirement_requires_separation_from_its_own_loan` |
-| Local loans, bounds, and lifetime | `candidate_local_array_view_uses_a_checked_loan_and_recovers`, `thread_local_view_blocks_writes_and_all_scope_exits_until_join`, `automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement`, `local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow`, `mdtests/stable_view_local_job.md`, `local_job_views_expand_and_reverify_without_ownership_annotations` |
+| Free and realloc under a borrow | `heap_free_requires_separation_from_an_interior_loan_until_it_ends`, `realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation`, `call_retirement_requires_separation_from_its_own_loan` |
+| Local borrows, bounds, and lifetime | `candidate_local_array_view_uses_a_checked_loan_and_recovers`, `thread_local_view_blocks_writes_and_all_scope_exits_until_join`, `automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement`, `local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow`, `mdtests/stable_view_local_job.md`, `local_job_views_expand_and_reverify_without_ownership_annotations` |
 | Locals and empty views | `active_stable_loan_requires_separation_for_local_assignment_and_alias_store`, `mdtests/direct_local_write_separation.md`, `candidate_local_array_view_out_of_bounds_is_refused`, `mdtests/empty_view_authorizes_nothing.md` |
 | Entry footprint | `field_derived_view_does_not_retarget_after_a_pointer_write` |
 | Composites | `composite_loan_protects_primitive_frontier_and_restores_head_once`, `projection_extends_permitted_descriptions_without_a_transition`, `candidate_composite_with_unstable_facts_is_refused`, `candidate_composite_view_is_backed_by_a_covering_owned_composite`, `mdtests/produced_composite_body_overlapping_a_held_owner.md` |

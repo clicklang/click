@@ -398,7 +398,7 @@ fn scalar_array_region_writes_require_separation_for_the_entire_destination() {
     let state = scalar_array_region_state();
     let assumptions = PureFactContext::new();
     for (block, separate) in [("local:array-target", false), ("local:array-source", true)] {
-        // The loan covers only the last element of the block.
+        // The borrow covers only the last element of the block.
         let range = MemoryRange::new(pointer(block, 12), 0u32.into(), 1u32.into());
         let backing = ResourceFact::own_memory(range.clone());
         let occurrence = ResourceContext::new()
@@ -421,7 +421,7 @@ fn scalar_array_region_writes_require_separation_for_the_entire_destination() {
                 panic!("expected one separation obligation for the entire write");
             };
             let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
-                panic!("expected a loan separation obligation");
+                panic!("expected a borrow separation obligation");
             };
             let expected = MemoryRange::from_pointer_value(
                 &Pointer::new(pointer("local:array-target", 0), ProgramType::UInt32Pointer),

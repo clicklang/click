@@ -4,7 +4,7 @@
 longer string. A call map that gives the length `1u64`, so that the call
 requires `cstr_at(tmp, 1u64)`, is refused at the
 body fact the bytes do not establish, that the byte before the terminator is
-nonzero, rather than as a missing loan.
+nonzero, rather than as a missing borrow.
 
 ```c filename=a_local_char_array_view_names_the_fact_its_bytes_lack.c
 unsigned long measure(const char *s);

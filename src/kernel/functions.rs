@@ -360,7 +360,7 @@ struct FunctionResourceTransfer {
     returned_entry_partition: Option<mixed_return_resources::ReturnedEntryPartition>,
     /// Each viewed piece in the one-level frontier of an ensured owned
     /// composite, with that composite's head: the borrows a produced
-    /// composite packages, which the caller side binds to exactly one loan of
+    /// composite packages, which the caller side binds to exactly one borrow of
     /// this call (step 7).
     produced_borrowing_pieces: Vec<ProducedBorrowingPiece>,
     /// Stable-view transition, when this call was prepared through the
@@ -882,7 +882,7 @@ fn recover_candidate_stable_view_resources(
     }
     // A call with nothing lent still has step 7 work when it consumed a
     // borrowing composite (its hold is released) or produced one (its
-    // borrow must be backed, which no loan of this call can do).
+    // borrow must be backed, which no borrow of this call can do).
     if !plan.has_stable_views()
         && plan.mutex_uses.is_empty()
         && plan.transferred_holds.is_empty()
@@ -906,7 +906,7 @@ fn recover_candidate_stable_view_resources(
         return Err(RuntimeError::PendingCallObligations(obligations.into()));
     }
     // Select each returned borrow by its authored input or its checked
-    // ownership transfer. Only the selected loan's permission is queried.
+    // ownership transfer. Only the selected borrow's permission is queried.
     let mut escaping = BTreeMap::<LoanId, Vec<super::loans::EscapingBorrow>>::new();
     let mut rebound_heads =
         BTreeMap::<ResourceOccurrenceId, (ResourceFact, LoanViewBinding)>::new();
@@ -1118,7 +1118,7 @@ fn recover_candidate_stable_view_resources(
                 })?;
         }
     }
-    // Recover into the actual constructed return. The loan operation admits
+    // Recover into the actual constructed return. The borrow operation admits
     // each recovered source once and retains that successor, including the
     // output cores' exact support metadata.
     let mut recovery = plan.clone().recover_returned_views(
@@ -1283,7 +1283,7 @@ pub(crate) fn check_produced_view_source(
 }
 
 /// A memory input lends exactly its written range even when two inputs
-/// share one loan. A composite can also supply a checked body projection.
+/// share one borrow. A composite can also supply a checked body projection.
 fn selected_input_view_covers(
     ledger: &BorrowLedger,
     borrow_id: LoanId,
@@ -1400,7 +1400,7 @@ pub(crate) struct CheckedResourceFact {
     /// Index of this leaf in the normalized resource section, when it was
     /// evaluated from a contract. Distinct leaves may share a source clause.
     pub(crate) section_index: Option<usize>,
-    /// Caller-selected exact named authority for a mutex-use loan. The
+    /// Caller-selected exact named authority for a mutex-use borrow. The
     /// planner must consume this source, never select by address instead.
     pub(crate) selected_mutex_source: Option<std::sync::Arc<(MutexAuthorityId, ResourceFact)>>,
     /// Byte extent formed from the evaluated mutex pointer at clause entry.
@@ -1826,7 +1826,7 @@ pub(super) fn execute_program_function_paths(
 /// `prepare_contract_resources` says whether the body runs from the contract's
 /// own entry resources. A whole-function judgment over a bare caller frame
 /// executes the body in that frame; the contract routes cross the resource
-/// boundary, so the views the contract declares become loans of this
+/// boundary, so the views the contract declares become borrows of this
 /// application and recovery returns them.
 /// The body runs under the concrete judgment, which unrolls loops.
 #[allow(clippy::too_many_arguments)]
@@ -2513,8 +2513,8 @@ pub(super) fn execute_program_function_call_paths(
         // An inline body is call-site code: it runs on the caller's own
         // resources and leaves the caller whatever it did not consume.
         // There is no contract boundary to transfer across. Under stable
-        // views that includes the caller's loan ledger: the body's stores
-        // are checked against the caller's active loans, its own view
+        // views that includes the caller's borrow ledger: the body's stores
+        // are checked against the caller's active borrows, its own view
         // clauses lend nothing, and any call it makes plans from and
         // recovers to the caller's ledger, whose evidence the path keeps.
         let callee_state = callee_state.with_resource_context(caller_state.resources().clone());
@@ -3573,8 +3573,8 @@ fn execute_verified_function_applications_with_suspension(
         } = primary;
         let additional_calls = applicable.into_iter();
         // The planner has checked these effects against the views this call
-        // lends; the caller's other active loans (its own contract inputs,
-        // an enclosing call's loans) are checked here, so a summary can
+        // lends; the caller's other active borrows (its own contract inputs,
+        // an enclosing call's borrows) are checked here, so a summary can
         // never havoc memory that is lent elsewhere.
         let call_site = || {
             CallRequirementSite::for_requirement(
@@ -3736,7 +3736,7 @@ fn execute_verified_function_applications_with_suspension(
             // and the callee writes only memory it owns, so the havoc keeps
             // every cell an owned residual member holds.
             // Stable views escrow their owned backing outside the residual.
-            // The checked loan plan protects that backing from the callee's
+            // The checked borrow plan protects that backing from the callee's
             // writes just as it protects the remaining caller-owned frame.
             let caller_frame = transfer
                 .caller_resources_after_requirements
@@ -4980,7 +4980,7 @@ fn execute_verified_function_applications_with_suspension(
 
         if let Some(completions) = suspended.as_deref_mut() {
             // Only the exact child authorities produced by the checked worker
-            // loan plan may cross this boundary. A nested or invented use
+            // borrow plan may cross this boundary. A nested or invented use
             // remains subject to ordinary thread confinement.
             let worker_mutex_uses: BTreeSet<_> = transfer
                 .stable_view_plan
@@ -5011,7 +5011,7 @@ fn execute_verified_function_applications_with_suspension(
                 continue;
             }
             // Definition-level confinement is only an admission rule. The
-            // checked partition and loan plan still conserve the authority
+            // checked partition and borrow plan still conserve the authority
             // that a worker receives, and the storage checks below keep the
             // parent's implicit stack/global accesses out of that transfer.
             // In preparation, the parent statement retains these prerequisites
@@ -5078,7 +5078,7 @@ fn execute_verified_function_applications_with_suspension(
             };
             // The checked partition has already separated projected writes
             // from views issued to this worker. A whole allocation may
-            // exceed that projection, so retirement also protects the loans
+            // exceed that projection, so retirement also protects the borrows
             // opened by the worker's entry transfer.
             obligations.extend(write_requirements);
             obligations.extend(verified_call_loan_requirements(
@@ -5156,7 +5156,7 @@ fn execute_verified_function_applications_with_suspension(
                 || return_state.loan_participant != caller_state.loan_participant
             {
                 paths.push(resource_call_failure(
-                    "mutex helper protocol effect requires completed ordinary loan recovery",
+                    "mutex helper protocol effect requires completed ordinary borrow recovery",
                 ));
                 continue;
             }
@@ -5358,9 +5358,9 @@ fn execute_verified_function_applications_with_suspension(
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
         }
         let call_parameters = CallParameters::of(&entry_contract_state, interface);
-        // The checked return partition recovers this call's loans. The
+        // The checked return partition recovers this call's borrows. The
         // transition that uses it still owes separation from the caller's
-        // pre-existing loans, on both normal and exceptional paths.
+        // pre-existing borrows, on both normal and exceptional paths.
         if let Some(path) = &mut exceptional_path
             && matches!(path.outcome, FunctionOutcome::Throw { .. })
         {
@@ -6375,7 +6375,7 @@ fn prepare_verified_function_call<'a>(
             }
         }
     }
-    // The checked loan plan identifies each selected use source and its
+    // The checked borrow plan identifies each selected use source and its
     // derived callee share. Move only those names, then rebind unchanged raw
     // authorities to their newly inserted occurrences.
     if let Some(plan) = transfer.stable_view_plan.as_ref() {
@@ -10997,7 +10997,7 @@ struct CompositeViewAdapter {
     resources: ResourceContext,
     /// The owned composite the lend escrows.
     head: ResourceFact,
-    /// The viewed descriptions the loan permits beside its own head.
+    /// The viewed descriptions the borrow permits beside its own head.
     adapted: Vec<ResourceFact>,
     /// What recovery hands back instead of the head, when the head was
     /// materialized for this call.
@@ -11015,7 +11015,7 @@ struct CompositeViewAdapter {
 ///
 /// * an owned composite `D` in the caller whose own checked frontier covers
 ///   `C`'s: `D`'s head is escrowed and `views C(args)` becomes an additional
-///   permitted description of that loan, exactly like a projection. Recovery
+///   permitted description of that borrow, exactly like a projection. Recovery
 ///   restores `D`;
 /// * the caller's owned frontier itself: `owns C(args)` is materialized out
 ///   of exactly those facts for the call, and recovery restores them, so a
@@ -11028,7 +11028,7 @@ struct CompositeViewAdapter {
 ///
 /// The materialized head carries no sidecar binding, so a hold a consumed
 /// owned occurrence carried does not travel with it. That direction only
-/// costs a later refusal -- the hold stays in the ledger and the loan behind
+/// costs a later refusal -- the hold stays in the ledger and the borrow behind
 /// it cannot be ended -- and no owned frontier piece carries one today,
 /// since a hold lives on the viewed piece an unfold hands it to.
 fn candidate_composite_view_adapter(
@@ -11066,7 +11066,7 @@ fn candidate_composite_view_adapter(
     // An empty frontier protects nothing and is handled before planning; an
     // exclusive instance cannot be viewed at all (D12). A borrowing
     // composite -- one whose body views storage it does not own -- is step
-    // 7's mechanism: folding one places a hold on the loan behind the viewed
+    // 7's mechanism: folding one places a hold on the borrow behind the viewed
     // piece, which this rule does not do, so it stays out of the adapter.
     if frontier.is_empty()
         || frontier
@@ -11168,7 +11168,7 @@ fn candidate_composite_view_adapter(
 
 /// The kernel's own one-level expansion of one owned composite head, read in
 /// the caller's memory. This is the same boundary the composite lend and
-/// `project` use, so nothing enters a loan that the definition does not
+/// `project` use, so nothing enters a borrow that the definition does not
 /// contain.
 pub(super) fn checked_one_level_frontier(
     head: &ResourceFact,
@@ -11178,7 +11178,7 @@ pub(super) fn checked_one_level_frontier(
 ) -> Option<Vec<ResourceFact>> {
     // Expand only the selected head. Checked construction attaches the trusted
     // equality graph before dependent children are added, without importing the
-    // caller's ambient resources or changing the loan's backing judgment.
+    // caller's ambient resources or changing the borrow's backing judgment.
     let singleton = ResourceContext::new()
         .try_compose_with_fact(head.clone(), assumptions)
         .ok()?;
@@ -11723,7 +11723,7 @@ fn string_literal_reads_resolved(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ResourceTransitionPurpose {
     /// A call site: the caller lends its authority, so the views the callee
-    /// declares become loans of this application and recovery returns them.
+    /// declares become borrows of this application and recovery returns them.
     CallSite,
     /// A worker call suspended across pthread create/join. Reborrowing a
     /// caller view reserves a separate reader share while the parent keeps
@@ -11731,7 +11731,7 @@ pub(super) enum ResourceTransitionPurpose {
     SuspendedWorker,
     /// A function's own boundary: a whole-function judgment executes,
     /// certifies, or reads the body's outcome from the resources the contract
-    /// declares, consumed definitionally. The loan roots of its input views
+    /// declares, consumed definitionally. The borrow roots of its input views
     /// come from the proof's entry construction
     /// (`execution_state_with_borrowed_contract_inputs`), never from this transition,
     /// so nothing is lent twice; no call-site transfer record exists for
@@ -12316,7 +12316,7 @@ fn prepare_contract_resource_transfer_unexplained(
         )));
     }
     // Implicit local storage authority has no owned fact to escrow. At a
-    // call site it backs a checked local loan, so writes and lifetime ends
+    // call site it backs a checked local borrow, so writes and lifetime ends
     // remain blocked even when a worker outlives the call. Read-only storage
     // retains intrinsic read authority. An explicitly supplied owner or view
     // takes the ordinary lend/reborrow route, including stale-binding checks.
@@ -12364,7 +12364,7 @@ fn prepare_contract_resource_transfer_unexplained(
         }
         // A view of a composite whose every piece is implicit local storage,
         // such as `cstr_at` of a local `char` array, is backed the way a view
-        // of those bytes is: each piece is lent as a checked local loan, and
+        // of those bytes is: each piece is lent as a checked local borrow, and
         // the composite itself needs no owner. Its body facts are the
         // caller's to establish at the call.
         if requirement.fact.is_view()
@@ -12427,7 +12427,7 @@ fn prepare_contract_resource_transfer_unexplained(
             if range.base().base.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().base)));
     // A composite view whose checked body is empty on this path protects no
     // bytes and holds no token, so there is nothing to lend and nothing a
-    // loan could suspend (D6: an empty permission grants no dereference).
+    // borrow could suspend (D6: an empty permission grants no dereference).
     // Demanding backing for it would turn the empty witness of a partial
     // recursive resource into a missing-backing refusal and hide the
     // structural validation that is the real verdict on such a call. Such a
@@ -12646,7 +12646,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 };
                 // A viewed piece is a description the head packages (a
                 // borrowing composite, step 7): it has no owner here to
-                // escrow, so it enters the loan as a permitted description
+                // escrow, so it enters the borrow as a permitted description
                 // with no byte backing, protected by the hold its head keeps.
                 if expanded_children
                     .iter()
@@ -12680,15 +12680,15 @@ fn prepare_contract_resource_transfer_unexplained(
                         })
                 else {
                     return Ok(Err(RuntimeError::FunctionContract(
-                        "composite loan definition is missing".to_string(),
+                        "composite borrow definition is missing".to_string(),
                     )));
                 };
                 // Recovery restores the exact escrowed head, so its facts are
                 // re-asserted precisely as folded; that is sound only when
-                // everything a fact depends on is stable for the loan.
+                // everything a fact depends on is stable for the borrow.
                 if !definition.facts_are_loan_stable() {
                     return Ok(Err(RuntimeError::FunctionContract(
-                        "composite body facts depend on a resource count or an allocation-liveness claim, which a stable loan does not stabilize".to_string(),
+                        "composite body facts depend on a resource count or an allocation-liveness claim, which a stable borrow does not stabilize".to_string(),
                     )));
                 }
                 let Some(backing) = CompositeLoanBacking::from_checked_adapter(
@@ -12699,7 +12699,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     restored,
                 ) else {
                     return Ok(Err(RuntimeError::FunctionContract(
-                        "composite loan frontier is not a checked expansion".to_string(),
+                        "composite borrow frontier is not a checked expansion".to_string(),
                     )));
                 };
                 checked_view_frontier.extend(frontier_pieces);
@@ -12806,7 +12806,7 @@ fn prepare_contract_resource_transfer_unexplained(
                             RuntimeError::PendingCallObligations(
                                 vec![
                                     ProofObligation::verification_condition(*goal)
-                                        .with_context("local loan admission separation"),
+                                        .with_context("local borrow admission separation"),
                                 ]
                                 .into(),
                             )
@@ -12816,7 +12816,7 @@ fn prepare_contract_resource_transfer_unexplained(
                             .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
                             .unwrap_or_else(|| {
                                 RuntimeError::FunctionContract(
-                                    "local view loan could not be checked".to_string(),
+                                    "local view borrow could not be checked".to_string(),
                                 )
                             }),
                     }));
@@ -12831,8 +12831,8 @@ fn prepare_contract_resource_transfer_unexplained(
             Err(error) => {
                 // An owned requirement the caller cannot supply is a missing
                 // owner, whatever planned it: name the fact, as the ordinary
-                // resource transfer does, rather than a loan the call never
-                // asked for. A view the planner cannot back is a loan matter.
+                // resource transfer does, rather than a borrow the call never
+                // asked for. A view the planner cannot back is a borrow matter.
                 if let super::loans::StableViewPlanError::MissingResource(resource) = &error
                     && resource.is_own()
                 {
@@ -12842,7 +12842,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 }
                 // A view the caller holds the pieces of, but could not
                 // assemble because a body fact is unproved: name that fact,
-                // as a refused `fold` does, rather than the missing loan.
+                // as a refused `fold` does, rather than the missing borrow.
                 if let super::loans::StableViewPlanError::MissingResource(resource) = &error
                     && let Some(fact) = assembly_gaps.remove(resource)
                 {
@@ -13384,7 +13384,7 @@ fn evaluate_contract_return_resource_context(
     // identity with a symbolic parameter spelling, even though the resource
     // being returned is exactly the occurrence that was lent. Consume the
     // already checked owned inputs in their source order instead. Views keep
-    // their ordinary evaluation path because their loan source is
+    // their ordinary evaluation path because their borrow source is
     // reconstructed separately, and post-state instances carry fresh
     // fields rather than an entry fact.
     let mut canonical_by_checked = BTreeMap::<ResourceFact, VecDeque<ResourceFact>>::new();
@@ -14206,7 +14206,7 @@ fn evaluate_contract_return_resources(
         // packages; a nested composite's own body is that composite's
         // business (the 4b rule). The viewed pieces of an observed
         // population family, or of more than one unit, keep the observation
-        // reading rather than an escaping loan.
+        // reading rather than an escaping borrow.
         let is_population = match support.resource() {
             Resource::Composite { name, .. } => {
                 support.owned_quantity_term() != Some(&MachineTerm::constant(1))
@@ -16092,7 +16092,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         }
     }
     if unfold {
-        // The opened owner and the caller's loan-bound views coexist in the
+        // The opened owner and the caller's borrow-bound views coexist in the
         // constructed successor. Retain that persistent composition so the
         // existing borrow-partition rule can relate them. The body's isolated
         // composition alone cannot express separation from the outer frame.
@@ -16497,7 +16497,7 @@ fn construct_composite_resource_body_with_source(
     {
         return Some(CompositeBodyConstruction::opaque(context));
     }
-    // A viewed composite carries its loan dependency on the folded
+    // A viewed composite carries its borrow dependency on the folded
     // occurrence.  Expansion must transfer that exact bundle to only the
     // newly inserted child occurrences; equal children in the ambient frame
     // are not eligible destinations.
@@ -17710,7 +17710,7 @@ pub(crate) fn evaluate_function_resource_context_with_metadata(
     )
 }
 
-/// Loop declarations retain the new occurrences and attach inherited loan
+/// Loop declarations retain the new occurrences and attach inherited borrow
 /// bindings before normalization can combine unbound views.
 pub(crate) fn evaluate_loop_resource_context(
     state: &ExecutionState,
@@ -21071,7 +21071,7 @@ pub(super) fn clear_automatic_lifetime_retirement() {
     AUTOMATIC_LIFETIME_RETIREMENT.with(|memo| memo.borrow_mut().clear());
 }
 
-/// Only the physical transition is reused. Callers check current loan,
+/// Only the physical transition is reused. Callers check current borrow,
 /// mutex, population and return-value restrictions before calling this.
 fn retire_automatic_lifetime_blocks(
     before: &SymbolicMemory,

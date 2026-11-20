@@ -13,7 +13,7 @@ This checks the local caller and helper contracts under their stated separation
 premises. It is not the complete Linux erase proof or a program-startup proof
 that derives those premises for arbitrary external arguments. The callback
 bodies remain no-ops; proving mutation-capable callbacks remains separate work.
-This fixture passes ordinary verification; its candidate stable-loan failure is
+This fixture passes ordinary verification; its candidate stable-borrow failure is
 tracked under rbtree C6 and fix-views, as recorded in `roadmap/global-variables.md`.
 
 ```c filename=rb_augment_callbacks_table.c

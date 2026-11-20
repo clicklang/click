@@ -175,10 +175,10 @@ fn active_heap_memory_loan(range: MemoryRange) -> BorrowLedger {
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
         .lend(owner, reader, support, fact)
-        .expect("memory loan");
+        .expect("memory borrow");
     ledger
         .apply(&opening.transition)
-        .expect("memory loan apply")
+        .expect("memory borrow apply")
 }
 
 fn heap_allocation_paths() -> Vec<StatementExecutionPath> {
@@ -1454,7 +1454,7 @@ fn heap_free_requires_separation_from_an_interior_loan_until_it_ends() {
     let path = free(&state);
     assert!(path.obligations.is_empty());
     let StatementOutcome::Normal(freed) = path.outcome else {
-        panic!("ending the loan must allow retirement");
+        panic!("ending the borrow must allow retirement");
     };
     assert!(
         freed
@@ -1540,7 +1540,7 @@ fn realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation()
         Some(&ProgramValue::pointer(Address::null()))
     );
 
-    // Proof operations after the call must not change which loans constrain it.
+    // Proof operations after the call must not change which borrows constrain it.
     let pending = pending.with_loan_ledger(None);
     let paths = resolve_test_realloc(&pending);
     let success = paths

@@ -2822,7 +2822,7 @@ fn rust_exclusive_reborrow_updates_value_before_parent_reuse_without_child_drop(
     fs::write(p.root.join("borrow.click"), proof).unwrap();
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    // Source loan ending evidence is independent of the existing call receipts.
+    // Source borrow ending evidence is independent of the existing call receipts.
     // Locate the actual imported child borrow and its last store, not StorageDead.
     let helper = prepared
         .export()

@@ -356,7 +356,7 @@ fn scalar_array_write_loan_requirement_ignores_alias_and_loan_counts() {
                 });
                 assert!(matches!(write.outcome, StatementOutcome::Normal(_)));
                 let [obligation] = write.obligations.as_slice() else {
-                    panic!("expected one loan separation obligation");
+                    panic!("expected one borrow separation obligation");
                 };
                 assert!(matches!(
                     obligation.proposition(),

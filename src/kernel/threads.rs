@@ -453,7 +453,7 @@ impl Ord for PendingThreadCreate {
 
 /// Path-local completion authority stored with ordinary C execution state.
 /// Clones share the root; an insertion or removal touches only one map path.
-/// Like the loan ledger, equality uses a fresh state identity so ordinary
+/// Like the borrow ledger, equality uses a fresh state identity so ordinary
 /// state comparisons never walk unrelated live children.
 #[derive(Clone)]
 pub(super) struct ThreadLedger {
@@ -490,7 +490,7 @@ struct ThreadLedgerStorage {
     parent_partition: Option<ParentOwnershipPartition>,
 }
 
-/// The checked loan root before the first outstanding create and the root
+/// The checked borrow root before the first outstanding create and the root
 /// reached by subsequent checked creates and joins on this path. This is
 /// retained beside the linear rights, so contract certification can check a
 /// view-bearing parent after every child has joined without reconstructing
@@ -953,7 +953,7 @@ fn test_entry_evidence(assumptions: &PureFactContext, proposition: &Proposition)
     use super::Resource;
 
     // The unit-test driver has no Surface proof script. Apply the
-    // separation-conjunction law to its explicit loan footprint and use
+    // separation-conjunction law to its explicit borrow footprint and use
     // ordinary atomic checks for the leaves.
     fn separates(assumptions: &PureFactContext, left: &Resource, right: &Resource) -> bool {
         match right {
@@ -1000,7 +1000,7 @@ impl ThreadContext {
             (Some(ledger), Some(participant)) if ledger.contains_participant(participant) => {}
             _ => {
                 return Err(RuntimeError::FunctionContract(
-                    "inconsistent parent loan context".to_string(),
+                    "inconsistent parent borrow context".to_string(),
                 ));
             }
         }
@@ -1135,9 +1135,9 @@ impl ThreadContext {
         if self.parent.loan_participant() != Some(completion.plan.caller_participant()) {
             return Err("completion right belongs to a different parent");
         }
-        // The worker's preserved `mutex_use` inputs are loans of the parent's
+        // The worker's preserved `mutex_use` inputs are borrows of the parent's
         // authority, not outputs. The sequential return strips them before
-        // loan recovery restores the lent source, and join does the same;
+        // borrow recovery restores the lent source, and join does the same;
         // otherwise the parent would hold the worker's use beside the
         // `mutex_live` or retained share that recovery returns.
         let mut outputs = completion.outputs.clone();
@@ -1197,13 +1197,13 @@ impl ThreadContext {
                 },
                 assumptions,
             )
-            .map_err(|_| "worker loans cannot be recovered in the current parent context")?;
+            .map_err(|_| "worker borrows cannot be recovered in the current parent context")?;
         if recovery
             .recheck_transitions(ledger, completion.plan.caller_participant())
-            .map_err(|_| "worker loan recovery evidence is invalid")?
+            .map_err(|_| "worker borrow recovery evidence is invalid")?
             != recovery.terminal_ledger
         {
-            return Err("worker loan recovery evidence is invalid");
+            return Err("worker borrow recovery evidence is invalid");
         }
         let after_loans = recovery.ledger.clone();
         let mut next = self.clone();

@@ -1923,10 +1923,10 @@ impl CompositeResourceDefinition {
         self
     }
 
-    /// Whether a stable loan of this composite may carry its body facts:
+    /// Whether a stable borrow of this composite may carry its body facts:
     /// recovery restores the exact escrowed head, so a fact is re-asserted
     /// precisely as folded, which is sound when everything the fact depends
-    /// on is stable for the loan. The body's memory and tokens are; a
+    /// on is stable for the borrow. The body's memory and tokens are; a
     /// population count the caller may change elsewhere and the liveness of
     /// storage the fact names are not (D12).
     pub fn facts_are_loan_stable(&self) -> bool {
@@ -4232,9 +4232,9 @@ impl ExecutionEnvironment {
                             _ => false,
                         }
                 });
-            // A retained head obligation names the loans of its checked
+            // A retained head obligation names the borrows of its checked
             // entry. An equal resource description may have different live
-            // loans, including when the original entry had none.
+            // borrows, including when the original entry had none.
             let active_loans = |state: &ExecutionState| {
                 state.loan_ledger()
                     .filter(|ledger| ledger.has_active_memory_loans())

@@ -1,4 +1,4 @@
-//! Shared-loan authority for views and synchronous borrowed-memory call receipts.
+//! Shared-borrow authority for views and synchronous borrowed-memory call receipts.
 //!
 //! A [`BorrowLedger`] is immutable. Every update returns opaque checked
 //! evidence tied to the exact predecessor state identity. The ledger deliberately
@@ -76,8 +76,8 @@ pub(crate) struct LoanShareId {
 }
 
 /// A restriction a folded borrowing composite places on the scope of the
-/// loan it packages: while the hold exists the scope cannot end, so the
-/// owner behind the loan cannot be recovered and written while the composite
+/// borrow it packages: while the hold exists the scope cannot end, so the
+/// owner behind the borrow cannot be recovered and written while the composite
 /// still describes it. A hold mints no share, scope, or recovery right, but
 /// changes whether the scope may end and therefore changes the ledger identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -105,7 +105,7 @@ impl StableViewDescription {
     }
 }
 
-/// Identity and possession of one live loan share. This establishes a lifetime
+/// Identity and possession of one live borrow share. This establishes a lifetime
 /// dependency only: it grants no resource description, memory access, escrow
 /// ownership, or close/recovery right. Every use rechecks the current ledger.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -167,7 +167,7 @@ pub(crate) struct LoanViewBinding {
     pub(crate) viewed: ResourceFact,
     /// Present on the binding of a folded borrowing composite (and on the
     /// body piece it restores when unfolded): the occurrence keeps this
-    /// loan's scope open until the hold is released.
+    /// borrow's scope open until the hold is released.
     pub(crate) hold: Option<LoanHoldId>,
 }
 
@@ -246,7 +246,7 @@ impl ExecutionState {
         assumptions: &PureFactContext,
     ) -> Result<Option<(Option<ResourceOccurrenceId>, LoanViewBinding)>, String> {
         if !self.loan_bindings_are_consistent() {
-            return Err("resource and loan binding sidecars disagree".into());
+            return Err("resource and borrow binding sidecars disagree".into());
         }
         let bindings = self.loan_view_bindings();
         let resources = self.resources();
@@ -274,7 +274,7 @@ impl ExecutionState {
             .ok_or("selected viewed resource has no active borrow ledger or holder")?;
         ledger
             .validate_view_binding(binding.clone(), holder)
-            .map_err(|error| format!("selected viewed resource loan is not live: {error}"))?;
+            .map_err(|error| format!("selected viewed resource borrow is not live: {error}"))?;
         Ok(Some((Some(occurrence), binding.clone())))
     }
 
@@ -285,7 +285,7 @@ impl ExecutionState {
         resource: &ResourceFact,
     ) -> Result<Option<LoanViewBinding>, String> {
         if !self.loan_bindings_are_consistent() {
-            return Err("resource and loan binding sidecars disagree".into());
+            return Err("resource and borrow binding sidecars disagree".into());
         }
         let mut selected = None;
         let mut saw_unbound = false;
@@ -301,7 +301,7 @@ impl ExecutionState {
                 .is_some_and(|existing| existing != binding)
             {
                 return Err(
-                    "equal viewed resource occurrences carry different loan dependencies".into(),
+                    "equal viewed resource occurrences carry different borrow dependencies".into(),
                 );
             }
             selected = Some(binding.clone());
@@ -312,15 +312,15 @@ impl ExecutionState {
             );
         }
         if let Some(binding) = &selected {
-            let ledger = self
-                .loan_ledger()
-                .ok_or_else(|| "selected viewed resource has no active loan ledger".to_string())?;
-            let holder = self
-                .loan_participant()
-                .ok_or_else(|| "selected viewed resource has no active loan holder".to_string())?;
+            let ledger = self.loan_ledger().ok_or_else(|| {
+                "selected viewed resource has no active borrow ledger".to_string()
+            })?;
+            let holder = self.loan_participant().ok_or_else(|| {
+                "selected viewed resource has no active borrow holder".to_string()
+            })?;
             ledger
                 .validate_view_binding(binding.clone(), holder)
-                .map_err(|error| format!("selected viewed resource loan is not live: {error}"))?;
+                .map_err(|error| format!("selected viewed resource borrow is not live: {error}"))?;
         }
         Ok(selected)
     }
@@ -505,7 +505,7 @@ impl PartialOrd for LoanViewBindings {
 }
 
 /// Authority selected from an already checked caller view occurrence. The
-/// private constructor retains its producer-issued loan binding; using it at
+/// private constructor retains its producer-issued borrow binding; using it at
 /// return checks liveness/holder status, not the old permission proof again.
 pub(crate) struct ReturnedViewAuthority(LoanViewBinding);
 
@@ -642,7 +642,7 @@ impl LoanViewBindings {
     }
 }
 
-/// The dyadic index nodes under which a loan *stores* its memory range, or
+/// The dyadic index nodes under which a borrow *stores* its memory range, or
 /// `None` for a range the ledger keeps per block and compares by proven
 /// overlap. Queries still use their own concrete interval nodes; every query
 /// alias also checks its block's per-block ranges. A range based
@@ -757,7 +757,7 @@ fn without_unindexed_memory(
 }
 
 /// Whether a range names no storage at all, which is the one shape the write
-/// barrier may skip without looking at a single loan.
+/// barrier may skip without looking at a single borrow.
 ///
 /// A backwards range is how a range says it is empty, and both endpoints are
 /// read as the signed `int32` values they are. Read through
@@ -811,7 +811,7 @@ pub(crate) fn protected_range_proven_overlapping(
     let mut separated = false;
     for (query_index, query) in queries.iter().enumerate() {
         for (protected_index, protected) in protected_ranges.iter().enumerate() {
-            // The original range comparison is charged by the loan query;
+            // The original range comparison is charged by the borrow query;
             // each additional alias is extra work for this check.
             if query_index != 0 || protected_index != 0 {
                 crate::instrumentation::record_deterministic_work(1);
@@ -878,7 +878,7 @@ pub(super) fn protected_ranges_constant_overlap(
     Some(query_start < end && start < query_end)
 }
 
-/// Check the new relationship between one selected loan permission and one
+/// Check the new relationship between one selected borrow permission and one
 /// returned piece. A whole permitted memory view can back smaller pieces even
 /// when bounded normalization keeps their descriptions separate.
 pub(crate) fn returned_permission_covers(
@@ -904,8 +904,8 @@ pub(crate) fn returned_permission_covers(
     )
 }
 
-/// Whether an active loan protects memory: any byte-backed loan, and any
-/// loan of a composite head, whose body is memory whether or not the
+/// Whether an active borrow protects memory: any byte-backed borrow, and any
+/// borrow of a composite head, whose body is memory whether or not the
 /// one-level frontier enumerated any of it. The fail-closed barriers
 /// (unknown loop write sets, branch joins) consult this count.
 fn loan_protects_memory<'a>(
@@ -916,8 +916,8 @@ fn loan_protects_memory<'a>(
         || permitted.any(|fact| matches!(fact.resource(), Resource::Composite { .. }))
 }
 
-/// The authority a reborrow inherits from its parent loan. One description,
-/// `viewed`, authorized the transition, so the child loan permits that
+/// The authority a reborrow inherits from its parent borrow. One description,
+/// `viewed`, authorized the transition, so the child borrow permits that
 /// description alone and protects only the parent backing that lies within
 /// it (docs/internals/stable-views.md):
 ///
@@ -948,8 +948,8 @@ fn reborrowed_authority(
 }
 
 /// A read derived from ownership in the current context. This is useful for
-/// checking the owner's own computation, but it is not transferable loan
-/// authority and contains no loan identity.
+/// checking the owner's own computation, but it is not transferable borrow
+/// authority and contains no borrow identity.
 #[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct OwnedResourceObservation {
@@ -1012,7 +1012,7 @@ enum LoanOrigin {
     /// Modular verification began with a caller-supplied shared borrow. The
     /// caller and its ownership escrow are deliberately outside this ledger.
     BorrowedContractInput,
-    /// A live local object backs a read loan without manufacturing an owned
+    /// A live local object backs a read borrow without manufacturing an owned
     /// resource. Closing it restores implicit access, not an escrowed fact.
     LocalStorage(LoanParticipantId),
 }
@@ -1031,8 +1031,8 @@ struct LoanRecord {
     /// Checked finite ownership frontier retained at lend time. Recovery
     /// carries this recipe rather than expanding the escrow description.
     restoration_frontier: Arc<Vec<ResourceFact>>,
-    /// Every checked viewed projection authorized by this loan.  A composite
-    /// loan keeps its folded head plus all primitive body views here so a
+    /// Every checked viewed projection authorized by this borrow.  A composite
+    /// borrow keeps its folded head plus all primitive body views here so a
     /// child binding cannot be minted from the head alone.
     permitted: PermittedDescriptions,
     origin: LoanOrigin,
@@ -1089,16 +1089,16 @@ struct LoanLedgerData {
     active_memory_index: PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>,
     active_memory_subtree: PersistentMap<ResourceMemoryIntervalNode, PersistentSet<LoanId>>,
     /// Counted from the same live ranges as the interval index. A symbolic
-    /// external argument can only skip that index when every indexed loan
+    /// external argument can only skip that index when every indexed borrow
     /// protects fresh function-local storage.
     active_nonlocal_indexed_ranges: usize,
     active_memory_loans: usize,
     active_footprint: active_footprint::ActiveFootprint,
     /// Whole automatic objects pinned by live backing, with one diagnostic
-    /// range per loan and object. Bounds cannot release the object's lifetime.
+    /// range per borrow and object. Bounds cannot release the object's lifetime.
     automatic_storage_loans: PersistentMap<AddressBase, PersistentMap<LoanId, MemoryRange>>,
     /// Exact coordinate origins, including symbolic pointers. Constant byte
-    /// intervals support cache retention without searching the symbolic loans.
+    /// intervals support cache retention without searching the symbolic borrows.
     cache_memory_index: CacheProtectionIndex,
     cache_memory_subtree: CacheProtectionIndex,
     /// Protected ranges whose bounds are not concrete, keyed by the block
@@ -1106,7 +1106,7 @@ struct LoanLedgerData {
     /// parameter pointer has a symbolic offset in the shared external block,
     /// so the dyadic index cannot hold it. A write query consults only the
     /// entries in its own block, and the entries are bounded by the active
-    /// loans with symbolic footprints, which a modular proof creates only
+    /// borrows with symbolic footprints, which a modular proof creates only
     /// from its contract's explicit view clauses and its own calls.
     unindexed_memory: PersistentMap<AddressBase, PersistentMap<LoanId, Vec<MemoryRange>>>,
 }
@@ -1322,7 +1322,7 @@ pub enum LoanRefusalOperation {
     MemoryAccess,
 }
 
-/// Where the authority a loan protects came from. A refusal names it so the
+/// Where the authority a borrow protects came from. A refusal names it so the
 /// reader knows which declaration to look at: a contract's own `views`
 /// clause, live local storage, an owner lent for a call, or a nested reborrow.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -1336,7 +1336,7 @@ pub enum LoanOriginKind {
 /// One bounded local subject for a refusal. A diagnostic may retain either
 /// the selected resource fact or its concrete memory range, the one other
 /// fact the refusal is a conflict with, and the small identity needed to
-/// explain a loan transition. It never retains a ledger, resource frame, or
+/// explain a borrow transition. It never retains a ledger, resource frame, or
 /// transition history.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct LoanRefusalSubject {
@@ -1344,7 +1344,7 @@ pub struct LoanRefusalSubject {
     /// Boxed for the same reason as `conflicting`: a refusal that names a
     /// range and a fact must stay within the bounded payload size.
     range: Option<Box<MemoryRange>>,
-    /// The fact on the other side of a conflict: the resource a live loan
+    /// The fact on the other side of a conflict: the resource a live borrow
     /// protects for a refused access, or the owned entry that already
     /// supports a contract input view at entry. Boxed so that naming both
     /// sides keeps the diagnostic within its bounded payload size.
@@ -1370,7 +1370,7 @@ impl LoanRefusalSubject {
         }
     }
 
-    /// The attempted range, the protected resource it overlaps, and the loan
+    /// The attempted range, the protected resource it overlaps, and the borrow
     /// that protects it: the D13 shape for a refused write, free, or
     /// reallocation.
     pub(crate) fn for_memory_conflict(
@@ -1508,7 +1508,7 @@ pub enum LoanOverlapStatus {
     SeparationUnproved,
 }
 
-/// Compact, bounded semantic payload for a rejected loan operation. It is
+/// Compact, bounded semantic payload for a rejected borrow operation. It is
 /// deliberately retains at most one selected subject; callers must never
 /// format a ledger or resource frame to explain a refusal.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -1583,27 +1583,27 @@ impl std::fmt::Display for LoanRefusal {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::NotOwnership => "the lent resource is not an ownership fact",
-            Self::WrongArena => "the loan evidence belongs to a different authority arena",
-            Self::MissingLoan => "the loan is not recorded in the ledger",
-            Self::MissingScope => "the loan scope is not recorded in the ledger",
-            Self::MissingShare => "the loan share is not recorded in the ledger",
-            Self::WrongHolder => "the loan evidence names the wrong participant",
-            Self::WrongScope => "the loan evidence names the wrong scope",
-            Self::ScopeEnded => "the loan scope has already ended",
-            Self::ScopeStillActive => "the loan scope is still active",
-            Self::ShareStillSplit => "the loan share is still split",
-            Self::NotSiblings => "the loan shares are not siblings",
-            Self::AlreadyRecovered => "the loan was already recovered",
-            Self::StalePredecessor => "the loan evidence uses a stale predecessor state",
-            Self::InvalidEvidence => "the loan evidence is invalid",
+            Self::WrongArena => "the borrow evidence belongs to a different authority arena",
+            Self::MissingLoan => "the borrow is not recorded in the ledger",
+            Self::MissingScope => "the borrow scope is not recorded in the ledger",
+            Self::MissingShare => "the borrow share is not recorded in the ledger",
+            Self::WrongHolder => "the borrow evidence names the wrong participant",
+            Self::WrongScope => "the borrow evidence names the wrong scope",
+            Self::ScopeEnded => "the borrow scope has already ended",
+            Self::ScopeStillActive => "the borrow scope is still active",
+            Self::ShareStillSplit => "the borrow share is still split",
+            Self::NotSiblings => "the borrow shares are not siblings",
+            Self::AlreadyRecovered => "the borrow was already recovered",
+            Self::StalePredecessor => "the borrow evidence uses a stale predecessor state",
+            Self::InvalidEvidence => "the borrow evidence is invalid",
             Self::UnsupportedResource => "this resource shape is outside stable-view support",
             Self::UnsupportedPartition => {
                 "the verifier could not prove the access separate from the live borrowed footprint"
             }
             Self::ActiveDependency => "the access overlaps a live borrowed footprint",
-            Self::MissingBacking => "the required loan backing is missing",
-            Self::MissingLoanBinding => "the required loan binding is missing",
-            Self::IdentitySpaceExhausted => "the loan identity space is exhausted",
+            Self::MissingBacking => "the required borrow backing is missing",
+            Self::MissingLoanBinding => "the required borrow binding is missing",
+            Self::IdentitySpaceExhausted => "the borrow identity space is exhausted",
         })
     }
 }
@@ -1852,7 +1852,7 @@ pub(crate) struct CompositeLoanBacking {
     support: ResourceOccurrenceId,
     head: ResourceFact,
     pieces: Vec<ResourceFact>,
-    /// Extra viewed composite descriptions this loan permits beside its own
+    /// Extra viewed composite descriptions this borrow permits beside its own
     /// head: the owned-interface-to-viewed-implementation adapter, where the
     /// caller escrows `head` and the callee's clause names a different
     /// composite whose checked frontier `pieces` already covers.
@@ -1877,7 +1877,7 @@ pub(crate) struct BorrowedContractInputBacking {
 }
 
 /// A definition-checked one-level expansion of one viewed composite: the
-/// head a loan already permits, and the only children a projection of that
+/// head a borrow already permits, and the only children a projection of that
 /// head may add to it. Construction is restricted to the kernel's expansion
 /// boundary, exactly like the two backings above, so `project` re-checks the
 /// containment premise itself instead of trusting the caller's child list
@@ -1923,7 +1923,7 @@ impl BorrowedContractInputBacking {
         pieces: Vec<ResourceFact>,
     ) -> Option<Self> {
         // A nested composite child is a read-only description under the
-        // same loan with no byte backing of its own: the head's escrow, or
+        // same borrow with no byte backing of its own: the head's escrow, or
         // the contract's partition at a root, protects everything under it.
         // An exclusive instance cannot be viewed (D12).
         (head.is_view()
@@ -1942,7 +1942,7 @@ impl BorrowedContractInputBacking {
 impl CompositeLoanBacking {
     /// The ordinary same-composite lend: the caller owns the very composite
     /// the callee views, so the escrowed head is also the only description
-    /// the loan permits and the exact restoration recipe.
+    /// the borrow permits and the exact restoration recipe.
     #[cfg(test)]
     pub(crate) fn from_checked_expansion(
         support: ResourceOccurrenceId,
@@ -1953,7 +1953,7 @@ impl CompositeLoanBacking {
     }
 
     /// The adapter form (docs/internals/stable-views.md). `adapted` are the viewed
-    /// composite descriptions this loan permits beside its own head, and
+    /// composite descriptions this borrow permits beside its own head, and
     /// `restored` are the owned facts recovery hands back in place of the
     /// head. Both are empty for an ordinary same-composite lend, which is
     /// what the test-only `CompositeLoanBacking::from_checked_expansion`
@@ -1966,7 +1966,7 @@ impl CompositeLoanBacking {
         restored: Vec<ResourceFact>,
     ) -> Option<Self> {
         // A nested composite child stays folded inside the escrowed head; it
-        // enters the loan as a permitted description with no byte backing.
+        // enters the borrow as a permitted description with no byte backing.
         // So does a viewed piece of a borrowing composite: the head packages
         // a description its hold keeps stable, and there is no owner here to
         // escrow for it. An exclusive instance cannot be viewed (D12).
@@ -1997,7 +1997,7 @@ impl CompositeLoanBacking {
 }
 
 /// Checked backing for a view of live automatic storage. Retain the memory
-/// state whose allocation bounds and lifetime were checked. The loan ledger
+/// state whose allocation bounds and lifetime were checked. The borrow ledger
 /// enforces the lifetime restriction; fields are private to this module.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct LocalViewBacking {
@@ -2153,14 +2153,14 @@ pub(crate) struct StableViewTransferPlan {
     /// For an adapter lend whose escrowed head was materialized for the call
     /// out of owned facts the caller already held: exactly those facts, which
     /// recovery hands back in place of the head (docs/internals/stable-views.md). The
-    /// escrow stays the head in the ledger, so the loan still protects the
+    /// escrow stays the head in the ledger, so the borrow still protects the
     /// whole frontier; only what the caller gets back differs.
     adapter_restorations: BTreeMap<LoanId, Vec<RecoveredEscrow>>,
     protected_escrows: BTreeMap<ResourceOccurrenceId, RecoveredEscrow>,
 }
 
 /// Ownership emitted by a checked ledger recovery, retaining the actual
-/// occurrence and its existing hold. Only the loan producer can issue it.
+/// occurrence and its existing hold. Only the borrow producer can issue it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RecoveredEscrow {
     fact: ResourceFact,
@@ -2200,7 +2200,7 @@ impl RecoveredEscrow {
                 .data
                 .loans
                 .get(&loan)
-                .expect("checked loan recovery")
+                .expect("checked borrow recovery")
                 .restoration_frontier
                 .clone(),
             fact,
@@ -2769,7 +2769,7 @@ impl Drop for CheckedLoanCallEvidenceSequence {
 
 impl CheckedLoanCallEvidence {
     /// A modeled runtime call retains its participant and transfers no
-    /// resource clauses. Its only loan effect is one checked hold or release.
+    /// resource clauses. Its only borrow effect is one checked hold or release.
     pub(crate) fn runtime_mutex_transition(
         before: &BorrowLedger,
         holder: LoanParticipantId,
@@ -2935,11 +2935,11 @@ impl StableViewRecovery {
     }
 }
 
-/// Whether a loan's lent view covers what a callee requires of it.
+/// Whether a borrow's lent view covers what a callee requires of it.
 ///
 /// The lent view covers the requirement directly, or through the view the
-/// caller holds under the loan: a loop that took `views chunk[0..n]` out of
-/// `views bytes[0..length]` holds the smaller view under the same loan, and
+/// caller holds under the borrow: a loop that took `views chunk[0..n]` out of
+/// `views bytes[0..length]` holds the smaller view under the same borrow, and
 /// a requirement inside `chunk[0..n]` is inside `bytes[0..length]` because
 /// the held view is. Both steps are checked here; neither is assumed from
 /// how the held view came to be bound.
@@ -3034,7 +3034,7 @@ impl From<LoanRefusal> for StableViewPlanError {
 /// Jointly plans all requirements from a normalized contract interface.
 ///
 /// Ownership requirements are reserved before any view is created, so input
-/// order cannot decide whether a mutable transfer and a shared loan overlap.
+/// order cannot decide whether a mutable transfer and a shared borrow overlap.
 /// Equal or overlapping views supported by the same owned occurrence reuse
 /// one escrow and one root share.
 pub(crate) fn plan_stable_view_transfer(
@@ -3357,7 +3357,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             // Evaluating a typed requirement preserves its selected use binding
             // but supplies the requested protected type. Concrete roots retain
             // that type in their authenticated protocol interface, not in the
-            // loan atom, so compare occurrence identity here and validate the
+            // borrow atom, so compare occurrence identity here and validate the
             // protected assertion against the interface after planning.
             if requirement.selected_mutex_source.is_none()
                 && identity.binding.is_some()
@@ -3645,7 +3645,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 .directly_supporting_owned_entry(&requirement.fact, assumptions)
                 .is_none()
         {
-            // A view description with no live loan binding carries no
+            // A view description with no live borrow binding carries no
             // authority (law 4), so it can neither be reborrowed nor stand in
             // for backing that the caller does not hold.
             return Err(StableViewPlanError::Loan(LoanRefusal::MissingLoanBinding));
@@ -3711,10 +3711,10 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             // A symbolic view range is plannable exactly when one owned
             // occurrence already covers it: the entailment above is the
             // checked coverage witness, and the whole covering owner becomes
-            // the loan backing.  Law 8 forbids inferring anything else here,
+            // the borrow backing.  Law 8 forbids inferring anything else here,
             // so no residual split and no separation from a sibling
             // requirement is assumed; every requirement grouped under this
-            // owner shares the one loan.
+            // owner shares the one borrow.
             let Resource::Memory(_) = owned.resource() else {
                 return Err(StableViewPlanError::UnsupportedPartition);
             };
@@ -3728,7 +3728,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
 
     let mut planned_views = Vec::<(usize, PlannedStableView)>::new();
     for (origin_support, group) in grouped {
-        // A group that must serve a symbolic range is lent whole: one loan
+        // A group that must serve a symbolic range is lent whole: one borrow
         // for the covering owner, one cluster holding every requirement it
         // supports.  Clustering by proven overlap is unavailable here, and
         // guessing that two symbolic ranges are separate would create two
@@ -4382,8 +4382,8 @@ impl StableViewTransferPlan {
                     .insert(opening.loan, (requirement.fact.clone(), worker));
                 continue;
             }
-            // An ordinary local loan closes with its call. New local
-            // authority cannot bypass an existing loan.
+            // An ordinary local borrow closes with its call. New local
+            // authority cannot bypass an existing borrow.
             backing.check_admission(&self.parent_ledger, assumptions)?;
             let opening = self.ledger.open_borrowed_root(
                 self.callee,
@@ -4464,9 +4464,9 @@ impl StableViewTransferPlan {
 
     /// Closes every unmodified root share and returns the exact escrowed
     /// ownership to the residual caller context.
-    /// Recovers the call's loans. `escaping` names the loans a produced
+    /// Recovers the call's borrows. `escaping` names the borrows a produced
     /// borrowing composite keeps open, with that composite's head fact; such
-    /// a loan is not ended (an escrowed owner stays escrowed) and the caller
+    /// a borrow is not ended (an escrowed owner stays escrowed) and the caller
     /// receives a hold binding for the head instead. `consumed_holds` are the
     /// hold bindings of owned composites the callee consumed without
     /// returning: their holds are released, and a root the caller can then
@@ -4526,8 +4526,8 @@ impl StableViewTransferPlan {
             && self.adapter_restorations.is_empty()
     }
 
-    /// Recover only this suspended call's loans against the parent's current
-    /// context. Other children may have opened loans since entry, so recovery
+    /// Recover only this suspended call's borrows against the parent's current
+    /// context. Other children may have opened borrows since entry, so recovery
     /// must keep the checked terminal ledger, never restore the entry state.
     #[cfg(test)]
     pub(crate) fn recover_suspended_views(
@@ -4843,7 +4843,7 @@ impl StableViewTransferPlan {
         // child would have refused before this checkpoint. When nothing
         // survives the call, the plan rolls back to the exact predecessor
         // root without a whole-ledger quiescence scan; a surviving (escaping)
-        // loan or a released hold keeps the terminal ledger, since the call
+        // borrow or a released hold keeps the terminal ledger, since the call
         // changed authority.
         if let Some(binding) = &self.exclusive_call {
             let transition = ledger.return_exclusive_call(binding, self.caller)?;
@@ -5670,14 +5670,14 @@ impl BorrowLedger {
         })
     }
 
-    /// Extend a loan's permitted descriptions by one checked child
+    /// Extend a borrow's permitted descriptions by one checked child
     /// projection of a composite description it already permits.
     ///
     /// `evidence` is the kernel's own one-level expansion of `parent`, built
     /// at the expansion boundary by the checked `unfold`, `observe`, or
     /// `with` scope that calls this. The ledger re-checks both premises of the
     /// transition rather than delegating them to its caller (D2 law 10): the
-    /// evidence must describe the very parent the loan permits, and the
+    /// evidence must describe the very parent the borrow permits, and the
     /// child must be one the expansion contains.
     ///
     /// **Identity rule.** A projection keeps the ledger identity, so two
@@ -5687,7 +5687,7 @@ impl BorrowLedger {
     /// see a projection difference. With containment checked here that is
     /// safe: every projected description is re-derivable from its parent by
     /// a checked expansion of the same state, so it is derived read-only
-    /// authority over memory the loan already protects. It mints no share,
+    /// authority over memory the borrow already protects. It mints no share,
     /// no scope, and no recovery right, and no transition is possible from a
     /// projected description alone. Ledger identity tracks
     /// authority-changing transitions only, and a certificate that re-runs
@@ -5761,7 +5761,7 @@ impl BorrowLedger {
     }
 
     /// Publish the views produced by the kernel's observation of an exact
-    /// loan-bound head. The evidence owns the child list this rule can add.
+    /// borrow-bound head. The evidence owns the child list this rule can add.
     pub(in crate::kernel) fn project_observed_body(
         &self,
         holder: LoanParticipantId,
@@ -5800,9 +5800,9 @@ impl BorrowLedger {
         })
     }
 
-    /// Places a hold on the scope of the binding's loan for a folded
+    /// Places a hold on the scope of the binding's borrow for a folded
     /// borrowing composite. While the hold exists, End refuses, so the owner
-    /// behind the loan cannot be recovered and written while the composite
+    /// behind the borrow cannot be recovered and written while the composite
     /// still describes it and carries its body facts.
     ///
     /// A hold changes the scope's ability to end. The kernel records it as a
@@ -5829,11 +5829,11 @@ impl BorrowLedger {
         self.hold_authority_with_transition(binding.authority(), holder)
     }
 
-    /// The successor of a proof `fold` that packages a loan-backed view into
+    /// The successor of a proof `fold` that packages a borrow-backed view into
     /// an owned borrowing composite: `transition` must be exactly the hold
-    /// `holder` placed on the loan `binding` names, and `binding.hold` must
+    /// `holder` placed on the borrow `binding` names, and `binding.hold` must
     /// name that hold, so the folded head carries the hold that keeps its
-    /// loan's scope from ending. Applying it rechecks the exact predecessor
+    /// borrow's scope from ending. Applying it rechecks the exact predecessor
     /// and that `holder` still holds the live authority. Anything else, a
     /// different transition or a hold the head does not carry, is refused.
     pub(crate) fn apply_borrowing_fold_hold(
@@ -5936,8 +5936,8 @@ impl BorrowLedger {
         Ok((ledger, transition))
     }
 
-    /// The descriptions a live loan authorizes, or none for an ended or
-    /// unknown loan.
+    /// The descriptions a live borrow authorizes, or none for an ended or
+    /// unknown borrow.
     #[cfg(test)]
     pub(crate) fn permitted_descriptions(&self, loan: LoanId) -> Vec<ResourceFact> {
         let data = &self.storage.data;
@@ -5954,7 +5954,7 @@ impl BorrowLedger {
             .unwrap_or_default()
     }
 
-    /// Read one producer-indexed permission of the selected loan. A failed
+    /// Read one producer-indexed permission of the selected borrow. A failed
     /// nominee is final; neither permission buckets nor pointer aliases are searched.
     pub(crate) fn selected_return_permission(
         &self,
@@ -6010,7 +6010,7 @@ impl BorrowLedger {
     }
 
     /// Whether `holder` is the recovery right of an escrowed, unrecovered
-    /// loan.
+    /// borrow.
     pub(crate) fn loan_is_recoverable_by(&self, loan: LoanId, holder: LoanParticipantId) -> bool {
         self.storage.data.loans.get(&loan).is_some_and(|record| {
             !record.recovered && record.origin == LoanOrigin::Escrowed(holder)
@@ -6319,9 +6319,9 @@ impl BorrowLedger {
     }
 
     /// [`Self::describe_view`] for a view reached through one the holder
-    /// already has under the loan: `held` lies in what the loan permits and
+    /// already has under the borrow: `held` lies in what the borrow permits and
     /// `viewed` lies in `held`, both checked here, so `viewed` lies in what
-    /// the loan permits. A requirement inside a chunk taken from a lent
+    /// the borrow permits. A requirement inside a chunk taken from a lent
     /// range is described this way, where its position in the whole range
     /// is two offsets deep.
     pub(crate) fn describe_view_through(
@@ -6394,9 +6394,9 @@ impl BorrowLedger {
         Arc::ptr_eq(&self.storage, &other.storage)
     }
 
-    /// Select the least conflicting loan ID from the concrete write index.
+    /// Select the least conflicting borrow ID from the concrete write index.
     /// Each fixed-width dyadic bucket contributes only its first member;
-    /// selecting the minimum preserves the diagnostic's existing loan choice.
+    /// selecting the minimum preserves the diagnostic's existing borrow choice.
     fn first_active_memory_overlap(
         &self,
         range: &MemoryRange,
@@ -6429,9 +6429,9 @@ impl BorrowLedger {
         Ok(selected)
     }
 
-    /// Return active memory loans whose concrete byte footprints overlap the
+    /// Return active memory borrows whose concrete byte footprints overlap the
     /// query. The dyadic index visits logarithmically many buckets plus the
-    /// returned loan IDs; it never scans the ledger.
+    /// returned borrow IDs; it never scans the ledger.
     #[cfg(test)]
     pub(crate) fn active_memory_overlaps(
         &self,
@@ -6487,11 +6487,11 @@ impl BorrowLedger {
     }
 
     /// Whether a write, free, or havoc of `range` is compatible with every
-    /// active loan. Concrete ranges and concrete aliases use the dyadic
+    /// active borrow. Concrete ranges and concrete aliases use the dyadic
     /// index. A symbolic query cannot be looked up there, so it is refused
-    /// while an indexed loan might alias it. An external input cannot alias a
+    /// while an indexed borrow might alias it. An external input cannot alias a
     /// fresh function-local block; that exact case is allowed when all
-    /// indexed loans are local. Remaining symbolic loans are compared in the
+    /// indexed borrows are local. Remaining symbolic borrows are compared in the
     /// buckets for the query and its exact pointer aliases with
     /// [`protected_range_proven_overlapping`], whose polarity is documented
     /// there.
@@ -6508,7 +6508,7 @@ impl BorrowLedger {
         crate::kernel::search::ProofSearch::<BorrowLedger>::loan_access(self, range, assumptions)
     }
 
-    /// The write's complete loan condition, retained as an ordinary resource
+    /// The write's complete borrow condition, retained as an ordinary resource
     /// proposition. Building it never visits the protected ranges or aliases.
     pub(crate) fn memory_access_requirement(
         &self,
@@ -6556,7 +6556,7 @@ impl BorrowLedger {
     }
 
     /// Whole-object retirement uses the backing identities retained when
-    /// loans were opened. Select one live loan directly for the refusal.
+    /// borrows were opened. Select one live borrow directly for the refusal.
     pub(super) fn automatic_storage_retirement_refusal(
         &self,
         block: &AddressBase,
@@ -6568,7 +6568,7 @@ impl BorrowLedger {
         crate::instrumentation::record_deterministic_work(1);
         let data = &self.storage.data;
         let (loan, protected) = data.automatic_storage_loans.get(block)?.iter().next()?;
-        let record = data.loans.get(loan).expect("indexed live loan");
+        let record = data.loans.get(loan).expect("indexed live borrow");
         let attempted = MemoryRange::new_with_element_width(
             Address {
                 base: block.clone(),
@@ -6589,8 +6589,8 @@ impl BorrowLedger {
         ))
     }
 
-    /// Explain a refused access in the D13 shape: the loan that refused it,
-    /// where that loan came from, the range it protects, and the range the
+    /// Explain a refused access in the D13 shape: the borrow that refused it,
+    /// where that borrow came from, the range it protects, and the range the
     /// operation attempted. Only the refusal path pays for the explanation,
     /// and it revisits the same index buckets the check itself used, so a
     /// permitted access costs nothing and a refused one never walks the
@@ -6617,8 +6617,8 @@ impl BorrowLedger {
         Some(refusal.diagnostic_with_subject(operation, subject))
     }
 
-    /// The first active loan whose protected footprint explains a refusal of
-    /// `range`, with the protected range and the loan's origin.
+    /// The first active borrow whose protected footprint explains a refusal of
+    /// `range`, with the protected range and the borrow's origin.
     #[cfg(test)]
     fn conflicting_memory_loan(
         &self,
@@ -6726,12 +6726,12 @@ impl BorrowLedger {
         false
     }
 
-    /// Whether an active loan may protect memory, including composite loans
+    /// Whether an active borrow may protect memory, including composite borrows
     /// whose one-level frontier enumerated no bytes.
     ///
     /// A zero count skips write-barrier alias discovery. Loop and branch havoc
     /// also need this fail-closed answer when no checked write set is available.
-    /// Read the maintained count; do not rediscover it from loans or scopes.
+    /// Read the maintained count; do not rediscover it from borrows or scopes.
     pub(crate) fn has_active_memory_loans(&self) -> bool {
         self.storage.data.active_memory_loans != 0
     }
@@ -7364,7 +7364,7 @@ impl BorrowLedger {
                 }
                 // Counted by the same predicate `End` decrements with, over
                 // the narrowed authority this child actually holds, so a
-                // reborrow of a byte-less composite loan is conserved.
+                // reborrow of a byte-less composite borrow is conserved.
                 if loan_protects_memory(&memory_backing, permitted.iter()) {
                     data.active_memory_loans = data
                         .active_memory_loans
@@ -7768,7 +7768,7 @@ impl BorrowLedger {
         if expected_unindexed != actual_unindexed {
             return false;
         }
-        // The fail-closed barrier counter is exactly the number of live loans
+        // The fail-closed barrier counter is exactly the number of live borrows
         // that protect memory, whether or not they enumerated any bytes.
         let expected_active_memory_loans = data
             .loans

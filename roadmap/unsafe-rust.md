@@ -43,7 +43,7 @@ provenance and bounds; see
 2. **The aliasing model.** Stacked Borrows / Tree Borrows define when `&mut`
    is exclusive, what writes through raw pointers do to outstanding
    references, and the permissions of references created from raw pointers.
-   This belongs to the permission layer (loans, `owns`, `views`), not the
+   This belongs to the permission layer (borrows, `owns`, `views`), not the
    pointer value. Choosing a model, or a subset that is sound under both,
    is the main decision here. The static parts map onto existing resources;
    dynamic permission tracking needs design.

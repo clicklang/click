@@ -1266,7 +1266,7 @@ pub(super) fn function_refines_named_contract_in_case(
         // The checked adapter has already established the resource transition
         // and recovery.  Keep the ordinary effect containment check, but do
         // not re-run the algebraic resource comparison that cannot represent
-        // the temporary owner-to-view loan scope.
+        // the temporary owner-to-view borrow scope.
         mutable_footprint_is_compatible_for_interfaces(
             contract_interface,
             function_interface,

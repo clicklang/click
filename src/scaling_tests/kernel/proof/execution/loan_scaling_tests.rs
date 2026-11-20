@@ -42,25 +42,25 @@ fn loop_head_havoc_work_over_cells_and_symbolic_loans() {
                 Some(&ledger),
             )
         });
-        // None of the symbolic loans protects these concrete addresses.
-        // Before the removal, every cell searched the whole loan bucket.
+        // None of the symbolic borrows protects these concrete addresses.
+        // Before the removal, every cell searched the whole borrow bucket.
         for index in 0..count {
             assert!(
                 !havoced.has_known_cell_at(&Address {
                     base: AddressBase::ExternalArgument,
                     offset: AddressOffset::Constant(4 * index as i64),
                 }),
-                "a cell no loan protects must not survive the havoc"
+                "a cell no borrow protects must not survive the havoc"
             );
         }
         samples.push((count, work));
     }
     // Before: 86, 287, 1071, 4175. Indexed retention: 30, 47, 79, 143.
-    assert_near_linear("loop-head havoc cells and symbolic loans", &samples);
+    assert_near_linear("loop-head havoc cells and symbolic borrows", &samples);
     for (count, work) in &samples {
         assert!(
             *work <= 4 * count + 16,
-            "loop-head havoc must not query every symbolic loan per cell: {samples:?}"
+            "loop-head havoc must not query every symbolic borrow per cell: {samples:?}"
         );
     }
 }
@@ -86,6 +86,6 @@ fn loop_head_havoc_symbolic_read_ignores_other_loans() {
     assert!(samples[0].1 > 0);
     assert!(
         samples.iter().all(|(_, work)| *work <= samples[0].1 + 8),
-        "one symbolic read must select its origin, not search other loans: {samples:?}"
+        "one symbolic read must select its origin, not search other borrows: {samples:?}"
     );
 }

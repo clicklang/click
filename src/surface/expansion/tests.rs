@@ -4551,7 +4551,7 @@ void copy(struct Packet* dst, struct Packet* src, int32* q) {
     })
     .unwrap();
 
-    // The loan can alias the second member when the separation is absent.
+    // The borrow can alias the second member when the separation is absent.
     let missing = proof.replace(
         "requires separate(memory((dst as (uint8*))[0..8]), memory(*q));",
         "",

@@ -897,7 +897,7 @@ pub(super) fn storage_is_automatic(
 
 /// A storage release must not leave a live initialization behind. Abstract
 /// guard contracts lack checked lifecycle inputs for deciding this dependency;
-/// refuse retirement there until the lifetime-loan model can discharge it.
+/// refuse retirement there until the lifetime-borrow model can discharge it.
 pub(super) fn storage_retirement_refusal(
     state: &ExecutionState,
     allocation: &super::MemoryRange,
@@ -1021,9 +1021,9 @@ impl MutexContext {
                 self.state
                     .loan_ledger
                     .as_ref()
-                    .expect("mutex loan successor"),
+                    .expect("mutex borrow successor"),
             )
-            .expect("checked mutex loan transition");
+            .expect("checked mutex borrow transition");
             evidence = append_checked_loan_evidence(&evidence, Some(Arc::new(checked)));
         }
         (self.state, evidence)
@@ -1162,7 +1162,7 @@ impl MutexContext {
         ) {
             return Err("mutex invariant must be one folded, exclusive instance");
         }
-        // The first transition has no loan evidence. Escrowing a resource
+        // The first transition has no borrow evidence. Escrowing a resource
         // beside a possible live borrower would be unsound.
         if self
             .state
@@ -1171,7 +1171,7 @@ impl MutexContext {
             .is_some_and(|ledger| ledger.has_active_memory_loans())
             || self.state.loan_view_bindings.iter().next().is_some()
         {
-            return Err("mutex publication with a loan ledger is not supported");
+            return Err("mutex publication with a borrow ledger is not supported");
         }
         if !self
             .state
@@ -1258,7 +1258,7 @@ impl MutexContext {
             Some(participant) => participant,
             None => ledger.fresh_participant().map_err(|error| {
                 MutexTransitionError::OwnedRefusal(format!(
-                    "cannot establish mutex loan participant: {error}"
+                    "cannot establish mutex borrow participant: {error}"
                 ))
             })?,
         };
@@ -1299,11 +1299,11 @@ impl MutexContext {
             .state
             .loan_ledger
             .as_ref()
-            .ok_or("missing mutex loan ledger")?;
+            .ok_or("missing mutex borrow ledger")?;
         let participant = self
             .state
             .loan_participant
-            .ok_or("missing mutex loan participant")?;
+            .ok_or("missing mutex borrow participant")?;
         let fact = ledger
             .mutex_use_resource(usage, participant)
             .map_err(|error| {
@@ -1340,11 +1340,11 @@ impl MutexContext {
             .state
             .loan_ledger
             .as_ref()
-            .ok_or("missing mutex loan ledger")?;
+            .ok_or("missing mutex borrow ledger")?;
         let participant = self
             .state
             .loan_participant
-            .ok_or("missing mutex loan participant")?;
+            .ok_or("missing mutex borrow participant")?;
         let parent_fact = self.owned_use_resource(usage)?;
         let (ledger, loan) = ledger
             .reborrow_mutex_use(usage, participant, participant)
@@ -1391,11 +1391,11 @@ impl MutexContext {
             .state
             .loan_ledger
             .as_ref()
-            .ok_or("missing mutex loan ledger")?;
+            .ok_or("missing mutex borrow ledger")?;
         let participant = self
             .state
             .loan_participant
-            .ok_or("missing mutex loan participant")?;
+            .ok_or("missing mutex borrow participant")?;
         let child_fact = self.owned_use_resource(loan.usage)?;
         let (ledger, parent_fact) = ledger
             .end_mutex_reborrow_with_parent(loan, participant)
@@ -1437,17 +1437,17 @@ impl MutexContext {
             .state
             .loan_ledger
             .as_ref()
-            .ok_or("missing mutex loan ledger")?;
+            .ok_or("missing mutex borrow ledger")?;
         let participant = self
             .state
             .loan_participant
-            .ok_or("missing mutex loan participant")?;
+            .ok_or("missing mutex borrow participant")?;
         let use_fact = self.owned_use_resource(loan.usage)?;
         let (ledger, owner) = ledger
             .recover_mutex_use(loan, participant)
             .map_err(|error| {
                 MutexTransitionError::OwnedRefusal(format!(
-                    "mutex use loan still has outstanding shares or guards: {error}"
+                    "mutex use borrow still has outstanding shares or guards: {error}"
                 ))
             })?;
         let mut state = self.state.clone();
@@ -1604,10 +1604,10 @@ impl MutexContext {
         mutex: &Address,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
-        // The resource occurrence selects the loan; an address or a loan
+        // The resource occurrence selects the borrow; an address or a borrow
         // record alone is not authority. The checked acquisition validates
         // possession and initialization identity before installing its hold.
-        // A use description without a binding selects no loan either: the
+        // A use description without a binding selects no borrow either: the
         // lifecycle authority, when the frame holds it, is the acquisition
         // route, and only its absence reports the missing use.
         let unbound_use = match self.state.resources.mutex_use_candidate_at(mutex) {
@@ -1832,7 +1832,7 @@ impl MutexContext {
                 .is_some_and(|ledger| ledger.has_active_memory_loans())
                 || self.state.loan_view_bindings.iter().next().is_some())
         {
-            return Err("mutex release with a loan ledger is not supported".into());
+            return Err("mutex release with a borrow ledger is not supported".into());
         }
         let resources = if let Some(restored) = &restored {
             if !self.state.resources.contains_exact_representation(restored) {
@@ -1855,7 +1855,7 @@ impl MutexContext {
             let loans = state
                 .loan_ledger
                 .as_ref()
-                .ok_or("missing mutex guard lifetime loan")?;
+                .ok_or("missing mutex guard lifetime borrow")?;
             let (next, transition) = loans
                 .release_mutex_use_hold_with_transition(
                     usage,
@@ -1946,7 +1946,7 @@ impl MutexLedger {
     }
 
     /// Read only the selected initialization's description. The call transfer
-    /// must separately establish ownership and the participant's live loan.
+    /// must separately establish ownership and the participant's live borrow.
     pub(super) fn interface_for_use(
         &self,
         fact: &ResourceFact,
@@ -4617,7 +4617,7 @@ mod tests {
             .unwrap()
             .live_resource(&address)
             .unwrap();
-        // A use description without a loan binding is not authority. Beside
+        // A use description without a borrow binding is not authority. Beside
         // the owned lifecycle it must not shadow the ordinary acquisition.
         let unbound = ResourceFact::own(Resource::MutexUse(super::super::MutexUseIdentity {
             protected: None,
@@ -4704,7 +4704,7 @@ mod tests {
             missing.recover_use(&loan, &assumptions).err(),
             Some(MutexTransitionError::MissingUse(address.clone()))
         );
-        // An ordinary resource move restores the ability to act. The loan
+        // An ordinary resource move restores the ability to act. The borrow
         // description alone, even with the correct pointer, did not do so.
         missing.state.resources = missing
             .state
@@ -4763,7 +4763,7 @@ mod tests {
                 .is_err()
         );
         // Putting a pinned parent atom into the resource context cannot
-        // bypass the loan's independent possession check.
+        // bypass the borrow's independent possession check.
         missing_child.state.resources = missing_child
             .state
             .resources
@@ -5056,7 +5056,7 @@ mod tests {
                 .err(),
             Some(MutexTransitionError::MissingUse(address.clone()))
         );
-        // An active old loan is also insufficient for a new initialization,
+        // An active old borrow is also insufficient for a new initialization,
         // even if a hostile state substitutes its mutex registry.
         let mut substituted = lent;
         substituted.state.mutex_ledger = reinitialized.state.mutex_ledger;

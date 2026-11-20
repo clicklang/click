@@ -100,10 +100,10 @@ fn divergent_ledger_successors_make_state_identities_differ() {
     let (second_fact, second_support) = token_with_support("second");
     let first = ledger
         .lend(owner, reader, first_support, first_fact)
-        .expect("first loan");
+        .expect("first borrow");
     let second = ledger
         .lend(owner, reader, second_support, second_fact)
-        .expect("second loan");
+        .expect("second borrow");
     let first = ledger.apply(&first.transition).expect("first successor");
     let second = ledger.apply(&second.transition).expect("second successor");
     let first_state = ExecutionState::new().with_loan_ledger(Some(first));
@@ -124,10 +124,10 @@ fn abstract_join_rejects_divergent_loan_roots_without_scanning_ledgers() {
     let (second_fact, second_support) = token_with_support("second");
     let first = ledger
         .lend(owner, reader, first_support, first_fact)
-        .expect("first loan");
+        .expect("first borrow");
     let second = ledger
         .lend(owner, reader, second_support, second_fact)
-        .expect("second loan");
+        .expect("second borrow");
     let first_state = ExecutionState::new().with_loan_ledger(Some(
         ledger.apply(&first.transition).expect("first successor"),
     ));
@@ -145,8 +145,8 @@ fn abstract_join_rejects_divergent_loan_roots_without_scanning_ledgers() {
         &std::collections::BTreeMap::new(),
         0,
     )
-    .expect_err("divergent loan roots must not be silently selected");
-    assert!(error.contains("stable-view loan state"));
+    .expect_err("divergent borrow roots must not be silently selected");
+    assert!(error.contains("stable-view borrow state"));
 }
 
 /// R22: one arm returns its access and recovers the owner, the other keeps
@@ -180,8 +180,8 @@ fn abstract_join_rejects_a_loan_ended_on_only_one_arm() {
         &std::collections::BTreeMap::new(),
         0,
     )
-    .expect_err("a loan ended on one arm only must not join into ownership");
-    assert!(error.contains("stable-view loan state"), "{error}");
+    .expect_err("a borrow ended on one arm only must not join into ownership");
+    assert!(error.contains("stable-view borrow state"), "{error}");
     let error = abstract_execution_state_for_join_across(
         &kept,
         &[&kept, &closed],
@@ -189,7 +189,7 @@ fn abstract_join_rejects_a_loan_ended_on_only_one_arm() {
         0,
     )
     .expect_err("arm order does not matter");
-    assert!(error.contains("stable-view loan state"), "{error}");
+    assert!(error.contains("stable-view borrow state"), "{error}");
 
     let closed_too = ExecutionState::new().with_loan_ledger(Some(recovered.clone()));
     let joined = abstract_execution_state_for_join_across(
@@ -202,7 +202,7 @@ fn abstract_join_rejects_a_loan_ended_on_only_one_arm() {
     assert_eq!(joined.state.loan_ledger(), closed.loan_ledger());
 }
 
-/// One arm state holding a checked view of `name`, rooted in a fresh loan
+/// One arm state holding a checked view of `name`, rooted in a fresh borrow
 /// taken from `ledger`. The state keeps `ledger` itself, so two arms built
 /// this way differ only in their occurrence bindings.
 fn arm_with_view_binding(
@@ -219,7 +219,7 @@ fn arm_with_view_binding(
     let occurrence = resources.occurrences_for_fact(&viewed)[0];
     let opening = ledger
         .lend(owner, reader, support, support_fact)
-        .expect("the arm's view is backed by a fresh loan");
+        .expect("the arm's view is backed by a fresh borrow");
     let binding = crate::kernel::loans::LoanViewBinding {
         loan: opening.loan,
         scope: opening.scope,
@@ -287,7 +287,7 @@ fn abstract_join_rejects_an_arm_that_dropped_its_view_root() {
     let dropped = ExecutionState::new()
         .with_loan_ledger(Some(ledger))
         .with_loan_participant(Some(reader))
-        // The same visible facts, but no recorded dependency on the loan that
+        // The same visible facts, but no recorded dependency on the borrow that
         // authorized reading them.
         .with_resource_context(
             ResourceContext::new().unchecked_with_facts(arm.resources().facts().iter().cloned()),
@@ -316,7 +316,7 @@ fn abstract_join_rejects_divergent_holders_on_one_ledger_root() {
         0,
     )
     .expect_err("divergent holders must not be silently selected");
-    assert!(error.contains("stable-view loan participant"));
+    assert!(error.contains("stable-view borrow participant"));
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn loop_backedge_rejects_divergent_holders_on_one_ledger_root() {
         &[],
     )
     .expect_err("divergent holders must not cross a loop backedge");
-    assert!(error.contains("stable-view loan participant"));
+    assert!(error.contains("stable-view borrow participant"));
 }
 
 /// Two arm states that share `known` cached cells and differ in one other

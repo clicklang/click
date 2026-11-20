@@ -3,7 +3,7 @@
 Control for
 [`byte_representation_borrowed_destination_rejected.md`](byte_representation_borrowed_destination_rejected.md):
 the identical program with the `memcpy` moved after `pthread_join`. Joining
-the worker ends its loan and recovers the caller's escrowed ownership of the
+the worker ends its borrow and recovers the caller's escrowed ownership of the
 heap cell, so the copy's `owns destination[0..bytes]` precondition holds and
 the program verifies.
 

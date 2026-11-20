@@ -8054,7 +8054,7 @@ int32 reader(int32 p[], int32 q[]) {
     /// The viewed pointer itself carries no write authority. A pure view
     /// holds no owner for the store, so the ordinary owned-authority check
     /// refuses it first and the missing-ownership diagnostic is what the
-    /// verifier reports. The loan barrier is reserved for an
+    /// verifier reports. The borrow barrier is reserved for an
     /// owner-authorized write.
     #[test]
     fn root_view_reports_missing_ownership_for_an_unowned_write() {
@@ -8234,7 +8234,7 @@ int32 read_retargeted(struct buffer* owner, int32* other) {
     }
 
     /// A view of read-only storage is intrinsic read authority, so it needs
-    /// no borrowed root at entry and no loan at a call. A call that lends an
+    /// no borrowed root at entry and no borrow at a call. A call that lends an
     /// ordinary view therefore has to carry the caller's file-static const
     /// view across its return without a binding for it, and the caller can
     /// still read the table afterwards.
@@ -8455,7 +8455,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
         );
     }
 
-    /// Consuming the composite releases its hold: the loan ends, the owner
+    /// Consuming the composite releases its hold: the borrow ends, the owner
     /// is recovered, and the same write is accepted afterwards.
     #[test]
     #[cfg(not(feature = "fast-gate"))]
@@ -8504,8 +8504,8 @@ int32 f(struct s* p, int32 d[], int32 n) {{
         let source = format!(
             "{BORROWING_BOX_HEADER}int32 f(struct s* p, int32 d[], int32 n) {{ setup(p, d, n); d[0] = 1; drop_box(p); return 0; }}"
         );
-        let error =
-            verify_sources(&refused, &source).expect_err("the unfolded piece still holds the loan");
+        let error = verify_sources(&refused, &source)
+            .expect_err("the unfolded piece still holds the borrow");
         assert!(
             error.message().contains("missing resource fact `owns "),
             "{}",
@@ -8580,7 +8580,7 @@ int32 f(struct s* p, int32 n) {
 
     /// A callee whose contract leaves allocation continuity undecided may
     /// deallocate; retiring the allocation must consult the ledger that
-    /// carries this call's own loans, because lending has removed the owner
+    /// carries this call's own borrows, because lending has removed the owner
     /// from the preserved residual (docs/internals/stable-views.md).
     #[test]
     fn call_retirement_requires_separation_from_its_own_loan() {

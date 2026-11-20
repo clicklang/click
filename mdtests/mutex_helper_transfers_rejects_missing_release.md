@@ -1,7 +1,7 @@
 # Consuming an acquisition requires releasing it
 
 The visible resource clause does not permit a function to return while its
-input acquisition still holds the lifetime loan.
+input acquisition still holds the lifetime borrow.
 
 ```c filename=missing_release.c
 #include <pthread.h>

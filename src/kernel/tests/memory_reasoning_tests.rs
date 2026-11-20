@@ -4332,7 +4332,7 @@ fn a_composition_separates_a_store_from_a_load_only_through_two_owners() {
     // observation of that very ownership (`owner_observation_core`), which is
     // why `MemoryResourceAlgebra::pair_validity_error` refuses only
     // owner/owner overlap; whether a particular view is independent is
-    // decided by its loan binding, which this rule cannot see.
+    // decided by its borrow binding, which this rule cannot see.
     let owner_and_view = compose(vec![
         ResourceFact::own_memory(value_cell.clone()),
         ResourceFact::view_memory(acquired_cell.clone()),

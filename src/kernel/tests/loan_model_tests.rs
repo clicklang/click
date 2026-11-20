@@ -1,6 +1,6 @@
-//! Executable design model for stable shared loans.
+//! Executable design model for stable shared borrows.
 //!
-//! This is deliberately independent of the production loan ledger. It fixes
+//! This is deliberately independent of the production borrow ledger. It fixes
 //! the conservation laws and cross-context counterexamples before the kernel
 //! representation is used by C contract transfer.
 //!
@@ -8,7 +8,7 @@
 //! sequential actor and explores interleavings only at explicit transition
 //! boundaries. SymbolicMemory is a bounded array of initialized byte cells; ranges
 //! are nonempty, concrete, and at most eight cells wide in the witnesses.
-//! The original loan search remains depth five with a 50,000-state cap, and
+//! The original borrow search remains depth five with a 50,000-state cap, and
 //! extension identities are eight-bit counters with checked exhaustion. This
 //! is not a release/acquire, allocator, or C data-race proof: atomics,
 //! scheduling fairness, cache visibility, C lifetime races, Rust trait/unsafe
@@ -280,7 +280,7 @@ impl Model {
         Ok(*self
             .values
             .get(&loan.location)
-            .expect("loaned location is live"))
+            .expect("borrowed location is live"))
     }
 
     fn write(&mut self, holder: Holder, location: Location, value: u8) -> Result<(), Refusal> {
@@ -769,7 +769,7 @@ impl RangeOwnershipModel {
         }
         self.owners.remove(&range);
         let loan = self.next_loan;
-        self.next_loan = self.next_loan.checked_add(1).expect("tiny loan bound");
+        self.next_loan = self.next_loan.checked_add(1).expect("tiny borrow bound");
         let root = self.next_share;
         self.next_share = self.next_share.checked_add(1).expect("tiny share bound");
         self.loans.insert(
@@ -889,7 +889,7 @@ impl RangeOwnershipModel {
             .get_mut(&record.root)
             .expect("checked root")
             .holder = None;
-        self.loans.get_mut(&loan).expect("checked loan").active = false;
+        self.loans.get_mut(&loan).expect("checked borrow").active = false;
         Ok(())
     }
 
@@ -909,7 +909,7 @@ impl RangeOwnershipModel {
         {
             return Err(RangeRefusal::Overlap);
         }
-        self.loans.get_mut(&loan).expect("checked loan").recovered = true;
+        self.loans.get_mut(&loan).expect("checked borrow").recovered = true;
         self.owners.insert(record.range, record.lender);
         Ok(())
     }
@@ -974,7 +974,7 @@ impl RangeOwnershipModel {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ReborrowMode {
     Shared,
-    // Model-only extension: the production stable-loan API intentionally has
+    // Model-only extension: the production stable-borrow API intentionally has
     // no exclusive reborrow operation.
     ExclusiveModelOnly,
 }

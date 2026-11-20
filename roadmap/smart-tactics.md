@@ -11,7 +11,7 @@ permission to write or preserve a value.
 
 A simple checking operation costs its explicit input and necessary state delta,
 up to indexing factors. With those fixed, more ambient facts, owners, aliases,
-loans, cached observations or execution history must not make it slower.
+borrows, cached observations or execution history must not make it slower.
 Expensive discovery belongs in budgeted, expandable search, whose expanded
 steps satisfy the same checking rule. A fast special case does not establish
 this guarantee for an operation's other routes.
@@ -134,7 +134,7 @@ same approach for calls with larger or unresolved write sets.
 
 There is no defensible total bug count yet. Rows are operations, not bugs;
 several rows share helpers and a row can contain multiple routes. The previous
-six-group estimate covered only resource/loan candidates, not the verifier.
+six-group estimate covered only resource/borrow candidates, not the verifier.
 
 ## Reconciled status and ownership
 
@@ -166,7 +166,7 @@ records the original classification and reproductions.
 - **Operation guards:** theorem application, scope completion, statement-result
   publication, prepared-step publication, have opening and contract-claim opening
   have test-build discovery guards.
-  The production paths formerly using the loan write guard now use explicit
+  The production paths formerly using the borrow write guard now use explicit
   evidence or obligations. Re-probe complete statement preparation for
   remaining crossings, including ownership validation and composite framing.
   See the [historical probes](../design/proof-boundary-classification.md#operation-discovery-guards-and-reproduced-crossings).
@@ -227,11 +227,11 @@ follow it. None of these whole-operation rows is marked complete.
 | Operation and intended cost | Checking entry points | Existing scoped evidence | Remaining evidence or candidate |
 | --- | --- | --- | --- |
 | Prepare selected code and function entry; pay once for selected declarations and clauses | `surface/verification.rs`, `kernel/functions.rs`, `kernel/termination.rs` | `surface/tests/step_shape_scaling_tests.rs`: `entry_setup_is_linear_in_owned_parameters`; `kernel/termination/termination_scaling_tests.rs`: call-chain, fan-out and cycle controls | Coverage gap: complete frontend/lowering/termination dependency map; no per-step rebuilding of prepared input. These are setup costs, not constant-size steps. |
-| Execute a scalar statement or access; pay for selected expression and affected storage | `kernel/eval.rs`, `kernel/proof/execution.rs`, `kernel/primitives/memory_state.rs` | `kernel/tests/memory_scaling_tests.rs`: `one_store_is_logarithmic_in_unrelated_cells`, `sequential_owned_parameter_stores_ignore_earlier_cached_fields`; source step-shape tests | Memory/cache candidates M1; ownership and loan checks below are dependencies of the whole step. A flat store helper alone is insufficient. |
+| Execute a scalar statement or access; pay for selected expression and affected storage | `kernel/eval.rs`, `kernel/proof/execution.rs`, `kernel/primitives/memory_state.rs` | `kernel/tests/memory_scaling_tests.rs`: `one_store_is_logarithmic_in_unrelated_cells`, `sequential_owned_parameter_stores_ignore_earlier_cached_fields`; source step-shape tests | Memory/cache candidates M1; ownership and borrow checks below are dependencies of the whole step. A flat store helper alone is insufficient. |
 | Admit facts and decide a condition; pay for named terms and justified incremental updates | `kernel/assumptions.rs`, `kernel/equality_graph.rs`, `kernel/difference_graph.rs`, `kernel/assumptions/condition_reasoning/decision.rs` | `kernel/assumptions/condition_buckets.rs`: `equality_class_hits_and_anchored_misses_stay_indexed`, `interval_queries_do_not_walk_symbolic_order_components`; graph late-merge/fork controls | Pointer distinctness uses explicit separation; ownership discovery is removed. Coverage gap: total admission/propagation work across growing shared classes, beyond covered shapes. |
 | Select, consume, fold or unfold ownership; pay for explicitly selected pieces/body | `ResourceContext::{satisfies_fact,without_fact_incrementally_impl,consume_unit_owned_memory}`, `ExecutionProofCore` fold construction | `kernel/loans/tests.rs`: `call_fragment_composition_stops_at_a_fixed_gap`; `kernel/proof/execution/tests.rs`: `constructing_an_instance_fold_pays_for_its_body_once`; source fold/unfold controls | R1 reachability gap for other quantities; R2 source candidates for ownership validity, alias/root discovery and overlap. |
 | Observe separation or resource facts; pay for selected operands/evidence | `surface/proof/proof_object/splits_and_scopes.rs`, `kernel/proof/facts.rs`, `kernel/assumptions/memory_reasoning.rs` | source `observing_one_owner_ignores_unused_parameters`; transport footprint tests, including `two_footprints_do_not_expand_into_a_cartesian_product` | F2: composition/member bucket growth remains a coverage gap; frontier opening no longer reconstructs a composition-only context. |
-| Check a write against loans; pay for selected conflict/evidence, not all loans or aliases | `LoanLedger::permits_memory_access_with_assumptions`, called by memory-access checking | `kernel/loans/tests.rs`: `write_barrier_does_not_enumerate_overlapping_loans`, `writes_without_active_memory_loans_do_not_walk_pointer_aliases` | L1: aliases with active loans and symbolic-loan comparisons. Zero-loan and concrete-overlap controls do not finish this operation. |
+| Check a write against borrows; pay for the selected evidence | `BorrowLedger::memory_access_requirement` and statement prerequisite checking | `loan_access_requirement_is_retained_and_branch_local`, `stated_symbolic_write_separation_ignores_nearby_facts_and_aliases` | L1 covers the scoped write path and its evidence lookup. The old alias-enumerating guard is test-only. |
 | Apply a modular call, transfer resources and finish it; pay for selected contract and effects | `kernel/functions.rs`: `execute_verified_function_applications_with_suspension`, `call_kept_ownership`; `kernel/proof/execution.rs` | source `a_call_ignores_unrelated_owned_objects`; `kernel/functions/stable_view_call_tests.rs`: `returning_one_borrowed_owner_does_not_rebuild_its_memory_block` | C1: resource-family selection and selected-address composite candidates; non-direct member-count preparation is now flat. E1: execution/publication/completion accounting. |
 | Split/join branches and enter/exit loops; pay for explicit arms/interfaces and actual changes | `kernel/api.rs`: `abstract_c_state_for_interface_join_across`; `kernel/loops.rs`; `kernel/proof/execution.rs` | `kernel/loops/contract_exit_join_tests.rs`, `kernel/loops/frame_resource_tests.rs`; branch availability and interface-join controls | J1 coverage gap: fixed-delta joins across growing stable state; loop-head abstraction uses a different policy. Existing growth allowances do not establish ambient independence. |
 | Apply an explicit equality, arithmetic step or preservation step; pay for written nodes/premises | `kernel/proof/{preservation,integer_arithmetic,term_rewrite}.rs` | `kernel/proof/preservation.rs`: history independence, explicit-step linearity, selected resource fields; `kernel/proof/integer_arithmetic/tests.rs`: repeated premise and shared-DAG controls | Coverage gap: map every Surface certificate driver through lowering, premise lookup, application and publication; preserve cold expansion/replay evidence. Do not re-enter discovery during application. |
@@ -530,20 +530,20 @@ coverage. Pointer decisions consume explicitly stated separation instead of
 discovering it through ownership compositions or alias classes. Removing this
 copy does not establish a bound for every separation observation.
 
-### L1: write restrictions from active loans
+### L1: write restrictions from active borrows
 
 The pointee-store route generates a separation obligation without alias
-search. The source write regression is flat at 179 charged units with one loan
-and 4/16/64 aliases (110 without a loan); these measurements cover this route,
+search. The source write regression is flat at 179 charged units with one borrow
+and 4/16/64 aliases (110 without a borrow); these measurements cover this route,
 not the remaining callers below. Explicit source proofs retain typed subobject
 bounds and provenance. The `contains_element` law supports signed 32-bit and
 unsigned 64-bit interval bounds without wrapping the selected upper endpoint.
 Exact pointer argument spellings use an entry-built index; enclosing recorded
 requirement clauses use the existing conjunct index. Keep the position-drift,
-expanded-replay and negative ownership controls alongside the loan measurements.
+expanded-replay and negative ownership controls alongside the borrow measurements.
 
 Pointee scalar stores return an ordinary separation obligation against a retained
-resource descriptor of active loan backing. Opens and closes update a
+resource descriptor of active borrow backing. Opens and closes update a
 persistent fixed-width identity trie. A reborrow whose footprint exactly
 repeats its parent uses the existing descriptor while the parent stays pinned.
 Generating the obligation clones the retained descriptor. The driver
@@ -554,15 +554,15 @@ to `ProofSearch`. The store adds no e-graph facts; the separate
 `contains_element` library axiom supplies explicit interval-to-cell containment.
 `one_write_with_a_loan_does_not_walk_unrelated_aliases` measures the complete
 source write with one view and 4/16/64 aliases; `loan_access_requirement_is_retained_and_branch_local`
-covers descriptor generation and persistent closes with 4/16/64/256 loans.
-These scoped controls do not certify every loan caller or proof-publication cost.
+covers descriptor generation and persistent closes with 4/16/64/256 borrows.
+These scoped controls do not certify every borrow caller or proof-publication cost.
 
 Scalar and bulk writes, allocation retirement, call and worker effects, loop
 and branch boundaries, mutex writes, and direct and modular construction now
-check retained loan evidence or emit separation obligations. Automatic storage
+check retained borrow evidence or emit separation obligations. Automatic storage
 retirement and initialization use the object-identity index. Verified calls
 check each bounded write separately and refuse unnamed write effects with a
-live memory loan. The [recorded rbtree insertion run](rbtree-example.md#verification-evidence)
+live memory borrow. The [recorded rbtree insertion run](rbtree-example.md#verification-evidence)
 exercised that refusal with a recursive tree and a live callback-table view.
 
 The legacy write guard and its alias search are test-only. Contract entry uses
@@ -628,7 +628,7 @@ Writing loop heads reuse the memory cache's pointer-reachable projection.
 Directly assigned scalars get their new head values before havoc. Private
 scalar cells stay in the persistent map without being visited. For selected
 addressable cells the head checks scalar slot membership by block, along
-with the existing loan check. Stores to private scalar slots advance the
+with the existing borrow check. Stores to private scalar slots advance the
 projection so forks of a warm frame do not each walk the same cells.
 The gate's `loop_head_havoc_ignores_private_scalar_slots` varies initialized
 slots at 4/16/64/128. The nightly source test measures a later fixed loop at
@@ -738,7 +738,7 @@ authorize a new primitive or a verifier behavior change.
 | --- | --- | --- |
 | Boundary enforcement / interface cleanup | Extend the theorem-operation discovery guard to the next audited primitive, identifying existing exceptions before enforcing it. The inventoried search/support adapters have been extracted. | Clear ownership of discovery; guards must distinguish allowed driver solve from search inside primitives, even when invoked by solve. No claim to detect arbitrary loops. |
 | Arithmetic obligation generation | Reduce one operator's inline safety decision; reproduce the spelling and position-drift controls above before designing a retained result plus obligation. | That operator generates and publishes bounded work while the driver alone solves its safety goal; no promise to migrate all arithmetic in one patch. |
-| L1 active-loan write | Fix one write and owner, grow aliases with one active loan, then symbolic loans with fixed aliases. Write the complete-operation red scaling test first. | Evidence of a concrete remaining scan, or a closed coverage gap if flat. Choose an index or explicit-proof repair only after the result. |
+| L1 active-borrow write | Fix one write and owner, grow aliases with one active borrow, then symbolic borrows with fixed aliases. Write the complete-operation red scaling test first. | Evidence of a concrete remaining scan, or a closed coverage gap if flat. Choose an index or explicit-proof repair only after the result. |
 
 F2 and C1 remain subsequent measurement candidates, followed by R2, R1
 reachability, and J1/M1/lifecycle coverage. Declaration-validation search and

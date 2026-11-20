@@ -1,4 +1,4 @@
-//! The resource families a proof has observed. Authority loan classification
+//! The resource families a proof has observed. Authority borrow classification
 //! reads these markers to decide whether a family's population is visible at
 //! a call; they record no count and grant no authority.
 use super::*;

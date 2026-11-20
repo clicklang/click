@@ -83,12 +83,12 @@ fn local_view_work_tracks_the_explicit_delta_not_ambient_local_storage() {
     }
     assert!(
         fixed[3] <= fixed[0] * 2,
-        "local loan scans ambient storage: {fixed:?}"
+        "local borrow scans ambient storage: {fixed:?}"
     );
     for pair in growing.windows(2) {
         assert!(
             pair[1] <= pair[0] * 3,
-            "local loan work exceeds its explicit delta: {growing:?}"
+            "local borrow work exceeds its explicit delta: {growing:?}"
         );
     }
 }

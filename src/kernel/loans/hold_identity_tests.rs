@@ -22,8 +22,10 @@ fn holding_a_scope_mints_a_distinct_ledger_identity() {
         .expect("memory backing");
     let opening = ledger
         .lend(owner, reader, support, fact.clone())
-        .expect("the loan opens");
-    let ledger = ledger.apply(&opening.transition).expect("the loan applies");
+        .expect("the borrow opens");
+    let ledger = ledger
+        .apply(&opening.transition)
+        .expect("the borrow applies");
     let binding = LoanViewBinding {
         loan: opening.loan,
         scope: opening.scope,
