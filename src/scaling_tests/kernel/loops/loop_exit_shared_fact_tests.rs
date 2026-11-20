@@ -25,7 +25,9 @@ fn merged_exit_equations_have_output_sized_work() {
                     )
                 })
                 .collect();
-            join_loop_exit_paths(exits, LoopExitFactsMode::Legacy).unwrap().0
+            join_loop_exit_paths(exits, LoopExitFactsMode::Legacy)
+                .unwrap()
+                .0
         });
         assert_eq!(
             facts.len(),
