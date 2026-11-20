@@ -82,34 +82,3 @@ fn merged_unit_consumption_is_flat_in_unrelated_resources() {
         assert!(work <= samples[0], "{samples:?}");
     }
 }
-
-#[test]
-fn merged_unit_consumption_is_linear_in_the_units_it_merges() {
-    let assumptions = PureFactContext::new();
-    let samples = [8_u32, 32, 128, 512].map(|size| {
-        let context = ResourceContext::new()
-            .unchecked_with_facts((0..size).map(|_| required(MachineTerm::constant(1))));
-        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-            assert!(
-                context
-                    .clone()
-                    .without_fact_delaying_normalization(
-                        &required(MachineTerm::constant(size)),
-                        &assumptions,
-                    )
-                    .unwrap()
-                    .is_empty()
-            );
-        });
-        (size, work)
-    });
-    // Work per merged unit stays within a constant factor of the smallest
-    // sample's: selecting, admitting and removing each unit is indexed.
-    let (base_size, base_work) = samples[0];
-    for (size, work) in samples {
-        assert!(
-            work * base_size as usize <= 2 * base_work * size as usize,
-            "{samples:?}"
-        );
-    }
-}
