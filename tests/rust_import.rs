@@ -2739,7 +2739,7 @@ fn rust_conditional_move_and_explicit_drop_verify() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
-fn rust_owned_field_loan_recovery_verifies() {
+fn rust_owned_field_borrow_recovery_verifies() {
     // Preserve the ordinary Rust source that exposed fragmented ownership at
     // the outer destructor call. Do not alter it to make the proof pass.
     let source = format!(
@@ -2771,7 +2771,7 @@ fn rust_owned_field_loan_recovery_verifies() {
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-example proof-tool rechecks"]
-fn rust_owned_field_loan_cli_expands_and_reverifies() {
+fn rust_owned_field_borrow_cli_expands_and_reverifies() {
     let p = Project::new(include_str!("../examples/rust-field-borrow/guard.rs"));
     fs::write(
         p.root.join("borrow.click"),

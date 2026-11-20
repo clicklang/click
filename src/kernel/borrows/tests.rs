@@ -18,16 +18,16 @@ fn backing(fact: &ResourceFact) -> ResourceOccurrenceId {
 
 fn lend_test(
     ledger: &BorrowLedger,
-    lender: LoanParticipantId,
-    borrower: LoanParticipantId,
+    lender: BorrowParticipantId,
+    borrower: BorrowParticipantId,
     escrow: ResourceFact,
-) -> LoanOpening {
+) -> BorrowOpening {
     ledger
         .lend(lender, borrower, backing(&escrow), escrow)
         .unwrap()
 }
 
-fn participants() -> (BorrowLedger, LoanParticipantId, LoanParticipantId) {
+fn participants() -> (BorrowLedger, BorrowParticipantId, BorrowParticipantId) {
     let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let reader = ledger.fresh_participant().unwrap();
@@ -170,15 +170,15 @@ fn borrowed_contract_input_is_read_only_and_cannot_be_closed_or_recovered() {
     ));
     assert_eq!(
         ledger.permits_memory_access(viewed.memory_range().unwrap()),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     assert_eq!(
         ledger.end(opening.scope, holder),
-        Err(LoanRefusal::WrongHolder)
+        Err(BorrowRefusal::WrongHolder)
     );
     assert_eq!(
-        ledger.recover(opening.loan, holder),
-        Err(LoanRefusal::InvalidEvidence)
+        ledger.recover(opening.borrow, holder),
+        Err(BorrowRefusal::InvalidEvidence)
     );
 }
 
@@ -207,7 +207,7 @@ fn local_job_range() -> MemoryRange {
 }
 
 #[test]
-fn symbolic_external_write_is_distinct_from_a_fresh_local_loan() {
+fn symbolic_external_write_is_distinct_from_a_fresh_local_borrow() {
     let assumptions = PureFactContext::new();
     let (ledger, owner, reader) = participants();
     let job = ResourceFact::own_memory(local_job_range());
@@ -225,7 +225,7 @@ fn symbolic_external_write_is_distinct_from_a_fresh_local_loan() {
     );
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&local_job_range(), &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     let returned = ledger.transfer(opening.root_share, reader, owner).unwrap();
     let ledger = ledger.apply(&returned).unwrap();
@@ -235,7 +235,7 @@ fn symbolic_external_write_is_distinct_from_a_fresh_local_loan() {
 }
 
 #[test]
-fn symbolic_external_write_still_refuses_a_nonlocal_indexed_loan() {
+fn symbolic_external_write_still_refuses_a_nonlocal_indexed_borrow() {
     let assumptions = PureFactContext::new();
     let (ledger, owner, reader) = participants();
     let job = lend_test(
@@ -250,12 +250,12 @@ fn symbolic_external_write_still_refuses_a_nonlocal_indexed_loan() {
     assert!(ledger.invariant_holds());
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(7, 0, 1, 4), &assumptions,),
-        Err(LoanRefusal::UnsupportedPartition)
+        Err(BorrowRefusal::UnsupportedPartition)
     );
 }
 
 #[test]
-fn symbolic_external_write_still_refuses_a_second_symbolic_loan() {
+fn symbolic_external_write_still_refuses_a_second_symbolic_borrow() {
     let assumptions = PureFactContext::new();
     let (ledger, owner, _, _) = rooted_parameter_view(41);
     let reader = ledger.fresh_participant().unwrap();
@@ -269,13 +269,18 @@ fn symbolic_external_write_still_refuses_a_second_symbolic_loan() {
     assert!(ledger.invariant_holds());
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(42, 0, 1, 4), &assumptions,),
-        Err(LoanRefusal::UnsupportedPartition)
+        Err(BorrowRefusal::UnsupportedPartition)
     );
 }
 
 fn rooted_parameter_view(
     variable: u64,
-) -> (BorrowLedger, LoanParticipantId, LoanOpening, ResourceFact) {
+) -> (
+    BorrowLedger,
+    BorrowParticipantId,
+    BorrowOpening,
+    ResourceFact,
+) {
     let (ledger, holder, _) = participants();
     let viewed = ResourceFact::view_memory(parameter_range(variable, 0, 1, 4));
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
@@ -305,7 +310,7 @@ fn symbolic_borrowed_contract_input_is_live_outside_the_concrete_index() {
     assert!(!ledger.has_indexed_memory_overlap(&parameter_range(41, 4, 8, 1)));
     assert!(!ledger.has_indexed_memory_overlap(&parameter_range(42, 0, 1, 4)));
     assert!(ledger.invariant_holds());
-    assert!(ledger.has_active_memory_loans());
+    assert!(ledger.has_active_memory_borrows());
     assert!(ledger.permits_view(
         holder,
         &opening.description,
@@ -315,15 +320,15 @@ fn symbolic_borrowed_contract_input_is_live_outside_the_concrete_index() {
     // The viewed cell itself, at any element width that touches it.
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(41, 0, 1, 4), &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(41, 3, 4, 1), &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(41, 0, 8, 1), &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     // A concretely disjoint offset of the same object.
     assert_eq!(
@@ -349,11 +354,11 @@ fn symbolic_borrowed_contract_input_is_live_outside_the_concrete_index() {
     );
     assert_eq!(
         ledger.end(opening.scope, holder),
-        Err(LoanRefusal::WrongHolder)
+        Err(BorrowRefusal::WrongHolder)
     );
     assert_eq!(
-        ledger.recover(opening.loan, holder),
-        Err(LoanRefusal::InvalidEvidence)
+        ledger.recover(opening.borrow, holder),
+        Err(BorrowRefusal::InvalidEvidence)
     );
 }
 
@@ -362,14 +367,14 @@ fn symbolic_borrowed_contract_input_is_live_outside_the_concrete_index() {
 /// outright while any concrete borrow is indexed, because the index cannot
 /// answer it.
 #[test]
-fn symbolic_and_concrete_loans_fail_closed_across_the_index_boundary() {
+fn symbolic_and_concrete_borrows_fail_closed_across_the_index_boundary() {
     let (ledger, owner, reader) = participants();
     let assumptions = PureFactContext::new();
     let concrete = lend_test(&ledger, owner, reader, memory(0, 4, true));
     let ledger = ledger.apply(&concrete.transition).unwrap();
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(7, 0, 1, 4), &assumptions),
-        Err(LoanRefusal::UnsupportedPartition)
+        Err(BorrowRefusal::UnsupportedPartition)
     );
     let ended = ledger
         .transfer(concrete.root_share, reader, owner)
@@ -427,13 +432,13 @@ fn bytewise_overlap_is_decided_across_mismatched_element_widths() {
     // A width-1 access at byte 2, inside the width-4 borrow.
     assert_eq!(
         ledger.permits_memory_access(&buffer_range(2, 3, 1)),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     // The reverse direction: a width-4 access covering bytes 4..8, which
     // contains the width-1 borrow's byte 5.
     assert_eq!(
         ledger.permits_memory_access(&buffer_range(1, 2, 4)),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     // Byte 4 alone: mismatched widths against both borrows, no shared byte.
     assert_eq!(ledger.permits_memory_access(&buffer_range(4, 5, 1)), Ok(()));
@@ -457,8 +462,8 @@ fn child_reborrow_of_a_symbolic_root_keeps_the_root_protected() {
     let ledger = ledger.apply(&opening.transition).unwrap();
     let write = parameter_range(10, 0, 1, 4);
     let requirement = ledger.memory_access_requirement(&write).unwrap();
-    let parent = LoanViewBinding {
-        loan: opening.loan,
+    let parent = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -474,7 +479,7 @@ fn child_reborrow_of_a_symbolic_root_keeps_the_root_protected() {
     );
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(9, 0, 1, 4), &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     let transfer = ledger.transfer(child.root_share, reader, holder).unwrap();
     let ledger = ledger.apply(&transfer).unwrap();
@@ -485,10 +490,10 @@ fn child_reborrow_of_a_symbolic_root_keeps_the_root_protected() {
         ledger.memory_access_requirement(&write),
         Some(requirement.clone())
     );
-    assert!(ledger.has_active_memory_loans());
+    assert!(ledger.has_active_memory_borrows());
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&parameter_range(9, 0, 1, 4), &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
 }
 
@@ -503,7 +508,8 @@ fn projection_extends_permitted_descriptions_without_a_transition() {
     let support = backing(&head);
     let nested = composite("nested", true);
     let backing_pieces =
-        CompositeLoanBacking::from_checked_expansion(support, head.clone(), vec![nested]).unwrap();
+        CompositeBorrowBacking::from_checked_expansion(support, head.clone(), vec![nested])
+            .unwrap();
     let opening = ledger
         .lend_composite(owner, reader, support, head, backing_pieces)
         .unwrap();
@@ -512,7 +518,7 @@ fn projection_extends_permitted_descriptions_without_a_transition() {
     let nested_view = composite("nested", false);
     let deep = ResourceFact::view_memory(memory(0, 1, true).memory_range().unwrap().clone());
     let describe = |viewed: ResourceFact| StableViewDescription {
-        loan: opening.loan,
+        borrow: opening.borrow,
         support,
         viewed,
     };
@@ -534,7 +540,13 @@ fn projection_extends_permitted_descriptions_without_a_transition() {
     )
     .expect("a viewed one-level expansion is projection evidence");
     let projected = ledger
-        .project(reader, opening.loan, &nested_view, &evidence, deep.clone())
+        .project(
+            reader,
+            opening.borrow,
+            &nested_view,
+            &evidence,
+            deep.clone(),
+        )
         .expect("a child of a permitted composite view projects");
     assert_eq!(projected, ledger, "projection keeps the ledger identity");
     assert!(projected.permits_view(
@@ -552,40 +564,40 @@ fn projection_extends_permitted_descriptions_without_a_transition() {
     assert_eq!(
         projected.project(
             reader,
-            opening.loan,
+            opening.borrow,
             &other_view,
             &other_evidence,
             deep.clone()
         ),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
     assert_eq!(
         projected.project(
             reader,
-            opening.loan,
+            opening.borrow,
             &nested_view,
             &evidence,
             memory(0, 1, true)
         ),
-        Err(LoanRefusal::UnsupportedResource)
+        Err(BorrowRefusal::UnsupportedResource)
     );
     // The evidence must expand the very parent the borrow permits, and the
     // child must be one that expansion contains (docs/internals/stable-views.md).
     assert_eq!(
         projected.project(
             reader,
-            opening.loan,
+            opening.borrow,
             &nested_view,
             &other_evidence,
             deep.clone()
         ),
-        Err(LoanRefusal::InvalidEvidence),
+        Err(BorrowRefusal::InvalidEvidence),
         "evidence for another composite cannot authorize this parent"
     );
     let sibling = ResourceFact::view_memory(memory(4, 5, true).memory_range().unwrap().clone());
     assert_eq!(
-        projected.project(reader, opening.loan, &nested_view, &evidence, sibling),
-        Err(LoanRefusal::MissingBacking),
+        projected.project(reader, opening.borrow, &nested_view, &evidence, sibling),
+        Err(BorrowRefusal::MissingBacking),
         "a child the checked expansion does not contain is refused"
     );
     let transfer = projected
@@ -595,8 +607,8 @@ fn projection_extends_permitted_descriptions_without_a_transition() {
     let end = projected.end(opening.scope, owner).unwrap();
     let ended = projected.apply(&end).unwrap();
     assert_eq!(
-        ended.project(owner, opening.loan, &nested_view, &evidence, deep),
-        Err(LoanRefusal::ScopeEnded)
+        ended.project(owner, opening.borrow, &nested_view, &evidence, deep),
+        Err(BorrowRefusal::ScopeEnded)
     );
 }
 
@@ -611,7 +623,8 @@ fn a_projection_mints_no_share_and_keeps_the_ledger_identity() {
     let support = backing(&head);
     let nested = composite("nested", true);
     let backing_pieces =
-        CompositeLoanBacking::from_checked_expansion(support, head.clone(), vec![nested]).unwrap();
+        CompositeBorrowBacking::from_checked_expansion(support, head.clone(), vec![nested])
+            .unwrap();
     let opening = ledger
         .lend_composite(owner, reader, support, head, backing_pieces)
         .unwrap();
@@ -620,7 +633,7 @@ fn a_projection_mints_no_share_and_keeps_the_ledger_identity() {
     let nested_view = composite("nested", false);
     let deep = ResourceFact::view_memory(memory(0, 1, true).memory_range().unwrap().clone());
     let describe = |viewed: ResourceFact| StableViewDescription {
-        loan: opening.loan,
+        borrow: opening.borrow,
         support,
         viewed,
     };
@@ -630,7 +643,13 @@ fn a_projection_mints_no_share_and_keeps_the_ledger_identity() {
     )
     .unwrap();
     let projected = ledger
-        .project(reader, opening.loan, &nested_view, &evidence, deep.clone())
+        .project(
+            reader,
+            opening.borrow,
+            &nested_view,
+            &evidence,
+            deep.clone(),
+        )
         .unwrap();
     // Equal ledgers, different derived descriptions: identity tracks
     // authority-changing transitions only.
@@ -647,8 +666,8 @@ fn a_projection_mints_no_share_and_keeps_the_ledger_identity() {
         opening.root_share,
         &assumptions
     ));
-    let projected_binding = LoanViewBinding {
-        loan: opening.loan,
+    let projected_binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -661,29 +680,29 @@ fn a_projection_mints_no_share_and_keeps_the_ledger_identity() {
     // the escrow's recovery right.
     assert_eq!(
         projected.reborrow(projected_binding.clone(), owner, reader),
-        Err(LoanRefusal::MissingLoanBinding),
+        Err(BorrowRefusal::MissingBorrowBinding),
         "a projected description does not hand its holder's share to another participant"
     );
     assert_eq!(
         projected.validate_view_binding(projected_binding, owner),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
     assert_eq!(
         projected.lend(owner, reader, support, deep.clone()),
-        Err(LoanRefusal::NotOwnership),
+        Err(BorrowRefusal::NotOwnership),
         "a projected view is not ownership to lend"
     );
     assert_eq!(
         projected.transfer(opening.root_share, owner, reader),
-        Err(LoanRefusal::WrongHolder)
+        Err(BorrowRefusal::WrongHolder)
     );
     assert_eq!(
         projected.end(opening.scope, reader),
-        Err(LoanRefusal::WrongHolder)
+        Err(BorrowRefusal::WrongHolder)
     );
     assert_eq!(
-        projected.recover(opening.loan, owner),
-        Err(LoanRefusal::ScopeStillActive)
+        projected.recover(opening.borrow, owner),
+        Err(BorrowRefusal::ScopeStillActive)
     );
     assert!(projected.invariant_holds());
 }
@@ -700,7 +719,7 @@ fn a_reborrow_narrows_to_the_description_that_authorized_it() {
     let support = backing(&head);
     let sibling = memory(0, 4, true);
     let nested = composite("nested", true);
-    let backing_pieces = CompositeLoanBacking::from_checked_expansion(
+    let backing_pieces = CompositeBorrowBacking::from_checked_expansion(
         support,
         head.clone(),
         vec![sibling.clone(), nested],
@@ -720,10 +739,16 @@ fn a_reborrow_narrows_to_the_description_that_authorized_it() {
     )
     .unwrap();
     let ledger = ledger
-        .project(reader, opening.loan, &nested_view, &evidence, deep.clone())
+        .project(
+            reader,
+            opening.borrow,
+            &nested_view,
+            &evidence,
+            deep.clone(),
+        )
         .unwrap();
-    let parent = LoanViewBinding {
-        loan: opening.loan,
+    let parent = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -734,7 +759,7 @@ fn a_reborrow_narrows_to_the_description_that_authorized_it() {
     let ledger = ledger.apply(&child.transition).unwrap();
     assert!(ledger.invariant_holds());
     let describe = |viewed: ResourceFact| StableViewDescription {
-        loan: child.loan,
+        borrow: child.borrow,
         support,
         viewed,
     };
@@ -753,28 +778,28 @@ fn a_reborrow_narrows_to_the_description_that_authorized_it() {
     // A nested composite child has no byte backing of its own; the
     // parent entry keeps protecting those bytes, and the child is still
     // counted by the barrier predicate.
-    let child_record = ledger.storage.data.loans.get(&child.loan).unwrap();
+    let child_record = ledger.storage.data.borrows.get(&child.borrow).unwrap();
     assert!(child_record.memory_backing.is_empty());
     assert_eq!(
         ledger
             .permits_memory_access_with_assumptions(sibling.memory_range().unwrap(), &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     let transfer = ledger.transfer(child.root_share, borrower, reader).unwrap();
     let ledger = ledger.apply(&transfer).unwrap();
     let end = ledger.end(child.scope, reader).unwrap();
     let ledger = ledger.apply(&end).unwrap();
     assert!(ledger.invariant_holds());
-    assert!(ledger.has_active_memory_loans());
+    assert!(ledger.has_active_memory_borrows());
     assert_eq!(
         ledger
             .permits_memory_access_with_assumptions(sibling.memory_range().unwrap(), &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     // The same holds for a reborrow of a projected child: it authorizes
     // that description and nothing else of the borrow it came from.
-    let projected_parent = LoanViewBinding {
-        loan: opening.loan,
+    let projected_parent = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -785,7 +810,7 @@ fn a_reborrow_narrows_to_the_description_that_authorized_it() {
     let ledger = ledger.apply(&grandchild.transition).unwrap();
     assert!(ledger.invariant_holds());
     let describe = |viewed: ResourceFact| StableViewDescription {
-        loan: grandchild.loan,
+        borrow: grandchild.borrow,
         support,
         viewed,
     };
@@ -824,7 +849,7 @@ fn a_reborrow_of_a_memory_view_protects_exactly_the_viewed_bytes() {
     let support = backing(&head);
     let viewed_piece = memory(0, 4, true);
     let other_piece = memory(8, 12, true);
-    let backing_pieces = CompositeLoanBacking::from_checked_expansion(
+    let backing_pieces = CompositeBorrowBacking::from_checked_expansion(
         support,
         head.clone(),
         vec![viewed_piece.clone(), other_piece.clone()],
@@ -835,8 +860,8 @@ fn a_reborrow_of_a_memory_view_protects_exactly_the_viewed_bytes() {
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
     let viewed = ResourceFact::view_memory(viewed_piece.memory_range().unwrap().clone());
-    let parent = LoanViewBinding {
-        loan: opening.loan,
+    let parent = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -846,7 +871,7 @@ fn a_reborrow_of_a_memory_view_protects_exactly_the_viewed_bytes() {
     let child = ledger.reborrow(parent, reader, borrower).unwrap();
     let ledger = ledger.apply(&child.transition).unwrap();
     assert!(ledger.invariant_holds());
-    let child_record = ledger.storage.data.loans.get(&child.loan).unwrap();
+    let child_record = ledger.storage.data.borrows.get(&child.borrow).unwrap();
     assert_eq!(
         child_record.memory_backing,
         vec![viewed_piece.memory_range().unwrap().clone()],
@@ -859,7 +884,7 @@ fn a_reborrow_of_a_memory_view_protects_exactly_the_viewed_bytes() {
     ] {
         assert_eq!(
             ledger.permits_memory_access_with_assumptions(range, &assumptions),
-            Err(LoanRefusal::ActiveDependency)
+            Err(BorrowRefusal::ActiveDependency)
         );
     }
     let transfer = ledger.transfer(child.root_share, borrower, reader).unwrap();
@@ -873,7 +898,7 @@ fn a_reborrow_of_a_memory_view_protects_exactly_the_viewed_bytes() {
     ] {
         assert_eq!(
             ledger.permits_memory_access_with_assumptions(range, &assumptions),
-            Err(LoanRefusal::ActiveDependency),
+            Err(BorrowRefusal::ActiveDependency),
             "the parent composite borrow still protects its whole frontier"
         );
     }
@@ -883,7 +908,7 @@ fn a_reborrow_of_a_memory_view_protects_exactly_the_viewed_bytes() {
 /// the same predicate, so ending the child leaves the parent's
 /// contribution to the fail-closed barrier in place (docs/internals/stable-views.md).
 #[test]
-fn ending_a_reborrow_of_a_byteless_composite_loan_keeps_the_barrier_armed() {
+fn ending_a_reborrow_of_a_byteless_composite_borrow_keeps_the_barrier_armed() {
     let (ledger, owner, reader) = participants();
     let head = ResourceFact::own(Resource::Composite {
         name: "box".to_string(),
@@ -891,16 +916,17 @@ fn ending_a_reborrow_of_a_byteless_composite_loan_keeps_the_barrier_armed() {
     });
     let piece = owned("box_token");
     let support = backing(&head);
-    let backing = CompositeLoanBacking::from_checked_expansion(support, head.clone(), vec![piece])
-        .expect("a token-only frontier is a checked expansion");
+    let backing =
+        CompositeBorrowBacking::from_checked_expansion(support, head.clone(), vec![piece])
+            .expect("a token-only frontier is a checked expansion");
     let opening = ledger
         .lend_composite(owner, reader, support, head.clone(), backing)
         .expect("composite lend");
     let ledger = ledger.apply(&opening.transition).unwrap();
-    assert!(ledger.has_active_memory_loans());
+    assert!(ledger.has_active_memory_borrows());
     assert!(ledger.invariant_holds());
-    let parent = LoanViewBinding {
-        loan: opening.loan,
+    let parent = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -909,14 +935,14 @@ fn ending_a_reborrow_of_a_byteless_composite_loan_keeps_the_barrier_armed() {
     };
     let child = ledger.reborrow(parent, reader, owner).unwrap();
     let ledger = ledger.apply(&child.transition).unwrap();
-    assert!(ledger.has_active_memory_loans());
+    assert!(ledger.has_active_memory_borrows());
     assert!(ledger.invariant_holds());
     let transfer = ledger.transfer(child.root_share, owner, reader).unwrap();
     let ledger = ledger.apply(&transfer).unwrap();
     let end = ledger.end(child.scope, reader).unwrap();
     let ledger = ledger.apply(&end).unwrap();
     assert!(
-        ledger.has_active_memory_loans(),
+        ledger.has_active_memory_borrows(),
         "the parent composite borrow is still live"
     );
     assert!(ledger.invariant_holds());
@@ -924,7 +950,7 @@ fn ending_a_reborrow_of_a_byteless_composite_loan_keeps_the_barrier_armed() {
     let ledger = ledger.apply(&transfer).unwrap();
     let end = ledger.end(opening.scope, owner).unwrap();
     let ledger = ledger.apply(&end).unwrap();
-    assert!(!ledger.has_active_memory_loans());
+    assert!(!ledger.has_active_memory_borrows());
     assert!(ledger.invariant_holds());
 }
 
@@ -940,7 +966,7 @@ fn mutex_owner(epoch: Option<u64>) -> ResourceFact {
 
 fn abstract_mutex_input() -> (
     BorrowLedger,
-    LoanParticipantId,
+    BorrowParticipantId,
     MutexUseContractInput,
     ResourceFact,
 ) {
@@ -1032,15 +1058,24 @@ fn mutex_contract_input_has_use_but_no_owner_view_close_or_recovery_right() {
             .is_ok()
     );
     assert!(!resources.satisfies_fact(&description, &PureFactContext::new()));
-    assert!(ledger.permitted_descriptions(input.usage.0.loan).is_empty());
-    assert!(!ledger.has_active_memory_loans());
-    let record = ledger.storage.data.loans.get(&input.usage.0.loan).unwrap();
+    assert!(
+        ledger
+            .permitted_descriptions(input.usage.0.borrow)
+            .is_empty()
+    );
+    assert!(!ledger.has_active_memory_borrows());
+    let record = ledger
+        .storage
+        .data
+        .borrows
+        .get(&input.usage.0.borrow)
+        .unwrap();
     assert!(record.escrow.is_none());
     assert!(ledger.end(input.usage.0.scope, holder).is_err());
-    assert!(ledger.recover(input.usage.0.loan, holder).is_err());
-    let forged_receipt = MutexUseLoan {
+    assert!(ledger.recover(input.usage.0.borrow, holder).is_err());
+    let forged_receipt = MutexUseBorrow {
         scope: input.usage.0.scope,
-        loan: input.usage.0.loan,
+        borrow: input.usage.0.borrow,
         usage: input.usage,
     };
     assert!(ledger.recover_mutex_use(&forged_receipt, holder).is_err());
@@ -1066,7 +1101,7 @@ fn mutex_contract_input_has_use_but_no_owner_view_close_or_recovery_right() {
         .unwrap();
     assert_eq!(
         held.check_mutex_use_input_return(&input, holder, &resources),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     let returned = held.release(hold, holder).unwrap();
     assert!(
@@ -1127,7 +1162,7 @@ fn mutex_contract_input_return_requires_exact_owned_root_and_current_holder() {
     let fact = ledger.mutex_use_resource(input.usage, holder).unwrap();
     assert_eq!(
         ledger.check_mutex_use_input_return(&input, holder, &ResourceContext::new()),
-        Err(LoanRefusal::MissingBacking)
+        Err(BorrowRefusal::MissingBacking)
     );
     let duplicate = ResourceContext::new()
         .unchecked_with_fact(fact.clone())
@@ -1242,7 +1277,7 @@ fn mutex_contract_input_return_requires_unsplit_unit_ownership() {
             .check_mutex_use_input_return(&input, holder, &resources)
             .is_err()
     );
-    let left_usage = MutexUseBinding(LoanAuthorityBinding {
+    let left_usage = MutexUseBinding(BorrowAuthorityBinding {
         share: left,
         ..input.usage.0
     });
@@ -1276,21 +1311,21 @@ fn mutex_contract_input_evidence_checks_anchor_freshness_and_predecessor() {
     let ledger = BorrowLedger::new();
     let holder = ledger.fresh_participant().unwrap();
     let arena = ledger.storage.data.arena;
-    let mut evidence = LoanTransitionEvidence::BorrowedMutexUseRoot {
+    let mut evidence = BorrowTransitionEvidence::BorrowedMutexUseRoot {
         holder,
         support: backing(&owned("input")),
         mutex: Address::symbolic(Variable(4321)),
         protected: None,
         initialization: super::super::mutexes::MutexInitializationId::fresh().unwrap(),
-        scope: LoanScopeId {
+        scope: BorrowScopeId {
             arena,
             ordinal: ledger.storage.data.next_scope,
         },
-        loan: LoanId {
+        borrow: BorrowId {
             arena,
-            ordinal: ledger.storage.data.next_loan,
+            ordinal: ledger.storage.data.next_borrow,
         },
-        root: LoanShareId {
+        root: BorrowShareId {
             arena,
             ordinal: ledger.storage.data.next_share,
         },
@@ -1300,11 +1335,11 @@ fn mutex_contract_input_evidence_checks_anchor_freshness_and_predecessor() {
     assert!(successor.invariant_holds());
     assert!(successor.apply(&checked).is_err());
     assert!(successor.issue(evidence.clone()).is_err());
-    let LoanTransitionEvidence::BorrowedMutexUseRoot { support, .. } = &mut evidence else {
+    let BorrowTransitionEvidence::BorrowedMutexUseRoot { support, .. } = &mut evidence else {
         unreachable!()
     };
     *support = ResourceOccurrenceId::default();
-    assert_eq!(ledger.issue(evidence), Err(LoanRefusal::MissingBacking));
+    assert_eq!(ledger.issue(evidence), Err(BorrowRefusal::MissingBacking));
     let foreign = BorrowLedger::new().fresh_participant().unwrap();
     assert!(
         ledger
@@ -1336,9 +1371,9 @@ fn mutex_use_reborrow_pins_parent_and_guard_blocks_return_across_participants() 
     );
     assert!(ledger.recover_mutex_use(&root, owner).is_err());
     assert!(ledger.recover_mutex_use(&child, helper).is_err());
-    assert!(ledger.recover(child.loan, helper).is_err());
-    assert!(ledger.permitted_descriptions(child.loan).is_empty());
-    assert!(!ledger.has_active_memory_loans());
+    assert!(ledger.recover(child.borrow, helper).is_err());
+    assert!(ledger.permitted_descriptions(child.borrow).is_empty());
+    assert!(!ledger.has_active_memory_borrows());
     let (ledger, hold) = ledger.hold_mutex_use(child.usage, &live, helper).unwrap();
     let ledger = ledger
         .apply(
@@ -1349,7 +1384,7 @@ fn mutex_use_reborrow_pins_parent_and_guard_blocks_return_across_participants() 
         .unwrap();
     assert_eq!(
         ledger.end_mutex_reborrow(&child, worker),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     assert!(ledger.release(hold, worker).is_err());
     let ledger = ledger.release(hold, helper).unwrap();
@@ -1376,11 +1411,11 @@ fn mutex_use_reborrow_preserves_sibling_share_and_initialization() {
         .split(root.usage.0.share, owner, owner, owner)
         .unwrap();
     let ledger = ledger.apply(&split).unwrap();
-    let left_use = MutexUseBinding(LoanAuthorityBinding {
+    let left_use = MutexUseBinding(BorrowAuthorityBinding {
         share: left,
         ..root.usage.0
     });
-    let right_use = MutexUseBinding(LoanAuthorityBinding {
+    let right_use = MutexUseBinding(BorrowAuthorityBinding {
         share: right,
         ..root.usage.0
     });
@@ -1397,24 +1432,24 @@ fn mutex_use_reborrow_preserves_sibling_share_and_initialization() {
         ledger
             .storage
             .data
-            .loans
-            .get(&child.loan)
+            .borrows
+            .get(&child.borrow)
             .unwrap()
             .mutex_root,
-        Some(root.loan)
+        Some(root.borrow)
     );
     assert!(
         ledger
             .storage
             .data
-            .loans
-            .get(&child.loan)
+            .borrows
+            .get(&child.borrow)
             .unwrap()
             .escrow
             .is_none()
     );
     assert!(ledger.end_mutex_reborrow(&root, owner).is_err());
-    let forged = MutexUseLoan {
+    let forged = MutexUseBorrow {
         scope: root.scope,
         ..child.clone()
     };
@@ -1432,21 +1467,24 @@ fn mutex_use_reborrow_rejects_forged_parent_and_stale_transition() {
     let (next, child) = ledger
         .reborrow_mutex_use(root.usage, owner, helper)
         .unwrap();
-    let evidence = LoanTransitionEvidence::Reborrow {
+    let evidence = BorrowTransitionEvidence::Reborrow {
         parent: ReborrowBinding::MutexUse(root.usage),
         lender: owner,
         borrower: helper,
         scope: child.scope,
-        loan: child.loan,
+        borrow: child.borrow,
         root: child.usage.0.share,
     };
     let transition = ledger.issue(evidence.clone()).unwrap();
-    assert_eq!(next.apply(&transition), Err(LoanRefusal::StalePredecessor));
+    assert_eq!(
+        next.apply(&transition),
+        Err(BorrowRefusal::StalePredecessor)
+    );
     let mut forged = evidence;
-    let LoanTransitionEvidence::Reborrow { parent, .. } = &mut forged else {
+    let BorrowTransitionEvidence::Reborrow { parent, .. } = &mut forged else {
         panic!("reborrow")
     };
-    *parent = ReborrowBinding::MutexUse(MutexUseBinding(LoanAuthorityBinding {
+    *parent = ReborrowBinding::MutexUse(MutexUseBinding(BorrowAuthorityBinding {
         support: ResourceOccurrenceId::default(),
         ..root.usage.0
     }));
@@ -1465,8 +1503,8 @@ fn mutex_use_reborrow_rejects_forged_parent_and_stale_transition() {
     let fact = owned("ordinary-token");
     let opening = ledger.lend(owner, owner, backing(&fact), fact).unwrap();
     let ordinary = ledger.apply(&opening.transition).unwrap();
-    let fabricated = MutexUseBinding(LoanAuthorityBinding {
-        loan: opening.loan,
+    let fabricated = MutexUseBinding(BorrowAuthorityBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support: opening.description.support(),
@@ -1485,17 +1523,17 @@ fn mutex_use_lending_never_authorizes_a_stable_view() {
     let support = backing(&live);
     assert_eq!(
         ledger.lend(owner, reader, support, live.clone()),
-        Err(LoanRefusal::UnsupportedResource)
+        Err(BorrowRefusal::UnsupportedResource)
     );
-    let (ledger, loan) = ledger
+    let (ledger, borrow) = ledger
         .lend_mutex_use(owner, reader, support, live.clone())
         .unwrap();
-    assert!(!ledger.has_active_memory_loans());
-    assert!(ledger.permitted_descriptions(loan.loan).is_empty());
+    assert!(!ledger.has_active_memory_borrows());
+    assert!(ledger.permitted_descriptions(borrow.borrow).is_empty());
     assert!(
         ledger
             .describe_view(
-                loan.loan,
+                borrow.borrow,
                 ResourceFact::View(live.resource().clone()),
                 &PureFactContext::new()
             )
@@ -1503,24 +1541,24 @@ fn mutex_use_lending_never_authorizes_a_stable_view() {
     );
     assert!(
         ledger
-            .describe_view(loan.loan, memory(0, 1, false), &PureFactContext::new())
+            .describe_view(borrow.borrow, memory(0, 1, false), &PureFactContext::new())
             .is_err()
     );
     assert_eq!(
-        ledger.hold_mutex_use(loan.usage, &mutex_owner(Some(2)), reader),
-        Err(LoanRefusal::MissingLoanBinding)
+        ledger.hold_mutex_use(borrow.usage, &mutex_owner(Some(2)), reader),
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
     assert_eq!(
-        ledger.hold_mutex_use(loan.usage, &mutex_owner(None), reader),
-        Err(LoanRefusal::MissingLoanBinding)
+        ledger.hold_mutex_use(borrow.usage, &mutex_owner(None), reader),
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
     assert!(
         ledger
             .reborrow(
-                LoanViewBinding {
-                    loan: loan.loan,
-                    scope: loan.scope,
-                    share: loan.usage.0.share,
+                BorrowBinding {
+                    borrow: borrow.borrow,
+                    scope: borrow.scope,
+                    share: borrow.usage.0.share,
                     support,
                     viewed: ResourceFact::View(live.resource().clone()),
                     hold: None,
@@ -1538,19 +1576,19 @@ fn mutex_use_shares_and_guard_holds_must_all_return_before_recovery() {
     let (ledger, owner, worker) = participants();
     let live = mutex_owner(Some(1));
     let support = backing(&live);
-    let (ledger, loan) = ledger
+    let (ledger, borrow) = ledger
         .lend_mutex_use(owner, owner, support, live.clone())
         .unwrap();
     let (split, left, right) = ledger
-        .split(loan.usage.0.share, owner, owner, worker)
+        .split(borrow.usage.0.share, owner, owner, worker)
         .unwrap();
     let ledger = ledger.apply(&split).unwrap();
-    let worker_use = MutexUseBinding(LoanAuthorityBinding {
+    let worker_use = MutexUseBinding(BorrowAuthorityBinding {
         share: right,
-        ..loan.usage.0
+        ..borrow.usage.0
     });
-    assert!(ledger.recover_mutex_use(&loan, owner).is_err());
-    assert!(ledger.hold_mutex_use(loan.usage, &live, owner).is_err());
+    assert!(ledger.recover_mutex_use(&borrow, owner).is_err());
+    assert!(ledger.hold_mutex_use(borrow.usage, &live, owner).is_err());
     let (ledger, hold) = ledger.hold_mutex_use(worker_use, &live, worker).unwrap();
     let ledger = ledger
         .apply(&ledger.transfer(right, worker, owner).unwrap())
@@ -1559,14 +1597,14 @@ fn mutex_use_shares_and_guard_holds_must_all_return_before_recovery() {
         .apply(&ledger.join(left, right, owner).unwrap())
         .unwrap();
     assert_eq!(
-        ledger.recover_mutex_use(&loan, owner),
-        Err(LoanRefusal::ActiveDependency)
+        ledger.recover_mutex_use(&borrow, owner),
+        Err(BorrowRefusal::ActiveDependency)
     );
-    assert_eq!(ledger.release(hold, owner), Err(LoanRefusal::WrongHolder));
+    assert_eq!(ledger.release(hold, owner), Err(BorrowRefusal::WrongHolder));
     let ledger = ledger.release(hold, worker).unwrap();
-    let (ledger, recovered) = ledger.recover_mutex_use(&loan, owner).unwrap();
+    let (ledger, recovered) = ledger.recover_mutex_use(&borrow, owner).unwrap();
     assert_eq!(recovered, live);
-    assert!(ledger.recover_mutex_use(&loan, owner).is_err());
+    assert!(ledger.recover_mutex_use(&borrow, owner).is_err());
     assert!(ledger.hold_mutex_use(worker_use, &live, worker).is_err());
     assert!(ledger.invariant_holds());
 }
@@ -1585,13 +1623,13 @@ fn mutex_use_rejects_invented_owners_receipts_and_certificates() {
     ] {
         assert_eq!(
             ledger.lend_mutex_use(owner, reader, backing(&mutex_owner(Some(1))), escrow),
-            Err(LoanRefusal::UnsupportedResource)
+            Err(BorrowRefusal::UnsupportedResource)
         );
     }
     let live = mutex_owner(Some(1));
     assert_eq!(
         ledger.lend_mutex_use(owner, reader, ResourceOccurrenceId::default(), live.clone()),
-        Err(LoanRefusal::MissingBacking)
+        Err(BorrowRefusal::MissingBacking)
     );
     let (ledger, first) = ledger
         .lend_mutex_use(owner, owner, backing(&live), live.clone())
@@ -1599,34 +1637,34 @@ fn mutex_use_rejects_invented_owners_receipts_and_certificates() {
     let (ledger, second) = ledger
         .lend_mutex_use(owner, owner, backing(&live), live.clone())
         .unwrap();
-    let forged = MutexUseLoan {
+    let forged = MutexUseBorrow {
         scope: first.scope,
-        loan: second.loan,
+        borrow: second.borrow,
         usage: first.usage,
     };
     assert_eq!(
         ledger.recover_mutex_use(&forged, owner),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
     let token = owned("token");
     let opening = ledger.lend(owner, owner, backing(&token), token).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let fake_use = MutexUseBinding(LoanAuthorityBinding {
-        loan: opening.loan,
+    let fake_use = MutexUseBinding(BorrowAuthorityBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support: opening.description.support(),
     });
     assert_eq!(
         ledger.hold_mutex_use(fake_use, &live, owner),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
     assert!(
         ledger
             .recover_mutex_use(
-                &MutexUseLoan {
+                &MutexUseBorrow {
                     scope: opening.scope,
-                    loan: opening.loan,
+                    borrow: opening.borrow,
                     usage: fake_use
                 },
                 owner
@@ -1636,14 +1674,14 @@ fn mutex_use_rejects_invented_owners_receipts_and_certificates() {
     // A hostile certificate cannot replace lifetime ownership with a
     // view, even if it also substitutes its structural seal.
     let mut invalid = opening.transition;
-    let LoanTransitionEvidence::Lend { escrow, .. } = &mut invalid.evidence else {
+    let BorrowTransitionEvidence::Lend { escrow, .. } = &mut invalid.evidence else {
         panic!("lend")
     };
     *escrow = ResourceFact::View(mutex_owner(None).resource().clone());
     invalid.checked_evidence = invalid.evidence.clone();
     assert_eq!(
         ledger.apply_evidence(&invalid.evidence),
-        Err(LoanRefusal::NotOwnership)
+        Err(BorrowRefusal::NotOwnership)
     );
 }
 
@@ -1654,14 +1692,14 @@ fn lifetime_hold_needs_possession_but_grants_no_read_or_recovery_authority() {
     let support = backing(&fact);
     let opening = ledger.lend(owner, reader, support, fact.clone()).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let authority = LoanAuthorityBinding {
-        loan: opening.loan,
+    let authority = BorrowAuthorityBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
     };
-    let invalid_view = LoanViewBinding {
-        loan: authority.loan,
+    let invalid_view = BorrowBinding {
+        borrow: authority.borrow,
         scope: authority.scope,
         share: authority.share,
         support,
@@ -1670,39 +1708,39 @@ fn lifetime_hold_needs_possession_but_grants_no_read_or_recovery_authority() {
     };
     assert_eq!(
         ledger.hold(&invalid_view, reader),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
     let (held, hold, certificate) = ledger
         .hold_authority_with_transition(authority, reader)
         .unwrap();
     assert_eq!(ledger.apply(&certificate).unwrap(), held);
-    assert!(!held.has_active_memory_loans());
+    assert!(!held.has_active_memory_borrows());
     assert_eq!(
-        held.permitted_descriptions(opening.loan),
-        ledger.permitted_descriptions(opening.loan)
+        held.permitted_descriptions(opening.borrow),
+        ledger.permitted_descriptions(opening.borrow)
     );
     assert_eq!(
         held.validate_view_binding(invalid_view, reader),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
     assert_eq!(
-        held.recover(opening.loan, reader),
-        Err(LoanRefusal::InvalidEvidence)
+        held.recover(opening.borrow, reader),
+        Err(BorrowRefusal::InvalidEvidence)
     );
     assert_eq!(
-        held.recover(opening.loan, owner),
-        Err(LoanRefusal::ScopeStillActive)
+        held.recover(opening.borrow, owner),
+        Err(BorrowRefusal::ScopeStillActive)
     );
     let moved = held
         .apply(&held.transfer(opening.root_share, reader, owner).unwrap())
         .unwrap();
     assert_eq!(
         moved.end(opening.scope, owner),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     assert_eq!(
         moved.hold_authority_with_transition(authority, reader),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
     let released = moved.release(hold, reader).unwrap();
     let ended = released
@@ -1710,9 +1748,9 @@ fn lifetime_hold_needs_possession_but_grants_no_read_or_recovery_authority() {
         .unwrap();
     assert_eq!(
         ended.hold_authority_with_transition(authority, owner),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
-    let (recover, recovered, _) = ended.recover(opening.loan, owner).unwrap();
+    let (recover, recovered, _) = ended.recover(opening.borrow, owner).unwrap();
     assert_eq!(recovered, fact);
     assert!(ended.apply(&recover).unwrap().invariant_holds());
 }
@@ -1724,8 +1762,8 @@ fn lifetime_hold_rechecks_split_reborrow_and_exact_occurrence() {
     let support = backing(&fact);
     let opening = ledger.lend(owner, reader, support, fact.clone()).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let authority = LoanAuthorityBinding {
-        loan: opening.loan,
+    let authority = BorrowAuthorityBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -1733,26 +1771,26 @@ fn lifetime_hold_rechecks_split_reborrow_and_exact_occurrence() {
     let other = ledger.lend(owner, reader, backing(&fact), fact).unwrap();
     let ledger = ledger.apply(&other.transition).unwrap();
     for forged in [
-        LoanAuthorityBinding {
-            loan: other.loan,
+        BorrowAuthorityBinding {
+            borrow: other.borrow,
             ..authority
         },
-        LoanAuthorityBinding {
+        BorrowAuthorityBinding {
             scope: other.scope,
             ..authority
         },
-        LoanAuthorityBinding {
+        BorrowAuthorityBinding {
             share: other.root_share,
             ..authority
         },
-        LoanAuthorityBinding {
+        BorrowAuthorityBinding {
             support: other.description.support(),
             ..authority
         },
     ] {
         assert_eq!(
             ledger.hold_authority_with_transition(forged, reader),
-            Err(LoanRefusal::MissingLoanBinding)
+            Err(BorrowRefusal::MissingBorrowBinding)
         );
     }
     let (split, left, right) = ledger
@@ -1761,9 +1799,9 @@ fn lifetime_hold_rechecks_split_reborrow_and_exact_occurrence() {
     let ledger = ledger.apply(&split).unwrap();
     assert_eq!(
         ledger.hold_authority_with_transition(authority, reader),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
-    let left_authority = LoanAuthorityBinding {
+    let left_authority = BorrowAuthorityBinding {
         share: left,
         ..authority
     };
@@ -1774,18 +1812,18 @@ fn lifetime_hold_rechecks_split_reborrow_and_exact_occurrence() {
     );
     assert_eq!(
         ledger.hold_authority_with_transition(
-            LoanAuthorityBinding {
+            BorrowAuthorityBinding {
                 share: right,
                 ..authority
             },
             reader
         ),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
     let child = ledger
         .reborrow(
-            LoanViewBinding {
-                loan: authority.loan,
+            BorrowBinding {
+                borrow: authority.borrow,
                 scope: authority.scope,
                 share: left,
                 support,
@@ -1799,10 +1837,10 @@ fn lifetime_hold_rechecks_split_reborrow_and_exact_occurrence() {
     let ledger = ledger.apply(&child.transition).unwrap();
     assert_eq!(
         ledger.hold_authority_with_transition(left_authority, reader),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
-    let child_authority = LoanAuthorityBinding {
-        loan: child.loan,
+    let child_authority = BorrowAuthorityBinding {
+        borrow: child.borrow,
         scope: child.scope,
         share: child.root_share,
         support,
@@ -1815,7 +1853,7 @@ fn lifetime_hold_rechecks_split_reborrow_and_exact_occurrence() {
         .unwrap();
     assert_eq!(
         held.end(child.scope, reader),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     let released = held.release(hold, owner).unwrap();
     let ended = released
@@ -1836,8 +1874,8 @@ fn lifetime_hold_certificate_cannot_substitute_a_different_share() {
     let support = backing(&fact);
     let opening = ledger.lend(owner, reader, support, fact).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let binding = LoanAuthorityBinding {
-        loan: opening.loan,
+    let binding = BorrowAuthorityBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -1845,21 +1883,24 @@ fn lifetime_hold_certificate_cannot_substitute_a_different_share() {
     let (held, _, mut certificate) = ledger
         .hold_authority_with_transition(binding, reader)
         .unwrap();
-    assert_eq!(held.apply(&certificate), Err(LoanRefusal::StalePredecessor));
-    let LoanTransitionEvidence::Hold { binding, .. } = &mut certificate.evidence else {
+    assert_eq!(
+        held.apply(&certificate),
+        Err(BorrowRefusal::StalePredecessor)
+    );
+    let BorrowTransitionEvidence::Hold { binding, .. } = &mut certificate.evidence else {
         panic!("hold certificate")
     };
     binding.support = ResourceOccurrenceId::default();
     assert_eq!(
         ledger.apply(&certificate),
-        Err(LoanRefusal::InvalidEvidence)
+        Err(BorrowRefusal::InvalidEvidence)
     );
     // Even rewriting the structural seal cannot bypass the transition's
     // own possession check when the checker rechecks it.
     certificate.checked_evidence = certificate.evidence.clone();
     assert_eq!(
         ledger.apply(&certificate),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
 }
 
@@ -1876,8 +1917,8 @@ fn a_hold_blocks_ending_the_scope_and_changes_identity() {
     let support = backing(&escrow);
     let opening = ledger.lend(owner, reader, support, escrow.clone()).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let binding = LoanViewBinding {
-        loan: opening.loan,
+    let binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -1900,7 +1941,7 @@ fn a_hold_blocks_ending_the_scope_and_changes_identity() {
     assert!(held.permits_view(
         reader,
         &StableViewDescription {
-            loan: opening.loan,
+            borrow: opening.borrow,
             support,
             viewed: escrow.core().unwrap(),
         },
@@ -1911,12 +1952,12 @@ fn a_hold_blocks_ending_the_scope_and_changes_identity() {
     let held = held.apply(&transfer).unwrap();
     assert_eq!(
         held.end(opening.scope, owner),
-        Err(LoanRefusal::ActiveDependency),
+        Err(BorrowRefusal::ActiveDependency),
         "a held scope cannot end"
     );
     assert_eq!(
         held.release(hold, owner),
-        Err(LoanRefusal::WrongHolder),
+        Err(BorrowRefusal::WrongHolder),
         "only the participant that placed the hold releases it"
     );
     let (released, release_transition) =
@@ -1934,14 +1975,14 @@ fn a_hold_blocks_ending_the_scope_and_changes_identity() {
     assert_eq!(released.held_scope(hold), None);
     assert_eq!(
         released.release(hold, reader),
-        Err(LoanRefusal::MissingScope),
+        Err(BorrowRefusal::MissingScope),
         "a hold is released once"
     );
     let end = released
         .end(opening.scope, owner)
         .expect("an unheld scope ends");
     let released = released.apply(&end).unwrap();
-    let (recover, recovered_escrow, _) = released.recover(opening.loan, owner).unwrap();
+    let (recover, recovered_escrow, _) = released.recover(opening.borrow, owner).unwrap();
     let released = released.apply(&recover).unwrap();
     assert_eq!(recovered_escrow, escrow);
     assert!(released.invariant_holds());
@@ -1961,8 +2002,8 @@ fn a_borrowing_fold_hold_is_exactly_the_hold_its_head_carries() {
         .borrowed_contract_input(holder, support, viewed.clone(), None)
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let binding = LoanViewBinding {
-        loan: opening.loan,
+    let binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -1970,7 +2011,7 @@ fn a_borrowing_fold_hold_is_exactly_the_hold_its_head_carries() {
         hold: None,
     };
     let (held, hold, transition) = ledger.hold_with_transition(&binding, holder).unwrap();
-    let carried = LoanViewBinding {
+    let carried = BorrowBinding {
         hold: Some(hold),
         ..binding.clone()
     };
@@ -1980,26 +2021,26 @@ fn a_borrowing_fold_hold_is_exactly_the_hold_its_head_carries() {
     );
     assert_eq!(
         ledger.apply_borrowing_fold_hold(&transition, &binding, holder),
-        Err(LoanRefusal::InvalidEvidence),
+        Err(BorrowRefusal::InvalidEvidence),
         "the head must carry the hold"
     );
     assert_eq!(
         ledger.apply_borrowing_fold_hold(&transition, &carried, other),
-        Err(LoanRefusal::InvalidEvidence),
+        Err(BorrowRefusal::InvalidEvidence),
         "the hold must be the folding participant's"
     );
-    let elsewhere = LoanViewBinding {
+    let elsewhere = BorrowBinding {
         support: ResourceOccurrenceId::default(),
         ..carried.clone()
     };
     assert_eq!(
         ledger.apply_borrowing_fold_hold(&transition, &elsewhere, holder),
-        Err(LoanRefusal::InvalidEvidence),
+        Err(BorrowRefusal::InvalidEvidence),
         "the hold must be on the head's borrow authority"
     );
     assert_eq!(
         held.apply_borrowing_fold_hold(&transition, &carried, holder),
-        Err(LoanRefusal::StalePredecessor),
+        Err(BorrowRefusal::StalePredecessor),
         "the hold applies only to its exact input ledger"
     );
 }
@@ -2017,8 +2058,8 @@ fn a_hold_needs_a_live_binding_and_may_rest_on_a_contract_input_root() {
         .borrowed_contract_input(holder, support, viewed.clone(), None)
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let binding = LoanViewBinding {
-        loan: opening.loan,
+    let binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -2027,7 +2068,7 @@ fn a_hold_needs_a_live_binding_and_may_rest_on_a_contract_input_root() {
     };
     assert_eq!(
         ledger.hold(&binding, other),
-        Err(LoanRefusal::MissingLoanBinding),
+        Err(BorrowRefusal::MissingBorrowBinding),
         "the share is not held by `other`"
     );
     let (held, hold) = ledger.hold(&binding, holder).unwrap();
@@ -2039,7 +2080,7 @@ fn a_hold_needs_a_live_binding_and_may_rest_on_a_contract_input_root() {
 /// A composite borrow is a memory borrow whether or not its one-level
 /// frontier enumerated any bytes: the head is memory.
 #[test]
-fn composite_lend_counts_as_a_memory_loan_without_byte_backing() {
+fn composite_lend_counts_as_a_memory_borrow_without_byte_backing() {
     let (ledger, owner, reader) = participants();
     let head = ResourceFact::own(Resource::Composite {
         name: "box".to_string(),
@@ -2047,19 +2088,20 @@ fn composite_lend_counts_as_a_memory_loan_without_byte_backing() {
     });
     let piece = owned("box_token");
     let support = backing(&head);
-    let backing = CompositeLoanBacking::from_checked_expansion(support, head.clone(), vec![piece])
-        .expect("a token-only frontier is a checked expansion");
+    let backing =
+        CompositeBorrowBacking::from_checked_expansion(support, head.clone(), vec![piece])
+            .expect("a token-only frontier is a checked expansion");
     let opening = ledger
         .lend_composite(owner, reader, support, head, backing)
         .expect("composite lend");
     let ledger = ledger.apply(&opening.transition).unwrap();
-    assert!(ledger.has_active_memory_loans());
+    assert!(ledger.has_active_memory_borrows());
     assert!(ledger.invariant_holds());
     let transfer = ledger.transfer(opening.root_share, reader, owner).unwrap();
     let ledger = ledger.apply(&transfer).unwrap();
     let end = ledger.end(opening.scope, owner).unwrap();
     let ledger = ledger.apply(&end).unwrap();
-    assert!(!ledger.has_active_memory_loans());
+    assert!(!ledger.has_active_memory_borrows());
     assert!(ledger.invariant_holds());
 }
 
@@ -2074,8 +2116,8 @@ fn nested_reborrow_restores_a_borrowed_contract_input_root() {
         .borrowed_contract_input(holder, support, viewed.clone(), None)
         .expect("checked contract input");
     let ledger = ledger.apply(&opening.transition).expect("apply input root");
-    let parent = LoanViewBinding {
-        loan: opening.loan,
+    let parent = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -2109,8 +2151,8 @@ fn nested_reborrow_restores_a_borrowed_contract_input_root() {
         &assumptions,
     ));
     assert_eq!(
-        ledger.recover(child.loan, holder),
-        Err(LoanRefusal::InvalidEvidence)
+        ledger.recover(child.borrow, holder),
+        Err(BorrowRefusal::InvalidEvidence)
     );
 }
 
@@ -2129,7 +2171,7 @@ fn checked_two_reader_lifecycle_recovers_exact_escrow_once() {
     assert!(ledger.permits_view(reader, &opening.description, right, &assumptions));
     assert_eq!(
         ledger.end(opening.scope, owner),
-        Err(LoanRefusal::ShareStillSplit)
+        Err(BorrowRefusal::ShareStillSplit)
     );
     let transfer = ledger.transfer(right, reader, owner).unwrap();
     let ledger = ledger.apply(&transfer).unwrap();
@@ -2152,13 +2194,13 @@ fn checked_two_reader_lifecycle_recovers_exact_escrow_once() {
         opening.root_share,
         &assumptions
     ));
-    let (recover, recovered, support) = ledger.recover(opening.loan, owner).unwrap();
+    let (recover, recovered, support) = ledger.recover(opening.borrow, owner).unwrap();
     assert_eq!(recovered, escrow);
     assert_eq!(support, opening.description.support());
     let ledger = ledger.apply(&recover).unwrap();
     assert!(ledger.invariant_holds());
     let duplicate = ledger
-        .recover(opening.loan, owner)
+        .recover(opening.borrow, owner)
         .expect_err("a borrow cannot be recovered twice");
     assert_eq!(
         duplicate
@@ -2187,14 +2229,14 @@ fn shared_reader_recovery_rejects_wrong_sibling_reuse_and_stale_branch() {
     let ledger = ledger.apply(&split_second).unwrap();
     assert_eq!(
         ledger.join(retained_share, first_share, owner),
-        Err(LoanRefusal::WrongHolder)
+        Err(BorrowRefusal::WrongHolder)
     );
 
     let return_first = ledger.transfer(first_share, first_reader, owner).unwrap();
     let after_first_return = ledger.apply(&return_first).unwrap();
     assert_eq!(
         after_first_return.join(first_share, retained_share, owner),
-        Err(LoanRefusal::NotSiblings),
+        Err(BorrowRefusal::NotSiblings),
         "a returned worker share cannot join the other branch's retained share"
     );
     assert_eq!(
@@ -2208,7 +2250,7 @@ fn shared_reader_recovery_rejects_wrong_sibling_reuse_and_stale_branch() {
     );
     assert_eq!(
         after_first_return.end(opening.scope, owner),
-        Err(LoanRefusal::ShareStillSplit)
+        Err(BorrowRefusal::ShareStillSplit)
     );
 
     let return_second = after_first_return
@@ -2222,34 +2264,34 @@ fn shared_reader_recovery_rejects_wrong_sibling_reuse_and_stale_branch() {
     assert_eq!(joins.len(), 2);
     assert_eq!(
         after_first_return.apply(&joins[0]),
-        Err(LoanRefusal::StalePredecessor),
+        Err(BorrowRefusal::StalePredecessor),
         "a join certificate cannot be transplanted before the second return"
     );
     assert_eq!(
         recombined.apply(&joins[0]),
-        Err(LoanRefusal::StalePredecessor),
+        Err(BorrowRefusal::StalePredecessor),
         "a consumed sibling join cannot be used twice"
     );
     assert_eq!(
         recombined.join(first_share, second_share, owner),
-        Err(LoanRefusal::WrongHolder),
+        Err(BorrowRefusal::WrongHolder),
         "consumed shares cannot be joined again"
     );
     let mut forged = joins[0].clone();
-    if let LoanTransitionEvidence::Join { right, .. } = &mut forged.evidence {
+    if let BorrowTransitionEvidence::Join { right, .. } = &mut forged.evidence {
         *right = first_share;
     } else {
         panic!("expected a checked sibling join");
     }
     assert_eq!(
         after_both_returns.apply(&forged),
-        Err(LoanRefusal::InvalidEvidence),
+        Err(BorrowRefusal::InvalidEvidence),
         "a changed sibling identity invalidates the checked payload"
     );
     assert!(recombined.invariant_holds());
     let end = recombined.end(opening.scope, owner).unwrap();
     let ended = recombined.apply(&end).unwrap();
-    let (recover, _, _) = ended.recover(opening.loan, owner).unwrap();
+    let (recover, _, _) = ended.recover(opening.borrow, owner).unwrap();
     assert!(ended.apply(&recover).unwrap().invariant_holds());
 }
 
@@ -2271,8 +2313,8 @@ fn an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource() {
         .lend(owner, owner, support, escrow.clone())
         .expect("a first borrow over the cell");
     let ledger = ledger.apply(&first.transition).unwrap();
-    let old_binding = LoanViewBinding {
-        loan: first.loan,
+    let old_binding = BorrowBinding {
+        borrow: first.borrow,
         scope: first.scope,
         share: first.root_share,
         support,
@@ -2292,7 +2334,7 @@ fn an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource() {
     // the same holder, so nothing but scope liveness changes.
     let end = ledger.end(first.scope, owner).unwrap();
     let ledger = ledger.apply(&end).unwrap();
-    let (recover, recovered, recovered_support) = ledger.recover(first.loan, owner).unwrap();
+    let (recover, recovered, recovered_support) = ledger.recover(first.borrow, owner).unwrap();
     assert_eq!(recovered, escrow);
     assert_eq!(recovered_support, support);
     let ledger = ledger.apply(&recover).unwrap();
@@ -2303,13 +2345,13 @@ fn an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource() {
         .expect("a fresh borrow over the same cell");
     let ledger = ledger.apply(&second.transition).unwrap();
     assert!(ledger.invariant_holds());
-    assert_ne!(first.loan, second.loan);
+    assert_ne!(first.borrow, second.borrow);
     assert_ne!(first.scope, second.scope);
     assert_eq!(first.description.viewed(), second.description.viewed());
 
     // The new scope authorizes reading, binding, and reborrowing.
-    let new_binding = LoanViewBinding {
-        loan: second.loan,
+    let new_binding = BorrowBinding {
+        borrow: second.borrow,
         scope: second.scope,
         share: second.root_share,
         support,
@@ -2332,11 +2374,11 @@ fn an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource() {
     assert!(!ledger.permits_view(owner, &first.description, second.root_share, &assumptions));
     assert_eq!(
         ledger.validate_view_binding(old_binding.clone(), owner),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
     assert_eq!(
         ledger.reborrow(old_binding, owner, reader),
-        Err(LoanRefusal::MissingLoanBinding)
+        Err(BorrowRefusal::MissingBorrowBinding)
     );
 }
 
@@ -2381,7 +2423,7 @@ fn divergent_successors_have_distinct_state_identities() {
 fn hostile_transition_payload_is_rechecked() {
     let (ledger, owner, reader) = participants();
     let mut opening = lend_test(&ledger, owner, reader, owned("cell"));
-    let LoanTransitionEvidence::Lend { borrower, .. } = &mut opening.transition.evidence else {
+    let BorrowTransitionEvidence::Lend { borrower, .. } = &mut opening.transition.evidence else {
         panic!("lend evidence")
     };
     *borrower = owner;
@@ -2400,13 +2442,13 @@ fn hostile_transition_payload_is_rechecked() {
 fn runtime_mutex_evidence_requires_exact_predecessor_participant_and_successor() {
     let (ledger, holder, other) = participants();
     let owner = mutex_owner(Some(1));
-    let (before, loan) = ledger
+    let (before, borrow) = ledger
         .lend_mutex_use(holder, holder, backing(&owner), owner.clone())
         .unwrap();
     let (held, hold, transition) = before
-        .hold_mutex_use_with_transition(loan.usage, &owner, holder)
+        .hold_mutex_use_with_transition(borrow.usage, &owner, holder)
         .unwrap();
-    let evidence = CheckedLoanCallEvidence::runtime_mutex_transition(
+    let evidence = CheckedBorrowCallEvidence::runtime_mutex_transition(
         &before,
         holder,
         transition.clone(),
@@ -2419,7 +2461,7 @@ fn runtime_mutex_evidence_requires_exact_predecessor_participant_and_successor()
             .is_ok()
     );
     assert!(
-        CheckedLoanCallEvidence::runtime_mutex_transition(
+        CheckedBorrowCallEvidence::runtime_mutex_transition(
             &before,
             other,
             transition.clone(),
@@ -2428,7 +2470,7 @@ fn runtime_mutex_evidence_requires_exact_predecessor_participant_and_successor()
         .is_err()
     );
     assert!(
-        CheckedLoanCallEvidence::runtime_mutex_transition(
+        CheckedBorrowCallEvidence::runtime_mutex_transition(
             &before,
             holder,
             transition.clone(),
@@ -2437,12 +2479,12 @@ fn runtime_mutex_evidence_requires_exact_predecessor_participant_and_successor()
         .is_err()
     );
     assert!(
-        CheckedLoanCallEvidence::runtime_mutex_transition(&held, holder, transition, &held)
+        CheckedBorrowCallEvidence::runtime_mutex_transition(&held, holder, transition, &held)
             .is_err()
     );
     let (released, release) = held.release_with_transition(hold, holder).unwrap();
     assert!(
-        CheckedLoanCallEvidence::runtime_mutex_transition(
+        CheckedBorrowCallEvidence::runtime_mutex_transition(
             &held,
             holder,
             release.clone(),
@@ -2451,7 +2493,8 @@ fn runtime_mutex_evidence_requires_exact_predecessor_participant_and_successor()
         .is_ok()
     );
     assert!(
-        CheckedLoanCallEvidence::runtime_mutex_transition(&held, holder, release, &before).is_err()
+        CheckedBorrowCallEvidence::runtime_mutex_transition(&held, holder, release, &before)
+            .is_err()
     );
 }
 
@@ -2482,7 +2525,7 @@ fn checked_call_evidence_rejects_stale_or_swapped_recovery() {
             || recovery_subject.share_id().is_some()
             || recovery_subject.support_id().is_some()
     );
-    let evidence = CheckedLoanCallEvidence::new(
+    let evidence = CheckedBorrowCallEvidence::new(
         plan,
         recovery.ledger.clone(),
         recovery.terminal_ledger.clone(),
@@ -2553,7 +2596,7 @@ fn checked_evidence_sequence_scales_with_shared_immutable_history() {
         .clone()
         .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
         .unwrap();
-    let evidence = Arc::new(CheckedLoanCallEvidence::new(
+    let evidence = Arc::new(CheckedBorrowCallEvidence::new(
         plan,
         recovery.ledger,
         recovery.terminal_ledger,
@@ -2561,12 +2604,12 @@ fn checked_evidence_sequence_scales_with_shared_immutable_history() {
         recovery.hold_base_ledger,
         recovery.hold_transitions,
     ));
-    let mut sequence = empty_checked_loan_evidence_sequence();
+    let mut sequence = empty_checked_borrow_evidence_sequence();
     let mut midpoint = None;
     for index in 0..2048 {
         let previous = sequence.clone();
-        sequence = append_checked_loan_evidence(&sequence, Some(evidence.clone()));
-        let CheckedLoanCallEvidenceSequenceNode::Append { prefix, .. } = &*sequence.node else {
+        sequence = append_checked_borrow_evidence(&sequence, Some(evidence.clone()));
+        let CheckedBorrowCallEvidenceSequenceNode::Append { prefix, .. } = &*sequence.node else {
             panic!("append must create a persistent node");
         };
         assert!(Arc::ptr_eq(prefix, &previous.node));
@@ -2577,12 +2620,12 @@ fn checked_evidence_sequence_scales_with_shared_immutable_history() {
     let midpoint = midpoint.unwrap();
     let suffix = sequence.suffix_since(&midpoint).unwrap();
     assert_eq!(suffix.len(), 1024);
-    assert_eq!(concat_checked_loan_evidence(&midpoint, &suffix), sequence);
+    assert_eq!(concat_checked_borrow_evidence(&midpoint, &suffix), sequence);
     let separately_built_equal_prefix = midpoint
         .to_vec()
         .into_iter()
-        .fold(empty_checked_loan_evidence_sequence(), |rebuilt, item| {
-            append_checked_loan_evidence(&rebuilt, Some(item))
+        .fold(empty_checked_borrow_evidence_sequence(), |rebuilt, item| {
+            append_checked_borrow_evidence(&rebuilt, Some(item))
         });
     assert_eq!(separately_built_equal_prefix, midpoint);
     assert!(
@@ -2607,7 +2650,7 @@ fn checked_evidence_sequence_scales_with_shared_immutable_history() {
         .clone()
         .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
         .unwrap();
-    let alternate_evidence = Arc::new(CheckedLoanCallEvidence::new(
+    let alternate_evidence = Arc::new(CheckedBorrowCallEvidence::new(
         alternate_plan,
         alternate_recovery.ledger,
         alternate_recovery.terminal_ledger,
@@ -2615,9 +2658,9 @@ fn checked_evidence_sequence_scales_with_shared_immutable_history() {
         alternate_recovery.hold_base_ledger,
         alternate_recovery.hold_transitions,
     ));
-    let mut separately_built_different = empty_checked_loan_evidence_sequence();
+    let mut separately_built_different = empty_checked_borrow_evidence_sequence();
     for _ in 0..2048 {
-        separately_built_different = append_checked_loan_evidence(
+        separately_built_different = append_checked_borrow_evidence(
             &separately_built_different,
             Some(alternate_evidence.clone()),
         );
@@ -2644,7 +2687,7 @@ fn checked_evidence_sequence_seals_each_appended_call_locally() {
         .clone()
         .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
         .unwrap();
-    let mut tampered = CheckedLoanCallEvidence::new(
+    let mut tampered = CheckedBorrowCallEvidence::new(
         plan,
         recovery.ledger,
         recovery.terminal_ledger,
@@ -2653,8 +2696,8 @@ fn checked_evidence_sequence_seals_each_appended_call_locally() {
         recovery.hold_transitions,
     );
     tampered.recovery_transitions.reverse();
-    let sequence = append_checked_loan_evidence(
-        &empty_checked_loan_evidence_sequence(),
+    let sequence = append_checked_borrow_evidence(
+        &empty_checked_borrow_evidence_sequence(),
         Some(Arc::new(tampered)),
     );
     assert!(!sequence.is_valid());
@@ -2668,8 +2711,8 @@ fn states_share_storage_and_updates_do_not_mutate_predecessors() {
     let opening = lend_test(&ledger, owner, reader, owned("cell"));
     let advanced = ledger.apply(&opening.transition).unwrap();
     assert!(!ledger.shares_storage_with(&advanced));
-    assert!(ledger.storage.data.loans.is_empty());
-    assert_eq!(advanced.storage.data.loans.len(), 1);
+    assert!(ledger.storage.data.borrows.is_empty());
+    assert_eq!(advanced.storage.data.borrows.len(), 1);
 }
 
 #[test]
@@ -2686,7 +2729,7 @@ fn nested_reborrow_must_rejoin_each_parent_before_scope_end() {
     let ledger = ledger.apply(&nested_split).unwrap();
     assert_eq!(
         ledger.join(retained, reborrowed, owner),
-        Err(LoanRefusal::WrongHolder)
+        Err(BorrowRefusal::WrongHolder)
     );
     let nested_join = ledger.join(nested_left, nested_right, reader).unwrap();
     let ledger = ledger.apply(&nested_join).unwrap();
@@ -2722,13 +2765,13 @@ fn participants_and_scope_ids_cannot_cross_ledger_arenas() {
     let cell = owned("cell");
     assert_eq!(
         first.lend(second_owner, second_reader, backing(&cell), cell.clone()),
-        Err(LoanRefusal::WrongArena)
+        Err(BorrowRefusal::WrongArena)
     );
     let opening = lend_test(&first, first_owner, first_owner, cell);
     let first = first.apply(&opening.transition).unwrap();
     assert_eq!(
         first.transfer(opening.root_share, second_owner, first_owner),
-        Err(LoanRefusal::WrongArena)
+        Err(BorrowRefusal::WrongArena)
     );
 }
 
@@ -2739,8 +2782,8 @@ fn reborrow_rejects_a_borrower_from_another_ledger_arena() {
     let escrow = memory(0, 4, true);
     let opening = ledger.lend(owner, owner, backing(&escrow), escrow).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let parent = LoanViewBinding {
-        loan: opening.loan,
+    let parent = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support: opening.description.support(),
@@ -2749,17 +2792,17 @@ fn reborrow_rejects_a_borrower_from_another_ledger_arena() {
     };
     assert_eq!(
         ledger.reborrow(parent, owner, foreign_reader),
-        Err(LoanRefusal::WrongArena)
+        Err(BorrowRefusal::WrongArena)
     );
 }
 
 #[test]
-fn first_loan_family_boundary_rejects_composites() {
+fn first_borrow_family_boundary_rejects_composites() {
     let (ledger, owner, reader) = participants();
     let composite = ResourceFact::own_composite("cell".to_string(), Vec::new());
     assert_eq!(
         ledger.lend(owner, reader, backing(&composite), composite),
-        Err(LoanRefusal::UnsupportedResource)
+        Err(BorrowRefusal::UnsupportedResource)
     );
 }
 
@@ -2787,8 +2830,8 @@ fn local_ledger_updates_allocate_logarithmically() {
             allocations <= allocation_bound,
             "size {size} borrow update allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
-        assert_eq!(ancestor.storage.data.loans.len(), size);
-        assert_eq!(successor.storage.data.loans.len(), size + 1);
+        assert_eq!(ancestor.storage.data.borrows.len(), size);
+        assert_eq!(successor.storage.data.borrows.len(), size + 1);
     }
 }
 
@@ -2848,14 +2891,14 @@ fn a_range_starting_below_its_base_is_not_empty_to_the_write_barrier() {
     let below = range(u32::MAX, 3);
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&below, &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     assert!(!ledger.active_memory_overlaps(&below).unwrap().is_empty());
     // The contained range is the control: a superset of a refused range
     // may never be the one that is admitted.
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&range(0, 3), &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
 }
 
@@ -2945,7 +2988,7 @@ fn composite(name: &str, own: bool) -> ResourceFact {
 }
 
 #[test]
-fn composite_loan_protects_primitive_frontier_and_restores_head_once() {
+fn composite_borrow_protects_primitive_frontier_and_restores_head_once() {
     let (ledger, owner, reader) = participants();
     let assumptions = PureFactContext::new();
     let head = composite("cell", true);
@@ -2958,7 +3001,7 @@ fn composite_loan_protects_primitive_frontier_and_restores_head_once() {
             reader,
             support,
             head.clone(),
-            CompositeLoanBacking::from_checked_expansion(
+            CompositeBorrowBacking::from_checked_expansion(
                 support,
                 head.clone(),
                 vec![piece.clone()],
@@ -2969,7 +3012,7 @@ fn composite_loan_protects_primitive_frontier_and_restores_head_once() {
     let ledger = ledger.apply(&opening.transition).unwrap();
     let child = ledger
         .describe_view(
-            opening.loan,
+            opening.borrow,
             ResourceFact::view_memory(piece.memory_range().unwrap().clone()),
             &assumptions,
         )
@@ -2977,10 +3020,10 @@ fn composite_loan_protects_primitive_frontier_and_restores_head_once() {
     assert!(ledger.permits_view(reader, &child, opening.root_share, &assumptions));
     assert_eq!(
         ledger.permits_memory_access(piece.memory_range().unwrap()),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     let end = ledger.end(opening.scope, owner);
-    assert_eq!(end, Err(LoanRefusal::ShareStillSplit));
+    assert_eq!(end, Err(BorrowRefusal::ShareStillSplit));
     let transfer = ledger.transfer(opening.root_share, reader, owner).unwrap();
     let ledger = ledger.apply(&transfer).unwrap();
     let end = ledger
@@ -2990,13 +3033,13 @@ fn composite_loan_protects_primitive_frontier_and_restores_head_once() {
         end.permits_memory_access(piece.memory_range().unwrap())
             .is_ok()
     );
-    let (recover, recovered, recovered_support) = end.recover(opening.loan, owner).unwrap();
+    let (recover, recovered, recovered_support) = end.recover(opening.borrow, owner).unwrap();
     assert_eq!(recovered, head);
     assert_eq!(recovered_support, support);
     let end = end.apply(&recover).unwrap();
     assert_eq!(
-        end.recover(opening.loan, owner),
-        Err(LoanRefusal::AlreadyRecovered)
+        end.recover(opening.borrow, owner),
+        Err(BorrowRefusal::AlreadyRecovered)
     );
 }
 
@@ -3011,7 +3054,7 @@ fn composite_planner_rejects_hidden_overlap_and_equal_head_ambiguity() {
     let context = ResourceContext::new().unchecked_with_facts([head.clone(), overlapping]);
     let support = context.unique_owned_occurrence_for_fact(&head).unwrap().0;
     let backing =
-        CompositeLoanBacking::from_checked_expansion(support, head.clone(), vec![piece.clone()])
+        CompositeBorrowBacking::from_checked_expansion(support, head.clone(), vec![piece.clone()])
             .unwrap();
     let mut backings = BTreeMap::new();
     backings.insert(support, backing);
@@ -3022,13 +3065,13 @@ fn composite_planner_rejects_hidden_overlap_and_equal_head_ambiguity() {
         &ledger,
         owner,
         reader,
-        &LoanViewBindings::default(),
+        &BorrowBindings::default(),
         &backings,
     )
     .expect_err("a hidden overlapping resource must be refused");
     assert_eq!(
         overlap
-            .loan_diagnostic(LoanRefusalOperation::Plan)
+            .borrow_diagnostic(LoanRefusalOperation::Plan)
             .expect("planner refusal diagnostic")
             .category(),
         LoanRefusalCategory::ProvenOverlap
@@ -3042,7 +3085,7 @@ fn composite_planner_rejects_hidden_overlap_and_equal_head_ambiguity() {
     let mut duplicate_backings = BTreeMap::new();
     duplicate_backings.insert(
         duplicate_support,
-        CompositeLoanBacking::from_checked_expansion(
+        CompositeBorrowBacking::from_checked_expansion(
             duplicate_support,
             composite("cell", true),
             vec![piece],
@@ -3056,13 +3099,13 @@ fn composite_planner_rejects_hidden_overlap_and_equal_head_ambiguity() {
         &ledger,
         owner,
         reader,
-        &LoanViewBindings::default(),
+        &BorrowBindings::default(),
         &duplicate_backings,
     )
     .expect_err("duplicate support must be refused");
     assert_eq!(
         duplicate_error
-            .loan_diagnostic(LoanRefusalOperation::Plan)
+            .borrow_diagnostic(LoanRefusalOperation::Plan)
             .expect("planner refusal diagnostic")
             .category(),
         LoanRefusalCategory::Unsupported
@@ -3087,7 +3130,7 @@ fn composite_planner_rejects_an_owned_requirement_inside_the_viewed_frontier() {
         let mut backings = BTreeMap::new();
         backings.insert(
             support,
-            CompositeLoanBacking::from_checked_expansion(
+            CompositeBorrowBacking::from_checked_expansion(
                 support,
                 head.clone(),
                 vec![piece.clone()],
@@ -3112,7 +3155,7 @@ fn composite_planner_rejects_an_owned_requirement_inside_the_viewed_frontier() {
             &ledger,
             owner,
             reader,
-            &LoanViewBindings::default(),
+            &BorrowBindings::default(),
             &backings,
         )
     };
@@ -3124,7 +3167,7 @@ fn composite_planner_rejects_an_owned_requirement_inside_the_viewed_frontier() {
     );
     assert_eq!(
         overlap
-            .loan_diagnostic(LoanRefusalOperation::Plan)
+            .borrow_diagnostic(LoanRefusalOperation::Plan)
             .expect("planner refusal diagnostic")
             .category(),
         LoanRefusalCategory::ProvenOverlap
@@ -3149,7 +3192,7 @@ fn composite_planner_escrows_one_head_and_recovers_it_once() {
     let caller = ResourceContext::new().unchecked_with_fact(head.clone());
     let support = caller.unique_owned_occurrence_for_fact(&head).unwrap().0;
     let backing =
-        CompositeLoanBacking::from_checked_expansion(support, head.clone(), vec![piece]).unwrap();
+        CompositeBorrowBacking::from_checked_expansion(support, head.clone(), vec![piece]).unwrap();
     let mut backings = BTreeMap::new();
     backings.insert(support, backing);
     let plan = plan_stable_view_transfer_with_bindings_and_composites(
@@ -3159,7 +3202,7 @@ fn composite_planner_escrows_one_head_and_recovers_it_once() {
         &ledger,
         owner,
         reader,
-        &LoanViewBindings::default(),
+        &BorrowBindings::default(),
         &backings,
     )
     .unwrap();
@@ -3352,7 +3395,7 @@ fn memory_split_origins_retain_both_sides_and_isolate_speculative_branches() {
 /// borrow through the composite's binding, and recovers the owner only
 /// when a later call consumes the composite.
 #[test]
-fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
+fn escaping_borrow_keeps_the_borrow_open_until_the_composite_is_consumed() {
     let assumptions = PureFactContext::new();
     let owner_fact = memory(0, 8, true);
     let viewed = memory(0, 8, false);
@@ -3367,12 +3410,12 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
         callee,
     )
     .expect("the view is lent from the owner");
-    let loan = plan.stable_views()[0].loan;
+    let borrow = plan.stable_views()[0].borrow;
     let head = composite("cursor", true);
     let mut escaping = BTreeMap::new();
     let (_, heads) = ResourceContext::new().unchecked_with_facts_and_occurrences([head.clone()]);
     escaping.insert(
-        loan,
+        borrow,
         vec![EscapingBorrow {
             head: head.clone(),
             occurrence: heads[0].1,
@@ -3384,7 +3427,7 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
         .clone()
         .recover_stable_views(&assumptions, &escaping, &[])
         .expect("an escaping borrow recovers open");
-    let evidence = CheckedLoanCallEvidence::new(
+    let evidence = CheckedBorrowCallEvidence::new(
         plan.clone(),
         recovery.ledger.clone(),
         recovery.terminal_ledger.clone(),
@@ -3406,7 +3449,7 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
     let open = recovery.ledger;
     assert!(open.invariant_holds());
     assert!(
-        open.has_active_memory_loans(),
+        open.has_active_memory_borrows(),
         "the lent bytes stay protected"
     );
     assert_eq!(
@@ -3414,12 +3457,12 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
             &memory(0, 8, true).memory_own_range().unwrap().clone(),
             &assumptions
         ),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     assert_eq!(open.held_scope(hold), Some(escaped.binding.scope));
     assert_eq!(
         open.end(escaped.binding.scope, caller),
-        Err(LoanRefusal::ActiveDependency),
+        Err(BorrowRefusal::ActiveDependency),
         "the held scope cannot be ended behind the composite's back"
     );
     assert_ne!(
@@ -3453,7 +3496,7 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
         )
         .expect("consuming the composite recovers the owner");
     let recovered_ledger = recovered.ledger.clone();
-    let next_evidence = Arc::new(CheckedLoanCallEvidence::new(
+    let next_evidence = Arc::new(CheckedBorrowCallEvidence::new(
         next,
         recovered.ledger.clone(),
         recovered.terminal_ledger.clone(),
@@ -3471,11 +3514,11 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
             )
             .is_ok()
     );
-    let sequence = append_checked_loan_evidence(
-        &empty_checked_loan_evidence_sequence(),
+    let sequence = append_checked_borrow_evidence(
+        &empty_checked_borrow_evidence_sequence(),
         Some(Arc::new(evidence)),
     );
-    let sequence = append_checked_loan_evidence(&sequence, Some(next_evidence));
+    let sequence = append_checked_borrow_evidence(&sequence, Some(next_evidence));
     assert_eq!(
         sequence.recovered_ledger_for(&ledger, caller, false),
         Some(recovered_ledger.clone()),
@@ -3495,7 +3538,7 @@ fn escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed() {
             .satisfies_fact(&owner_fact, &assumptions)
     );
     assert!(recovered.ledger.invariant_holds());
-    assert!(!recovered.ledger.has_active_memory_loans());
+    assert!(!recovered.ledger.has_active_memory_borrows());
     assert_eq!(recovered.ledger.held_scope(hold), None);
     assert!(
         recovered
@@ -3519,10 +3562,11 @@ fn composite_backing_tamper_and_instance_frontier_are_refused() {
     // backing of its own.
     let nested = composite("nested", true);
     assert!(
-        CompositeLoanBacking::from_checked_expansion(support, head.clone(), vec![nested]).is_some()
+        CompositeBorrowBacking::from_checked_expansion(support, head.clone(), vec![nested])
+            .is_some()
     );
     assert!(
-        CompositeLoanBacking::from_checked_expansion(
+        CompositeBorrowBacking::from_checked_expansion(
             support,
             head.clone(),
             vec![composite("nested", false)]
@@ -3531,7 +3575,7 @@ fn composite_backing_tamper_and_instance_frontier_are_refused() {
     );
     // A backing whose head is not the escrow is not this composite's
     // checked expansion, whatever it was built from.
-    let tampered = CompositeLoanBacking {
+    let tampered = CompositeBorrowBacking {
         support,
         head: composite("other", true),
         pieces: Vec::new(),
@@ -3553,7 +3597,7 @@ fn composite_backing_tamper_and_instance_frontier_are_refused() {
             reader,
             support,
             composite("cell", true),
-            CompositeLoanBacking::from_checked_expansion(
+            CompositeBorrowBacking::from_checked_expansion(
                 support,
                 composite("cell", true),
                 Vec::new(),
@@ -3561,7 +3605,7 @@ fn composite_backing_tamper_and_instance_frontier_are_refused() {
             .unwrap(),
         )
         .unwrap();
-    let LoanTransitionEvidence::LendComposite { support_fact, .. } =
+    let BorrowTransitionEvidence::LendComposite { support_fact, .. } =
         &mut opening.transition.evidence
     else {
         panic!("composite lend evidence")
@@ -3614,7 +3658,7 @@ fn joint_planner_uses_one_escrow_for_overlapping_views_and_recovers_it() {
     )
     .unwrap();
     assert_eq!(plan.stable_views.len(), 3);
-    assert_eq!(plan.stable_views[0].loan, plan.stable_views[1].loan);
+    assert_eq!(plan.stable_views[0].borrow, plan.stable_views[1].borrow);
     assert_eq!(plan.stable_views[0].share, plan.stable_views[1].share);
     assert!(
         !plan
@@ -3739,7 +3783,7 @@ fn joint_planner_reserves_owned_fragments_once_and_retains_each_support() {
 }
 
 #[test]
-fn joint_planner_rechecks_two_disjoint_entry_loans_by_exact_state_chain() {
+fn joint_planner_rechecks_two_disjoint_entry_borrows_by_exact_state_chain() {
     let assumptions = PureFactContext::new();
     let owner = memory(0, 8, true);
     let caller_resources = ResourceContext::new().unchecked_with_fact(owner);
@@ -3770,7 +3814,7 @@ fn joint_planner_rechecks_two_disjoint_entry_loans_by_exact_state_chain() {
 }
 
 #[test]
-fn joint_planner_empty_views_need_no_backing_or_loan() {
+fn joint_planner_empty_views_need_no_backing_or_borrow() {
     let assumptions = PureFactContext::new();
     let resources = ResourceContext::new();
     let (ledger, caller, callee) = participants();
@@ -3911,7 +3955,7 @@ fn joint_planner_backs_a_covered_symbolic_view_with_its_whole_owner() {
 }
 
 #[test]
-fn joint_planner_shares_one_loan_between_two_covered_symbolic_views() {
+fn joint_planner_shares_one_borrow_between_two_covered_symbolic_views() {
     let assumptions = PureFactContext::new();
     let end = MachineTerm::Variable(Variable(71_003));
     let owner = symbolic_memory(MachineTerm::constant(0), end.clone(), true);
@@ -3932,7 +3976,7 @@ fn joint_planner_shares_one_loan_between_two_covered_symbolic_views() {
     // resolved into two escrows of the same bytes.
     assert_eq!(plan.entry_transitions.len(), 1);
     assert_eq!(plan.stable_views.len(), 2);
-    assert_eq!(plan.stable_views[0].loan, plan.stable_views[1].loan);
+    assert_eq!(plan.stable_views[0].borrow, plan.stable_views[1].borrow);
 }
 
 /// Every view the plan composes into the callee context carries its borrow
@@ -3960,7 +4004,7 @@ fn joint_planner_binds_every_composed_callee_view_occurrence() {
     assert_eq!(plan.stable_views.len(), 2);
     let bound = plan
         .callee_resources
-        .live_loan_dependencies()
+        .live_borrow_dependencies()
         .map(|(occurrence, binding)| (occurrence, binding.viewed.clone()))
         .collect::<Vec<_>>();
     assert_eq!(bound.len(), 2);
@@ -3985,7 +4029,9 @@ fn joint_planner_refuses_an_unbound_view_the_caller_does_not_own() {
             caller,
             callee,
         ),
-        Err(StableViewPlanError::Loan(LoanRefusal::MissingLoanBinding))
+        Err(StableViewPlanError::Borrow(
+            BorrowRefusal::MissingBorrowBinding
+        ))
     );
 }
 
@@ -4016,8 +4062,8 @@ fn active_child_dependency_blocks_parent_close_until_child_ends() {
     let borrower = ledger.fresh_participant().unwrap();
     let parent = lend_test(&ledger, owner, reader, owned("parent"));
     let ledger = ledger.apply(&parent.transition).unwrap();
-    let binding = LoanViewBinding {
-        loan: parent.loan,
+    let binding = BorrowBinding {
+        borrow: parent.borrow,
         scope: parent.scope,
         share: parent.root_share,
         support: parent.description.support,
@@ -4029,7 +4075,7 @@ fn active_child_dependency_blocks_parent_close_until_child_ends() {
     let ledger = ledger.apply(&child.transition).unwrap();
     assert_eq!(
         ledger.end(parent.scope, owner),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     let child_return = ledger.transfer(child.root_share, borrower, reader).unwrap();
     let ledger = ledger.apply(&child_return).unwrap();
@@ -4130,7 +4176,7 @@ fn joint_planner_partitions_disjoint_write_and_view_ranges_in_any_clause_order()
     );
     let bound = |plan: &StableViewTransferPlan| {
         plan.callee_resources
-            .live_loan_dependencies()
+            .live_borrow_dependencies()
             .map(|(_, binding)| binding.viewed.clone())
             .collect::<Vec<_>>()
     };
@@ -4221,7 +4267,9 @@ fn joint_planner_refuses_an_independent_view_without_owned_support() {
             caller,
             callee,
         ),
-        Err(StableViewPlanError::Loan(LoanRefusal::MissingLoanBinding))
+        Err(StableViewPlanError::Borrow(
+            BorrowRefusal::MissingBorrowBinding
+        ))
     );
 }
 
@@ -4237,8 +4285,8 @@ fn nested_view_reborrow_pins_parent_and_restores_exact_binding() {
         .lend(owner, owner, support, owned_range.clone())
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let parent_binding = LoanViewBinding {
-        loan: opening.loan,
+    let parent_binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -4252,7 +4300,7 @@ fn nested_view_reborrow_pins_parent_and_restores_exact_binding() {
         .map(|occurrence| (occurrence, ()))
         .next()
         .expect("parent view occurrence");
-    let parent_bindings = LoanViewBindings::default().with_inserted(occurrence, parent_binding);
+    let parent_bindings = BorrowBindings::default().with_inserted(occurrence, parent_binding);
     let plan = plan_stable_view_transfer_with_bindings(
         &parent_resources,
         &child_views.iter().cloned().map(checked).collect::<Vec<_>>(),
@@ -4265,7 +4313,7 @@ fn nested_view_reborrow_pins_parent_and_restores_exact_binding() {
     .unwrap();
     assert_eq!(plan.stable_views.len(), child_views.len());
     for (child, viewed) in plan.stable_views.iter().zip(&child_views) {
-        assert_ne!(child.loan, opening.loan);
+        assert_ne!(child.borrow, opening.borrow);
         assert_eq!(child.description.viewed(), viewed);
         assert!(
             plan.ledger
@@ -4328,10 +4376,10 @@ fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
     let resources =
         ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(parent_view.clone());
     let occurrence = resources.occurrences_for_fact(&parent_view)[0];
-    let bindings = LoanViewBindings::default().with_inserted(
+    let bindings = BorrowBindings::default().with_inserted(
         occurrence,
-        LoanViewBinding {
-            loan: opening.loan,
+        BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support: opening.description.support(),
@@ -4365,7 +4413,7 @@ fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
             ResourceFact::view_memory(range(alias, 17u32.into())),
             &bindings,
         ),
-        (&assumptions, child_view, &LoanViewBindings::default()),
+        (&assumptions, child_view, &BorrowBindings::default()),
     ] {
         assert!(
             plan_stable_view_transfer_with_bindings(
@@ -4397,15 +4445,15 @@ fn nested_view_reborrow_rejects_wider_child_than_bound_parent() {
         .into_iter()
         .next()
         .expect("wider view occurrence");
-    let binding = LoanViewBinding {
-        loan: opening.loan,
+    let binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support: opening.description.support(),
         viewed: parent_view,
         hold: None,
     };
-    let bindings = LoanViewBindings::default().with_inserted(occurrence, binding);
+    let bindings = BorrowBindings::default().with_inserted(occurrence, binding);
     let invalid = plan_stable_view_transfer_with_bindings(
         &parent_resources,
         &[checked(wider_view)],
@@ -4418,7 +4466,7 @@ fn nested_view_reborrow_rejects_wider_child_than_bound_parent() {
     .expect_err("a wider range than the bound view must be refused");
     assert_eq!(
         invalid
-            .loan_diagnostic(LoanRefusalOperation::Plan)
+            .borrow_diagnostic(LoanRefusalOperation::Plan)
             .expect("planner refusal diagnostic")
             .category(),
         LoanRefusalCategory::InvalidEvidence
@@ -4426,7 +4474,7 @@ fn nested_view_reborrow_rejects_wider_child_than_bound_parent() {
 }
 
 #[test]
-fn active_memory_index_returns_only_overlapping_live_loans() {
+fn active_memory_index_returns_only_overlapping_live_borrows() {
     let owned_range = memory(0, 8, true);
     let (ledger, owner, reader) = participants();
     let opening = ledger
@@ -4434,7 +4482,7 @@ fn active_memory_index_returns_only_overlapping_live_loans() {
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
     let protected_state = ledger.clone();
-    assert!(ledger.has_active_memory_loans());
+    assert!(ledger.has_active_memory_borrows());
     assert!(ledger.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap()));
     assert!(!ledger.has_indexed_memory_overlap(memory(8, 10, false).memory_range().unwrap()));
     assert!(!ledger.has_indexed_memory_overlap(memory(8, 8, false).memory_range().unwrap()));
@@ -4443,7 +4491,7 @@ fn active_memory_index_returns_only_overlapping_live_loans() {
         ledger
             .active_memory_overlaps(memory(2, 4, false).memory_range().unwrap())
             .unwrap(),
-        vec![opening.loan]
+        vec![opening.borrow]
     );
     assert!(
         ledger
@@ -4489,13 +4537,13 @@ fn active_memory_index_returns_only_overlapping_live_loans() {
     assert!(
         protected_state.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap())
     );
-    assert!(!ledger.has_active_memory_loans());
-    assert!(protected_state.has_active_memory_loans());
+    assert!(!ledger.has_active_memory_borrows());
+    assert!(protected_state.has_active_memory_borrows());
     assert_eq!(
         protected_state.permits_memory_access(memory(2, 4, false).memory_range().unwrap()),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
-    let _ = ledger.recover(opening.loan, owner).unwrap();
+    let _ = ledger.recover(opening.borrow, owner).unwrap();
 }
 
 #[test]
@@ -4570,7 +4618,7 @@ fn contract_entry_overlap_does_not_walk_pointer_aliases() {
 }
 
 #[test]
-fn indexed_loan_blocks_write_through_exact_pointer_alias() {
+fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
     let (ledger, owner, reader) = participants();
     let protected_base = Address {
         base: AddressBase::Symbolic(Variable(702)),
@@ -4605,7 +4653,7 @@ fn indexed_loan_blocks_write_through_exact_pointer_alias() {
 
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&query, &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     assert_eq!(
         ledger
@@ -4617,7 +4665,7 @@ fn indexed_loan_blocks_write_through_exact_pointer_alias() {
 }
 
 #[test]
-fn symbolic_loan_fallback_checks_equal_pointer_alias_buckets() {
+fn symbolic_borrow_fallback_checks_equal_pointer_alias_buckets() {
     let (ledger, owner, reader) = participants();
     let protected_base = Address {
         base: AddressBase::Symbolic(Variable(704)),
@@ -4654,20 +4702,20 @@ fn symbolic_loan_fallback_checks_equal_pointer_alias_buckets() {
 
     assert_eq!(
         ledger.permits_memory_access_with_assumptions(&query, &assumptions),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
 }
 
 #[test]
-fn ending_nested_memory_loan_keeps_parent_footprint_indexed() {
+fn ending_nested_memory_borrow_keeps_parent_footprint_indexed() {
     let owned_range = memory(0, 8, true);
     let (ledger, owner, reader) = participants();
     let parent = ledger
         .lend(owner, owner, backing(&owned_range), owned_range.clone())
         .unwrap();
     let ledger = ledger.apply(&parent.transition).unwrap();
-    let parent_binding = LoanViewBinding {
-        loan: parent.loan,
+    let parent_binding = BorrowBinding {
+        borrow: parent.borrow,
         scope: parent.scope,
         share: parent.root_share,
         support: parent.description.support(),
@@ -4679,8 +4727,8 @@ fn ending_nested_memory_loan_keeps_parent_footprint_indexed() {
     let overlapping_fact = memory(1, 2, false);
     let overlapping = overlapping_fact.memory_range().unwrap();
     let active = ledger.active_memory_overlaps(overlapping).unwrap();
-    assert!(active.contains(&parent.loan));
-    assert!(active.contains(&child.loan));
+    assert!(active.contains(&parent.borrow));
+    assert!(active.contains(&child.borrow));
 
     let child_return = ledger.transfer(child.root_share, reader, owner).unwrap();
     let ledger = ledger.apply(&child_return).unwrap();
@@ -4688,7 +4736,7 @@ fn ending_nested_memory_loan_keeps_parent_footprint_indexed() {
     let ledger = ledger.apply(&child_end).unwrap();
     assert_eq!(
         ledger.active_memory_overlaps(overlapping).unwrap(),
-        vec![parent.loan]
+        vec![parent.borrow]
     );
     let blocked = ledger
         .permits_memory_access(overlapping)
@@ -4712,28 +4760,28 @@ fn ending_nested_memory_loan_keeps_parent_footprint_indexed() {
 
 #[test]
 fn refusal_diagnostics_preserve_overlap_and_boundary_categories() {
-    let active = LoanRefusal::ActiveDependency.diagnostic(LoanRefusalOperation::MemoryAccess);
+    let active = BorrowRefusal::ActiveDependency.diagnostic(LoanRefusalOperation::MemoryAccess);
     assert_eq!(active.category(), LoanRefusalCategory::ActiveDependency);
     assert_eq!(active.overlap(), LoanOverlapStatus::ProvenOverlap);
 
-    let unsupported = LoanRefusal::UnsupportedPartition.diagnostic(LoanRefusalOperation::Plan);
+    let unsupported = BorrowRefusal::UnsupportedPartition.diagnostic(LoanRefusalOperation::Plan);
     assert_eq!(
         unsupported.category(),
         LoanRefusalCategory::SeparationUnproved
     );
     assert_eq!(unsupported.overlap(), LoanOverlapStatus::SeparationUnproved);
 
-    let wrong_holder = LoanRefusal::WrongHolder.diagnostic(LoanRefusalOperation::Recovery);
+    let wrong_holder = BorrowRefusal::WrongHolder.diagnostic(LoanRefusalOperation::Recovery);
     assert_eq!(wrong_holder.category(), LoanRefusalCategory::WrongHolder);
-    let wrong_scope = LoanRefusal::WrongScope.diagnostic(LoanRefusalOperation::Transition);
+    let wrong_scope = BorrowRefusal::WrongScope.diagnostic(LoanRefusalOperation::Transition);
     assert_eq!(wrong_scope.category(), LoanRefusalCategory::WrongScope);
-    let stale = LoanRefusal::StalePredecessor.diagnostic(LoanRefusalOperation::Recovery);
+    let stale = BorrowRefusal::StalePredecessor.diagnostic(LoanRefusalOperation::Recovery);
     assert_eq!(stale.category(), LoanRefusalCategory::StalePredecessor);
-    let recovery = LoanRefusal::AlreadyRecovered.diagnostic(LoanRefusalOperation::Recovery);
+    let recovery = BorrowRefusal::AlreadyRecovered.diagnostic(LoanRefusalOperation::Recovery);
     assert_eq!(recovery.category(), LoanRefusalCategory::Recovery);
-    let lifetime = LoanRefusal::ScopeEnded.diagnostic(LoanRefusalOperation::Transition);
+    let lifetime = BorrowRefusal::ScopeEnded.diagnostic(LoanRefusalOperation::Transition);
     assert_eq!(lifetime.category(), LoanRefusalCategory::Lifetime);
-    let arena = LoanRefusal::WrongArena.diagnostic(LoanRefusalOperation::Transition);
+    let arena = BorrowRefusal::WrongArena.diagnostic(LoanRefusalOperation::Transition);
     assert_eq!(arena.category(), LoanRefusalCategory::WrongArena);
 }
 
@@ -4741,18 +4789,18 @@ fn refusal_diagnostics_preserve_overlap_and_boundary_categories() {
 fn refusal_diagnostic_is_a_small_bounded_payload() {
     assert!(std::mem::size_of::<LoanRefusalDiagnostic>() <= 512);
     let subject = LoanRefusalSubject::resource(memory(0, 4, true));
-    let diagnostic =
-        LoanRefusal::ActiveDependency.diagnostic_with_subject(LoanRefusalOperation::Plan, subject);
+    let diagnostic = BorrowRefusal::ActiveDependency
+        .diagnostic_with_subject(LoanRefusalOperation::Plan, subject);
     assert!(diagnostic.subject().resource_fact().is_some());
 }
 
 #[cfg(test)]
 mod scaling_tests {
-    include!("../../scaling_tests/kernel/loans/tests.rs");
+    include!("../../scaling_tests/kernel/borrows/tests.rs");
 }
 
 #[test]
-fn selected_loan_consumption_never_tries_another_occurrence() {
+fn selected_borrow_consumption_never_tries_another_occurrence() {
     let facts = PureFactContext::new();
     let first = memory(0, 4, true);
     let second = memory(4, 8, true);
@@ -4775,7 +4823,7 @@ fn selected_loan_consumption_never_tries_another_occurrence() {
 }
 
 #[test]
-fn indexed_write_witness_keeps_the_least_loan_across_buckets_and_aliases() {
+fn indexed_write_witness_keeps_the_least_borrow_across_buckets_and_aliases() {
     let (mut ledger, holder, _) = participants();
     let mut first = None;
     for (start, end) in [(12, 16), (0, 32), (64, 96)] {
@@ -4784,7 +4832,7 @@ fn indexed_write_witness_keeps_the_least_loan_across_buckets_and_aliases() {
         let opening = ledger
             .borrowed_contract_input(holder, resources.occurrences_for_fact(&view)[0], view, None)
             .unwrap();
-        first.get_or_insert(opening.loan);
+        first.get_or_insert(opening.borrow);
         ledger = ledger.apply(&opening.transition).unwrap();
     }
     for (start, end) in [(0, 32), (0, 1), (12, 16), (32, 64), (64, 100), (16, 16)] {
@@ -4803,7 +4851,7 @@ fn indexed_write_witness_keeps_the_least_loan_across_buckets_and_aliases() {
         );
         assert_eq!(
             report.and_then(|d| d.subject().loan_id()),
-            expected.map(|loan| (loan.arena, loan.ordinal))
+            expected.map(|borrow| (borrow.arena, borrow.ordinal))
         );
     }
     let original = memory(0, 32, false);
@@ -4834,12 +4882,12 @@ fn indexed_write_witness_keeps_the_least_loan_across_buckets_and_aliases() {
             .unwrap()
             .subject()
             .loan_id(),
-        first.map(|loan| (loan.arena, loan.ordinal))
+        first.map(|borrow| (borrow.arena, borrow.ordinal))
     );
     let unknown = parameter_range(991_124, 0, 1, 4);
     assert_eq!(
         ledger.first_active_memory_overlap(&unknown),
-        Err(LoanRefusal::UnsupportedPartition)
+        Err(BorrowRefusal::UnsupportedPartition)
     );
     assert_eq!(
         BorrowLedger::new().first_active_memory_overlap(&unknown),
@@ -4864,8 +4912,8 @@ fn equal_returned_composite_occurrences_keep_independent_holds() {
     let head = composite("returned_cursor", true);
     let (_, inserted) =
         ResourceContext::new().unchecked_with_facts_and_occurrences([head.clone(), head.clone()]);
-    let escaping: BTreeMap<LoanId, Vec<EscapingBorrow>> = BTreeMap::from([(
-        plan.stable_views()[0].loan,
+    let escaping: BTreeMap<BorrowId, Vec<EscapingBorrow>> = BTreeMap::from([(
+        plan.stable_views()[0].borrow,
         inserted
             .into_iter()
             .map(|(head, occurrence)| EscapingBorrow {
@@ -4902,7 +4950,7 @@ fn equal_returned_composite_occurrences_keep_independent_holds() {
         .unwrap();
     assert_eq!(
         after_first.end(first.scope, caller),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     let after_both = after_first.release(second.hold.unwrap(), caller).unwrap();
     assert!(after_both.end(first.scope, caller).is_ok());
@@ -4933,11 +4981,11 @@ fn a_failed_selected_return_permission_does_not_retry_a_wider_description() {
     );
     assert!(
         ledger
-            .selected_return_permission(opening.loan, &view(1, 2), &preferred, &facts)
+            .selected_return_permission(opening.borrow, &view(1, 2), &preferred, &facts)
             .is_none()
     );
     assert_eq!(
-        ledger.selected_return_permission(opening.loan, &preferred, &preferred, &facts),
+        ledger.selected_return_permission(opening.borrow, &preferred, &preferred, &facts),
         Some(preferred)
     );
 }

@@ -29,7 +29,7 @@ uint64 count(uint64 n) {
     <testcase name="debug_error" classname="clicklang::examples" time="2">
       <failure message="thread 'debug_error' panicked at tests/examples.rs:9:5" type="test failure">
 thread 'debug_error' panicked at tests/examples.rs:9:5:
-the rotation must recheck: ClickError { message: "`f.contract` tactic 0:\\nstep refused: a \\"loan\\" is active", rendered: OnceLock(&lt;uninit&gt;), kind: Proof }
+the rotation must recheck: ClickError { message: "`f.contract` tactic 0:\\nstep refused: a \\"borrow\\" is active", rendered: OnceLock(&lt;uninit&gt;), kind: Proof }
       </failure>
     </testcase>
   </testsuite>
@@ -107,7 +107,7 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
         "the message is the Click source it checked"), by_id["test:clicklang::examples prints_source"]
     # A debug-printed ClickError shows its message, unescaped.
     assert by_id["test:clicklang::examples debug_error"]["summary"] == (
-        'the rotation must recheck: `f.contract` tactic 0: step refused: a "loan" is active'
+        'the rotation must recheck: `f.contract` tactic 0: step refused: a "borrow" is active'
     ), by_id["test:clicklang::examples debug_error"]["summary"]
     # The aggregate mdtests failure is replaced by its fixtures.
     assert not any("clicklang::mdtests" in key for key in by_id)

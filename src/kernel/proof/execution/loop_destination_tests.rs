@@ -39,7 +39,7 @@ fn enter_loop(
             PureFactContext::new(),
             &ExecutionFacts::new(),
             &[],
-            &crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            &crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         )
         .expect("the entered test is true");
     }
@@ -196,7 +196,7 @@ fn transfer(fixture: &mut NestedLoop, continuing: bool) {
             PureFactContext::new(),
             &ExecutionFacts::new(),
             &[],
-            &crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            &crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         )
         .expect("the checked transfer follows its recorded destination");
 }
@@ -341,7 +341,7 @@ fn test_false_and_written_break_keep_distinct_checked_region_exits() {
             PureFactContext::new(),
             &ExecutionFacts::new(),
             &[],
-            &crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            &crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         )
         .expect("the checked boundary retains the explicit exit reason");
         assert_eq!(core.frontier.loop_control, expected);

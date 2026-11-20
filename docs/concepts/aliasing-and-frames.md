@@ -86,7 +86,7 @@ through a function pointer, and a recursive call that does it to itself.
 It is the same rule the two-pointer case at the top of this page follows.
 Given
 
-<!-- verified-example: mdtests/pointer_params_separate_by_transfer_and_loan.md -->
+<!-- verified-example: mdtests/pointer_params_separate_by_transfer_and_borrow.md -->
 ```click
 consumes dst[0..1];
 views src[0..1];

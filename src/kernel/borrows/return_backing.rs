@@ -100,6 +100,6 @@ mod tests {
         assert!(child.contains(&b));
     }
     mod scaling_tests {
-        include!("../../scaling_tests/kernel/loans/return_backing.rs");
+        include!("../../scaling_tests/kernel/borrows/return_backing.rs");
     }
 }

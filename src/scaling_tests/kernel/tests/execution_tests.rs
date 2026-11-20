@@ -5,7 +5,7 @@
 use super::*;
 
 #[test]
-fn direct_local_write_builds_loan_obligation_without_visiting_aliases() {
+fn direct_local_write_builds_borrow_obligation_without_visiting_aliases() {
     let _session = crate::kernel::VerificationSession::enter();
     let execute =
         |state: &ExecutionState, statement: &ProgramStatement, assumptions: &PureFactContext| {
@@ -24,12 +24,12 @@ fn direct_local_write_builds_loan_obligation_without_visiting_aliases() {
         &PureFactContext::new(),
     ));
     let slot = state.locals().slot("x").unwrap().clone();
-    let loan = active_memory_loan(MemoryRange::new(
+    let borrow = active_memory_borrow(MemoryRange::new(
         Address::symbolic(Variable(930_000)),
         0u32.into(),
         1u32.into(),
     ));
-    let state = state.with_loan_ledger(Some(loan));
+    let state = state.with_borrow_ledger(Some(borrow));
     let write = program_assign("x", crate::kernel::program_expression::int32_literal(1));
 
     let mut samples = Vec::new();
@@ -53,7 +53,7 @@ fn direct_local_write_builds_loan_obligation_without_visiting_aliases() {
             execute(&state, &write, &assumptions)
         });
         assert_eq!(paths.len(), 1);
-        loan_write_separation(&paths[0]);
+        borrow_write_separation(&paths[0]);
         samples.push(work);
     }
     assert!(

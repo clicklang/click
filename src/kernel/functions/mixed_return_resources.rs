@@ -186,7 +186,7 @@ impl ConsumedCellReturns {
             {
                 outputs.borrowed.insert(index, input);
                 if caller
-                    .loan_dependency(input)
+                    .borrow_dependency(input)
                     .is_some_and(|binding| binding.hold.is_some())
                 {
                     outputs.returned_holds.insert(input);

@@ -124,7 +124,7 @@ pub(super) fn bind(
     caller: &ExecutionState,
     interface: &FunctionContractInterface,
     callee: &mut ExecutionState,
-    loan_obligations: Option<&mut Vec<ProofObligation>>,
+    borrow_obligations: Option<&mut Vec<ProofObligation>>,
 ) -> Option<()> {
     let parameter_destination;
     let selected_state = if let Some((index, layout)) = interface.construction_parameter() {
@@ -157,8 +157,8 @@ pub(super) fn bind(
     // Rebinding a construction result at a proof frontier names the object
     // without writing to it. The body checks its stores, and a nested call
     // that constructs into the slot must retain the write prerequisite.
-    let check_loan_write =
-        loan_obligations.is_some() || interface.construction_parameter().is_some();
+    let check_borrow_write =
+        borrow_obligations.is_some() || interface.construction_parameter().is_some();
     let mut pending = Vec::new();
     let mut writable = |pointer: &Address, bytes| {
         if caller
@@ -175,12 +175,12 @@ pub(super) fn bind(
         {
             return false;
         }
-        if !check_loan_write {
+        if !check_borrow_write {
             return true;
         }
         let Some(ledger) = caller
-            .loan_ledger()
-            .filter(|ledger| ledger.has_active_memory_loans())
+            .borrow_ledger()
+            .filter(|ledger| ledger.has_active_memory_borrows())
         else {
             return true;
         };
@@ -221,7 +221,7 @@ pub(super) fn bind(
     }
     // Native constructor entry reconstruction still validates its explicit
     // destination parameter without publishing obligations.
-    if let Some(obligations) = loan_obligations {
+    if let Some(obligations) = borrow_obligations {
         obligations.extend(pending);
     } else if !pending.is_empty() {
         return None;

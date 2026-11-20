@@ -3,12 +3,12 @@
 use super::*;
 
 impl crate::kernel::search::ProofSearch<BorrowLedger> {
-    pub(crate) fn loan_aliases(
+    pub(crate) fn borrow_aliases(
         range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> Vec<MemoryRange> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("loan_aliases");
+        crate::kernel::search::record_discovery("borrow_aliases");
         // Rebase through the indexed, directly stated equalities before scaling
         // element offsets. An equality such as w == p + 1 relates different pointer
         // spellings, which syntactic pointer subtraction alone cannot see.
@@ -32,17 +32,17 @@ impl crate::kernel::search::ProofSearch<BorrowLedger> {
 
 impl crate::kernel::search::ProofSearch<BorrowLedger> {
     #[cfg(test)]
-    pub(crate) fn loan_access(
+    pub(crate) fn borrow_access(
         proof_input: &BorrowLedger,
         range: &MemoryRange,
         assumptions: &PureFactContext,
-    ) -> Result<(), LoanRefusal> {
+    ) -> Result<(), BorrowRefusal> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("loan_access");
+        crate::kernel::search::record_discovery("borrow_access");
         // This barrier only restricts otherwise owner-authorized writes.
         // With no active memory borrows there is nothing to compare, regardless
         // of pointer aliases, non-memory borrows, or ended borrow history.
-        if !proof_input.has_active_memory_loans() || memory_range_is_empty(range) {
+        if !proof_input.has_active_memory_borrows() || memory_range_is_empty(range) {
             return Ok(());
         }
         let aliases = memory_range_aliases(range, assumptions);
@@ -57,7 +57,7 @@ impl crate::kernel::search::ProofSearch<BorrowLedger> {
                 if memory_interval_nodes(alias).is_some() {
                     indexed_alias_exists = true;
                     if proof_input.first_active_memory_overlap(alias)?.is_some() {
-                        return Err(LoanRefusal::ActiveDependency);
+                        return Err(BorrowRefusal::ActiveDependency);
                     }
                 }
             }
@@ -74,7 +74,7 @@ impl crate::kernel::search::ProofSearch<BorrowLedger> {
                 // external input cannot reach those blocks unless an exact
                 // alias says otherwise; in that case the test above refuses
                 // the non-indexable query conservatively.
-                return Err(LoanRefusal::UnsupportedPartition);
+                return Err(BorrowRefusal::UnsupportedPartition);
             }
         }
         let mut checked_blocks = BTreeSet::new();
@@ -94,7 +94,7 @@ impl crate::kernel::search::ProofSearch<BorrowLedger> {
                 for protected in ranges {
                     crate::instrumentation::record_deterministic_work(1);
                     if protected_range_proven_overlapping(range, protected, assumptions) {
-                        return Err(LoanRefusal::ActiveDependency);
+                        return Err(BorrowRefusal::ActiveDependency);
                     }
                 }
             }

@@ -5,7 +5,7 @@ fn view(index: usize, end: u32) -> CheckedResourceFact {
     CheckedResourceFact {
         fact: ResourceFact::view_memory(MemoryRange::new(
             Address {
-                base: format!("local:loan-{index}").into(),
+                base: format!("local:borrow-{index}").into(),
                 offset: AddressOffset::Constant(0),
             },
             0.into(),
@@ -71,10 +71,10 @@ fn local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow() {
 
 fn lend_memory(
     ledger: &BorrowLedger,
-    lender: LoanParticipantId,
-    borrower: LoanParticipantId,
+    lender: BorrowParticipantId,
+    borrower: BorrowParticipantId,
     range: MemoryRange,
-) -> LoanOpening {
+) -> BorrowOpening {
     let owner = ResourceFact::own_memory(range);
     let support = ResourceContext::new()
         .unchecked_with_fact(owner.clone())
@@ -145,11 +145,11 @@ fn automatic_storage_retirement_uses_the_retained_backing_identity() {
 
 #[cfg(test)]
 mod scaling_tests {
-    include!("../../scaling_tests/kernel/loans/local_storage_tests.rs");
+    include!("../../scaling_tests/kernel/borrows/local_storage_tests.rs");
 }
 
 #[test]
-fn local_loan_admission_distinguishes_overlap_from_missing_separation() {
+fn local_borrow_admission_distinguishes_overlap_from_missing_separation() {
     let requirement = view(0, 1);
     let range = requirement.fact.memory_range().unwrap();
     let memory = SymbolicMemory::new().with_block(range.base().base.clone(), 4);
@@ -162,7 +162,7 @@ fn local_loan_admission_distinguishes_overlap_from_missing_separation() {
     let overlapping = ledger.apply(&opening.transition).unwrap();
     assert_eq!(
         backing.check_admission(&overlapping, &PureFactContext::new()),
-        Err(StableViewPlanError::Loan(LoanRefusal::ActiveDependency)),
+        Err(StableViewPlanError::Borrow(BorrowRefusal::ActiveDependency)),
     );
 
     let other = Address::symbolic(Variable(99_100));

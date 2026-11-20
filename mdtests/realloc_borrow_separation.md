@@ -4,7 +4,7 @@ The proof separates the complete old allocation from the view before the
 resize. The success branch uses that separation to retire the old allocation.
 The failure branch returns the original allocation.
 
-```c filename=resize_loan.c
+```c filename=resize_borrow.c
 unsigned char *resize(int32 *q) {
     unsigned char *p = malloc(16);
     if (p == 0) {
@@ -19,7 +19,7 @@ unsigned char *resize(int32 *q) {
 ```
 
 ```click
-verifying "resize_loan.c";
+verifying "resize_borrow.c";
 
 resource resized(p: uint8*) {
     if p != 0 {

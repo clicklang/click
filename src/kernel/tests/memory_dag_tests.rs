@@ -1201,7 +1201,7 @@ fn loop_havoc_is_its_own_edge_kind_and_keeps_its_marker_block() {
         arc_pointer(0),
         ProgramValue::Int32(MachineTerm::constant(5)),
     );
-    let after = base.clone().with_loop_memory_havoc_preserving_loans(
+    let after = base.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(0),
         &BTreeSet::new(),
         None,
@@ -1269,7 +1269,7 @@ fn derivations_carry_a_load_across_a_distinct_store_but_not_across_havoc() {
         "a call that may only write a disjoint range preserves the load"
     );
 
-    let havoced = base.clone().with_loop_memory_havoc_preserving_loans(
+    let havoced = base.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(7),
         &BTreeSet::new(),
         None,
@@ -1295,7 +1295,7 @@ fn loop_havoc_carries_a_verified_write_set_for_disjoint_loads() {
     let base = SymbolicMemory::new().with_block("arg-memory", 16);
     let read = arc_pointer(0);
     let ranges = [memory_range(arc_pointer(8), 0, 8)];
-    let havoced = base.clone().with_loop_memory_havoc_preserving_loans(
+    let havoced = base.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(8),
         &BTreeSet::new(),
         Some(&ranges),
@@ -1330,7 +1330,7 @@ fn loop_havoc_carries_a_verified_write_set_for_disjoint_loads() {
     );
 
     let overlapping_ranges = [memory_range(arc_pointer(0), 0, 8)];
-    let overlapping = base.clone().with_loop_memory_havoc_preserving_loans(
+    let overlapping = base.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(9),
         &BTreeSet::new(),
         Some(&overlapping_ranges),
@@ -1380,7 +1380,7 @@ fn loop_kept_frame_preserves_only_complete_pointer_reads() {
     };
     assert!(unchanged(&complete));
     assert!(!unchanged(&prefix));
-    let unframed = base.clone().with_loop_memory_havoc_preserving_loans(
+    let unframed = base.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(980114),
         &BTreeSet::new(),
         Some(&ranges),
@@ -1395,7 +1395,7 @@ fn loop_kept_frame_preserves_only_complete_pointer_reads() {
 }
 
 #[test]
-fn loan_preserving_havoc_uses_the_full_cell_footprint() {
+fn borrow_preserving_havoc_uses_the_full_cell_footprint() {
     let pointer = arc_pointer(0);
     let base = SymbolicMemory::new().with_block("arg-memory", 16).store(
         pointer.clone(),
@@ -1412,7 +1412,7 @@ fn loan_preserving_havoc_uses_the_full_cell_footprint() {
         .unique_owned_occurrence_for_fact(&fact)
         .expect("memory backing")
         .0;
-    let ledger = crate::kernel::loans::BorrowLedger::new();
+    let ledger = crate::kernel::borrows::BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner identity");
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
@@ -1422,7 +1422,7 @@ fn loan_preserving_havoc_uses_the_full_cell_footprint() {
         .apply(&opening.transition)
         .expect("memory borrow transition");
 
-    let retained = base.with_loop_memory_havoc_preserving_loans(
+    let retained = base.with_loop_memory_havoc_preserving_borrows(
         Variable(10),
         &BTreeSet::new(),
         None,
@@ -1432,9 +1432,9 @@ fn loan_preserving_havoc_uses_the_full_cell_footprint() {
 }
 
 #[test]
-fn loan_havoc_may_forget_a_run_crossing_the_interval_index_boundary() {
+fn borrow_havoc_may_forget_a_run_crossing_the_interval_index_boundary() {
     let pointer = Address {
-        base: "local:loan-index-boundary".into(),
+        base: "local:borrow-index-boundary".into(),
         offset: AddressOffset::Constant(i64::from(i32::MAX) - 7),
     };
     let fact = ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -1448,7 +1448,7 @@ fn loan_havoc_may_forget_a_run_crossing_the_interval_index_boundary() {
         .unique_owned_occurrence_for_fact(&fact)
         .unwrap()
         .0;
-    let ledger = crate::kernel::loans::BorrowLedger::new();
+    let ledger = crate::kernel::borrows::BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let reader = ledger.fresh_participant().unwrap();
     let opening = ledger.lend(owner, reader, support, fact.clone()).unwrap();
@@ -1465,7 +1465,7 @@ fn loan_havoc_may_forget_a_run_crossing_the_interval_index_boundary() {
     );
     let mut memory = original.memory().clone();
     std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
-    let after = memory.with_loop_memory_havoc_preserving_loans(
+    let after = memory.with_loop_memory_havoc_preserving_borrows(
         Variable(980115),
         &BTreeSet::new(),
         None,
@@ -1591,7 +1591,7 @@ fn sibling_states_resolve_one_cell_to_a_common_ancestor() {
 
     // Soundness, and so asserted in both modes: an intervening loop havoc has
     // no write set, so no walk may resolve through one.
-    let havoced = left.clone().with_loop_memory_havoc_preserving_loans(
+    let havoced = left.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(9),
         &BTreeSet::new(),
         None,
@@ -3490,7 +3490,7 @@ fn pointer_read_cache_forgetting_does_not_bridge_writes_havoc_or_unrecorded_prun
         seeded
             .memory()
             .clone()
-            .with_loop_memory_havoc_preserving_loans(
+            .with_loop_memory_havoc_preserving_borrows(
                 Variable(98_402),
                 &BTreeSet::new(),
                 None,

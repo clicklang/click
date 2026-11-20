@@ -9,13 +9,13 @@ use crate::kernel::MutexAuthorityId;
 pub(crate) enum MutexUseCallError {
     MissingResource(ResourceFact),
     Unavailable(&'static str),
-    Loan(LoanRefusal),
+    Borrow(BorrowRefusal),
     InvalidResources(crate::kernel::ResourceContextValidityError),
 }
 
-impl From<LoanRefusal> for MutexUseCallError {
-    fn from(error: LoanRefusal) -> Self {
-        Self::Loan(error)
+impl From<BorrowRefusal> for MutexUseCallError {
+    fn from(error: BorrowRefusal) -> Self {
+        Self::Borrow(error)
     }
 }
 
@@ -26,8 +26,8 @@ pub(crate) struct MutexUseCallTransfer {
     pub(crate) caller_resources: ResourceContext,
     pub(crate) callee_resources: ResourceContext,
     pub(crate) ledger: BorrowLedger,
-    pub(crate) entry_transition: CheckedLoanTransition,
-    pub(crate) entry_transitions: Vec<CheckedLoanTransition>,
+    pub(crate) entry_transition: CheckedBorrowTransition,
+    pub(crate) entry_transitions: Vec<CheckedBorrowTransition>,
     suspended_parent: Option<MutexUseBinding>,
     retained_resource: Option<ResourceFact>,
     pub(crate) usage: MutexUseBinding,
@@ -36,9 +36,9 @@ pub(crate) struct MutexUseCallTransfer {
     pub(crate) mutex_storage: Option<Arc<MemoryRange>>,
     interface: Option<Arc<crate::kernel::mutexes::InitializedMutexInterface>>,
     required_type: Option<ResourceDescription>,
-    loan: MutexUseLoan,
-    caller: LoanParticipantId,
-    callee: LoanParticipantId,
+    borrow: MutexUseBorrow,
+    caller: BorrowParticipantId,
+    callee: BorrowParticipantId,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -48,7 +48,7 @@ pub(crate) struct MutexUseCallReturn {
     /// The other returned clauses remain for the surrounding contract planner
     /// to check and transfer; this component neither grants nor discards them.
     pub(crate) remaining_resources: ResourceContext,
-    pub(crate) exit_transitions: Vec<CheckedLoanTransition>,
+    pub(crate) exit_transitions: Vec<CheckedBorrowTransition>,
     pub(crate) authority_updates: Vec<MutexAuthorityUpdate>,
 }
 
@@ -63,8 +63,8 @@ pub(crate) struct MutexAuthorityUpdate {
 impl MutexUseCallTransfer {
     pub(crate) fn prepare(
         ledger: &BorrowLedger,
-        caller: LoanParticipantId,
-        callee: LoanParticipantId,
+        caller: BorrowParticipantId,
+        callee: BorrowParticipantId,
         resources: &ResourceContext,
         source: &ResourceFact,
         assumptions: &PureFactContext,
@@ -72,49 +72,55 @@ impl MutexUseCallTransfer {
         let (support, _) = resources
             .unique_owned_occurrence_for_fact(source)
             .ok_or_else(|| MutexUseCallError::MissingResource(source.clone()))?;
-        let (ledger, loan, entry_transition) = match source.resource() {
+        let (ledger, borrow, entry_transition) = match source.resource() {
             Resource::MutexLive(_) => {
                 ledger.lend_mutex_use_with_transition(caller, callee, support, source.clone())?
             }
             Resource::MutexUse(identity) => {
                 ledger.check_mutex_use_available(
-                    identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?,
+                    identity
+                        .binding
+                        .ok_or(BorrowRefusal::MissingBorrowBinding)?,
                     caller,
                     resources,
                 )?;
                 if ledger.mutex_use_resource(
-                    identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?,
+                    identity
+                        .binding
+                        .ok_or(BorrowRefusal::MissingBorrowBinding)?,
                     caller,
                 )? != *source
                 {
-                    return Err(LoanRefusal::MissingLoanBinding.into());
+                    return Err(BorrowRefusal::MissingBorrowBinding.into());
                 }
                 ledger.reborrow_mutex_use_with_transition(
-                    identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?,
+                    identity
+                        .binding
+                        .ok_or(BorrowRefusal::MissingBorrowBinding)?,
                     caller,
                     callee,
                 )?
             }
-            _ => return Err(LoanRefusal::UnsupportedResource.into()),
+            _ => return Err(BorrowRefusal::UnsupportedResource.into()),
         };
         let caller_resources = resources
             .clone()
             .without_fact_delaying_normalization(source, assumptions)
             .ok_or_else(|| MutexUseCallError::MissingResource(source.clone()))?;
-        let use_fact = ledger.mutex_use_resource(loan.usage, callee)?;
+        let use_fact = ledger.mutex_use_resource(borrow.usage, callee)?;
         let callee_resources =
             ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(use_fact);
         Ok(Self {
             caller_resources,
             callee_resources,
             ledger,
-            usage: loan.usage,
+            usage: borrow.usage,
             source: source.clone(),
             selected_alias: None,
             mutex_storage: None,
             interface: None,
             required_type: None,
-            loan,
+            borrow,
             entry_transitions: vec![entry_transition.clone()],
             entry_transition,
             suspended_parent: None,
@@ -127,8 +133,8 @@ impl MutexUseCallTransfer {
     /// Keep a caller share available while the worker holds its own child scope.
     pub(crate) fn prepare_suspended(
         ledger: &BorrowLedger,
-        caller: LoanParticipantId,
-        callee: LoanParticipantId,
+        caller: BorrowParticipantId,
+        callee: BorrowParticipantId,
         resources: &ResourceContext,
         source: &ResourceFact,
         assumptions: &PureFactContext,
@@ -151,27 +157,29 @@ impl MutexUseCallTransfer {
                 root.usage
             }
             Resource::MutexUse(identity) => {
-                let usage = identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?;
+                let usage = identity
+                    .binding
+                    .ok_or(BorrowRefusal::MissingBorrowBinding)?;
                 ledger.check_mutex_use_available(usage, caller, resources)?;
                 if ledger.mutex_use_resource(usage, caller)? != *source {
-                    return Err(LoanRefusal::MissingLoanBinding.into());
+                    return Err(BorrowRefusal::MissingBorrowBinding.into());
                 }
                 usage
             }
-            _ => return Err(LoanRefusal::UnsupportedResource.into()),
+            _ => return Err(BorrowRefusal::UnsupportedResource.into()),
         };
         let (split, retained, worker) = ledger.split(parent.0.share, caller, caller, caller)?;
         ledger = ledger.apply(&split)?;
         transitions.push(split);
-        let retained = MutexUseBinding(LoanAuthorityBinding {
+        let retained = MutexUseBinding(BorrowAuthorityBinding {
             share: retained,
             ..parent.0
         });
-        let worker = MutexUseBinding(LoanAuthorityBinding {
+        let worker = MutexUseBinding(BorrowAuthorityBinding {
             share: worker,
             ..parent.0
         });
-        let (ledger, loan, entry_transition) =
+        let (ledger, borrow, entry_transition) =
             ledger.reborrow_mutex_use_with_transition(worker, caller, callee)?;
         transitions.push(entry_transition.clone());
         let caller_resources = resources
@@ -181,7 +189,7 @@ impl MutexUseCallTransfer {
             .insert_checked_mutex_authority(ledger.mutex_use_resource(retained, caller)?)
             .map_err(MutexUseCallError::InvalidResources)?;
         let callee_resources = ResourceContext::new_with_equalities(assumptions)
-            .unchecked_with_fact(ledger.mutex_use_resource(loan.usage, callee)?);
+            .unchecked_with_fact(ledger.mutex_use_resource(borrow.usage, callee)?);
         let retained_resource = Some(ledger.mutex_use_resource(retained, caller)?);
         Ok(Self {
             caller_resources,
@@ -191,13 +199,13 @@ impl MutexUseCallTransfer {
             entry_transitions: transitions,
             retained_resource,
             suspended_parent: Some(worker),
-            usage: loan.usage,
+            usage: borrow.usage,
             source: source.clone(),
             selected_alias: None,
             mutex_storage: None,
             interface: None,
             required_type: None,
-            loan,
+            borrow,
             caller,
             callee,
         })
@@ -234,7 +242,9 @@ impl MutexUseCallTransfer {
         returned_resources: &ResourceContext,
         assumptions: &PureFactContext,
     ) -> Result<MutexUseCallReturn, MutexUseCallError> {
-        let parent = self.suspended_parent.ok_or(LoanRefusal::InvalidEvidence)?;
+        let parent = self
+            .suspended_parent
+            .ok_or(BorrowRefusal::InvalidEvidence)?;
         let expected = ledger.mutex_use_resource(self.usage, self.callee)?;
         if self
             .interface
@@ -255,7 +265,7 @@ impl MutexUseCallTransfer {
             .ok_or_else(|| MutexUseCallError::MissingResource(expected.clone()))?;
         let transfer = ledger.transfer(self.usage.0.share, self.callee, self.caller)?;
         ledger = ledger.apply(&transfer)?;
-        let end = ledger.end(self.loan.scope, self.caller)?;
+        let end = ledger.end(self.borrow.scope, self.caller)?;
         ledger = ledger.apply(&end)?;
         let mut exit_transitions = vec![transfer, end];
         let mut current = parent.0.share;
@@ -266,7 +276,7 @@ impl MutexUseCallTransfer {
                 .data
                 .shares
                 .get(&current)
-                .ok_or(LoanRefusal::MissingShare)?;
+                .ok_or(BorrowRefusal::MissingShare)?;
             let Some(ancestor) = record.parent else {
                 break;
             };
@@ -276,13 +286,13 @@ impl MutexUseCallTransfer {
                 .shares
                 .get(&ancestor)
                 .and_then(|record| record.children)
-                .ok_or(LoanRefusal::NotSiblings)?;
+                .ok_or(BorrowRefusal::NotSiblings)?;
             let sibling = if left == current {
                 right
             } else if right == current {
                 left
             } else {
-                return Err(LoanRefusal::NotSiblings.into());
+                return Err(BorrowRefusal::NotSiblings.into());
             };
             if !ledger
                 .storage
@@ -295,7 +305,7 @@ impl MutexUseCallTransfer {
             {
                 break;
             }
-            let sibling_use = MutexUseBinding(LoanAuthorityBinding {
+            let sibling_use = MutexUseBinding(BorrowAuthorityBinding {
                 share: sibling,
                 ..parent.0
             });
@@ -313,17 +323,17 @@ impl MutexUseCallTransfer {
             exit_transitions.push(join);
             current = ancestor;
         }
-        let restored_use = MutexUseBinding(LoanAuthorityBinding {
+        let restored_use = MutexUseBinding(BorrowAuthorityBinding {
             share: current,
             ..parent.0
         });
-        let restored = if ledger.loan_is_recoverable_by(parent.0.loan, self.caller)
+        let restored = if ledger.borrow_is_recoverable_by(parent.0.borrow, self.caller)
             && ledger.scope_can_end(parent.0.scope, self.caller)
         {
             let end = ledger.end(parent.0.scope, self.caller)?;
             ledger = ledger.apply(&end)?;
             exit_transitions.push(end);
-            let (recover, owner, support) = ledger.recover(parent.0.loan, self.caller)?;
+            let (recover, owner, support) = ledger.recover(parent.0.borrow, self.caller)?;
             consumed_authorities.push((support, owner.clone()));
             ledger = ledger.apply(&recover)?;
             exit_transitions.push(recover);
@@ -448,18 +458,18 @@ impl MutexUseCallTransfer {
         self.selected_alias
     }
 
-    pub(crate) fn callee_resource(&self) -> Result<ResourceFact, LoanRefusal> {
+    pub(crate) fn callee_resource(&self) -> Result<ResourceFact, BorrowRefusal> {
         self.ledger.mutex_use_resource(self.usage, self.callee)
     }
 
     #[cfg(test)]
-    pub(crate) fn recheck_entry(&self, predecessor: &BorrowLedger) -> Result<(), LoanRefusal> {
+    pub(crate) fn recheck_entry(&self, predecessor: &BorrowLedger) -> Result<(), BorrowRefusal> {
         let mut checked = predecessor.clone();
         for transition in &self.entry_transitions {
             checked = checked.apply(transition)?;
         }
         if checked != self.ledger {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         Ok(())
     }
@@ -471,28 +481,28 @@ impl MutexUseCallTransfer {
     pub(crate) fn finish(
         &self,
         returned_ledger: &BorrowLedger,
-        returned_participant: LoanParticipantId,
+        returned_participant: BorrowParticipantId,
         returned_resources: &ResourceContext,
-        body_transitions: &[CheckedLoanTransition],
+        body_transitions: &[CheckedBorrowTransition],
         assumptions: &PureFactContext,
     ) -> Result<MutexUseCallReturn, MutexUseCallError> {
         if returned_participant != self.callee {
-            return Err(LoanRefusal::WrongHolder.into());
+            return Err(BorrowRefusal::WrongHolder.into());
         }
         let mut ledger = self.ledger.clone();
         for transition in body_transitions {
             if matches!(
                 transition.evidence,
-                LoanTransitionEvidence::BorrowedMutexUseRoot { .. }
-                    | LoanTransitionEvidence::BorrowedRoot { local: None, .. }
+                BorrowTransitionEvidence::BorrowedMutexUseRoot { .. }
+                    | BorrowTransitionEvidence::BorrowedRoot { local: None, .. }
             ) {
-                return Err(LoanRefusal::InvalidEvidence.into());
+                return Err(BorrowRefusal::InvalidEvidence.into());
             }
             crate::instrumentation::record_deterministic_work(1);
             ledger = ledger.apply(transition)?;
         }
         if ledger != *returned_ledger {
-            return Err(LoanRefusal::InvalidEvidence.into());
+            return Err(BorrowRefusal::InvalidEvidence.into());
         }
         self.finish_checked_ledger(ledger, returned_resources, assumptions)
     }
@@ -526,24 +536,26 @@ impl MutexUseCallTransfer {
         let transfer = ledger.transfer(self.usage.0.share, self.callee, self.caller)?;
         ledger = ledger.apply(&transfer)?;
         exit_transitions.push(transfer);
-        let end = ledger.end(self.loan.scope, self.caller)?;
+        let end = ledger.end(self.borrow.scope, self.caller)?;
         ledger = ledger.apply(&end)?;
         exit_transitions.push(end);
         let restored = match self.source.resource() {
             Resource::MutexLive(_) => {
-                let (recovery, owner, _) = ledger.recover(self.loan.loan, self.caller)?;
+                let (recovery, owner, _) = ledger.recover(self.borrow.borrow, self.caller)?;
                 ledger = ledger.apply(&recovery)?;
                 exit_transitions.push(recovery);
                 owner
             }
             Resource::MutexUse(identity) => ledger.mutex_use_resource(
-                identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?,
+                identity
+                    .binding
+                    .ok_or(BorrowRefusal::MissingBorrowBinding)?,
                 self.caller,
             )?,
-            _ => return Err(LoanRefusal::UnsupportedResource.into()),
+            _ => return Err(BorrowRefusal::UnsupportedResource.into()),
         };
         if restored != self.source {
-            return Err(LoanRefusal::MissingLoanBinding.into());
+            return Err(BorrowRefusal::MissingBorrowBinding.into());
         }
         let caller_resources = self
             .caller_resources
@@ -810,7 +822,7 @@ mod tests {
             &first.ledger,
             caller,
             worker,
-            &LoanViewBindings::default(),
+            &BorrowBindings::default(),
             &BTreeMap::new(),
             true,
         )
@@ -836,7 +848,7 @@ mod tests {
                 &first.ledger,
                 caller,
                 worker,
-                &LoanViewBindings::default(),
+                &BorrowBindings::default(),
                 &BTreeMap::new(),
                 true
             )
@@ -955,7 +967,7 @@ mod tests {
         assert_eq!(
             plan.ledger
                 .check_mutex_use_available(parent, caller, &forged_resources),
-            Err(LoanRefusal::MissingLoanBinding)
+            Err(BorrowRefusal::MissingBorrowBinding)
         );
         let Resource::MutexUse(retained) = plan.retained_resource.as_ref().unwrap().resource()
         else {
@@ -1125,11 +1137,11 @@ mod tests {
             .split(root.usage.0.share, caller, caller, caller)
             .unwrap();
         let ledger = ledger.apply(&split).unwrap();
-        let first = MutexUseBinding(LoanAuthorityBinding {
+        let first = MutexUseBinding(BorrowAuthorityBinding {
             share: first_share,
             ..root.usage.0
         });
-        let second = MutexUseBinding(LoanAuthorityBinding {
+        let second = MutexUseBinding(BorrowAuthorityBinding {
             share: second_share,
             ..root.usage.0
         });
@@ -1164,7 +1176,7 @@ mod tests {
             &ledger,
             caller,
             callee,
-            &LoanViewBindings::default(),
+            &BorrowBindings::default(),
             &BTreeMap::new(),
             false,
         )
@@ -1185,7 +1197,7 @@ mod tests {
                 &ledger,
                 caller,
                 callee,
-                &LoanViewBindings::default(),
+                &BorrowBindings::default(),
                 &BTreeMap::new(),
                 false,
             ),
@@ -1326,7 +1338,7 @@ mod tests {
             .unwrap();
         assert_eq!(result.caller_resources.facts(), &[source]);
         assert!(result.remaining_resources.facts().is_empty());
-        assert!(result.ledger.recover(input.usage.0.loan, caller).is_err());
+        assert!(result.ledger.recover(input.usage.0.borrow, caller).is_err());
         assert!(result.ledger.invariant_holds());
     }
 
@@ -1493,7 +1505,7 @@ mod tests {
                 std::slice::from_ref(&hold_step),
                 &assumptions
             ),
-            Err(MutexUseCallError::Loan(LoanRefusal::ActiveDependency))
+            Err(MutexUseCallError::Borrow(BorrowRefusal::ActiveDependency))
         );
         let (released, release_step) = held.release_with_transition(hold, plan.callee).unwrap();
         let result = plan
@@ -1523,24 +1535,24 @@ mod tests {
         let (_, plan) = plan();
         let data = &plan.ledger.storage.data;
         let arena = data.arena;
-        let support = plan.loan.usage.0.support;
+        let support = plan.borrow.usage.0.support;
         let transition = plan
             .ledger
-            .issue(LoanTransitionEvidence::BorrowedMutexUseRoot {
+            .issue(BorrowTransitionEvidence::BorrowedMutexUseRoot {
                 holder: plan.callee,
                 support,
                 mutex: Address::symbolic(Variable(200)),
                 protected: None,
                 initialization: crate::kernel::mutexes::MutexInitializationId::fresh().unwrap(),
-                scope: LoanScopeId {
+                scope: BorrowScopeId {
                     arena,
                     ordinal: data.next_scope,
                 },
-                loan: LoanId {
+                borrow: BorrowId {
                     arena,
-                    ordinal: data.next_loan,
+                    ordinal: data.next_borrow,
                 },
-                root: LoanShareId {
+                root: BorrowShareId {
                     arena,
                     ordinal: data.next_share,
                 },
@@ -1555,12 +1567,12 @@ mod tests {
                 &[transition],
                 &PureFactContext::new()
             ),
-            Err(MutexUseCallError::Loan(LoanRefusal::InvalidEvidence))
+            Err(MutexUseCallError::Borrow(BorrowRefusal::InvalidEvidence))
         );
     }
 
     #[cfg(test)]
     mod scaling_tests {
-        include!("../../scaling_tests/kernel/loans/mutex_calls/tests.rs");
+        include!("../../scaling_tests/kernel/borrows/mutex_calls/tests.rs");
     }
 }

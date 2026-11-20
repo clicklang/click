@@ -12,7 +12,7 @@ transferring.
 The refusal comes from the call-site planner, which reserves every owned
 requirement out of the caller's residual *before* it plans a single view
 (`plan_stable_view_transfer_with_bindings_and_composites`,
-`src/kernel/loans.rs`). It is fail-closed: a view whose backing owner is no
+`src/kernel/borrows.rs`). It is fail-closed: a view whose backing owner is no
 longer in the residual is refused for want of backing, never admitted.
 
 ```c filename=a_caller_cannot_lend_and_transfer_one_range.c

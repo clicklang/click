@@ -1974,7 +1974,7 @@ mod wide_range_reader_tests {
 #[cfg(test)]
 mod borrowed_range_frame_tests {
     use super::*;
-    use crate::kernel::loans::{BorrowLedger, LoanViewBinding};
+    use crate::kernel::borrows::{BorrowBinding, BorrowLedger};
     use crate::kernel::{Proposition, PureFactContext, Variable};
 
     #[cfg(test)]

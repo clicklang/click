@@ -4497,14 +4497,14 @@ fn exact_proposition_propagation_replays_without_search() {
 }
 
 #[test]
-fn heap_free_loan_separation_expands_and_rechecks() {
+fn heap_free_borrow_separation_expands_and_rechecks() {
     let c = r#"
 void release(unsigned char *p, unsigned long n, int32 *q) {
     free(p);
 }
 "#;
     let proof = r#"
-verifying "free_loan.c";
+verifying "free_borrow.c";
 
 void release(uint8* p, uint64 n, int32* q) {
     requires p != 0;
@@ -4514,7 +4514,7 @@ void release(uint8* p, uint64 n, int32* q) {
     views *q;
 } by { step() by { known(); } }
 "#;
-    let sources = [("free_loan.c", c)];
+    let sources = [("free_borrow.c", c)];
     verify_c_sources(proof, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
     let expanded = expand_c_claim_source_by_label(proof, &sources, "release.contract").unwrap();
     without_implicit_solve_for_claim("release.contract", || {
@@ -4524,7 +4524,7 @@ void release(uint8* p, uint64 n, int32* q) {
 }
 
 #[test]
-fn aggregate_copy_loan_separation_expands_and_rechecks() {
+fn aggregate_copy_borrow_separation_expands_and_rechecks() {
     let c = r#"
 union Payload { int32 value; };
 struct Packet { int32 tag; union Payload payload; };
@@ -4533,7 +4533,7 @@ void copy(struct Packet *dst, struct Packet *src, int32 *q) {
 }
 "#;
     let proof = r#"
-verifying "copy_loan.c";
+verifying "copy_borrow.c";
 void copy(struct Packet* dst, struct Packet* src, int32* q) {
     owns dst->tag;
     owns dst->payload.value;
@@ -4543,7 +4543,7 @@ void copy(struct Packet* dst, struct Packet* src, int32* q) {
     requires separate(memory((dst as (uint8*))[0..8]), memory(*q));
 } by { step() by { known(); } }
 "#;
-    let sources = [("copy_loan.c", c)];
+    let sources = [("copy_borrow.c", c)];
     verify_c_sources(proof, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
     let expanded = expand_c_claim_source_by_label(proof, &sources, "copy.contract").unwrap();
     without_implicit_solve_for_claim("copy.contract", || {

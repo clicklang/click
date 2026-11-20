@@ -1,9 +1,9 @@
 // These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
-use crate::kernel::LoanViewBinding;
+use crate::kernel::BorrowBinding;
 use crate::kernel::binary_node;
+use crate::kernel::borrows::{BorrowBindings, BorrowLedger};
 use crate::kernel::int32_constant;
-use crate::kernel::loans::{BorrowLedger, LoanViewBindings};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// A fold publishes read authority for the cells it consumed, attached to
@@ -3099,11 +3099,11 @@ fn an_unbound_view_beside_its_owner_normalizes_into_the_owner() {
 /// no occurrence, so absorbing a bound view would drop the binding that
 /// authorizes reading it and retire the borrow by normalization — exactly what
 /// the owner-observation rule in docs/internals/stable-views.md forbids ("Combining an owner and a live borrowed description
-/// cannot absorb the borrow"). `ResourceContext::normalized`'s `loan_bound`
+/// cannot absorb the borrow"). `ResourceContext::normalized`'s `borrow_bound`
 /// guard, not the family algebra, is what draws the line: `normalize_pair`
 /// sees two bare facts and cannot tell the two cases apart.
 #[test]
-fn a_loan_bound_view_beside_an_owner_is_not_absorbed_by_normalization() {
+fn a_borrow_bound_view_beside_an_owner_is_not_absorbed_by_normalization() {
     let base = Address {
         base: "bound_view_survives".into(),
         offset: AddressOffset::Constant(0),
@@ -3119,10 +3119,10 @@ fn a_loan_bound_view_beside_an_owner_is_not_absorbed_by_normalization() {
     let opening = ledger
         .lend(lender, reader, support_occurrence, owner.clone())
         .unwrap();
-    let context = context.with_loan_dependency(
+    let context = context.with_borrow_dependency(
         borrowed_occurrence,
-        LoanViewBinding {
-            loan: opening.loan,
+        BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support: support_occurrence,
@@ -3138,7 +3138,7 @@ fn a_loan_bound_view_beside_an_owner_is_not_absorbed_by_normalization() {
     let surviving = normalized.occurrences_for_fact(&borrowed);
     assert_eq!(surviving, vec![borrowed_occurrence]);
     assert!(
-        normalized.loan_dependency(borrowed_occurrence).is_some(),
+        normalized.borrow_dependency(borrowed_occurrence).is_some(),
         "the dependency that authorizes the borrowed description must survive with it"
     );
 }
@@ -4925,7 +4925,7 @@ fn observed_wide_footprint_and_unknown_loop_barrier_are_invalidated() {
     let barrier = state
         .memory()
         .clone()
-        .with_loop_memory_havoc_preserving_loans(Variable(81), &BTreeSet::new(), None, None);
+        .with_loop_memory_havoc_preserving_borrows(Variable(81), &BTreeSet::new(), None, None);
     let after = state.with_memory(barrier);
     assert!(
         !after
@@ -5079,25 +5079,25 @@ fn v11_fresh_view_children_use_exact_occurrences_and_preserve_duplicates() {
     let opening = ledger
         .lend(owner, reader, support_occurrence, support.clone())
         .unwrap();
-    let binding = LoanViewBinding {
-        loan: opening.loan,
+    let binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support: support_occurrence,
         viewed: child.clone(),
         hold: None,
     };
-    let after = after.with_loan_dependency(inserted_child, binding.clone());
-    assert!(after.loan_dependency(existing_child).is_none());
-    assert_eq!(after.loan_dependency(inserted_child), Some(&binding));
+    let after = after.with_borrow_dependency(inserted_child, binding.clone());
+    assert!(after.borrow_dependency(existing_child).is_none());
+    assert_eq!(after.borrow_dependency(inserted_child), Some(&binding));
     assert_eq!(after.occurrences_for_fact(&child).len(), 2);
     let recreated = after
         .without_exact_representation_for_occurrence(inserted_child)
         .unwrap();
-    assert!(recreated.loan_dependency(inserted_child).is_none());
+    assert!(recreated.borrow_dependency(inserted_child).is_none());
     let (recreated, inserted_again) = recreated.unchecked_with_facts_and_occurrences([child]);
     assert_ne!(inserted_again[0].1, inserted_child);
-    assert!(recreated.loan_dependency(inserted_again[0].1).is_none());
+    assert!(recreated.borrow_dependency(inserted_again[0].1).is_none());
 }
 
 #[test]
@@ -5118,30 +5118,30 @@ fn v11_duplicate_bound_and_unbound_views_are_not_authority_candidates() {
     let opening = ledger
         .lend(owner, reader, support_occurrence, support)
         .unwrap();
-    let binding = LoanViewBinding {
-        loan: opening.loan,
+    let binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support: support_occurrence,
         viewed: child.clone(),
         hold: None,
     };
-    let context = context.with_loan_dependency(occurrences[0], binding.clone());
-    assert!(context.loan_dependency(occurrences[1]).is_none());
+    let context = context.with_borrow_dependency(occurrences[0], binding.clone());
+    assert!(context.borrow_dependency(occurrences[1]).is_none());
     // A checked surface operation must reject this mixed candidate set rather
     // than silently selecting the one occurrence that happens to be bound.
     assert!(
         context
             .occurrences_for_fact(&child)
             .iter()
-            .any(|occurrence| context.loan_dependency(*occurrence).is_none())
+            .any(|occurrence| context.borrow_dependency(*occurrence).is_none())
     );
 }
 
 /// Build the same one-dependency context every time, in a fresh ledger.
 /// `view_the_support` changes only the binding's viewed fact, so two contexts
 /// that disagree on it still hold the same facts and the same support graph.
-fn context_with_one_loan_dependency(view_the_support: bool) -> ResourceContext {
+fn context_with_one_borrow_dependency(view_the_support: bool) -> ResourceContext {
     let support = ResourceFact::own_token("f7_dependency_support".into(), Vec::new());
     let child = ResourceFact::view_token("f7_dependency_child".into(), Vec::new());
     let context = ResourceContext::new().unchecked_with_facts([support.clone(), child.clone()]);
@@ -5153,10 +5153,10 @@ fn context_with_one_loan_dependency(view_the_support: bool) -> ResourceContext {
     let opening = ledger
         .lend(owner, reader, support_occurrence, support.clone())
         .unwrap();
-    context.with_loan_dependency(
+    context.with_borrow_dependency(
         child_occurrence,
-        LoanViewBinding {
-            loan: opening.loan,
+        BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support: support_occurrence,
@@ -5179,23 +5179,23 @@ fn resource_context_hash(context: &ResourceContext) -> u64 {
 /// unequal, which costs loop fixpoints and interning; the comparison and the
 /// hash both use structure-derived keys instead.
 #[test]
-fn loan_dependencies_from_different_ledgers_compare_equal_and_hash_alike() {
-    let left = context_with_one_loan_dependency(false);
-    let right = context_with_one_loan_dependency(false);
+fn borrow_dependencies_from_different_ledgers_compare_equal_and_hash_alike() {
+    let left = context_with_one_borrow_dependency(false);
+    let right = context_with_one_borrow_dependency(false);
     let left_binding = left
-        .live_loan_dependencies()
+        .live_borrow_dependencies()
         .next()
         .expect("the left context should carry a live dependency")
         .1
         .clone();
     let right_binding = right
-        .live_loan_dependencies()
+        .live_borrow_dependencies()
         .next()
         .expect("the right context should carry a live dependency")
         .1
         .clone();
     // Without different raw identities the assertions below would be vacuous.
-    assert_ne!(left_binding.loan, right_binding.loan);
+    assert_ne!(left_binding.borrow, right_binding.borrow);
     assert_ne!(left_binding.scope, right_binding.scope);
     assert_ne!(left_binding.share, right_binding.share);
     assert_ne!(left_binding.support, right_binding.support);
@@ -5209,9 +5209,9 @@ fn loan_dependencies_from_different_ledgers_compare_equal_and_hash_alike() {
 /// Two contexts whose dependencies differ only in the viewed fact must still
 /// order, and order the same way each time they are rebuilt in a new arena.
 #[test]
-fn loan_dependencies_differing_in_the_viewed_fact_order_deterministically() {
-    let viewing_child = context_with_one_loan_dependency(false);
-    let viewing_support = context_with_one_loan_dependency(true);
+fn borrow_dependencies_differing_in_the_viewed_fact_order_deterministically() {
+    let viewing_child = context_with_one_borrow_dependency(false);
+    let viewing_support = context_with_one_borrow_dependency(true);
     assert_eq!(viewing_child.facts(), viewing_support.facts());
     assert_ne!(viewing_child, viewing_support);
 
@@ -5219,7 +5219,7 @@ fn loan_dependencies_differing_in_the_viewed_fact_order_deterministically() {
     assert_ne!(ordering, std::cmp::Ordering::Equal);
     assert_eq!(viewing_support.cmp(&viewing_child), ordering.reverse());
     assert_eq!(
-        context_with_one_loan_dependency(false).cmp(&context_with_one_loan_dependency(true)),
+        context_with_one_borrow_dependency(false).cmp(&context_with_one_borrow_dependency(true)),
         ordering
     );
 }
@@ -5302,8 +5302,8 @@ fn v11_composite_expansion_emits_a_destination_beside_an_equal_ambient_child() {
     let opening = ledger
         .lend(owner, reader, support_occurrence, support)
         .unwrap();
-    let binding = LoanViewBinding {
-        loan: opening.loan,
+    let binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support: support_occurrence,
@@ -5311,7 +5311,7 @@ fn v11_composite_expansion_emits_a_destination_beside_an_equal_ambient_child() {
         hold: None,
     };
     let ambient = resources.occurrences_for_fact(&child)[0];
-    let resources = resources.with_loan_dependency(parent_occurrence, binding.clone());
+    let resources = resources.with_borrow_dependency(parent_occurrence, binding.clone());
     let expanded = crate::kernel::functions::expand_composite_resource_fact_with_children(
         &resources,
         &ResourceFact::view_composite("v11_box".into(), Vec::new()),
@@ -5322,7 +5322,7 @@ fn v11_composite_expansion_emits_a_destination_beside_an_equal_ambient_child() {
     .expect("a fresh emitted child retains the exact parent binding")
     .0;
     assert_eq!(expanded.view_fact_for_occurrence(ambient), Some(&child));
-    assert!(expanded.loan_dependency(ambient).is_none());
+    assert!(expanded.borrow_dependency(ambient).is_none());
     let children = expanded.occurrences_for_fact(&child);
     assert_eq!(children.len(), 2);
     let emitted = *children
@@ -5330,8 +5330,8 @@ fn v11_composite_expansion_emits_a_destination_beside_an_equal_ambient_child() {
         .find(|occurrence| **occurrence != ambient)
         .unwrap();
     assert_eq!(
-        expanded.loan_dependency(emitted),
-        Some(&LoanViewBinding {
+        expanded.borrow_dependency(emitted),
+        Some(&BorrowBinding {
             viewed: child,
             ..binding
         })
@@ -5356,40 +5356,40 @@ fn v11_tampered_cstate_mirror_is_rejected_and_stale_sidecar_is_dropped() {
     let opening = ledger
         .lend(owner, reader, support_occurrence, support)
         .unwrap();
-    let binding = LoanViewBinding {
-        loan: opening.loan,
+    let binding = BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support: support_occurrence,
         viewed: child,
         hold: None,
     };
-    let state = ExecutionState::new().with_resource_context_and_loan_dependencies(
+    let state = ExecutionState::new().with_resource_context_and_borrow_dependencies(
         resources,
         [(child_occurrence, binding.clone())],
     );
-    assert!(state.loan_bindings_are_consistent());
+    assert!(state.borrow_bindings_are_consistent());
     let mut tampered = binding.clone();
     tampered.viewed = ResourceFact::view_token("v11_other_child".into(), Vec::new());
     let mut tampered_state = state;
-    tampered_state.loan_view_bindings =
-        LoanViewBindings::default().with_inserted(child_occurrence, tampered);
-    assert!(!tampered_state.loan_bindings_are_consistent());
+    tampered_state.borrow_bindings =
+        BorrowBindings::default().with_inserted(child_occurrence, tampered);
+    assert!(!tampered_state.borrow_bindings_are_consistent());
 
     let retained = tampered_state.with_resource_context(ResourceContext::new());
     assert!(
         retained
             .resources()
-            .live_loan_dependencies()
+            .live_borrow_dependencies()
             .next()
             .is_none()
     );
-    assert!(retained.loan_bindings_are_consistent());
+    assert!(retained.borrow_bindings_are_consistent());
 
-    let first = LoanViewBindings::default().with_inserted(child_occurrence, binding.clone());
+    let first = BorrowBindings::default().with_inserted(child_occurrence, binding.clone());
     let mut other_binding = binding;
     other_binding.viewed = ResourceFact::view_token("v11_identity_other".into(), Vec::new());
-    let second = LoanViewBindings::default().with_inserted(child_occurrence, other_binding);
+    let second = BorrowBindings::default().with_inserted(child_occurrence, other_binding);
     assert_ne!(first, second);
 }
 
@@ -7064,9 +7064,9 @@ fn native_owned_fragments_supply_indexed_writes() {
 }
 
 #[test]
-fn observable_projection_uses_current_loan_bindings_and_composite_eligibility() {
+fn observable_projection_uses_current_borrow_bindings_and_composite_eligibility() {
     let _session = crate::kernel::VerificationSession::enter();
-    let context = context_with_one_loan_dependency(false);
+    let context = context_with_one_borrow_dependency(false);
     assert_eq!(
         context
             .observable_facts_assuming_valid(&PureFactContext::new())
@@ -7075,14 +7075,14 @@ fn observable_projection_uses_current_loan_bindings_and_composite_eligibility() 
         "a separately held owner and live borrow expose their composition"
     );
     let original = context.observable_composition();
-    let (occurrence, binding) = context.live_loan_dependencies().next().unwrap();
-    assert_eq!(original.loan_dependency(occurrence), Some(binding));
+    let (occurrence, binding) = context.live_borrow_dependencies().next().unwrap();
+    assert_eq!(original.borrow_dependency(occurrence), Some(binding));
     let current = context
         .clone()
-        .with_loan_dependency_state(ResourceContext::new().loan_dependency_state());
+        .with_borrow_dependency_state(ResourceContext::new().borrow_dependency_state());
     let updated = current.observable_composition();
     assert!(std::sync::Arc::ptr_eq(&original.storage, &updated.storage));
-    assert!(updated.loan_dependency(occurrence).is_none());
+    assert!(updated.borrow_dependency(occurrence).is_none());
     assert_eq!(updated, current.observable_composition_uncached());
     assert_ne!(original, updated);
     assert!(

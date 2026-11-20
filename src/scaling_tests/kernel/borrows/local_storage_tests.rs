@@ -1,11 +1,11 @@
-// Scaling tests of `src/kernel/loans.rs` (module `local_storage_tests`): deterministic work measured at several
+// Scaling tests of `src/kernel/borrows.rs` (module `local_storage_tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
 
 #[test]
-fn automatic_storage_retirement_lookup_scales_with_neither_loan_bucket() {
+fn automatic_storage_retirement_lookup_scales_with_neither_borrow_bucket() {
     let selected = SymbolicMemory::local_pointer("selected");
     let other = SymbolicMemory::local_pointer("other");
     for same_block in [false, true] {
@@ -94,7 +94,7 @@ fn local_view_work_tracks_the_explicit_delta_not_ambient_local_storage() {
 }
 
 #[test]
-fn local_loan_admission_tracks_selected_backing_with_live_loans_and_aliases() {
+fn local_borrow_admission_tracks_selected_backing_with_live_borrows_and_aliases() {
     let requirement = view(0, 1);
     let local = requirement.fact.memory_range().unwrap().base().clone();
     let memory = SymbolicMemory::new().with_block(local.base.clone(), 4);

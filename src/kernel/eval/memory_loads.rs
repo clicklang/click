@@ -6787,7 +6787,7 @@ mod tests {
                 // A loop head can forget the field's value without adding a
                 // call-havoc node. The storage address still says nothing
                 // about the pointee's allocation identity.
-                before.with_loop_memory_havoc_preserving_loans(
+                before.with_loop_memory_havoc_preserving_borrows(
                     Variable(944_014),
                     &BTreeSet::new(),
                     Some(&[range]),

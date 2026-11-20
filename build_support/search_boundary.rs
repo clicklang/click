@@ -51,8 +51,8 @@ impl Boundary<'_> {
         }
         // Moving a legacy body must retain its existing operation-specific guards.
         match name.as_str() {
-            "loan_aliases" => "memory_range_aliases",
-            "loan_access" => "permits_memory_access_with_assumptions",
+            "borrow_aliases" => "memory_range_aliases",
+            "borrow_access" => "permits_memory_access_with_assumptions",
             "ownership_validity_candidates" => "owned_validity_candidates",
             "ownership_overlap" => "memory_ranges_proven_overlapping_with_separation",
             "owned_anchor_distinctness" => "pointers_distinct_by_owned_anchors",
@@ -69,7 +69,7 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: legacy loop preparation belongs only to the explicit independent-input adapter", self.path));
         }
-        if self.path == "src/kernel/loans.rs"
+        if self.path == "src/kernel/borrows.rs"
             && matches!(
                 self.function.as_str(),
                 "recover_stable_views_impl"
@@ -235,8 +235,8 @@ impl Boundary<'_> {
             ));
         }
 
-        if self.path == "src/kernel/loans.rs"
-            && self.function == "has_active_memory_loans"
+        if self.path == "src/kernel/borrows.rs"
+            && self.function == "has_active_memory_borrows"
             && matches!(
                 name,
                 "iter"
@@ -247,12 +247,12 @@ impl Boundary<'_> {
                     | "all"
                     | "fold"
                     | "count"
-                    | "loans"
+                    | "borrows"
                     | "scopes"
                     | "unindexed_memory"
                     | "active_memory_index"
                     | "cache_memory_index"
-                    | "loan_protects_memory"
+                    | "borrow_protects_memory"
             )
         {
             self.errors.push(format!(
@@ -260,11 +260,11 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
-        if self.path == "src/kernel/loans.rs"
+        if self.path == "src/kernel/borrows.rs"
             && matches!(
                 self.function.as_str(),
                 "permits_memory_access_with_assumptions"
-                    | "conflicting_memory_loan"
+                    | "conflicting_memory_borrow"
                     | "first_active_memory_overlap"
                     | "first_active_memory_overlap_with_assumptions"
             )
@@ -278,7 +278,7 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
-        if self.path == "src/kernel/loans.rs"
+        if self.path == "src/kernel/borrows.rs"
             && matches!(
                 self.function.as_str(),
                 "first_active_memory_overlap" | "first_active_memory_overlap_with_assumptions"
@@ -303,7 +303,7 @@ impl Boundary<'_> {
         if self.path == "src/kernel/primitives/memory_state.rs"
             && matches!(
                 self.function.as_str(),
-                "loan_preserving_havoc_keeps_cell" | "loan_preserving_havoc_keeps_run"
+                "borrow_preserving_havoc_keeps_cell" | "borrow_preserving_havoc_keeps_run"
             )
             && matches!(
                 name,
@@ -317,7 +317,7 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
-        if self.path == "src/kernel/loans.rs"
+        if self.path == "src/kernel/borrows.rs"
             && self.function == "has_indexed_memory_overlap"
             && matches!(
                 name,
@@ -389,7 +389,7 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
-        if self.path == "src/kernel/loans.rs"
+        if self.path == "src/kernel/borrows.rs"
             && matches!(
                 name,
                 "has_other_directly_supporting_owned_entry"
@@ -399,7 +399,7 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: {}: borrow sources must retain split origins, not reconstruct them by search or history ({name})", self.path, self.function));
         }
-        if self.path == "src/kernel/loans.rs"
+        if self.path == "src/kernel/borrows.rs"
             && (name == "view_occurrences_for_fact"
                 || name == "with_coalesced_owned_memory"
                 || (matches!(
@@ -413,13 +413,14 @@ impl Boundary<'_> {
             self.errors.push(format!("{}: {}: borrow binding selection must nominate an indexed identity, not scan observations ({name})", self.path, self.function));
         }
         if ((self.path == "src/kernel/loops.rs" && self.function == "loop_body_resource_context")
-            || (self.path == "src/kernel/loans.rs" && self.function == "attach_to_inserted_views"))
+            || (self.path == "src/kernel/borrows.rs"
+                && self.function == "attach_to_inserted_views"))
             && (matches!(name, "view_occurrences_for_fact" | "find" | "find_map")
                 || (self.function == "attach_to_inserted_views" && name == "facts"))
         {
             self.errors.push(format!("{}: {}: loop binding handoff must retain producer occurrences, not rediscover views ({name})", self.path, self.function));
         }
-        if ((self.path == "src/kernel/loans.rs" && self.function == "recover_stable_views_impl")
+        if ((self.path == "src/kernel/borrows.rs" && self.function == "recover_stable_views_impl")
             || (self.path == "src/kernel/functions.rs"
                 && matches!(
                     self.function.as_str(),

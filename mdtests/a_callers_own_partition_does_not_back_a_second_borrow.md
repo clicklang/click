@@ -10,7 +10,7 @@ then cannot find backing for the callee's `views g[0..1]` in what is left.
 The checked point is that a separation the caller holds is never mistaken for
 the backing a borrow needs.
 
-```c filename=a_callers_own_partition_does_not_back_a_second_loan.c
+```c filename=a_callers_own_partition_does_not_back_a_second_borrow.c
 int32 g[4];
 
 void split(int32 *b) {
@@ -23,7 +23,7 @@ void caller(int32 a[], int32 n) {
 ```
 
 ```click
-verifying "a_callers_own_partition_does_not_back_a_second_loan.c";
+verifying "a_callers_own_partition_does_not_back_a_second_borrow.c";
 
 void split(int32* b) {
     views b[0..1];

@@ -1,7 +1,7 @@
 //! Retained resource descriptor for active borrow backing. An exact repeated
 //! reborrow stays covered by its pinned parent. Updates follow one fixed-width
 //! borrow-id path, and access requirements clone only the retained descriptor.
-use super::{LoanId, MemoryRange, Resource};
+use super::{BorrowId, MemoryRange, Resource};
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Default)]
@@ -32,16 +32,21 @@ impl ActiveFootprint {
             .map_or(Resource::Emp, |node| node.resource.clone())
     }
 
-    pub(super) fn with_loan(&self, loan: LoanId, ranges: &[MemoryRange]) -> Self {
+    pub(super) fn with_borrow(&self, borrow: BorrowId, ranges: &[MemoryRange]) -> Self {
         let mut resources = ranges.iter().map(|range| Resource::Memory(range.clone()));
         let resource = resources
             .next()
             .map(|first| resources.fold(first, Resource::star));
-        Self(update(self.0.as_ref(), loan.ordinal, 64, resource.as_ref()))
+        Self(update(
+            self.0.as_ref(),
+            borrow.ordinal,
+            64,
+            resource.as_ref(),
+        ))
     }
 
-    pub(super) fn without_loan(&self, loan: LoanId) -> Self {
-        Self(update(self.0.as_ref(), loan.ordinal, 64, None))
+    pub(super) fn without_borrow(&self, borrow: BorrowId) -> Self {
+        Self(update(self.0.as_ref(), borrow.ordinal, 64, None))
     }
 }
 

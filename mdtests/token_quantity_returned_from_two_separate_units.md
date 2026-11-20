@@ -7,7 +7,7 @@ the remainder of the first unit and the unit `give_back` produced. Neither
 covers the returned quantity alone, and the return check consumes without
 normalizing first, so it must take the quantity from both units together.
 It merges same-resource units it already selected, and keeps a unit with a
-loan, support, projection or witness apart.
+borrow, support, projection or witness apart.
 
 ```c filename=pool.c
 struct pool { int32 checked_out; int32 capacity; };

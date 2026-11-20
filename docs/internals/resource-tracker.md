@@ -477,8 +477,8 @@ edge exists. Each decides the same abstract question as the matching arm of
 | --- | --- | --- |
 | `call_havoc_keeps_cell` `src/kernel/primitives/memory_state.rs` | disagrees | For ordinary cells, keeps a cell when plain `ranges_proven_disjoint_from_pointer` proves the declared write set cannot reach it. A cell an owned member of what the caller keeps owning holds (`CallKeptOwnership`) is dropped from the cache too, and that member is recorded on the edge with the premises that place the cell in it, where the rule's `CallHavoc` arm reads it. A local cell whose block has a write-range base in a different form is retained only when the pointer-equality graph does not resolve that base to the cell; this catches assumed aliases while preserving direct same-block construction transitions. The rule's `CallHavoc` arm uses typed range evidence and the `_for_frame` expansion, which looks through composite definitions, so the two remain weaker in different cases. |
 | `SymbolicMemory::with_call_memory_havoc`, `SymbolicMemory::matches_call_memory_havoc_result` | disagrees | The producer that applies a call's write set and the checker that re-derives what it would have written. Both now ask `call_havoc_keeps_cell`, so the retain rule is one function: the checker has to stay identical to the producer, not to the rule, and sharing the function is what makes that structural instead of remembered. Both apply it to the typed union views (`union_cells`) as well as the cells: a view is the authoritative answer to an exact typed load, and the producer used to keep every view while the checker dropped them, so a load after a call that wrote through a union member read the pre-call member (`mdtests/call_havoc_drops_a_union_member_view.md`). `click audit` accepted that proof too: a kept view is not a difference between the two states, so no coverage check asked about it. |
-| `loan_preserving_havoc_keeps_cell` | disagrees | Preserved-block membership **or** bytes `BorrowLedger::permits_memory_access` refuses a write through. An ownership question, with fail-open polarity, and no pointer-alias reasoning at all — a loop body or a joined branch arm may write through any pointer it can reach, so separation has nothing to decide. The width it asks the ledger about is the wider of the cell's value and the widest typed overlay recorded there (`union_overlay_widths`), and an unknown width fails closed. |
-| `SymbolicMemory::with_loop_memory_havoc_preserving_loans`, `SymbolicMemory::with_interface_memory_havoc_preserving_loans` | disagrees | The loop head and the interface join, which both ask `loan_preserving_havoc_keeps_cell`. The interface join also records a `BranchJoin` edge: the tracker can recover uncached reads by checking every incoming arm, independently of this eager retain rule. The loop head does not record that edge. |
+| `borrow_preserving_havoc_keeps_cell` | disagrees | Preserved-block membership **or** bytes `BorrowLedger::permits_memory_access` refuses a write through. An ownership question, with fail-open polarity, and no pointer-alias reasoning at all — a loop body or a joined branch arm may write through any pointer it can reach, so separation has nothing to decide. The width it asks the ledger about is the wider of the cell's value and the widest typed overlay recorded there (`union_overlay_widths`), and an unknown width fails closed. |
+| `SymbolicMemory::with_loop_memory_havoc_preserving_borrows`, `SymbolicMemory::with_interface_memory_havoc_preserving_borrows` | disagrees | The loop head and the interface join, which both ask `borrow_preserving_havoc_keeps_cell`. The interface join also records a `BranchJoin` edge: the tracker can recover uncached reads by checking every incoming arm, independently of this eager retain rule. The loop head does not record that edge. |
 | `SymbolicMemory::forget_zeroed_allocations_written_by` | disagrees | The other half of a call's write set: it drops the zeroed reading of every allocation the declared ranges may reach, because "reads as zero where unwritten" is a claim about contents that an unseen write invalidates exactly as it invalidates a stored cell. It drops the status for the whole allocation rather than narrowing it to a prefix, since a write set bounds where a callee may store and not where it did. The rule has no arm for it: a zeroed reading is not a resource the tracker names. |
 | `SymbolicMemory::without_possible_aliasing_cells` | disagrees | A store's own eager drop, and the one site on this list that shares the rule's byte question: the address ladder is conjoined with `access_byte_overlap`, exactly as the rule's `Store` arm conjoins it, so a ladder that proves two addresses differ may stand in for byte separation only where the gap it establishes clears both accesses. Ahead of the ladder, and before `access_byte_overlap`, it asks ownership through the composition base index (`PureFactContext::access_owned_apart_from_store`, below), including the composition the store statement opens from the held folded instances whose arguments name a cached cell's base (`functions::store_opened_instance_composition`, below); a cell ownership does not place goes down the ladder unchanged. The ladder itself is `pointers_proven_distinct_for_memory_resolution`, **or** `pointers_proven_disjoint_by_explicit_range_for_memory_resolution`, **or** `pointers_directly_disjoint_by_range`, **or** `owned_composition_store_separated_evidence`. The two range rungs are the cross-base pairs offset reasoning cannot decide and the byte question answers `Unknown` for; they are a range-index scan the rule's hot `Store` arm must not pay for. The last is shared with the rule's `Store` arm and the two transport sites, and it has to be here too: a cell this function drops is lost to every later route, because the two states then differ at the read's own address. |
 | `SymbolicMemory::without_field_cells` | disagrees | Same-block equality and a constant byte interval. Across blocks it removes too little, which for a copy is the safe direction; a completeness difference only. |
@@ -1295,7 +1295,7 @@ clause-list pairing itself is pinned by
 (`src/kernel/tests/memory_reasoning_tests.rs`). On the true side,
 `const_callback_field.md` is unquarantined,
 `a_views_clause_is_separate_from_an_owns_clause.md` is the minimal shape, and
-`pointer_params_separate_by_transfer_and_loan.md` is the two-parameter one.
+`pointer_params_separate_by_transfer_and_borrow.md` is the two-parameter one.
 
 Loop `owns`/`views` clauses are **not** part of this. A loop head is not a
 contract entry: there is no call-site planner between an iteration and the
@@ -1306,7 +1306,7 @@ every other entry fact does, as path facts of the context the loop starts from.
 The borrow family — `BorrowLedger::permits_memory_access`,
 `protected_range_proven_overlapping`, `active_memory_overlaps` — is **not** in
 the entry table above. It is fail-open by design and its soundness rests on the
-ownership partition rather than on the predicate (`src/kernel/loans.rs`), so it
+ownership partition rather than on the predicate (`src/kernel/borrows.rs`), so it
 must never be merged with the fail-closed families there.
 
 ### Sites that only look like this question
@@ -1771,9 +1771,9 @@ authority — "may I touch this" — rather than about versions:
 
 - **resource occurrence identity** (`ResourceOccurrenceId`) and the **borrow
   ledger**. Borrows, shares and support bind to an occurrence; no proposition can
-  name one, and the ledger's `LoanLedgerStateId` is opaque and carries no delta.
+  name one, and the ledger's `BorrowLedgerStateId` is opaque and carries no delta.
   The borrow family is fail-open by design and must never be merged with the
-  fail-closed families (above, and `src/kernel/loans.rs`);
+  fail-closed families (above, and `src/kernel/borrows.rs`);
 - **resource validity** — `pair_validity_error`, `permits_memory_read` — which
   is who may touch a footprint, not which version it holds;
 - **separation predicates**, which `affects` calls rather than replaces.
@@ -1799,7 +1799,7 @@ the final answer there is open.
   `describe_resource_version_mismatch`: their callers hold two propositions and
   not the two saved states the answer needs.
 - **From the map above** — the two duplicated retain closures are one function
-  each now, `call_havoc_keeps_cell` and `loan_preserving_havoc_keeps_cell`, so
+  each now, `call_havoc_keeps_cell` and `borrow_preserving_havoc_keeps_cell`, so
   a producer and the checker that re-derives it can no longer drift apart by
   an edit to one of them. `call_havoc_keeps_cell` now requires range-disjointness
   evidence when a local cell has a range base in a different form; direct

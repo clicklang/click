@@ -227,8 +227,8 @@ pub fn inventory(path: &str, file: &syn::File) -> BTreeMap<String, usize> {
             } else if path.starts_with("src/kernel/") {
                 if matches!(
                     target.as_str(),
-                    "loan_aliases"
-                        | "loan_access"
+                    "borrow_aliases"
+                        | "borrow_access"
                         | "ownership_validity_candidates"
                         | "ownership_overlap"
                         | "owned_anchor_distinctness"

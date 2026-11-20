@@ -1820,7 +1820,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             };
             return_exits.push(
                 LoopReturnExit::from_store(value.clone(), (**state).clone(), &pending.pure_facts)
-                    .with_loan_evidence(pending.loan_evidence.clone()),
+                    .with_borrow_evidence(pending.borrow_evidence.clone()),
             );
             let mut nested = (**nested).clone();
             nested.owners.push((
@@ -1852,7 +1852,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 &assumptions_from_propositions(checked.facts()),
             );
             let exit = LoopReturnExit::from_store(value, state, &exit_facts)
-                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+                .with_borrow_evidence(checked_execution.core.borrow_evidence().clone());
             // Equal semantic exits may carry different written proofs. Keep
             // each arm so no source proof disappears through deduplication.
             return_exits.push(exit);
@@ -1914,7 +1914,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                     crate::kernel::proof::LoopControlExit::NaturalExit(target) => target,
                     _ => unreachable!("the checked frontier is a natural exit jump"),
                 })
-                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+                .with_borrow_evidence(checked_execution.core.borrow_evidence().clone());
             if seen_final_exits.is_new(
                 exit.state(),
                 exit.pure_facts(),
@@ -1953,7 +1953,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             let exit = LoopEarlyExit::from_store(state, checked.facts())
                 .with_guard_false(guard_false)
                 .with_guard_points_index(points_index)
-                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+                .with_borrow_evidence(checked_execution.core.borrow_evidence().clone());
             if seen_early_exits.is_new(exit.state(), exit.pure_facts(), &early_exits, &exit) {
                 early_exits.push(exit);
             }
@@ -1980,7 +1980,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             });
             let candidate = LoopFinalExitCandidate::from_store(state, &exit_facts)
                 .with_guard_points_index(points_index)
-                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+                .with_borrow_evidence(checked_execution.core.borrow_evidence().clone());
             if seen_final_exits.is_new(
                 candidate.state(),
                 candidate.pure_facts(),

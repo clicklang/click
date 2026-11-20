@@ -1,4 +1,4 @@
-// Scaling tests of `src/kernel/loans.rs` (module `tests`): deterministic work measured at several
+// Scaling tests of `src/kernel/borrows.rs` (module `tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
@@ -8,12 +8,12 @@ use super::*;
 /// Measure both the planner's current selection expression and the real call.
 /// Index preparation, resource insertion and borrow construction are outside both.
 #[test]
-fn parent_loan_binding_selection_ignores_unbound_observations() {
+fn parent_borrow_binding_selection_ignores_unbound_observations() {
     check_parent_binding_observation_scaling(&["early", "late", "two_bindings", "subrange"]);
 }
 
 #[test]
-fn parent_loan_binding_refusals_and_owner_selection_ignore_observations() {
+fn parent_borrow_binding_refusals_and_owner_selection_ignore_observations() {
     check_parent_binding_observation_scaling(&["unbound", "owner", "stale"]);
 }
 
@@ -32,8 +32,8 @@ fn check_parent_binding_observation_scaling(cases: &[&str]) {
             if case != "owner" {
                 ledger = ledger.apply(&opening.transition).unwrap();
             }
-            let mut binding = LoanViewBinding {
-                loan: opening.loan,
+            let mut binding = BorrowBinding {
+                borrow: opening.borrow,
                 scope: opening.scope,
                 share: opening.root_share,
                 support,
@@ -47,7 +47,7 @@ fn check_parent_binding_observation_scaling(cases: &[&str]) {
                     .unwrap();
                 ledger = ledger.apply(&split).unwrap();
                 binding.share = left;
-                second_binding = Some(LoanViewBinding {
+                second_binding = Some(BorrowBinding {
                     share: right,
                     ..binding.clone()
                 });
@@ -56,14 +56,14 @@ fn check_parent_binding_observation_scaling(cases: &[&str]) {
                 ledger = ledger
                     .apply(&ledger.end(opening.scope, caller).unwrap())
                     .unwrap();
-                let (recovery, _, _) = ledger.recover(opening.loan, caller).unwrap();
+                let (recovery, _, _) = ledger.recover(opening.borrow, caller).unwrap();
                 ledger = ledger.apply(&recovery).unwrap();
             }
             let (mut resources, occurrences) = ResourceContext::new_with_equalities(&facts)
                 .unchecked_with_facts_and_occurrences(std::iter::repeat_n(view.clone(), count + 1));
             let first = occurrences[0].1;
             let last = occurrences[count].1;
-            let mut bindings = LoanViewBindings::default();
+            let mut bindings = BorrowBindings::default();
             let expected = match case {
                 "early" | "two_bindings" | "subrange" => Some(first),
                 "late" | "stale" => Some(last),
@@ -78,7 +78,7 @@ fn check_parent_binding_observation_scaling(cases: &[&str]) {
             if case == "owner" {
                 resources = resources.unchecked_with_fact(owned);
             }
-            resources = resources.with_loan_dependency_state(bindings.state());
+            resources = resources.with_borrow_dependency_state(bindings.state());
             resources.synchronize_memory_equalities(&facts);
             let required = if case == "subrange" {
                 memory(2, 4, false)
@@ -86,7 +86,7 @@ fn check_parent_binding_observation_scaling(cases: &[&str]) {
                 view.clone()
             };
             let requirements = [checked(required.clone())];
-            let select = |bindings: &LoanViewBindings| {
+            let select = |bindings: &BorrowBindings| {
                 bindings.select_bound_view(&required, &resources, &facts)
             };
             let mut queries = Vec::new();
@@ -113,7 +113,9 @@ fn check_parent_binding_observation_scaling(cases: &[&str]) {
                 if matches!(case, "unbound" | "stale") {
                     assert_eq!(
                         plan,
-                        Err(StableViewPlanError::Loan(LoanRefusal::MissingLoanBinding)),
+                        Err(StableViewPlanError::Borrow(
+                            BorrowRefusal::MissingBorrowBinding
+                        )),
                         "{case}, {count}"
                     );
                 } else {
@@ -175,8 +177,8 @@ fn bound_view_selection_is_indexed_and_branch_local() {
         let (ledger, caller, _) = participants();
         let owner = memory(0, 8, true);
         let opening = ledger.lend(caller, caller, backing(&owner), owner).unwrap();
-        let template = LoanViewBinding {
-            loan: opening.loan,
+        let template = BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support: opening.description.support(),
@@ -187,7 +189,7 @@ fn bound_view_selection_is_indexed_and_branch_local() {
             .unchecked_with_facts_and_occurrences([view.clone()]);
         let selected = first[0].1;
         let sole_live_view = resources.clone();
-        let mut bindings = LoanViewBindings::default().with_inserted(selected, template.clone());
+        let mut bindings = BorrowBindings::default().with_inserted(selected, template.clone());
         for index in 0..count {
             let other = memory(16 + index * 8, 24 + index * 8, false);
             let (next, occurrences) =
@@ -195,7 +197,7 @@ fn bound_view_selection_is_indexed_and_branch_local() {
             resources = next;
             bindings = bindings.with_inserted(
                 occurrences[0].1,
-                LoanViewBinding {
+                BorrowBinding {
                     viewed: other,
                     ..template.clone()
                 },
@@ -227,7 +229,7 @@ fn bound_view_selection_is_indexed_and_branch_local() {
         let replacement = memory(4000, 4008, false);
         let replaced = bindings.with_inserted(
             selected,
-            LoanViewBinding {
+            BorrowBinding {
                 viewed: replacement.clone(),
                 ..template
             },
@@ -582,8 +584,8 @@ fn lifetime_holds_scale_with_selected_shares() {
             let support = backing(&fact);
             let opening = ledger.lend(owner, reader, support, fact).unwrap();
             ledger = ledger.apply(&opening.transition).unwrap();
-            bindings.push(LoanAuthorityBinding {
-                loan: opening.loan,
+            bindings.push(BorrowAuthorityBinding {
+                borrow: opening.borrow,
                 scope: opening.scope,
                 share: opening.root_share,
                 support,
@@ -629,7 +631,7 @@ fn completed_call_history_does_not_slow_outer_ledger_lookup() {
         .clone()
         .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
         .unwrap();
-    let evidence = Arc::new(CheckedLoanCallEvidence::new(
+    let evidence = Arc::new(CheckedBorrowCallEvidence::new(
         plan,
         recovery.ledger,
         recovery.terminal_ledger,
@@ -639,9 +641,9 @@ fn completed_call_history_does_not_slow_outer_ledger_lookup() {
     ));
     let mut samples = Vec::new();
     for size in [16_usize, 32, 64, 128] {
-        let mut sequence = empty_checked_loan_evidence_sequence();
+        let mut sequence = empty_checked_borrow_evidence_sequence();
         for _ in 0..size {
-            sequence = append_checked_loan_evidence(&sequence, Some(evidence.clone()));
+            sequence = append_checked_borrow_evidence(&sequence, Some(evidence.clone()));
         }
         let ((valid, recovered), work) = crate::persistent::measure_persistent_work(|| {
             (
@@ -717,8 +719,8 @@ fn dependency_updates_scale_with_changed_scope_entries() {
             let fact = owned(&format!("dependency-parent-{index}"));
             let parent = ledger.lend(owner, reader, backing(&fact), fact).unwrap();
             ledger = ledger.apply(&parent.transition).unwrap();
-            bindings.push(LoanViewBinding {
-                loan: parent.loan,
+            bindings.push(BorrowBinding {
+                borrow: parent.borrow,
                 scope: parent.scope,
                 share: parent.root_share,
                 support: parent.description.support,
@@ -907,7 +909,7 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 5s in the parallel gate"]
-fn loan_certificate_recheck_scales_with_explicit_transition_delta() {
+fn borrow_certificate_recheck_scales_with_explicit_transition_delta() {
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [4_usize, 8, 16, 32] {
@@ -933,7 +935,7 @@ fn loan_certificate_recheck_scales_with_explicit_transition_delta() {
             .clone()
             .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
             .unwrap();
-        let evidence = CheckedLoanCallEvidence::new(
+        let evidence = CheckedBorrowCallEvidence::new(
             plan,
             recovery.ledger,
             recovery.terminal_ledger,
@@ -1106,7 +1108,7 @@ fn joint_fragment_reservation_does_not_scan_ambient_memory_with_scalar_equalitie
 }
 
 #[test]
-fn active_memory_witness_ignores_unrelated_live_loans() {
+fn active_memory_witness_ignores_unrelated_live_borrows() {
     let mut samples = Vec::new();
     for size in [16_usize, 32, 64, 128] {
         let (mut ledger, owner, reader) = participants();
@@ -1118,10 +1120,10 @@ fn active_memory_witness_ignores_unrelated_live_loans() {
             ledger = ledger.apply(&opening.transition).unwrap();
         }
         let query = memory(0, 1, false).memory_range().unwrap().clone();
-        let (loan, work) = crate::instrumentation::measure_deterministic_work(|| {
+        let (borrow, work) = crate::instrumentation::measure_deterministic_work(|| {
             ledger.first_active_memory_overlap(&query).unwrap()
         });
-        assert!(loan.is_some());
+        assert!(borrow.is_some());
         samples.push((size, work));
     }
     for pair in samples.windows(2) {
@@ -1235,7 +1237,7 @@ fn call_fragment_composition_stops_at_a_fixed_gap() {
             resources.synchronize_memory_equalities(&facts);
             let (ledger, caller, callee) = participants();
             let requirements = [checked(required.clone())];
-            let bindings = LoanViewBindings::default();
+            let bindings = BorrowBindings::default();
             let original_len = resources.facts().len();
             let mut queries = Vec::new();
             for _ in 0..3 {
@@ -1308,7 +1310,7 @@ fn call_fragment_composition_stops_at_a_fixed_gap() {
 }
 
 #[test]
-fn cache_protection_does_not_enumerate_overlapping_loans() {
+fn cache_protection_does_not_enumerate_overlapping_borrows() {
     let mut samples = Vec::new();
     for count in [4, 16, 64] {
         let (mut ledger, holder, _) = participants();
@@ -1334,7 +1336,7 @@ fn cache_protection_does_not_enumerate_overlapping_loans() {
 }
 
 #[test]
-fn write_barrier_does_not_enumerate_overlapping_loans() {
+fn write_barrier_does_not_enumerate_overlapping_borrows() {
     for (name, start, end, blocked) in [
         ("inside", 2, 4, true),
         ("covering", 0, 16, true),
@@ -1352,7 +1354,7 @@ fn write_barrier_does_not_enumerate_overlapping_loans() {
                 let opening = ledger
                     .borrowed_contract_input(holder, support, view.clone(), None)
                     .unwrap();
-                first.get_or_insert(opening.loan);
+                first.get_or_insert(opening.borrow);
                 ledger = ledger.apply(&opening.transition).unwrap();
             }
             let query = memory(start, end, false);
@@ -1367,7 +1369,7 @@ fn write_barrier_does_not_enumerate_overlapping_loans() {
                 assert_eq!(
                     result,
                     if blocked {
-                        Err(LoanRefusal::ActiveDependency)
+                        Err(BorrowRefusal::ActiveDependency)
                     } else {
                         Ok(())
                     }
@@ -1387,7 +1389,7 @@ fn write_barrier_does_not_enumerate_overlapping_loans() {
                 );
                 assert_eq!(
                     diagnostic.map(|d| d.subject().loan_id()),
-                    blocked.then(|| first.map(|loan| (loan.arena, loan.ordinal)))
+                    blocked.then(|| first.map(|borrow| (borrow.arena, borrow.ordinal)))
                 );
                 diagnostic_samples.push((count, repeat, diagnostic_work));
             }
@@ -1408,7 +1410,7 @@ fn write_barrier_does_not_enumerate_overlapping_loans() {
 }
 
 #[test]
-fn writes_without_active_memory_loans_do_not_walk_pointer_aliases() {
+fn writes_without_active_memory_borrows_do_not_walk_pointer_aliases() {
     for mode in ["empty", "token", "ended_memory"] {
         let (mut ledger, owner, reader) = participants();
         if mode != "empty" {
@@ -1426,7 +1428,7 @@ fn writes_without_active_memory_loans_do_not_walk_pointer_aliases() {
                 ledger = ledger.apply(&ended).unwrap();
             }
         }
-        assert!(!ledger.has_active_memory_loans());
+        assert!(!ledger.has_active_memory_borrows());
         assert!(ledger.invariant_holds());
         for symbolic_bound in [false, true] {
             let mut samples = Vec::new();
@@ -1477,7 +1479,7 @@ fn writes_without_active_memory_loans_do_not_walk_pointer_aliases() {
 }
 
 #[test]
-fn loan_access_requirement_is_retained_and_branch_local() {
+fn borrow_access_requirement_is_retained_and_branch_local() {
     let mut samples = Vec::new();
     for count in [4, 16, 64, 256] {
         let (mut ledger, holder, _) = participants();
@@ -1657,7 +1659,7 @@ fn composite_lending_checks_only_the_selected_frontier() {
                     resources.unchecked_with_fact(memory(16 + index * 8, 20 + index * 8, true));
             }
             let (support, _) = resources.unique_owned_occurrence_for_fact(&head).unwrap();
-            let backing = CompositeLoanBacking::from_checked_expansion(
+            let backing = CompositeBorrowBacking::from_checked_expansion(
                 support,
                 head,
                 vec![memory(0, 4, true)],
@@ -1679,7 +1681,7 @@ fn composite_lending_checks_only_the_selected_frontier() {
                     &ledger,
                     caller,
                     callee,
-                    &LoanViewBindings::default(),
+                    &BorrowBindings::default(),
                     &backings,
                 )
             });
@@ -1722,7 +1724,7 @@ fn releasing_one_produced_view_ignores_unrelated_resources() {
             ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
         let occurrence = inserted[0].1;
         let escaping = BTreeMap::from([(
-            plan.stable_views()[0].loan,
+            plan.stable_views()[0].borrow,
             vec![EscapingBorrow {
                 head: view.clone(),
                 occurrence,
@@ -1733,21 +1735,26 @@ fn releasing_one_produced_view_ignores_unrelated_resources() {
             .recover_stable_views(&assumptions, &escaping, &[])
             .unwrap();
         let resources = resources
-            .with_loan_dependency(occurrence, recovery.escaped_holds[0].binding.clone())
+            .with_borrow_dependency(occurrence, recovery.escaped_holds[0].binding.clone())
             .unchecked_with_facts(
                 (0..size).map(|extra| owned(&format!("unrelated-release-{extra}"))),
             );
         let state = ExecutionState::new()
             .with_resource_context(resources)
-            .with_loan_participant(Some(caller))
-            .with_loan_ledger(Some(recovery.ledger));
+            .with_borrow_participant(Some(caller))
+            .with_borrow_ledger(Some(recovery.ledger));
         let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
             state.release_produced_view(&view, &assumptions)
         });
         let restored = restored.unwrap();
         assert!(restored.resources().contains_exact_representation(&owner));
         assert!(!restored.resources().contains_exact_representation(&view));
-        assert!(!restored.loan_ledger().unwrap().has_active_memory_loans());
+        assert!(
+            !restored
+                .borrow_ledger()
+                .unwrap()
+                .has_active_memory_borrows()
+        );
         samples.push(work);
     }
     assert!(
@@ -1779,7 +1786,7 @@ fn releasing_one_produced_view_ignores_other_pieces_sharing_its_hold() {
             (0..size).map(|start| memory(start, start + 1, false)),
         );
         let escaping = BTreeMap::from([(
-            plan.stable_views()[0].loan,
+            plan.stable_views()[0].borrow,
             vec![EscapingBorrow {
                 head: view.clone(),
                 occurrence: pieces[0].1,
@@ -1790,9 +1797,9 @@ fn releasing_one_produced_view_ignores_other_pieces_sharing_its_hold() {
             .recover_stable_views(&assumptions, &escaping, &[])
             .unwrap();
         for (viewed, occurrence) in pieces {
-            resources = resources.with_loan_dependency(
+            resources = resources.with_borrow_dependency(
                 occurrence,
-                LoanViewBinding {
+                BorrowBinding {
                     viewed,
                     ..recovery.escaped_holds[0].binding.clone()
                 },
@@ -1800,8 +1807,8 @@ fn releasing_one_produced_view_ignores_other_pieces_sharing_its_hold() {
         }
         let state = ExecutionState::new()
             .with_resource_context(resources)
-            .with_loan_participant(Some(caller))
-            .with_loan_ledger(Some(recovery.ledger));
+            .with_borrow_participant(Some(caller))
+            .with_borrow_ledger(Some(recovery.ledger));
         let (released, work) = crate::instrumentation::measure_deterministic_work(|| {
             state.release_produced_view(&view, &assumptions)
         });
@@ -1813,7 +1820,7 @@ fn releasing_one_produced_view_ignores_other_pieces_sharing_its_hold() {
                 .contains_exact_representation(&memory(1, 2, false))
         );
         assert!(!released.resources().contains_exact_representation(&owner));
-        assert_eq!(released.loan_ledger(), state.loan_ledger());
+        assert_eq!(released.borrow_ledger(), state.borrow_ledger());
         assert!(state.resources().contains_exact_representation(&view));
         samples.push(work);
     }
@@ -1845,7 +1852,7 @@ fn consuming_a_borrowing_composite_ignores_unrelated_resources() {
         let (_, occurrences) =
             ResourceContext::new().unchecked_with_facts_and_occurrences([head.clone()]);
         let escaping = BTreeMap::from([(
-            plan.stable_views()[0].loan,
+            plan.stable_views()[0].borrow,
             vec![EscapingBorrow {
                 head,
                 occurrence: occurrences[0].1,
@@ -1877,7 +1884,7 @@ fn consuming_a_borrowing_composite_ignores_unrelated_resources() {
         });
         let recovered = recovered.unwrap();
         assert!(recovered.resources.contains_exact_representation(&owner));
-        assert!(!recovered.ledger.has_active_memory_loans());
+        assert!(!recovered.ledger.has_active_memory_borrows());
         samples.push(work);
     }
     assert!(
@@ -1908,7 +1915,7 @@ fn folding_a_held_view_ignores_equal_owner_observations() {
             ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
         let occurrence = inserted[0].1;
         let escaping = BTreeMap::from([(
-            plan.stable_views()[0].loan,
+            plan.stable_views()[0].borrow,
             vec![EscapingBorrow {
                 head: view.clone(),
                 occurrence,
@@ -1926,9 +1933,12 @@ fn folding_a_held_view_ignores_equal_owner_observations() {
         }
         let binding = &recovery.escaped_holds[0].binding;
         let state = ExecutionState::new()
-            .with_resource_context_and_loan_dependencies(resources, [(occurrence, binding.clone())])
-            .with_loan_participant(Some(caller))
-            .with_loan_ledger(Some(recovery.ledger));
+            .with_resource_context_and_borrow_dependencies(
+                resources,
+                [(occurrence, binding.clone())],
+            )
+            .with_borrow_participant(Some(caller))
+            .with_borrow_ledger(Some(recovery.ledger));
         let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
             state.fold_view_dependency(&view, &assumptions)
         });

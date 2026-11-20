@@ -8638,7 +8638,7 @@ mod wide_range_reader_tests {
 #[cfg(test)]
 mod borrow_partition_tests {
     use super::*;
-    use crate::kernel::loans::{BorrowLedger, LoanViewBinding};
+    use crate::kernel::borrows::{BorrowBinding, BorrowLedger};
 
     fn range(id: u64) -> MemoryRange {
         MemoryRange::new(
@@ -8671,10 +8671,10 @@ mod borrow_partition_tests {
             opening.root_share,
             &PureFactContext::new()
         ));
-        let bound = bare.clone().with_loan_dependency(
+        let bound = bare.clone().with_borrow_dependency(
             support,
-            LoanViewBinding {
-                loan: opening.loan,
+            BorrowBinding {
+                borrow: opening.borrow,
                 scope: opening.scope,
                 share: opening.root_share,
                 support,
@@ -8726,7 +8726,7 @@ mod borrow_partition_tests {
         let occurrence = bound.occurrences_for_fact(&ResourceFact::view_memory(read.clone()))[0];
         let removed = bound
             .clone()
-            .without_bound_view_occurrence(occurrence, bound.loan_dependency(occurrence).unwrap())
+            .without_bound_view_occurrence(occurrence, bound.borrow_dependency(occurrence).unwrap())
             .unwrap()
             .unchecked_with_fact(ResourceFact::view_memory(read.clone()));
         assert!(!removed.proves_borrow_partition_separate(&write, &read));
@@ -8736,9 +8736,9 @@ mod borrow_partition_tests {
     fn borrow_partition_binding_journal_tracks_branches_and_ignores_repeated_binding() {
         let (bare, bound, _, read) = resources();
         let occurrence = bound.occurrences_for_fact(&ResourceFact::view_memory(read))[0];
-        let binding = bound.loan_dependency(occurrence).unwrap().clone();
+        let binding = bound.borrow_dependency(occurrence).unwrap().clone();
         let initial =
-            crate::kernel::loans::LoanViewBindings::from_state(bare.loan_dependency_state());
+            crate::kernel::borrows::BorrowBindings::from_state(bare.borrow_dependency_state());
         let left = initial.with_inserted(occurrence, binding.clone());
         let right = initial.with_inserted(occurrence, binding.clone());
         // Equal-length branches have distinct updates; neither is a prefix.

@@ -174,7 +174,7 @@ authorities.
   values.
 - `mdtests/pointer_params_may_alias_without_separate.md`: aliasing is allowed by
   default.
-- `mdtests/pointer_params_separate_by_transfer_and_loan.md`: transferring one
+- `mdtests/pointer_params_separate_by_transfer_and_borrow.md`: transferring one
   parameter and lending the other separates them.
 - `mdtests/a_views_clause_is_separate_from_an_owns_clause.md`: a contract's
   `views` and `owns` clauses denote disjoint memory.

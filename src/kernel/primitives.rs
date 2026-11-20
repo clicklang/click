@@ -10848,14 +10848,14 @@ pub struct ExecutionState {
     pub(super) resources: ResourceContext,
     /// Active stable-view authority. `None` is the canonical empty ledger so
     /// independently constructed states retain ordinary structural equality.
-    pub(super) loan_ledger: Option<super::loans::BorrowLedger>,
+    pub(super) borrow_ledger: Option<super::borrows::BorrowLedger>,
     /// Holder identity for the authority carried by this state. Keeping it
     /// beside the immutable ledger lets nested candidate calls reuse the
     /// caller's participant when lending a view.
-    pub(super) loan_participant: Option<super::loans::LoanParticipantId>,
+    pub(super) borrow_participant: Option<super::borrows::BorrowParticipantId>,
     /// Exact resource-occurrence bindings for live borrowed views. This map
     /// is carried with checked state so nested calls can reborrow by identity.
-    pub(super) loan_view_bindings: super::loans::LoanViewBindings,
+    pub(super) borrow_bindings: super::borrows::BorrowBindings,
     /// Live child completion rights travel with the C path through ordinary
     /// statements. `None` is the canonical state before any thread operation.
     pub(super) thread_ledger: Option<super::threads::ThreadLedger>,
@@ -11153,7 +11153,7 @@ pub struct ResourceContext {
     /// resource algebra's support graph: equal resource terms can have
     /// different borrow origins, and a rewrite must preserve the opaque
     /// occurrence identity rather than rediscovering it from the term.
-    pub(super) loan_dependencies: std::sync::Arc<crate::kernel::loans::LoanViewBindingsState>,
+    pub(super) borrow_dependencies: std::sync::Arc<crate::kernel::borrows::BorrowBindingsState>,
     pub(super) structural_witnesses:
         Option<std::sync::Arc<crate::kernel::termination::resource_descent::ResourceWitnesses>>,
 }
@@ -11165,7 +11165,7 @@ impl Clone for ResourceContext {
             storage: self.storage.clone(),
             framed_origins: self.framed_origins.clone(),
             observable_projection: self.observable_projection.clone(),
-            loan_dependencies: self.loan_dependencies.clone(),
+            borrow_dependencies: self.borrow_dependencies.clone(),
             structural_witnesses: self.structural_witnesses.clone(),
             memory_equalities: std::sync::Mutex::new(
                 self.memory_equalities
@@ -11213,20 +11213,20 @@ impl ResourceContext {
             && self.storage.supported_by.is_empty()
             && self.storage.support_occurrence_by_projection.is_empty()
             && self.storage.expansions_by_support_entry.is_empty()
-            && self.loan_dependencies.map.is_empty()
+            && self.borrow_dependencies.map.is_empty()
     }
 
     /// Return a live dependency for an exact occurrence.  The occurrence
     /// lookup is checked against this context so stale sidecar entries can
     /// never authorize a rewritten or removed resource.
-    pub(crate) fn loan_dependency(
+    pub(crate) fn borrow_dependency(
         &self,
         occurrence: ResourceOccurrenceId,
-    ) -> Option<&crate::kernel::loans::LoanViewBinding> {
+    ) -> Option<&crate::kernel::borrows::BorrowBinding> {
         self.storage
             .entry_by_occurrence
             .contains_key(&occurrence)
-            .then(|| self.loan_dependencies.map.get(&occurrence))
+            .then(|| self.borrow_dependencies.map.get(&occurrence))
             .flatten()
     }
 
@@ -11234,20 +11234,20 @@ impl ResourceContext {
     /// Callers must identify the destination occurrence returned by the
     /// resource insertion operation; value equality is intentionally not a
     /// valid substitute for that identity.
-    pub(crate) fn with_loan_dependency(
+    pub(crate) fn with_borrow_dependency(
         mut self,
         occurrence: ResourceOccurrenceId,
-        dependency: crate::kernel::loans::LoanViewBinding,
+        dependency: crate::kernel::borrows::BorrowBinding,
     ) -> Self {
         if self.storage.entry_by_occurrence.contains_key(&occurrence) {
-            if let Some(existing) = self.loan_dependencies.map.get(&occurrence) {
+            if let Some(existing) = self.borrow_dependencies.map.get(&occurrence) {
                 if existing != &dependency {
                     return self;
                 }
                 return self;
             }
-            self.loan_dependencies = self.loan_dependencies.updated(
-                self.loan_dependencies
+            self.borrow_dependencies = self.borrow_dependencies.updated(
+                self.borrow_dependencies
                     .map
                     .with_inserted(occurrence, dependency),
                 [occurrence],
@@ -11256,45 +11256,45 @@ impl ResourceContext {
         self
     }
 
-    pub(crate) fn loan_dependency_state(
+    pub(crate) fn borrow_dependency_state(
         &self,
-    ) -> std::sync::Arc<crate::kernel::loans::LoanViewBindingsState> {
-        self.loan_dependencies.clone()
+    ) -> std::sync::Arc<crate::kernel::borrows::BorrowBindingsState> {
+        self.borrow_dependencies.clone()
     }
 
-    pub(crate) fn with_loan_dependency_state(
+    pub(crate) fn with_borrow_dependency_state(
         mut self,
-        state: std::sync::Arc<crate::kernel::loans::LoanViewBindingsState>,
+        state: std::sync::Arc<crate::kernel::borrows::BorrowBindingsState>,
     ) -> Self {
-        self.loan_dependencies = state;
+        self.borrow_dependencies = state;
         self
     }
 
-    pub(crate) fn live_loan_dependencies(
+    pub(crate) fn live_borrow_dependencies(
         &self,
-    ) -> impl Iterator<Item = (ResourceOccurrenceId, &crate::kernel::loans::LoanViewBinding)> {
+    ) -> impl Iterator<Item = (ResourceOccurrenceId, &crate::kernel::borrows::BorrowBinding)> {
         // A filtered observation shares the current borrow state, which may
         // also contain excluded occurrences. Query the smaller side of the
         // intersection; never walk all excluded borrows for a small frame.
-        let by_entries = self.storage.facts.len() < self.loan_dependencies.map.len();
+        let by_entries = self.storage.facts.len() < self.borrow_dependencies.map.len();
         let mut selected = Vec::new();
         if by_entries {
             for (_, occurrence) in self.storage.occurrence_by_entry.iter() {
                 crate::instrumentation::record_deterministic_work(1);
-                if let Some(binding) = self.loan_dependencies.map.get(occurrence) {
+                if let Some(binding) = self.borrow_dependencies.map.get(occurrence) {
                     selected.push((*occurrence, binding));
                 }
             }
             // Preserve the original occurrence ordering for every caller.
             selected.sort_unstable_by_key(|(occurrence, _)| *occurrence);
         }
-        self.loan_dependencies
+        self.borrow_dependencies
             .map
             .iter()
             .take(if by_entries {
                 0
             } else {
-                self.loan_dependencies.map.len()
+                self.borrow_dependencies.map.len()
             })
             .filter_map(|(occurrence, binding)| {
                 crate::instrumentation::record_deterministic_work(1);
@@ -11639,7 +11639,7 @@ impl std::fmt::Debug for ResourceContext {
 impl PartialEq for ResourceContext {
     fn eq(&self, other: &Self) -> bool {
         if std::sync::Arc::ptr_eq(&self.storage, &other.storage)
-            && std::sync::Arc::ptr_eq(&self.loan_dependencies, &other.loan_dependencies)
+            && std::sync::Arc::ptr_eq(&self.borrow_dependencies, &other.borrow_dependencies)
         {
             return true;
         }
@@ -11650,7 +11650,7 @@ impl PartialEq for ResourceContext {
             && self.storage.supported_by == other.storage.supported_by
             && compare_support_graph(self, other) == std::cmp::Ordering::Equal
             && self.storage.expansions_by_support_entry == other.storage.expansions_by_support_entry
-            && compare_loan_dependencies(self, other) == std::cmp::Ordering::Equal
+            && compare_borrow_dependencies(self, other) == std::cmp::Ordering::Equal
     }
 }
 
@@ -11680,9 +11680,9 @@ impl std::hash::Hash for ResourceContext {
                 entry.hash(state);
             }
         }
-        // Hash the same structure-derived keys `compare_loan_dependencies`
+        // Hash the same structure-derived keys `compare_borrow_dependencies`
         // orders by, so two contexts that compare equal never hash apart.
-        for dependency in stable_loan_dependencies(self) {
+        for dependency in stable_borrow_dependencies(self) {
             dependency.hash(state);
         }
     }
@@ -11698,7 +11698,7 @@ impl Ord for ResourceContext {
     /// consistent with `Eq` and deterministic.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if std::sync::Arc::ptr_eq(&self.storage, &other.storage)
-            && std::sync::Arc::ptr_eq(&self.loan_dependencies, &other.loan_dependencies)
+            && std::sync::Arc::ptr_eq(&self.borrow_dependencies, &other.borrow_dependencies)
         {
             return std::cmp::Ordering::Equal;
         }
@@ -11727,7 +11727,7 @@ impl ResourceContext {
             })
             .then_with(|| compare_support_graph(self, other))
             .then_with(|| compare_cached_expansions(self, other))
-            .then_with(|| compare_loan_dependencies(self, other))
+            .then_with(|| compare_borrow_dependencies(self, other))
     }
 }
 
@@ -11757,7 +11757,7 @@ fn compare_cached_expansions(
 /// One live borrow dependency, reduced to keys that do not name a process-local
 /// counter.
 ///
-/// `ResourceOccurrenceId`, `LoanId`, `LoanScopeId`, and `LoanShareId` are all
+/// `ResourceOccurrenceId`, `BorrowId`, `BorrowScopeId`, and `BorrowShareId` are all
 /// fresh arena/ordinal pairs. Comparing them directly makes two structurally
 /// identical contexts unequal whenever their bindings came from different
 /// ledgers or were allocated in a different order, which silently costs loop
@@ -11768,14 +11768,14 @@ fn compare_cached_expansions(
 /// share a borrow, scope, or share without naming any of them.
 ///
 /// This changes only how dependencies compare. Their meaning, and every
-/// authority check that reads `loan_dependency`, still uses the exact
+/// authority check that reads `borrow_dependency`, still uses the exact
 /// identities.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-struct StableLoanDependency<'a> {
+struct StableBorrowDependency<'a> {
     entry: ResourceEntryId,
     viewed: &'a ResourceFact,
-    support: StableLoanSupport,
-    loan: usize,
+    support: StableBorrowSupport,
+    borrow: usize,
     scope: usize,
     share: usize,
     hold: Option<usize>,
@@ -11783,7 +11783,7 @@ struct StableLoanDependency<'a> {
 
 /// Where a dependency's supporting occurrence lives, without naming its arena.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum StableLoanSupport {
+enum StableBorrowSupport {
     /// The support is an entry of this context; its stable ordinal names it.
     Entry(ResourceEntryId),
     /// The support is not an entry here, so only the position of its first
@@ -11801,9 +11801,9 @@ fn first_appearance<K: Ord>(seen: &mut std::collections::BTreeMap<K, usize>, key
 /// The context's live borrow dependencies in a canonical, structure-derived
 /// order. Ordering by the stable entry ordinal is a total order because
 /// `entry_by_occurrence` maps distinct occurrences to distinct entries.
-fn stable_loan_dependencies(context: &ResourceContext) -> Vec<StableLoanDependency<'_>> {
+fn stable_borrow_dependencies(context: &ResourceContext) -> Vec<StableBorrowDependency<'_>> {
     let mut ordered = context
-        .live_loan_dependencies()
+        .live_borrow_dependencies()
         .filter_map(|(occurrence, binding)| {
             context
                 .storage
@@ -11813,7 +11813,7 @@ fn stable_loan_dependencies(context: &ResourceContext) -> Vec<StableLoanDependen
         })
         .collect::<Vec<_>>();
     ordered.sort_unstable_by_key(|(entry, _)| *entry);
-    let mut loans = std::collections::BTreeMap::new();
+    let mut borrows = std::collections::BTreeMap::new();
     let mut scopes = std::collections::BTreeMap::new();
     let mut shares = std::collections::BTreeMap::new();
     let mut supports = std::collections::BTreeMap::new();
@@ -11821,21 +11821,21 @@ fn stable_loan_dependencies(context: &ResourceContext) -> Vec<StableLoanDependen
     ordered
         .into_iter()
         .map(|(entry, binding)| {
-            let loan = first_appearance(&mut loans, binding.loan);
+            let borrow = first_appearance(&mut borrows, binding.borrow);
             let scope = first_appearance(&mut scopes, binding.scope);
             let share = first_appearance(&mut shares, binding.share);
             let hold = binding.hold.map(|hold| first_appearance(&mut holds, hold));
             let support = match context.storage.entry_by_occurrence.get(&binding.support) {
-                Some(entry) => StableLoanSupport::Entry(*entry),
+                Some(entry) => StableBorrowSupport::Entry(*entry),
                 None => {
-                    StableLoanSupport::Position(first_appearance(&mut supports, binding.support))
+                    StableBorrowSupport::Position(first_appearance(&mut supports, binding.support))
                 }
             };
-            StableLoanDependency {
+            StableBorrowDependency {
                 entry,
                 viewed: &binding.viewed,
                 support,
-                loan,
+                borrow,
                 scope,
                 share,
                 hold,
@@ -11844,11 +11844,11 @@ fn stable_loan_dependencies(context: &ResourceContext) -> Vec<StableLoanDependen
         .collect()
 }
 
-fn compare_loan_dependencies(
+fn compare_borrow_dependencies(
     left: &ResourceContext,
     right: &ResourceContext,
 ) -> std::cmp::Ordering {
-    stable_loan_dependencies(left).cmp(&stable_loan_dependencies(right))
+    stable_borrow_dependencies(left).cmp(&stable_borrow_dependencies(right))
 }
 
 impl PartialOrd for ResourceContext {
@@ -12056,7 +12056,7 @@ impl ConditionalMutexGuard {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MutexUseIdentity {
     pub(in crate::kernel) protected: Option<super::ResourceDescription>,
-    pub(in crate::kernel) binding: Option<super::loans::MutexUseBinding>,
+    pub(in crate::kernel) binding: Option<super::borrows::MutexUseBinding>,
     pub(in crate::kernel) initialization: Option<u64>,
     pub(in crate::kernel) mutex: Address,
 }
@@ -16156,7 +16156,7 @@ impl CheckedFunctionExecution {
             if left.obligations != right.obligations {
                 return Err(format!("path {index}: the obligations differ"));
             }
-            if left.loan_evidence != right.loan_evidence {
+            if left.borrow_evidence != right.borrow_evidence {
                 return Err(format!("path {index}: the borrow evidence differs"));
             }
             same_proposition(left.theorem.proposition(), right.theorem.proposition())
@@ -16184,7 +16184,7 @@ pub struct SymbolicExecutionPath {
     pub(super) effect_facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) theorem: Theorem,
-    pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
+    pub(super) borrow_evidence: super::borrows::CheckedBorrowCallEvidenceSequence,
 }
 
 // Retaining a context changes neither a path's evidence nor its identity.
@@ -16198,7 +16198,7 @@ impl PartialEq for SymbolicExecutionPath {
             && self.effect_facts == other.effect_facts
             && self.obligations == other.obligations
             && self.theorem == other.theorem
-            && self.loan_evidence == other.loan_evidence
+            && self.borrow_evidence == other.borrow_evidence
     }
 }
 
@@ -16254,7 +16254,7 @@ pub(super) struct FunctionExecutionCandidateData {
     /// retained. Derived only from the stored facts; carries no authority.
     pub(super) effects_public_first: bool,
     pub(super) obligations: Arc<Vec<ProofObligation>>,
-    pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
+    pub(super) borrow_evidence: super::borrows::CheckedBorrowCallEvidenceSequence,
 }
 
 impl PartialEq for FunctionExecutionCandidateData {
@@ -16264,7 +16264,7 @@ impl PartialEq for FunctionExecutionCandidateData {
             && self.effect_facts == other.effect_facts
             && self.effects_public_first == other.effects_public_first
             && self.obligations == other.obligations
-            && self.loan_evidence == other.loan_evidence
+            && self.borrow_evidence == other.borrow_evidence
     }
 }
 impl Eq for FunctionExecutionCandidateData {}
@@ -16329,7 +16329,7 @@ pub(super) struct StatementExecutionPath {
     pub(super) outcome: StatementOutcome,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
-    pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
+    pub(super) borrow_evidence: super::borrows::CheckedBorrowCallEvidenceSequence,
 }
 
 impl StatementExecutionPath {
@@ -16359,7 +16359,7 @@ impl StatementExecutionPath {
             outcome,
             facts,
             obligations,
-            loan_evidence: super::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: super::borrows::empty_checked_borrow_evidence_sequence(),
         }
     }
 }
@@ -16369,7 +16369,7 @@ pub(super) struct FunctionPath {
     pub(super) outcome: FunctionOutcome,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
-    pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
+    pub(super) borrow_evidence: super::borrows::CheckedBorrowCallEvidenceSequence,
     /// The callee's by-value aggregate parameters as a contract call bound
     /// them; `None` for every other path.
     pub(super) call_parameters: Option<CallParameters>,
@@ -16428,7 +16428,7 @@ impl FunctionPath {
             outcome,
             facts,
             obligations,
-            loan_evidence: super::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: super::borrows::empty_checked_borrow_evidence_sequence(),
             call_parameters: None,
         }
     }

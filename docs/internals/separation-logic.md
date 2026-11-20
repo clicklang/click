@@ -462,7 +462,7 @@ The code maps onto this model as follows:
   pair normalization, and the owner observation core.
 - `MemoryResourceAlgebra` implements range coverage, splitting, joining,
   exclusive writes, and the viewed descriptions a lend records.
-- `src/kernel/loans.rs` is the borrow ledger. It holds the scopes, escrows,
+- `src/kernel/borrows.rs` is the borrow ledger. It holds the scopes, escrows,
   access shares, recovery rights, and dependencies that make a view a borrow,
   and every write, free, havoc, and branch join consults it.
 - `TokenResourceAlgebra` implements strict exact-match tokens.

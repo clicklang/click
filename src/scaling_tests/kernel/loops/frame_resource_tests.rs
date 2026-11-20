@@ -59,7 +59,7 @@ fn a_loop_frame_normalizes_its_retained_views_once() {
 /// as its real checking caller, without charging fixture/index construction.
 #[test]
 fn loop_binding_carryover_ignores_ambient_observations() {
-    use crate::kernel::loans::{BorrowLedger, LoanViewBinding, LoanViewBindings};
+    use crate::kernel::borrows::{BorrowBinding, BorrowBindings, BorrowLedger};
 
     let mut curves = Vec::new();
     for case in ["early", "late", "unbound", "retained_metadata"] {
@@ -99,15 +99,15 @@ fn loop_binding_carryover_ignores_ambient_observations() {
                 .borrowed_contract_input(holder, selected, view.clone(), None)
                 .unwrap();
             let ledger = ledger.apply(&opening.transition).unwrap();
-            let binding = LoanViewBinding {
-                loan: opening.loan,
+            let binding = BorrowBinding {
+                borrow: opening.borrow,
                 scope: opening.scope,
                 share: opening.root_share,
                 support: selected,
                 viewed: view.clone(),
                 hold: None,
             };
-            let mut bindings = LoanViewBindings::default();
+            let mut bindings = BorrowBindings::default();
             if case != "unbound" {
                 bindings = bindings.with_inserted(selected, binding.clone());
             }
@@ -120,9 +120,9 @@ fn loop_binding_carryover_ignores_ambient_observations() {
             }
             let entry = ExecutionState::new()
                 .with_resource_context(resources)
-                .with_loan_ledger(Some(ledger))
-                .with_loan_participant(Some(holder))
-                .with_loan_view_bindings(bindings.clone());
+                .with_borrow_ledger(Some(ledger))
+                .with_borrow_participant(Some(holder))
+                .with_borrow_bindings(bindings.clone());
             entry
                 .resources()
                 .synchronize_memory_equalities(&assumptions);
@@ -142,7 +142,7 @@ fn loop_binding_carryover_ignores_ambient_observations() {
                             &body_occurrences,
                             &assumptions,
                         );
-                        LoanViewBindings::from_state(destination.loan_dependency_state())
+                        BorrowBindings::from_state(destination.borrow_dependency_state())
                     })
                 });
                 assert_eq!(
@@ -173,7 +173,7 @@ fn loop_binding_carryover_ignores_ambient_observations() {
                     "one declared body view, independent of frame size"
                 );
                 assert_eq!(
-                    body.loan_view_bindings().get(&held[0]),
+                    body.borrow_bindings().get(&held[0]),
                     (case != "unbound").then_some(&binding)
                 );
                 assert_ne!(
@@ -181,7 +181,7 @@ fn loop_binding_carryover_ignores_ambient_observations() {
                     "loop construction allocated the body occurrence"
                 );
                 assert_eq!(
-                    entry.loan_view_bindings(),
+                    entry.borrow_bindings(),
                     &bindings,
                     "the entry branch is unchanged"
                 );

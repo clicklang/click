@@ -141,8 +141,8 @@ The search inventory includes these kernel bridges:
 
 | Existing entry point | `ProofSearch` implementation | Ambient work to resolve |
 | --- | --- | --- |
-| `memory_range_aliases` | `loan_aliases` | Pointer aliases used by loan queries. |
-| `permits_memory_access_with_assumptions` | `loan_access` | Legacy write check exercised by tests. |
+| `memory_range_aliases` | `borrow_aliases` | Pointer aliases used by borrow queries. |
+| `permits_memory_access_with_assumptions` | `borrow_access` | Legacy write check exercised by tests. |
 | `owned_validity_candidates` | `ownership_validity_candidates` | Candidate owners for composition validity. |
 | `call_kept_ownership` | `call_frame` | Residual caller resources and composite families. |
 

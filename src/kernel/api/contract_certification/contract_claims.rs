@@ -343,7 +343,7 @@ mod cached_read_completion_tests {
                 arguments: vec![],
                 outcome,
             }),
-            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         };
         let theorem = Theorem::new(
             Proposition::ProgramFunctionPartiallySatisfiesSpecification {
@@ -3326,7 +3326,7 @@ mod checked_proposition_index_tests {
                 &[],
             )),
 
-            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         };
         let (_, _, _, entry_assumptions) =
             super::super::certified_function_path_parts(&function, &path)

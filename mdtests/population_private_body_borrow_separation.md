@@ -1,6 +1,6 @@
 # A private body can open with separated stack and external borrows
 
-```c filename=population_private_body_loan_separation.c
+```c filename=population_private_body_borrow_separation.c
 #include <pthread.h>
 #include <stddef.h>
 void *reader(void *p) { (void)p; return NULL; }
@@ -18,7 +18,7 @@ int update(int *pool, int *p, int *q) {
 target "x86_64-unknown-linux-gnu";
 runtime "modeled-pthread";
 authorized resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
-verifying "population_private_body_loan_separation.c";
+verifying "population_private_body_borrow_separation.c";
 void *reader(void *p) { views (p as (int32 *))[0..1]; }
 int32 update(int32 *pool, int32 *p, int32 *q) {
     owns slot(pool, p);

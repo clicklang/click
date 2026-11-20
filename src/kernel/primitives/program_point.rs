@@ -1824,7 +1824,7 @@ mod tests {
         let memory = head
             .memory()
             .clone()
-            .with_loop_memory_havoc_preserving_loans(
+            .with_loop_memory_havoc_preserving_borrows(
                 Variable(38_133),
                 &std::collections::BTreeSet::new(),
                 Some(&[range]),

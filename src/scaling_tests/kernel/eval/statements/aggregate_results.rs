@@ -102,10 +102,10 @@ fn opaque_exception_creation_ignores_unrelated_memory_and_types() {
     assert!(costs.iter().all(|work| *work == costs[0]), "{costs:?}");
 }
 
-use crate::kernel::loans::BorrowLedger;
+use crate::kernel::borrows::BorrowLedger;
 
 #[test]
-fn aggregate_copy_builds_one_loan_obligation_without_visiting_aliases_or_loans() {
+fn aggregate_copy_builds_one_borrow_obligation_without_visiting_aliases_or_borrows() {
     let _session = VerificationSession::enter();
     let (state, source, layout) = fixture(2);
     let target = SymbolicMemory::local_pointer("destination");
@@ -154,7 +154,7 @@ fn aggregate_copy_builds_one_loan_obligation_without_visiting_aliases_or_loans()
                 last = Some(opening);
             }
             let copy = |ledger: &BorrowLedger| {
-                let state = state.clone().with_loan_ledger(Some(ledger.clone()));
+                let state = state.clone().with_borrow_ledger(Some(ledger.clone()));
                 let mut paths = execute_program_aggregate_copy_paths(
                     &state,
                     &target_expression,

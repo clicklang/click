@@ -1,8 +1,8 @@
 use super::*;
-use crate::kernel::loans::BorrowLedger;
+use crate::kernel::borrows::BorrowLedger;
 
 #[test]
-fn automatic_frame_retirement_checks_its_live_loans() {
+fn automatic_frame_retirement_checks_its_live_borrows() {
     let function = program_function(
         ProgramType::Int32Pointer,
         "scope",
@@ -29,18 +29,23 @@ fn automatic_frame_retirement_checks_its_live_loans() {
     let borrower = ledger.fresh_participant().unwrap();
     let opening = ledger.lend(lender, borrower, support, backing).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let loaned = state.clone().with_loan_ledger(Some(ledger.clone()));
+    let with_active_borrow = state.clone().with_borrow_ledger(Some(ledger.clone()));
     let caller = ExecutionState::new();
     let returned = ProgramValue::typed_pointer(slot.clone(), ProgramType::Int32Pointer).into();
     for selected in [
-        end_inline_frame_automatic_lifetimes(&loaned),
-        end_function_body_automatic_lifetimes(&loaned, &function, caller.memory(), None),
-        function_exit_memory(&caller, &loaned, &returned, &function),
+        end_inline_frame_automatic_lifetimes(&with_active_borrow),
+        end_function_body_automatic_lifetimes(
+            &with_active_borrow,
+            &function,
+            caller.memory(),
+            None,
+        ),
+        function_exit_memory(&caller, &with_active_borrow, &returned, &function),
     ] {
         assert!(matches!(selected, Err(RuntimeError::LoanRefusal(_))));
     }
     assert_eq!(
-        end_function_body_automatic_lifetimes(&loaned, &function, &memory, None),
+        end_function_body_automatic_lifetimes(&with_active_borrow, &function, &memory, None),
         Ok(memory),
     );
     let returned_share = ledger
@@ -50,7 +55,7 @@ fn automatic_frame_retirement_checks_its_live_loans() {
     let ended = closing
         .apply(&closing.end(opening.scope, lender).unwrap())
         .unwrap();
-    let recovered = state.with_loan_ledger(Some(ended));
+    let recovered = state.with_borrow_ledger(Some(ended));
     assert!(
         !end_inline_frame_automatic_lifetimes(&recovered)
             .unwrap()

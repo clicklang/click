@@ -21,7 +21,7 @@ fn exit(restated: Vec<Proposition>) -> LoopExitFacts {
         restated,
         successor_equations: Vec::new(),
         obligations: Vec::new(),
-        loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
     }
 }
 
@@ -41,7 +41,7 @@ fn merged_exit_equations_are_available_without_historical_guards() {
         restatement.restate(
             vec![ExecutionPureFact::new(fact(1, guard))].into(),
             Vec::new(),
-            crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
             false,
         )
     };
@@ -70,7 +70,7 @@ fn merged_exit_equations_are_available_without_historical_guards() {
     let unknown = LoopExitFacts::unabstracted(
         vec![ExecutionPureFact::new(fact(1, 2))].into(),
         Vec::new(),
-        crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
     );
     let (facts, _, _) =
         join_loop_exit_paths(vec![make(7, 0), unknown], LoopExitFactsMode::Legacy).unwrap();
@@ -261,7 +261,7 @@ fn algebraic_exit_pins_drop_private_aliases_but_keep_constructors() {
     let alias_exit = aliases.restate(
         Vec::new().into(),
         Vec::new(),
-        crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         false,
     );
     assert!(alias_exit.successor_equations.is_empty());
@@ -280,7 +280,7 @@ fn algebraic_exit_pins_drop_private_aliases_but_keep_constructors() {
     let shared_exit = shared.restate(
         Vec::new().into(),
         Vec::new(),
-        crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         false,
     );
     assert_eq!(shared_exit.successor_equations, vec![expected_shared]);
@@ -300,7 +300,7 @@ fn algebraic_exit_pins_drop_private_aliases_but_keep_constructors() {
     let concrete_exit = concrete.restate(
         Vec::new().into(),
         Vec::new(),
-        crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         false,
     );
     assert_eq!(concrete_exit.successor_equations, expected);

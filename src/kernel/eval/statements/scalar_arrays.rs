@@ -140,7 +140,7 @@ pub(super) fn execute(
             } else if fresh && target.base.is_local_block() {
                 memory_write_storage_outcome(state, target, bytes, &selected).or_else(|| {
                     state
-                        .automatic_storage_loan_refusal(&target.base)
+                        .automatic_storage_borrow_refusal(&target.base)
                         .map(StatementOutcome::RuntimeError)
                 })
             } else {

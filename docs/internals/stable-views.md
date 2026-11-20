@@ -76,7 +76,7 @@ frame present.
 
 ## State
 
-The borrow ledger (`src/kernel/loans.rs`) lives in the checked state root
+The borrow ledger (`src/kernel/borrows.rs`) lives in the checked state root
 beside the resource context and is shared by ordinary evaluation, modular
 calls, proof execution, and certification. It is persistent, indexed, and
 opaque: every transition produces evidence bound to the exact predecessor
@@ -458,7 +458,7 @@ for tests and the remaining local-reference lifetime boundary.
 
 ## Model-only extensions
 
-`src/kernel/tests/loan_model_tests.rs` is an executable model with a
+`src/kernel/tests/borrow_model_tests.rs` is an executable model with a
 bounded search that checks, beside the production rules, two-context
 partition and transfer, shared readers across contexts, shared and exclusive
 reborrows, a returned field borrow, a mutex handle with an invariant-owned
@@ -481,18 +481,18 @@ between compiler-checked borrow legality and Click's functional claims.
 | Shares and scopes | `splitting_and_joining_require_exact_linear_siblings`, `shared_reader_recovery_rejects_wrong_sibling_reuse_and_stale_branch`, `nested_reborrow_must_rejoin_each_parent_before_scope_end`, `an_old_descriptor_is_refused_after_a_fresh_scope_over_the_same_resource`, `checked_call_evidence_rejects_stale_or_swapped_recovery` |
 | Aliased views and nested readers | `candidate_joint_planner_reuses_one_escrow_for_two_aliases`, `candidate_rejects_new_output_view`, `mdtests/stable_view_nested_reader.md` |
 | Partial borrows and widths | `mdtests/stable_view_partial_borrow.md`, `bytewise_overlap_is_decided_across_mismatched_element_widths`, `memory_entailment_relates_two_spellings_of_one_byte_footprint` |
-| Free and realloc under a borrow | `heap_free_requires_separation_from_an_interior_loan_until_it_ends`, `realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation`, `call_retirement_requires_separation_from_its_own_loan` |
-| Local borrows, bounds, and lifetime | `candidate_local_array_view_uses_a_checked_loan_and_recovers`, `thread_local_view_blocks_writes_and_all_scope_exits_until_join`, `automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement`, `local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow`, `mdtests/stable_view_local_job.md`, `local_job_views_expand_and_reverify_without_ownership_annotations` |
-| Locals and empty views | `active_stable_loan_requires_separation_for_local_assignment_and_alias_store`, `mdtests/direct_local_write_separation.md`, `candidate_local_array_view_out_of_bounds_is_refused`, `mdtests/empty_view_authorizes_nothing.md` |
+| Free and realloc under a borrow | `heap_free_requires_separation_from_an_interior_borrow_until_it_ends`, `realloc_failure_preserves_a_borrow_and_success_requires_call_entry_separation`, `call_retirement_requires_separation_from_its_own_borrow` |
+| Local borrows, bounds, and lifetime | `candidate_local_array_view_uses_a_checked_borrow_and_recovers`, `thread_local_view_blocks_writes_and_all_scope_exits_until_join`, `automatic_lifetime_event_rejects_active_local_borrow_and_forged_retirement`, `local_views_preserve_aliases_check_bounds_and_mint_no_owned_escrow`, `mdtests/stable_view_local_job.md`, `local_job_views_expand_and_reverify_without_ownership_annotations` |
+| Locals and empty views | `active_stable_borrow_requires_separation_for_local_assignment_and_alias_store`, `mdtests/direct_local_write_separation.md`, `candidate_local_array_view_out_of_bounds_is_refused`, `mdtests/empty_view_authorizes_nothing.md` |
 | Entry footprint | `field_derived_view_does_not_retarget_after_a_pointer_write` |
-| Composites | `composite_loan_protects_primitive_frontier_and_restores_head_once`, `projection_extends_permitted_descriptions_without_a_transition`, `candidate_composite_with_unstable_facts_is_refused`, `candidate_composite_view_is_backed_by_a_covering_owned_composite`, `mdtests/produced_composite_body_overlapping_a_held_owner.md` |
+| Composites | `composite_borrow_protects_primitive_frontier_and_restores_head_once`, `projection_extends_permitted_descriptions_without_a_transition`, `candidate_composite_with_unstable_facts_is_refused`, `candidate_composite_view_is_backed_by_a_covering_owned_composite`, `mdtests/produced_composite_body_overlapping_a_held_owner.md` |
 | Explicit frame evidence | `frame_queries_ignore_folded_compositions_until_explicitly_opened`, `mdtests/call_keeps_an_uncached_flat_field_beside_folded_state.md` |
 | Open and close | `mdtests/rb_augment_callbacks_helper_mutates_body_stepwise.md` (a viewed open closes the same way from a step as from `step_until(function.exit)`), `execution_open_scope_owns_entry_body_and_close_transactionally` |
-| Escaping borrows | `a_hold_blocks_ending_the_scope_and_changes_identity`, `escaping_borrow_keeps_the_loan_open_until_the_composite_is_consumed`, `consuming_the_composite_recovers_the_owner`, `mdtests/borrowing_composite_survives_an_owning_call.md`, `examples/input-cursor` |
+| Escaping borrows | `a_hold_blocks_ending_the_scope_and_changes_identity`, `escaping_borrow_keeps_the_borrow_open_until_the_composite_is_consumed`, `consuming_the_composite_recovers_the_owner`, `mdtests/borrowing_composite_survives_an_owning_call.md`, `examples/input-cursor` |
 | Effects | `candidate_rejects_mutable_effect_overlapping_a_composite_view_piece`, `candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence` |
 | Callbacks and refinement | `stable_view_refinement_uses_checked_variance_for_subranges`, `mdtests/rb_augment_callbacks_helper_owns_without_separate.md` |
-| Loops and branches | `loop_havoc_requires_a_checked_set_disjoint_from_active_loans`, `loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root`, `abstract_join_rejects_a_loan_ended_on_only_one_arm` |
+| Loops and branches | `loop_havoc_requires_a_checked_set_disjoint_from_active_borrows`, `loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root`, `abstract_join_rejects_a_borrow_ended_on_only_one_arm` |
 | Suspended workers | `src/kernel/tests/thread_transition_tests.rs` (both join orders, linear completion rights, refusal paths, scoped termination, withheld guarantees, backing lifetime, and four-size recovery scaling) |
 | Evidence | `hostile_transition_payload_is_rechecked`, `transitions_are_bound_to_their_exact_predecessor`, `session_rejects_a_stale_identity_before_reverification` |
-| Scaling | `local_view_work_tracks_the_explicit_delta_not_ambient_local_storage`, the four-size curves in `src/scaling_tests/kernel/loans/`, `interface_binding_inheritance_visits_only_claimed_bindings`, `loop_head_havoc_work_over_cells_and_symbolic_loans` |
-| Model | the `r27_`, `r28_`, `r29_`, and `r30_` tests in `loan_model_tests.rs` |
+| Scaling | `local_view_work_tracks_the_explicit_delta_not_ambient_local_storage`, the four-size curves in `src/scaling_tests/kernel/borrows/`, `interface_binding_inheritance_visits_only_claimed_bindings`, `loop_head_havoc_work_over_cells_and_symbolic_borrows` |
+| Model | the `r27_`, `r28_`, `r29_`, and `r30_` tests in `borrow_model_tests.rs` |

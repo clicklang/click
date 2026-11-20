@@ -3119,7 +3119,7 @@ fn install_borrowed_contract_inputs(
     .map_err(|diagnostic| {
         ClickError::new(format!(
             "`{proof_label}` could not establish stable authority for a contract input view: {}",
-            crate::surface::diagnostics::describe_loan_refusal(&diagnostic, parameter_binding,)
+            crate::surface::diagnostics::describe_borrow_refusal(&diagnostic, parameter_binding,)
         ))
     })
 }

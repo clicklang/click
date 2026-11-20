@@ -306,7 +306,7 @@ grows with alias classes. Existing guard, range, and hole controls still apply. 
 iterated-source buckets and the explicit hole list remain separate axes.
 
 The other callers need separate transfer derivations. Call recovery in
-`functions.rs` and `loans.rs` must establish that all outputs coexist with the
+`functions.rs` and `borrows.rs` must establish that all outputs coexist with the
 withheld escrow before restoring it. A body-local valid output is insufficient.
 Worker `join` in `threads.rs` composes into today's parent frame, which may
 contain another child's outputs; the entry snapshot alone is not its successor.
@@ -568,7 +568,7 @@ Borrow-preserving cache havoc uses a maintained interval index keyed by exact
 coordinate origins, including symbolic pointer expressions. Unknown relative
 bounds forget the cached value. Writes require independent separation evidence. Interval queries
 ask whether a bucket is nonempty, without enumerating the borrows it contains.
-`loop_head_havoc_work_over_cells_and_symbolic_loans` enforces near-linear work
+`loop_head_havoc_work_over_cells_and_symbolic_borrows` enforces near-linear work
 as cached cells and unrelated symbolic borrows grow together.
 
 Stores emit separation against the retained active-borrow footprint. Explicit

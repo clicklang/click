@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::VerificationSession;
-use crate::kernel::loans::BorrowLedger;
+use crate::kernel::borrows::BorrowLedger;
 
 #[test]
 fn free_retires_a_cached_interior_alias() {
@@ -163,7 +163,7 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
     );
 }
 
-fn active_heap_memory_loan(range: MemoryRange) -> BorrowLedger {
+fn active_heap_memory_borrow(range: MemoryRange) -> BorrowLedger {
     let fact = ResourceFact::own_memory(range);
     let support = ResourceContext::new()
         .unchecked_with_fact(fact.clone())
@@ -1405,7 +1405,7 @@ fn free_test_pointer(state: &ExecutionState, pointer: ProgramExpression) -> Stat
 }
 
 #[test]
-fn heap_free_requires_separation_from_an_interior_loan_until_it_ends() {
+fn heap_free_requires_separation_from_an_interior_borrow_until_it_ends() {
     let state = successful_heap_allocation_state();
     let local = state.locals().get_native("p");
     let Some(ProgramValue::Pointer(pointer)) = local.as_deref() else {
@@ -1424,7 +1424,7 @@ fn heap_free_requires_separation_from_an_interior_loan_until_it_ends() {
     let reader = ledger.fresh_participant().unwrap();
     let opening = ledger.lend(owner, reader, occurrence, backing).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
-    let state = state.with_loan_ledger(Some(ledger.clone()));
+    let state = state.with_borrow_ledger(Some(ledger.clone()));
 
     let null = free_test_pointer(&state, crate::kernel::program_expression::int32_literal(0));
     assert!(null.obligations.is_empty());
@@ -1450,7 +1450,7 @@ fn heap_free_requires_separation_from_an_interior_loan_until_it_ends() {
     let transfer = ledger.transfer(opening.root_share, reader, owner).unwrap();
     let ledger = ledger.apply(&transfer).unwrap();
     let ended = ledger.end(opening.scope, owner).unwrap();
-    let state = state.with_loan_ledger(Some(ledger.apply(&ended).unwrap()));
+    let state = state.with_borrow_ledger(Some(ledger.apply(&ended).unwrap()));
     let path = free(&state);
     assert!(path.obligations.is_empty());
     let StatementOutcome::Normal(freed) = path.outcome else {
@@ -1507,7 +1507,7 @@ fn resolve_test_realloc(pending: &ExecutionState) -> Vec<StatementExecutionPath>
 }
 
 #[test]
-fn realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation() {
+fn realloc_failure_preserves_a_borrow_and_success_requires_call_entry_separation() {
     let state =
         successful_heap_allocation_state().with_local("q", ProgramValue::pointer(Address::null()));
     let local = state.locals().get_native("p");
@@ -1517,8 +1517,8 @@ fn realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation()
     let base = pointer.address().clone();
     // This field is in the part that the successful shrink would cut off.
     let interior = MemoryRange::new(base.offset_by_bytes(12), 0.into(), 1.into());
-    let ledger = active_heap_memory_loan(interior.clone());
-    let state = state.with_loan_ledger(Some(ledger.clone()));
+    let ledger = active_heap_memory_borrow(interior.clone());
+    let state = state.with_borrow_ledger(Some(ledger.clone()));
     let pending = start_test_realloc(&state, &PureFactContext::new());
     let paths = resolve_test_realloc(&pending);
     assert_eq!(paths.len(), 2);
@@ -1534,14 +1534,14 @@ fn realloc_failure_preserves_a_loan_and_success_requires_call_entry_separation()
         Some(&AllocationSize::int32(16))
     );
     assert_eq!(after_failure.resources(), state.resources());
-    assert_eq!(after_failure.loan_ledger(), Some(&ledger));
+    assert_eq!(after_failure.borrow_ledger(), Some(&ledger));
     assert_eq!(
         after_failure.locals().get_native("q").as_deref(),
         Some(&ProgramValue::pointer(Address::null()))
     );
 
     // Proof operations after the call must not change which borrows constrain it.
-    let pending = pending.with_loan_ledger(None);
+    let pending = pending.with_borrow_ledger(None);
     let paths = resolve_test_realloc(&pending);
     let success = paths
         .iter()
