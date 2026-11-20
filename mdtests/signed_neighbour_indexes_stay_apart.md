@@ -5,7 +5,8 @@ A scaled index `i + 1` is no longer taken apart into `i` plus one element, but
 a signed C index needs no such split: the step proves `i + 1` does not
 overflow, and the facts bound the word `i + 1` itself. A store at `a[i + 1]`
 leaves `a[i]` in place both in a range seeded from a constant start and in
-one anchored at `i`.
+one anchored at `i`. For the anchored range, the proof states the cell
+separation and preserves the read across the store.
 
 ```c filename=signed_neighbour_indexes_stay_apart.c
 int32 store_both(int32* a, int32 i) {
@@ -30,6 +31,8 @@ int32 store_next_in_anchored_range(int32* a, int32 i) {
 ```
 
 ```click
+import click::separation;
+
 verifying "signed_neighbour_indexes_stay_apart.c";
 
 int32 store_both(int32* a, int32 i) {
@@ -55,6 +58,23 @@ int32 store_next_in_anchored_range(int32* a, int32 i) {
     requires a[i] > -100;
     consumes a[i..(i + 2)];
     ensures result == 0;
+} by {
+    step();
+    step();
+    have defined(i + 1);
+    have ((i + 1) as int32) != i;
+    have separate(memory(a[i + 1]), memory(a[i])) by {
+        apply(separation::separate_elements(a, i + 1, i)) using { defined(i + 1); ((i + 1) as int32) != i; };
+    }
+    step();
+    have separate(statement(2).footprint, memory(a[i])) by {
+        normalize() using { separate(memory(a[i + 1]), memory(a[i])); };
+    }
+    have a[i] == at(statement(2).entry, a[i]) by {
+        preserve(memory(a[i]), statement(2));
+    }
+    step_until(function.exit);
+    solve();
 }
 ```
 

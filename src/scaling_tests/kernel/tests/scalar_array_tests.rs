@@ -312,7 +312,7 @@ fn scalar_array_state_region_does_not_scan_unrelated_sibling_cells() {
 
 #[test]
 fn scalar_array_write_loan_requirement_ignores_alias_and_loan_counts() {
-    use crate::kernel::loans::LoanLedger;
+    use crate::kernel::loans::BorrowLedger;
 
     let _session = crate::kernel::VerificationSession::enter();
     let state = scalar_array_region_state();
@@ -332,7 +332,7 @@ fn scalar_array_write_loan_requirement_ignores_alias_and_loan_counts() {
                     );
                 }
             }
-            let mut ledger = LoanLedger::new();
+            let mut ledger = BorrowLedger::new();
             let lender = ledger.fresh_participant().unwrap();
             let reader = ledger.fresh_participant().unwrap();
             for i in 0..if grow_aliases { 1 } else { count } {

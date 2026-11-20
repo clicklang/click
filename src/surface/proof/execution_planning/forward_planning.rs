@@ -706,15 +706,21 @@ fn advance_execution_proof_statement(
                     }
                 }
             };
-        let scope_exit_facts = |state: &ExecutionState, facts: &crate::kernel::ExecutionFacts| {
-            scoped_loop_exit_facts(
-                loop_index.expect("selected loop"),
-                state,
-                facts,
-                &context,
-                environment,
-            )
-        };
+        let scope_exit_facts =
+            |state: &ExecutionState,
+             iterations: &crate::kernel::IntegerTerm,
+             exits: &[(ExecutionState, crate::kernel::ExecutionFacts)],
+             facts: &crate::kernel::ExecutionFacts| {
+                scoped_loop_exit_facts(
+                    loop_index.expect("selected loop"),
+                    state,
+                    iterations,
+                    exits,
+                    facts,
+                    &context,
+                    environment,
+                )
+            };
         let exit_fact_scope = (loop_index.is_some() && scoped_loop_exit_facts_enabled())
             .then_some(&scope_exit_facts as &crate::kernel::LoopExitFactScope<'_>);
         let mut next_opaque_call = context.next_opaque_call;

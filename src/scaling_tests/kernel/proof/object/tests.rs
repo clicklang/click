@@ -801,6 +801,149 @@ fn strict_literal_remainder_bound_known_work_ignores_context_growth() {
 }
 
 #[test]
+fn unsigned_remainder_dividend_bound_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    let mut samples = [Vec::new(), Vec::new()];
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let dividend = MachineTerm::Variable(Variable(975_500));
+        let divisor = MachineTerm::Variable(Variable(975_501));
+        let relation = |relation, left, right| {
+            Proposition::condition_is(
+                ConditionTerm::machine_compare(ty, relation, left, right),
+                true,
+            )
+        };
+        let positive = |value| {
+            relation(
+                CompareRelation::LessThan,
+                MachineTerm::uint64_constant(0),
+                value,
+            )
+        };
+        let goal = relation(
+            CompareRelation::LessEqual,
+            MachineTerm::Binary {
+                format: ty,
+                op: MachineBinaryOp::Remainder,
+                left: Box::new(dividend.clone()),
+                right: Box::new(divisor.clone()),
+            },
+            dividend,
+        );
+        let facts = (0..size)
+            .flat_map(|index| {
+                [
+                    relation(
+                        CompareRelation::LessThan,
+                        divisor.clone(),
+                        MachineTerm::Variable(Variable(976_000 + index)),
+                    ),
+                    Proposition::Predicate {
+                        name: format!("unrelated_{index}"),
+                        arguments: vec![],
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactStore::from_ordered(&facts);
+        for (expected, costs) in [true, false].into_iter().zip(&mut samples) {
+            let facts = if expected {
+                facts.with_fact(positive(divisor.clone()))
+            } else {
+                facts.clone()
+            };
+            let proof = known_computation_proof(goal.clone(), facts);
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), expected);
+            costs.push(work);
+        }
+    }
+    for costs in samples {
+        assert!(
+            costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 16),
+            "{costs:?}"
+        );
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: signed quotient hit and miss scaling took 0.6s"]
+fn signed_quotient_sign_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    let mut samples = [Vec::new(), Vec::new()];
+    for size in [8, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let n = MachineTerm::Variable(Variable(977_500));
+        let d = MachineTerm::Variable(Variable(977_501));
+        let zero = MachineTerm::constant(0);
+        let relation = |relation, left, right, truth| {
+            Proposition::condition_is(
+                ConditionTerm::machine_compare(ty, relation, left, right),
+                truth,
+            )
+        };
+        let goal = relation(
+            CompareRelation::LessEqual,
+            zero.clone(),
+            MachineTerm::Binary {
+                format: ty,
+                op: MachineBinaryOp::Divide,
+                left: Box::new(n.clone()),
+                right: Box::new(d.clone()),
+            },
+            true,
+        );
+        let mut facts = vec![
+            relation(CompareRelation::LessEqual, n.clone(), zero.clone(), true),
+            relation(CompareRelation::LessThan, d.clone(), zero, true),
+        ];
+        for index in 0..size {
+            facts.push(relation(
+                CompareRelation::LessThan,
+                d.clone(),
+                MachineTerm::Variable(Variable(978_000 + index)),
+                true,
+            ));
+            facts.push(Proposition::Predicate {
+                name: format!("unrelated_{index}"),
+                arguments: vec![],
+            });
+        }
+        let facts = PureFactStore::from_ordered(&facts);
+        for (expected, costs) in [true, false].into_iter().zip(&mut samples) {
+            let facts = if expected {
+                facts.with_fact(relation(
+                    CompareRelation::Equal,
+                    n.clone(),
+                    MachineTerm::constant(i32::MIN as u32),
+                    false,
+                ))
+            } else {
+                facts.clone()
+            };
+            let proof = known_computation_proof(goal.clone(), facts);
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), expected);
+            costs.push(work);
+        }
+    }
+    for costs in samples {
+        assert!(
+            costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 16),
+            "{costs:?}"
+        );
+    }
+}
+
+#[test]
 fn known_computation_work_is_linear_in_shared_integer_terms() {
     use crate::kernel::{ConditionTerm, IntegerTerm};
     let mut costs = Vec::new();

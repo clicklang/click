@@ -58,7 +58,7 @@ int32 compute_difference(struct callback_table* table, int32 left, int32 right) 
     requires defined(left - right);
     ensures to_integer(result) == to_integer(left - right);
 } by {
-    open(callback_suite(table)) {
+    with(callback_suite(table)) {
     }
 }
 

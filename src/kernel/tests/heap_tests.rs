@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::VerificationSession;
-use crate::kernel::loans::LoanLedger;
+use crate::kernel::loans::BorrowLedger;
 
 #[test]
 fn free_retires_a_cached_interior_alias() {
@@ -163,14 +163,14 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
     );
 }
 
-fn active_heap_memory_loan(range: MemoryRange) -> LoanLedger {
+fn active_heap_memory_loan(range: MemoryRange) -> BorrowLedger {
     let fact = ResourceFact::own_memory(range);
     let support = ResourceContext::new()
         .unchecked_with_fact(fact.clone())
         .unique_owned_occurrence_for_fact(&fact)
         .expect("memory backing")
         .0;
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner identity");
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
@@ -1419,7 +1419,7 @@ fn heap_free_requires_separation_from_an_interior_loan_until_it_ends() {
         .unique_owned_occurrence_for_fact(&backing)
         .unwrap()
         .0;
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let reader = ledger.fresh_participant().unwrap();
     let opening = ledger.lend(owner, reader, occurrence, backing).unwrap();

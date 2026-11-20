@@ -37,7 +37,7 @@ void issue(int32* pool, int32* p) {
 void update(int32* pool, int32* p) {
     owns slot(pool, p);
     ensures p[0] == 7;
-} by { open(slot(pool, p)) { open(cell(pool, p)) { step(); } } step_until(function.exit); solve(); }
+} by { with(slot(pool, p)) { with(cell(pool, p)) { step(); } } step_until(function.exit); solve(); }
 void release(int32* pool, int32* p) {
     owns authority(slot(pool, _));
     consumes slot(pool, p);
@@ -57,9 +57,9 @@ int32 lifecycle() { ensures result == 0 or result == 9; } by {
     step(); step(); step();
     have to_integer(count(slot(&pool, _))) == 1;
     have to_integer(count(cell(&pool, _))) == 2;
-    open(cell(&pool, p)) {
-        open(slot(&pool, p + 1)) {
-            open(cell(&pool, p + 1)) { step(); step(); }
+    with(cell(&pool, p)) {
+        with(slot(&pool, p + 1)) {
+            with(cell(&pool, p + 1)) { step(); step(); }
         }
     }
     unfold(slot(&pool, p + 1));

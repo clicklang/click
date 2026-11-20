@@ -39,7 +39,7 @@ struct object* object_retain(struct object* obj) {
     ensures valid_refcount(obj);
     ensures result == obj;
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         unfold(valid_refcount(obj));
         step();
         fold(object_ref(obj));

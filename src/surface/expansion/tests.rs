@@ -754,7 +754,7 @@ fn trace_target_selects_only_the_arm_containing_its_source_position() {
 
 #[test]
 fn nested_tactic_position_follows_have_and_open_bodies() {
-    let source = "resource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\nhave true by {\n    open(cell(p)) {\n        have true by {\n            known();\n        }\n    }\n}\n}\n";
+    let source = "resource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\nhave true by {\n    with(cell(p)) {\n        have true by {\n            known();\n        }\n    }\n}\n}\n";
     let have = position_at_offset(source, source.find("have").unwrap());
     let position = ProofSourceIndex::new(source)
         .unwrap()
@@ -1343,7 +1343,7 @@ int32 identity(int32 x) {
     owns known(x);
     ensures result == x;
 } by {
-    open(known(x)) {
+    with(known(x)) {
         step_until(function.exit);
     }
     solve();
@@ -1352,7 +1352,7 @@ int32 identity(int32 x) {
     let sources = [("identity.c", c_source)];
 
     let nested = c_tactic_source_position(click_source, &sources, "identity.contract", 1)
-        .expect("the tactic inside `open` should have a source position");
+        .expect("the tactic inside `with` should have a source position");
     assert_eq!(
         nested,
         SourcePosition {
@@ -1363,7 +1363,7 @@ int32 identity(int32 x) {
     );
 
     let continuation = c_tactic_source_position(click_source, &sources, "identity.contract", 2)
-        .expect("the tactic after `open` should retain its source position");
+        .expect("the tactic after `with` should retain its source position");
     assert_eq!(
         continuation,
         SourcePosition {
@@ -3606,7 +3606,7 @@ fn a_parsed_source_index_holds_only_proof_blocks() {
 
 #[test]
 fn trace_source_index_preserves_nested_locations_and_containment() {
-    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  all { true => { normalize(); } true => { solve(); } }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } { true => { step(); } false => { solve(); } }\n  normalize();\n}\n";
+    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { with(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  all { true => { normalize(); } true => { solve(); } }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } { true => { step(); } false => { solve(); } }\n  normalize();\n}\n";
     let index = ProofSourceIndex::new(source).unwrap();
     // A `branch` shares its line only with its own arms' tactics, which are
     // inside it, so the line names it alone.

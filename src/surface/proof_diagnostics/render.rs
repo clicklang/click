@@ -1494,6 +1494,10 @@ impl Renderer<'_> {
                 self.push(")");
             }
             Proposition::Equal(left, right) => self.binary_term(left, " = ", right),
+            Proposition::SequenceMembership { element, .. } => {
+                self.cvalue(element.native_compat());
+                self.push(" in sequence(<bounded opaque value>)");
+            }
             Proposition::ConditionIs(condition, value) => {
                 self.condition(condition.native_compat());
                 self.push(if *value { " is true" } else { " is false" });

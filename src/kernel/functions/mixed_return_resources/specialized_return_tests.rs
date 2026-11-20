@@ -531,7 +531,7 @@ fn matched_returns_carry_one_selected_constructor_and_keep_unknown_models_opaque
         &destination,
     );
     assert_eq!(projected[0].expansion, body.expansion);
-    assert!(projected[0].constructed_borrowing_pieces().is_empty());
+    assert!(projected[0].viewed_children.is_empty());
     let parent_bodies = ConstructedReturnBodies::construct(
         &outputs,
         &[definition],

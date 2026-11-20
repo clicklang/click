@@ -818,7 +818,7 @@ id = "language.word.exact"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.open"
+id = "language.word.with"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1358,7 +1358,7 @@ id = "tactic.have"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
-id = "tactic.open"
+id = "tactic.with"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
@@ -1493,7 +1493,7 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.have"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
-id = "tactic-form.open"
+id = "tactic-form.with"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.if"
@@ -3614,8 +3614,8 @@ id = "glossary.observe"
 path = "reference/glossary.md#observe"
 
 [[item]]
-id = "glossary.open"
-path = "reference/glossary.md#open"
+id = "glossary.resource-scope"
+path = "reference/glossary.md#resource-scope"
 
 [[item]]
 id = "glossary.proof-branch"

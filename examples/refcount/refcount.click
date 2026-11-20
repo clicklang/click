@@ -23,7 +23,7 @@ void object_retain(struct object* obj) {
     requires obj->refs < 2147483647;
     produces reference(obj);
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         step();
         fold(reference(obj));
     }
@@ -34,7 +34,7 @@ void object_release_nonfinal(struct object* obj) {
     consumes reference(obj);
     requires obj->refs > 1;
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         unfold(reference(obj));
         step();
     }
@@ -60,7 +60,7 @@ void object_retain_many(struct object* obj, int32 amount) {
     produces amount of reference(obj);
     ensures defined(obj->refs);
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         step();
         fold(amount of reference(obj));
     }
@@ -74,7 +74,7 @@ void object_release_many_nonfinal(struct object* obj, int32 amount) {
     consumes amount of reference(obj);
     ensures defined(obj->refs);
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         unfold(amount of reference(obj));
         step();
     }
@@ -103,11 +103,11 @@ int32 refcount_pipeline(int32 amount) {
     fold(reference(obj));
     fold(control(obj));
     step();
-    open(control(obj)) {
+    with(control(obj)) {
     }
     have amount < obj->refs;
     step();
-    open(control(obj)) {
+    with(control(obj)) {
     }
     step();
     step();

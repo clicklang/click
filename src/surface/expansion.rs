@@ -2439,7 +2439,7 @@ impl<'a> ProofTokens<'a> {
         }
     }
 
-    /// The `}` of the proof block whose `{` is `open`.
+    /// The `}` of the proof block whose `{` is `with`.
     fn block_close(&self, open: usize) -> Result<usize, ClickError> {
         Ok(self.blocks.block(open)?.close)
     }
@@ -5709,7 +5709,7 @@ fn collect_tactic_block_spans<'t>(
         });
         match tactic {
             ProofTactic::Open(proof_open) => {
-                let (body_open, body_close) = tokens.body_block(&token_range, "open")?;
+                let (body_open, body_close) = tokens.body_block(&token_range, "with")?;
                 collect_tactic_block_spans(
                     tokens,
                     body_open,

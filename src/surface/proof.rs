@@ -1358,7 +1358,7 @@ impl Drop for InternalProofNode {
 /// Each control tactic holds the rest of its script as its continuation, so
 /// a script of N sequential control tactics is a chain N nodes deep. The
 /// chain is built front to back in a loop and linked from the back; only a
-/// written nesting (an arm, a case, an `open` body) recurses.
+/// written nesting (an arm, a case, a `with` body) recurses.
 fn build_internal_proof_at(
     tactics: &[ProofTactic],
     index_offset: usize,

@@ -276,7 +276,7 @@ fn heap_free_loan_obligation_ignores_unrelated_aliases_and_loans() {
     for grow_aliases in [true, false] {
         let mut samples = Vec::new();
         for count in [4, 16, 64] {
-            let mut ledger = LoanLedger::new();
+            let mut ledger = BorrowLedger::new();
             let owner = ledger.fresh_participant().unwrap();
             let reader = ledger.fresh_participant().unwrap();
             let mut assumptions = PureFactContext::new();
@@ -363,7 +363,7 @@ fn realloc_loan_requirement_work_is_bounded_by_the_pending_result() {
                     );
                 }
             }
-            let mut ledger = LoanLedger::new();
+            let mut ledger = BorrowLedger::new();
             let lender = ledger.fresh_participant().unwrap();
             let borrower = ledger.fresh_participant().unwrap();
             for i in 0..if grow_aliases { 1 } else { count } {

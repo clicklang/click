@@ -2540,6 +2540,12 @@ fn join_loop_exits(
     if mismatch.is_none() {
         exit_state.join_loop_exit_program_points(&states);
     }
+    let source_exits = exit_fact_scope.map(|_| {
+        exits
+            .iter()
+            .map(|(state, facts, _, _, _)| (state.clone(), facts.clone()))
+            .collect::<Vec<_>>()
+    });
     let (mut facts, mut obligations, loan_evidence) = join_loop_exit_paths(
         exits
             .into_iter()
@@ -2555,12 +2561,14 @@ fn join_loop_exits(
             .collect(),
         mode,
     )?;
-    if let Some(scope) = exit_fact_scope {
-        let admitted = scope(&exit_state, &facts);
+    if let Some((scope, source_exits)) = exit_fact_scope.zip(source_exits) {
+        let (admitted, written_exports) =
+            scope(&exit_state, &head.iterations, &source_exits, &facts);
         facts = facts
             .into_iter()
             .zip(admitted)
             .filter_map(|(fact, visible)| visible.then_some(fact))
+            .chain(written_exports.into_iter().map(ExecutionPureFact::new))
             .collect();
     }
     if let Some(mismatch) = mismatch {
@@ -9054,7 +9062,7 @@ fn checked_owned_entry_footprint(resources: &ResourceContext) -> Option<Vec<Memo
 
 /// Retain separation from the entry ledger for each checked write range.
 fn loop_head_loan_requirements(
-    ledger: &super::loans::LoanLedger,
+    ledger: &super::loans::BorrowLedger,
     ranges: Option<&[MemoryRange]>,
 ) -> Result<Vec<ProofObligation>, &'static str> {
     let Some(ranges) =
@@ -9071,7 +9079,7 @@ fn loop_head_loan_requirements(
 }
 
 fn loop_loan_separation(
-    ledger: &super::loans::LoanLedger,
+    ledger: &super::loans::BorrowLedger,
     range: &MemoryRange,
     context: &'static str,
 ) -> Option<ProofObligation> {

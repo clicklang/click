@@ -5595,6 +5595,12 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                     | native_constant!(_, _) => results.push(term.clone()),
                     MachineTerm::IntegerAddress(_, _) => results.push(term.clone()),
                     MachineTerm::MemoryLoad(memory, pointer, kind) => {
+                        // The selected entry already names the unchanged cell.
+                        // Resolving its empty view would discard that point.
+                        if memory.is_entry_read() {
+                            results.push(term.clone());
+                            continue;
+                        }
                         let kind = *kind;
                         let canonical_pointer = canonicalize_pointer_loads(pointer);
                         let resolved =
@@ -5641,6 +5647,10 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                                 results.push(canonicalize_atomic_loads_deep(&value));
                                 break;
                             };
+                            if next_memory.is_entry_read() {
+                                results.push(value);
+                                break;
+                            }
                             let next_kind = *next_kind;
                             let canonical_pointer = canonicalize_pointer_loads(next_pointer);
                             let resolved = cell_integer_for_read(
@@ -8625,7 +8635,7 @@ mod wide_range_reader_tests {
 #[cfg(test)]
 mod borrow_partition_tests {
     use super::*;
-    use crate::kernel::loans::{LoanLedger, LoanViewBinding};
+    use crate::kernel::loans::{BorrowLedger, LoanViewBinding};
 
     fn range(id: u64) -> MemoryRange {
         MemoryRange::new(
@@ -8646,7 +8656,7 @@ mod borrow_partition_tests {
             .unchecked_with_fact(ResourceFact::own_memory(write.clone()))
             .unchecked_with_fact(view.clone());
         let support = bare.occurrences_for_fact(&view)[0];
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let holder = ledger.fresh_participant().unwrap();
         let opening = ledger
             .borrowed_contract_input(holder, support, view.clone(), None)

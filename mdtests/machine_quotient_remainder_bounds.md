@@ -8,10 +8,10 @@ within that range; a high-bit unsigned dividend does not satisfy the guard.
 theorem signed_bounds(n: int32, d: int32) {
     requires 0 <= n;
     requires 0 < d;
-    ensures 0 <= n / d by { normalize() using { 0 <= n; 0 < d; }; }
-    ensures n / d <= n by { normalize() using { 0 <= n; 0 < d; }; }
-    ensures 0 <= n % d by { normalize() using { 0 <= n; 0 < d; }; }
-    ensures n % d <= n by { normalize() using { 0 <= n; 0 < d; }; }
+    ensures 0 <= n / d by { solve() using { 0 <= n; 0 < d; }; }
+    ensures n / d <= n by { solve() using { 0 <= n; 0 < d; }; }
+    ensures 0 <= n % d by { solve() using { 0 <= n; 0 < d; }; }
+    ensures n % d <= n by { solve() using { 0 <= n; 0 < d; }; }
 }
 theorem unsigned_bounds(n: uint32, d: uint32) {
     requires 0 <= n as int32;

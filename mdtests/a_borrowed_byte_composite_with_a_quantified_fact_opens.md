@@ -30,7 +30,7 @@ uint8 first_byte(uint8 p[], uint64 n) {
     views nonzero_bytes(p, n);
     ensures true;
 } by {
-    open(nonzero_bytes(p, n)) {
+    with(nonzero_bytes(p, n)) {
     }
 }
 
@@ -39,7 +39,7 @@ char first_char(char p[], int32 n) {
     views nonzero_chars(p, n);
     ensures true;
 } by {
-    open(nonzero_chars(p, n)) {
+    with(nonzero_chars(p, n)) {
     }
 }
 ```

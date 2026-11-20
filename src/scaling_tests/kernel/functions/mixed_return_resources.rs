@@ -1536,8 +1536,15 @@ fn rebound_hold_creation_scales_with_the_returned_occurrences() {
             .into_iter()
             .map(|(head, occurrence)| (occurrence, (head, holds[0].binding.clone())))
             .collect::<BTreeMap<_, _>>();
+        let preserved = holds[0].binding.hold.unwrap();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            retain_rebound_composite_holds(&mut recovery, &mut rebound, caller).unwrap()
+            retain_rebound_composite_holds(
+                &mut recovery,
+                &mut rebound,
+                BTreeSet::from([preserved]),
+                caller,
+            )
+            .unwrap()
         });
         assert_eq!(
             rebound
@@ -1547,7 +1554,12 @@ fn rebound_hold_creation_scales_with_the_returned_occurrences() {
                 .len(),
             count
         );
-        assert_eq!(recovery.hold_transitions.len(), count - 1);
+        assert_eq!(recovery.hold_transitions.len(), count);
+        assert!(
+            rebound
+                .values()
+                .all(|(_, binding)| binding.hold != Some(preserved))
+        );
         samples.push(work);
     }
     assert!(

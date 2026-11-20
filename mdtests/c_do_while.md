@@ -7,11 +7,8 @@ loop.
 The guard is read after the body, so the state a body path ends in *is* the
 loop's guard-false exit; there is no separate exit at the head. `do_while_invariant`
 is where that shows: the loop head is an arbitrary visit, so `i` there is
-abstract and only the invariant says anything about it, and the postcondition
-`result == 1` is read off the invariant at the value the body's increment
-produced. The invariant is written `i + 1 == 1` rather than `i == 0` because a
-proof after the loop reads the exported invariant facts in the terms the head
-stated them.
+abstract and only the invariant says anything about it. The `otherwise` proof establishes `i == 1` from the invariant and the body's
+increment. The function returns that value.
 
 The first three proofs carry no loop annotation, so certification executes
 their constant-bound loops to the exit and that execution is their termination
@@ -91,6 +88,9 @@ int32 do_while_invariant(int32 i) {
     loop {
         decreases i;
         invariant i + 1 == 1;
+        otherwise {
+            have i == 1 by solve();
+        }
     }
     step();
     solve();

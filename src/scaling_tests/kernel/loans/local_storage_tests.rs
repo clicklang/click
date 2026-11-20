@@ -10,7 +10,7 @@ fn automatic_storage_retirement_lookup_scales_with_neither_loan_bucket() {
     let other = SymbolicMemory::local_pointer("other");
     for same_block in [false, true] {
         let samples = [4, 16, 64, 256].map(|count| {
-            let mut ledger = LoanLedger::new();
+            let mut ledger = BorrowLedger::new();
             let lender = ledger.fresh_participant().unwrap();
             let borrower = ledger.fresh_participant().unwrap();
             for index in 0..count {
@@ -100,7 +100,7 @@ fn local_loan_admission_tracks_selected_backing_with_live_loans_and_aliases() {
     let memory = SymbolicMemory::new().with_block(local.base.clone(), 4);
     for worker in [false, true] {
         let samples = [4, 16, 64].map(|count| {
-            let mut ledger = LoanLedger::new();
+            let mut ledger = BorrowLedger::new();
             let caller = ledger.fresh_participant().unwrap();
             let callee = ledger.fresh_participant().unwrap();
             let mut assumptions = PureFactContext::new();

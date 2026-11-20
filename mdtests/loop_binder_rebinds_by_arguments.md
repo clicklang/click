@@ -59,6 +59,9 @@ void bump_n(struct cell* p, int32 n) {
             step();
             let d = fold(counter(p), { count: (old(c.count) + i) });
         }
+        otherwise {
+            have to_integer(c.count) == to_integer(old(c.count) + i) by known();
+        }
     }
     have i == n;
 }

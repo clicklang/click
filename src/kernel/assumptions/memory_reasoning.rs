@@ -500,6 +500,10 @@ impl PureFactContext {
         // bytes inside that range, which the narrow prover carries through
         // states. It is consulted only when this base indexes such a
         // range, so a refusal stays independent of other addresses' facts.
+        let literal_cover = self
+            .string_literal_loadable_span(memory, base)
+            .filter(|(origin, _)| self.pointers_known_equal(base, origin))
+            .and_then(|(_, size)| size.as_const());
         let narrow_cover = self
             .memory_loadable_exact_candidates_for_base(base)
             .filter_map(|fact| match fact {
@@ -511,6 +515,7 @@ impl PureFactContext {
                 },
                 _ => None,
             })
+            .chain(literal_cover)
             .max();
         if let Some(held) = narrow_cover
             && (bytes
@@ -1079,6 +1084,11 @@ impl PureFactContext {
         {
             return true;
         }
+        if let Some((origin, extent)) = self.string_literal_loadable_span(memory, base)
+            && self.proves_loadable_region_from_structural_range(&origin, extent, base, bytes)
+        {
+            return true;
+        }
         if bytes.as_const() == Some(4)
             && crate::kernel::api::contract_certification::quantified_int32_fact_certifies_loadable_cell(
                 self, memory, base,
@@ -1128,6 +1138,34 @@ impl PureFactContext {
                     self,
                 )
             })
+    }
+
+    /// Select the literal through the query's block or its indexed storage
+    /// spelling. Only the block in the requested snapshot licenses the span.
+    fn string_literal_loadable_span<'m>(
+        &self,
+        memory: &'m SymbolicMemory,
+        base: &Address,
+    ) -> Option<(Address, &'m MachineTerm)> {
+        let block = if matches!(base.base, AddressBase::StringLiteral { .. }) {
+            base.base.clone()
+        } else {
+            self.equality_graph.indexed_storage_block(base)?
+        };
+        if !matches!(block, AddressBase::StringLiteral { .. }) {
+            return None;
+        }
+        let extent = memory
+            .blocks
+            .get(&block)
+            .filter(|entry| entry.is_read_only())?;
+        Some((
+            Address {
+                base: block,
+                offset: AddressOffset::Constant(0),
+            },
+            extent.size(),
+        ))
     }
 
     fn nonwrapping_signed_byte_sum_end(

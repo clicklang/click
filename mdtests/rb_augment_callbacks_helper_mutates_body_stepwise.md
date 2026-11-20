@@ -80,7 +80,7 @@ void erase_mutating(struct node* node, struct node* parent,
     ensures parent->left == 0;
     ensures parent->right == old(parent->right);
 } by {
-    open(callback_suite(augment)) {
+    with(callback_suite(augment)) {
         step();
         step();
         step();

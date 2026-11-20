@@ -26,10 +26,10 @@ resource slice_of(p: int32*, n: int32) {
 verifying "wrapped_fold.c";
 
 int32 wrapped_fold(int32* p, int32 n) {
-    views p[0..n];
+    views p[0..n] as input;
     requires n == 1073741824;
     requires 0 < n;
-    produces slice_of(p, n);
+    produces slice_of(p, n) from input;
 } by {
     step_until(function.exit);
     fold(slice_of(p, n));

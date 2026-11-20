@@ -190,11 +190,27 @@ pub(in crate::kernel) fn spec_algebraic_expression_is_state_independent(
 pub(in crate::kernel) fn spec_sequence_is_state_independent(
     sequence: &SpecSequenceExpression,
 ) -> bool {
-    spec_tree_all(SpecNode::Sequence(sequence), |node| match node {
+    spec_tree_all(
+        SpecNode::Sequence(sequence),
+        sequence_state_independent_node,
+    )
+}
+
+pub(in crate::kernel) fn spec_sequence_element_is_state_independent(
+    element: &SpecExpression,
+) -> bool {
+    spec_tree_all(
+        SpecNode::Expression(element),
+        sequence_state_independent_node,
+    )
+}
+
+fn sequence_state_independent_node(node: SpecNode<'_>) -> Visit<()> {
+    match node {
         SpecNode::Sequence(_) => Visit::Descend,
         SpecNode::Expression(SpecExpression::LoopEntryState(_)) => Visit::Stop(()),
         node => state_independent_node(node),
-    })
+    }
 }
 
 /// Whether one spec node reads no program state of its own. Anything not

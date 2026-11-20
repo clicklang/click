@@ -512,6 +512,15 @@ impl Printer<'_> {
                     operand(right, SHIFT)
                 )))
             }
+            Proposition::SequenceMembership { element, sequence } => {
+                let element = self.cvalue(element.native_compat(), depth)?;
+                let sequence = self.sequence(sequence, depth)?;
+                Some(atom(format!(
+                    "{} in {}",
+                    operand(element, SHIFT),
+                    sequence.text
+                )))
+            }
             _ if !self.source_mode() => None,
             Proposition::Predicate { name, arguments } => {
                 if let Some(surface) =

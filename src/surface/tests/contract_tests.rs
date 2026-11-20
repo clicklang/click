@@ -816,7 +816,7 @@ fn individual_linear_open_proof_stays_on_proof_through_claim_acceptance() {
             int32 identity(int32 x) {
                 consumes marker(x);
                 ensures returns_x: result == x by {
-                    open(marker(x)) {
+                    with(marker(x)) {
                         step_until(function.exit);
                     }
                     solve();
@@ -837,7 +837,7 @@ fn individual_linear_open_proof_stays_on_proof_through_claim_acceptance() {
         ContractProofClaim::Ensure(0),
     )
     .expect("the individual open proof should expand");
-    assert!(expanded.contains("open(marker(x))"), "{expanded}");
+    assert!(expanded.contains("with(marker(x))"), "{expanded}");
     assert!(
         !expanded.contains("step_until(function.exit);"),
         "{expanded}"
@@ -921,7 +921,7 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
 
                 ensures result == 0 or result == 1;
             } by {
-                open(allocated_cell(owner)) {
+                with(allocated_cell(owner)) {
                 }
                 step();
                 step();
@@ -1017,7 +1017,7 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
 
                 ensures result == 0 or result == 1;
             } by {
-                open(allocated_cell(owner)) {
+                with(allocated_cell(owner)) {
                 }
                 step();
                 step();
@@ -1711,7 +1711,7 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
                 owns owned_cell(cell);
                 ensures result == 7;
             } by {
-                open(owned_cell(cell)) {
+                with(owned_cell(cell)) {
                     step_until(function.exit);
                 }
                 solve();
@@ -1721,7 +1721,7 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
                 owns wrapped_cell(cell);
                 ensures result == 7;
             } by {
-                open(wrapped_cell(cell)) {
+                with(wrapped_cell(cell)) {
                     step_until(function.exit);
                 }
                 solve();
@@ -1749,7 +1749,7 @@ fn grouped_mutable_composite_calls_keep_open_scopes_on_proof() {
         .nth(1)
         .expect("the expanded source should retain the selected caller");
     assert!(
-        caller_expansion.contains("open(wrapped_cell(cell))"),
+        caller_expansion.contains("with(wrapped_cell(cell))"),
         "{expanded}"
     );
     assert!(
@@ -1806,7 +1806,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
                 owns owned_cell(cell);
                 ensures result == 0 or result == 1;
             } by {
-                open(owned_cell(cell)) {
+                with(owned_cell(cell)) {
                     branch { true => { step(); } false => { } }
                     step_until(function.exit);
                 }
@@ -1817,7 +1817,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
                 owns wrapped_cell(cell);
                 ensures result == 0 or result == 1;
             } by {
-                open(wrapped_cell(cell)) {
+                with(wrapped_cell(cell)) {
                 }
                 step_until(function.exit);
                 solve();
@@ -1849,7 +1849,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
         "{expanded}"
     );
     assert!(!caller_expansion.contains("solve();"), "{expanded}");
-    assert!(caller_expansion.contains("open(wrapped_cell(cell))"));
+    assert!(caller_expansion.contains("with(wrapped_cell(cell))"));
     verify_c_sources(&expanded, sources)
         .unwrap_or_else(|error| panic!("TEMP {error:?}\n{expanded}"));
 }
@@ -1882,10 +1882,10 @@ fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
                 owns second_marker(x);
                 ensures result == (x + 1) + 1;
             } by {
-                open(first_marker(x)) {
+                with(first_marker(x)) {
                     step();
                 }
-                open(second_marker(x)) {
+                with(second_marker(x)) {
                     step_until(function.exit);
                 }
                 solve();
@@ -1910,7 +1910,7 @@ fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
         .nth(1)
         .expect("the expanded source should retain the selected function");
     assert_eq!(
-        caller_expansion.matches("open(").count(),
+        caller_expansion.matches("with(").count(),
         2,
         "both top-level scopes should be serialized: {expanded}"
     );

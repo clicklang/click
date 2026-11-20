@@ -31,6 +31,27 @@ int32 count_down_or_stop(int32 n) {
     loop {
         invariant n >= 0;
         decreases n;
+        maintain by {
+            if n == 0 {
+                step();
+                step();
+                have n == 7 or n == 9 by known();
+                step();
+            } else {
+                step();
+                step();
+                if n == 1 {
+                    step();
+                    step();
+                    have n == 7 or n == 9 by known();
+                    step();
+                } else {
+                    step();
+                    step();
+                    step();
+                }
+            }
+        }
     }
 }
 ```

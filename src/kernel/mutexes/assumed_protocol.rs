@@ -85,7 +85,7 @@ impl AssumedMutexProtocol {
     pub(super) fn loans<'a>(
         &self,
         state: &'a ExecutionState,
-    ) -> Result<&'a LoanLedger, MutexTransitionError> {
+    ) -> Result<&'a BorrowLedger, MutexTransitionError> {
         let missing = || MutexTransitionError::MissingUse(self.mutex().clone());
         if !state.preserves_mutex_protocols
             || state.loan_participant != Some(self.holder)
@@ -340,9 +340,9 @@ impl AssumedMutexProtocol {
 
     fn evidence(
         &self,
-        before: &LoanLedger,
+        before: &BorrowLedger,
         transition: CheckedLoanTransition,
-        after: &LoanLedger,
+        after: &BorrowLedger,
     ) -> Result<CheckedLoanCallEvidenceSequence, MutexTransitionError> {
         let evidence = CheckedLoanCallEvidence::runtime_mutex_transition(
             before,
@@ -786,7 +786,7 @@ mod tests {
         let (support, _) = resources
             .unique_owned_occurrence_for_fact(&description)
             .unwrap();
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let holder = ledger.fresh_participant().unwrap();
         let (ledger, root) = ledger
             .borrowed_mutex_use_input(holder, support, mutex)
@@ -826,7 +826,7 @@ mod tests {
         }));
         let resources = ResourceContext::new().unchecked_with_fact(fact.clone());
         let (support, _) = resources.unique_owned_occurrence_for_fact(&fact).unwrap();
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let holder = ledger.fresh_participant().unwrap();
         let (ledger, root) = ledger
             .borrowed_mutex_use_input_with_protected(holder, support, mutex, Some(description))

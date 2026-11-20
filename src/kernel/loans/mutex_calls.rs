@@ -25,7 +25,7 @@ impl From<LoanRefusal> for MutexUseCallError {
 pub(crate) struct MutexUseCallTransfer {
     pub(crate) caller_resources: ResourceContext,
     pub(crate) callee_resources: ResourceContext,
-    pub(crate) ledger: LoanLedger,
+    pub(crate) ledger: BorrowLedger,
     pub(crate) entry_transition: CheckedLoanTransition,
     pub(crate) entry_transitions: Vec<CheckedLoanTransition>,
     suspended_parent: Option<MutexUseBinding>,
@@ -43,7 +43,7 @@ pub(crate) struct MutexUseCallTransfer {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MutexUseCallReturn {
-    pub(crate) ledger: LoanLedger,
+    pub(crate) ledger: BorrowLedger,
     pub(crate) caller_resources: ResourceContext,
     /// The other returned clauses remain for the surrounding contract planner
     /// to check and transfer; this component neither grants nor discards them.
@@ -62,7 +62,7 @@ pub(crate) struct MutexAuthorityUpdate {
 
 impl MutexUseCallTransfer {
     pub(crate) fn prepare(
-        ledger: &LoanLedger,
+        ledger: &BorrowLedger,
         caller: LoanParticipantId,
         callee: LoanParticipantId,
         resources: &ResourceContext,
@@ -126,7 +126,7 @@ impl MutexUseCallTransfer {
 
     /// Keep a caller share available while the worker holds its own child scope.
     pub(crate) fn prepare_suspended(
-        ledger: &LoanLedger,
+        ledger: &BorrowLedger,
         caller: LoanParticipantId,
         callee: LoanParticipantId,
         resources: &ResourceContext,
@@ -229,7 +229,7 @@ impl MutexUseCallTransfer {
     /// Resume only this worker against current ownership, never its entry state.
     pub(super) fn finish_suspended_checked_ledger(
         &self,
-        mut ledger: LoanLedger,
+        mut ledger: BorrowLedger,
         mut caller_resources: ResourceContext,
         returned_resources: &ResourceContext,
         assumptions: &PureFactContext,
@@ -453,7 +453,7 @@ impl MutexUseCallTransfer {
     }
 
     #[cfg(test)]
-    pub(crate) fn recheck_entry(&self, predecessor: &LoanLedger) -> Result<(), LoanRefusal> {
+    pub(crate) fn recheck_entry(&self, predecessor: &BorrowLedger) -> Result<(), LoanRefusal> {
         let mut checked = predecessor.clone();
         for transition in &self.entry_transitions {
             checked = checked.apply(transition)?;
@@ -470,7 +470,7 @@ impl MutexUseCallTransfer {
     #[cfg(test)]
     pub(crate) fn finish(
         &self,
-        returned_ledger: &LoanLedger,
+        returned_ledger: &BorrowLedger,
         returned_participant: LoanParticipantId,
         returned_resources: &ResourceContext,
         body_transitions: &[CheckedLoanTransition],
@@ -500,7 +500,7 @@ impl MutexUseCallTransfer {
     /// Used only inside the common planner's checked entry/recovery chain.
     pub(super) fn finish_checked_ledger(
         &self,
-        mut ledger: LoanLedger,
+        mut ledger: BorrowLedger,
         returned_resources: &ResourceContext,
         assumptions: &PureFactContext,
     ) -> Result<MutexUseCallReturn, MutexUseCallError> {
@@ -592,7 +592,7 @@ mod tests {
     fn suspended_siblings_recover_current_shares_in_either_order() {
         for reverse in [false, true] {
             for borrowed in [false, true] {
-                let ledger = LoanLedger::new();
+                let ledger = BorrowLedger::new();
                 let caller = ledger.fresh_participant().unwrap();
                 let worker1 = ledger.fresh_participant().unwrap();
                 let worker2 = ledger.fresh_participant().unwrap();
@@ -775,7 +775,7 @@ mod tests {
 
     #[test]
     fn bound_typed_requirement_keeps_occurrence_identity_without_assuming_its_type() {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let worker = ledger.fresh_participant().unwrap();
         let resources = ResourceContext::new().unchecked_with_fact(owner());
@@ -846,7 +846,7 @@ mod tests {
 
     #[test]
     fn returned_sibling_candidate_can_acquire_and_spawn_before_last_join() {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let worker = ledger.fresh_participant().unwrap();
         let resources = ResourceContext::new().unchecked_with_fact(owner());
@@ -931,7 +931,7 @@ mod tests {
 
     #[test]
     fn suspended_sibling_availability_does_not_unpin_the_worker_parent() {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let worker = ledger.fresh_participant().unwrap();
         let resources = ResourceContext::new().unchecked_with_fact(owner());
@@ -968,7 +968,7 @@ mod tests {
 
     #[test]
     fn suspended_return_requires_ownership_and_released_guard() {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let worker = ledger.fresh_participant().unwrap();
         let resources = ResourceContext::new().unchecked_with_fact(owner());
@@ -1022,7 +1022,7 @@ mod tests {
 
     #[test]
     fn typed_modular_use_reborrows_and_returns_the_same_protected_assertion() {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let callee = ledger.fresh_participant().unwrap();
         let resources = ResourceContext::new().unchecked_with_fact(owner());
@@ -1088,8 +1088,8 @@ mod tests {
         })
     }
 
-    fn plan() -> (LoanLedger, MutexUseCallTransfer) {
-        let before = LoanLedger::new();
+    fn plan() -> (BorrowLedger, MutexUseCallTransfer) {
+        let before = BorrowLedger::new();
         let caller = before.fresh_participant().unwrap();
         let callee = before.fresh_participant().unwrap();
         let resources = ResourceContext::new()
@@ -1109,7 +1109,7 @@ mod tests {
 
     #[test]
     fn named_use_plan_selects_exact_sibling_share_and_rejects_stale_generation() {
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let callee = ledger.fresh_participant().unwrap();
         let live = owner();
@@ -1256,7 +1256,7 @@ mod tests {
 
     #[test]
     fn use_call_reborrows_an_assumed_input_through_nested_helpers() {
-        let before = LoanLedger::new();
+        let before = BorrowLedger::new();
         let caller = before.fresh_participant().unwrap();
         let callee = before.fresh_participant().unwrap();
         let helper = before.fresh_participant().unwrap();

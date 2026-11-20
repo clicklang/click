@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::loans::LoanLedger;
+use crate::kernel::loans::BorrowLedger;
 
 #[test]
 fn automatic_frame_retirement_checks_its_live_loans() {
@@ -24,7 +24,7 @@ fn automatic_frame_retirement_checks_its_live_loans() {
         .unique_owned_occurrence_for_fact(&backing)
         .unwrap()
         .0;
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let lender = ledger.fresh_participant().unwrap();
     let borrower = ledger.fresh_participant().unwrap();
     let opening = ledger.lend(lender, borrower, support, backing).unwrap();

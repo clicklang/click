@@ -1,6 +1,6 @@
 //! Shared-loan authority for views and synchronous borrowed-memory call receipts.
 //!
-//! A [`LoanLedger`] is immutable. Every update returns opaque checked
+//! A [`BorrowLedger`] is immutable. Every update returns opaque checked
 //! evidence tied to the exact predecessor state identity. The ledger deliberately
 //! exposes the same participant and dependency transitions to ordinary calls,
 //! named contracts and language frontends; memory authority stays in the
@@ -782,7 +782,7 @@ fn memory_range_is_empty(range: &MemoryRange) -> bool {
 
 #[cfg(test)]
 fn memory_range_aliases(range: &MemoryRange, assumptions: &PureFactContext) -> Vec<MemoryRange> {
-    crate::kernel::search::ProofSearch::<LoanLedger>::loan_aliases(range, assumptions)
+    crate::kernel::search::ProofSearch::<BorrowLedger>::loan_aliases(range, assumptions)
 }
 
 /// Whether a query range provably touches a protected range, compared
@@ -1256,41 +1256,41 @@ impl LoanLedgerStateId {
 }
 
 #[derive(Clone)]
-pub(crate) struct LoanLedger {
+pub(crate) struct BorrowLedger {
     storage: Arc<LoanLedgerStorage>,
 }
 
-impl std::fmt::Debug for LoanLedger {
+impl std::fmt::Debug for BorrowLedger {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
-            .debug_struct("LoanLedger")
+            .debug_struct("BorrowLedger")
             .field("state", &self.storage.state)
             .field("arena", &self.storage.data.arena)
             .finish_non_exhaustive()
     }
 }
 
-impl PartialEq for LoanLedger {
+impl PartialEq for BorrowLedger {
     fn eq(&self, other: &Self) -> bool {
         self.storage.state == other.storage.state
     }
 }
 
-impl Eq for LoanLedger {}
+impl Eq for BorrowLedger {}
 
-impl Hash for LoanLedger {
+impl Hash for BorrowLedger {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.storage.state.hash(state);
     }
 }
 
-impl PartialOrd for LoanLedger {
+impl PartialOrd for BorrowLedger {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for LoanLedger {
+impl Ord for BorrowLedger {
     fn cmp(&self, other: &Self) -> Ordering {
         self.storage.state.cmp(&other.storage.state)
     }
@@ -2050,7 +2050,7 @@ impl LocalViewBacking {
 
     fn check_admission(
         &self,
-        ledger: &LoanLedger,
+        ledger: &BorrowLedger,
         assumptions: &PureFactContext,
     ) -> Result<(), StableViewPlanError> {
         #[cfg(test)]
@@ -2117,13 +2117,13 @@ pub(crate) struct StableViewTransferPlan {
     /// recorded here too, since the effects projected from it are the bytes
     /// of that one occurrence.
     pub(crate) reserved_ownership_supports: Vec<(ResourceFact, ResourceOccurrenceId)>,
-    pub(crate) ledger: LoanLedger,
+    pub(crate) ledger: BorrowLedger,
     pub(crate) entry_transitions: Vec<CheckedLoanTransition>,
     pub(crate) mutex_uses: Vec<mutex_calls::MutexUseCallTransfer>,
     pub(crate) mutex_use_requirements: BTreeMap<ResourceFact, ResourceFact>,
     callee_view_bindings: LoanViewBindings,
     parent_view_bindings: LoanViewBindings,
-    parent_ledger: LoanLedger,
+    parent_ledger: BorrowLedger,
     caller: LoanParticipantId,
     callee: LoanParticipantId,
     loan_roots: Vec<(LoanScopeId, LoanId, LoanShareId, ResourceOccurrenceId, bool)>,
@@ -2141,7 +2141,7 @@ pub(crate) struct StableViewTransferPlan {
     /// composite went to the callee together with its borrow. Recovery
     /// re-binds it if the callee returned it and releases the hold if the
     /// callee consumed it (step 7).
-    pub(crate) transferred_holds: Vec<(ResourceFact, LoanViewBinding)>,
+    pub(crate) transferred_holds: Vec<TransferredHold>,
     /// For a view lent as a child of the caller's own binding: that parent
     /// binding, which an escaping borrow holds after the child ends.
     pub(crate) rebound_parents: BTreeMap<LoanId, LoanViewBinding>,
@@ -2188,7 +2188,7 @@ impl RecoveredEscrow {
     }
 
     fn from_loan(
-        ledger: &LoanLedger,
+        ledger: &BorrowLedger,
         loan: LoanId,
         fact: ResourceFact,
         source: ResourceOccurrenceId,
@@ -2247,9 +2247,16 @@ impl RecoveredEscrow {
 pub(crate) struct EscapingBorrow {
     pub(crate) head: ResourceFact,
     pub(crate) occurrence: ResourceOccurrenceId,
-    /// The checked requirement when a bare view explicitly names its source.
+    /// The checked input requirement for this escaping borrow.
     /// A reborrow uses the parent binding's own permission instead.
-    pub(crate) root_permission: Option<ResourceFact>,
+    pub(crate) root_permission: ResourceFact,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct TransferredHold {
+    pub(crate) section_index: Option<usize>,
+    pub(crate) occurrence: ResourceOccurrenceId,
+    pub(crate) binding: LoanViewBinding,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2261,10 +2268,10 @@ pub(crate) struct EscapedHold {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StableViewRecovery {
-    pub(crate) ledger: LoanLedger,
-    pub(crate) terminal_ledger: LoanLedger,
+    pub(crate) ledger: BorrowLedger,
+    pub(crate) terminal_ledger: BorrowLedger,
     /// The canonical predecessor on which escaped composite holds are added.
-    pub(crate) hold_base_ledger: LoanLedger,
+    pub(crate) hold_base_ledger: BorrowLedger,
     /// Exact hold transitions after the terminal recovery path is selected.
     pub(crate) hold_transitions: Vec<CheckedLoanTransition>,
     pub(crate) resources: ResourceContext,
@@ -2426,12 +2433,12 @@ impl StableViewRecovery {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedLoanCallEvidence {
     pub(crate) entry: StableViewTransferPlan,
-    pub(crate) recovered_ledger: LoanLedger,
-    pub(crate) recovery_terminal_ledger: LoanLedger,
+    pub(crate) recovered_ledger: BorrowLedger,
+    pub(crate) recovery_terminal_ledger: BorrowLedger,
     pub(crate) recovery_transitions: Vec<CheckedLoanTransition>,
     /// Holds are applied to either the exact caller predecessor or the
     /// terminal recovery successor, and retain their own checked identities.
-    pub(crate) recovery_hold_base: LoanLedger,
+    pub(crate) recovery_hold_base: BorrowLedger,
     pub(crate) recovery_hold_transitions: Vec<CheckedLoanTransition>,
 }
 
@@ -2445,10 +2452,10 @@ pub(crate) struct CheckedLoanCallEvidence {
 #[derive(Clone)]
 struct CheckedLoanCallEvidenceSummary {
     valid: bool,
-    recovered_by_caller: PersistentMap<(u64, LoanParticipantId), LoanLedger>,
-    last_pristine_recovered: Option<(LoanParticipantId, LoanLedger)>,
+    recovered_by_caller: PersistentMap<(u64, LoanParticipantId), BorrowLedger>,
+    last_pristine_recovered: Option<(LoanParticipantId, BorrowLedger)>,
     chain_origin: Option<(u64, LoanParticipantId)>,
-    last_recovered: Option<(LoanParticipantId, LoanLedger)>,
+    last_recovered: Option<(LoanParticipantId, BorrowLedger)>,
 }
 
 impl Default for CheckedLoanCallEvidenceSummary {
@@ -2591,10 +2598,10 @@ impl CheckedLoanCallEvidenceSequence {
     #[cfg(test)]
     pub(crate) fn recovered_ledger_for(
         &self,
-        caller_ledger: &LoanLedger,
+        caller_ledger: &BorrowLedger,
         caller_participant: LoanParticipantId,
         pristine_start: bool,
-    ) -> Option<LoanLedger> {
+    ) -> Option<BorrowLedger> {
         if pristine_start {
             self.summary
                 .last_pristine_recovered
@@ -2611,7 +2618,7 @@ impl CheckedLoanCallEvidenceSequence {
     }
 
     #[cfg(test)]
-    pub(crate) fn pristine_recovery(&self) -> (Option<LoanParticipantId>, Option<LoanLedger>) {
+    pub(crate) fn pristine_recovery(&self) -> (Option<LoanParticipantId>, Option<BorrowLedger>) {
         self.summary
             .last_pristine_recovered
             .as_ref()
@@ -2764,10 +2771,10 @@ impl CheckedLoanCallEvidence {
     /// A modeled runtime call retains its participant and transfers no
     /// resource clauses. Its only loan effect is one checked hold or release.
     pub(crate) fn runtime_mutex_transition(
-        before: &LoanLedger,
+        before: &BorrowLedger,
         holder: LoanParticipantId,
         transition: CheckedLoanTransition,
-        after: &LoanLedger,
+        after: &BorrowLedger,
     ) -> Result<Self, LoanRefusal> {
         let is_hold = match &transition.evidence {
             LoanTransitionEvidence::Hold { holder: actual, .. } if *actual == holder => true,
@@ -2818,10 +2825,10 @@ impl CheckedLoanCallEvidence {
 
     pub(crate) fn new(
         entry: StableViewTransferPlan,
-        recovered_ledger: LoanLedger,
-        recovery_terminal_ledger: LoanLedger,
+        recovered_ledger: BorrowLedger,
+        recovery_terminal_ledger: BorrowLedger,
         recovery_transitions: Vec<CheckedLoanTransition>,
-        recovery_hold_base: LoanLedger,
+        recovery_hold_base: BorrowLedger,
         recovery_hold_transitions: Vec<CheckedLoanTransition>,
     ) -> Self {
         Self {
@@ -2839,9 +2846,9 @@ impl CheckedLoanCallEvidence {
     /// final identity check; every retained transition is applied first.
     pub(crate) fn recheck(
         &self,
-        caller_ledger: &LoanLedger,
+        caller_ledger: &BorrowLedger,
         caller_participant: Option<LoanParticipantId>,
-        callee_ledger: &LoanLedger,
+        callee_ledger: &BorrowLedger,
         callee_participant: Option<LoanParticipantId>,
     ) -> Result<(), LoanRefusal> {
         if caller_participant != Some(self.entry.caller)
@@ -2907,9 +2914,9 @@ impl StableViewRecovery {
     /// the canonical predecessor stored in `ledger`.
     pub(crate) fn recheck_transitions(
         &self,
-        predecessor: &LoanLedger,
+        predecessor: &BorrowLedger,
         caller: LoanParticipantId,
-    ) -> Result<LoanLedger, LoanRefusal> {
+    ) -> Result<BorrowLedger, LoanRefusal> {
         let mut current = predecessor.clone();
         for transition in &self.transitions {
             match &transition.evidence {
@@ -3034,7 +3041,7 @@ pub(crate) fn plan_stable_view_transfer(
     caller_resources: &ResourceContext,
     requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
-    ledger: &LoanLedger,
+    ledger: &BorrowLedger,
     caller: LoanParticipantId,
     callee: LoanParticipantId,
 ) -> Result<StableViewTransferPlan, StableViewPlanError> {
@@ -3053,7 +3060,7 @@ pub(crate) fn plan_stable_view_transfer_with_bindings(
     caller_resources: &ResourceContext,
     requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
-    ledger: &LoanLedger,
+    ledger: &BorrowLedger,
     caller: LoanParticipantId,
     callee: LoanParticipantId,
     parent_view_bindings: &LoanViewBindings,
@@ -3074,7 +3081,7 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites(
     caller_resources: &ResourceContext,
     requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
-    ledger: &LoanLedger,
+    ledger: &BorrowLedger,
     caller: LoanParticipantId,
     callee: LoanParticipantId,
     parent_view_bindings: &LoanViewBindings,
@@ -3098,7 +3105,7 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites(
 /// of the escrowed piece, so later workers use the ordinary split/reborrow
 /// path. The view is removed when the final join recovers the exact escrow.
 fn lend_owned_view_to_suspended_worker(
-    ledger: &mut LoanLedger,
+    ledger: &mut BorrowLedger,
     transitions: &mut Vec<CheckedLoanTransition>,
     residual: &mut ResourceContext,
     split_origins: &mut MemorySplitOrigins,
@@ -3188,7 +3195,7 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
     caller_resources: &ResourceContext,
     requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
-    ledger: &LoanLedger,
+    ledger: &BorrowLedger,
     caller: LoanParticipantId,
     callee: LoanParticipantId,
     parent_view_bindings: &LoanViewBindings,
@@ -3213,7 +3220,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     caller_resources: &ResourceContext,
     requirements: &[CheckedResourceFact],
     assumptions: &PureFactContext,
-    ledger: &LoanLedger,
+    ledger: &BorrowLedger,
     caller: LoanParticipantId,
     callee: LoanParticipantId,
     parent_view_bindings: &LoanViewBindings,
@@ -3539,7 +3546,11 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         if let Some(binding) = parent_view_bindings.get(&occurrence)
             && binding.hold.is_some()
         {
-            transferred_holds.push((requirement.fact.clone(), binding.clone()));
+            transferred_holds.push(TransferredHold {
+                section_index: requirement.section_index,
+                occurrence,
+                binding: binding.clone(),
+            });
         }
         residual = match fragment_reservation {
             Some((remaining, supports, origins)) if supports.len() == 1 => {
@@ -4412,7 +4423,7 @@ impl StableViewTransferPlan {
         Ok(())
     }
 
-    pub(crate) fn caller_ledger(&self) -> &LoanLedger {
+    pub(crate) fn caller_ledger(&self) -> &BorrowLedger {
         &self.parent_ledger
     }
 
@@ -4500,6 +4511,10 @@ impl StableViewTransferPlan {
         Ok(recovery)
     }
 
+    pub(crate) fn escrowed_hold(&self, source: &PlannedStableView) -> Option<&LoanViewBinding> {
+        self.escrowed_holds.get(&source.support)
+    }
+
     pub(crate) fn supports_explicit_view_escape(&self, source: &PlannedStableView) -> bool {
         !self.adapter_restorations.contains_key(&source.loan)
             && !self.escrowed_holds.contains_key(&source.support)
@@ -4517,7 +4532,7 @@ impl StableViewTransferPlan {
     #[cfg(test)]
     pub(crate) fn recover_suspended_views(
         self,
-        ledger: LoanLedger,
+        ledger: BorrowLedger,
         resources: ResourceContext,
         bindings: LoanViewBindings,
         local_bindings: BTreeMap<ResourceFact, LoanViewBinding>,
@@ -4535,7 +4550,7 @@ impl StableViewTransferPlan {
 
     pub(in crate::kernel) fn recover_suspended_views_with_entry_partition(
         mut self,
-        ledger: LoanLedger,
+        ledger: BorrowLedger,
         resources: ResourceContext,
         bindings: LoanViewBindings,
         local_bindings: BTreeMap<ResourceFact, LoanViewBinding>,
@@ -4580,14 +4595,6 @@ impl StableViewTransferPlan {
         };
         self.validate_exclusive_reservation()?;
         let parent_ledger = self.parent_ledger;
-        let mut viewed_by_loan = BTreeMap::new();
-        if !escaping.is_empty() {
-            for view in &self.stable_views {
-                viewed_by_loan
-                    .entry(view.loan)
-                    .or_insert(&view.requirement.fact);
-            }
-        }
         let loan_roots = self.loan_roots.clone();
         let mut ledger = self.ledger;
         let mut resources = self.caller_resources_after_requirements;
@@ -4615,11 +4622,6 @@ impl StableViewTransferPlan {
                     // Keep the caller's escrow or implicit local authority
                     // suspended under the returned occurrence's hold.
                     for head in heads {
-                        let viewed = head
-                            .root_permission
-                            .as_ref()
-                            .or_else(|| viewed_by_loan.get(&loan).copied())
-                            .ok_or(StableViewPlanError::Loan(LoanRefusal::MissingLoanBinding))?;
                         pending_holds.push((
                             std::slice::from_ref(head),
                             LoanViewBinding {
@@ -4627,7 +4629,7 @@ impl StableViewTransferPlan {
                                 scope,
                                 share: root,
                                 support,
-                                viewed: viewed.clone(),
+                                viewed: head.root_permission.clone(),
                                 hold: None,
                             },
                         ));
@@ -4921,8 +4923,8 @@ impl StableViewTransferPlan {
 
     pub(crate) fn recheck_entry(
         &self,
-        predecessor: &LoanLedger,
-    ) -> Result<LoanLedger, LoanRefusal> {
+        predecessor: &BorrowLedger,
+    ) -> Result<BorrowLedger, LoanRefusal> {
         self.validate_exclusive_reservation()?;
         let mut current = predecessor.clone();
         for transition in &self.entry_transitions {
@@ -4966,7 +4968,7 @@ fn is_mutex_lifetime_owner(fact: &ResourceFact) -> bool {
         if quantity.as_const() == Some(1))
 }
 
-impl LoanLedger {
+impl BorrowLedger {
     pub(crate) fn new() -> Self {
         static NEXT_ARENA: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let arena = NEXT_ARENA.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -5673,7 +5675,7 @@ impl LoanLedger {
     ///
     /// `evidence` is the kernel's own one-level expansion of `parent`, built
     /// at the expansion boundary by the checked `unfold`, `observe`, or
-    /// `open` that calls this. The ledger re-checks both premises of the
+    /// `with` scope that calls this. The ledger re-checks both premises of the
     /// transition rather than delegating them to its caller (D2 law 10): the
     /// evidence must describe the very parent the loan permits, and the
     /// child must be one the expansion contains.
@@ -5936,6 +5938,7 @@ impl LoanLedger {
 
     /// The descriptions a live loan authorizes, or none for an ended or
     /// unknown loan.
+    #[cfg(test)]
     pub(crate) fn permitted_descriptions(&self, loan: LoanId) -> Vec<ResourceFact> {
         let data = &self.storage.data;
         data.loans
@@ -6502,7 +6505,7 @@ impl LoanLedger {
         if !self.has_active_memory_loans() || memory_range_is_empty(range) {
             return Ok(());
         }
-        crate::kernel::search::ProofSearch::<LoanLedger>::loan_access(self, range, assumptions)
+        crate::kernel::search::ProofSearch::<BorrowLedger>::loan_access(self, range, assumptions)
     }
 
     /// The write's complete loan condition, retained as an ordinary resource

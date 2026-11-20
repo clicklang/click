@@ -504,7 +504,7 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
     let entry = ExecutionState::new().begin_function_entry_memory();
     let cell = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: AddressOffset::Constant(4),
     };
     let local = slot();
     let declared = entry
@@ -538,19 +538,20 @@ fn fold_cell_instantiation_keeps_the_entry_point_across_disjoint_stores() {
         let integer_body = observation(body.clone());
         let ((native, integer), work) = crate::instrumentation::measure_deterministic_work(|| {
             let zero = MachineTerm::constant(0);
+            let one = MachineTerm::constant(1);
             let native = crate::kernel::reasoning::order_reasoning::instantiate_range_fold_step(
                 &body,
                 accumulator,
                 &zero,
                 item,
-                &zero,
+                &one,
             );
             let integer = crate::kernel::reasoning::instantiate_integer_range_fold_step(
                 &integer_body,
                 accumulator,
                 &IntegerTerm::constant_i64(0),
                 item,
-                &IntegerTerm::constant_i64(0),
+                &IntegerTerm::constant_i64(1),
                 Some(MachineIntegerType::Int32),
             )
             .unwrap();

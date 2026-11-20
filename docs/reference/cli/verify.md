@@ -180,7 +180,7 @@ any live constructor arm. The ordinary error and the trace use
 the same formatted failure report, including the written tactic and its source
 location. A separate `To get a trace:` section gives the command to rerun.
 The source excerpt points to the failing written tactic (including steps inside
-`have` and `open`), and the ordinary error omits the internal premise dump.
+`have` and `with`), and the ordinary error omits the internal premise dump.
 A proof error prints the proposition it could not prove on a `goal:` line: a
 claim's remaining goal, or a refused C statement's requirement at the
 statement's pre-state, such as a call precondition, the condition that rules

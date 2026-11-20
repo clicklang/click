@@ -689,7 +689,7 @@ impl<'a> ProofScope<'a> {
         }
     }
 
-    /// Closes this `open` scope from `body`, this scope's body or one that
+    /// Closes this `with` scope from `body`, this scope's body or one that
     /// has gone on to prove a body fact the closing fold leaves open; the
     /// recorded scope keeps this scope's own body. At function exit the
     /// close is deferred until the outcome proof.
@@ -701,12 +701,16 @@ impl<'a> ProofScope<'a> {
         restoration: &OpenResourceRestoration,
     ) -> Result<Proof<'a>, ClickError> {
         let ProofContext::Execution(context) = self.root.context.as_ref() else {
-            unreachable!("an open scope can only be created from an execution Proof")
+            unreachable!("a resource scope can only be created from an execution Proof")
         };
         let body_certificate = self.body.certificate();
         let deferred = body.is_at_function_exit();
         let state = if !deferred && let OpenResourceRestoration::Named(instance) = restoration {
-            body.restore_open_instance(resource, instance)?.state
+            if body.holds_open_instance(instance)? {
+                body.state.clone()
+            } else {
+                body.restore_open_instance(resource, instance)?.state
+            }
         } else {
             let mut execution = body
                 .branch_execution()
@@ -714,7 +718,7 @@ impl<'a> ProofScope<'a> {
                 .map(Arc::unwrap_or_clone)
                 .ok_or_else(|| {
                     self.root
-                        .step_error("open scope body lost its execution frontier")
+                        .step_error("with block lost its execution frontier")
                 })?;
             let mut facts = body.facts().clone();
             if deferred {
@@ -752,7 +756,7 @@ impl<'a> ProofScope<'a> {
                     context.parameter_binding(),
                     &checked.state,
                 )?;
-                // The `open(...)` clause spells no access, so it lowers
+                // The `with(...)` clause spells no access, so it lowers
                 // as owned, but the head returns to the closed state
                 // with the access it was opened with. Record the head as
                 // the state holds it, so a viewed open closes through the
@@ -793,7 +797,7 @@ impl<'a> ProofScope<'a> {
                 .map_err(|error| match error {
                     ExecutionUpdateError::NotFrontier | ExecutionUpdateError::MissingExecution => {
                         self.root
-                            .step_error("open scope body lost its execution frontier")
+                            .step_error("with block lost its execution frontier")
                     }
                     ExecutionUpdateError::NotLoopBody
                     | ExecutionUpdateError::InvariantsAlreadyClosed => {

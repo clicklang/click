@@ -2560,39 +2560,25 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) = proposition {
-        fn sequence(
-            value: &crate::kernel::SequenceTerm,
-            parameter_binding: ParameterBinding<'_>,
-            state: &ExecutionState,
-            bound: &BTreeMap<Variable, SurfaceBinder>,
-        ) -> Option<ContractExpression> {
-            let _frame = SurfaceSynthesisFrame::enter("sequence")?;
-            Some(match value.node.as_ref() {
-                crate::kernel::SequenceTermNode::Literal(values) => {
-                    ContractExpression::SequenceLiteral(
-                        values
-                            .iter()
-                            .map(|value| {
-                                let ProgramValue::Int32(value) = value else {
-                                    return None;
-                                };
-                                synthesize_surface_bitvector(value, parameter_binding, state, bound)
-                            })
-                            .collect::<Option<Vec<_>>>()?,
-                    )
-                }
-                crate::kernel::SequenceTermNode::Concat(left, right) => {
-                    ContractExpression::SequenceConcat(
-                        Box::new(sequence(left, parameter_binding, state, bound)?),
-                        Box::new(sequence(right, parameter_binding, state, bound)?),
-                    )
-                }
-            })
-        }
         return Some(ClickProposition::Comparison {
-            left: sequence(left, parameter_binding, state, bound_variables)?,
+            left: synthesize_surface_sequence(left, parameter_binding, state, bound_variables)?,
             operator: ComparisonOperator::Equal,
-            right: sequence(right, parameter_binding, state, bound_variables)?,
+            right: synthesize_surface_sequence(right, parameter_binding, state, bound_variables)?,
+        });
+    }
+    if let Proposition::SequenceMembership { element, sequence } = proposition {
+        let ProgramValue::Int32(element) = element.native_compat() else {
+            return None;
+        };
+        return Some(ClickProposition::Comparison {
+            left: synthesize_surface_bitvector(element, parameter_binding, state, bound_variables)?,
+            operator: ComparisonOperator::In,
+            right: synthesize_surface_sequence(
+                sequence,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
         });
     }
     // The hidden resource-state argument has no written spelling. A
@@ -5587,6 +5573,42 @@ fn synthesize_typed_word_read(
     Some(ContractExpression::At {
         selector,
         expression: Box::new(at_state(&load, &recorded)?),
+    })
+}
+
+fn synthesize_surface_sequence(
+    value: &crate::kernel::SequenceTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<ContractExpression> {
+    let _frame = SurfaceSynthesisFrame::enter("sequence")?;
+    Some(match value.node.as_ref() {
+        crate::kernel::SequenceTermNode::Literal(values) => ContractExpression::SequenceLiteral(
+            values
+                .iter()
+                .map(|value| {
+                    let ProgramValue::Int32(value) = value else {
+                        return None;
+                    };
+                    synthesize_surface_bitvector(value, parameter_binding, state, bound)
+                })
+                .collect::<Option<Vec<_>>>()?,
+        ),
+        crate::kernel::SequenceTermNode::Concat(left, right) => ContractExpression::SequenceConcat(
+            Box::new(synthesize_surface_sequence(
+                left,
+                parameter_binding,
+                state,
+                bound,
+            )?),
+            Box::new(synthesize_surface_sequence(
+                right,
+                parameter_binding,
+                state,
+                bound,
+            )?),
+        ),
     })
 }
 

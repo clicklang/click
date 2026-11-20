@@ -34,7 +34,7 @@ int32 read_ref(int32** p) {
         Link::Present(linked) => {
             unfold(saved);
             have old(*p) == linked by { known(); }
-            open(control(*p)) { step_until(function.exit); }
+            with(control(*p)) { step_until(function.exit); }
             let saved = fold(slot(p), { link: Link::Present(linked) });
             solve();
         },

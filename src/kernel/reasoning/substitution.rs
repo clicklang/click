@@ -1363,6 +1363,10 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             }))
         }
         Proposition::Equal(left, right) => Proposition::Equal(s.term(left), s.term(right)),
+        Proposition::SequenceMembership { element, sequence } => Proposition::SequenceMembership {
+            element: s.stored_program_value(element.value()).into(),
+            sequence: walk_sequence(sequence, s),
+        },
         Proposition::ConditionIs(condition, value) => {
             Proposition::condition_is(s.stored_condition(condition), *value)
         }
@@ -1888,7 +1892,7 @@ mod resource_frame_substitution_tests {
             .try_compose_with_fact(live.clone(), &PureFactContext::new())
             .unwrap();
         let support = resources.unique_owned_occurrence_for_fact(&live).unwrap().0;
-        let ledger = crate::kernel::loans::LoanLedger::new();
+        let ledger = crate::kernel::loans::BorrowLedger::new();
         let participant = ledger.fresh_participant().unwrap();
         let (ledger, loan) = ledger
             .lend_mutex_use(participant, participant, support, live)
@@ -1942,7 +1946,7 @@ mod resource_frame_substitution_tests {
 
     #[test]
     fn state_substitutions_preserve_the_exact_loan_ledger_root() {
-        let ledger = crate::kernel::loans::LoanLedger::new();
+        let ledger = crate::kernel::loans::BorrowLedger::new();
         let participant = ledger.fresh_participant().expect("participant identity");
         let state = ExecutionState::new()
             .with_local("x", int32(MachineTerm::Variable(Variable(71_100))))
@@ -2242,7 +2246,7 @@ pub(crate) fn substitute_algebraic_variable_in_proposition(
     }
 
     match proposition {
-        Proposition::VolatileAccess(_) => {
+        Proposition::VolatileAccess(_) | Proposition::SequenceMembership { .. } => {
             let source = AlgebraicTerm {
                 algebraic_type: to.algebraic_type.clone(),
                 node: AlgebraicTermNode::Variable(from),
@@ -2477,6 +2481,10 @@ fn collect_proposition_bound_variables_one(
         Proposition::Equal(left, right) => {
             collect_term_bound_variables(left, variables);
             collect_term_bound_variables(right, variables);
+        }
+        Proposition::SequenceMembership { element, sequence } => {
+            collect_expression_value_bound_variables(element.value(), variables);
+            collect_sequence_bound_variables(sequence, variables);
         }
         Proposition::ConditionIs(condition, _) => {
             collect_condition_bound_variables(condition.native_compat(), variables);
@@ -4186,6 +4194,9 @@ fn validate_integer_pure_proposition(
         {
             validate_integer_atomic_proposition(proposition, collector)
         }
+        Proposition::SequenceMembership { .. } => {
+            validate_integer_atomic_proposition(proposition, collector)
+        }
         Proposition::ConditionIs(condition, _) => {
             validate_integer_pure_condition(condition.native_compat(), collector)
         }
@@ -4410,6 +4421,12 @@ fn substitute_pure_proposition_with_walker(
                         if integer_atomic_term_supported(left)
                             && integer_atomic_term_supported(right) =>
                     {
+                        rewritten.push(rewrite_integer_atomic_proposition_with_walker(
+                            proposition,
+                            walker,
+                        )?);
+                    }
+                    Proposition::SequenceMembership { .. } => {
                         rewritten.push(rewrite_integer_atomic_proposition_with_walker(
                             proposition,
                             walker,

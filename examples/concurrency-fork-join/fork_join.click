@@ -210,6 +210,20 @@ void *fill_range(void *argument) {
             }
             solve();
         }
+        otherwise {
+            have index == job->end by solve();
+            have forall (k: int32) {
+                job->begin <= k and k < job->end implies job->output[k] == job->value
+            } by {
+                intro();
+                intro();
+                have job->begin <= k and k < index by solve();
+                instantiate(forall (k: int32) {
+                    job->begin <= k and k < index implies job->output[k] == job->value
+                }, k);
+                solve();
+            }
+        }
     }
     step();
     fold(filled_range((argument as (struct range_job *))->output, (argument as (struct range_job *))->begin, (argument as (struct range_job *))->end, (argument as (struct range_job *))->value));

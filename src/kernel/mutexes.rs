@@ -32,7 +32,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(test)]
 use super::loans::MutexUseLoan;
-use super::loans::{LoanHoldId, LoanLedger, LoanParticipantId, MutexUseBinding};
+use super::loans::{BorrowLedger, LoanHoldId, LoanParticipantId, MutexUseBinding};
 use crate::persistent::PersistentMap;
 
 use super::{Address, ConditionTerm, ExecutionState, PureFactContext, Resource, ResourceFact};
@@ -178,7 +178,7 @@ pub(super) enum MutexProtocolMismatch {
 pub(super) struct MutexContext {
     state: ExecutionState,
     runtime_loan_transition: Option<(
-        LoanLedger,
+        BorrowLedger,
         LoanParticipantId,
         super::loans::CheckedLoanTransition,
     )>,
@@ -1253,7 +1253,7 @@ impl MutexContext {
             .state
             .loan_ledger
             .clone()
-            .unwrap_or_else(LoanLedger::new);
+            .unwrap_or_else(BorrowLedger::new);
         let participant = match self.state.loan_participant {
             Some(participant) => participant,
             None => ledger.fresh_participant().map_err(|error| {
@@ -3787,12 +3787,12 @@ mod tests {
     #[test]
     fn runtime_mutex_writes_require_entry_evidence_for_an_active_local_loan() {
         use super::super::*;
-        use crate::kernel::loans::{LoanLedger, plan_stable_view_transfer};
+        use crate::kernel::loans::{BorrowLedger, plan_stable_view_transfer};
         use crate::kernel::prelude::CheckedResourceFact;
         let (state, pointer) = automatic_holder();
         register_block_alignment(&pointer.base, 8);
         let viewed = ResourceFact::view_memory(allocation_range(pointer.clone(), 40));
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let callee = ledger.fresh_participant().unwrap();
         let assumptions = PureFactContext::new();

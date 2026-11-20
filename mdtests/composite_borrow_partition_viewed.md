@@ -21,7 +21,7 @@ void update(struct node* p, const struct callbacks* cb) {
     views callback_table(cb);
     ensures p->value == 1;
 } by {
-    open(callback_table(cb)) {
+    with(callback_table(cb)) {
         have separate(memory(cb->invoke), memory(p->value));
         step_until(function.exit);
     }

@@ -4,7 +4,7 @@
 `const struct rb_augment_callbacks *` and calls `propagate`, `copy` and
 `rotate` through it. Here the helper is verified alone, against three abstract
 facts and nothing else. The `callback_suite` resource carries one named
-contract per field, the helper only `views` it, and `open` brings the three
+contract per field, the helper only `views` it, and `with` brings the three
 facts into scope for the three indirect calls. Nothing enumerates the
 callbacks: each call is justified by the contract on that field alone.
 
@@ -118,7 +118,7 @@ void erase_augmented(struct node* node, struct node* parent,
     ensures parent->left == old(parent->left);
     ensures parent->right == old(parent->right);
 } by {
-    open(callback_suite(augment)) {
+    with(callback_suite(augment)) {
     }
 }
 ```

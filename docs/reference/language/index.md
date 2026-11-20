@@ -2080,7 +2080,7 @@ named members rather than quantities.
 Members are created and destroyed only under the authority.
 `fold(object_ref(obj))` creates one member and `unfold(object_ref(obj))`
 destroys one, each while the authority is owned, typically inside
-`open(object_control(obj)) { ... }`. Closing the `open` proves the control's
+`with(object_control(obj)) { ... }`. Closing the block proves the control's
 facts again, so a retain must update the stored count in the same scope:
 
 <!-- verified-example: mdtests/counted_resource_refcount_transitions.md -->
@@ -2093,7 +2093,7 @@ struct object* object_retain(struct object* obj) {
 
     ensures result == obj;
 } by {
-    open(object_control(obj)) {
+    with(object_control(obj)) {
         step();
         fold(object_ref(obj));
     }
@@ -2108,7 +2108,7 @@ the corresponding counter update.
 `fold(authority(object_ref(obj)))` establishes an empty population and
 `unfold(authority(object_ref(obj)))` retires one whose count is zero
 (`mdtests/authority_count_after_cleanup.md`; the lifecycle of a heap
-reference count is `examples/refcount/`). A call inside an `open` block does
+reference count is `examples/refcount/`). A call inside a `with` block does
 not assume the control's facts on return: closing the block proves them from
 what the caller knows
 (`mdtests/call_inside_open_population_does_not_assume_its_body.md`).
@@ -2790,6 +2790,9 @@ input must cover the output, and the output keeps the input borrow active
 until the caller gives it up. You can omit `from` when exactly one input
 view has the same lowered range. See
 [Producing a view](../../concepts/resources.md#producing-a-view).
+A newly produced composite that contains a view names its source with
+`produces cursor(...) from source;`. The source can be a `views ... as source;`
+requirement or an existing borrowing composite named by `consumes ... as source;`.
 `requires` and `ensures` accept pure propositions
 only. `consumes X;` beside `produces X;` for the same `X` is exactly
 `owns X;`, and the pair is refused with that one clause to write (with the

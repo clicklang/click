@@ -296,13 +296,13 @@ loan's scope. Folding moves the hold onto the head. Unfolding passes it to
 its viewed children so refolding can reuse it. A refold transfers all the
 viewed children sharing that hold.
 
-`produces cursor(...) from input` names a checked `views` requirement. Its
-normalized requirement index is carried with the returned occurrence. The
-caller checks the raw viewed children against that selected requirement and
-attaches one hold per returned head. Unannotated returns still select unique
-backing from the call's lent inputs or an entering held composite. Consuming
-a composite releases its hold unless the call transfers it to a returned head.
-Recovery closes a recoverable root after its final hold is released.
+`produces cursor(...) from input` names a checked `views` or `consumes`
+requirement. Its normalized requirement index travels with each emitted child
+occurrence. An `owns` return carries its reserved input occurrence directly.
+The caller checks the emitted pieces against the selected borrow and attaches
+one hold per returned head. Consuming a composite releases its hold unless
+the call transfers it to a returned head. Recovery restores the owner after
+the last hold for its borrow ends.
 
 ## Footprints and storage
 
@@ -339,7 +339,7 @@ keep a cell only when a loan protects it and drop zero-width cells.
 An owner may read directly and observe its composite without lending to
 itself: the observation is a projection recorded against the owner's
 occurrence and disappears with it. A borrowed composite's observations keep
-the loan identity through projection, fold, unfold, `open`, `close`,
+the loan identity through projection, fold, unfold, `with`, `close`,
 normalization, range splitting, and callback-fact extraction. Three outcomes
 stay distinct: a copied value or a state proposition may remain true
 after a loan ends; a claim about the current cell needs checked framing;

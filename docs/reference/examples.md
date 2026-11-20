@@ -479,7 +479,7 @@ sequence:
 - `mdtests/composite_resource_accepts_read_backed_fact.md`: contained
   current view permission provides read authority for a memory fact.
 - `mdtests/stable_view_fact_workflow.md`: a current view supports a
-  resource fact through an ordinary `open` proof workflow.
+  resource fact through an ordinary `with` proof workflow.
 - `mdtests/composite_resource_rejects_predicate_hidden_fact_read.md`:
   predicate-hidden memory reads are checked against contained current read
   authority.

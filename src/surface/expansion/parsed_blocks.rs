@@ -187,7 +187,7 @@ impl ParsedBlocks {
     }
 
     /// The proof blocks directly inside the tactic `range`, in source order:
-    /// a structured tactic's arms, or the body of `have ... by` and `open`.
+    /// a structured tactic's arms, or the body of `have ... by` and `with`.
     /// A block nested in one of them is not one of them.
     pub(super) fn child_blocks(&self, range: &Range<usize>) -> Vec<(usize, usize)> {
         let mut children: Vec<(usize, usize)> = Vec::new();
@@ -260,7 +260,7 @@ impl ParsedBlocks {
         }
     }
 
-    /// The single proof block of an `open` or a `have ... by` tactic.
+    /// The single proof block of a `with` or a `have ... by` tactic.
     pub(super) fn body_block(
         &self,
         range: &Range<usize>,

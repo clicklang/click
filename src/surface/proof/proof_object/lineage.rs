@@ -37,7 +37,7 @@ pub(super) enum ProofStepBlock {
     Claim,
     /// The `by { ... }` block of a `have`.
     Have,
-    /// The body of an `open`.
+    /// The body of a `with`.
     Open,
     /// One arm of a structured proof tactic (`if`, `cases`, or `both`)
     /// written in a block. `index` is the arm's written position (0 for the
@@ -50,7 +50,7 @@ impl ProofStepBlock {
         match self {
             Self::Claim => "proof".to_string(),
             Self::Have => "have body".to_string(),
-            Self::Open => "open body".to_string(),
+            Self::Open => "with body".to_string(),
             Self::Arm {
                 index,
                 name: "conjunct",
@@ -80,7 +80,7 @@ impl ProofStepPosition {
 }
 
 /// Where the step being checked sits in the proof the user wrote: the chain
-/// of enclosing `have`/`open` blocks, innermost last, with each block's
+/// of enclosing `have`/`with` blocks, innermost last, with each block's
 /// current source position.
 ///
 /// This is diagnostic addressing only. It carries no semantic state and
@@ -163,7 +163,7 @@ impl ProofStepSite {
         }
     }
 
-    /// The site of a step inside a nested `have` or `open` block, or an arm
+    /// The site of a step inside a nested `have` or `with` block, or an arm
     /// of a structured tactic, opened at this site.
     pub(super) fn nested(&self, block: ProofStepBlock) -> Self {
         Self {
@@ -198,7 +198,7 @@ impl ProofStepSite {
 
     /// The source path of the step being checked: the claim-level source
     /// index of its outermost tactic, then, for each block it descends into,
-    /// the written position there. A `have` or `open` body contributes one
+    /// the written position there. A `have` or `with` body contributes one
     /// entry (the position in the body); an arm of a structured tactic
     /// contributes two (the arm's written position, then the position in the
     /// arm). Every written tactic therefore has its own path, and the source

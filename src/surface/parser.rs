@@ -756,6 +756,7 @@ fn is_tactic_name(name: &str) -> bool {
 fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
     Some(match name {
         "both" => "`both` is retired: write `all { P => { ... } Q => { ... } }`",
+        "open" => "`open` is now `with`; write `with(resource) { ... }`",
         "assumption" => {
             "`assumption()` is now `known()`; use `known()` to close a goal from available facts"
         }
@@ -5678,6 +5679,18 @@ impl Parser {
                         return Err(self.value_binder_refusal(false));
                     }
                     let resource = self.parse_function_contract_memory_binding()?;
+                    if self.peek_ident() == Some("as") {
+                        self.position += 1;
+                        if !matches!(resource, ResourceClause::Declared { .. }) {
+                            return Err(self.error("a named consumed borrow must be one composite"));
+                        }
+                        let name = self.expect_ident("borrow source name")?;
+                        if view_inputs.insert(name.clone(), requires.len()).is_some() {
+                            return Err(
+                                self.error(format!("duplicate borrow source name `{name}`"))
+                            );
+                        }
+                    }
                     self.expect(Token::Semicolon)?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -11104,7 +11117,7 @@ impl Parser {
             self.expect(Token::Semicolon)?;
             return Ok(ProofTactic::Mark(mark));
         }
-        if name == "open" {
+        if name == "with" {
             self.expect(Token::LParen)?;
             let resource = if self.starts_named_resource_target() {
                 self.parse_owned_resource_target()?
@@ -11115,7 +11128,7 @@ impl Parser {
             let tactics = self.parse_possibly_empty_tactic_block()?;
             if self.peek_ident() == Some("by") {
                 return Err(self.error(
-                    "`open` takes no trailing `by`; prove the closing fact with `have` inside the block",
+                    "`with` takes no trailing `by`; prove the closing fact with `have` inside the block",
                 ));
             }
             self.skip_redundant_semicolon();
@@ -18809,7 +18822,7 @@ mod tactic_classification_tests {
             "apply(theorem(x)) using { x == 1; };",
         ),
         ("have", "have x == 1 by { normalize(); }"),
-        ("open", "open(reference(p)) { normalize(); }"),
+        ("with", "with(reference(p)) { normalize(); }"),
         ("if", "if x == 1 { normalize(); } else { normalize(); }"),
         (
             "cases",

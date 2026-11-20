@@ -142,7 +142,7 @@ impl ProofSourceIndex {
             ..Default::default()
         };
         match self.tokens[range.start].text.as_str() {
-            "have" | "open" => result.body = parsed.child_blocks(range).first().copied(),
+            "have" | "with" => result.body = parsed.child_blocks(range).first().copied(),
             "if" => {
                 result.arms = parsed
                     .two_arms(range, "if")

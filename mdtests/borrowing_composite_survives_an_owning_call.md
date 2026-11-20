@@ -26,12 +26,12 @@ verifying "probe.c";
 int32 setup(struct s* p, int32 d[], int32 n) {
     requires 0 <= n;
     consumes *p;
-    views src(d, n);
-    produces box(p);
+    views src(d, n) as input;
+    produces box(p) from input;
     ensures p->b == n;
     ensures p->d == d;
 } by {
-    unfold(src(d, n));
+    observe(src(d, n));
     have separate(memory(*p), memory(d[0..n])) by { solve(); }
     have contains(memory(d[0..n]), memory(d[0..n])) by { apply(click::separation::contains_refl(memory(d[0..n]))) using {}; }
     have contains(memory(*p), memory(p->a)) by { normalize(); }
@@ -59,7 +59,6 @@ int32 setup(struct s* p, int32 d[], int32 n) {
         };
     }
     step_until(function.exit);
-    fold(src(d, n));
     fold(box(p));
     solve();
 }
@@ -79,8 +78,8 @@ int32 bump(struct s* p) {
 int32 probe(struct s* p, int32 d[], int32 n) {
     requires 0 < n;
     consumes *p;
-    views src(d, n);
-    produces box(p);
+    views src(d, n) as input;
+    produces box(p) from input;
     ensures result == n;
 } by {
     step();
