@@ -1149,27 +1149,39 @@ impl ProgramPoint {
     /// store supplies a value. Use the recorded disjoint suffix only when
     /// it reaches a verified function-entry view.
     pub(crate) fn entry_integer_version(&self, pointer: &Address, kind: LoadKind) -> Option<Self> {
-        let at_parameter_base = matches!(pointer.offset, AddressOffset::Constant(0))
-            || matches!(&pointer.offset, AddressOffset::Int32Scaled { value, .. }
-                if value.operand_view().variable().is_some());
         if kind != LoadKind::Int32
             || pointer.base != AddressBase::ExternalArgument
-            || !at_parameter_base
+            || !pointer.offset.is_shallow()
         {
             return None;
         }
         let mut entry = self.parameter_read_start(&pointer.base);
         let node = entry.path.0.as_ref()?;
-        let cells = &entry.memory().cells;
+        // Preserve the selection when a fold or quantified index is
+        // instantiated. A materialized parameter block keeps its existing
+        // read rules for both the symbolic index and its concrete instances.
         if !node.function_entry
             || !entry.path.matches_indexed_view(&entry.memory)
-            || cells.explicitly_stored_value(pointer).is_some()
-            || cells.exact_run_slot_type(pointer) != Ok(None)
+            || entry.memory().cells.has_cells_in_block(&pointer.base)
         {
             return None;
         }
         entry.read = ReadSelection::Entry;
         Some(entry)
+    }
+
+    /// An instance of an entry read still names that same input point.
+    /// Check the new address and view using the same rule as direct lowering.
+    pub(in crate::kernel) fn entry_version_after_rewrite(
+        &self,
+        pointer: &Address,
+        kind: LoadKind,
+    ) -> Option<Self> {
+        if matches!(self.read, ReadSelection::Entry) {
+            self.entry_integer_version(pointer, kind)
+        } else {
+            None
+        }
     }
 
     pub(crate) fn ordinary_typed_version(

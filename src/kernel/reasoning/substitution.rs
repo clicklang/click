@@ -6186,6 +6186,17 @@ pub(crate) fn substitute_bitvector_variable(
                 crate::kernel::MachineOperandView::Legacy(term),
             )
             .expect("structural read");
+            if let Some(entry) = memory
+                .with_renamed_memory(rewritten_memory.clone())
+                .entry_version_after_rewrite(&rewritten_pointer, *kind)
+            {
+                return crate::kernel::eval::scalar_read_for_exact_cell_at(
+                    &entry,
+                    &rewritten_pointer,
+                    *kind,
+                    read.bytes,
+                );
+            }
             // A projected state is indexed by the address it was selected
             // for. Renaming that address must project the original source
             // again, just as direct lowering at the new binder does.
