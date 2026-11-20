@@ -1145,14 +1145,20 @@ refused as a proven overlap. Write a narrow effect as ownership of the whole
 composite plus an `ensures` about the cells the function leaves alone.
 
 A composite whose definition body contains a `views` clause is a struct holding
-a borrow — a cursor, an iterator, a parser over input it does not own. Folding
-one makes the folded head a dependency of the borrow behind its viewed pieces,
-so the lender recovers its memory only once the composite is unfolded or
-consumed. A function may produce such a composite over one of its own viewed
-inputs: that input's borrow stays open past the return with the produced
-composite holding it, and the caller recovers the input when it consumes the
-composite. Click infers the relationship when exactly one viewed input can back
-the piece and refuses the contract when none or several can.
+a borrow, such as a cursor over input it reads. A contract can name the input
+that backs the cursor. For example, the initializer in
+`examples/input-cursor/input_cursor.click` uses `views readable_input(data,
+length) as input;` and `produces input_cursor(owner) from input;`. Each
+viewed piece in the cursor must be covered by `input`. The source must have
+backing that the caller can recover directly when the borrow ends.
+
+Each produced cursor keeps its own hold on the input. Unfolding moves the hold
+to its viewed pieces, and refolding those pieces together moves it back to
+the new head. Consuming
+one cursor leaves the other cursors' holds live. Once the last hold is gone,
+the caller can recover its original ownership. For contracts with unannotated
+borrowing composites, Click still infers backing when it can identify a
+unique source.
 
 Members of an `authorized` family are the exception: they carry no body, so
 folding one places no hold, and lending one member of a quantity leaves the

@@ -5651,8 +5651,13 @@ impl Parser {
                     let resource = self.parse_resource_target(ResourceAccessMode::View)?;
                     if self.peek_ident() == Some("as") {
                         self.position += 1;
-                        if !matches!(resource, ResourceClause::ViewMemory(_)) {
-                            return Err(self.error("a named input view must name one memory range"));
+                        if !matches!(
+                            resource,
+                            ResourceClause::ViewMemory(_) | ResourceClause::Declared { .. }
+                        ) {
+                            return Err(self.error(
+                                "a named input view must name one memory range or composite",
+                            ));
                         }
                         let name = self.expect_ident("input view name")?;
                         if view_inputs.insert(name.clone(), requires.len()).is_some() {
@@ -5742,6 +5747,21 @@ impl Parser {
                         }
                     }
                     let resource = self.parse_function_contract_memory_binding()?;
+                    let view_source =
+                        if self.peek_ident() == Some("from") {
+                            if !matches!(resource, ResourceClause::Declared { .. }) {
+                                return Err(self.error(
+                                "`from` requires a produced view or an unnamed composite resource",
+                            ));
+                            }
+                            self.position += 1;
+                            let name = self.expect_ident("input view name")?;
+                            Some(view_inputs.get(&name).copied().ok_or_else(|| {
+                                self.error(format!("unknown input view `{name}`"))
+                            })?)
+                        } else {
+                            None
+                        };
                     let proof = self.parse_proof_clause_or_default()?;
                     let binder_resource =
                         apply_contract_lets_to_resource_clause(resource.clone(), &contract_lets)
@@ -5762,7 +5782,7 @@ impl Parser {
                                 ensure: Ensure::Resource(resource),
                                 proof,
                                 borrowed: false,
-                                view_source: None,
+                                view_source,
                                 condition: None,
                             },
                             &contract_lets,

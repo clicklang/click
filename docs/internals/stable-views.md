@@ -291,19 +291,18 @@ handles any joins a later proof needs.
 
 ### Escaping borrows
 
-A composite whose body packages a loan-backed view is a struct holding a
-borrow. Folding it places a hold on the loan's scope, carried by the head's
-binding; unfolding hands the binding to the restored piece so a refold reuses
-the hold. At a call boundary, every viewed piece a produced or returned owned
-composite packages must be backed by exactly one loan of the call (one
-joined owner, when the view spans several pieces): a view
-lent here (the loan is returned open with the composite holding it: an
-escrowed owner stays escrowed, a child of the caller's view ends and the
-parent binding is held), or the hold binding an owned input brought in. None
-or more than one is refused. A consumed composite releases its hold, and a
-root the caller can then close is ended and its owner recovered inside the
-recovery. This is Rust's lifetime elision: nothing is written in the
-ordinary case, and the ambiguous case is a diagnostic.
+A composite whose body packages a loan-backed view carries a hold on the
+loan's scope. Folding moves the hold onto the head. Unfolding passes it to
+its viewed children so refolding can reuse it. A refold transfers all the
+viewed children sharing that hold.
+
+`produces cursor(...) from input` names a checked `views` requirement. Its
+normalized requirement index is carried with the returned occurrence. The
+caller checks the raw viewed children against that selected requirement and
+attaches one hold per returned head. Unannotated returns still select unique
+backing from the call's lent inputs or an entering held composite. Consuming
+a composite releases its hold unless the call transfers it to a returned head.
+Recovery closes a recoverable root after its final hold is released.
 
 ## Footprints and storage
 
