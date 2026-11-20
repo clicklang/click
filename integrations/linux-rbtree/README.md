@@ -22,9 +22,9 @@ a whole kernel tree.
 - [`rbtree.click`](rbtree.click) and [`click.project.json`](click.project.json):
   the sidecar and the project, whose `linux` C unit is the recorded
   invocation with `inputs/` as its root. The sidecar has no contracts yet.
-- [`click.project.lock.json`](click.project.lock.json) and
-  [`.click/linux/lib/rbtree.c.i`](.click/linux/lib/rbtree.c.i): the lock and
-  the preprocessed artifact that `click import lock` produced. The artifact is
+- [`.click/captures/manifest.json`](.click/captures/manifest.json) and
+  [`.click/captures/linux/lib/rbtree.c.i`](.click/captures/linux/lib/rbtree.c.i): the lock and
+  the preprocessed artifact that `click capture` produced. The artifact is
   the recorded 637,604 bytes.
 - [`make-closure.py`](make-closure.py): rebuilds the archive from a configured
   tree.
@@ -36,7 +36,7 @@ closure there first:
 ```sh
 mkdir -p integrations/linux-rbtree/inputs
 tar -xzf integrations/linux-rbtree/input-closure.tar.gz -C integrations/linux-rbtree/inputs
-click import lock integrations/linux-rbtree
+click capture integrations/linux-rbtree
 ```
 
 Refreshing needs the recorded compiler; loading does not.
@@ -58,7 +58,7 @@ and no unrecorded file is present, and that the project's unit carries
 every recorded argument except `-E` and the source operand, which the
 importer supplies. The unit selects the `linux-6.8-x86_64-kbuild`
 option profile, which accepts every recorded option; the classification and
-reasons are in [`docs/reference/cli/import.md`](../../docs/reference/cli/import.md).
+reasons are in [`docs/reference/cli/capture.md`](../../docs/reference/cli/capture.md).
 The options are not removed to make the import fit.
 
 `linux_rbtree_locked_import_loads_offline` runs everywhere. It extracts the
@@ -76,7 +76,7 @@ declarations of 2,575.
 
 `linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier` needs
 the recorded compiler, identified by the SHA-256 of the driver and of `cc1`.
-With it, `click import lock` locks the project in a fresh copy; the
+With it, `click capture` locks the project in a fresh copy; the
 artifact is the recorded output and the lock agrees with the committed one in
 everything but the paths of the preparing checkout. The recorded
 preprocessing, run directly in the extracted closure, also yields exactly the

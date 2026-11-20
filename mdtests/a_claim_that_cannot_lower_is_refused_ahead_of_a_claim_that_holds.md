@@ -1,6 +1,6 @@
 # A claim that cannot lower is refused with its own cause, ahead of a claim that holds
 
-`preserve` states two claims. The first holds: nothing writes `member`. The
+`maintain` states two claims. The first holds: nothing writes `member`. The
 second cannot be lowered: `count(...)` of `ticket(pool + 1)` needs owning
 authority for that population, which the function does not hold. The
 implicit tail closes the proposition claims as one group, and a claim whose

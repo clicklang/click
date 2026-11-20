@@ -243,7 +243,7 @@ fails the proof and never falls back to body execution. Only a contract-less
 same way.
 
 Each loop-rule premise can be automatic or explicit. Explicit `initialize` is a
-pure proof of the invariants at the actual loop entry. Explicit `preserve` is an
+pure proof of the invariants at the actual loop entry. Explicit `maintain` is an
 execution proof that advances through one arbitrary iteration and checks every
 reached back edge. These proofs feed the abstract-exit constructor directly;
 the kernel does not prove either supplied premise again. An omitted phase uses

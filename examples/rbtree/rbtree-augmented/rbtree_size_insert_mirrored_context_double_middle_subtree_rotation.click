@@ -198,7 +198,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant old(state.phase) == SizedInsertMirroredContextDoubleMiddleSubtreePhase::Before(g, p, above, pv, gv, far, m, mv, middle_right, middle_left, nv);
                 invariant state.model == sized_mirrored_context_double_middle_subtree_before(g, p, node, above, pv, gv, far, m, mv, middle_right, middle_left, nv);
                 initialize by solve();
-                preserve by {
+                maintain by {
                     let { tree: loop_tree, link: link } = unfold(state);
                     unfold(sized_mirrored_context_double_middle_subtree_before(g, p, node, above, pv, gv, far, m, mv, middle_right, middle_left, nv));
                     have loop_tree.model == SizedTree::Node(g, above, Color::Black, gv, SizedTree::Empty, SizedTree::Node(p, g, Color::Red, pv, SizedTree::Node(node, p, Color::Red, nv, SizedTree::Empty, SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right)), far)) by {

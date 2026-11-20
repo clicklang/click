@@ -38,7 +38,7 @@ int32 branch_arm_break(int32 n) {
         invariant i >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             branch { true => { step(); } false => { } }
             step();
         }

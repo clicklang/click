@@ -85,7 +85,7 @@ void destroy(struct tree* t) {
         invariant tree_size(x.model) <= tree_size(old(x.model));
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match x.model {
                 Tree::Leaf => { contradiction(x.model == Tree::Leaf); },
                 Tree::Node(child_model, sibling_model) => {

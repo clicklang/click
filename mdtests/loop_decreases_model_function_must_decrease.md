@@ -51,7 +51,7 @@ void spin(int32 n) {
         invariant n >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

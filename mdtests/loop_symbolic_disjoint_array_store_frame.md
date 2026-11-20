@@ -47,7 +47,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
         views next[0..n];
         owns visited[0..n];
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             mark iter;
             have 0 <= next[cur] and next[cur] < n by {
                 instantiate(forall (k: int32) {

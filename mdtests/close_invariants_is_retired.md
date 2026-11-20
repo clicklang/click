@@ -1,6 +1,6 @@
 # `close_invariants` is retired
 
-A `preserve` script closes the loop's invariants and its `decreases` when it
+A `maintain` script closes the loop's invariants and its `decreases` when it
 reaches the back edge, as a function proof closes its `ensures` when it
 reaches the exit: each by `solve()`, which reads the facts the script has
 stated. A member that needs help is proved with `have <invariant> by { ... }`
@@ -28,7 +28,7 @@ int32 count(int32 n) {
     loop {
         decreases n - i;
         invariant 0 <= i and i <= n;
-        preserve by {
+        maintain by {
             step();
             close_invariants();
         }

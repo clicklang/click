@@ -1,6 +1,6 @@
 # `cases` in a loop body rejoins
 
-In a loop's `preserve` proof the arms of `cases` rejoin where they end, as a
+In a loop's `maintain` proof the arms of `cases` rejoin where they end, as a
 straight-line proof `if` does there, and the proof continues once with the
 facts every arm proved.
 
@@ -26,7 +26,7 @@ int32 count_once(int32 flag) {
         invariant i >= 0;
         invariant i <= 1;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
             have i == 0 or i == 1;
             cases {

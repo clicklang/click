@@ -53,7 +53,7 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
         };
         owns dst[0..n];
         invariant forall (k: int32) { 0 <= k and k < n implies src[k] == old(src[k]) };
-        preserve by {
+        maintain by {
             mark iteration;
             have contains(memory(dst[0..n]), memory(dst[i])) by {
                 apply(click::separation::contains_element(dst, 0, n, i)) using { 0 <= i; i < n; };

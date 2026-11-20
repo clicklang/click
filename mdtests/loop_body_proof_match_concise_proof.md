@@ -1,6 +1,6 @@
 # a loop-body proof `match` closes its invariants without a certificate
 
-This checks the unexpanded proof `match` inside `preserve`: the excluded arm
+This checks the unexpanded proof `match` inside `maintain`: the excluded arm
 closes by `contradiction`, and the live arm relates its binding to the entry
 model, refolds the binder, and leaves the invariants to the back edge's
 `solve()`.
@@ -49,7 +49,7 @@ int32 spin(struct cell* node, int32 n) {
         invariant c.model != Maybe::None;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Maybe::None => { contradiction(c.model == Maybe::None); },
                 Maybe::Some(value) => {

@@ -607,7 +607,7 @@ impl adler2::Adler32 {
       }
       have to_integer(loop(0).iter.len()) + iterations == to_integer((bytes.len() - bytes.len() % 4u64) / 22208u64);
      }
-     preserve by {
+     maintain by {
       mark outer_pass;
       // The header reads `iter.len()` and leaves by `break` when it is zero.
       step(); step(); step(); step();
@@ -878,7 +878,7 @@ impl adler2::Adler32 {
        }
        have to_integer(loop(1).iter.len()) + iterations == to_integer(chunk_len / 4u64);
       }
-     preserve by {
+     maintain by {
        mark inner_pass;
        // The header reads `iter.len()` and leaves by `break` when it is zero.
        step(); step(); step(); step();
@@ -1969,7 +1969,7 @@ impl adler2::Adler32 {
        have remainder_chunk_len % 4u64 == 0u64;
        have remainder_chunk_len <= 22204u64;
       }
-      preserve by {
+      maintain by {
        mark remainder_pass;
        // The header reads `iter.len()` and leaves by `break` when it is zero.
        step(); step(); step(); step();
@@ -3061,7 +3061,7 @@ impl adler2::Adler32 {
       invariant truncating_remainder(to_integer(b), 65521) == adler_spec_b_u64(bytes, bytes.len() - __rust_mir_138_remaining, old(to_integer((self.a as u32))), old(to_integer((self.b as u32))));
       invariant 0 <= to_integer(a) and to_integer(a) <= adler_tail_a_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), ((__rust_mir_138_remaining as u32) as i32)));
       invariant 0 <= to_integer(b) and to_integer(b) <= adler_tail_b_ceiling(adler_tail_consumed(((remainder_len as u32) as i32), ((__rust_mir_138_remaining as u32) as i32)));
-      preserve by {
+      maintain by {
         have 0u64 < __rust_mir_138_remaining;
         have 1u64 <= __rust_mir_138_remaining by solve() using { 0u64 < __rust_mir_138_remaining; };
         have __rust_mir_138_remaining <= 22208u64 by solve() using { __rust_mir_138_remaining <= remainder_len; remainder_len <= 3u64; };

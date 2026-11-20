@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "stack.cpp": {
+              "compilation_database_sha256": "e6784c4c71e6c57c55e7c9cd1f10d8e291167b24fb00f5f40c40ccda95d2419d",
+              "dependencies": {},
+              "logical_source_sha256": "abfe4d40c6dfa098b303b1298809fbe5fe7781256cda9a74a5e557ae37072862",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "stack.cpp",
+                  "-o",
+                  "stack.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "stack.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "clang version 19.1.7",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "abfe4d40c6dfa098b303b1298809fbe5fe7781256cda9a74a5e557ae37072862"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "abcba821f53be0cf6eaca36f7cf965760fe3ab3912c356ee9682523fe41cb90d",
+          "name": "clang"
+        },
+        "sources": {
+          "stack.cpp": {
+            "artifact": {
+              "bytes": 92220,
+              "path": ".click/captures/fixture/stack.cpp.click-cpp.json",
+              "sha256": "bdfdd20378b8c60e7f86be6bc52adddf21b0c3c6faac6b951d6edaf8040876b9"
+            },
+            "identity": "99a06904656e569be4870eeb650ed073217d02b2e1e7193c0daff78c25f01e33",
+            "inputs": {
+              "$unit/stack.cpp": "abfe4d40c6dfa098b303b1298809fbe5fe7781256cda9a74a5e557ae37072862"
+            }
+          }
+        },
+        "unit": "e8f96712e697f702f4586314758bfe3100e54617118c8dd4f916dfe6228b1da6"
+      }
+    }
+  }
+}

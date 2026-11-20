@@ -69,7 +69,7 @@ void *fill_range(void *argument) {
     step();
     step();
     step();
-    loop as fill {
+    loop fill {
         decreases job->end - index;
         views job->output;
         views job->begin;
@@ -89,7 +89,7 @@ void *fill_range(void *argument) {
                 contradiction(job->begin <= k and k < index);
             }
         }
-        preserve by {
+        maintain by {
             have separate(memory(*job), memory(job->output[job->begin..job->end]));
             have job->begin <= index;
             have contains(memory(*job), memory(job->output)) by { normalize(); }

@@ -78,14 +78,14 @@ void fill(struct arena *arena, int32 start, int32 end) {
     unfold(state(arena, start, end));
     step(); step();
     let w = fold(arena_window(arena->data, arena->occupied, arena->capacity, start, end), { next: start });
-    loop as mark_free_run {
+    loop mark_free_run {
         decreases to_integer(end) - to_integer(i);
         owns w: arena_window(arena->data, arena->occupied, arena->capacity, start, end);
         invariant w.next == i;
         invariant arena->data == old(arena->data);
         invariant arena->occupied == old(arena->occupied);
         initialize by solve();
-        preserve by {
+        maintain by {
             let { next: m } = unfold(w);
             have m == i;
             have i < end;

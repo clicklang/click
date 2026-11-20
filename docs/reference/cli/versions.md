@@ -95,14 +95,14 @@ reported as a warning; the version is still installed.
 ## Languages
 
 C is built into Click. C++ and Rust need a front end to prepare a lock
-(`click import lock`); verifying a committed lock needs none. The front ends
+(`click capture`); verifying a committed lock needs none. The front ends
 are add-ons of the version the launcher runs here, the one
 [version dispatch](#version-dispatch) selects: the nearest project pin, then the
 global default, then the launcher's own version.
 
 - `click add cpp` (or `c++`) installs that release's pinned C++ exporter from
   `click-cpp-frontend-TARGET.tar.gz` into `versions/VERSION/frontends/cpp`,
-  where `click import lock` finds it. Its manifest must name the exporter
+  where `click capture` finds it. Its manifest must name the exporter
   version, Clang version and artifact schema this Click pins.
 - `click add rust` installs that release's pinned Rust front end and compiler
   runtime from `click-rust-frontend-TARGET.tar.gz` into

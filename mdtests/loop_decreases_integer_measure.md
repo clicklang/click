@@ -40,7 +40,7 @@ int32 drain(int32 n) {
         decreases level(n);
         invariant 0 <= n;
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             have 0 <= to_integer(n - 1);
             have 1 <= n by {
                 solve() using {

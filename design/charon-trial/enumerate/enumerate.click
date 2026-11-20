@@ -16,7 +16,7 @@ fn last_index(bytes: &[u8]) -> usize {
         invariant iter.count == bytes.len() - iter.len();
         invariant iter.as_slice() == bytes + iter.count;
         invariant iter.count != 0u64 implies last == iter.count - 1u64;
-        preserve by {
+        maintain by {
             if 0u64 < iter.len() {
                 mark taken;
                 have to_integer(iter.count) < to_integer(bytes.len());
@@ -57,7 +57,7 @@ fn last_pair(words: &[u16]) -> u32 {
         invariant iter.as_slice() == words + iter.count;
         invariant iter.count != 0u64 implies index == iter.count - 1u64;
         invariant value <= 65535u32;
-        preserve by {
+        maintain by {
             if 0u64 < iter.len() {
                 mark taken;
                 have to_integer(iter.count) < to_integer(words.len());

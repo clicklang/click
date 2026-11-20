@@ -68,7 +68,7 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
         invariant 0 <= i and i <= p;
         owns occupied[0..capacity];
         initialize by solve();
-        preserve by {
+        maintain by {
             mark iteration;
             have i < p by {
                 if i < p {

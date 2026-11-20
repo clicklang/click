@@ -46,7 +46,7 @@ void repeat_node_loop(struct node* node) {
         invariant i >= 0;
         invariant i <= 1;
         initialize by solve();
-        preserve by {
+        maintain by {
             if node->next != 0 {
                 step();
                 step();

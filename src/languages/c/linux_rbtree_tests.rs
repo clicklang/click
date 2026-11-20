@@ -72,7 +72,7 @@ const REQUIRE_TOOLCHAIN: &str = "CLICK_LINUX_RBTREE_REQUIRE_TOOLCHAIN";
 const INVENTORY: &str = "CLICK_LINUX_RBTREE_INVENTORY";
 
 /// The unit's prepared artifact and the sidecar, relative to the project.
-const ARTIFACT: &str = ".click/linux/lib/rbtree.c.i";
+const ARTIFACT: &str = ".click/captures/linux/lib/rbtree.c.i";
 const SIDECAR: &str = "rbtree.click";
 
 fn fixture() -> PathBuf {
@@ -443,7 +443,7 @@ fn linux_rbtree_pinned_translation_unit_locks_and_reproduces_its_frontier() {
         return;
     }
 
-    // The import route: `click import lock` runs the unit's vector under
+    // The import route: `click capture` runs the unit's vector under
     // the option profile and reproduces the committed lock.
     Project::load(&closure.0.join(project::FILE_NAME))
         .and_then(|project| project.lock())

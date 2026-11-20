@@ -30,7 +30,7 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant 0 <= ((i as uint32) as int32) and 1000 >= ((i as uint32) as int32);
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(((i as uint32) as int32));
         invariant to_integer(total) == prefix(bytes, ((i as uint32) as int32));
-        preserve by {
+        maintain by {
             have bytes.len() <= 2147483647u64 by {
                 normalize() using {
                     bytes.len() <= 1000u64;

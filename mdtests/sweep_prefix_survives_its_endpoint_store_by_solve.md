@@ -42,7 +42,7 @@ void sweep(int32 visited[], int32 n) {
         invariant unmarked(visited, 0, i) == 0;
         owns visited[0..n];
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             mark iter;
             have i < 1073741823 by {
                 solve() using { i < n; n <= 1073741823; };

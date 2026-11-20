@@ -37,5 +37,5 @@ int32 f(int32 a, int32 b) {
 ```
 
 ```expect
-fail: `f.loop(0).preserve`: the loop condition could not be evaluated on this path: it reaches undefined behavior (signed overflow)
+fail: `f.loop(0).maintain`: the loop condition could not be evaluated on this path: it reaches undefined behavior (signed overflow)
 ```

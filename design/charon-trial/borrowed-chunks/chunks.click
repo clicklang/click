@@ -20,7 +20,7 @@ fn cover(bytes: &[u8]) -> usize {
             have bytes.len() % 4u64 <= bytes.len();
             solve();
         }
-        preserve by {
+        maintain by {
             if 4u64 <= iter.v.len() {
                 have bytes.len() % 4u64 <= bytes.len();
                 have to_integer(bytes.len() - bytes.len() % 4u64 - iter.v.len()) + 4 <= to_integer(bytes.len());

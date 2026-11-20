@@ -1,5 +1,33 @@
-//! Compound literals share named automatic storage and initialization.
+//! Compound literal objects use automatic storage with a source occurrence identity.
 use super::*;
+
+#[derive(Clone, Default)]
+pub(super) struct CompoundLiteralStorage {
+    bindings: BTreeSet<BindingName>,
+    declarations: Vec<CStatement>,
+}
+
+impl CompoundLiteralStorage {
+    fn record(&mut self, declaration: CStatement) {
+        let name = match &declaration {
+            CStatement::Declare { name, .. } | CStatement::DeclareStructValue { name, .. } => name,
+            _ => unreachable!("literal storage"),
+        };
+        if self.bindings.insert(name.binding().clone()) {
+            self.declarations.push(declaration);
+        }
+    }
+
+    pub(super) fn append(&mut self, storage: Self) {
+        for declaration in storage.declarations {
+            self.record(declaration);
+        }
+    }
+
+    pub(super) fn into_declarations(self) -> Vec<CStatement> {
+        self.declarations
+    }
+}
 
 impl Parser {
     fn require_compound_literal_scope(&self) -> Result<(), CSyntaxError> {
@@ -12,6 +40,32 @@ impl Parser {
             return Err(self.error_here("compound literals currently require block scope"));
         }
         Ok(())
+    }
+
+    fn compound_literal_binding(&mut self) -> BindingName {
+        // A parser retry reaches the same opening initializer brace.
+        if let Some(binding) = self.compound_literal_bindings.get(&self.position) {
+            return binding.clone().into();
+        }
+        let ordinal =
+            u32::try_from(self.compound_literal_bindings.len()).expect("literal ordinal fits u32");
+        let owner = self
+            .binding_function
+            .clone()
+            .expect("literal has a function");
+        let binding = LocalBindingId::compound_literal(owner, ordinal)
+            .with_scope_depth(self.scopes.len() as u32);
+        self.compound_literal_bindings
+            .insert(self.position, binding.clone());
+        binding.into()
+    }
+
+    fn reserve_compound_literal_local_ordinal(&mut self) {
+        // Existing proofs can still select later source declarations by ordinal.
+        self.next_local_binding = self
+            .next_local_binding
+            .checked_add(1)
+            .expect("binding ordinal fits u32");
     }
 
     pub(super) fn parse_array_compound_literal(
@@ -37,6 +91,7 @@ impl Parser {
                 "array compound literals require unqualified elements with ordinary alignment",
             ));
         }
+        let name = self.compound_literal_binding();
         let mut written = Vec::new();
         let mut next = 0;
         let written_count = self.parse_array_initializer_elements(
@@ -54,10 +109,7 @@ impl Parser {
         }
         let interface_type = array_type_for_element(element_type, length)
             .expect("array declarator has a modeled element type");
-        let name = self.new_automatic_binding(Some(format!(
-            "__click_compound_literal_{}",
-            self.next_local_binding
-        )));
+        self.reserve_compound_literal_local_ordinal();
         let (initializer, initializer_call, initializer_assignment) = if self.unevaluated_operand {
             (CStatement::Skip, None, None)
         } else {
@@ -87,7 +139,7 @@ impl Parser {
             self.compound_literal_declarations
                 .last_mut()
                 .expect("literal has a block")
-                .push(CStatement::Declare {
+                .record(CStatement::Declare {
                     name: name.clone().into(),
                     interface_type,
                     volatile: false,
@@ -142,27 +194,29 @@ impl Parser {
             return Err(self.error_here("aligned typedef compound literals are not supported"));
         }
         let layout = self.scalar_struct_value_layout(&struct_name)?;
-        let name = self.new_automatic_binding(Some(format!(
-            "__click_compound_literal_{}",
-            self.next_local_binding
-        )));
-        self.variable_types
-            .insert(name.clone(), record_value_type(&layout));
+        let name = self.compound_literal_binding();
+        self.reserve_compound_literal_local_ordinal();
+        if self
+            .variable_types
+            .insert(name.clone(), record_value_type(&layout))
+            .is_none()
+        {
+            self.scopes
+                .last_mut()
+                .expect("literal has a lexical scope")
+                .push(ScopeBinding {
+                    source_name: None,
+                    kernel_name: name.clone(),
+                    shadowed: None,
+                    previous_visible: None,
+                });
+        }
         self.variable_structs
             .insert(name.clone(), struct_name.clone());
         self.variable_struct_values
             .insert(name.clone(), struct_name.clone());
         self.local_struct_values
             .insert(name.clone(), Some(struct_name.clone()));
-        self.scopes
-            .last_mut()
-            .expect("literal has a lexical scope")
-            .push(ScopeBinding {
-                source_name: None,
-                kernel_name: name.clone(),
-                shadowed: None,
-                previous_visible: None,
-            });
         let stores = self.parse_struct_initializer_level(
             CExpression::AddressOf(Box::new(CExpression::Variable(name.clone()))),
             &struct_name,
@@ -174,7 +228,7 @@ impl Parser {
         self.compound_literal_declarations
             .last_mut()
             .expect("literal has a block")
-            .push(CStatement::DeclareStructValue {
+            .record(CStatement::DeclareStructValue {
                 name: name.clone().into(),
                 layout,
                 site: CSite::NONE,
@@ -309,7 +363,8 @@ impl Parser {
             self.compound_literal_declarations
                 .last_mut()
                 .expect("open block"),
-        );
+        )
+        .into_declarations();
         let names = declarations
             .iter()
             .map(|declaration| {
@@ -389,6 +444,21 @@ mod tests {
             }
             assert_eq!(loop_declarations, Some(1 - declarations_outside));
         }
+    }
+
+    #[test]
+    fn reparsing_a_call_initializer_keeps_one_compound_literal_object() {
+        let source = r#"
+            struct pair { int value; };
+            int measure(struct pair *p) { return p->value; }
+            int f(void) {
+                int value = measure(&(struct pair){41}) + 1;
+                return value;
+            }
+        "#;
+        let functions = super::super::parse_functions(source).unwrap();
+        let body = functions[1].body();
+        assert_eq!(own_declarations(body), 1);
     }
 
     #[test]

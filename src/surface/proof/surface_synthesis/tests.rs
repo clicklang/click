@@ -9148,3 +9148,60 @@ fn literal_float_comparisons_preserve_ieee_truth_and_round_trip() {
         }
     }
 }
+
+#[test]
+fn integer_match_on_written_constructor_round_trips() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = ExecutionState::new();
+    let declarations = "spec enum Choice { Empty, Full(Integer) }";
+    let written = "(match Choice::Full(7) { Choice::Empty => 0, Choice::Full(n) => n + 1 }) == 8";
+    let parse = |text: &str| {
+        parser::parse(&format!(
+            "{declarations} theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap()
+    };
+    let file = parse(written);
+    let functions = ClickFunctionEnvironment::with_algebraic_types(
+        file.click_function_definitions(),
+        file.algebraic_type_definitions(),
+    );
+    let lower = |proposition: &ClickProposition| {
+        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+            proposition,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+            SpecDefinitions::new(&PredicateEnvironment::new(&[]), &functions),
+            FixedStateLoweringOptions::default(),
+        )
+        .unwrap()
+        .0
+    };
+    let Requirement::Proposition(proposition) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("expected a proposition");
+    };
+    let original = lower(proposition);
+    assert!(matches!(
+        original.condition_native(),
+        Some((ConditionTerm::IntegerEqual(left, _), true))
+            if matches!(left.as_ref(), crate::kernel::IntegerTerm::AlgebraicMatch { .. })
+    ));
+    let raised =
+        synthesize_surface_proposition(&original, ParameterBinding::default(), &state).unwrap();
+    let text = crate::surface::printing::source_click_proposition(&raised);
+    assert!(text.contains("match Choice::Full"), "{text}");
+    assert!(
+        crate::kernel::proof::propositions_are_alpha_equal(&lower(&raised), &original),
+        "{text}"
+    );
+    let reparsed = parse(&text);
+    let Requirement::Proposition(proposition) = &reparsed.theorem_definitions()[0].requires()[0]
+    else {
+        panic!("expected a proposition: {text}");
+    };
+    assert!(
+        crate::kernel::proof::propositions_are_alpha_equal(&lower(proposition), &original),
+        "{text}"
+    );
+}

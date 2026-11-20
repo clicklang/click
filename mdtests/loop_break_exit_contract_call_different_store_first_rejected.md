@@ -39,7 +39,7 @@ void paint(struct node* p, int32 flag) {
     loop {
         decreases 0;
         owns p->shade;
-        preserve by {
+        maintain by {
             if flag == 0 { step(); step(); step(); }
             else { step(); step(); step(); }
         }

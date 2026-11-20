@@ -52,6 +52,10 @@ The report reconciles measured work into named phases. `SIMPLE`, `SMART`, and
 `CONTROL` are exclusive tactic times. `CERTIFICATION` and `VERIFIER CORE`
 cover checked work outside those operations. `PROCESS/DRIVER` covers source I/O
 and known driver overhead. `INTERRUPTED` is unfinished time after a limit stopped the run;
+Report preparation measures aggregation and source location lookup after
+verification. It is displayed separately from the verification total and
+its phase percentages.
+
 `UNATTRIBUTED` indicates inconsistent or unknown accounting rather than a
 healthy miscellaneous bucket.
 

@@ -3,7 +3,7 @@
 This page states, for each target language Click verifies, which source
 features and runtime errors a proof covers. Use it to decide whether Click
 applies to a codebase before reading the per-language references:
-[supported C](language/c.md), [C++ import](cli/import.md#preliminary-c-semantic-artifact),
+[supported C](language/c.md), [C++ import](cli/capture.md#preliminary-c-semantic-artifact),
 and [Rust import](rust.md). Those pages define the exact forms; this page is
 the single summary, and other pages link here instead of repeating it.
 

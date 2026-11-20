@@ -31,7 +31,7 @@ int32 walk(int32 n) {
         decreases n - i;
         invariant 0 <= i;
         invariant to_integer(i + 1) == to_integer(i + 1);
-        preserve by {
+        maintain by {
             step();
         }
     }

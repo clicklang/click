@@ -49,7 +49,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
         invariant old(tree.model) == SizedTree::Node(node, 0, Color::Red, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model)));
         invariant tree.model == SizedTree::Node(node, 0, Color::Red, sized_value(tree.model), sized_left(tree.model), sized_right(tree.model));
         initialize by solve();
-        preserve by {
+        maintain by {
             let { metadata: metadata, left: left, right: right } = unfold(tree);
             step(); step();
             have (node->__rb_parent_color & 1) == color_bit(Color::Black) by {

@@ -39,7 +39,7 @@
   - [Tactics](reference/tactics/index.md)
   - [Command-line interface](reference/cli/index.md)
     - [`click verify`](reference/cli/verify.md)
-    - [`click import`](reference/cli/import.md)
+    - [`click capture`](reference/cli/capture.md)
     - [`click docs`](reference/cli/docs.md)
     - [`click profile`](reference/cli/profile.md)
     - [`click expand`](reference/cli/expand.md)

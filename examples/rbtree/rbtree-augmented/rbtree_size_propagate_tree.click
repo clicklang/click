@@ -22,7 +22,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
         invariant sized_shape(sized_walk_tree(walk.model)) == sized_shape(sized_walk_tree(old(walk.model)));
         invariant rb_subtree_size(sized_shape(sized_walk_tree(walk.model))) <= 2147483647;
         initialize by solve();
-        preserve by {
+        maintain by {
             mark iteration;
             match walk.model {
                 SizedWalk::Done(result_model) => {

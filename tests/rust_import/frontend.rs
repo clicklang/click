@@ -15,7 +15,7 @@ fn missing_installed_rust_frontend_names_the_version_and_install_location() {
         Path::new(env!("CARGO_BIN_EXE_click")),
         &home,
         &source,
-        &["import", "lock"],
+        &["capture"],
     );
     let error = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success());
@@ -33,7 +33,7 @@ fn missing_installed_rust_frontend_names_the_version_and_install_location() {
     } else {
         assert!(error.contains("unavailable"), "{error}");
     }
-    assert!(!source.join("click.project.lock.json").exists());
+    assert!(!source.join(".click/captures/manifest.json").exists());
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
@@ -79,12 +79,12 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
     fs::copy(env!("CARGO_BIN_EXE_click"), &binary).unwrap();
     let source = t.path().join("project");
     project(&source);
-    success(cli(&binary, &home, &source, &["import", "lock"]));
+    success(cli(&binary, &home, &source, &["capture"]));
     success(cli(&binary, &home, &source, &["verify", "borrow.click"]));
-    let lock = fs::read(source.join("click.project.lock.json")).unwrap();
-    success(cli(&binary, &home, &source, &["import", "lock"]));
+    let lock = fs::read(source.join(".click/captures/manifest.json")).unwrap();
+    success(cli(&binary, &home, &source, &["capture"]));
     assert_eq!(
-        fs::read(source.join("click.project.lock.json")).unwrap(),
+        fs::read(source.join(".click/captures/manifest.json")).unwrap(),
         lock
     );
 
@@ -99,16 +99,16 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
             .write_all(b"\nClick test build metadata\n")
             .unwrap();
     }
-    success(cli(&binary, &home, &source, &["import", "lock"]));
+    success(cli(&binary, &home, &source, &["capture"]));
     assert_eq!(
-        fs::read(source.join("click.project.lock.json")).unwrap(),
+        fs::read(source.join(".click/captures/manifest.json")).unwrap(),
         lock
     );
 
     // The existing launch proof also uses the external-crate configuration.
     let adler = t.path().join("adler-proof");
     examples::adler_project(&adler);
-    success(cli(&binary, &home, &adler, &["import", "lock"]));
+    success(cli(&binary, &home, &adler, &["capture"]));
     success(cli(
         &binary,
         &home,
@@ -139,7 +139,7 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
     )
     .unwrap();
     for command in [
-        &["import", "lock", "borrow.click"][..],
+        &["capture", "borrow.click"][..],
         &["verify", "borrow.click"],
     ] {
         let refused = cli(&binary, &home, &legacy, command);
@@ -157,7 +157,7 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
     let mut manifest: serde_json::Value = serde_json::from_slice(&original).unwrap();
     manifest["compiler_commit"] = "wrong-compiler".into();
     fs::write(&manifest_path, manifest.to_string()).unwrap();
-    let failed = cli(&binary, &home, &source, &["import", "lock"]);
+    let failed = cli(&binary, &home, &source, &["capture"]);
     assert!(!failed.status.success());
     let error = String::from_utf8_lossy(&failed.stderr);
     assert!(
@@ -169,7 +169,7 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
         "{error}"
     );
     assert_eq!(
-        fs::read(source.join("click.project.lock.json")).unwrap(),
+        fs::read(source.join(".click/captures/manifest.json")).unwrap(),
         lock
     );
     fs::write(&manifest_path, original).unwrap();
@@ -189,7 +189,7 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
         fs::rename(&path, &saved).unwrap();
         fs::write(&path, "#!/bin/sh\necho wrong-version\n").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-        let failed = cli(&binary, &home, &source, &["import", "lock"]);
+        let failed = cli(&binary, &home, &source, &["capture"]);
         assert!(!failed.status.success());
         let error = String::from_utf8_lossy(&failed.stderr);
         assert!(error.contains(expected), "{error}");
@@ -199,7 +199,7 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
         );
         assert!(error.contains("click add rust"), "{error}");
         assert_eq!(
-            fs::read(source.join("click.project.lock.json")).unwrap(),
+            fs::read(source.join(".click/captures/manifest.json")).unwrap(),
             lock
         );
         fs::rename(saved, path).unwrap();
@@ -208,7 +208,7 @@ fn installed_rust_frontend_extracts_and_verifies_without_rustup() {
     // A partial installation must explain how to replace it: a plain repeat
     // install will correctly refuse the existing incomplete bundle.
     fs::remove_file(&manifest_path).unwrap();
-    let missing = cli(&binary, &home, &source, &["import", "lock"]);
+    let missing = cli(&binary, &home, &source, &["capture"]);
     let error = String::from_utf8_lossy(&missing.stderr);
     assert!(!missing.status.success());
     assert!(
@@ -227,7 +227,7 @@ fn missing_development_toolchain_names_setup_and_override_action() {
     let t = tempfile::tempdir().unwrap();
     project(t.path());
     let output = Command::new(env!("CARGO_BIN_EXE_click"))
-        .args(["import", "lock"])
+        .args(["capture"])
         .current_dir(t.path())
         .env(
             "CLICK_CHARON",
@@ -248,5 +248,5 @@ fn missing_development_toolchain_names_setup_and_override_action() {
         error.contains("scripts/build-charon.sh --install-toolchain"),
         "{error}"
     );
-    assert!(!t.path().join("click.project.lock.json").exists());
+    assert!(!t.path().join(".click/captures/manifest.json").exists());
 }

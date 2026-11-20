@@ -79,7 +79,7 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
         decreases end - i;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             let { next: n } = unfold(w);
             have n == i;
             have n <= i;

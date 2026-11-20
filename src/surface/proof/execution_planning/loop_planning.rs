@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 /// The proof scope a loop's phase proofs are written in.
 ///
-/// `initialize` and `preserve` bodies are written where the `loop` tactic
+/// `initialize` and `maintain` bodies are written where the `loop` tactic
 /// was written: inside whatever proof `match` arm, `let { ... } = unfold(...)` binding,
 /// or call-result binder reached that frontier. Their sub-proofs are built
 /// from fresh roots, so the scope has to be attached explicitly or a `have`
@@ -676,7 +676,7 @@ impl CheckedLoopInitialization {
 }
 
 /// The body the automatic closer planned for a loop with no written
-/// `preserve` proof.
+/// `maintain` proof.
 pub(in crate::surface::proof) struct AutomaticLoopBody {
     pub(in crate::surface::proof) certificate: ProofCertificate,
 }
@@ -999,7 +999,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     if first_generated_tactic_index < tactics.len() {
         // Automatic preservation appends planned body steps and a closer
         // after the source-written unfold prefix. They are owned by the loop
-        // tactic, not additional source occurrences after `preserve`.
+        // tactic, not additional source occurrences after `maintain`.
         // Detach them so a later nested clause cannot be mistaken for one of
         // these generated tactics by expand.
         detach_generated_suffix_from_source_indices(&mut program, first_generated_tactic_index);
@@ -1182,7 +1182,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
     body_execution
         .core
         .advance_kernel_variable_mark(preservation.next_kernel_variable())
-        .map_err(|message| ClickError::new(format!("`{claim_label}`.preserve: {message}")))?;
+        .map_err(|message| ClickError::new(format!("`{claim_label}`.maintain: {message}")))?;
     let root = Proof::for_execution_frontier(
         &claim_label,
         internal_proof_first_index(&program).unwrap_or(0),

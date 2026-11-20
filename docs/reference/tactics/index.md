@@ -6,7 +6,7 @@ language. A tactic is either **smart**, **simple**, or **control**:
 - Smart tactics search. The written one is `solve()`, with its `using` form
   and `step_until`, which steps to a target and proves what each step needs;
   the rest are the implicit closer that ends every proof, including each loop
-  `preserve` script at its back edge, and finishes a `step()` or `fold`, and
+  `maintain` script at its back edge, and finishes a `step()` or `fold`, and
   the elided forms whose search fills one argument a simple form writes:
   `apply(theorem(args))`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
   are the tactics that `click profile` may recommend expanding. The parser
@@ -348,7 +348,7 @@ the one execution transition that fails.
 | `let { result: name } = step()` | simple | Specialized | Bind a checked assignment, call, or scalar step result. | [Reference](#binding-a-statement-result) |
 | `step_until(statement(i))` | smart | Specialized | Execute up to a selected source point, or to `function.exit`, without splitting. | [Reference](#execution-to-a-point) |
 | `branch [ensuring { ... }] { true => { ... } false => { ... } }` | control | Core | Prove and join the arms of source control flow. | [Reference](#source-branches) |
-| `loop [as name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
+| `loop [name] { ... }` | control | Core | Prove a loop from its invariants and ranking obligations. | [Reference](#loop-transitions) |
 | `step(Contract)` | simple | Specialized | Select a named contract for a call. | [Reference](#calls-through-named-contracts) |
 | `step(callee, { binder: instance })` | simple | Specialized | Map a call's instance binders and value parameters, and name what it produces. | [Reference](#calls-with-binder-maps) |
 | `step(Contract, { handle: instance, ... })`; `step(Contract, { binder: instance })` | simple | Specialized | Select a contract and map its resource instances. | [Reference](#named-contracts-with-resource-bindings) |
@@ -381,14 +381,14 @@ path is at now a proof-local name without advancing C.
 
 **Accepts** a name not yet marked on the current path, at a live frontier of a
 C function's execution script: the claim's top-level script, a `branch` arm, a
-proof `if` or `cases` arm, or a loop's `preserve` proof. It records the current
+proof `if` or `cases` arm, or a loop's `maintain` proof. It records the current
 state under that name and changes nothing else:
 
 - From then on `at(name, e)` reads `e` in the recorded state. It can appear in
   a `have`, a `branch ensuring` interface, or the `ensures` clause the script
   proves (`ensures result == at(after_first_write, x) + 1 by { ... }`).
 - The name stays visible after later steps and after a `branch` join, and
-  inside nested loop `preserve` proofs.
+  inside nested loop `maintain` proofs.
 - The two arms of one `branch` or proof `if` may each mark the same name.
 
 **Outside it**, with what to write instead:
@@ -398,7 +398,7 @@ state under that name and changes nothing else:
 - A name that is not yet marked, used in `at(name, ...)` before its `mark` or
   never marked, fails with `unknown proof mark`. Put the `mark` where the proof
   reaches that state.
-- A mark made inside a `preserve` proof, read outside that proof, also fails
+- A mark made inside a `maintain` proof, read outside that proof, also fails
   with `unknown proof mark`. Loop invariants use `at(loop(n).entry, e)`.
 - At function exit (after the last `step()` or `step_until(function.exit)`), `mark` is refused.
   Mark before the last step, or name the final values directly.
@@ -768,7 +768,7 @@ through local pointers keep their declared element types.
 
 ### Loop transitions
 
-**Form:** `loop [as name] { ... }`
+**Form:** `loop [name] [diverges] { ... }`
 
 **Core.** At a C loop frontier, prove initialization and one arbitrary
 iteration, construct the loop rule, and advance to its abstract exit. One
@@ -777,7 +777,7 @@ function `return`: a `continue` is the back edge; a `break` closes no invariant
 and joins the loop's ordinary exits; and a `return` is terminal for the function
 and owes neither the invariant nor ranking bundle.
 
-A `preserve by { ... }` script works like a function proof. When it ends, or
+A `maintain by { ... }` script works like a function proof. When it ends, or
 when its tactics stop inside the body and the rest of the body runs implicitly
 to the back edge (splitting at C `if`s like a function's implicit tail,
 [`preserve_runs_the_rest_of_the_body.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_runs_the_rest_of_the_body.md)),
@@ -792,7 +792,7 @@ function's exit closes each `ensures`; this closes, for example, an unsigned or
 To help a member `solve()` misses, prove it, or a fact it needs, with
 `have <invariant> by { ... }` before the back edge. `click expand` prints the
 closure as one `have <member> by { ... }` per member at the end of the
-`preserve` script, omitting members already available as facts. The retired
+`maintain` script, omitting members already available as facts. The retired
 `close_invariants` tactic is rejected by the parser
 ([`close_invariants_is_retired.md`](https://github.com/clicklang/click/blob/master/mdtests/close_invariants_is_retired.md)).
 
@@ -2161,7 +2161,7 @@ For equality goals, use an ordinary `have` to establish the equality, then
 `rewrite` and `known` to carry a proposition across the change. The tactic remains
 `preserve(...)` in expansion. Unavailable separation, an unsupported observation,
 or mismatched endpoints is a local refusal. This tactic is distinct from a
-loop's `preserve by { ... }` proof block.
+loop's `maintain by { ... }` proof block.
 
 - Read equality. [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md) and [`memcpy_then_terminator_keeps_copied_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/memcpy_then_terminator_keeps_copied_bytes.md)
 - Resource field equality across two statements. [`multi_write_resource_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/multi_write_resource_transport_expansion.md)
@@ -2858,7 +2858,7 @@ layer, and any implicit guard proofs.
 
 **Core.** In a pure proposition proof (including structural-induction arms), or
 at any execution frontier the proof has reached — unchanged function entry,
-after executed statements, or a loop's `preserve` body — split an ADT of any
+after executed statements, or a loop's `maintain` body — split an ADT of any
 width into exhaustive execution proofs, one arm per constructor.
 
 The live arms are joined by a balanced tree of frontier splits, so three or more
@@ -2876,7 +2876,7 @@ after the `match`, each live arm must reach function exit and the arms are
 joined there; with tactics written after it, every live arm must end at the same
 point in the same state, and the arms rejoin there so those tactics are
 checked once, without the constructor facts or fields of any arm; in a loop's
-`preserve` body with nothing written after the `match`, each live arm must
+`maintain` body with nothing written after the `match`, each live arm must
 execute one complete iteration on its own path — restoring the loop binder,
 closing the invariants and satisfying the structural descent at the body's end
 or at a `continue`, or leaving through a `break`, which owes none of those.
@@ -2899,14 +2899,14 @@ A `match` with `ensuring`, or with an arm that is a lone `contradiction`,
 splits once at the exit frontier instead, on the path's facts, and so does a
 `match` whose scrutinee has no checked value there.
 
-Tactics written after a `match` in a `preserve` body are checked once:
+Tactics written after a `match` in a `maintain` body are checked once:
 straight-line arms that end in one state rejoin as in a function body, and two
 arms still live at one point that end apart are refused
 (`mdtests/loop_body_proof_match_shared_continuation.md`). With `ensuring`, arms
 that end apart rejoin inside the body, as the arms of a `branch` do, and those
 tactics are checked once on the one path that leaves the `match`
 (`mdtests/loop_body_proof_match_ensuring_rejoins.md`); a proof `if ... ensuring`
-in a `preserve` body rejoins the same way.
+in a `maintain` body rejoins the same way.
 
 The constructor equation is an entry assumption of the whole function only when
 the `match` ran before any C step. Pure arms prove the same current goal under
@@ -3224,7 +3224,7 @@ states or at different points are refused when tactics follow the `if`
 those tactics belong to the other arm and run once, in it
 (`mdtests/proof_if_one_arm_returns_and_the_other_continues.md`).
 
-In a loop's `preserve` body the rule is the same, except that arms reaching
+In a loop's `maintain` body the rule is the same, except that arms reaching
 those tactics at different points are different paths of the C and each
 is finished its own way.
 
@@ -3261,7 +3261,7 @@ arm proved, or the `cases` is refused
 (`mdtests/cases_arms_rejoin_with_the_facts_every_arm_proved.md`,
 `mdtests/cases_arms_that_do_not_rejoin_are_refused.md`); an arm that reaches
 function exit finishes its own path
-(`mdtests/cases_at_a_frontier_finishes_each_arm.md`). In a loop's `preserve`
+(`mdtests/cases_at_a_frontier_finishes_each_arm.md`). In a loop's `maintain`
 proof its arms must rejoin: each arm closes its own back edge, and the
 rejoined path's back edge is then closed again with only the facts every arm
 proved, so an arm that needs its own fact there proves the invariants at the

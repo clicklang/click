@@ -133,7 +133,7 @@ cargo nextest run --test rust_import --run-ignored all \
 Refresh every unit of the project through the production adapter:
 
 ```sh
-target/debug/click import lock design/adler32/project/adler2/helpers.click
+target/debug/click capture design/adler32/project/adler2/helpers.click
 ```
 
 `CLICK_CHARON` selects a source-built Charon. Run the focused live regression to refresh a private copy and reprove the original helper bodies:

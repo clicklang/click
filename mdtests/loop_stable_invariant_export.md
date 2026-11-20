@@ -38,7 +38,7 @@ int32 fill_tail(int32 p[], int32 n, int32 untouched[]) {
         invariant i >= 1 and i <= n;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
             step();
         }

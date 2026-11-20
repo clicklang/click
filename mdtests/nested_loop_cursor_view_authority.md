@@ -23,7 +23,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
  invariant cursor == bytes + (4 * outer);
  invariant bytes == old(bytes);
  invariant viewable(bytes[0..8]);
- preserve by {
+ maintain by {
   have outer < 2;
   mark outer_head;
   step_until(loop(1));
@@ -78,7 +78,7 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
    invariant 0 <= inner and inner <= 1;
    invariant chunk == bytes + (4 * outer);
    invariant 0 <= outer and outer < 2;
-   preserve by { step(); step(); step(); step();
+   maintain by { step(); step(); step(); step();
     have viewable(chunk[0..4]) by { observe(chunk[0..4]); }
    }
   }

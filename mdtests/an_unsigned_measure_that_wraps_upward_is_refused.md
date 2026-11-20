@@ -23,7 +23,7 @@ int32 fill(uint32 x) {
     loop {
         decreases to_integer(3u32 - x);
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             step();
         }
     }

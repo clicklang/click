@@ -61,7 +61,7 @@ int32 inspect(struct node* p, struct node* q, int32 flag) {
         invariant a.shade == old(a.shade);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             if flag == 0 {
                 unfold(a);
                 step();

@@ -207,7 +207,7 @@ pub(super) fn check_closure(
         shown.join(", ")
     }
     Err(format!(
-        "Rust compiler source closure differs from configured crate files; missing from `crate.files`: {}; extra in `crate.files`: {}. Update `crate.files` and run `click import lock`",
+        "Rust compiler source closure differs from configured crate files; missing from `crate.files`: {}; extra in `crate.files`: {}. Update `crate.files` and run `click capture`",
         names(observed.difference(&configured)),
         names(configured.difference(observed))
     ))

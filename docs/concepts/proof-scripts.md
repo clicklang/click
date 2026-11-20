@@ -214,7 +214,7 @@ frontier, and naming it is refused by naming the local
 into one arm per constructor, with the constructor equation and fresh field
 bindings on each arm's path. It may run at any frontier the proof has reached:
 at unchanged function entry, after executed statements, and inside a loop's
-`preserve` body.
+`maintain` body.
 
 An arm's bindings are in scope in every term the arm writes: `have` goals,
 theorem arguments and `using` premises, `instantiate`, `have`, `rewrite`,
@@ -222,7 +222,7 @@ theorem arguments and `using` premises, `instantiate`, `have`, `rewrite`,
 inside a `have` body (`mdtests/have_body_solve_using_names_an_arm_binding.md`),
 the clauses of a `loop` written inside the arm
 (`mdtests/loop_clause_reads_arm_bindings.md`), and that loop's `initialize` and
-`preserve` bodies (`mdtests/loop_phase_body_reads_arm_bindings.md`). A name that a `have` goal can see is a theorem
+`maintain` bodies (`mdtests/loop_phase_body_reads_arm_bindings.md`). A name that a `have` goal can see is a theorem
 argument at the same point; `mdtests/theorem_argument_arm_binding.md` and
 `mdtests/theorem_argument_arm_binding_algebraic.md` pin the pointer, integer,
 and model cases.

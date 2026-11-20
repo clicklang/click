@@ -155,7 +155,7 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
         invariant plug(c.model, t.model) == plug(old(c.model), old(t.model));
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Context::Top => { contradiction(c.model == Context::Top); },
                 Context::Left(identity, grandparent, value, sibling_model, up_model) => {

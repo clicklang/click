@@ -1,4 +1,4 @@
-# a bare `instantiate` in `preserve` names its repair
+# a bare `instantiate` in `maintain` names its repair
 
 `instantiate` adds a fact and executes nothing, so the preservation driver
 does not run it between execution steps. The refusal used to name the tactic
@@ -35,7 +35,7 @@ int32 walk(int32 next[8], int32 start) {
         decreases cur;
         invariant 0 <= cur and cur < 8;
         initialize by solve();
-        preserve by {
+        maintain by {
             have 0 < cur by solve();
             instantiate(forall (k: int32) {
                 0 < k and k < 8 implies 0 <= next[k] and next[k] < k

@@ -1,8 +1,9 @@
 use super::*;
 use crate::surface::ProgramVerificationSession;
 
-const ARTIFACT: &[u8] =
-    include_bytes!("../../../../design/charon-trial/array-lengths/.click/bounds/bounds.rs.ullbc");
+const ARTIFACT: &[u8] = include_bytes!(
+    "../../../../design/charon-trial/array-lengths/.click/captures/bounds/bounds.rs.ullbc"
+);
 const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/array-lengths/bounds.rs");
 
 #[test]

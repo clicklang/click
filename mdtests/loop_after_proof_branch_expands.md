@@ -3,7 +3,7 @@
 `count_after_guard` returns early for a non-positive `n` and then counts up
 to `n`. The proof splits the early return with a proof-level `branch`, then
 states the loop. A loop is one tactic of the rest of the proof, and the
-tactics of its `initialize` and `preserve` proofs are numbered directly
+tactics of its `initialize` and `maintain` proofs are numbered directly
 after it.
 
 Expanding the `initialize by solve()` site used to fail although verification
@@ -52,7 +52,7 @@ int32 count_after_guard(int32 n) {
         invariant i >= 0;
         invariant i <= n;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

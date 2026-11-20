@@ -44,7 +44,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 1415761 * to_integer(zlib_prefix_count(16u64, len)) by { rewrite(zlib_prefix_count(16u64, len), 0); known(); }
    solve();
   }
-  preserve by {
+  maintain by {
    have len == 16u64 by {
     cases {
      len == 0u64 => {
@@ -529,7 +529,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
   invariant len == 0u64;
   invariant to_integer(adler) == 1 + adler_byte_sum(old(buf), 16);
   invariant to_integer(sum2) == to_integer(16) + adler_weighted_sum(old(buf), 16, 16);
-  preserve by { step(); step(); step(); step(); step(); }
+  maintain by { step(); step(); step(); step(); step(); }
  }
  step_until(assignment(adler, 39));
  apply(zlib_reduced_result(old(buf), 16, adler, sum2));

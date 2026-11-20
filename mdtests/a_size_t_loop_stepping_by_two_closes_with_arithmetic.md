@@ -37,7 +37,7 @@ uint8 last(const uint8* bytes, uint64 length) {
         views bytes[0..length];
         invariant length <= 2147483647u64;
         invariant i <= length;
-        preserve by {
+        maintain by {
             have to_integer(i + 2u64) <= to_integer(length) by {
                 solve() using { i <= length; to_integer(i + 1u64) < to_integer(length); length <= 2147483647u64; };
             }

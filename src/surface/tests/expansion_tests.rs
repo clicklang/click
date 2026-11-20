@@ -3110,7 +3110,7 @@ fn ranked_loops_with_no_invariant_expand_and_reverify() {
             expanded.contains("initialize by {\n            known();\n        }"),
             "{expanded}"
         );
-        assert!(expanded.contains("preserve by {"), "{expanded}");
+        assert!(expanded.contains("maintain by {"), "{expanded}");
     }
 }
 
@@ -3296,7 +3296,7 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
         "{expanded}"
     );
     let initialize = &expanded
-        [expanded.find("initialize by {").unwrap()..expanded.find("preserve by {").unwrap()];
+        [expanded.find("initialize by {").unwrap()..expanded.find("maintain by {").unwrap()];
     assert_eq!(
         initialize.matches("unfold(head(box))").count(),
         1,
@@ -3428,7 +3428,7 @@ fn post_execution_closer_continues_the_proof_a_witness_opened() {
     assert!(!expanded.contains("have exists (len: int32)"), "{expanded}");
 }
 
-/// The `solve()` closing the loop's `preserve` proof in `arena_init` expands
+/// The `solve()` closing the loop's `maintain` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the
 /// loop's store from the earlier cells by their indices alone, and
@@ -5014,7 +5014,7 @@ fn deferred_preservation_solve_expands_at_its_original_source_site() {
     let c_sources = crate::cli::source_refs(&sources);
     verify_c_sources_functions(&source, &c_sources, vec!["vector_copy".into()]).unwrap();
     let function = source.find("int32 vector_copy(").unwrap();
-    let preserve = function + source[function..].find("preserve by {").unwrap();
+    let preserve = function + source[function..].find("maintain by {").unwrap();
     let offset = preserve + source[preserve..].find("solve();").unwrap();
     let position = expansion::position_at_offset(&source, offset);
     let expanded =
@@ -7765,7 +7765,7 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_branch_arm() {
     assert_mixed_have_body_solve_expands(click_source, &[("early_exit.c", c_source)], 10, 13);
 }
 
-/// A mixed `have` in a frontier-local loop's `preserve` phase is checked by
+/// A mixed `have` in a frontier-local loop's `maintain` phase is checked by
 /// the preservation proof; its body `solve` expands on its own there.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_32")]
@@ -7790,7 +7790,7 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_loop_preserve_phase() {
         \x20       invariant i >= 0;\n\
         \x20       invariant i <= n;\n\
         \x20       initialize by solve();\n\
-        \x20       preserve by {\n\
+        \x20       maintain by {\n\
         \x20           have i <= n by {\n\
         \x20               have i == i by solve();\n\
         \x20               solve();\n\
@@ -7830,7 +7830,7 @@ fn count_up_with_initialize(phase: &str) -> String {
         \x20       initialize by {{\n\
         {phase}\
         \x20       }}\n\
-        \x20       preserve by {{\n\
+        \x20       maintain by {{\n\
         \x20           step();\n\
         \x20       }}\n\
         \x20   }}\n\
@@ -14351,7 +14351,7 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                     unfold(all_le_range(p, 0, j, p[j]));
                     solve();
                 }
-                preserve by {
+                maintain by {
                     branch ensuring {
                         fact p[j] <= p[j + 1];
                         fact all_le_range(p, 0, j, p[j + 1]);
@@ -17042,7 +17042,7 @@ fn loop_preservation_case_after_step_expands_in_place() {
                 invariant i >= 0;
                 invariant i <= 1;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     step();
                     if flag == i {
                         have flag == i by { known(); }
@@ -17062,7 +17062,7 @@ fn loop_preservation_case_after_step_expands_in_place() {
         expand_checked_grouped_claim(click_source, &verified_for_expansion, "count_once")
             .expect("the loop proof expands");
     let preserve = expanded
-        .find("preserve by")
+        .find("maintain by")
         .expect("the expansion keeps the preservation proof");
     let body = &expanded[preserve..];
     let step = body.find("step();").expect("the body step is retained");
@@ -17101,7 +17101,7 @@ fn loop_preservation_case_before_step_expands_in_place() {
                 invariant i >= 0;
                 invariant i <= 1;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     if flag == i {
                         have flag == i by { known(); }
                     } else {
@@ -17121,7 +17121,7 @@ fn loop_preservation_case_before_step_expands_in_place() {
         expand_checked_grouped_claim(click_source, &verified_for_expansion, "count_once")
             .expect("the loop proof expands");
     let preserve = expanded
-        .find("preserve by")
+        .find("maintain by")
         .expect("the expansion keeps the preservation proof");
     let body = &expanded[preserve..];
     let case = body
@@ -17162,7 +17162,7 @@ fn loop_preservation_if_retains_its_enclosing_match_binding() {
     let expanded = expand_checked_grouped_claim(click_source, &verified_for_expansion, "count_to")
         .expect("the loop proof should expand");
     let preserve = expanded
-        .find("preserve by")
+        .find("maintain by")
         .expect("the expansion should retain the preservation phase");
     let body = &expanded[preserve..];
     assert!(
@@ -17202,7 +17202,7 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
                 invariant i >= 0 and i <= 3;
                 invariant forall (k: int32) { 0 <= k and k < i implies p[k] == k };
                 initialize by solve();
-                preserve by solve();
+                maintain by solve();
             }
             step();
             solve();
@@ -17218,7 +17218,7 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
         .find("initialize by")
         .expect("the expansion keeps the initialization proof");
     let preserve = expanded
-        .find("preserve by")
+        .find("maintain by")
         .expect("the expansion keeps the preservation proof");
     assert!(initialize < preserve, "{expanded}");
     assert!(
@@ -17822,7 +17822,7 @@ int spin(int n) {
             have i <= n by solve();
             known();
         }
-        preserve by solve();
+        maintain by solve();
     }
     step();
     solve();
@@ -17847,7 +17847,7 @@ int spin(int n) {
             have n + 0 == n by { normalize(); }
             solve();
         }
-        preserve by {
+        maintain by {
             step();
         }
     }
@@ -17895,18 +17895,18 @@ fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expansion and recheck took 3.55s in isolation"]
 fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
-    // `preserve by solve();` is one smart tactic standing for the whole phase,
+    // `maintain by solve();` is one smart tactic standing for the whole phase,
     // like `initialize by solve();`. Every driver step under it is generated, so
     // none claimed the source occurrence and audit reported
     // `Grouped proof has no source tactic 4`.
     let sources = [("spin.c", LOOP_INITIALIZE_PHASE_C)];
-    for phase in ["preserve by solve();", "preserve by { solve(); }"] {
-        let source = LOOP_INITIALIZE_SMART_HAVE_CLICK.replace("preserve by solve();", phase);
+    for phase in ["maintain by solve();", "maintain by { solve(); }"] {
+        let source = LOOP_INITIALIZE_SMART_HAVE_CLICK.replace("maintain by solve();", phase);
         let offset = source.find(phase).expect("the proof contains the phase");
         let position =
             expansion::position_at_offset(&source, offset + phase.find("solve").unwrap());
         let expanded = expand_c_tactic_source_at(&source, &sources, position.line, position.column)
-            .expect("a smart `preserve` phase should expand");
+            .expect("a smart `maintain` phase should expand");
         assert!(
             !expanded.contains(phase),
             "the smart preserve phase should be replaced by its certificate: {expanded}"
@@ -17993,7 +17993,7 @@ fn loop_initialization_duplicate_clauses_keep_distinct_bodies() {
         .split("initialize by")
         .nth(1)
         .unwrap()
-        .split("preserve by")
+        .split("maintain by")
         .next()
         .unwrap();
     assert_eq!(initialize.matches("have i >= 0").count(), 2, "{expanded}");
@@ -19232,7 +19232,7 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
         \x20   loop {\n\
         \x20       decreases x;\n\
         \x20       initialize by { solve(); }\n\
-        \x20       preserve by {\n\
+        \x20       maintain by {\n\
         \x20           step();\n\
         \x20       }\n\
         \x20   }\n\
@@ -20448,18 +20448,18 @@ fn a_written_loop_phase_expands_alone_by_label_and_by_line() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let function = "loop_entry_guard_before_written_implication";
-    let label = format!("{function}.loop(0).preserve");
+    let label = format!("{function}.loop(0).maintain");
     let expanded = expand_c_claim_source_by_label(&click, &sources, &label).unwrap();
     // Arithmetic steps need no additional import; only the selected
     // phase changes, and the surrounding source stays byte-for-byte intact.
     let body = expanded.as_str();
-    let written = "preserve by solve();";
+    let written = "maintain by solve();";
     let start = click.find(written).unwrap();
     let end = start + written.len();
     assert!(body.starts_with(&click[..start]), "{expanded}");
     assert!(body.ends_with(&click[end..]), "{expanded}");
     let phase = &body[start..body.len() - (click.len() - end)];
-    assert!(phase.starts_with("preserve by {"), "{phase}");
+    assert!(phase.starts_with("maintain by {"), "{phase}");
     assert!(!phase.contains("solve"), "{phase}");
     verify_c_sources(&expanded, &sources).unwrap();
 
@@ -20543,7 +20543,7 @@ fn an_omitted_loop_phase_expands_to_an_explicit_phase_proof() {
     let sources = [("omitted.c", OMITTED_PHASE_C)];
     verify_c_sources(OMITTED_PHASE_CLICK, &sources).unwrap();
     let insertion = OMITTED_PHASE_CLICK.find("}\n    step();").unwrap();
-    for phase in ["initialize", "preserve"] {
+    for phase in ["initialize", "maintain"] {
         let expanded = expand_c_claim_source_by_label(
             OMITTED_PHASE_CLICK,
             &sources,
@@ -20567,7 +20567,7 @@ fn an_omitted_loop_phase_expands_to_an_explicit_phase_proof() {
         assert!(inserted.ends_with("        }\n    "), "{inserted}");
         verify_c_sources(&expanded, &sources).unwrap();
     }
-    let error = expand_c_claim_source_by_label(OMITTED_PHASE_CLICK, &sources, "f.loop(1).preserve")
+    let error = expand_c_claim_source_by_label(OMITTED_PHASE_CLICK, &sources, "f.loop(1).maintain")
         .unwrap_err();
     assert!(
         error
@@ -20590,7 +20590,7 @@ fn a_loop_phase_expands_by_label_over_a_prepared_c_import() {
     let sources = [("omitted.c", OMITTED_PHASE_C)];
     let imports = [PreparedCImport::for_test("omitted.c", OMITTED_PHASE_C)];
     let inputs = ProgramInputs::Prepared(&imports);
-    for phase in ["initialize", "preserve"] {
+    for phase in ["initialize", "maintain"] {
         let label = format!("f.loop(0).{phase}");
         let bundled = expand_c_claim_source_by_label(OMITTED_PHASE_CLICK, &sources, &label)
             .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
@@ -24662,6 +24662,30 @@ fn bit_field_record_storage_expands_and_replays() {
     assert_ne!(expanded, source);
     assert!(expanded.contains("&source"), "{expanded}");
     assert!(!expanded.contains("__click_bit_field_word_"), "{expanded}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: compound literal expansion and replay takes about one second"]
+fn compound_literal_source_reference_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/c_struct_compound_literal_argument.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = format!("{source}\nby {{ step_until(function.exit); solve(); }}");
+    let claim = "answer.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(
+        expanded.contains("answer.compound_literal(0)"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("answer.local(0)"), "{expanded}");
     without_implicit_solve_for_claim(claim, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })

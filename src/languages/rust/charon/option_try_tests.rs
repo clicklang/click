@@ -1,7 +1,7 @@
 use super::*;
 
 const ARTIFACT: &[u8] = include_bytes!(
-    "../../../../design/charon-trial/option-values/.click/option_values/options.rs.ullbc"
+    "../../../../design/charon-trial/option-values/.click/captures/option_values/options.rs.ullbc"
 );
 const SOURCE: &[u8] = include_bytes!("../../../../design/charon-trial/option-values/options.rs");
 

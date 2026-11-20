@@ -15,7 +15,7 @@ fn count(n: u32) -> u32 {
     loop {
         decreases iter.n;
         invariant to_integer(passes) + to_integer(iter.n) == to_integer(n);
-        preserve by {
+        maintain by {
             if 0u32 < iter.n {
                 mark iteration;
                 have iter.n != 0u32;
@@ -39,7 +39,7 @@ fn last(n: u32) -> u32 {
     loop {
         decreases iter.n;
         invariant (iter.n == n and last == 0u32) or last == iter.n;
-        preserve by {
+        maintain by {
             if 0u32 < iter.n {
                 mark iteration;
                 have iter.n != 0u32;

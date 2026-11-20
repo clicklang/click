@@ -57,6 +57,7 @@ fn loop_exit_scalar_restatement_keeps_recorded_memory_effects() {
 #[test]
 fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
     let _session = crate::kernel::VerificationSession::enter();
+    let left_only = SymbolicMemory::global_pointer("left-exit-only");
     let right_only = SymbolicMemory::global_pointer("exit-only");
     let work = [4u32, 16, 64, 256].map(|size| {
         let mut shared = ExecutionState::new()
@@ -72,8 +73,14 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
             memory = memory.store(pointer, int32(index));
         }
         let shared = shared.with_memory(memory.clone());
-        let left = shared.clone().with_local("counter", int32(1));
-        let mut right = shared.clone().with_local("counter", int32(2));
+        let left = shared
+            .clone()
+            .with_local("counter", int32(1))
+            .with_memory(memory.clone().store(left_only.clone(), int32(11)));
+        let mut right = shared
+            .clone()
+            .with_local("counter", int32(2))
+            .with_memory(memory.clone().store(right_only.clone(), int32(12)));
         assert!(right.locals.forget_initialization("maybe_initialized"));
         let head = LoopHead {
             top: shared.clone(),
@@ -115,8 +122,8 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
         assert!(restatements.iter().all(|exit| exit.equations.len() == 1));
 
         // A later exit may hold a cache entry the successor never had.
-        // Measure candidate selection without interning a reconstructed
-        // memory for the residual witness comparison.
+        // Also measure selection on its own when only the later exit has a
+        // cell to set aside.
         let exits = [
             joined.clone(),
             joined
@@ -148,6 +155,9 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
         assert!(requirements.is_empty());
         (work, cell_work)
     });
+    eprintln!(
+        "(exit join, cell selection) work at 4/16/64/256 shared bindings and cells: {work:?}"
+    );
     assert!(
         work.iter().all(|&(join, cells)| {
             join > 0 && cells > 0 && join <= work[0].0 + 64 && cells <= work[0].1 + 16

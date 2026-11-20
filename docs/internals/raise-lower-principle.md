@@ -620,6 +620,9 @@ Match-arm algebraic bindings retain their source names for premise synthesis,
 including list tails and C type-parameter values stored in constructors. These
 names are selected from existing proof bindings; no equality search reconstructs
 them.
+An Integer-valued match with Integer-only fields retains its scrutinee and
+scoped arms even when the scrutinee is a written constructor. Goal-local
+checking may select the constructor's arm and substitute its fields.
 A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
 not consult facts or change the Boolean term inside a larger expression.

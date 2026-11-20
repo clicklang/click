@@ -34,7 +34,7 @@ uint64 seed(uint64 word, uint64 len) {
    }
    solve();
   }
-  preserve by {
+  maintain by {
    have len > 0u64 by known();
    have 0u64 < len by {
     if 0u64 < len { known(); } else {

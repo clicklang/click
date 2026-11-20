@@ -1,4 +1,4 @@
-# A `preserve` cases arm keeps a fact every arm proves
+# A `maintain` cases arm keeps a fact every arm proves
 
 The loop of
 `a_preserve_cases_rejoin_keeps_only_the_facts_every_arm_proved.md`, with one
@@ -32,7 +32,7 @@ uint64 f(uint64 b) {
         invariant 1u64 <= b;
         invariant (i == 0 and b <= 18446744073709u64) or (i == 1 and b <= 18446744073u64) or (i == 2 and b <= 18446744u64);
         initialize by solve();
-        preserve by {
+        maintain by {
             have (b >> 32) != 0u64;
             have 4294967296u64 <= b;
             have (i == 0 and b <= 18446744073709u64) or (i == 1 and b <= 18446744073u64) by {

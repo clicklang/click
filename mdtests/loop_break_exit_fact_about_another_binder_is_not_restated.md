@@ -66,7 +66,7 @@ int32 inspect(struct node* p, struct node* q) {
         owns y: cell_at(q);
         invariant y.model == old(y.model);
 
-        preserve by {
+        maintain by {
             match x.model {
                 Cell::Missing => {
                     unfold(x);

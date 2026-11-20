@@ -10,8 +10,8 @@ identity needed at a fold or a call.
 
 The [original report](https://github.com/clicklang/click/blob/d3dbacbb7/bugs/rbtree-augmented-sized-resources-lack-the-parent-pointer-fact.md)
 keeps the affected sidecars and per-case repair evidence.
-The [current rbtree rerun](../roadmap/rbtree-example.md#focused-verification-on-current-master)
-records the first failures on master. The selected metadata proof reaches
-child naming in its fold, and the typed parent-rotation helper verifies.
+The [rbtree verification evidence](../roadmap/rbtree-example.md#verification-evidence)
+links to the historical run where the metadata proof reached child naming in
+its fold and the typed parent-rotation helper verified.
 Full-directory verification and expansion audit remain part of the rbtree
 milestone.

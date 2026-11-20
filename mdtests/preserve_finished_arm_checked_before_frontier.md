@@ -6,7 +6,7 @@ invariants separately. The arms never rejoin — a preservation path does not
 join across the back edge — so the loop rule is certified from two paths and
 the preservation certificate is reassembled as the `match` that produced them.
 
-The `Neg` arm of this `preserve` has been written only as far as its
+The `Neg` arm of this `maintain` has been written only as far as its
 `unfold`, while the `Pos` arm after it reaches its back edge with a `have`
 whose proof fails. Both are wrong, but only one is a mistake: a script still being
 written is reported by the frontier it reached, and a finished path that does
@@ -66,7 +66,7 @@ void spin(struct cell* node, int32 n) {
         invariant c.model == old(c.model);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Sign::Neg(value) => {
                     unfold(c);

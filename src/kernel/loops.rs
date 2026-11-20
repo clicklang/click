@@ -3879,7 +3879,9 @@ fn abstract_loop_exit_memory(
                 .collect(),
             Vec::new(),
         );
-        *successor = successor.clone().with_memory(memory);
+        *successor = successor
+            .clone()
+            .with_memory_relative_to(memory, successor.memory());
     }
     Ok(abstracted)
 }
@@ -4105,10 +4107,10 @@ fn loop_exit_residual_difference(
             vec![seated.memory.clone(), witness.memory.clone()],
             cells.iter().cloned().map(ProgramValue::pointer).collect(),
         );
-        witness = witness.with_memory(memory);
-        seated = seated.with_memory(exit_memory);
+        witness = witness.with_memory_relative_to(memory, successor.memory());
+        seated = seated.with_memory_relative_to(exit_memory, successor.memory());
     }
-    loop_exit_state_difference(&witness, &seated, assumptions)
+    loop_exit_state_difference(&witness, &seated, successor.memory(), assumptions)
 }
 
 /// Whether two exits hold the same resources: structurally, or after each
@@ -4155,27 +4157,26 @@ fn loop_exit_resources_agree(
 fn loop_exit_state_difference(
     left: &ExecutionState,
     right: &ExecutionState,
+    memory_base: &SymbolicMemory,
     assumptions: &PureFactContext,
 ) -> Option<String> {
+    let same_memory = left
+        .memory()
+        .same_contents_relative_to(right.memory(), memory_base);
+    let mut aligned = right.clone();
     // Creation ledgers that record the same state differ only in their
     // fresh names: a local one exit created and retired leaves none behind.
-    if left.equal_up_to_creation_ledger_identity(right) {
-        return None;
+    if same_memory {
+        // Reuse the already compared memory in the state equality check.
+        aligned.memory = left.memory.clone();
+        if left.equal_up_to_creation_ledger_identity(&aligned) {
+            return None;
+        }
     }
-    let same_memory = left.memory().same_contents_as(right.memory());
     let same_resources =
         loop_exit_resources_agree(left.resources(), right.resources(), assumptions);
-    if same_memory || same_resources {
-        // The fields are assigned directly: the setters also refresh what
-        // they mirror elsewhere in the state, and nothing but the component
-        // just shown equivalent may change before the comparison.
-        let mut aligned = right.clone();
-        if same_memory {
-            aligned.memory = left.memory.clone();
-        }
-        if same_resources {
-            aligned.resources = left.resources.clone();
-        }
+    if same_memory && same_resources {
+        aligned.resources = left.resources.clone();
         if left.equal_up_to_creation_ledger_identity(&aligned) {
             return None;
         }

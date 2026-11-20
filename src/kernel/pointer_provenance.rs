@@ -1,13 +1,12 @@
 //! Value-origin equality. Address congruence must never enter this index.
 use super::Pointer;
-use crate::persistent::{PersistentMap, PersistentSet};
+use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
 
 /// Persistent union by size. Insertion touches two root paths; a branch
 /// forks a persistent clone.
 #[derive(Clone, Debug)]
 pub(super) struct ValueClasses<K: Ord> {
-    parents: PersistentMap<K, K>,
-    sizes: PersistentMap<K, usize>,
+    components: PersistentComponents<K>,
     edges: PersistentMap<K, PersistentSet<K>>,
     /// Reverse admission order, independent of state content hashes.
     ordered_edges: PersistentMap<K, PersistentMap<u64, K>>,
@@ -18,8 +17,7 @@ pub(super) struct ValueClasses<K: Ord> {
 impl<K: Ord> Default for ValueClasses<K> {
     fn default() -> Self {
         Self {
-            parents: Default::default(),
-            sizes: Default::default(),
+            components: Default::default(),
             edges: Default::default(),
             ordered_edges: Default::default(),
             next_edge: 0,
@@ -28,20 +26,12 @@ impl<K: Ord> Default for ValueClasses<K> {
     }
 }
 impl<K: Ord + Clone> ValueClasses<K> {
-    fn root(&self, value: &K) -> K {
-        let mut root = value;
-        while let Some(parent) = self.parents.get(root) {
-            crate::instrumentation::record_deterministic_work(1);
-            root = parent;
-        }
-        root.clone()
-    }
     pub(super) fn equal(&self, left: &K, right: &K) -> bool {
-        left == right || self.root(left) == self.root(right)
+        left == right || self.components.root(left) == self.components.root(right)
     }
     pub(super) fn representative(&self, value: &K) -> K {
         self.representative
-            .get(&self.root(value))
+            .get(self.components.root(value))
             .unwrap_or(value)
             .clone()
     }
@@ -62,29 +52,6 @@ impl<K: Ord + Clone> ValueClasses<K> {
             .get(value)
             .into_iter()
             .flat_map(|neighbors| neighbors.iter().rev().map(|(_, key)| key))
-    }
-    fn join(&mut self, left: &K, right: &K, prefer: impl Fn(&K, &K) -> K) {
-        let mut left = self.root(left);
-        let mut right = self.root(right);
-        if left == right {
-            return;
-        }
-        let mut a = self.sizes.get(&left).copied().unwrap_or(1);
-        let mut b = self.sizes.get(&right).copied().unwrap_or(1);
-        if a < b {
-            std::mem::swap(&mut left, &mut right);
-            std::mem::swap(&mut a, &mut b);
-        }
-        let value = prefer(&self.representative(&left), &self.representative(&right));
-        self.parents = self.parents.with_inserted(right.clone(), left.clone());
-        self.sizes = self
-            .sizes
-            .without_key(&right)
-            .with_inserted(left.clone(), a + b);
-        self.representative = self
-            .representative
-            .without_key(&right)
-            .with_inserted(left, value);
     }
     pub(super) fn insert(&mut self, left: &K, right: &K, prefer: impl Fn(&K, &K) -> K) {
         if left == right {
@@ -108,7 +75,14 @@ impl<K: Ord + Clone> ValueClasses<K> {
                 .edges
                 .with_inserted(a.clone(), neighbors.with_value(b.clone()));
         }
-        self.join(left, right, prefer);
+        if let Some((root, absorbed)) = self.components.join(left, right) {
+            let value = prefer(
+                self.representative.get(&root).unwrap_or(&root),
+                self.representative.get(&absorbed).unwrap_or(&absorbed),
+            );
+            self.representative.remove(&absorbed);
+            self.representative.insert(root, value);
+        }
     }
 }
 

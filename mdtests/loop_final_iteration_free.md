@@ -34,7 +34,7 @@ int32 loop_final_iteration_free(int32* data) {
         invariant i >= 0;
         invariant i <= 1;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
             step();
         }

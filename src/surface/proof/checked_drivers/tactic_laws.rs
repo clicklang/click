@@ -542,7 +542,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
 
 /// A loop label names one loop on an execution path. `at(label.exit, ...)`
 /// and `label` regions resolve through the clause that declared it, so a
-/// second `loop as label` at another loop would make the same name mean two
+/// second `loop label` at another loop would make the same name mean two
 /// program points.
 fn refuse_rebound_loop_labels(
     function_block: &FunctionBlock,

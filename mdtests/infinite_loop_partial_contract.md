@@ -23,7 +23,7 @@ int32 spin() diverges {
     loop diverges {
         invariant 0 == 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

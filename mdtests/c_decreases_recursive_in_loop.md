@@ -39,7 +39,7 @@ int32 recursive_loop(int32 n) {
         invariant i <= 1;
         invariant result == 0;
         initialize by solve();
-        preserve by {
+        maintain by {
             if n > 0 {
                 step();
                 step();

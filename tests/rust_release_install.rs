@@ -94,21 +94,21 @@ fn rust_release_archive_installs_and_verifies() {
 
     let basic = t.path().join("basic");
     examples::committed_project(&basic, "examples/basic-rust");
-    success(cli(&binary, &relocated, &basic, &["import", "lock"]));
+    success(cli(&binary, &relocated, &basic, &["capture"]));
     success(cli(
         &binary,
         &relocated,
         &basic,
         &["verify", "borrow.click"],
     ));
-    let lock = fs::read(basic.join("click.project.lock.json")).unwrap();
+    let lock = fs::read(basic.join(".click/captures/manifest.json")).unwrap();
     assert_eq!(
         lock,
-        include_bytes!("../examples/basic-rust/click.project.lock.json")
+        include_bytes!("../examples/basic-rust/.click/captures/manifest.json")
     );
-    success(cli(&binary, &relocated, &basic, &["import", "lock"]));
+    success(cli(&binary, &relocated, &basic, &["capture"]));
     assert_eq!(
-        fs::read(basic.join("click.project.lock.json")).unwrap(),
+        fs::read(basic.join(".click/captures/manifest.json")).unwrap(),
         lock
     );
     assert_eq!(

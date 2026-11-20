@@ -41,7 +41,7 @@ void spin(int32* p, int32 n) {
         invariant i <= n;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             have 0 <= n - i - 1 by { solve() using { i < n; i >= 0; n >= 0; }; }
             have n - i - 1 < n - i by { solve() using { i < n; i >= 0; n >= 0; }; }
             step();

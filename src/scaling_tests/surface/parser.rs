@@ -76,6 +76,38 @@ fn literal_reference_parsing_shares_the_source_index_as_other_literals_grow() {
 }
 
 #[test]
+fn compound_literal_selector_uses_the_declaration_index() {
+    let work = [1, 16, 256].map(|count| {
+        let owner = crate::kernel::LocalFunctionId::new(None, "f".into());
+        let mut layouts = ProgramLayouts::default();
+        let bindings = std::sync::Arc::make_mut(&mut layouts.local_bindings);
+        bindings.owners.insert("f".into(), BTreeSet::from([None]));
+        for ordinal in 0..count {
+            bindings.declarations.insert(
+                crate::kernel::LocalBindingId::compound_literal(owner.clone(), ordinal),
+                SourceBindingInfo {
+                    struct_name: None,
+                    aggregate: true,
+                    array_shape: None,
+                },
+            );
+        }
+        let index = layouts.local_bindings.clone();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut parser =
+                Parser::with_program_layouts("f.compound_literal(0)", layouts, None).unwrap();
+            assert!(std::sync::Arc::ptr_eq(&index, &parser.local_bindings));
+            parser.parse_contract_expression().unwrap()
+        });
+        work
+    });
+    assert!(
+        work.iter().all(|sample| *sample <= work[0] + 16),
+        "{work:?}"
+    );
+}
+
+#[test]
 fn static_declaration_preparation_is_linear_and_selector_lookup_is_indexed() {
     for size in [1usize, 16, 256] {
         let mut source = String::new();

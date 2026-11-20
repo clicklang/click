@@ -42,7 +42,7 @@ int32 loop_stdlib_permutation_invariant(int32 p[3]) {
             unfold(permutation::permutation(p, old(p), 0, 3));
             solve();
         }
-        preserve by {
+        maintain by {
             mark iteration;
             unfold(permutation::permutation(p, old(p), 0, 3));
             step();

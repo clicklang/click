@@ -40,7 +40,7 @@ void advance(int32* rb, int32* stop) {
         owns cell: Cell(old(rb));
         invariant cell.value == old(cell.value);
         initialize by solve();
-        preserve by {
+        maintain by {
             have remaining(rb, stop) == 1 by {
                 unfold(remaining(rb, stop));
                 normalize() using { address(rb) != address(stop); };
@@ -64,7 +64,7 @@ void change_index(int32* p, int32 index) {
         invariant index >= 0;
         invariant cell.value == old(cell.value);
         initialize by solve();
-        preserve by { step(); }
+        maintain by { step(); }
     }
 }
 ```

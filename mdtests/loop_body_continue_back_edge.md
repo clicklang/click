@@ -42,7 +42,7 @@ int32 count_down(int32 n) {
         invariant i >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             have 0 <= to_integer(i - 1);
             step();
             step();

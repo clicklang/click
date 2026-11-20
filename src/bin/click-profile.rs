@@ -1,3 +1,4 @@
+use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -10,9 +11,8 @@ use click::cli::{
 };
 use click::instrumentation::{self, ActiveVerificationWork, TacticEvent, VerificationEvent};
 use click::surface::{
-    ClickError, ClickProject, ProofSourceIndex, SourcePosition, project_smart_tactic_source_sites,
-    project_tactic_source_position, smart_tactic_source_sites, tactic_source_position,
-    verify_c_prepared_project, verify_c_project, verify_c_sources, verify_program_prepared_project,
+    ClickError, ClickProject, ProofSourceIndex, SourcePosition, verify_c_prepared_project,
+    verify_c_project, verify_c_sources, verify_program_prepared_project,
 };
 
 /// The crash-containment bound per profiled project; see
@@ -165,6 +165,7 @@ struct ProjectProfile {
     /// are reported instead of ignored.
     unknown_timing: BTreeMap<String, UnknownTiming>,
     accounting: TimeAccounting,
+    report_preparation: Option<Duration>,
     work: WorkMetrics,
     attribution: BTreeMap<String, FunctionAttribution>,
     operations: Vec<ProfileOperation>,
@@ -538,7 +539,8 @@ fn profile_target(
             ),
         })
     });
-    let wall_elapsed = started.elapsed();
+    let verification_finished = Instant::now();
+    let wall_elapsed = verification_finished.duration_since(started);
     let project_name = project
         .file_name()
         .and_then(|name| name.to_str())
@@ -565,6 +567,7 @@ fn profile_target(
     profile.verification_failure = verification.err();
     profile.work.smart_source_sites = count_smart_source_sites(&events, &mut sources)?;
     resolve_source_positions(&mut profile, &mut sources)?;
+    profile.report_preparation = Some(verification_finished.elapsed());
     Ok(profile)
 }
 
@@ -1129,6 +1132,7 @@ fn build_profile(
         verification_failure: None,
         unknown_timing: BTreeMap::new(),
         accounting,
+        report_preparation: None,
         work,
         attribution,
         operations,
@@ -1284,6 +1288,7 @@ fn parse_profile(
         verification_failure: None,
         unknown_timing,
         accounting,
+        report_preparation: None,
         work,
         attribution,
         operations,
@@ -1479,7 +1484,9 @@ struct ProfiledSource {
     /// file; the offset of the ```click block for an mdtest, so reported
     /// locations point into the markdown the user actually edits.
     line_offset: usize,
-    smart_sites: std::cell::OnceCell<Result<SmartSiteInventory, String>>,
+    index: OnceCell<Result<ProofSourceIndex, ClickError>>,
+    claim_positions: RefCell<BTreeMap<String, Result<Vec<SourcePosition>, ClickError>>>,
+    smart_sites: OnceCell<Result<SmartSiteInventory, String>>,
 }
 
 struct SmartSiteInventory {
@@ -1488,25 +1495,55 @@ struct SmartSiteInventory {
 }
 
 impl ProfiledSource {
+    fn source_index(&self) -> Result<&ProofSourceIndex, ClickError> {
+        self.index
+            .get_or_init(|| {
+                let inputs = self.inputs.program_inputs();
+                match &self.project {
+                    Some(project) => ProofSourceIndex::for_project(project, &inputs),
+                    None => ProofSourceIndex::for_sidecar(&self.click_source, &inputs),
+                }
+            })
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+
+    fn position(&self, key: &StepKey) -> Result<SourcePosition, String> {
+        let message = |error: ClickError| error.message().to_owned();
+        let index = self.source_index().map_err(message)?;
+        let mut claims = self.claim_positions.borrow_mut();
+        let positions = claims
+            .entry(key.claim.clone())
+            .or_insert_with(|| index.tactic_positions(&key.claim))
+            .as_ref()
+            .map_err(|error| error.message().to_owned())?;
+        let outer = positions.get(key.source_index).ok_or_else(|| {
+            format!(
+                "`{}` has no source tactic occurrence {}",
+                key.claim, key.source_index
+            )
+        })?;
+        match key.source_tactic_path.as_deref() {
+            Some(path) if path.len() > 1 => {
+                index.nested_position(outer, &path[1..]).map_err(message)
+            }
+            _ => Ok(outer.clone()),
+        }
+    }
+
     fn smart_sites(&self) -> Result<&SmartSiteInventory, String> {
         self.smart_sites
             .get_or_init(|| {
-                match &self.project {
-                    Some(project) => {
-                        project_smart_tactic_source_sites(project, &self.inputs.program_inputs())
-                    }
-                    None => {
-                        smart_tactic_source_sites(&self.click_source, &self.inputs.program_inputs())
-                    }
-                }
-                .map(|sites| SmartSiteInventory {
-                    count: sites.len(),
-                    positions: sites
-                        .into_iter()
-                        .map(|site| (site.position.line, site.position.column))
-                        .collect(),
-                })
-                .map_err(|error| error.report())
+                self.source_index()
+                    .and_then(|index| index.smart_tactic_sites(&self.click_source))
+                    .map(|sites| SmartSiteInventory {
+                        count: sites.len(),
+                        positions: sites
+                            .into_iter()
+                            .map(|site| (site.position.line, site.position.column))
+                            .collect(),
+                    })
+                    .map_err(|error| error.report())
             })
             .as_ref()
             .map_err(Clone::clone)
@@ -1555,7 +1592,9 @@ fn load_profiled_source(
             inputs,
             project,
             line_offset: mdtest.click_start_line.saturating_sub(1),
-            smart_sites: std::cell::OnceCell::new(),
+            index: OnceCell::new(),
+            claim_positions: RefCell::default(),
+            smart_sites: OnceCell::new(),
         });
     }
     let (click_source, project, inputs) = load_sidecar_inputs(path, project_root)?;
@@ -1564,7 +1603,9 @@ fn load_profiled_source(
         inputs,
         project: Some(project),
         line_offset: 0,
-        smart_sites: std::cell::OnceCell::new(),
+        index: OnceCell::new(),
+        claim_positions: RefCell::default(),
+        smart_sites: OnceCell::new(),
     })
 }
 
@@ -1580,10 +1621,6 @@ fn resolve_source_positions(
     sources: &mut ProfiledSources,
 ) -> Result<(), String> {
     let mut unresolved: BTreeMap<String, usize> = BTreeMap::new();
-    // A nested step is located through its source's proof index, built from
-    // the parse once per source.
-    let mut indexes: BTreeMap<std::path::PathBuf, Result<ProofSourceIndex, ClickError>> =
-        BTreeMap::new();
     let interrupted_key = match profile.interrupted.as_mut() {
         Some(InterruptedWork::Tactic(key)) => Some(key),
         Some(InterruptedWork::Phase(_) | InterruptedWork::Driver) | None => None,
@@ -1600,37 +1637,7 @@ fn resolve_source_positions(
         }
         let source = sources.get(&key.source_path)?;
         key.prepared_import = source.inputs.is_prepared() && !looks_like_mdtest(&key.source_path);
-        let position = match (&source.project, &source.inputs) {
-            (Some(project), inputs) => project_tactic_source_position(
-                project,
-                &inputs.program_inputs(),
-                &key.claim,
-                key.source_index,
-            ),
-            (None, inputs) => tactic_source_position(
-                &source.click_source,
-                &inputs.program_inputs(),
-                &key.claim,
-                key.source_index,
-            ),
-        };
-        let position = position.and_then(|outer| match key.source_tactic_path.as_deref() {
-            Some(path) if path.len() > 1 => {
-                let index = indexes.entry(key.source_path.clone()).or_insert_with(|| {
-                    let inputs = source.inputs.program_inputs();
-                    match &source.project {
-                        Some(project) => ProofSourceIndex::for_project(project, &inputs),
-                        None => ProofSourceIndex::for_sidecar(&source.click_source, &inputs),
-                    }
-                });
-                match index {
-                    Ok(index) => index.nested_position(&outer, &path[1..]),
-                    Err(error) => Err(error.clone()),
-                }
-            }
-            _ => Ok(outer),
-        });
-        match position {
+        match source.position(key) {
             Ok(position) => {
                 // A smart budget can cover a mixed container whose nested
                 // tactics are selectable, but whose body is not one smart
@@ -1648,7 +1655,7 @@ fn resolve_source_positions(
                 });
             }
             Err(error) => {
-                *unresolved.entry(error.message().to_string()).or_default() += 1;
+                *unresolved.entry(error).or_default() += 1;
             }
         }
     }

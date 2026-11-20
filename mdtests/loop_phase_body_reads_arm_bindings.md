@@ -1,7 +1,7 @@
 # A loop phase body written inside a proof `match` arm names the arm's bindings
 
 [`loop_clause_reads_arm_bindings.md`](loop_clause_reads_arm_bindings.md) resolves
-the proof scope into a loop's *clauses*. Its `initialize` and `preserve`
+the proof scope into a loop's *clauses*. Its `initialize` and `maintain`
 *bodies* are written in the same scope and must resolve the same names: a
 `have` inside a phase body is as much part of the enclosing arm as a `have`
 written beside the `loop`.
@@ -13,7 +13,7 @@ this fixture a phase body that named an arm binding was refused with
 lowered to nothing at all, with the contentless "body did not construct a
 completed proof object". The scope is now attached to all three phase roots:
 the per-invariant entry planner, the automatic preservation walk, and the
-written `preserve` body.
+written `maintain` body.
 
 What is *not* a trigger, checked while reducing this: whether the loop is
 ranked, and whether an earlier `have` in the same body was proved by `solve`.
@@ -22,7 +22,7 @@ a `have` whose goal names none still works after one that does. The same `have`
 written beside the `loop` in the arm, rather than in a phase body, always
 worked. Both loops below carry a measure, as every loop must; they differ in
 which phase bodies name the arm's bindings, `spin` from `initialize` and
-`preserve` and `spin_ranked` only from `preserve`, and both phase bodies prove
+`maintain` and `spin_ranked` only from `maintain`, and both phase bodies prove
 the same definitional equation by `unfold` and `normalize`.
 
 `spin`'s `initialize` is written in the shape the entry planner checks: one
@@ -113,7 +113,7 @@ int spin(struct node* p, int n) {
                     }
                     known();
                 }
-                preserve by {
+                maintain by {
                     have head_value(Tree::Node(id, value, left_model)) == value by {
                         unfold(head_value(Tree::Node(id, value, left_model)));
                         normalize();
@@ -147,7 +147,7 @@ int spin_ranked(struct node* p, int n) {
                 invariant i <= n;
 
                 initialize by solve();
-                preserve by {
+                maintain by {
                     have head_value(Tree::Node(id, value, left_model)) == value by {
                         unfold(head_value(Tree::Node(id, value, left_model)));
                         normalize();
