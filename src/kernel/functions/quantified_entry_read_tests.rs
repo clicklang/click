@@ -182,3 +182,53 @@ fn quantity_read_projection_ignores_unrelated_definitions() {
         "quantity setup must not scan unrelated declarations: {samples:?}"
     );
 }
+
+#[test]
+fn symbolic_quantity_keeps_the_entry_field_read_through_materialization() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pool = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(38_500)), 4),
+    };
+    let capacity = pool.offset_by_bytes(4);
+    let view = ResourceFact::view_memory(MemoryRange::new(
+        pool.clone(),
+        MachineTerm::constant(0),
+        MachineTerm::constant(2),
+    ));
+    let entry = ExecutionState::new()
+        .with_local("pool", ProgramValue::pointer(pool))
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(view))
+        .begin_function_entry_memory();
+    let point = entry.program_point();
+    let named = entry.clone().with_materialized_memory_at_current_point(
+        entry
+            .memory()
+            .clone()
+            .materialize_cell_at(capacity.clone(), ProgramType::Int32, &point),
+    );
+    let expression = crate::kernel::program_expression::load(
+        crate::kernel::program_expression::pointer_offset_bytes(
+            crate::kernel::program_expression::variable("pool"),
+            4,
+        ),
+    );
+    let quantity = |state| {
+        evaluate_declared_quantity(
+            state,
+            &expression,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap()
+        .unwrap()
+    };
+
+    let before = quantity(&entry);
+    assert!(matches!(
+        before.native_compat(),
+        MachineTerm::MemoryLoad(read, address, LoadKind::Int32)
+            if read.read_version_id() == point.id() && address.as_ref() == &capacity
+    ));
+    assert_eq!(before, quantity(&named));
+}
