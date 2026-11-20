@@ -8585,8 +8585,8 @@ impl ResourceContext {
     /// `slot(pool)` and later produced another holds `slot(pool) x 1` twice;
     /// a context only merges them when it normalizes, which consumption
     /// deliberately does not do first. The units are those the consumption
-    /// already selected by key, merged with the family's own pair rule in
-    /// their index order until one merged unit covers `fact`. Memory keeps
+    /// already selected by key, admitted with the family's own pair rule in
+    /// their index order until their constant total covers `fact`. Memory keeps
     /// its own supplier composition, and a unit with a loan, support,
     /// projection or witness keeps its identity.
     fn consume_fact_from_merged_units(
@@ -8604,35 +8604,45 @@ impl ResourceContext {
             return false;
         }
         let algebra = resource_family_algebra(fact.family());
-        let mut merged: Option<ResourceFact> = None;
+        // The first selected unit, the running constant total, and the units
+        // merged so far. Each further unit is checked against the first with
+        // the family's pair rule, so the check stays the size of one unit
+        // while the total is kept as a constant.
+        let mut first: Option<ResourceFact> = None;
+        let mut total = 0_u32;
         let mut used = Vec::new();
+        let mut seen = BTreeSet::new();
         for &entry in candidates {
             crate::instrumentation::record_deterministic_work(1);
             let unit = self.fact(entry);
-            if used.contains(&entry)
+            let Some(quantity) = unit.owned_quantity_term().and_then(MachineTerm::as_const) else {
+                continue;
+            };
+            if !seen.insert(entry)
                 || !self.merged_unit_eligible(entry)
                 || !unit.is_own()
                 || unit.resource() != fact.resource()
-                || unit
-                    .owned_quantity_term()
-                    .and_then(MachineTerm::as_const)
-                    .is_none()
             {
                 continue;
             }
-            let next = match &merged {
-                None => unit.clone(),
-                Some(merged) => {
-                    let Some(next) = normalize_resource_fact_pair(merged, unit, assumptions) else {
-                        continue;
-                    };
-                    next
-                }
+            if let Some(first) = &first
+                && normalize_resource_fact_pair(first, unit, assumptions).is_none()
+            {
+                continue;
+            }
+            let Some(next_total) = total.checked_add(quantity) else {
+                return false;
             };
+            first.get_or_insert_with(|| unit.clone());
+            total = next_total;
             used.push(entry);
-            if used.len() > 1
-                && let Some(ResourceFactConsumption::Replace(residual)) =
-                    algebra.consume(&next, fact, assumptions)
+            if used.len() < 2 {
+                continue;
+            }
+            let merged =
+                ResourceFact::own_quantity(fact.resource().clone(), MachineTerm::constant(total));
+            if let Some(ResourceFactConsumption::Replace(residual)) =
+                algebra.consume(&merged, fact, assumptions)
             {
                 for entry in &used {
                     let occurrence = self.occurrence(*entry);
@@ -8652,7 +8662,6 @@ impl ResourceContext {
                 }
                 return true;
             }
-            merged = Some(next);
         }
         false
     }
