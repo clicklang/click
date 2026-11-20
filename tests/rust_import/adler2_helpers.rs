@@ -1569,7 +1569,7 @@ fn charon_adler2_small_batch_compute_rejects_missing_view_and_full_outer_batch()
 fn charon_adler2_small_batch_compute_rejects_wrong_scalar_byte() {
     let count = "(((bytes.len() as u32) as i32) - ((__rust_mir_138_remaining as u32) as i32))";
     let goal =
-        format!("have to_integer(__rust_mir_144) == to_integer((bytes[({count} - 1)] as i32)) by");
+        format!("have to_integer(byte as u32) == to_integer((bytes[({count} - 1)] as i32)) by");
     reject_compute(SMALL_BATCH_COMPUTE, &goal, &goal.replace(" - 1)", " - 2)"));
 }
 
@@ -1579,7 +1579,7 @@ fn charon_adler2_small_batch_compute_rejects_wrong_scalar_byte() {
 fn charon_adler2_small_batch_compute_rejects_stale_scalar_a() {
     let error = reject_compute(
         SMALL_BATCH_COMPUTE,
-        "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, __rust_mir_144)) by",
+        "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) + to_integer(at(tail_add_a, byte as u32)) by",
         "have to_integer(at(tail_add_b, __rust_mir_147)) == to_integer(at(tail_add_a, a)) by",
     );
     assert!(error.message().contains("`known`"), "{}", error.message());

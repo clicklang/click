@@ -215,7 +215,7 @@ pub(super) fn substitute_pure_values(
             );
         }
     }
-    fold_borrowed_slice_lengths(blocks, &predecessors, &substitutable, &mut removed);
+    fold_scalar_intrinsic_results(blocks, &predecessors, &substitutable, &mut removed);
     for block in blocks.iter_mut() {
         block.statements.retain(|statement| match statement {
             S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
@@ -229,10 +229,10 @@ pub(super) fn substitute_pure_values(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
-/// A lowered slice length call leaves a goto between the metadata read and
-/// its use. Rejoin the two fragments of the same written statement when the
-/// read is the predecessor's last action and the successor has one entry.
-fn fold_borrowed_slice_lengths(
+/// An intrinsic lowered to a scalar expression can leave a goto between
+/// the expression and its use. Rejoin the two fragments of the same written
+/// statement when the definition is last and the successor has one entry.
+fn fold_scalar_intrinsic_results(
     blocks: &mut [MirBlock],
     predecessors: &[usize],
     substitutable: &impl Fn(&str) -> bool,
@@ -250,21 +250,12 @@ fn fold_borrowed_slice_lengths(
         };
         let Some(S::Assign {
             target: E::Local { name },
-            value: length @ E::SliceLength { slice },
+            value: result,
         }) = definition.statements.last()
         else {
             continue;
         };
-        if !substitutable(name)
-            || !matches!(
-                slice.as_ref(),
-                E::Borrow {
-                    place,
-                    value_type: Type::ByteSlice { mutable: false }
-                        | Type::ScalarSlice { mutable: false, .. },
-                } if matches!(place.as_ref(), E::Local { .. })
-            )
-        {
+        if !substitutable(name) || !is_movable_scalar_intrinsic(result) {
             continue;
         }
         let Some(site) = definition.terminator_site else {
@@ -299,7 +290,7 @@ fn fold_borrowed_slice_lengths(
         if !straight_line_scalar(value) {
             continue;
         }
-        let mut values = BTreeMap::from([(name.clone(), length.clone())]);
+        let mut values = BTreeMap::from([(name.clone(), result.clone())]);
         let mut pending = Pending {
             values: &mut values,
             refused: Vec::new(),
@@ -311,7 +302,29 @@ fn fold_borrowed_slice_lengths(
     }
 }
 
-/// Moving a scalar metadata read here cannot cross any effect, load, or
+/// These expressions read an existing local and have no effect of their own.
+fn is_movable_scalar_intrinsic(value: &E) -> bool {
+    match value {
+        E::SliceLength { slice } => matches!(
+            slice.as_ref(),
+            E::Borrow {
+                place,
+                value_type: Type::ByteSlice { mutable: false }
+                    | Type::ScalarSlice { mutable: false, .. },
+            } if matches!(place.as_ref(), E::Local { .. })
+        ),
+        E::IntegerFrom {
+            value,
+            source_type: Type::U8,
+            value_type: Type::U32,
+        } => {
+            matches!(value.as_ref(), E::Local { .. })
+        }
+        _ => false,
+    }
+}
+
+/// Moving a scalar intrinsic here cannot cross any effect, load, or
 /// short-circuit branch within the consumer.
 fn straight_line_scalar(value: &E) -> bool {
     match value {
@@ -2524,66 +2537,76 @@ mod tests {
     }
 
     #[test]
-    fn a_borrowed_slice_length_crosses_only_its_own_straight_line_goto() {
+    fn a_scalar_intrinsic_crosses_only_its_own_straight_line_goto() {
         let length = E::SliceLength {
             slice: Box::new(E::Borrow {
-                place: Box::new(local("bytes")),
+                place: Box::new(local("source")),
                 value_type: Type::ByteSlice { mutable: false },
             }),
+        };
+        let conversion = E::IntegerFrom {
+            value: Box::new(local("source")),
+            source_type: Type::U8,
+            value_type: Type::U32,
         };
         let cast = E::Cast {
             value: Box::new(local("t1")),
             value_type: Type::U32,
         };
-        for (site, storage, second_entry, folded) in [
-            (1, "t1", false, true),
-            (2, "t1", false, false),
-            (1, "bytes", false, false),
-            (1, "t1", true, false),
+        for (intrinsic, source_type, temporary_type) in [
+            (length, Type::ByteSlice { mutable: false }, Type::Usize),
+            (conversion, Type::U8, Type::U32),
         ] {
-            let mut blocks = vec![
-                MirBlock {
-                    terminator_site: Some(1),
-                    statements: vec![S::Site { site: 1 }, assign("t1", length.clone())],
-                    terminator: T::Goto { target: 1 },
-                },
-                MirBlock {
-                    terminator_site: Some(site),
-                    statements: vec![
-                        S::Site { site },
-                        S::EndStorage {
-                            local: storage.into(),
-                        },
-                        assign("x", binary("add", local("a"), cast.clone())),
-                    ],
-                    terminator: T::Return,
-                },
-            ];
-            if second_entry {
-                blocks.push(MirBlock {
-                    terminator_site: Some(1),
-                    statements: Vec::new(),
-                    terminator: T::Goto { target: 1 },
-                });
+            for (site, storage, second_entry, folded) in [
+                (1, "t1", false, true),
+                (2, "t1", false, false),
+                (1, "source", false, false),
+                (1, "t1", true, false),
+            ] {
+                let mut blocks = vec![
+                    MirBlock {
+                        terminator_site: Some(1),
+                        statements: vec![S::Site { site: 1 }, assign("t1", intrinsic.clone())],
+                        terminator: T::Goto { target: 1 },
+                    },
+                    MirBlock {
+                        terminator_site: Some(site),
+                        statements: vec![
+                            S::Site { site },
+                            S::EndStorage {
+                                local: storage.into(),
+                            },
+                            assign("x", binary("add", local("a"), cast.clone())),
+                        ],
+                        terminator: T::Return,
+                    },
+                ];
+                if second_entry {
+                    blocks.push(MirBlock {
+                        terminator_site: Some(1),
+                        statements: Vec::new(),
+                        terminator: T::Goto { target: 1 },
+                    });
+                }
+                let mut source = place("source");
+                source.value_type = source_type.clone();
+                let mut temporary = place("t1");
+                temporary.value_type = temporary_type.clone();
+                let mut locals = vec![source, place("a"), place("x"), temporary];
+                super::substitute_pure_values(
+                    &mut locals,
+                    &mut blocks,
+                    &BTreeSet::from(["t1".into()]),
+                    &BTreeSet::new(),
+                );
+                assert_eq!(!locals.iter().any(|local| local.name == "t1"), folded);
+                assert!(matches!(
+                    blocks[1].statements.last(),
+                    Some(S::Assign { value: E::Binary { right, .. }, .. })
+                        if matches!(right.as_ref(), E::Cast { value, .. }
+                            if (std::mem::discriminant(value.as_ref()) == std::mem::discriminant(&intrinsic)) == folded)
+                ));
             }
-            let mut bytes = place("bytes");
-            bytes.value_type = Type::ByteSlice { mutable: false };
-            let mut temporary = place("t1");
-            temporary.value_type = Type::Usize;
-            let mut locals = vec![bytes, place("a"), place("x"), temporary];
-            super::substitute_pure_values(
-                &mut locals,
-                &mut blocks,
-                &BTreeSet::from(["t1".into()]),
-                &BTreeSet::new(),
-            );
-            assert_eq!(!locals.iter().any(|local| local.name == "t1"), folded);
-            assert!(matches!(
-                blocks[1].statements.last(),
-                Some(S::Assign { value: E::Binary { right, .. }, .. })
-                    if matches!(right.as_ref(), E::Cast { value, .. }
-                        if matches!(value.as_ref(), E::SliceLength { .. }) == folded)
-            ));
         }
     }
 
