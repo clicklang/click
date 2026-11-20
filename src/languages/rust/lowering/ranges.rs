@@ -188,7 +188,9 @@ mod tests {
     #[test]
     fn range_bounds_are_distinct_from_source_locals() {
         let mut export = crate::languages::rust::charon::decode(
-            include_bytes!("../../../../design/charon-trial/ranges/.click/captures/ranges/ranges.rs.ullbc"),
+            include_bytes!(
+                "../../../../design/charon-trial/ranges/.click/captures/ranges/ranges.rs.ullbc"
+            ),
             "ranges.rs",
             include_bytes!("../../../../design/charon-trial/ranges/ranges.rs"),
         )

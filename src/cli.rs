@@ -1861,8 +1861,8 @@ fn cpp_mdtest_import_directory(path: &Path) -> Option<PathBuf> {
 
 /// The lock and artifacts in a C++ import, by their paths inside it.
 fn cpp_import_files(directory: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut files = vec![PathBuf::from(crate::project::LOCK_NAME)];
-    let mut pending = vec![PathBuf::from(".click")];
+    let mut files = Vec::new();
+    let mut pending = vec![PathBuf::from(crate::project::ARTIFACT_DIRECTORY)];
     while let Some(relative) = pending.pop() {
         let entries = fs::read_dir(directory.join(&relative))
             .map_err(|error| format!("failed to read `{}`: {error}", relative.display()))?;

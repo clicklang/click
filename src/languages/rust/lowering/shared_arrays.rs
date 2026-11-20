@@ -306,7 +306,9 @@ mod tests {
     #[test]
     fn slice_iterator_fields_are_distinct_from_source_locals() {
         let mut export = crate::languages::rust::charon::decode(
-            include_bytes!("../../../../design/charon-trial/slice-iter/.click/captures/sum/sum.rs.ullbc"),
+            include_bytes!(
+                "../../../../design/charon-trial/slice-iter/.click/captures/sum/sum.rs.ullbc"
+            ),
             "sum.rs",
             include_bytes!("../../../../design/charon-trial/slice-iter/sum.rs"),
         )

@@ -1652,6 +1652,13 @@ fn canonicalize_roots(roots: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
 
 fn output_exclusions(config: &Config) -> Result<BTreeSet<PathBuf>, String> {
     let mut result = BTreeSet::new();
+    if matches!(config.origin, ConfigOrigin::ProjectUnit(_)) {
+        result.insert(path_identity(
+            &config
+                .config_directory
+                .join(crate::project::ARTIFACT_DIRECTORY),
+        )?);
+    }
     result.insert(path_identity(&lock_path_from_config(config))?);
     for source in &config.sources {
         result.insert(path_identity(&resolve_artifact(config, &source.artifact)?)?);
