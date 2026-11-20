@@ -185,12 +185,7 @@ impl ExecutionState {
         let occurrence = self
             .resources()
             .principal_view_for_release(view, assumptions)
-            .ok_or_else(|| {
-                format!(
-                    "release_view requires one directly held view of `{}`",
-                    view.diagnostic_summary()
-                )
-            })?;
+            .ok_or_else(|| "the operand must name one directly held view".to_string())?;
         let binding = self
             .resources()
             .loan_dependency(occurrence)

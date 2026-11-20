@@ -33,5 +33,5 @@ int32 use() {
 ```
 
 ```expect
-fail: write ownership required; available `views a[0..1]` covers the requested range but permits reading only
+fail: borrow: use `release_view` to give up this view when it is no longer needed.
 ```

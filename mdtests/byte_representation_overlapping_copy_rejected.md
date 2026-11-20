@@ -29,5 +29,5 @@ int f() {
 ```
 
 ```expect
-fail: a required resource overlaps a live borrowed footprint
+fail: A required resource overlaps a live borrow.
 ```

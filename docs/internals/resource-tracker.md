@@ -1144,14 +1144,13 @@ entry it still holds is refused for want of backing, not admitted.
 Measured, on the minimized `split(int32* a, int32* b) { owns a[0..1]; views
 b[0..1]; }`:
 
-- `split(g, g)` from a caller holding `owns g[0..4]` — refused, *"a required
-  resource overlaps a live borrowed footprint refused during planning;
-  selected resource `owns g[0..1]`"*;
+- `split(g, g)` from a caller holding `owns g[0..4]` — refused, *"cannot prepare the call's
+  borrow for `owns g[0..1]`. A required resource overlaps a live borrow."*;
 - the same through a function pointer under `contract Split` — refused
   identically;
 - `split(g, q)` where the caller holds `owns g[0..4]` and nothing about `q` —
-  refused, *"the required loan backing or binding is missing … `views
-  q[0..1]`"*;
+  refused, *"cannot supply `views q[0..1]` at this call. The caller needs an owner or
+  a live view that covers it."*;
 - `split(g, q)` where the caller also holds `views q[0..1]` — accepted, which
   is the induction step: the callee's pair is a reborrow of the caller's own
   pair.

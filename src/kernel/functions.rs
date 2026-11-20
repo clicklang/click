@@ -12,7 +12,10 @@ use super::spec::walk::{SpecNode, Visit, spec_tree_all};
 use super::thread_confinement::confined_resource_name;
 use crate::kernel::ResourceDescription;
 use crate::kernel::unary_term;
-use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{
+    CompareRelation, MachineIntegerType, OverflowOperation, ReturnedBorrowReason,
+    ReturnedBorrowRefusal,
+};
 use crate::kernel::{bits32_constant, int64_constant, uint64_constant};
 use std::sync::Arc;
 
@@ -851,8 +854,9 @@ fn recover_candidate_stable_view_resources(
     let Some(plan) = &transfer.stable_view_plan else {
         if let Some(produced) = transfer.produced_borrowing_pieces.first() {
             if produced.input_view.is_some() {
-                return Err(RuntimeError::FunctionContract(
-                    "a produced view requires a live borrow from its named input view".into(),
+                return Err(returned_borrow_error(
+                    &produced.support.head,
+                    ReturnedBorrowReason::InactiveSource,
                 ));
             }
             let (head, piece) = (&produced.support.head, &produced.piece);
@@ -949,33 +953,32 @@ fn recover_candidate_stable_view_resources(
                 "select explicit returned view source",
                 1,
             );
-            let source = selected_inputs.get(&input).ok_or_else(|| {
-                RuntimeError::FunctionContract(format!(
-                    "produced view `{}` requires a live borrow from its named input view",
-                    piece.diagnostic_summary()
-                ))
-            })?;
-            if !explicit_view_coverage(&source.requirement.fact, piece, output_assumptions) {
-                return Err(produced_view_coverage_error(
-                    &source.requirement.fact,
-                    piece,
+            let planned_source = selected_inputs
+                .get(&input)
+                .ok_or_else(|| returned_borrow_error(head, ReturnedBorrowReason::InactiveSource))?;
+            let source = &planned_source.requirement.fact;
+            if !explicit_view_coverage(source, piece, output_assumptions) {
+                return Err(returned_borrow_error(
+                    head,
+                    ReturnedBorrowReason::UncoveredView {
+                        source: source.clone(),
+                        viewed: piece.clone(),
+                    },
                 ));
             }
-            if !plan.supports_explicit_view_escape(source) {
-                return Err(RuntimeError::FunctionContract(if head.is_view() {
-                    "a bare produced view needs a directly recoverable memory borrow".into()
-                } else {
-                    "a produced composite's named input must have directly recoverable borrow backing".into()
-                }));
+            if !plan.supports_explicit_view_escape(planned_source) {
+                return Err(returned_borrow_error(
+                    head,
+                    ReturnedBorrowReason::UnrecoverableSource(source.clone()),
+                ));
             }
-            if escaped_occurrences.insert((source.loan, produced.support.occurrence)) {
-                escaping
-                    .entry(source.loan)
-                    .or_default()
-                    .push(super::loans::EscapingBorrow {
-                        root_permission: Some(source.requirement.fact.clone()),
+            if escaped_occurrences.insert((planned_source.loan, produced.support.occurrence)) {
+                escaping.entry(planned_source.loan).or_default().push(
+                    super::loans::EscapingBorrow {
+                        root_permission: Some(source.clone()),
                         ..produced.support.clone()
-                    });
+                    },
+                );
             }
             continue;
         }
@@ -1214,7 +1217,7 @@ pub(crate) fn check_produced_view_source(
     exit: &ExecutionState,
     output: &[ResourceFact],
     assumptions: &PureFactContext,
-) -> Result<(), String> {
+) -> Result<(), RuntimeError> {
     let FunctionContractClaimKey::Ensure(index) = key else {
         return Ok(());
     };
@@ -1234,31 +1237,56 @@ pub(crate) fn check_produced_view_source(
     let _checking =
         crate::instrumentation::CheckingWorkScope::new("check produced view coverage", 1);
     let source = &function.resource_requires()[input];
+    let unevaluable = || match output.first() {
+        Some(first) => returned_borrow_error(first, ReturnedBorrowReason::UnevaluableSource),
+        None => {
+            RuntimeError::FunctionContract("could not evaluate the selected borrow source".into())
+        }
+    };
     let input = evaluate_function_resource_spec(
         entry,
         source,
         assumptions,
         &mut ExecutionBudget::beside_live_state(),
     )
-    .map_err(|_| "could not evaluate the produced view's named input".to_string())?
-    .map_err(|_| "could not evaluate the produced view's named input".to_string())?;
+    .map_err(|_| unevaluable())?
+    .map_err(|_| unevaluable())?;
     for resource in output {
         if resource.is_view() {
             if !explicit_view_coverage(&input, resource, assumptions) {
-                return Err(produced_view_coverage_message(&input, resource));
+                return Err(returned_borrow_error(
+                    resource,
+                    ReturnedBorrowReason::UncoveredView {
+                        source: input.clone(),
+                        viewed: resource.clone(),
+                    },
+                ));
             }
         } else {
             let (occurrence, _) = exit
                 .resources()
                 .unique_owned_occurrence_for_fact(resource)
-                .ok_or("the produced composite has no unique held occurrence for its borrow")?;
+                .ok_or_else(|| {
+                    returned_borrow_error(resource, ReturnedBorrowReason::MissingOutput)
+                })?;
             let binding = exit
                 .resources()
                 .loan_dependency(occurrence)
                 .filter(|binding| binding.hold.is_some())
-                .ok_or("the produced composite must hold a borrow from its named input view")?;
+                .ok_or_else(|| {
+                    returned_borrow_error(
+                        resource,
+                        ReturnedBorrowReason::MissingHold(input.clone()),
+                    )
+                })?;
             if !explicit_view_coverage(&input, &binding.viewed, assumptions) {
-                return Err(produced_view_coverage_message(&input, &binding.viewed));
+                return Err(returned_borrow_error(
+                    resource,
+                    ReturnedBorrowReason::UncoveredView {
+                        source: input.clone(),
+                        viewed: binding.viewed.clone(),
+                    },
+                ));
             }
         }
     }
@@ -1279,16 +1307,11 @@ fn explicit_view_coverage(
     }) || super::loans::returned_permission_covers(input, output, assumptions)
 }
 
-fn produced_view_coverage_message(input: &ResourceFact, output: &ResourceFact) -> String {
-    format!(
-        "cannot produce view `{}` from input view `{}`: prove that the input view covers the produced view using `contains(memory(input), memory(output))`",
-        output.diagnostic_summary(),
-        input.diagnostic_summary()
-    )
-}
-
-fn produced_view_coverage_error(input: &ResourceFact, output: &ResourceFact) -> RuntimeError {
-    RuntimeError::FunctionContract(produced_view_coverage_message(input, output))
+fn returned_borrow_error(output: &ResourceFact, reason: ReturnedBorrowReason) -> RuntimeError {
+    RuntimeError::ReturnedBorrow(Box::new(ReturnedBorrowRefusal {
+        output: output.clone(),
+        reason,
+    }))
 }
 
 /// A retained input hold may support one returned owner directly. Further

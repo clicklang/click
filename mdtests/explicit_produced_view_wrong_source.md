@@ -16,5 +16,5 @@ int32* first(int32* left, int32* right) {
 ```
 
 ```expect
-fail: prove that the input view covers the produced view
+fail: The selected input `views right[0]` does not establish coverage of `views left[0]`
 ```

@@ -1895,6 +1895,9 @@ pub(super) fn describe_runtime_error(
             crate::kernel::RuntimeError::UNBACKED_RETURNED_VIEW,
             render_resource_fact_diagnostic(view, parameter_binding)
         ),
+        crate::kernel::RuntimeError::ReturnedBorrow(refusal) => {
+            describe_returned_borrow(refusal, parameter_binding)
+        }
         crate::kernel::RuntimeError::MissingVerifiedFunctionRule(name) => format!(
             "cannot execute call to `{name}`: the sidecar states no contract for it; state one, as a function this sidecar verifies or as an `extern` declaration"
         ),
@@ -2043,8 +2046,58 @@ pub(super) fn runtime_refusal_kind(error: &crate::kernel::RuntimeError) -> Click
     }
 }
 
+fn describe_returned_borrow(
+    refusal: &crate::kernel::ReturnedBorrowRefusal,
+    parameter_binding: ParameterBinding<'_>,
+) -> String {
+    use crate::kernel::ReturnedBorrowReason;
+
+    let render = |fact: &ResourceFact| render_resource_fact_diagnostic(fact, parameter_binding);
+    let output = render_resource_diagnostic(refusal.output.resource(), parameter_binding);
+    let output = if refusal.output.is_view() {
+        format!("view({output})")
+    } else {
+        output
+    };
+    let prefix = format!("cannot produce `{output}` as a borrow");
+    match &refusal.reason {
+        ReturnedBorrowReason::UnevaluableSource => {
+            format!("{prefix}. The input view named by `from` could not be evaluated at entry.")
+        }
+        ReturnedBorrowReason::InactiveSource => {
+            format!("{prefix}. The selected input supplies no live borrow at this call.")
+        }
+        ReturnedBorrowReason::UnrecoverableSource(source) => format!(
+            "{prefix} from `{}`. The source must have backing that can be recovered directly when the borrow ends.",
+            render(source)
+        ),
+        ReturnedBorrowReason::UncoveredView { source, viewed } => {
+            let mut message = format!(
+                "{prefix}. The selected input `{}` does not establish coverage of `{}`.",
+                render(source),
+                render(viewed)
+            );
+            if source.memory_view_range().is_some() && viewed.memory_view_range().is_some() {
+                message.push_str(
+                    " Use an input that covers the view or prove coverage with `contains(memory(...), memory(...))`.",
+                );
+            } else {
+                message.push_str(" Use an input view covering the same resource.");
+            }
+            message
+        }
+        ReturnedBorrowReason::MissingOutput => {
+            format!("{prefix}. The proof must establish one folded output resource.")
+        }
+        ReturnedBorrowReason::MissingHold(source) => format!(
+            "{prefix} from `{}`. The proof must fold the output with a live borrow from that input.",
+            render(source)
+        ),
+    }
+}
+
 /// The D13 shape for a refusal that is a conflict between two named things:
-/// which loan refused, where that loan came from, what it protects, and what
+/// where the borrow came from, what it protects, and what
 /// the refused operation attempted. Both halves are bounded facts from the
 /// refusal subject; nothing here reads the ledger or the resource frame.
 fn describe_loan_conflict(
@@ -2060,7 +2113,7 @@ fn describe_loan_conflict(
         // input, so it names the two clauses directly and adds no prefix.
         return Some(format!(
             "the contract's `views` clause overlaps its own `owns` clause: `{}` is already supported by `{conflicting}`; \
-             a view must name authority the caller lends, not authority this contract owns",
+             use `owns` when the contract already holds write permission",
             render_resource_fact_diagnostic(viewed, parameter_binding)
         ));
     }
@@ -2078,18 +2131,13 @@ fn describe_loan_conflict(
         };
     }
     let origin = match subject.origin()? {
-        crate::kernel::LoanOriginKind::LocalStorage => "a view of local storage",
-        crate::kernel::LoanOriginKind::ContractInputView => "a contract input view",
-        crate::kernel::LoanOriginKind::LentOwner => "an owner lent for a call",
-        crate::kernel::LoanOriginKind::Reborrow => "a reborrow of a live loan",
+        crate::kernel::LoanOriginKind::LocalStorage => "a borrow of local storage",
+        crate::kernel::LoanOriginKind::ContractInputView => "an input `views` clause",
+        crate::kernel::LoanOriginKind::LentOwner => "ownership lent at an earlier call",
+        crate::kernel::LoanOriginKind::Reborrow => "a borrow of an existing view",
     };
-    let loan = subject
-        .loan_id()
-        .map_or_else(String::new, |(arena, ordinal)| {
-            format!(" (loan {arena}:{ordinal})")
-        });
     Some(format!(
-        "stable-view memory access conflicts with an active loan: the attempted range `{}` overlaps `{conflicting}`, lent as {origin}{loan}",
+        "the attempted access to `{}` overlaps the live borrow of `{conflicting}` from {origin}",
         describe_memory_range(attempted, parameter_binding)
     ))
 }
@@ -2101,95 +2149,52 @@ pub(in crate::surface) fn describe_loan_refusal(
     if let Some(conflict) = describe_loan_conflict(diagnostic, parameter_binding) {
         return conflict;
     }
-    let category = match diagnostic.category() {
-        crate::kernel::LoanRefusalCategory::ProvenOverlap => {
-            "a required resource overlaps a live borrowed footprint"
-        }
-        crate::kernel::LoanRefusalCategory::SeparationUnproved => {
-            "the verifier could not prove the requested ranges separate"
-        }
-        crate::kernel::LoanRefusalCategory::WrongHolder => {
-            "the loan evidence names the wrong participant"
-        }
-        crate::kernel::LoanRefusalCategory::WrongArena => {
-            "the loan evidence belongs to a different authority arena"
-        }
-        crate::kernel::LoanRefusalCategory::WrongScope => "the loan evidence names the wrong scope",
-        crate::kernel::LoanRefusalCategory::ActiveDependency => {
-            "an active loan dependency blocks this operation"
-        }
-        crate::kernel::LoanRefusalCategory::StalePredecessor => {
-            "the loan evidence uses a stale predecessor state"
-        }
-        crate::kernel::LoanRefusalCategory::Recovery => {
-            "loan recovery evidence is inconsistent or already consumed"
-        }
-        crate::kernel::LoanRefusalCategory::Lifetime => {
-            "the loan scope has an incompatible lifetime state"
-        }
-        crate::kernel::LoanRefusalCategory::Unsupported => {
-            "this resource shape is outside stable-view support"
-        }
-        crate::kernel::LoanRefusalCategory::Missing => {
-            "the required loan backing or binding is missing"
-        }
-        crate::kernel::LoanRefusalCategory::InvalidEvidence => "the loan evidence is invalid",
-    };
+    use crate::kernel::{LoanRefusalCategory, LoanRefusalOperation};
+
     let subject = diagnostic.subject();
-    let subject = if let Some(resource) = subject.resource_fact() {
-        format!(
-            "; selected resource `{}`",
-            render_resource_fact_diagnostic(resource, parameter_binding)
-        )
-    } else if let Some(range) = subject.memory_range() {
-        format!(
-            "; selected range `{}`",
-            describe_memory_range(range, parameter_binding)
-        )
-    } else {
-        String::new()
+    if diagnostic.category() == LoanRefusalCategory::Missing
+        && diagnostic.operation() == LoanRefusalOperation::Plan
+        && let Some(view) = subject
+            .resource_fact()
+            .filter(|resource| resource.is_view())
+    {
+        return format!(
+            "cannot supply `{}` at this call. The caller needs an owner or a live view that covers it.",
+            render_resource_fact_diagnostic(view, parameter_binding)
+        );
+    }
+    let operation = match diagnostic.operation() {
+        LoanRefusalOperation::Validate => "cannot use this borrow",
+        LoanRefusalOperation::Plan => "cannot prepare the call's borrow",
+        LoanRefusalOperation::Entry => "cannot establish the input borrow",
+        LoanRefusalOperation::Recovery => "cannot recover the borrowed resource",
+        LoanRefusalOperation::Transition => "cannot change this borrow",
+        LoanRefusalOperation::MemoryAccess => "cannot access the borrowed resource",
     };
-    let ids = {
-        let subject = diagnostic.subject();
-        let mut ids = Vec::new();
-        if let Some((arena, ordinal)) = subject.loan_id() {
-            ids.push(format!("loan {arena}:{ordinal}"));
-        }
-        if let Some((arena, ordinal)) = subject.scope_id() {
-            ids.push(format!("scope {arena}:{ordinal}"));
-        }
-        if let Some((arena, ordinal)) = subject.share_id() {
-            ids.push(format!("share {arena}:{ordinal}"));
-        }
-        if let Some((arena, ordinal)) = subject.support_id() {
-            ids.push(format!("support {arena}:{ordinal}"));
-        }
-        if let Some(clause) = diagnostic.source_clause() {
-            ids.push(format!("clause {clause}"));
-        }
-        if let Some(step) = diagnostic.source_step() {
-            ids.push(format!("step {step}"));
-        }
-        if ids.is_empty() {
-            String::new()
-        } else {
-            format!(" ({})", ids.join(", "))
-        }
+    let reason = match diagnostic.category() {
+        LoanRefusalCategory::ProvenOverlap => "A required resource overlaps a live borrow",
+        LoanRefusalCategory::SeparationUnproved => "The requested ranges must be proved separate",
+        LoanRefusalCategory::WrongHolder => "This path does not hold the required borrow",
+        LoanRefusalCategory::WrongArena => "The borrow belongs to another proof",
+        LoanRefusalCategory::WrongScope => "The borrow belongs to a different scope",
+        LoanRefusalCategory::ActiveDependency => "A live borrow still depends on this resource",
+        LoanRefusalCategory::StalePredecessor => "The borrow evidence is from an earlier state",
+        LoanRefusalCategory::Recovery => "The borrow cannot be recovered from this state",
+        LoanRefusalCategory::Lifetime => "The required borrow is outside its lifetime",
+        LoanRefusalCategory::Unsupported => "Borrowing this resource shape is unsupported",
+        LoanRefusalCategory::Missing => "The required view or its backing resource is unavailable",
+        LoanRefusalCategory::InvalidEvidence => "The borrow evidence is invalid",
     };
-    format!(
-        "stable-view {} refused during {}{}{}",
-        category,
-        match diagnostic.operation() {
-            crate::kernel::LoanRefusalOperation::Validate => "validation",
-            crate::kernel::LoanRefusalOperation::Plan => "planning",
-            crate::kernel::LoanRefusalOperation::Entry => "entry transition",
-            crate::kernel::LoanRefusalOperation::Recovery => "recovery",
-            crate::kernel::LoanRefusalOperation::Transition => "transition",
-            crate::kernel::LoanRefusalOperation::MemoryAccess => "memory access",
-        },
-        subject,
-        ids,
-    )
+    let selected = subject
+        .resource_fact()
+        .map(|resource| render_resource_fact_diagnostic(resource, parameter_binding))
+        .or_else(|| {
+            subject
+                .memory_range()
+                .map(|range| describe_memory_range(range, parameter_binding))
+        });
+    let selected = selected.map_or_else(String::new, |selected| format!(" for `{selected}`"));
+    format!("{operation}{selected}. {reason}.")
 }
 
 /// One iterated guarded-ownership fact, spelled as the clause it came from:
@@ -3099,6 +3104,7 @@ fn describe_assembly_body_fact_source(
 pub(super) fn describe_missing_range_end_note(
     error: &crate::kernel::RuntimeError,
     resource_facts: &[ResourceFact],
+    state: Option<&ExecutionState>,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let crate::kernel::RuntimeError::MissingResource { resource } = error else {
@@ -3222,10 +3228,34 @@ pub(super) fn describe_missing_range_end_note(
                 }
             })
         }) {
-        format!(
+        let mut note = format!(
             "\n  access check: {reserved_prefix}write ownership required; available `{}` covers the requested range but permits reading only",
             render_resource_fact_diagnostic(view, parameter_binding)
-        )
+        );
+        if reservation.is_none()
+            && let Some(state) = state
+            && let Some(occurrence) = state.resources().exact_diagnostic_view(view)
+        {
+            let resources = state.resources();
+            if let Some((owner, fact)) = resources.owned_projection_support(occurrence)
+                && resources
+                    .loan_dependency(owner)
+                    .is_some_and(|binding| binding.hold.is_some())
+            {
+                note.push_str(&format!(
+                    "\n  borrow: `{}` keeps this view live. Consume the borrowing resource before writing through the owner.",
+                    render_resource_diagnostic(fact.resource(), parameter_binding)
+                ));
+            } else if resources.view_occurrence_is_principal(occurrence)
+                && let Some(hold) = resources
+                    .loan_dependency(occurrence)
+                    .and_then(|binding| binding.hold)
+                && state.loan_view_bindings().hold_occurrence_count(hold) == 1
+            {
+                note.push_str("\n  borrow: use `release_view` to give up this view when it is no longer needed.");
+            }
+        }
+        note
     } else {
         String::new()
     };
@@ -8809,7 +8839,7 @@ mod wide_range_reader_tests {
             resource: Box::new(resource.clone()),
         };
         assert!(
-            describe_missing_range_end_note(&error, &[resource], ParameterBinding::default())
+            describe_missing_range_end_note(&error, &[resource], None, ParameterBinding::default())
                 .is_empty()
         );
     }

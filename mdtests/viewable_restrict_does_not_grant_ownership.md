@@ -27,5 +27,5 @@ void copy4(uint8* dst, const uint8* src) {
 ```
 
 ```expect
-fail: the required loan backing or binding is missing refused during planning
+fail: The caller needs an owner or a live view that covers it.
 ```

@@ -1141,6 +1141,7 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::UnbackedReturnedView { .. } => {
             RuntimeError::UNBACKED_RETURNED_VIEW.to_string()
         }
+        RuntimeError::ReturnedBorrow(_) => "the returned resource cannot borrow from its selected input view".into(),
         RuntimeError::UninitializedMutex { .. } => {
             "the mutex has not been initialized on this path".to_string()
         }

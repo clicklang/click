@@ -80,5 +80,5 @@ int32 root(int32* flags, int32* b) {
 
 
 ```expect
-fail: stable-view
+fail: cannot supply `views b[0]` at this call
 ```

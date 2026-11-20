@@ -47,7 +47,10 @@ void box_release(struct box* box, struct box* other, int32* q) {
     unfold(boxed(box));
     have separate(memory(((box->data as (void *)) as (uint8 *))[0..4]), memory(q[0..1])) by { solve(); }
     fold(boxed(box));
-    step() by { known(); }
+    step() {
+        requires separate(memory((box as (int32 *))[0..2]), memory((q as (int32 *))[0..1])) by { solve(); }
+        requires separate(memory(((box->data as (void *)) as (uint8 *))[0..4]), memory(q[0..1])) by { known(); }
+    }
 }
 void aliased(struct box* box, struct box* other) {
     consumes boxed(box);
@@ -59,5 +62,5 @@ void aliased(struct box* box, struct box* other) {
 ```
 
 ```expect
-fail:stable-view this resource shape is outside stable-view support refused during planning
+fail:Borrowing this resource shape is unsupported.
 ```

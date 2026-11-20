@@ -26,5 +26,5 @@ int32 f(struct buf* s) {
 ```
 
 ```expect
-fail: selected resource `views s->data[0u64..s->len]`
+fail: `views s->data[0u64..s->len]`
 ```
