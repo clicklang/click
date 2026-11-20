@@ -639,6 +639,8 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_ste
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	try_ordinary_viewability_restriction_closure	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_history_indexed_equalities	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_history_indexed_equalities	driver	3
+src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_history_indexed_equalities	try_returned_index_preservation	1
+src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_returned_index_preservation	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_integer_composition_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_integer_composition_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::selected_arithmetic	apply_integer_composition	2

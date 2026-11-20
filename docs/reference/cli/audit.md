@@ -41,33 +41,32 @@ fails the audit; one with smart sites is reported by its session.
 
 ## Checks
 
-A wholly selected claim is expanded once, with all its smart sites together.
-The rewritten claim must contain no smart tactics and pass retained and cold
-verification, including the performance comparison. Its cold verification runs
-with the implicit closer off for the selected claim and its nested proofs,
-so that claim is shown self-contained. Other claims and modeled workers that
-the targeted verifier visits retain ordinary verification, including their
-implicit solving. A failed whole-claim expansion fails the audit; a selected
-claim that was not checked also fails.
+A wholly selected claim is expanded once with all its smart sites. The
+rewrite must contain no smart tactics and pass retained and cold verification.
+Cold replay disables implicit solving inside the selected claim and its nested
+proofs. It also rejects monitored discovery, including ambient search,
+proposition search, and legacy fact transport. Neighboring claims and modeled
+workers keep their ordinary verification policy. A selected claim that cold
+replay did not visit fails the audit.
 
 A cursor, site cap, or changed-source selection can select part of a claim.
-The selected sites are captured together in one verification and applied as
-one rewrite. The audit checks that each emitted region contains only simple
-tactics, then verifies the rewritten proof unit once in the retained session
-and once through ordinary cold targeted verification. It compares that cold
-work with the original claim. Unselected automation remains in the source, and
-the implicit closer stays on for it.
+Audit rewrites the selected sites together and checks that the emitted regions
+contain only simple tactics. The rewritten unit then passes retained and cold
+verification with unselected automation still available.
 
-Every audit check counts deterministic work units, the units the tactic
-budgets are charged, so the same source reaches the same verdict on any
-machine under any load. The performance comparison fails when the rewritten
-proof's cold verification spends both more than twice the original's work and
-more than the configured slack beyond it. Each phase also fails when it spends
-more than its work budget. Wall-clock times are reported as information only.
-A phase time limit is a crash-containment bound for a hung or starved run.
-The whole-run deadline interrupts phases cooperatively; the process watchdog
-retains the configured phase limit rather than the time left in the run.
-Verification inside each phase keeps the per-tactic work budgets [`click verify`](verify.md#deterministic-verdicts) applies; no tactic has a wall-clock limit.
+Each phase has a deterministic work budget. Replay uses the usual per-tactic
+budgets and the input-sized work allowances of the checked operations that
+define them. An allowance failure identifies the operation and its enclosing
+tactic when available. Use the verifier's scaling tests to measure work across
+multiple input and context sizes.
+
+The verbose report shows original and rewritten cold work, the number of
+lines containing written tactic tokens, and the selected proof's lines per
+second. About 300 lines per second is acceptable and 700 is good. Audit
+highlights a work increase above both twice the original and the configured
+slack. These measurements are diagnostic. Phase time limits contain hung or
+starved runs. The whole-run deadline interrupts phases cooperatively and leaves
+the phase watchdog's configured time limit in place.
 
 ## Options and defaults
 
@@ -76,7 +75,7 @@ Verification inside each phase keeps the per-tactic work budgets [`click verify`
 | `--session-work-limit UNITS` | `100000000` | Budget each source's smart-site inventory, and each original-sidecar session initialization. |
 | `--expansion-work-limit UNITS` | `50000000` | Budget the deterministic work of one expansion or re-expansion. |
 | `--verification-work-limit UNITS` | `50000000` | Budget the deterministic work of one retained or cold proof-unit verification. |
-| `--performance-slack UNITS` | `10000` | Set the minimum expanded-over-original work increase that can fail. |
+| `--performance-slack UNITS` | `10000` | Set the minimum work increase to highlight in the report. |
 | `--slow-site-limit UNITS` | `10000` | Deprecated alias for `--performance-slack`. |
 | `--session-time-limit DURATION` | `10m` | Contain a hung inventory or session initialization. |
 | `--discovery-time-limit DURATION` | `10m` | Compatibility alias for `--session-time-limit`. |
@@ -86,7 +85,7 @@ Verification inside each phase keeps the per-tactic work budgets [`click verify`
 | `--start-at PATH:LINE:COLUMN` | none | Resume inclusively at a source location. |
 | `--claim CLAIM` | all | Select an exact claim by its [label](expand.md#claim-labels), or `PATH:LINE[:COLUMN]`: the claim whose clause or proof covers that line of an audited sidecar or mdtest (Markdown lines), as `click expand --claim` resolves it, except that a line of a loop phase written in a `loop` tactic selects the proof that writes the tactic, whose sites include the phase's. A label shared by several audited files is ambiguous; a location names one. Repeat the option to select several claims. |
 | `--changed-since REVISION` | none | Select claims affected since a Git revision. |
-| `--verbose` | off | Include phase costs for each claim batch. |
+| `--verbose` | off | Include phase costs, proof size, and throughput for each claim batch. |
 | `--keep-going` | off | Continue after failures instead of stopping at the first failure. |
 | `--exclude PATH` | none | Leave out a proof container, or every one under a directory. Repeat the option for several. A path that matches nothing in the audited path is an error. |
 | `--max-sites COUNT` | unlimited | Run a positive bounded number of sites and print the next cursor. |
@@ -97,9 +96,9 @@ ambiguous claim across sidecars are errors.
 
 ## Output and exit behavior
 
-Passing progress is one row per claim; `--verbose` includes its phase costs. A bounded or
-timed-out run prints a resumable command with the active selection and output
-mode. After inventory, its `--start-at` cursor retries the unfinished site
+Passing progress is one row per claim. A claim failure prints a command for
+that selection and an inclusive resume command for the larger run. A bounded
+or timed-out run prints a resumable command with its selection and output mode. After inventory, its `--start-at` cursor retries the unfinished site
 inclusively. If preparation is interrupted before sites are known, the summary
 reports that no sites were audited and the command restarts the same selection,
 retaining an existing cursor if one was supplied. The summary distinguishes
@@ -107,8 +106,7 @@ passing sites, site failures, claim failures, session failures, and incomplete
 work.
 
 The command exits with status 1 for any audit failure or exhausted hard limit.
-A full audit is a manual release gate for expansion integrity and performance,
-not part of ordinary `scripts/check.sh`.
+The full audit runs in the nightly workflow and is a release check.
 
 ## Example
 

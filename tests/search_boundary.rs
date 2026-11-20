@@ -2,6 +2,14 @@
 #[allow(dead_code)]
 mod boundary;
 
+// The isolated compiler probes exercise the capability's privacy, without
+// loading Click's replay instrumentation.
+const REPLAY_INSTRUMENTATION_PROBE: &str = r"
+    mod instrumentation {
+        pub(crate) fn replay_forbids_discovery(_: &'static str) -> bool { false }
+    }
+";
+
 #[test]
 fn checking_rejects_planner_dependencies_and_enumeration_escape_hatches() {
     for source in [
@@ -74,6 +82,7 @@ fn only_planning_can_construct_search_permission() {
         let source = format!(
             r#"
             #![allow(dead_code)]
+            {REPLAY_INSTRUMENTATION_PROBE}
             mod planning {{
                 #[path = {permission:?}] mod permission;
                 pub(crate) use permission::SearchPermission;
@@ -134,6 +143,7 @@ fn selected_reasoning_requires_explicit_premises_or_planner_permission() {
         let source = format!(
             r#"
             #![allow(dead_code, unused_imports)]
+            {REPLAY_INSTRUMENTATION_PROBE}
             mod planning {{
                 #[path = {permission:?}] mod permission;
                 pub(crate) use permission::SearchPermission;
