@@ -6095,9 +6095,17 @@ fn synthesize_surface_bitvector(
                         )?;
                         Some(element_type.to_kernel_type())
                     });
-                // A read through a pointer a pure function returns is a typed
-                // read through that call, at the load's own width.
-                if matches!(kernel_pointer.base, AddressBase::PureFunctionApplication(_)) {
+                let pointer = synthesize_surface_pointer(
+                    kernel_pointer,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                );
+                // A pointer with no C spelling, such as a pure call's result
+                // or a call's returned pointer, is spelled as a Click
+                // expression; the read is a typed read through it at the
+                // load's own width.
+                let Some(pointer) = pointer else {
                     let pointer = synthesize_surface_pointer_expression(
                         kernel_pointer,
                         parameter_binding,
@@ -6108,14 +6116,7 @@ fn synthesize_surface_bitvector(
                         pointer,
                         load_kind_value_type(*kind)?,
                     ));
-                }
-                let pointer = synthesize_surface_pointer(
-                    kernel_pointer,
-                    parameter_binding,
-                    state,
-                    bound_variables,
-                );
-                let pointer = pointer?;
+                };
                 // An unsigned byte read is spelled as one whatever the
                 // pointer's own element type: through a signed plain `char`
                 // pointer it is the byte's one name, not the pointer's read.
@@ -7809,9 +7810,11 @@ fn synthesize_surface_pointer_expression(
         return Some(ContractExpression::Add(Box::new(base), Box::new(index)));
     }
     // A pointer a pure function returns is that call: its base retains the
-    // function and the arguments it was applied to.
+    // function and the arguments it was applied to. A kernel-internal
+    // function (`$...`) has no Surface spelling.
     if let (AddressBase::PureFunctionApplication(application), AddressOffset::Constant(0)) =
         (&pointer.base, &pointer.offset)
+        && !application.name().starts_with('$')
     {
         return synthesize_surface_call(
             application.name(),
