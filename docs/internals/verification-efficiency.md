@@ -566,29 +566,18 @@ charged to visible semantic output rather than hidden ambient state:
 
 Loan-preserving cache havoc uses a maintained interval index keyed by exact
 coordinate origins, including symbolic pointer expressions. Unknown relative
-bounds forget the cached value; they never authorize a write. The write barrier retains its independent loan checks. Interval queries
+bounds forget the cached value. Writes require independent separation evidence. Interval queries
 ask whether a bucket is nonempty, without enumerating the loans it contains.
 `loop_head_havoc_work_over_cells_and_symbolic_loans` enforces near-linear work
-as cached cells and unrelated symbolic loans grow together. The write barrier's
-symbolic-loan comparison is a separate remaining checking caller; cache
-retention evidence must not be used to grant write permission.
+as cached cells and unrelated symbolic loans grow together.
 
-Loan write barriers consult the maintained active-memory-loan count before
-pointer alias discovery. Empty ledgers, non-memory loans, and ended memory
-loans impose no loan restriction on a write; checking them must not visit the
-pointer's equality class. The
-`writes_without_active_memory_loans_do_not_walk_pointer_aliases` regression
-grows that class for constant and symbolic bounds, including repeated checks
-and the no-refusal diagnostic path. This shortcut does not replace ownership,
-bounds, or definedness checks.
-
-Concrete loan write barriers select one indexed conflict witness instead of
-collecting all overlapping loan IDs. Each dyadic bucket contributes only its
-least member; taking the minimum across those buckets preserves the diagnostic's
-loan choice. Both checking and refusal diagnostics use this selection. The
-`write_barrier_does_not_enumerate_overlapping_loans` regression grows overlapping
-loans around one fixed write, including covering and adjacent queries and repeats.
-Symbolic-loan and alias candidate discovery remain separate checking costs.
+Stores emit separation against the retained active-loan footprint. Explicit
+statement checking looks up the written separation, its symmetric form, or
+one witness keyed by the exact fixed-width byte spans. The
+`stated_symbolic_write_separation_ignores_nearby_facts_and_aliases` regression
+grows both same-base separation facts and aliases at 4, 16, 64, and 256
+entries. Establishing a missing symbolic separation uses ordinary tactics.
+The legacy interval and alias write guard remains test-only.
 
 The following are known violations of the fast-part rule, listed under
 "Fast-part scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).

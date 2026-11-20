@@ -7478,6 +7478,18 @@ impl PureFactContext {
     /// Read the stated separation for these exact physical byte spans. This
     /// proves only separation, without transferring either range's authority.
     pub(crate) fn states_memory_separation(&self, proposition: &Proposition) -> bool {
+        self.states_memory_separation_with_upkeep(proposition, true)
+    }
+
+    pub(crate) fn states_prepared_memory_separation(&self, proposition: &Proposition) -> bool {
+        self.states_memory_separation_with_upkeep(proposition, false)
+    }
+
+    fn states_memory_separation_with_upkeep(
+        &self,
+        proposition: &Proposition,
+        synchronize: bool,
+    ) -> bool {
         let Proposition::ResourceSeparate { left, right } = proposition else {
             return false;
         };
@@ -7489,11 +7501,20 @@ impl PureFactContext {
         if self.resource_separation_conflicts_with_equalities(left, right) {
             return false;
         }
-        let Some(source) = self.separated_address_classes.exact_spans(
-            left_range,
-            right_range,
-            &self.equality_graph,
-        ) else {
+        let source = if synchronize {
+            self.separated_address_classes.exact_spans(
+                left_range,
+                right_range,
+                &self.equality_graph,
+            )
+        } else {
+            self.separated_address_classes.prepared_exact_spans(
+                left_range,
+                right_range,
+                &self.equality_graph,
+            )
+        };
+        let Some(source) = source else {
             return false;
         };
         record_implicit_consulted_premises(self, &source);

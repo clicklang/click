@@ -224,6 +224,25 @@ impl SeparatedAddressIndex {
         right: &MemoryRange,
         graph: &EqualityGraph,
     ) -> Option<Proposition> {
+        self.exact_spans_with_upkeep(left, right, graph, true)
+    }
+
+    pub(in crate::kernel) fn prepared_exact_spans(
+        &self,
+        left: &MemoryRange,
+        right: &MemoryRange,
+        graph: &EqualityGraph,
+    ) -> Option<Proposition> {
+        self.exact_spans_with_upkeep(left, right, graph, false)
+    }
+
+    fn exact_spans_with_upkeep(
+        &self,
+        left: &MemoryRange,
+        right: &MemoryRange,
+        graph: &EqualityGraph,
+        synchronize: bool,
+    ) -> Option<Proposition> {
         let (left_bytes, right_bytes) = (fixed_span_bytes(left)?, fixed_span_bytes(right)?);
         let mut cache = self.0.lock().expect("separation index");
         let index = cache.as_deref_mut()?;
@@ -231,13 +250,18 @@ impl SeparatedAddressIndex {
             graph.address_class(&left.start_pointer())?,
             graph.address_class(&right.start_pointer())?,
         );
-        index.synchronize(graph);
-        let (key, widths) = span_key(
-            graph.address_class_root(left),
-            graph.address_class_root(right),
-            left_bytes,
-            right_bytes,
-        );
+        if synchronize {
+            index.synchronize(graph);
+        }
+        let current_key = |left, right, left_bytes, right_bytes| {
+            span_key(
+                graph.address_class_root(left),
+                graph.address_class_root(right),
+                left_bytes,
+                right_bytes,
+            )
+        };
+        let (key, widths) = current_key(left, right, left_bytes, right_bytes);
         // Registering the selected addresses can itself expose an equality.
         // Nonempty intervals starting at one address always overlap.
         if key.0 == key.1 {
@@ -246,6 +270,26 @@ impl SeparatedAddressIndex {
         let fact = index.exact_spans.get(&key)?.get(&widths)?;
         source_visit();
         crate::instrumentation::record_deterministic_work(1);
+        if !synchronize {
+            // A prepared key can survive new equalities. Match the one
+            // nominated premise in the live graph, without replaying the
+            // merge journal or trying another source after a miss.
+            let Proposition::ResourceSeparate { left: a, right: b } = fact else {
+                return None;
+            };
+            let (Resource::Memory(a), Resource::Memory(b)) = (a.as_ref(), b.as_ref()) else {
+                return None;
+            };
+            let (a_class, b_class) = (
+                graph.address_class(&a.start_pointer())?,
+                graph.address_class(&b.start_pointer())?,
+            );
+            let source = current_key(a_class, b_class, fixed_span_bytes(a)?, fixed_span_bytes(b)?);
+            let target = current_key(left, right, left_bytes, right_bytes);
+            if target.0.0 == target.0.1 || source != target {
+                return None;
+            }
+        }
         Some(fact.clone())
     }
 
