@@ -1,6 +1,103 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+fn entry_cell_after_local_stores(
+    store_count: usize,
+    overwrite: bool,
+    goal: &str,
+) -> (String, String) {
+    let local_stores = (1..=store_count)
+        .map(|value| format!("    i = {value};\n"))
+        .collect::<String>();
+    let cell_store = if overwrite { "    a[0] = 7;\n" } else { "" };
+    let steps = "    step();\n".repeat(store_count + 2 + usize::from(overwrite));
+    let c_source = format!(
+        "void probe(int32 a[], int32 n) {{\n    int32 i;\n    i = 0;\n{local_stores}{cell_store}}}\n"
+    );
+    let click_source = format!(
+        r#"verifying "probe.c";
+void probe(int32 a[], int32 n) {{
+    requires 0 < n;
+    owns a[0..n];
+}} by {{
+{steps}    have {goal} by known();
+}}
+"#
+    );
+    (c_source, click_source)
+}
+
+#[test]
+fn first_entry_cell_lookup_has_bounded_work_after_disjoint_stores() {
+    use crate::instrumentation::{VerificationEvent, collect};
+
+    // The symbolic range gives access to the entry cell without naming its
+    // value. The final have is the first proof read of a[0].
+    let samples = [4, 16, 64, 256].map(|size| {
+        let (c, source) = entry_cell_after_local_stores(size, false, "a[0] == old(a[0])");
+        let (verified, events) = collect(|| verify_c_sources(&source, &[("probe.c", &c)]));
+        verified.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+
+        let start = events
+            .iter()
+            .position(|event| {
+                matches!(event, VerificationEvent::TacticStarted(tactic)
+                if tactic.tactic_name == "have")
+            })
+            .expect("the explicit comparison ran");
+        let (end, have_work) = events
+            .iter()
+            .enumerate()
+            .skip(start + 1)
+            .find_map(|(index, event)| match event {
+                VerificationEvent::TacticFinished { tactic, work, .. }
+                    if tactic.tactic_name == "have" =>
+                {
+                    Some((index, *work))
+                }
+                _ => None,
+            })
+            .expect("the explicit comparison finished");
+        let walk_work = events[start + 1..end]
+            .iter()
+            .filter_map(|event| match event {
+                VerificationEvent::OperationFinished { name, work, .. }
+                    if name == "cell version walk" =>
+                {
+                    Some(*work)
+                }
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        (walk_work, have_work)
+    });
+    let (first_walk, first_have) = samples[0];
+    assert!(
+        samples
+            .iter()
+            .all(|&(walk, have)| walk <= first_walk && have <= first_have + 16),
+        "cold entry-cell (walk, have) work at 4, 16, 64, and 256 stores: {samples:?}"
+    );
+}
+
+#[test]
+fn writing_the_entry_cell_changes_its_ordinary_read_version() {
+    let (c, source) = entry_cell_after_local_stores(4, true, "a[0] == 7");
+    verify_c_sources(&source, &[("probe.c", &c)]).expect("the read names the written value");
+
+    let (_, source) = entry_cell_after_local_stores(4, true, "a[0] == old(a[0])");
+    let error = verify_c_sources(&source, &[("probe.c", &c)])
+        .expect_err("known must not identify the written cell with the entry read");
+    assert!(
+        error
+            .message()
+            .contains("`known` requires the current goal as an available semantic fact"),
+        "{}",
+        error.message()
+    );
+}
+
 #[test]
 fn trivial_disjuncts_do_not_spell_unrelated_premises() {
     let mut samples = Vec::new();
