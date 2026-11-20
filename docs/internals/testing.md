@@ -1884,6 +1884,45 @@ the recording in the Firefox Profiler; `--save-only` writes
 hot", never "which step exceeded its budget": those are different questions,
 and the budget one belongs to `click profile`.
 
+### Comparing verifier performance
+
+Build the two Click executables with the same Rust toolchain and optimized
+Cargo profile, in separate target directories. Run the harness from the
+common workload checkout.
+
+```console
+scripts/benchmark-verify.py --baseline /path/to/base/click --candidate /path/to/new/click
+```
+
+With no target arguments, the harness runs Arena, Owned Vector, and Rust
+Iterators. Pass one or more sidecar, mdtest, or project paths to use a
+smaller reproduction or a different workload. Use binaries that support
+`click verify --locked` and prepare any required captures before running.
+Both variants read these same targets and run full verification with the
+same limits. Use `--candidate-env NAME=VALUE` with no `--candidate` to compare
+two runtime configurations of the same binary. `--baseline-env` sets
+overrides for the first variant. The report records these overrides.
+
+The harness runs one warmup per variant and five timed pairs per workload
+by default. Pairs alternate baseline–candidate and candidate–baseline.
+`--warmups` and `--pairs` override these counts. Warmups and the separate
+`CLICK_TIMINGS=1` pass do not enter the timing samples. CPU and wall times
+cover the full command, including source loading and any Git bookkeeping.
+The reported work sums completed tactics' exclusive work charges. The
+raw logs preserve named operation counters and phase timings for
+investigating costs outside tactics.
+
+Use `--output` to retain the report at a named directory. The default is a
+fresh temporary directory. The report contains run order, raw samples,
+proof counts, command logs, executable checksums, and the workload
+checkout revision when available. A verifier failure or unequal proof
+counts stops the comparison and leaves the logs for inspection.
+
+Compare paired differences with the spread of each variant's timings.
+Use [the benchmarking skill](https://github.com/clicklang/click/blob/master/.agents/skills/benchmarking/SKILL.md)
+for interpretation and keep wall-clock measurements out of the regular
+gate.
+
 ### Dependency-aware incremental verification
 
 After a clean full verification, Click records a small atomic success marker
