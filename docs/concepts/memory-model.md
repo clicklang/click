@@ -657,7 +657,7 @@ predicate same_first(a: int32[], b: int32[]) {
 
 receives pure array refs for `a` and `b`. Each ref carries:
 
-- a `SymbolicMemory` value, the memory its reads are taken in
+- the source program point and its memory view, or a bare memory view for a producer without a recorded point
 - a C pointer
 - an element type, currently `int32` or `uint8`
 

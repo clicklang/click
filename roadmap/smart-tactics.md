@@ -85,21 +85,28 @@ For each read slice, test which point it selects, its raise/lower round trip,
 and bounded work as unrelated history grows. Use `cell_version_on_path` for
 diagnostic comparisons in tests. Keep production selection indexed.
 
-The scalar observation registry and read congruence use the retained version
-when a read has one. Reads produced from a bare memory view still use legacy
-identity. Concrete resource cells and modular byte outputs pass their source
-point into scalar read construction and use a typed index entry when present.
-Unindexed resource cells, compact runs, array and algebraic arguments, and
-opaque byte outputs still need point-based versions. Ordinary pointer reads
-through parameters also need checked stores to publish a complete pointer
-equation that raises and lowers at the same version point. Read selection
-through unrelated symbolic addresses needs a checked way to identify the
-affected storage.
+Named scalar observations and read congruence use indexed versions where the
+producer has a recorded typed write or one of the supported entry versions.
+Concrete resource cells and compact runs can retain their source point.
+Indexed abstract reads of a directly written local use its typed store in
+equality and raising. Native and shared array arguments carry the same source
+point. External arrays can use function entry after disjoint local
+declarations, stores and checked calls whose write set is one range in an automatic
+object.
 
-Array arguments can skip a recorded suffix of disjoint local stores and
-declarations. The block selector still handles other effects, and native
-array arguments still use the memory key. The scalar naming walk is a
-separate caller of the same block routine.
+The remaining memory-state paths have production callers:
+
+| Path | Remaining caller |
+| --- | --- |
+| Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for generic parameter cells. `canonical_scalar_read` and the congruence key still bridge the scalar entry version to the empty view used by fold instantiation. |
+| Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` still construct memory-state observations for bare memory producers and unsupported indexed types or addresses. |
+| Preservation | `array_ref_argument_point` uses the block version walk outside the indexed suffix, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
+| Raising | `synthesize_at_memory` still raises shared array arguments that carry a bare memory view. Legacy scalar and abstract reads use `RecordedStates::point_reading_load`. |
+
+Give symbolic addresses a separate slice. A loaded or opaque symbolic pointer
+can refer to the same storage as a write. Producers need checked evidence
+identifying that storage before their reads can use the point index. Use the
+same approach for calls with larger or unresolved write sets.
 
 ## Reading the inventory
 
