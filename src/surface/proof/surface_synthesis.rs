@@ -6490,10 +6490,16 @@ fn synthesize_legacy_call_argument(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     Some(match value {
-        crate::kernel::PureFunctionArgument::Value(value @ ProgramValue::Pointer(_)) => {
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
-                pointer_names::native_name(value)?.into(),
-            ))
+        // As `raise_call_argument`: a proof name, the literal `0` for null,
+        // or else the pointer itself.
+        crate::kernel::PureFunctionArgument::Value(value @ ProgramValue::Pointer(pointer)) => {
+            if let Some(name) = pointer_names::native_name(value) {
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.into()))
+            } else if pointer.address() == &Address::null() {
+                SurfaceTerm::IntegerLiteral("0".into())
+            } else {
+                synthesize_surface_value(value, parameter_binding, state)?
+            }
         }
         crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(word)) => {
             synthesize_surface_bool(
