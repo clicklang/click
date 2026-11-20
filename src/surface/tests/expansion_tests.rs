@@ -20541,6 +20541,8 @@ fn line_containing(source: &str, text: &str) -> usize {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.85s focused"]
 fn loop_otherwise_expands_without_by() {
     let (click, sources) = mdtest_sources("mdtests/loop_otherwise.md");
     let sources = sources
