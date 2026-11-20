@@ -182,7 +182,7 @@ fn verified_call_loan_requirement_building_does_not_visit_live_loans() {
                 &effects,
                 || CallRequirementSite::for_requirement("write", "write", 0, &[], &memory),
                 0,
-                "verified call allocation retirement separation",
+                CallLoanEffect::CallRetirement,
             )
         });
         assert_eq!(requirements.len(), 1);
