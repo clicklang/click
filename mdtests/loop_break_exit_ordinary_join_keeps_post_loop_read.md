@@ -47,7 +47,7 @@ int32 keep(int32* p, int32* q, int32 flag) {
         decreases 0;
         owns p[0..1];
 
-        preserve by {
+        maintain by {
             if flag == 0 {
                 step();
                 step();

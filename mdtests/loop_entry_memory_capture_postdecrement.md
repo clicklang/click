@@ -23,7 +23,7 @@ uint64 post(const uint8* p, uint64 n) {
   views p[0u64..n];
   invariant to_integer(n) <= 15;
   initialize by { have to_integer(n) <= to_integer(15u64); solve(); }
-  preserve by {
+  maintain by {
    if n == 0u64 {
     step(); step();
     have at(statement(0).region(1).entry, n) == 0u64 by known();

@@ -50,7 +50,7 @@ fn quad::walk(bytes: &[u8]) -> u32 {
         invariant iter.chunk_size == 4u64;
         invariant iter.v.len() <= 16u64;
         invariant iter.v == bytes + (16u64 - iter.v.len());
-        preserve by {
+        maintain by {
             if 4u64 <= iter.v.len() {
                 have to_integer(16u64 - iter.v.len()) + 4 <= 16;
                 have to_integer((16u64 - iter.v.len()) + 4u64) <= 16;

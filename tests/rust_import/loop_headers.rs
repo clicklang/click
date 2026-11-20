@@ -61,7 +61,7 @@ fn charon_loop_phase_expands_by_label_over_the_prepared_program() {
     let prepared = p.prepared().unwrap();
     let sidecar = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     let inputs = click::surface::ProgramInputs::program(&prepared);
-    for phase in ["initialize", "preserve"] {
+    for phase in ["initialize", "maintain"] {
         let label = format!("count.loop(0).{phase}");
         let expanded = click::surface::expand_program_prepared_claim_source_by_label(
             &sidecar, &prepared, &label,

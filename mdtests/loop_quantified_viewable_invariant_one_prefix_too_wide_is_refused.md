@@ -49,7 +49,7 @@ int32 count_up(int32 *a, int32 n) {
             }
             solve();
         }
-        preserve by {
+        maintain by {
             step();
             step();
         }

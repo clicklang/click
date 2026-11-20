@@ -47,7 +47,7 @@ int32 chase(int32 *next, int32 n) {
         };
         views next[0..n];
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             have 0 <= next[cur] and next[cur] < n by {
                 instantiate(forall (k: int32) {
                     0 <= k and k < n implies 0 <= next[k] and next[k] < n

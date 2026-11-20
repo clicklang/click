@@ -205,7 +205,7 @@ apply one admission rule: `from_proof_tactics` classifies source tactics and
 `from_steps` classifies serialized lineage, so a leaf that no explicit
 proof could write is rejected from either direction. A smart tactic therefore
 has no step of its own. The implicit back-edge closure of a loop's
-`preserve` script, for example, plans the bundle body, and the step retained
+`maintain` script, for example, plans the bundle body, and the step retained
 for it is the internal `ProofStep::CloseInvariantsBy` carrying that planned
 body, which has no Surface form (the `close_invariants` tactic is retired);
 the closure request itself is a semantic-core update with no certificate

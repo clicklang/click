@@ -3,7 +3,7 @@
 This is `arena_init` from `examples/arena`, its C unchanged, with only the
 resources its own contract names. `consumes *arena` gives the
 function-entry fact `aligned(arena, 8)`. Expanding the `solve()` that closes
-the loop's `preserve` proof once cited that fact as a premise read at
+the loop's `maintain` proof once cited that fact as a premise read at
 function entry.
 
 The fact is `address(arena) & 7u64 == 0u64` inside, and the expansion wrote
@@ -235,7 +235,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         };
     }
     step();
-    loop as initialize_occupied {
+    loop initialize_occupied {
         decreases capacity - i;
         invariant 0 <= i and i <= capacity;
         invariant forall (k: int32) {
@@ -244,7 +244,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         owns occupied[0..capacity];
 
         initialize by solve();
-        preserve by {
+        maintain by {
             mark iteration;
             step();
             step();

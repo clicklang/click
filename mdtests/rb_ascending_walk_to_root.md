@@ -275,7 +275,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
         invariant plug(c.model, t.model) == plug(old(c.model), old(t.model));
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Context::Top => {
                     have ctx_node_is(c.model, parent) != 1 by {

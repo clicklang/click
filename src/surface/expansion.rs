@@ -710,7 +710,7 @@ pub struct ClaimExpansion {
 
 /// Expands one claim selected by its label, from any input kind: a function
 /// or theorem claim, or a loop phase `f.loop(N).initialize` or
-/// `f.loop(N).preserve`. With `project`, `click_source` is ignored and the
+/// `f.loop(N).maintain`. With `project`, `click_source` is ignored and the
 /// project's entry module is rewritten.
 ///
 /// `at`, a location of the claim's source such as [`claim_at`] reports,
@@ -811,7 +811,7 @@ pub fn expand_claim_by_label(
 
 /// Expands the loop phase `claim_label` names, if it names one: its written
 /// proof is replaced by the phase's checked certificate, and an omitted
-/// phase gets an explicit `initialize by { ... }` or `preserve by { ... }`.
+/// phase gets an explicit `initialize by { ... }` or `maintain by { ... }`.
 ///
 /// A loop phase is proved by a `loop` tactic written in a claim's proof
 /// script, and is part of that claim's proof: the source does not name the
@@ -952,7 +952,7 @@ fn loop_phase_keyword(phase: &str) -> &'static str {
     if phase == "initialize" {
         "initialize"
     } else {
-        "preserve"
+        "maintain"
     }
 }
 
@@ -4100,7 +4100,7 @@ impl ClaimLocationError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClaimLocationScope {
     /// The innermost claim, including a loop phase proved by a `loop`
-    /// tactic inside a claim's proof script, `f.loop(N).preserve`. The
+    /// tactic inside a claim's proof script, `f.loop(N).maintain`. The
     /// source does not say which C loop such a tactic proves, so naming its
     /// phase checks the proof that writes it.
     Innermost,
@@ -4118,7 +4118,7 @@ pub enum ClaimLocationScope {
 /// proof, or a tactic's proof. A clause without its own proof that the
 /// grouped proof covers names the grouped proof, `f.contract`, which is the
 /// claim that proves it. With [`ClaimLocationScope::Innermost`], a written
-/// `initialize` or `preserve` proof of a `loop` tactic in a proof script is
+/// `initialize` or `maintain` proof of a `loop` tactic in a proof script is
 /// a claim inside the claim whose proof writes it. With a column the
 /// location selects the innermost claim containing it; without one, the
 /// line must touch exactly one claim that contains no other claim touching
@@ -4311,7 +4311,7 @@ fn claim_source_regions(
     }
     if scope == ClaimLocationScope::Innermost {
         for tactic in written_loop_tactics(click_source, &tokens, file)? {
-            for phase in ["initialize", "preserve"] {
+            for phase in ["initialize", "maintain"] {
                 let (Some(keyword), edit) = written_loop_phase(&tokens, &tactic, phase)? else {
                     continue;
                 };
@@ -5802,7 +5802,7 @@ fn collect_tactic_block_spans<'t>(
             ProofTactic::Loop(clause) => {
                 for (phase, proof) in [
                     ("initialize", clause.initialize_proof()),
-                    ("preserve", clause.preserve_proof()),
+                    ("maintain", clause.preserve_proof()),
                 ] {
                     if let Some(proof) = proof {
                         let (_, phase_clause) =

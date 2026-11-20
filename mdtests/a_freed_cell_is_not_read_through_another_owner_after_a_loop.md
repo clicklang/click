@@ -60,7 +60,7 @@ int32 f(struct holder* h, struct holder* g) {
         owns holder(h);
         owns holder(g);
         initialize by solve();
-        preserve by {
+        maintain by {
             unfold(holder(h));
             unfold(holder(g));
             step(); step(); step(); step();

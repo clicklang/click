@@ -31,11 +31,11 @@ int32 nest(int32 n) {
     loop {
         decreases n;
         invariant n <= 100;
-        preserve by {
+        maintain by {
             loop {
                 decreases 10 - n;
                 invariant n >= 0 and n <= 100;
-                preserve by {
+                maintain by {
                     have to_integer(n + 1) >= 0;
                     have n < 100 by { solve() using { n < 10; }; }
                     have to_integer(n + 1) <= 100;

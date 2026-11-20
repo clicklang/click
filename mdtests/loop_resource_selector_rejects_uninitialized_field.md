@@ -27,7 +27,7 @@ void probe(int32* data, int32 n) {
         invariant 0 <= i;
         invariant i <= n;
         initialize by solve();
-        preserve by {
+        maintain by {
             unfold(cells(h->data, n));
             step(); step();
             fold(cells(h->data, n));

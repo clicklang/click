@@ -30,7 +30,7 @@ int32 fill_tail_keeps_first(int32 p[], int32 n) {
         decreases n - i;
         invariant i >= 1 and i <= n;
         invariant p[0] == old(p[0]);
-        preserve by {
+        maintain by {
             mark before_store;
             have i != 0 by { solve() using { i >= 1; }; }
             have separate(memory(p[i]), memory(p[0])) by {

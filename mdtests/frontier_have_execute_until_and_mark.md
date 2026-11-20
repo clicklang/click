@@ -51,7 +51,7 @@ int32 fill_zero(int32 p[], int32 n) {
     have i == 0 by {
         solve();
     }
-    loop as fill {
+    loop fill {
         decreases n - i;
         owns p[0..n];
         invariant i >= 0;

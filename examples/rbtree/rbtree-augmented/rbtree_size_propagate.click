@@ -40,7 +40,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
         invariant rb == old(rb) or rb == stop;
         invariant metadata.value == 1 or rb == old(rb);
         initialize by solve();
-        preserve by {
+        maintain by {
             have rb == old(rb) by {
                 cases {
                     rb == old(rb) => { known(); }

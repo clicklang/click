@@ -856,7 +856,7 @@ int32 count_to_one() {
     loop {
         invariant i >= 0 and i <= 1;
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
         }
     }

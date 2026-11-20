@@ -48,7 +48,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    };
    solve();
   }
-  preserve by {
+  maintain by {
    have 5552u64 <= len by known();
    have len <= 22208u64 by solve() using { len <= old(len); old(len) <= 22208u64; };
    have len <= 9223372036854775807u64 by solve() using { len <= 22208u64; };
@@ -149,7 +149,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      have to_integer(sum2) <= 65520 + 1481280 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n), 0); solve() using { to_integer(sum2) <= 65520; }; }
      solve();
     }
-    preserve by {
+    maintain by {
      apply(zlib_batch_prefix_limit(n));
      apply(zlib_batch_nonempty_prefix(n));
      apply(zlib_batch_remaining_limit(n));
@@ -1058,7 +1058,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have to_integer(sum2) <= 65520 + 1481280 * to_integer(zlib_prefix_count(at(loop(3).entry, len), len)) by { rewrite(zlib_prefix_count(at(loop(3).entry, len), len), 0); known(); }
    solve();
   }
-  preserve by {
+  maintain by {
    have 16u64 <= len by solve();
    have len <= 5551u64 by solve() using { len <= at(loop(3).entry, len); at(loop(3).entry, len) <= 5551u64; };
    have len <= 9223372036854775807u64 by solve() using { len <= 5551u64; };
@@ -1766,7 +1766,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     have to_integer(sum2) <= 10000000000 + 1504080 * to_integer(zlib_prefix_count(at(loop(4).entry, len), len)) by { rewrite(zlib_prefix_count(at(loop(4).entry, len), len), 0); solve() using { to_integer(sum2) <= 10000000000; }; }
     solve();
    }
-   preserve by {
+   maintain by {
     if len == 0u64 {
      // Record the checksum before the zero guard decrements len to UINT64_MAX.
      have old(len) - at(loop(4).entry, len) <= 22208u64 by solve() using { at(loop(4).entry, len) <= old(len); old(len) <= 22208u64; };

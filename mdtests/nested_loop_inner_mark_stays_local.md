@@ -23,7 +23,7 @@ int32 count() {
     loop {
         decreases 3 - i;
         invariant i >= 0 and i <= 3;
-        preserve by {
+        maintain by {
             mark outer_head;
             have at(outer_head, i) < 3 by { solve(); }
             step_until(loop(1));
@@ -31,7 +31,7 @@ int32 count() {
                 decreases 2 - j;
                 invariant j >= 0 and j <= 2;
                 invariant i >= 0 and i <= 3;
-                preserve by {
+                maintain by {
                     mark inner_head;
                     have at(outer_head, i) < 3 by { known(); }
                     step_until(back_edge());

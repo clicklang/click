@@ -18,7 +18,7 @@ fn nested(bytes: &[u8]) -> usize {
         invariant iter.chunk_size == 4u64;
         invariant iter.v.len() <= 8u64;
         invariant iter.v == bytes + (8u64 - iter.v.len());
-        preserve by {
+        maintain by {
             if 4u64 <= iter.v.len() {
                 have to_integer(8u64 - iter.v.len()) + 4 <= 8;
                 have to_integer((8u64 - iter.v.len()) + 4u64) <= 8;
@@ -45,7 +45,7 @@ fn nested(bytes: &[u8]) -> usize {
                     invariant iter.chunk_size == 2u64;
                     invariant iter.v.len() <= 4u64;
                     invariant iter.v == bytes + ((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len()));
-                    preserve by {
+                    maintain by {
                         if 2u64 <= iter.v.len() {
                             have to_integer((4u64 - loop(0).iter.v.len())) + to_integer(4u64 - iter.v.len()) + 2 <= 8;
                             have to_integer(((4u64 - loop(0).iter.v.len()) + (4u64 - iter.v.len())) + 2u64) <= 8;

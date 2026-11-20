@@ -42,7 +42,7 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant 0 <= (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining) and 1000 >= (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining);
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining));
         invariant to_integer(total) == prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining));
-        preserve by {
+        maintain by {
             have 0 < __rust_iter_3_5_remaining by { solve() using { 0 <= __rust_iter_3_5_remaining; not (__rust_iter_3_5_remaining == 0); } }
             have 0 <= __rust_iter_3_5_remaining - 1 by { solve() using { 0 < __rust_iter_3_5_remaining; } }
             have 0 <= to_integer((((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)) by {

@@ -124,7 +124,7 @@ int32 vector_copy(
                 contradiction(0 <= k);
             }
         }
-        preserve by {
+        maintain by {
             step();
             step();
             solve();

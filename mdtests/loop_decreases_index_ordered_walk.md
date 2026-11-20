@@ -33,7 +33,7 @@ int32 walk(int32 next[8], int32 start) {
         decreases cur;
         invariant 0 <= cur and cur < 8;
         initialize by solve();
-        preserve by {
+        maintain by {
             have 0 < cur;
             have 0 <= next[cur] and next[cur] < cur by {
                 instantiate(forall (k: int32) {

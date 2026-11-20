@@ -509,7 +509,7 @@ rather than by a step of the function's, and Click certifies every loop of a
 function that declares a measure under that function's anchor: the call in the
 body raises the same members, against the same function-entry M0. Loop phases
 read `old(...)` at the function entry too, so `old(...)` names M0 inside a
-`preserve by { ... }` exactly as it does in the contract proof, and what
+`maintain by { ... }` exactly as it does in the contract proof, and what
 relates the iteration's state to the entry is an invariant the user writes,
 such as `invariant n <= old(n)`. See
 `mdtests/c_decreases_pure_expression_recursion_in_loop.md`,
@@ -1470,7 +1470,7 @@ abstract exit. It fails if the current frontier is not a loop. Ordinary
 iteration; it does not invent a loop summary.
 
 A loop header holds `invariant` items, an optional `decreases` clause, the
-`initialize` and `preserve` phase proofs, and the loop's own resource clauses.
+`initialize` and `maintain` phase proofs, and the loop's own resource clauses.
 Those resource clauses take the same forms a contract's do, including the
 instance binder `owns name: resource(args);`. A declared binder takes the one
 enclosing owned instance of that family and arguments, the invariants may read
@@ -1517,9 +1517,9 @@ sequence does not receive a separate ID. The same IDs name execution targets,
 annotations, and the points `at(region(N).entry|exit, ...)` reads at.
 
 A frontier-local loop tactic may give the loop it encounters a stable name
-with `loop as label { ... }`.  The label names that encountered loop's entry
+with `loop label { ... }`.  The label names that encountered loop's entry
 and exit points; it never searches for or jumps to a source region. A
-label names one loop on an execution path: a second `loop as label` at a
+label names one loop on an execution path: a second `loop label` at a
 different loop is refused. Use
 `at(label.entry, expression_or_proposition)` and
 `at(label.exit, expression_or_proposition)` after the tactic has established
@@ -2392,7 +2392,7 @@ only through an explicit `unfold` — and it does not expose contained child
 instances. A loop head decides the same way, with its invariants in the part
 the requirements play; a proof that needs the constructor itself, to `unfold`
 or to name children, writes an explicit proof `match` on the model, which runs
-at any frontier including a loop's `preserve` body
+at any frontier including a loop's `maintain` body
 (`mdtests/loop_body_proof_match.md`). The regressions are
 `mdtests/resource_match_arm_selected_at_contract.md`,
 `mdtests/resource_match_arm_selected_by_existential.md`, and
@@ -4148,7 +4148,7 @@ function parameter names retain their ordinary contract meaning.
 `at(loop_label.entry, expression)` is supported inside invariants for that
 same labeled loop code region. It evaluates `expression` at the loop's entry
 point, just before the loop region starts, and uses that value for invariant
-entry and preservation checks. Inside an explicit `preserve` proof, the same
+entry and preservation checks. Inside an explicit `maintain` proof, the same
 form continues to denote the value at that pre-loop point; the value at
 the arbitrary loop-head iteration being checked is the ordinary unwrapped
 expression.
@@ -4558,11 +4558,11 @@ ensures still_sorted: sorted(p, n) by {
 
 Loop invariants are declared by the `loop` tactic when execution reaches that
 loop. Predicate bodies needed by the loop rule can be exposed in its
-`initialize` and `preserve` proofs:
+`initialize` and `maintain` proofs:
 
 <!-- verified-example: mdtests/loop_sorted_range_invariant.md -->
 ```click
-loop as carry_sorted {
+loop carry_sorted {
     decreases 3 - i;
     invariant i >= 0 and i <= 3;
     invariant sorted(old(p), 3);
@@ -4572,7 +4572,7 @@ loop as carry_sorted {
         unfold(sorted_range(p, 0, 3));
         ...
     }
-    preserve by {
+    maintain by {
         unfold(sorted(old(p), 3));
         unfold(sorted_range(p, 0, 3));
     }

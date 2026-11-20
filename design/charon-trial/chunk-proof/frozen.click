@@ -46,7 +46,7 @@ fn cover(bytes: &[u8]) -> usize {
         invariant chunks_remaining % 4 == 0;
         invariant chunks_cursor == bytes + ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining);
         invariant 0 <= ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) and ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) <= 1000;
-        preserve by {
+        maintain by {
             have 4 <= chunks_remaining by { solve(); }
             mark iteration;
             have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - chunks_remaining) + 4 <= ((bytes.len() as uint32) as int32) by {

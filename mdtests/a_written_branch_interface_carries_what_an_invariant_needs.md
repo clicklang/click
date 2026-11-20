@@ -45,7 +45,7 @@ int32 flip(int32 n) {
         invariant 0 <= i and i <= n;
         invariant 0 <= x and x <= 1;
         initialize by solve();
-        preserve by {
+        maintain by {
             branch ensuring {
                 fact 0 <= x and x <= 1;
             } {

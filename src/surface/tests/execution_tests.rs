@@ -1261,7 +1261,7 @@ fn execute_in_loop_preservation_keeps_the_function_exit_miss() {
                 decreases more;
                 invariant 0 <= more;
                 initialize by solve();
-                preserve by { step_until(function.exit); }
+                maintain by { step_until(function.exit); }
             }
             step_until(function.exit);
         }

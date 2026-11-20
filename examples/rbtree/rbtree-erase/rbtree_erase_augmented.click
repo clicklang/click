@@ -619,7 +619,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                 invariant successor == erase_spine_parent(c.model, child);
                                                 invariant plug(erase_context(c.model), t.model) == rl;
                                                 initialize by solve();
-                                                preserve by {
+                                                maintain by {
                                                     match t.model {
                                                         RbTree::Empty => { unfold(t); have tmp != 0 by { solve(); } contradiction(tmp == 0); },
                                                         RbTree::Node(tid, tp, tc, tl, tr) => {
@@ -1507,7 +1507,7 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                 invariant successor == erase_spine_parent(c.model, child);
                                                 invariant plug(erase_context(c.model), t.model) == rl;
                                                 initialize by solve();
-                                                preserve by {
+                                                maintain by {
                                                     match t.model {
                                                         RbTree::Empty => { unfold(t); have tmp != 0 by { solve(); } contradiction(tmp == 0); },
                                                         RbTree::Node(tid, tp, tc, tl, tr) => {

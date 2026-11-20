@@ -42,7 +42,7 @@ int32 count_up(int32 n) {
         invariant 0 <= i and i <= n and run == i;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             mark iteration;
             have 0 <= at(iteration, i);
             have run < n;

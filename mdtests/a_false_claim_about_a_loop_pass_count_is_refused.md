@@ -32,7 +32,7 @@ int32 doubled(int32 n) {
         invariant 0 <= i and i <= n;
         invariant i == iterations;
         invariant total == 3 * iterations;
-        preserve by { step(); step(); }
+        maintain by { step(); step(); }
     }
 }
 ```

@@ -97,7 +97,7 @@ void clear_data(struct region* region) {
         invariant 0 <= i and i <= arena->capacity;
         invariant forall (k: int32) { 0 <= k and k < arena->capacity implies region->arena->occupied[k] == old(region->arena->occupied[k]) };
         initialize by solve();
-        preserve by {
+        maintain by {
             mark opened;
             have contains(memory(arena->data[0..arena->capacity]), memory(arena->data[i])) by {
                 apply(click::separation::contains_element(arena->data, 0, arena->capacity, i)) using { 0 <= i; i < arena->capacity; };

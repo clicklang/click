@@ -57,7 +57,7 @@ int32 paint(struct node* p, const int32* q, int32 flag) {
         owns c: painted(p);
         invariant c.color == Color::Black;
 
-        preserve by {
+        maintain by {
             unfold(c);
             if flag == 0 {
                 step();

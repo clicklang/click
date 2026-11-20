@@ -142,9 +142,9 @@ impl FrontierLoopProofSource {
 /// Which part of a `loop` tactic a phase proof is.
 #[derive(Clone, Copy)]
 pub(in crate::surface::proof) enum LoopPhasePlace {
-    /// The body steps Click plans for a loop without a written `preserve`.
+    /// The body steps Click plans for a loop without a written `maintain`.
     PlannedPreservation,
-    /// A written `initialize` or `preserve` script.
+    /// A written `initialize` or `maintain` script.
     Script(&'static str),
 }
 
@@ -468,7 +468,7 @@ pub(in crate::surface::proof) fn certificate_leaf_for_case_path(
                     // C `if` consumed on this one path, not a case the
                     // validation path split at. Keep it whole and charge no
                     // case (A26, gap 57a); without this a `branch` in a
-                    // `preserve` arm is refused as a certificate that
+                    // `maintain` arm is refused as a certificate that
                     // disagrees with its validation path.
                     let matched_case = case_path.get(*next_case).filter(|choice| {
                         choice.match_arm.is_none()

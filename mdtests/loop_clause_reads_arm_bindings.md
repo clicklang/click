@@ -65,7 +65,7 @@ int spin(struct node* p, int n) {
                 invariant t.model == Tree::Node(id, value, left_model);
 
                 initialize by solve();
-                preserve by {
+                maintain by {
                     step();
                 }
             }

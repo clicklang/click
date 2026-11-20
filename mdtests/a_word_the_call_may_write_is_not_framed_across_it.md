@@ -91,7 +91,7 @@ void probe(struct node* g, struct node* n) {
                 invariant n == old(n);
                 decreases 0;
                 initialize by { known(); }
-                preserve by {
+                maintain by {
                     let { word: w, nw: v } = unfold(state);
                     step(); step(); step(); step(); step(); step();
 

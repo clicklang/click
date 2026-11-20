@@ -109,7 +109,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant node == old(node);
                 invariant node == identity;
                 initialize by solve();
-                preserve by {
+                maintain by {
                     let { focus: focus, path: path } = unfold(state);
                     have root->rb_node == old(root->rb_node) by known();
                     let loop_root = fold(flip_boundary_root_link(root), { node: old(root->rb_node) });

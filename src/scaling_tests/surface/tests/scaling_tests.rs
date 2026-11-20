@@ -2397,7 +2397,7 @@ fn ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String
          \x20       decreases n;\n\
          \x20       invariant n >= 0;\n\
          \x20       initialize by solve();\n\
-         \x20       preserve by {\n\
+         \x20       maintain by {\n\
          \x20           have 0 <= n - 1 by {\n\
          \x20               solve() using { n > 0; }\n\
          \x20           }\n\
@@ -2505,7 +2505,7 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
              \x20       decreases chain_len(c.model);\n\
              \x20       invariant n >= 0;\n\
              \x20       initialize by solve();\n\
-             \x20       preserve by {{\n\
+             \x20       maintain by {{\n\
              \x20           match c.model {{\n\
              \x20               Chain::Nil => {{ contradiction(c.model == Chain::Nil); }},\n\
              \x20               Chain::Link(rest_model) => {{\n\
@@ -2648,7 +2648,7 @@ fn smart_ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, 
          \x20       decreases n;\n\
          \x20       invariant n >= 0;\n\
          \x20       initialize by solve();\n\
-         \x20       preserve by {\n\
+         \x20       maintain by {\n\
          \x20           have 0 <= n - 1 by {\n\
          \x20               solve() using { n > 0; }\n\
          \x20           }\n\
@@ -2715,7 +2715,7 @@ fn guarded_member_bundle(conjuncts: usize) -> (String, String) {
          \x20       invariant 0 <= i and i <= n;\n\
          \x20       invariant {members};\n\
          \x20       initialize by solve();\n\
-         \x20       preserve by {{\n\
+         \x20       maintain by {{\n\
          \x20           mark iteration;\n\
          \x20           have 0 <= at(iteration, i) by {{ solve(); }}\n\
          \x20           step();\n\
@@ -4292,7 +4292,7 @@ fn framed_field_cells_loop(cells: usize) -> (String, String) {
          {invariants}\
          \x20       decreases end - i;\n\
          \x20       initialize by solve();\n\
-         \x20       preserve by {{\n\
+         \x20       maintain by {{\n\
          \x20           have 0 <= i by {{ solve(); }}\n\
          \x20           step();\n\
          \x20           step();\n\
@@ -4380,7 +4380,7 @@ fn many_clause_loop(clauses: usize) -> (String, String) {
          {invariants}\
          \x20       decreases n - i;\n\
          \x20       initialize by solve();\n\
-         \x20       preserve by {{\n\
+         \x20       maintain by {{\n\
          \x20           step();\n\
          \x20       }}\n\
          \x20   }}\n\
@@ -5268,7 +5268,7 @@ fn copy_loop_with_unrelated_requirements(fact_count: usize) -> String {
                          contradiction(0 <= k);\n            \
                      }}\n        \
                  }}\n        \
-                 preserve by {{\n            step();\n            step();\n            solve();\n        }}\n    \
+                 maintain by {{\n            step();\n            step();\n            solve();\n        }}\n    \
              }}\n    \
              have i == length by {{\n        \
                  have at(loop(0).exit, i) == at(loop(0).exit, length) by {{\n            \
@@ -6494,7 +6494,7 @@ fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
     }
 }
 
-/// A `step()` written in a loop's `preserve` body is its own simple tactic:
+/// A `step()` written in a loop's `maintain` body is its own simple tactic:
 /// it has its own work event and its own simple budget, like a `step()`
 /// anywhere else. The preservation driver used to apply it with no tactic
 /// open, so every C statement of every path through the body was charged to
@@ -6526,7 +6526,7 @@ void fill(int32* p, int32 n) {{
         invariant i >= 0;
 
         initialize by solve();
-        preserve by {{
+        maintain by {{
 {}        }}
     }}
     step();
@@ -6646,7 +6646,7 @@ void paint(struct node* p, int32 k) {{
         owns c: painted(p);
         invariant c.color == Color::Black;
 
-        preserve by {{
+        maintain by {{
             unfold(c);
 {}        }}
     }}
@@ -6735,7 +6735,7 @@ fn loop_with_break_exits_project(exit_count: usize) -> (String, String) {
     c_source.push_str("        repaint(p);\n        break;\n    }\n}\n");
 
     let mut click_source = String::from(
-        "verifying \"exits.c\";\n\nspec enum Color { Red, Black }\n\nresource painted(p: struct node*) {\n    field color: Color;\n    match color {\n        Color::Red => { owns p->shade; fact p->shade == 0; },\n        Color::Black => { owns p->shade; fact p->shade == 1; },\n    }\n}\n\nvoid paint(struct node* p, int32 flag) {\n    owns c: painted(p);\n    requires c.color == Color::Black;\n} by {\n    loop {\n        decreases 0;\n        owns c: painted(p);\n        invariant c.color == Color::Black;\n\n        preserve by {\nif flag == 0 {\nstep();\nstep();\n} else {\n",
+        "verifying \"exits.c\";\n\nspec enum Color { Red, Black }\n\nresource painted(p: struct node*) {\n    field color: Color;\n    match color {\n        Color::Red => { owns p->shade; fact p->shade == 0; },\n        Color::Black => { owns p->shade; fact p->shade == 1; },\n    }\n}\n\nvoid paint(struct node* p, int32 flag) {\n    owns c: painted(p);\n    requires c.color == Color::Black;\n} by {\n    loop {\n        decreases 0;\n        owns c: painted(p);\n        invariant c.color == Color::Black;\n\n        maintain by {\nif flag == 0 {\nstep();\nstep();\n} else {\n",
     );
     let writing_exit = |click_source: &mut String, skipped: usize| {
         click_source.push_str("unfold(c);\n");
@@ -7012,7 +7012,7 @@ fn stepping_a_store_does_not_rewrite_the_memory_its_fact_carries() {
     }
 }
 
-/// A counting loop whose `preserve` proof makes `count` proof-level case
+/// A counting loop whose `maintain` proof makes `count` proof-level case
 /// splits in a row before closing the invariants. Both arms of each only
 /// reason.
 fn loop_body_reasoning_ifs_project(count: usize) -> (String, String) {
@@ -7020,7 +7020,7 @@ fn loop_body_reasoning_ifs_project(count: usize) -> (String, String) {
         "int32 spin(int32 n, int32 x) {\n    int32 i;\n    i = 0;\n    while (i < n) {\n        i = i + 1;\n    }\n    return 0;\n}\n",
     );
     let mut click_source = String::from(
-        "verifying \"ifs.c\";\n\nint32 spin(int32 n, int32 x) {\n    requires n >= 0;\n    ensures result == 0;\n} by {\n    step();\n    step();\n    loop {\n        decreases n - i;\n        invariant 0 <= i and i <= n;\n\n        initialize by solve();\n        preserve by {\n            step();\n",
+        "verifying \"ifs.c\";\n\nint32 spin(int32 n, int32 x) {\n    requires n >= 0;\n    ensures result == 0;\n} by {\n    step();\n    step();\n    loop {\n        decreases n - i;\n        invariant 0 <= i and i <= n;\n\n        initialize by solve();\n        maintain by {\n            step();\n",
     );
     for index in 0..count {
         click_source.push_str(&format!(
@@ -7058,7 +7058,7 @@ fn sequential_proof_ifs_in_a_loop_body_rejoin_instead_of_doubling() {
 }
 
 /// A scanning loop whose body is `count` C `if`s in a row, each storing to
-/// a local when its guard holds, with no written `preserve` proof.
+/// a local when its guard holds, with no written `maintain` proof.
 fn loop_body_c_ifs_project(count: usize) -> (String, String) {
     let ifs = (0..count)
         .map(|index| {
@@ -9515,7 +9515,7 @@ int32 count_once(int32 flag) {{
         invariant i >= 0;
         invariant i <= 1;
         initialize by {{ normalize(); }}
-        preserve by {{
+        maintain by {{
             mark before_increment;
             step();
             have 0 <= to_integer(i) by {{

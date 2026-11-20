@@ -170,7 +170,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant node == sized_context_flip_focus(state.phase, old(node));
                 invariant parent == sized_context_flip_parent(state.phase, state.outer);
                 initialize by solve();
-                preserve by {
+                maintain by {
                     mark iteration;
                     match state.phase {
                         SizedContextFlipPhase::Done(x, y, z) => {

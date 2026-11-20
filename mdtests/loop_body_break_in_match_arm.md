@@ -1,6 +1,6 @@
 # A `break` inside a proof `match` arm exits the loop
 
-A proof `match` in `preserve` splits the body into one path per constructor,
+A proof `match` in `maintain` splits the body into one path per constructor,
 and those paths are never joined: each reaches the loop's own boundary on its
 own. A `break` is one of the ways to reach it. The live arm here leaves the
 loop immediately, so it closes no invariant and hands its binder to nobody; it
@@ -55,7 +55,7 @@ int32 spin(struct cell* node, int32 n) {
         invariant c.model != Maybe::None;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match c.model {
                 Maybe::None => { contradiction(c.model == Maybe::None); },
                 Maybe::Some(value) => {

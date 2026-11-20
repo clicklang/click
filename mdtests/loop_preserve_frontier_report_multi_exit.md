@@ -1,4 +1,4 @@
-# An unfinished `preserve` lists every end still ahead of it
+# An unfinished `maintain` lists every end still ahead of it
 
 A loop body with a `break` and a `continue` has three ways for a path to end,
 and a preservation script closes them one at a time. The frontier report a
@@ -54,7 +54,7 @@ int32 scan(int32 n) {
         invariant i >= 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             if i == 3 {
                 step();
                 step();

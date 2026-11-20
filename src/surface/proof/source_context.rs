@@ -14,7 +14,7 @@ pub(in crate::surface::proof) enum SourceContext {
     /// explicit script inside smart search.
     PureGoal,
     /// An execution frontier that has not reached the function exit: the
-    /// linear continuation, a focused execution arm, a loop's `preserve`
+    /// linear continuation, a focused execution arm, a loop's `maintain`
     /// body and a linear `open` scope.
     ExecutionFrontier,
     /// A path that has reached the function exit, where a tactic runs once

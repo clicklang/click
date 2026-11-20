@@ -201,7 +201,7 @@ have viewable(buf[0u64..len]) by solve();
     have to_integer(sum2) <= 65520 + 1481280 * to_integer(zlib_prefix_count(at(loop(0).entry, len), len)) by { rewrite(zlib_prefix_count(at(loop(0).entry, len), len), 0); solve() using { to_integer(sum2) <= 65520; }; }
     solve();
    }
-   preserve by {
+   maintain by {
     if len == 0u64 {
      // Record the checksum before the zero guard decrements len to UINT64_MAX.
      have to_integer(old(len) - at(loop(0).entry, len)) <= to_integer(2147483647u64) by solve() using { at(loop(0).entry, len) <= old(len); old(len) <= 2147483647u64; };
@@ -396,7 +396,7 @@ apply(zlib_seed_bounds(adler));
    have to_integer(sum2) == adler_spec_b_u64(old(buf), old(len) - len, to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))) by { rewrite(to_integer(old(len) - len), to_integer(0u64)); rewrite(sum2, zlib_seed_b(old(adler))); rewrite(adler_spec_b_u64(old(buf), 0u64, to_integer(zlib_seed_a(old(adler))), to_integer(zlib_seed_b(old(adler)))), to_integer(zlib_seed_b(old(adler)))); solve(); }
    solve();
   }
-  preserve by {
+  maintain by {
    have 5552u64 <= len by known();
    have len <= 9223372036854775807u64 by solve() using { len <= old(len); old(len) <= 9223372036854775807u64; };
    have viewable(buf[0u64..5552u64]) by solve();
@@ -496,7 +496,7 @@ apply(zlib_seed_bounds(adler));
      have to_integer(sum2) <= 65520 + 1481280 * to_integer(zlib_batch_count(n)) by { rewrite(zlib_batch_count(n), 0); solve() using { to_integer(sum2) <= 65520; }; }
      solve();
     }
-    preserve by {
+    maintain by {
      apply(zlib_batch_prefix_limit(n));
      apply(zlib_batch_nonempty_prefix(n));
      apply(zlib_batch_remaining_limit(n));
@@ -1421,7 +1421,7 @@ apply(zlib_seed_bounds(adler));
    have to_integer(sum2) <= 65520 + 1481280 * to_integer(zlib_prefix_count(at(loop(3).entry, len), len)) by { rewrite(zlib_prefix_count(at(loop(3).entry, len), len), 0); known(); }
    solve();
   }
-  preserve by {
+  maintain by {
    have 16u64 <= len by solve();
    have len <= 5551u64 by solve() using { len <= at(loop(3).entry, len); at(loop(3).entry, len) <= 5551u64; };
    have len <= 9223372036854775807u64 by solve() using { len <= 5551u64; };
@@ -2128,7 +2128,7 @@ apply(zlib_seed_bounds(adler));
     have to_integer(sum2) <= 10000000000 + 1504080 * to_integer(zlib_prefix_count(at(loop(4).entry, len), len)) by { rewrite(zlib_prefix_count(at(loop(4).entry, len), len), 0); solve() using { to_integer(sum2) <= 10000000000; }; }
     solve();
    }
-   preserve by {
+   maintain by {
     if len == 0u64 {
      // Record the checksum before the zero guard decrements len to UINT64_MAX.
      have to_integer(at(loop(4).entry, len) - len) <= to_integer(2147483647u64) by solve() using { len <= at(loop(4).entry, len); at(loop(4).entry, len) <= 15u64; };

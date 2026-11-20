@@ -200,7 +200,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 invariant old(state.phase) == SizedInsertContextDoubleMiddleSubtreePhase::Before(g, p, above, pv, gv, far, m, mv, middle_left, middle_right, nv);
                 invariant state.model == sized_context_double_middle_subtree_before(g, p, node, above, pv, gv, far, m, mv, middle_left, middle_right, nv);
                 initialize by solve();
-                preserve by {
+                maintain by {
                     let { tree: loop_tree, link: link } = unfold(state);
                     unfold(sized_context_double_middle_subtree_before(g, p, node, above, pv, gv, far, m, mv, middle_left, middle_right, nv));
                     have loop_tree.model == SizedTree::Node(g, above, Color::Black, gv, SizedTree::Node(p, g, Color::Red, pv, far, SizedTree::Node(node, p, Color::Red, nv, SizedTree::Node(m, node, Color::Black, mv, middle_left, middle_right), SizedTree::Empty)), SizedTree::Empty) by {

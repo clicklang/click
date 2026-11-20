@@ -161,7 +161,7 @@ Stack<int>::~Stack() {
         decreases length(list.items);
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match list.items {
                 List::Nil => { contradiction(list.items == List<int32>::Nil); },
                 List::Cons(value, rest) => {

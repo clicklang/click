@@ -1395,7 +1395,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
         invariant erase_flips_red_all_result(c.model, t.model) == erase_flips_red_all_result(old(c.model), RbTree::Empty);
         invariant rb_inorder(plug(c.model, t.model)) == rb_inorder(plug(old(c.model), RbTree::Empty));
         initialize by solve();
-        preserve by {
+        maintain by {
             mark iteration;
             match c.model {
                 Context::Top => { contradiction(c.model == Context::Top); },

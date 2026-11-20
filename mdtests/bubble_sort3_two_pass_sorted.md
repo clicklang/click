@@ -85,7 +85,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 enumerate();
             }
         }
-        preserve by {
+        maintain by {
             if p[(j + 1)] < p[j] {
                 unfold(all_le_range(p, 0, j, p[j]));
                 step();
@@ -216,7 +216,7 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                 enumerate();
             }
         }
-        preserve by {
+        maintain by {
             if p[(j + 1)] < p[j] {
                 unfold(all_le_range(p, 0, j, p[j]));
                 have j == 0 by {

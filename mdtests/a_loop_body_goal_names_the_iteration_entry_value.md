@@ -33,7 +33,7 @@ int32 walk(int32 n) {
         decreases n - i;
         invariant 0 <= i and i <= n;
         initialize by { solve(); }
-        preserve by {
+        maintain by {
             step();
             have i <= n by { solve() using { }; }
         }

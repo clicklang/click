@@ -78,7 +78,7 @@ int32 inspect(struct node* p) {
         invariant seen == 0;
 
         initialize by solve();
-        preserve by {
+        maintain by {
             match x.model {
                 Cell::Missing => {
                     unfold(x);

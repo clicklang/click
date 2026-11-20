@@ -225,7 +225,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         crate::surface::claim_labels::loop_phase_claim_label(
                             environment.function_block.signature().name(),
                             loop_index,
-                            "preserve",
+                            "maintain",
                         ),
                         crate::surface::diagnostics::describe_loop_head_refusal(&refusal),
                         crate::surface::diagnostics::describe_execution_statement_site()
@@ -311,7 +311,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                 environment,
                                 error,
                                 if explicit_tactics.is_some() {
-                                    LoopPhasePlace::Script("preserve")
+                                    LoopPhasePlace::Script("maintain")
                                 } else {
                                     LoopPhasePlace::PlannedPreservation
                                 },
@@ -431,7 +431,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 )?;
                 environment.frontier_loop_certificates.borrow_mut().preserve =
                     Some(preservation_certificate.clone());
-                // `preserve by solve();` is one smart tactic standing for the
+                // `maintain by solve();` is one smart tactic standing for the
                 // whole phase, exactly as `initialize by solve();` is: the
                 // planned preservation certificate is its expansion. The
                 // driver's own tactics are all generated here, so no

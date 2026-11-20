@@ -31,7 +31,7 @@ void set_either(int32* p, int32 flag) {
     loop {
         owns p[0..1];
 
-        preserve by {
+        maintain by {
             if flag == 0 {
                 step();
                 step();

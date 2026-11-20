@@ -37,7 +37,7 @@ int32 inner_addr(int32 flag) {
     step();
     loop {
         decreases 0;
-        preserve by {
+        maintain by {
             if flag == 0 {
                 step();
                 step();

@@ -27,7 +27,7 @@ int32 drain(int32 n) {
             have n >= 0 by solve();
             known();
         }
-        preserve by {
+        maintain by {
             have 0 <= to_integer(n - 1);
             step();
         }

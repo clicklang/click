@@ -35,7 +35,7 @@ void choose(int32* p, int32* q, int32* anchor, int32 flag) {
     loop {
         owns c: cursor(cur, anchor);
         decreases 0;
-        preserve by {
+        maintain by {
             if flag != 0 {
                 unfold(c);
                 step(); step();

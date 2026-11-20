@@ -338,11 +338,11 @@ mod tests {
             "{error}"
         );
 
-        write_proof(" preserve by { step(); step(); solve(); }");
+        write_proof(" maintain by { step(); step(); solve(); }");
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "proof error:\n  `f.contract` tactic 3 (`loop`), `preserve` tactic 0\n{bound}"
+                "proof error:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
             )),
             "{error}"
         );
@@ -467,7 +467,7 @@ uint64 spell(const uint8* b, uint64 n) {
         views b[0u64..n];
         invariant vl <= n;
         invariant v == b + (n - vl);
-        preserve by {
+        maintain by {
             if 4u64 <= vl {
                 step();
                 step();
@@ -852,7 +852,7 @@ uint64 spell(const uint8* b, uint64 n) {
         };
         let count_up = |phase: &str| {
             format!(
-                "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n        }}\n    }}\n    step();\n    solve();\n}}\n"
+                "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        maintain by {{\n            step();\n        }}\n    }}\n    step();\n    solve();\n}}\n"
             )
         };
         // Give each selected `known()` a false goal, so improvements to

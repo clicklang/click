@@ -28,7 +28,7 @@ int32 read_packed(unsigned long word, struct node* p, int32 count) {
         invariant i <= count;
         invariant ((word & ~1) as (struct node *)) == p;
         initialize by { solve(); }
-        preserve by { step(); step(); solve(); }
+        maintain by { step(); step(); solve(); }
     }
 }
 ```

@@ -18,7 +18,7 @@ fn sum(bytes: &[u8]) -> i32 {
         invariant i <= bytes.len();
         invariant 0 <= total and total <= 255 * i;
         invariant total == prefix(bytes, i);
-        preserve by {
+        maintain by {
             step_until(read(0)); step();
             have i < 18446744073709551615u64;
             have prefix(bytes, i + 1u64) == prefix(bytes, i) + to_integer(bytes[i] as i32) by {

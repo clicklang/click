@@ -80,7 +80,7 @@ struct node* h(struct node* p) {
         owns tl: tree(p->right->left);
         owns tr: tree(p->right->right);
         initialize by solve();
-        preserve by {
+        maintain by {
             step();
             have s == p->right by solve();
             let ns = fold(tree(s), { model: Tree::Node(tl.model, tr.model), left: tl, right: tr });
