@@ -7,7 +7,7 @@ use super::*;
 
 #[test]
 fn loop_back_edge_prepares_written_invariants_once_and_closes_by_exact_facts() {
-    use crate::instrumentation::{IMPLICIT_SOLVE_TACTIC, VerificationEvent, collect};
+    use crate::instrumentation::{IMPLICIT_LOOP_CLOSER_TACTIC, VerificationEvent, collect};
 
     let c_source = "int once(int i, int x) { while (i != 0) i = 0; return i; }";
     let proof = r#"
@@ -41,11 +41,11 @@ int32 once(int32 i, int32 x) {
             .iter()
             .skip_while(|event| {
                 !matches!(event, VerificationEvent::TacticStarted(tactic)
-                    if tactic.tactic_name == IMPLICIT_SOLVE_TACTIC && tactic.claim == "once.contract")
+                    if tactic.tactic_name == IMPLICIT_LOOP_CLOSER_TACTIC && tactic.claim == "once.contract")
             })
             .take_while(|event| {
                 !matches!(event, VerificationEvent::TacticFinished { tactic, .. }
-                    if tactic.tactic_name == IMPLICIT_SOLVE_TACTIC)
+                    if tactic.tactic_name == IMPLICIT_LOOP_CLOSER_TACTIC)
             });
         let operations = back_edge
             .filter_map(|event| match event {

@@ -13,6 +13,9 @@ use std::time::{Duration, Instant};
 /// open requirement is profiled, at that tactic's site. A bare simple tactic
 /// is not a selectable expansion site, so its claim is expanded instead.
 pub const IMPLICIT_SOLVE_TACTIC: &str = "implicit closer";
+/// The closer at the end of a written loop maintenance phase. Its source
+/// index points inside that phase, so expansion can select it by location.
+pub const IMPLICIT_LOOP_CLOSER_TACTIC: &str = "implicit loop closer";
 /// The tactic name timing records for the implicit tail that ends every
 /// script: the C it runs and the goals it closes.
 pub const IMPLICIT_TAIL_TACTIC: &str = "implicit tail";
@@ -59,6 +62,8 @@ pub enum VerificationEvent {
         work: usize,
     },
     TacticFailed(TacticEvent),
+    /// The active loop closer produced written member proofs for its phase.
+    LoopCloserProof,
     TacticWorkBudgetExceeded {
         tactic: TacticEvent,
         used: usize,
@@ -1599,6 +1604,7 @@ fn render_legacy(event: &VerificationEvent) -> String {
         VerificationEvent::DeadlineExceeded(active) => {
             format!("click timing: deadline exceeded in {active:?}")
         }
+        VerificationEvent::LoopCloserProof => "click timing: loop closer proof".to_string(),
         VerificationEvent::Diagnostic(message) => format!("click timing: {message}"),
     }
 }
