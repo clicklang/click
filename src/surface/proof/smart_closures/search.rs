@@ -10726,7 +10726,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         let goal = proof.goal()?;
-        if matches!(&goal, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Float32(_) | ConditionTerm::Float64(_), _))))
+        if (matches!(&goal, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Float32(_) | ConditionTerm::Float64(_), _))))
+            || crate::kernel::proof::fact_reasoning::is_quotient_remainder_order(goal))
             && Self::known_bridge_using(&proof, surfaces).ok() == Some(true)
         {
             return proof

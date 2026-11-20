@@ -1669,6 +1669,10 @@ The same fixed local check accepts intrinsic machine type ranges and
 constant-divisor quotient, remainder, and right-shift bounds. This includes
 `x % d < d` and its exact Integer reading for a positive machine literal `d`.
 An unsigned `x % d` is at most `x` when the exact divisor is known nonzero.
+Signed quotient and remainder bounds against zero use the named operand
+signs and the divisor's nonzero guard. Machine operations also require
+evidence that excludes the signed minimum divided by `-1` when the signs
+alone leave that pair possible.
 A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.
