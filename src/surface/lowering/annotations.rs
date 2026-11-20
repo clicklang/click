@@ -6838,13 +6838,17 @@ impl AnnotationLowerer<'_> {
             && let Some(retained_states) = self.retained_states
         {
             let index = retained_states.result_region_index(region)?;
-            // Ordinary pointer results retain their usual indexing and member reads.
-            if retained_states
-                .source_layout
-                .as_ref()
-                .is_some_and(|layout| layout.is_aggregate_result(index))
+            // An aggregate result is read in its storage at the producer's
+            // exit; a pointer to a record is read through, here. Other
+            // pointer results keep their usual indexing.
+            let layout = retained_states.source_layout.as_ref();
+            if layout.is_some_and(|layout| layout.is_aggregate_result(index)) {
+                return self.lower_region_result_read(region, &accesses, false, environment);
+            }
+            if layout.is_some_and(|layout| layout.is_pointee_result(index))
+                && matches!(accesses.first(), Some(RegionParameterAccess::Field(_)))
             {
-                return self.lower_region_result_read(region, &accesses, environment);
+                return self.lower_region_result_read(region, &accesses, true, environment);
             }
         }
         if let Some((region, name, accesses)) = region_parameter_read(expression) {
@@ -9063,11 +9067,14 @@ impl AnnotationLowerer<'_> {
         }))
     }
 
-    /// Read a scalar field of an aggregate result at its producer's exit.
+    /// Read a scalar field of an aggregate result at its producer's exit,
+    /// or, `through_pointer`, of the record a pointer result points at, in
+    /// this state.
     fn lower_region_result_read(
         &mut self,
         region: &CodeRegionRef,
         accesses: &[RegionParameterAccess<'_>],
+        through_pointer: bool,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         let retained_states = self
@@ -9094,7 +9101,14 @@ impl AnnotationLowerer<'_> {
                 }
             }
         }
-        let (field, element) = match layout.aggregate_result_field(index, &path) {
+        let field_of = |path: &str| {
+            if through_pointer {
+                layout.pointee_result_field(index, path)
+            } else {
+                layout.aggregate_result_field(index, path)
+            }
+        };
+        let (field, element) = match field_of(&path) {
             Some(field) => (field, None),
             None => {
                 let Some((last, _)) = accesses.split_last() else {
@@ -9109,8 +9123,7 @@ impl AnnotationLowerer<'_> {
                 let position = literal_element_index(position)
                     .ok_or("aggregate result array fields require a literal index")?;
                 let cut = path.rfind('[').expect("indexed path");
-                let field = layout
-                    .aggregate_result_field(index, &path[..cut])
+                let field = field_of(&path[..cut])
                     .ok_or_else(|| format!("aggregate result has no field `{}`", &path[..cut]))?;
                 (field, Some(position))
             }
@@ -9145,6 +9158,9 @@ impl AnnotationLowerer<'_> {
             access_class: None,
             source: Default::default(),
         });
+        if through_pointer {
+            return self.lower_contract_expression_to_spec_one(&read, environment);
+        }
         self.lower_at_expression_to_spec(
             &ProgramPointSelector::ProgramPoint(ProgramPointRef {
                 region: CodeRegionRef::Region(index),
