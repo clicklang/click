@@ -905,7 +905,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
         "__body".to_owned(),
         crate::surface::lowering::InstanceRename {
             name: instance_name.to_string(),
-            identity: InstanceId::from_variable(Variable(u64::MAX)),
+            identity: InstanceId::BODY,
             target_identity: Some(instance.identity()),
         },
     )]);

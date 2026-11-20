@@ -620,7 +620,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
             };
             let source = match value {
                 ContractExpression::ResourceField(access)
-                    if access.identity == InstanceId::from_variable(Variable(u64::MAX))
+                    if access.identity == InstanceId::BODY
                         && access.owner == "__body"
                         && access.children.is_empty() =>
                 {

@@ -4101,7 +4101,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
         // placeholder binding installed by `instance_body_evaluation`, not
         // through the concrete instance identity.  Keep the field payload's
         // free Integer identity independent from that resource placeholder.
-        identity: InstanceId::from_variable(Variable(u64::MAX)),
+        identity: InstanceId::BODY,
         children: vec![],
         field_index: 1,
         at_entry: false,

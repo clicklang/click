@@ -11948,6 +11948,13 @@ impl InstanceId {
         self.0
     }
 
+    /// The instance a resource definition's body describes: the `self` of
+    /// the body. A body's field references name it; opening an instance
+    /// binds it to that instance, and reading a definition's fields alone
+    /// stands an instance with this identity in for one. No child of a body
+    /// may take it, and nothing else mints it.
+    pub const BODY: InstanceId = InstanceId(Variable(u64::MAX));
+
     /// Whether an execution created this instance
     /// ([`ExecutionBudget::allocate_instance_identity`]) rather than a
     /// binder the surface named.

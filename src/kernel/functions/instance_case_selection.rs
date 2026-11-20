@@ -552,7 +552,7 @@ pub(super) fn check_unmatched_instance_children(
         if child.name.is_empty()
             || reserved.contains(child.name.as_str())
             || !names.insert(child.name.as_str())
-            || child.binding == InstanceId::from_variable(Variable(u64::MAX))
+            || child.binding == InstanceId::BODY
             || !bindings.insert(child.binding)
             || child.arguments.len() != child_definition.parameters.len()
             || child.field_bindings.len() != child_schema.fields().len()
@@ -690,7 +690,7 @@ pub(in crate::kernel) fn selected_instance_match_arm<'a>(
                 || reserved.contains(child.name.as_str())
                 || names.contains(&child.name)
                 || !child_names.insert(&child.name)
-                || child.binding == InstanceId::from_variable(Variable(u64::MAX))
+                || child.binding == InstanceId::BODY
                 || !child_bindings.insert(child.binding)
                 || child.arguments.len() != child_definition.parameters.len()
                 || child.field_bindings.len() != child_schema.fields().len()
@@ -927,10 +927,7 @@ pub(in crate::kernel) fn instance_body_evaluation(
         evaluation.locals = LocalEnvironment::default();
     }
     let mut bindings = ResourceBindings::new();
-    bindings.insert_instance(
-        InstanceId::from_variable(Variable(u64::MAX)),
-        instance.identity,
-    );
+    bindings.insert_instance(InstanceId::BODY, instance.identity);
     evaluation.resource_bindings = Some(std::sync::Arc::new(bindings));
     // A C-typed field is stable model data of this instance, so the body may
     // name it wherever it may name a matched constructor payload: as a memory

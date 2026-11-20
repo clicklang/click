@@ -4031,8 +4031,7 @@ impl Parser {
             return;
         };
         let is_parent = |access: &ResourceFieldAccess| {
-            access.owner == "__body"
-                && access.identity == InstanceId::from_variable(Variable(u64::MAX))
+            access.owner == "__body" && access.identity == InstanceId::BODY
         };
         let (child, parent) = match (is_parent(one), is_parent(other)) {
             (false, true) => (one, other),
@@ -4078,7 +4077,7 @@ impl Parser {
             let hidden = ResourceFieldAccess {
                 owner: "__body".into(),
                 resource_name: resource_name.into(),
-                identity: InstanceId::from_variable(Variable(u64::MAX)),
+                identity: InstanceId::BODY,
                 children: vec![],
                 field: hidden_name.clone(),
                 field_index: fields.len(),
@@ -4140,7 +4139,7 @@ impl Parser {
                         ResourceFieldAccess {
                             owner: "__body".into(),
                             resource_name: resource_name.into(),
-                            identity: InstanceId::from_variable(Variable(u64::MAX)),
+                            identity: InstanceId::BODY,
                             children: vec![],
                             field: field.name.clone(),
                             field_index,

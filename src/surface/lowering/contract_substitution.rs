@@ -3983,7 +3983,7 @@ fn substitute_contract_expression_node(
         ContractExpression::IntegerLiteral(_) => Ok(expression.clone()),
         ContractExpression::ResourceField(access)
             if let Some(fields) = substitutions.body_field_values
-                && access.identity == InstanceId::from_variable(Variable(u64::MAX))
+                && access.identity == InstanceId::BODY
                 && access.owner == "__body"
                 && access.children.is_empty() =>
         {
@@ -5044,7 +5044,7 @@ pub(in crate::surface) fn resource_body_program_expression(
     expression: &ContractExpression,
 ) -> Option<ProgramExpression> {
     contract_expression_as_program_expression_resolving_fields(expression, &|access| {
-        (access.identity == InstanceId::from_variable(Variable(u64::MAX))
+        (access.identity == InstanceId::BODY
             && access.owner == "__body"
             && access.children.is_empty()
             && access

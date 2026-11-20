@@ -9043,7 +9043,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
         // Interpret logical parent fields without granting body ownership.
         if let Some(values) = fields.iter().cloned().collect::<Option<Vec<_>>>()
             && let Some(instance) = ResourceInstance::new(
-                InstanceId::from_variable(Variable(u64::MAX)),
+                InstanceId::BODY,
                 definition.name().to_string(),
                 arguments.iter().cloned().collect(),
                 schema.clone(),
@@ -9133,7 +9133,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             definition.instance_schema.as_ref(),
             fields.iter().cloned().collect::<Option<Vec<_>>>(),
         ) && let Some(instance) = ResourceInstance::new(
-            InstanceId::from_variable(Variable(u64::MAX)),
+            InstanceId::BODY,
             definition.name().to_string(),
             arguments.iter().cloned().collect(),
             schema.clone(),
@@ -15722,10 +15722,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     child_evaluation.resources = body.clone();
     let child_assumptions = assumptions.clone().require_owned_expression_loads();
     let mut resource_bindings = ResourceBindings::new();
-    resource_bindings.insert_instance(
-        InstanceId::from_variable(Variable(u64::MAX)),
-        instance.identity,
-    );
+    resource_bindings.insert_instance(InstanceId::BODY, instance.identity);
     let mut introduced_children: Vec<ResourceInstance> = Vec::new();
     let mut child_read_definitions = Vec::new();
     for child in body_children {
