@@ -4591,7 +4591,7 @@ fn source_backed_call_requirement_surface(
                     binding.binder().to_string(),
                     crate::surface::lowering::InstanceRename {
                         name: binding.instance().to_string(),
-                        identity: binding.binder_identity().instance()?,
+                        identity: binding.binder_identity().instance()?.into(),
                         target_identity: Some(binding.identity().instance()?),
                     },
                 ))
@@ -4608,14 +4608,16 @@ fn source_backed_call_requirement_surface(
                 ) => Some((binder, *identity, *actual)),
                 _ => None,
             })
-            .filter(|(_, identity, _)| referenced_instances.contains(identity))
+            .filter(|(_, identity, _)| {
+                referenced_instances.contains(&crate::kernel::InstanceRef::Instance(*identity))
+            })
             .map(|(binder, identity, actual)| {
                 let name = crate::kernel::model_fields::registered_instance_spelling(actual)?;
                 Some((
                     binder.clone(),
                     crate::surface::lowering::InstanceRename {
                         name: name.to_string(),
-                        identity,
+                        identity: identity.into(),
                         target_identity: Some(actual),
                     },
                 ))
@@ -4844,6 +4846,7 @@ fn caller_parameter_through_identity_cast(
     parameters: &[crate::languages::interface::ImportedParameter],
     state: &crate::kernel::ExecutionState,
 ) -> Option<usize> {
+    let argument = without_repeated_cast(argument);
     let (name, cast_type, cast_struct) = match argument {
         ProgramExpression::Variable(name) => (name, None, None),
         ProgramExpression::Cast {
@@ -4896,6 +4899,37 @@ fn caller_parameter_through_identity_cast(
         }
         _ => Some(slot),
     }
+}
+
+/// `argument` without the inner casts a cast to the same pointer type
+/// repeats: a Rust reborrow, `&mut *self`, views its operand's cast again,
+/// and `(p as T) as T` is `p as T`.
+fn without_repeated_cast(argument: &ProgramExpression) -> &ProgramExpression {
+    let mut current = argument;
+    while let ProgramExpression::Cast {
+        expression,
+        target_type,
+        pointee_struct,
+        pointee_volatile,
+        pointee_constant,
+        ..
+    } = current
+        && let ProgramExpression::Cast {
+            target_type: inner_type,
+            pointee_struct: inner_struct,
+            pointee_volatile: inner_volatile,
+            pointee_constant: inner_constant,
+            ..
+        } = expression.as_ref()
+        && target_type.is_pointer()
+        && target_type == inner_type
+        && pointee_struct == inner_struct
+        && pointee_volatile == inner_volatile
+        && pointee_constant == inner_constant
+    {
+        current = expression;
+    }
+    current
 }
 
 /// Whether a fact the last step checked is the focused goal under another

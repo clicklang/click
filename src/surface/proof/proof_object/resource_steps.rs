@@ -962,7 +962,7 @@ impl<'a> Proof<'a> {
                         child_name.clone(),
                         crate::surface::lowering::InstanceRename {
                             name: name.to_string(),
-                            identity: child_identity,
+                            identity: child_identity.into(),
                             target_identity: Some(*actual),
                         },
                     );

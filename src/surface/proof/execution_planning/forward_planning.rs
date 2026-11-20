@@ -706,6 +706,17 @@ fn advance_execution_proof_statement(
                     }
                 }
             };
+        let scope_exit_facts = |state: &ExecutionState, facts: &crate::kernel::ExecutionFacts| {
+            scoped_loop_exit_facts(
+                loop_index.expect("selected loop"),
+                state,
+                facts,
+                &context,
+                environment,
+            )
+        };
+        let exit_fact_scope = (loop_index.is_some() && scoped_loop_exit_facts_enabled())
+            .then_some(&scope_exit_facts as &crate::kernel::LoopExitFactScope<'_>);
         let mut next_opaque_call = context.next_opaque_call;
         let mut next_kernel_variable = context.next_kernel_variable;
         let transitions_result = match (initialization_proven, preservation_proven) {
@@ -736,6 +747,7 @@ fn advance_execution_proof_statement(
                 return_exits,
                 otherwise
                     .map(|_| &mut prove_otherwise as &mut crate::kernel::LoopOtherwiseProof<'_>),
+                exit_fact_scope,
                 &mut next_opaque_call,
                 &mut next_kernel_variable,
             ),

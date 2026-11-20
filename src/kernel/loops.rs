@@ -1600,6 +1600,7 @@ pub(in crate::kernel) fn abstract_loop_paths(
         &[],
         &[],
         None,
+        None,
         execution_context.semantics,
         false,
         budget,
@@ -2080,6 +2081,7 @@ pub(super) fn execute_program_loop_exit_paths_with_proven_phases(
     early_exits: &[LoopEarlyExit],
     return_exits: &[LoopReturnExit],
     otherwise: Option<&mut LoopOtherwiseProof<'_>>,
+    exit_fact_scope: Option<&LoopExitFactScope<'_>>,
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
@@ -2093,6 +2095,7 @@ pub(super) fn execute_program_loop_exit_paths_with_proven_phases(
         early_exits,
         return_exits,
         otherwise,
+        exit_fact_scope,
         execution_context.semantics,
         initialization_proven,
         budget,
@@ -2177,6 +2180,13 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
     Some(disjunction)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LoopExitFactsMode {
+    Legacy,
+    Common,
+    Otherwise,
+}
+
 /// Joins the exit paths of one loop guard into the single exit the loop rule
 /// certifies.
 ///
@@ -2197,6 +2207,7 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
 /// index and never inferred from this ordering.
 fn join_loop_exit_paths(
     mut exits: Vec<LoopExitFacts>,
+    mode: LoopExitFactsMode,
 ) -> Option<(
     ExecutionFacts,
     Vec<ProofObligation>,
@@ -2221,6 +2232,53 @@ fn join_loop_exit_paths(
             .map(|exit| exit.stated.len() + exit.disjunct.len())
             .sum(),
     );
+    let mut obligations = first_obligations;
+    for exit in exits.iter().skip(1) {
+        for obligation in &exit.obligations {
+            if !obligations.contains(obligation) {
+                obligations.push(obligation.clone());
+            }
+        }
+    }
+    if mode == LoopExitFactsMode::Common {
+        // Include both the stated fact and its verified restatement. An exit
+        // that already uses the successor's name need not restate its fact.
+        fn entries(exit: &LoopExitFacts) -> impl Iterator<Item = &Proposition> {
+            exit.stated
+                .iter()
+                .map(ExecutionPureFact::proposition)
+                .chain(exit.restated.iter())
+        }
+        #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+        enum Identity<'a> {
+            Alpha(crate::kernel::proof::PropositionIdentityKey),
+            Exact(&'a Proposition),
+        }
+        fn identity(proposition: &Proposition) -> Identity<'_> {
+            crate::kernel::proof::proposition_identity_key(proposition)
+                .map_or(Identity::Exact(proposition), Identity::Alpha)
+        }
+        let first = entries(&exits[0]).collect::<Vec<_>>();
+        let identities = first.iter().copied().map(identity).collect::<Vec<_>>();
+        let first_objects = first_facts.iter().collect::<Vec<_>>();
+        let mut seen = BTreeSet::new();
+        let facts = positions_in_every_set(
+            identities.iter().cloned(),
+            exits[1..].iter().map(|exit| entries(exit).map(identity)),
+        )
+        .into_iter()
+        .filter_map(|index| {
+            seen.insert(&identities[index]).then(|| {
+                first_objects
+                    .get(index)
+                    .map(|fact| (*fact).clone())
+                    .unwrap_or_else(|| ExecutionPureFact::new(first[index].clone()))
+            })
+        })
+        .collect();
+        return Some((facts, obligations, loan_evidence));
+    }
+
     let in_every_exit = positions_in_every_set(
         first_facts.iter().map(ExecutionPureFact::proposition),
         exits[1..]
@@ -2264,9 +2322,16 @@ fn join_loop_exit_paths(
     // `!a | (a & !b)` into the `!a | !b` a proof can name.
     let mut facts = shared;
     facts.extend(facts_every_exit_restates(&exits, &facts));
+    // A synthesized summary can help check an explicit otherwise proof.
+    // Such facts never become implicit exports under the common-facts rule.
+    let summarize = if mode == LoopExitFactsMode::Otherwise {
+        ExecutionPureFact::internal
+    } else {
+        ExecutionPureFact::new
+    };
     let historical_disjunction = guard_path_disjunction(&own_facts);
     if let Some(disjunction) = &historical_disjunction {
-        facts.push(ExecutionPureFact::new(disjunction.clone()));
+        facts.push(summarize(disjunction.clone()));
     }
     // Pinning equations describe only the successor's abstracted components.
     // Keep their weaker disjunction independently of historical path guards:
@@ -2278,15 +2343,7 @@ fn join_loop_exit_paths(
     if let Some(disjunction) = guard_path_disjunction(&successor_equations)
         && historical_disjunction.as_ref() != Some(&disjunction)
     {
-        facts.push(ExecutionPureFact::new(disjunction));
-    }
-    let mut obligations = first_obligations;
-    for exit in exits.iter().skip(1) {
-        for obligation in &exit.obligations {
-            if !obligations.contains(obligation) {
-                obligations.push(obligation.clone());
-            }
-        }
+        facts.push(summarize(disjunction));
     }
     Some((facts.into(), obligations, loan_evidence))
 }
@@ -2347,9 +2404,9 @@ fn facts_every_exit_restates(
 /// the indexes until one lacks it, so the comparisons are the items times a
 /// logarithm of one set's size. Nothing compares one exit's facts with every
 /// other exit's.
-fn positions_in_every_set<'a, T: Ord + 'a>(
-    first: impl Iterator<Item = &'a T>,
-    others: impl Iterator<Item = impl Iterator<Item = &'a T>>,
+fn positions_in_every_set<T: Ord>(
+    first: impl Iterator<Item = T>,
+    others: impl Iterator<Item = impl Iterator<Item = T>>,
 ) -> Vec<usize> {
     let indexes = others
         .map(|items| items.collect::<BTreeSet<_>>())
@@ -2440,6 +2497,8 @@ fn join_loop_exits(
         Option<PureFactContext>,
     )>,
     assumptions: &PureFactContext,
+    exit_fact_scope: Option<&LoopExitFactScope<'_>>,
+    mode: LoopExitFactsMode,
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
 ) -> Option<StatementExecutionPath> {
@@ -2481,15 +2540,29 @@ fn join_loop_exits(
     if mismatch.is_none() {
         exit_state.join_loop_exit_program_points(&states);
     }
-    let (facts, mut obligations, loan_evidence) = join_loop_exit_paths(
+    let (mut facts, mut obligations, loan_evidence) = join_loop_exit_paths(
         exits
             .into_iter()
             .zip(restatements)
             .map(|((_, facts, obligations, loan_evidence, _), restatement)| {
-                restatement.restate(facts, obligations, loan_evidence)
+                restatement.restate(
+                    facts,
+                    obligations,
+                    loan_evidence,
+                    mode == LoopExitFactsMode::Common,
+                )
             })
             .collect(),
+        mode,
     )?;
+    if let Some(scope) = exit_fact_scope {
+        let admitted = scope(&exit_state, &facts);
+        facts = facts
+            .into_iter()
+            .zip(admitted)
+            .filter_map(|(fact, visible)| visible.then_some(fact))
+            .collect();
+    }
     if let Some(mismatch) = mismatch {
         obligations.push(
             ProofObligation::verification_condition(false_equals_true_proposition())
@@ -2999,6 +3072,7 @@ impl LoopExitRestatement {
         &self,
         proposition: &Proposition,
         symbolic_only: bool,
+        common_only: bool,
     ) -> Option<Proposition> {
         let mut restated = None;
         for (held, fresh) in &self.replacements {
@@ -3010,7 +3084,13 @@ impl LoopExitRestatement {
             }
             let current = restated.as_ref().unwrap_or(proposition);
             let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::new(held, fresh);
-            let rewritten = rewrite.proposition(current);
+            // A written export can be a disjunction or quantify a model.
+            // Use the capture-avoiding walk through the entire proposition.
+            let rewritten = if common_only {
+                rewrite.substitute_proposition(current)
+            } else {
+                rewrite.proposition(current)
+            };
             // A refused walk hands back a placeholder, not a rewritten fact.
             if rewrite.refusal().is_some() {
                 return None;
@@ -3034,6 +3114,7 @@ impl LoopExitRestatement {
         facts: ExecutionFacts,
         obligations: Vec<ProofObligation>,
         loan_evidence: CheckedLoanCallEvidenceSequence,
+        common_only: bool,
     ) -> LoopExitFacts {
         if self.renamings.is_empty() && self.equations.is_empty() && self.replacements.is_empty() {
             return LoopExitFacts::unabstracted(facts, obligations, loan_evidence);
@@ -3048,14 +3129,24 @@ impl LoopExitRestatement {
         let mut restated = Vec::new();
         let mut disjunct = Vec::new();
         for fact in facts.iter() {
-            let rewritten = self.restated_about_merged_binders(fact.proposition(), true);
-            disjunct.push(rename(rewritten.as_ref().unwrap_or(fact.proposition())));
-            if let Some(rewritten) = self.restated_about_merged_binders(fact.proposition(), false) {
-                restated.push(rewritten);
+            let original = fact.proposition();
+            if common_only {
+                let algebraic = self.restated_about_merged_binders(original, false, true);
+                let restatement = rename(algebraic.as_ref().unwrap_or(original));
+                if &restatement != original {
+                    restated.push(restatement);
+                }
+            } else {
+                let rewritten = self.restated_about_merged_binders(original, true, false);
+                disjunct.push(rename(rewritten.as_ref().unwrap_or(original)));
+                if let Some(rewritten) = self.restated_about_merged_binders(original, false, false)
+                {
+                    restated.push(rewritten);
+                }
             }
         }
         let mut successor_equations = Vec::new();
-        for equation in &self.equations {
+        for equation in self.equations.iter().filter(|_| !common_only) {
             // A pin reduced to a reflexive equality states nothing.
             let renamed = rename(equation);
             if equation_states_nothing(&renamed) {
@@ -4204,6 +4295,7 @@ fn loop_exit_state_difference(
     let ExecutionState {
         aggregate_destination,
         instance_field_scope,
+        body_field_view,
         resource_bindings,
         loan_ledger,
         loan_participant,
@@ -4274,6 +4366,7 @@ fn loop_exit_state_difference(
     }
     component!(aggregate_destination, "aggregate call destination");
     component!(instance_field_scope, "resource field evaluation scope");
+    component!(body_field_view, "resource body field view");
     if resource_bindings != &right.resource_bindings {
         differences.push(format!(
             "call resource bindings (successor: {} entries; exit: {} entries)",
@@ -4337,6 +4430,7 @@ fn execute_program_loop_exit_paths(
     early_exits: &[LoopEarlyExit],
     return_exits: &[LoopReturnExit],
     otherwise: Option<&mut LoopOtherwiseProof<'_>>,
+    exit_fact_scope: Option<&LoopExitFactScope<'_>>,
     execution_semantics: ExecutionSemantics,
     initialization_proven: bool,
     budget: &mut ExecutionBudget,
@@ -4482,6 +4576,16 @@ fn execute_program_loop_exit_paths(
             loan_evidence: exit.loan_evidence().clone(),
         });
     }
+    let public_exit_mode = if exit_fact_scope.is_some() {
+        LoopExitFactsMode::Common
+    } else {
+        LoopExitFactsMode::Legacy
+    };
+    let guard_exit_mode = if exit_fact_scope.is_some() && otherwise.is_some() {
+        LoopExitFactsMode::Otherwise
+    } else {
+        public_exit_mode
+    };
     let mut candidate_exit_entries = Vec::new();
     let mut jump_exit_entries = std::collections::BTreeMap::<_, Vec<_>>::new();
     if initial_may_continue {
@@ -4545,7 +4649,9 @@ fn execute_program_loop_exit_paths(
                     candidate.loan_evidence().clone(),
                 ));
             }
-            if let Some((facts, obligations, loan_evidence)) = join_loop_exit_paths(exits) {
+            if let Some((facts, obligations, loan_evidence)) =
+                join_loop_exit_paths(exits, guard_exit_mode)
+            {
                 // A candidate is one more way out, not a second successor:
                 // it joins the guard-false and `break` exits below on the
                 // same terms. Exporting it as its own path would give the
@@ -4618,6 +4724,7 @@ fn execute_program_loop_exit_paths(
     } else {
         early_exit_entries.extend(candidate_exit_entries);
     }
+    let mut guard_exits = Vec::new();
     if initial_may_exit {
         for (invariant_facts, invariant_obligations, invariant_propositions) in invariant_contexts {
             let condition_contexts = assume_loop_entry_truthiness(
@@ -4688,6 +4795,10 @@ fn execute_program_loop_exit_paths(
                 otherwise_exits.extend(exits);
                 continue;
             }
+            if exit_fact_scope.is_some() {
+                guard_exits.extend(exits);
+                continue;
+            }
             let exits = exits.chain(early_exit_entries.iter().cloned()).collect();
             if let Some(path) = join_loop_exits(
                 &head,
@@ -4696,6 +4807,8 @@ fn execute_program_loop_exit_paths(
                 &binders,
                 exits,
                 assumptions,
+                None,
+                LoopExitFactsMode::Legacy,
                 variables,
                 budget,
             ) {
@@ -4703,6 +4816,7 @@ fn execute_program_loop_exit_paths(
             }
         }
     } else if otherwise.is_none()
+        && exit_fact_scope.is_none()
         && let Some(path) = join_loop_exits(
             &head,
             body,
@@ -4710,6 +4824,8 @@ fn execute_program_loop_exit_paths(
             &binders,
             std::mem::take(&mut early_exit_entries),
             assumptions,
+            None,
+            LoopExitFactsMode::Legacy,
             variables,
             budget,
         )
@@ -4718,6 +4834,7 @@ fn execute_program_loop_exit_paths(
         // exit: the successor is the join of the `break` exits alone.
         paths.push(path);
     }
+    let had_otherwise = otherwise.is_some();
     if let Some(prove) = otherwise {
         // An otherwise block has one entry, even when different operands of
         // a short-circuit guard can make it false. Keep breaks out of this
@@ -4732,6 +4849,8 @@ fn execute_program_loop_exit_paths(
                 &binders,
                 otherwise_exits,
                 assumptions,
+                None,
+                guard_exit_mode,
                 variables,
                 budget,
             )
@@ -4749,7 +4868,11 @@ fn execute_program_loop_exit_paths(
             })
         };
         if let Some((state, mut facts, mut obligations, evidence, _)) = false_exit {
-            if let Some(proven) = prove(&head.entry, &state, &facts) {
+            let proven = prove(&head.entry, &state, &facts);
+            if guard_exit_mode == LoopExitFactsMode::Otherwise {
+                facts = facts.filtered(ExecutionPureFact::is_public);
+            }
+            if let Some(proven) = proven {
                 facts.extend(proven);
             } else {
                 obligations.push(
@@ -4759,18 +4882,22 @@ fn execute_program_loop_exit_paths(
             }
             early_exit_entries.insert(0, (state, facts, obligations, evidence, None));
         }
-        if let Some(path) = join_loop_exits(
+    }
+    if (had_otherwise || exit_fact_scope.is_some())
+        && let Some(path) = join_loop_exits(
             &head,
             body,
             &Default::default(),
             &binders,
-            early_exit_entries,
+            guard_exits.into_iter().chain(early_exit_entries).collect(),
             assumptions,
+            exit_fact_scope,
+            public_exit_mode,
             variables,
             budget,
-        ) {
-            paths.push(path);
-        }
+        )
+    {
+        paths.push(path);
     }
     // Several checked edges to one label have one successor. Preserve
     // their disjunction and abstract differing states by the same checked
@@ -4783,6 +4910,8 @@ fn execute_program_loop_exit_paths(
             &binders,
             exits,
             assumptions,
+            exit_fact_scope,
+            public_exit_mode,
             variables,
             budget,
         ) {
@@ -6440,7 +6569,7 @@ pub(super) fn prepare_loop_top_state(
     let mut direct_mutexes = Vec::new();
     for spec in resource_specs {
         if spec.guard().is_some() && matches!(spec.term(), ResourceTerm::MutexGuard { .. }) {
-            let identity = InstanceId::from_variable(variables.next_in(budget)?);
+            let identity = budget.allocate_instance_identity()?;
             match super::mutexes::prepare_direct_loop_guard(
                 &entry_state,
                 &top_state,

@@ -4042,13 +4042,13 @@ pub(crate) fn canonical_form_of_load(
     canonical_scalar_read(&MachineTerm::memory_read(memory, pointer, kind))
 }
 
-/// Name a resource cell using the indexed defining store when available.
+/// Name a resource cell by its indexed store or entry point when available.
 pub(crate) fn canonical_cell_load(
     source: &ProgramPoint,
     pointer: &Address,
     ty: ProgramType,
 ) -> MachineTerm {
-    if let Some(read) = indexed_resource_scalar_read(source, pointer, ty) {
+    if let Some(read) = expected_point_named_cell_read(source, pointer, ty) {
         record_indexed_cell_read(source, &read);
         return read;
     }
@@ -4077,7 +4077,10 @@ pub(in crate::kernel) fn expected_point_named_cell_read(
     ty: ProgramType,
 ) -> Option<MachineTerm> {
     indexed_resource_scalar_read(source, pointer, ty).or_else(|| {
-        let kind = LoadKind::of_type(ty)?;
+        if ty != ProgramType::Int32 {
+            return None;
+        }
+        let kind = LoadKind::Int32;
         let point = source.entry_integer_version(pointer, kind)?;
         Some(MachineTerm::MemoryLoad(
             point,
@@ -5220,11 +5223,9 @@ pub(crate) fn comparison_identity_of_exact_read(
     match point
         .indexed_integer_version(pointer, kind)
         .or_else(|| point.call_output_integer_version(pointer, kind))
+        .or_else(|| point.entry_integer_version(pointer, kind))
     {
         Some(version) => MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind),
-        None if let Some(entry) = point.entry_integer_version(pointer, kind) => {
-            MachineTerm::memory_read(entry.shared_memory().clone(), pointer.clone(), kind)
-        }
         None => canonical_form_of_load(point.shared_memory().clone(), pointer.clone(), kind),
     }
 }
@@ -5234,20 +5235,8 @@ pub(crate) fn comparison_identity_of_exact_read(
 /// publication are separate operations. Until exact-state lowering migrates,
 /// callers still retain the selected identity as their read term.
 pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
-    if let MachineTerm::MemoryLoad(point, pointer, kind) = bits
-        && point.read_version_id().is_some()
-    {
-        // The retained term names the entry point. Legacy producers of
-        // the same cell compare with its empty view without projecting it.
-        return if point.is_entry_read() {
-            MachineTerm::memory_read(
-                point.shared_memory().clone(),
-                pointer.as_ref().clone(),
-                *kind,
-            )
-        } else {
-            bits.clone()
-        };
+    if matches!(bits, MachineTerm::MemoryLoad(point, _, _) if point.read_version_id().is_some()) {
+        return bits.clone();
     }
     let Some(descriptor) = ScalarReadDescriptor::from_term(bits) else {
         return bits.clone();

@@ -155,20 +155,33 @@ pub(super) fn is_int32_add_sub_obligation(goal: &Proposition) -> bool {
         || (operation(left).is_some() && at_limit(right, i32::MAX))
 }
 
-/// The cast's destination and which written operand holds the original value.
-fn bounded_cast_shape(goal: &Proposition) -> Option<(crate::kernel::MachineIntegerFormat, bool)> {
-    use crate::kernel::machine_integer::conversion;
+/// The observation format and the side naming its exact Integer value.
+fn bounded_observation_shape(
+    goal: &Proposition,
+) -> Option<(
+    crate::kernel::MachineIntegerFormat,
+    bool,
+    &crate::kernel::IntegerTerm,
+)> {
+    use crate::kernel::machine_integer::{conversion, identity};
     let Some((ConditionTerm::IntegerEqual(a, b), true)) = goal.condition_native() else {
         return None;
     };
-    for (cast, original, original_on_left) in [(a, b, false), (b, a, true)] {
-        let format = conversion::cast(cast, original).or_else(|| {
-            conversion::integer_conversion(cast)
-                .filter(|(operand, _)| operand == original)
-                .map(|(_, ty)| ty.format())
-        });
+    for (observed, exact, exact_on_left) in [(a, b, false), (b, a, true)] {
+        let product = matches!(exact.as_ref(), crate::kernel::IntegerTerm::Multiply(..));
+        let format = product
+            .then(|| identity::explicit_mathematical(observed))
+            .flatten()
+            .filter(|(_, value)| identity::same_exact_value(value, exact))
+            .map(|(ty, _)| ty.format())
+            .or_else(|| conversion::cast(observed, exact))
+            .or_else(|| {
+                conversion::integer_conversion(observed)
+                    .filter(|(operand, _)| operand == exact)
+                    .map(|(_, ty)| ty.format())
+            });
         if let Some(format) = format {
-            return Some((format, original_on_left));
+            return Some((format, exact_on_left, exact));
         }
     }
     None
@@ -208,7 +221,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // in the kernel. Match both sides in their exact Integer reading.
         let goal_readings =
             crate::kernel::machine_integer::comparison::integer_readings_with_promotions(goal);
-        let Some((goal_lo, goal_hi, false)) = std::iter::once(goal)
+        let Some((goal_lo, goal_hi, goal_strict)) = std::iter::once(goal)
             .chain(&goal_readings)
             .find_map(integer_order)
         else {
@@ -220,10 +233,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some((lo, hi, strict)) = integer_order(reading) else {
                 continue;
             };
-            if !strict && (lo, hi) == (goal_lo, goal_hi) {
+            if strict == goal_strict
+                && lo.value_read() == goal_lo.value_read()
+                && hi.value_read() == goal_hi.value_read()
+            {
                 return attempt::candidate_outcome(input.driver().apply_step(ProofStep::Known));
             }
-            if !strict {
+            if !strict || goal_strict {
                 continue;
             }
             let Some((lower, ComparisonOperator::LessEqual, upper)) =
@@ -293,16 +309,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// Discover connected bounds within the solve budget and replay the same
-    /// proof as the selected form. The fast cast rule never searches facts.
-    pub(in crate::surface::proof) fn try_bounded_cast_identity_closure(
+    /// proof as the selected form. The fast identity rule checks exact ranges.
+    pub(in crate::surface::proof) fn try_bounded_observation_identity_closure(
         input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_bounded_cast_identity_closure");
+        crate::kernel::search::record_discovery("try_bounded_observation_identity_closure");
         let (Some(goal), Some(surface)) = (input.goal(), input.surface_goal()) else {
             return Ok(None);
         };
-        if bounded_cast_shape(goal).is_none() || has_retained_read_source(surface) {
+        if bounded_observation_shape(goal).is_none() || has_retained_read_source(surface) {
             return Ok(None);
         }
         let Some(candidates) =
@@ -323,42 +339,175 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .into_iter()
             .map(|(_, source)| source)
             .collect::<Vec<_>>();
-        Self::try_bounded_cast_identity_using(input, &premises)
+        Self::try_bounded_observation_identity_using(input, &premises)
     }
 
-    /// Weaken the selected bounds to the exact destination range, then
-    /// use the same local observation rule as a written known().
-    pub(in crate::surface::proof) fn try_bounded_cast_identity_using(
+    /// Weaken the selected bounds to the observation's exact range, then
+    /// let known check the explicit operation or conversion.
+    pub(in crate::surface::proof) fn try_bounded_observation_identity_using(
         input: &Proof<'a>,
         premises: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_bounded_cast_identity_using");
-        let (Some(goal), Some(ClickProposition::Comparison { left, right, .. })) =
-            (input.goal(), input.surface_goal())
+        crate::kernel::search::record_discovery("try_bounded_observation_identity_using");
+        use super::super::wide_arithmetic::have;
+        use crate::kernel::IntegerTerm;
+        let (Some(goal), Some(surface)) = (input.goal(), input.surface_goal()) else {
+            return Ok(None);
+        };
+        let Some(ClickProposition::Comparison {
+            mut left,
+            operator: ComparisonOperator::Equal,
+            mut right,
+        }) = integer_composition::canonical_surface(surface)
         else {
             return Ok(None);
         };
-        let Some((format, original_on_left)) = bounded_cast_shape(goal) else {
+        // A C comparison may promote a narrow result to the input's format.
+        // State the two original observations at their own types first.
+        let observed = if bounded_observation_shape(goal).is_none()
+            && matches!(
+                goal.condition_native(),
+                Some((
+                    ConditionTerm::Compare {
+                        relation: crate::kernel::CompareRelation::Equal,
+                        ..
+                    },
+                    true
+                ))
+            ) {
+            left = to_integer(&left);
+            right = to_integer(&right);
+            let comparison = eq(left.clone(), right.clone());
+            let kernel = input.lower_cited_surface_proposition(&comparison, "cast observation")?;
+            Some((comparison, kernel))
+        } else {
+            None
+        };
+        let Some((format, exact_on_left, exact)) =
+            bounded_observation_shape(observed.as_ref().map_or(goal, |(_, kernel)| kernel))
+        else {
             return Ok(None);
         };
-        let source = if original_on_left { left } else { right };
-        let (minimum, maximum) = format.bounds();
+        for premise in premises {
+            let kernel =
+                input.lower_cited_surface_proposition(premise, "observation identity premise")?;
+            if !input.facts().listed_premise_available(&kernel, &[], false) {
+                return Ok(None);
+            }
+        }
+        let (source, result) = if exact_on_left {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        let (min, max) = format.bounds();
         let integer_literal = |value: &BigInt| {
             super::super::surface_synthesis::integer_typed_expression(
                 surface_signed_integer_literal(value),
             )
         };
+        let source_range = match exact {
+            IntegerTerm::Machine(value) => Some(
+                crate::kernel::machine_integer::range::observation_range(value),
+            ),
+            _ => None,
+        };
         let mut proof = input.clone();
-        for bound in [
-            le(integer_literal(&minimum), source.clone()),
-            le(source.clone(), integer_literal(&maximum)),
-        ] {
-            let scope = proof.driver().open_have(bound)?;
-            let Some(closed) = scope.driver().try_integer_composition_using(premises)? else {
-                return Ok(None);
+        for (upper, endpoint) in [(false, min), (true, max)] {
+            let bound = |n: &BigInt| {
+                if upper {
+                    le(source.clone(), integer_literal(n))
+                } else {
+                    le(integer_literal(n), source.clone())
+                }
             };
-            proof = closed.join()?;
+            let target = bound(&endpoint);
+            let intrinsic = source_range.as_ref().and_then(|(min, max)| {
+                if upper && max <= &endpoint {
+                    Some(max)
+                } else if !upper && min >= &endpoint {
+                    Some(min)
+                } else {
+                    None
+                }
+            });
+            if let Some(intrinsic) = intrinsic {
+                if intrinsic == &endpoint {
+                    proof = proof
+                        .driver()
+                        .apply_step(have(target, vec![ProofStep::Known]))?;
+                } else {
+                    let source_bound = bound(intrinsic);
+                    proof = proof
+                        .driver()
+                        .apply_step(have(source_bound.clone(), vec![ProofStep::Known]))?;
+                    let scope = proof.driver().open_have(target)?;
+                    let Some(closed) = scope
+                        .driver()
+                        .try_integer_composition_using(&[source_bound])?
+                    else {
+                        return Ok(None);
+                    };
+                    proof = closed.join()?;
+                }
+            } else {
+                let scope = proof.driver().open_have(target)?;
+                let Some(closed) = scope.driver().try_integer_composition_using(premises)? else {
+                    return Ok(None);
+                };
+                proof = closed.join()?;
+            }
+        }
+        if let Some((comparison, _)) = &observed {
+            proof = proof
+                .driver()
+                .apply_step(have(comparison.clone(), vec![ProofStep::Known]))?;
+            // C promotes a signed narrow result to uint32 when comparing it
+            // with its unsigned source. That promotion preserves the value
+            // only once the equality above supplies the unsigned range.
+            if format.is_signed()
+                && format.bits() < 32
+                && matches!(exact, IntegerTerm::Machine(value) if value.ty() == MachineIntegerType::UInt32)
+                && matches!(
+                    goal.condition_native(),
+                    Some((
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::UInt32,
+                            ..
+                        },
+                        true
+                    ))
+                )
+            {
+                let Some(native) = integer_composition::observed_argument(&result) else {
+                    return Ok(None);
+                };
+                let identity = eq(result.clone(), source.clone());
+                let (min, max) = MachineIntegerType::UInt32.format().bounds();
+                for (source_bound, result_bound) in [
+                    (
+                        le(integer_literal(&min), source.clone()),
+                        le(integer_literal(&min), result.clone()),
+                    ),
+                    (
+                        le(source.clone(), integer_literal(&max)),
+                        le(result.clone(), integer_literal(&max)),
+                    ),
+                ] {
+                    proof = proof
+                        .driver()
+                        .apply_step(have(source_bound, vec![ProofStep::Known]))?;
+                    proof = proof.driver().apply_step(have(
+                        result_bound,
+                        vec![ProofStep::Rewrite(identity.clone()), ProofStep::Known],
+                    ))?;
+                }
+                let promoted = to_integer(&native_uint32_split_operand(native));
+                proof = proof
+                    .driver()
+                    .apply_step(have(eq(promoted, result), vec![ProofStep::Known]))?;
+            }
         }
         proof.driver().apply_step(ProofStep::Known).map(Some)
     }
@@ -569,7 +718,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return input.driver().apply_step(ProofStep::Known).map(Some);
         }
-        if let Some(closed) = Self::try_bounded_cast_identity_using(input, premises)? {
+        if let Some(closed) = Self::try_bounded_observation_identity_using(input, premises)? {
             return Ok(Some(closed));
         }
         // Native unsigned comparisons use their own observation, rather than
@@ -836,25 +985,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let goal = body.goal();
                 let mut known =
                     goal.is_some_and(crate::surface::planning::solve::computes_with_known);
-                let mut single_source = None;
+                let mut sources = Vec::with_capacity(premises.len());
                 let all_available = premises.iter().all(|source| {
                     body.lower_cited_surface_proposition(source, "interval source")
                         .is_ok_and(|premise| {
                             known |= goal == Some(&premise);
                             let available =
                                 body.facts().listed_premise_available(&premise, &[], false);
-                            if available && premises.len() == 1 {
-                                single_source = Some(premise);
-                            }
+                            sources.push(premise);
                             available
                         })
                 });
-                if !known
-                    && let Some(source) = single_source
-                    && let Some(closed) = driver.try_native_integer_bound(&source)?
-                    && closed.is_complete()
-                {
-                    return Ok(Some(closed.join()?));
+                if all_available && !known {
+                    for source in &sources {
+                        if let Some(closed) = driver.try_native_integer_bound(source)?
+                            && closed.is_complete()
+                        {
+                            return Ok(Some(closed.join()?));
+                        }
+                    }
                 }
                 let step = if all_available && known {
                     ProofStep::Known

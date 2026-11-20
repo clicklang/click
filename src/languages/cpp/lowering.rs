@@ -406,6 +406,10 @@ fn lower_parameter(
         pointer @ CppType::Pointer { .. } if scalar::record_pointee(pointer).is_some() => Ok(
             program_parameter(binding.clone(), ProgramType::Int32Pointer),
         ),
+        pointer if let Some(is_const) = scalar::void_pointer(pointer) => {
+            Ok(program_parameter(binding.clone(), ProgramType::VoidPointer)
+                .with_pointee_constant(is_const))
+        }
         CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some() => {
             Ok(program_parameter(
                 binding.clone(),
@@ -2058,15 +2062,7 @@ impl LoweringContext<'_> {
         &mut self,
         expression: &CppExpression,
     ) -> Result<ScalarEvaluation, String> {
-        let value_type = if scalar::record_pointee(expression.value_type()).is_some() {
-            ProgramType::Int32Pointer
-        } else if let CppType::Pointer { pointee } = expression.value_type() {
-            Scalar::pointer_element(pointee, true)
-                .and_then(|scalar| scalar.kind.pointer_kernel_type())
-                .ok_or("unsupported native pointer expression")?
-        } else {
-            cpp_return_scalar_type(expression.value_type())?
-        };
+        let value_type = cpp_return_scalar_type(expression.value_type())?;
         let (prefix, value, may_throw) = match expression {
             CppExpression::ObserverCall {
                 callee,
@@ -2120,6 +2116,16 @@ impl LoweringContext<'_> {
             CppExpression::PointerQualification { value, .. } => {
                 let input = self.normalize_expression(value)?;
                 (input.prefix, input.value, input.may_throw)
+            }
+            CppExpression::VoidPointerCast {
+                value, value_type, ..
+            } => {
+                let input = self.normalize_expression(value)?;
+                (
+                    input.prefix,
+                    erase_pointer_type(input.value, value_type),
+                    input.may_throw,
+                )
             }
             CppExpression::BytePointerCast { value, .. } => {
                 let input = self.normalize_expression(value)?;
@@ -2670,6 +2676,12 @@ impl LoweringContext<'_> {
                 self.lower_qualified_typed_load(pointer, field_type, pointee_constant)
             }
             CppExpression::PointerQualification { value, .. } => self.lower_expression(value),
+            CppExpression::VoidPointerCast {
+                value, value_type, ..
+            } => Ok(erase_pointer_type(
+                self.lower_expression(value)?,
+                value_type,
+            )),
             CppExpression::BytePointerCast { value, .. } => {
                 Ok(crate::kernel::program_expression::cast(
                     self.lower_expression(value)?,
@@ -2912,6 +2924,7 @@ fn expression_contains_observer(expression: &CppExpression) -> bool {
         | CppExpression::IntegralCast { value, .. }
         | CppExpression::EnumCast { value, .. }
         | CppExpression::PointerQualification { value, .. }
+        | CppExpression::VoidPointerCast { value, .. }
         | CppExpression::BytePointerCast { value, .. }
         | CppExpression::ReferenceBinding { address: value, .. }
         | CppExpression::Dereference { pointer: value, .. } => expression_contains_observer(value),
@@ -2954,6 +2967,9 @@ fn lower_binary_value(
 }
 
 fn cpp_return_scalar_type(value_type: &CppType) -> Result<ProgramType, String> {
+    if scalar::void_pointer(value_type).is_some() {
+        return Ok(ProgramType::VoidPointer);
+    }
     if scalar::record_pointee(value_type).is_some()
         || matches!(value_type, CppType::LvalueReference { .. })
             && scalar::record_referent(value_type).is_some()
@@ -2973,6 +2989,18 @@ fn cpp_return_scalar_type(value_type: &CppType) -> Result<ProgramType, String> {
         .ok_or_else(|| "unsupported C++ scalar kernel type".into())
 }
 
+fn erase_pointer_type(expression: ProgramExpression, value_type: &CppType) -> ProgramExpression {
+    ProgramExpression::Cast {
+        expression: Box::new(expression),
+        target_type: ProgramType::VoidPointer,
+        integer_mode: crate::kernel::IntegerCastMode::PointerCoercion,
+        pointee_struct: None,
+        pointee_volatile: false,
+        pointee_constant: scalar::returns_constant_element(value_type),
+        explicit_qualification: false,
+    }
+}
+
 /// The pointer that carries a native reference to `element`.
 fn element_pointer_type(element: Scalar) -> Result<ProgramType, String> {
     element
@@ -2986,7 +3014,7 @@ fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<ProgramType, String> {
         .filter(|kind| kind.is_integer() || matches!(kind, ScalarKind::Parameter(_)))
     {
         Ok(kind.kernel_type())
-    } else if is_native_object_pointer(value_type) {
+    } else if is_native_object_pointer(value_type) || scalar::void_pointer(value_type).is_some() {
         cpp_return_scalar_type(value_type)
     } else if scalar::record_pointee(value_type).is_some() {
         Ok(ProgramType::Int32Pointer)

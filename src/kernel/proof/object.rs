@@ -1892,7 +1892,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let ProofObligation::Proposition(goal) = &branch.obligation else {
             return Err("`both` requires a proposition goal");
         };
-        let Proposition::And(left, right) = goal.proposition() else {
+        let sequence = crate::kernel::spec::int32_sequence_equality_view(goal.proposition());
+        let Proposition::And(left, right) = sequence.as_ref().unwrap_or_else(|| goal.proposition())
+        else {
             return Err("`both` requires an `and` goal");
         };
         let arm = |proposition: &Proposition, left: bool| {

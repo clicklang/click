@@ -40,7 +40,7 @@ fn loop_exit_scalar_restatement_keeps_recorded_memory_effects() {
         let mut restatement = LoopExitRestatement::default();
         restatement.pin(&fresh, &held);
         let (exit, work) = crate::instrumentation::measure_deterministic_work(|| {
-            restatement.restate(facts, vec![], empty_checked_loan_evidence_sequence())
+            restatement.restate(facts, vec![], empty_checked_loan_evidence_sequence(), false)
         });
         assert!(exit.stated.contains_proposition(&original));
         let nested = Proposition::And(Box::new(effect.clone()), Box::new(guard(&fresh)));

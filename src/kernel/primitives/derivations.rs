@@ -1831,6 +1831,20 @@ impl ExecutionBudget {
         self.refuses_execution_identities
     }
 
+    /// A fresh identity for a resource instance this execution creates.
+    ///
+    /// An instance identity is its own sort: it is distinct from every other
+    /// instance identity, and is never compared with a value. It takes the
+    /// execution counter's next number, which no other instance this
+    /// execution created holds, and which is above every identity the
+    /// surface gives a binder (those count up from zero). Value freshness
+    /// therefore never has to reserve instance identities, nor instance
+    /// freshness values.
+    pub(in crate::kernel) fn allocate_instance_identity(&mut self) -> ExecutionResult<InstanceId> {
+        self.allocate_kernel_variable()
+            .map(InstanceId::from_variable)
+    }
+
     pub(in crate::kernel) fn allocate_kernel_variable(&mut self) -> ExecutionResult<Variable> {
         if self.refuses_execution_identities {
             return Err(ExecutionLimit::ExecutionIdentityBesideLiveState);

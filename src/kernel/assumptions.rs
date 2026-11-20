@@ -7312,6 +7312,15 @@ impl PureFactContext {
             record_implicit_consulted_premises(self, proposition);
             return true;
         }
+        if let Some(holds) = crate::kernel::spec::checks_int32_sequence_equality(
+            proposition,
+            true,
+            |condition, truth| {
+                self.proves_exact_unresolved(&Proposition::condition_is(condition.clone(), truth))
+            },
+        ) {
+            return holds;
+        }
         // Compound comparison identities select a held source, not a newly
         // manufactured alias. Exact membership stays separate.
         if !self.comparison_views.is_empty()
@@ -7388,6 +7397,17 @@ impl PureFactContext {
         ) && self.contains_proposition_fact(proposition)
         {
             return true;
+        }
+        if let Some(holds) = crate::kernel::spec::checks_int32_sequence_equality(
+            proposition,
+            true,
+            |condition, value| {
+                crate::kernel::machine_integer::comparison::closed_condition_value(condition)
+                    == Some(value)
+                    || self.knows_condition_or_stated_separation(condition, value)
+            },
+        ) {
+            return holds;
         }
         match proposition {
             Proposition::MemoryReadDefined {

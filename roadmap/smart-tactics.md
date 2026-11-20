@@ -95,13 +95,19 @@ declarations, stores and checked calls whose write set is one range in an automa
 object. Declared predicates also retain that entry version for external
 `int32` array arguments, including when unfolding their bodies or raising
 a predicate fact. Scalar fold instantiation keeps a selected entry point
-when the substituted index still uses the indexed entry selector.
+when the substituted index still uses the indexed entry selector. Checked
+resource quantities and materialized resource cells share that entry point for
+an `int32` field at a fixed displacement from its external parameter. Computed
+scalar fold endpoints, ordinary checked reads, loop boundaries and iterated
+ownership guards also carry the selected entry point. A join retains it when all incoming paths
+establish the same unchanged entry version. Scalar canonicalization,
+congruence and Integer arithmetic retain the point through comparison.
 
 The remaining memory-state paths have production callers:
 
 | Path | Remaining caller |
 | --- | --- |
-| Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for generic parameter cells. `canonical_scalar_read` and the congruence key still bridge scalar entry reads to the empty view for legacy producers, including computed fold endpoints, contract-entry resource quantities and loop-boundary reads. |
+| Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for generic parameter cells. |
 | Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` still construct memory-state observations for bare memory producers and unsupported indexed types or addresses. |
 | Preservation | `array_ref_argument_point` uses the block version walk outside the indexed suffix, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
 | Raising | `synthesize_at_memory` still raises function and predicate array arguments that carry a bare memory view. Legacy scalar and abstract reads use `RecordedStates::point_reading_load`. |

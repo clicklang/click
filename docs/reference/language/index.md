@@ -223,7 +223,9 @@ parenthesized: `p as (uint8 *)`, `p as (void *)`, `p as (struct node *)`,
 and a pointer to a struct. Native pointer targets may add `const`, `volatile`,
 or both before the pointee type, such as `p as (const uint8 *)`; struct pointer
 targets support `const`. An unqualified byte view inherits its source's const
-qualification. Qualifying a pointer grants no memory access permission. A Rust source's sidecar
+qualification. In a contract, casting a `void *` to an unsigned byte pointer
+keeps the bounds carried by the void pointer. Qualifying a pointer grants no
+memory access permission. A Rust source's sidecar
 also writes Rust's scalar names, `x as u32`.
 
 Float pointer casts preserve the address and use the existing pointer-cast

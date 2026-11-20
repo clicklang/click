@@ -2892,9 +2892,9 @@ fn selected_call_binder_application(
                 continue;
             }
             let fresh = budget
-                .allocate_kernel_variable()
+                .allocate_instance_identity()
                 .map_err(|_| "a produced instance could not be named")?;
-            inferred.insert_instance(identity, InstanceId::from_variable(fresh));
+            inferred.insert_instance(identity, fresh);
         }
     }
     let bindings = match (written, inferred.is_empty()) {
@@ -2963,8 +2963,7 @@ pub(crate) fn exit_with_unheld_produced_binders_adopted(
             .into_iter()
             .filter(|instance| {
                 !binders.contains(&instance.identity())
-                    && instance.identity().variable().0
-                        >= crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE
+                    && instance.identity().created_by_execution()
             })
             .collect::<Vec<_>>()[..]
         else {
@@ -3421,13 +3420,22 @@ fn execute_verified_function_applications_with_suspension(
         )]);
     }
     budget.consume_function_call()?;
+    let fact_bound = assumptions.execution_variable_ceiling();
     let existing_variables = crate::instrumentation::measure_operation(
         application.name,
         "verified function rule application",
         "verified call variable collection",
         || {
             let mut existing_variables = BTreeSet::new();
-            collect_execution_state_bitvector_variables(caller_state, &mut existing_variables);
+            let caller_bound = caller_state_variable_bound(caller_state);
+            // Usual callers continue above everything they issued. For a
+            // supplied state with live identities above the mark, retain
+            // exact membership so a free identity below its bound stays usable.
+            if caller_bound.is_some_and(|bound| {
+                bound.0 >= budget.next_kernel_variable && Some(bound) > fact_bound
+            }) {
+                collect_call_caller_state_variables(caller_state, &mut existing_variables);
+            }
             for application in applications {
                 collect_program_function_contract_interface_bitvector_variables(
                     application.interface,
@@ -3444,7 +3452,7 @@ fn execute_verified_function_applications_with_suspension(
     // collected: collecting walked every fact, and every state a fact
     // names, at every call.
     let mut variables = KernelVariableGenerator::fresh_for_execution(existing_variables)
-        .reserving_through(assumptions.execution_variable_ceiling());
+        .reserving_through(fact_bound);
     let memory_identity = variables.next_in(budget)?;
     let result_identity = variables.next_in(budget)?;
     let exceptional_payload_identity =
@@ -8517,7 +8525,7 @@ fn matched_instance_body_ownership(
         return None;
     };
     let projection = ResourceFieldProjection {
-        identity: instance.identity(),
+        identity: instance.identity().into(),
         children: Vec::new(),
         field_index: matched.field_index,
         at_entry: false,
@@ -9085,16 +9093,15 @@ impl<'a> OwnedFootprintDerivation<'a> {
         }
         // Interpret logical parent fields without granting body ownership.
         if let Some(values) = fields.iter().cloned().collect::<Option<Vec<_>>>()
-            && let Some(instance) = ResourceInstance::new(
-                InstanceId::from_variable(Variable(u64::MAX)),
+            && let Some(view) = ResourceInstance::field_view(
                 definition.name().to_string(),
                 arguments.iter().cloned().collect(),
                 schema.clone(),
                 values.into_iter().collect(),
             )
         {
-            evaluation.instance_field_scope = ResourceContext::new()
-                .unchecked_with_fact(ResourceFact::own(Resource::Instance(instance)));
+            evaluation.instance_field_scope = ResourceContext::new();
+            evaluation.body_field_view = Some(std::sync::Arc::new(view));
             evaluation.resource_bindings = None;
         }
         for ((name, _), value) in schema.fields().iter().zip(fields) {
@@ -9175,8 +9182,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
         if let (Some(schema), Some(fields)) = (
             definition.instance_schema.as_ref(),
             fields.iter().cloned().collect::<Option<Vec<_>>>(),
-        ) && let Some(instance) = ResourceInstance::new(
-            InstanceId::from_variable(Variable(u64::MAX)),
+        ) && let Some(instance) = ResourceInstance::field_view(
             definition.name().to_string(),
             arguments.iter().cloned().collect(),
             schema.clone(),
@@ -15779,10 +15785,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     child_evaluation.resources = body.clone();
     let child_assumptions = assumptions.clone().require_owned_expression_loads();
     let mut resource_bindings = ResourceBindings::new();
-    resource_bindings.insert_instance(
-        InstanceId::from_variable(Variable(u64::MAX)),
-        instance.identity,
-    );
+    resource_bindings.bind_body(instance.identity);
     let mut introduced_children: Vec<ResourceInstance> = Vec::new();
     let mut child_read_definitions = Vec::new();
     for child in body_children {

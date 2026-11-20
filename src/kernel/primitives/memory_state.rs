@@ -8695,7 +8695,7 @@ impl ExecutionState {
                 },
             });
         }
-        let parts: [(&str, bool); 22] = [
+        let parts: [(&str, bool); 23] = [
             ("memory", self.memory != other.memory),
             ("the local variables", self.locals != other.locals),
             (
@@ -8705,6 +8705,10 @@ impl ExecutionState {
             (
                 "the instance field scope",
                 self.instance_field_scope != other.instance_field_scope,
+            ),
+            (
+                "the body field view",
+                self.body_field_view != other.body_field_view,
             ),
             (
                 "the aggregate destination",
@@ -8821,6 +8825,7 @@ impl ExecutionState {
             && same_or_empty_persistent_map(&self.locals.bindings, &other.locals.bindings)
             && same_or_empty_persistent_map(&self.locals.slots, &other.locals.slots)
             && same_or_empty_resources(&self.instance_field_scope, &other.instance_field_scope)
+            && self.body_field_view == other.body_field_view
             && same_or_empty_resources(&self.resources, &other.resources)
             && self.loan_ledger == other.loan_ledger
             && self.loan_participant == other.loan_participant
@@ -8851,7 +8856,7 @@ impl ExecutionState {
 
     pub(crate) fn resource_instance_at_path(
         &self,
-        identity: InstanceId,
+        identity: impl Into<InstanceRef>,
         children: &[String],
     ) -> Option<&ResourceInstance> {
         if !children.is_empty() {
@@ -8866,20 +8871,40 @@ impl ExecutionState {
             None => Some(identity),
         }
     }
+    /// The instance a field read names. [`InstanceRef::Body`] is the opened
+    /// instance its body binding names, or else the field view of a
+    /// definition evaluated without one.
     pub(crate) fn resource_instance_fields(
         &self,
-        identity: InstanceId,
+        identity: impl Into<InstanceRef>,
     ) -> Option<&ResourceInstance> {
-        let actual = self.bound_instance(identity)?;
+        let actual = match identity.into() {
+            InstanceRef::Body => {
+                match self
+                    .resource_bindings
+                    .as_ref()
+                    .and_then(|bindings| bindings.body())
+                {
+                    Some(actual) => actual,
+                    None => return self.body_field_view.as_deref(),
+                }
+            }
+            InstanceRef::Instance(identity) => self.bound_instance(identity)?,
+        };
         self.resources
             .owned_instance(actual)
             .or_else(|| self.instance_field_scope.owned_instance(actual))
     }
+    /// The owned instance a reference names. [`InstanceRef::Body`] names
+    /// only an opened instance: a definition's field view is never owned.
     pub(crate) fn owned_resource_instance(
         &self,
-        identity: InstanceId,
+        identity: impl Into<InstanceRef>,
     ) -> Option<&ResourceInstance> {
-        let actual = self.bound_instance(identity)?;
+        let actual = match identity.into() {
+            InstanceRef::Body => self.resource_bindings.as_ref()?.body()?,
+            InstanceRef::Instance(identity) => self.bound_instance(identity)?,
+        };
         self.resources.owned_instance(actual)
     }
     pub(crate) fn resolve_named_mutex_authority(
@@ -10700,6 +10725,12 @@ impl ExecutionState {
             None,
             super::intern_memory_ref(&self.memory),
         );
+    }
+
+    /// Summarize the installed inputs while establishing an execution entry.
+    /// Later calls need only the bindings and resources changed from it.
+    pub(crate) fn prepare_modular_call_reservations(&self) {
+        crate::kernel::reasoning::caller_state_variable_bound(self);
     }
 
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {

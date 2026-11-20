@@ -777,7 +777,7 @@ pub(super) fn forced_refinement_instance_bindings(
         {
             return Ok(None);
         }
-        let identity = InstanceId::from_variable(budget.allocate_kernel_variable()?);
+        let identity = budget.allocate_instance_identity()?;
         let instance = |budget: &mut ExecutionBudget| -> ExecutionResult<ResourceInstance> {
             let fields = arbitrary_resource_instance_fields(
                 &target.schema,

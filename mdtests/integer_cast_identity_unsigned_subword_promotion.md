@@ -1,7 +1,7 @@
 # A stored unsigned sub-word retains its promoted observation
 
-Arithmetic search expands to ordinary proof steps, with the selected premises
-stated explicitly in `solve() using { ... }`.
+The proof names the stored expression at both widths. The entry bounds
+relate the narrowed value to the original parameter.
 
 ```c filename=lane.c
 void store_lane(uint16 *out, uint32 value) {
@@ -20,9 +20,12 @@ void store_lane(uint16 *out, uint32 value) {
     ensures to_integer(*out as int32) == to_integer(*out);
 } by {
     step_until(function.exit);
-    have to_integer(*out) == to_integer(old(value)) by { solve() using { 0 <= to_integer(old(value)); to_integer(old(value)) <= 65535; }; }
-    have to_integer(*out as int32) == to_integer(*out) by { solve() using { 0 <= to_integer(*out); to_integer(*out) <= 65535; }; }
-    solve() using { to_integer(*out as int32) == to_integer(*out); };
+    have to_integer(*out) == to_integer((((old(value) & 65535u32) as int32) as uint16)) by known();
+    have to_integer((((old(value) & 65535u32) as int32) as uint16)) == to_integer(old(value)) by known();
+    have to_integer(*out) == to_integer(old(value)) by known();
+    have to_integer(*out as int32) == to_integer((((old(value) & 65535u32) as int32) as uint16) as int32) by known();
+    have to_integer((((old(value) & 65535u32) as int32) as uint16) as int32) == to_integer((((old(value) & 65535u32) as int32) as uint16)) by known();
+    known();
 }
 ```
 

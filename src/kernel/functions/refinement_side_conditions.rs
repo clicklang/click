@@ -187,6 +187,16 @@ pub(in crate::kernel) fn spec_algebraic_expression_is_state_independent(
     spec_tree_all(SpecNode::Algebraic(expression), state_independent_node)
 }
 
+pub(in crate::kernel) fn spec_sequence_is_state_independent(
+    sequence: &SpecSequenceExpression,
+) -> bool {
+    spec_tree_all(SpecNode::Sequence(sequence), |node| match node {
+        SpecNode::Sequence(_) => Visit::Descend,
+        SpecNode::Expression(SpecExpression::LoopEntryState(_)) => Visit::Stop(()),
+        node => state_independent_node(node),
+    })
+}
+
 /// Whether one spec node reads no program state of its own. Anything not
 /// listed reads state, or is not supported here, and refuses.
 pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {

@@ -185,7 +185,7 @@ mod tests {
                 vec![SpecProposition::Comparison {
                     left: SpecExpression::ResourceField {
                         projection: ResourceFieldProjection {
-                            identity: InstanceId::from_variable(Variable(identity)),
+                            identity: InstanceId::from_variable(Variable(identity)).into(),
                             children: vec![],
                             field_index: 0,
                             at_entry,

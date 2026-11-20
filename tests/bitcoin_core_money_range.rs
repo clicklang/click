@@ -5620,6 +5620,14 @@ const SPANREADER_IGNORE_CPP: &str =
     include_str!("../integrations/bitcoin-core-money-range/SpanReaderIgnore.cpp");
 
 fn pinned_streams_fixture(name: &str) -> (PathBuf, PreparedCppImport) {
+    pinned_streams_selected_fixture(name, "span-probe.cpp", "probe")
+}
+
+fn pinned_streams_selected_fixture(
+    name: &str,
+    logical_source: &str,
+    function: &str,
+) -> (PathBuf, PreparedCppImport) {
     let root = std::env::temp_dir().join(format!(
         "click-bitcoin-streams-{name}-{}",
         std::process::id()
@@ -5682,23 +5690,43 @@ fn pinned_streams_fixture(name: &str) -> (PathBuf, PreparedCppImport) {
     let exporter = root.join("click-cpp-exporter");
     fs::copy(std::env::var("CLICK_CPP_EXPORTER").unwrap(), &exporter).unwrap();
     let header = "sysroot/usr/include/c++/12/bits/ios_base.h";
-    let config = serde_json::json!({
+    let mut config = serde_json::json!({
         "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
         "exceptions": true, "rtti": true, "exception_behavior": "ios_failure", "exporter": exporter,
         "compilation_database": "compile_commands.json", "working_directory": ".",
-        "source": "span-probe.cpp", "logical_source": "span-probe.cpp",
+        "source": "span-probe.cpp", "logical_source": logical_source,
         "dependencies": ["bitcoin-src/src/streams.h", "clang-resource/include/__stddef_size_t.h", header,
             "sysroot/usr/include/c++/12/cstddef", "sysroot/usr/include/c++/12/span", "sysroot/usr/include/x86_64-linux-gnu/c++/12/bits/c++config.h"],
         "library_assertions": [{"kind": "opaque_exception_constructor", "function": "std::ios_base::failure::failure",
             "header": header, "sha256": sha256(&fs::read(root.join(header)).unwrap())}],
-        "function": "probe", "artifact": "span.click-cpp.json"
+        "function": function, "artifact": "span.click-cpp.json"
     });
+    config["dependencies"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|dependency| dependency.as_str() != Some(logical_source));
     let config_path = root.join("span.import-description.json");
     fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
     refresh_import(&config_path).unwrap();
     fs::remove_file(exporter).unwrap();
     let import = load_import(&config_path).unwrap();
     (root, import)
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: pinned Bitcoin read capture"]
+fn pinned_spanreader_read_captures_the_canonical_memcpy_call() {
+    let (root, import) =
+        pinned_streams_selected_fixture("read", "bitcoin-src/src/streams.h", "SpanReader::read");
+    assert_eq!(import.export().functions[0].path, ["SpanReader", "read"]);
+    assert!(import.export().reachable_functions.iter().any(|function| {
+        function.axiom.as_ref().is_some_and(|axiom| {
+            axiom.qualified_name == "memcpy"
+                && axiom.signature == "void *(void *, const void *, unsigned long) noexcept"
+        })
+    }));
+    fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

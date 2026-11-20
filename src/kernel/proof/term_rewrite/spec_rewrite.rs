@@ -164,11 +164,8 @@ fn collect_spec_integer_carriers(
         return;
     }
     match expression {
-        SpecIntegerExpression::ResourceField(projection) => {
-            variables
-                .program_values
-                .insert(projection.identity.variable());
-        }
+        // A projection's instance identity is not a value a binder can capture.
+        SpecIntegerExpression::ResourceField(_) => {}
         SpecIntegerExpression::Term(term) => {
             collect_integer_carriers(term, variables, integer_seen)
         }
@@ -304,11 +301,7 @@ fn collect_spec_expression_carriers(
         SpecExpression::IntegerToMachine { value, .. } => {
             collect_spec_integer_carriers(value, variables, integer_seen)
         }
-        SpecExpression::ResourceField { projection, .. } => {
-            variables
-                .program_values
-                .insert(projection.identity.variable());
-        }
+        SpecExpression::ResourceField { .. } => {}
         SpecExpression::AlgebraicMatch { scrutinee, arms } => {
             collect_spec_algebraic_carriers(scrutinee, variables, integer_seen);
             if variables.exhausted() {
@@ -507,11 +500,7 @@ fn collect_spec_algebraic_carriers(
             variables.algebraic.insert(*variable);
         }
         SpecAlgebraicExpressionNode::Binding(_) => {}
-        SpecAlgebraicExpressionNode::ResourceField(projection) => {
-            variables
-                .program_values
-                .insert(projection.identity.variable());
-        }
+        SpecAlgebraicExpressionNode::ResourceField(_) => {}
         SpecAlgebraicExpressionNode::ProgramValue(value) => {
             collect_spec_expression_carriers(value, variables, integer_seen)
         }

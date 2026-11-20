@@ -52,7 +52,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if let Some(premises) = &premises
             && let Some(closed) = attempt::candidate_outcome(
-                Self::try_bounded_cast_identity_using(search_input, premises),
+                Self::try_bounded_observation_identity_using(search_input, premises),
             )?
             .flatten()
         {
@@ -468,14 +468,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed));
         }
-        if retained
-            && let [source] = kernels.as_slice()
-            && let Some(closed) = Self::try_native_integer_bound(search_input, source)?
-            && closed.is_complete()
-        {
-            return Ok(Some(closed));
-        }
         if retained {
+            for source in &kernels {
+                if let Some(closed) = Self::try_native_integer_bound(search_input, source)?
+                    && closed.is_complete()
+                {
+                    return Ok(Some(closed));
+                }
+            }
             let step = if kernels.contains(goal)
                 || crate::surface::planning::solve::computes_with_known(goal)
             {
@@ -1148,7 +1148,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known));
         }
-        if matches!(search_input.goal(), Some(Proposition::And(_, _))) {
+        if search_input.has_conjunctive_goal() {
             let Some((split_proof, split, ids)) =
                 attempt::candidate_outcome(search_input.split_focused_both())?
             else {
@@ -2851,9 +2851,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             scope.succeed();
             return Ok(Some(proof));
         }
-        if let Some(proof) =
-            attempt::candidate_outcome(Self::try_bounded_cast_identity_closure(search_input))?
-                .flatten()
+        if let Some(proof) = attempt::candidate_outcome(
+            Self::try_bounded_observation_identity_closure(search_input),
+        )?
+        .flatten()
         {
             scope.succeed();
             return Ok(Some(proof));
@@ -6620,7 +6621,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )? {
             return Ok(Some(proof));
         }
-        if matches!(goal, Proposition::And(_, _)) {
+        if search_input.has_conjunctive_goal() {
             // The split owns the checked Surface-to-kernel correspondence.
             // In particular, a lowered existential body may be a conjunction
             // whose written Surface spelling is only the body; do not gate
@@ -10656,7 +10657,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
             }
         }
-        if matches!(search_input.goal(), Some(Proposition::And(..)))
+        if search_input.has_conjunctive_goal()
             && !matches!(search_input.surface_goal(), Some(ClickProposition::And(..)))
             && !search_input.goal().is_some_and(|goal| {
                 crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)

@@ -751,6 +751,57 @@ fn aggregate_copy_symbolic_result_has_a_fresh_identity_per_call() {
     assert_ne!(pointer(&first).base, pointer(&second).base);
 }
 
+#[test]
+fn a_modular_call_preserves_sparse_caller_reservations() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = ExecutionBudget::KERNEL_VARIABLE_BASE;
+    let reserved = Variable(base + 1);
+    let function = program_function(
+        ProgramType::Int32,
+        "fresh_result",
+        Vec::new(),
+        program_return(crate::kernel::program_expression::int32_literal(0)),
+    );
+    let application = FunctionContractApplication {
+        pointer_result: None,
+        name: function.name(),
+        interface_name: function.name(),
+        interface: function.contract_interface(),
+        storage: Some(&function),
+        evidence: None,
+        framed_rule: None,
+        representation_copy: None,
+        value_arguments: &[],
+    };
+    let caller = ExecutionState::new()
+        .with_population_creation_tracking()
+        .with_local("live", ProgramValue::Int32(MachineTerm::Variable(reserved)));
+    let mut budget = ExecutionBudget::for_new_execution();
+    let paths = execute_verified_function_applications_with_suspension(
+        &caller,
+        &[application],
+        None,
+        None,
+        &[],
+        &PureFactContext::new(),
+        &ExecutionEnvironment::new(),
+        &mut budget,
+        None,
+    )
+    .expect("modular call");
+    let [path] = paths.as_slice() else {
+        panic!("expected one call outcome");
+    };
+    let FunctionOutcome::Return { value, .. } = &path.outcome else {
+        panic!("expected a returned value, got {:?}", path.outcome);
+    };
+    assert_eq!(
+        value.native().as_ref(),
+        &ProgramValue::Int32(MachineTerm::Variable(Variable(base + 2))),
+    );
+    assert_eq!(budget.next_kernel_variable(), 3);
+}
+
 // A by-value result must not erase the caller's read history. Check the
 // value judgment and its certificate, then refuse it across an actual write.
 #[test]
