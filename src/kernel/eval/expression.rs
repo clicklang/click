@@ -3570,7 +3570,7 @@ fn read_retained_lvalue_paths_without_ranges(
                 let entry_source = (has_read_resource
                     && matches!(
                         lvalue.value_type,
-                        ProgramType::Int32 | ProgramType::Parameter(_)
+                        ProgramType::Int32 | ProgramType::UInt32 | ProgramType::Parameter(_)
                     )
                     && pointer.base == AddressBase::ExternalArgument
                     && (!lvalue.is_volatile() || SpecificationAccessScope::is_active()))
