@@ -1103,8 +1103,8 @@ fn block_last_same_version_point(memory: &SharedMemory, block: &AddressBase) -> 
     // array fact after each of N steps walks the whole chain N times and
     // costs N^2 hops; with it, a walk from a new state meets a recorded
     // answer after one hop, so the whole proof costs one hop per state.
-    // `an_array_fact_carried_across_local_stores_scales_linearly` is the
-    // regression that tells those apart.
+    // The checked-call case in `an_array_fact_carried_across_declarations_and_calls_scales_linearly`
+    // covers this memoization.
     let mut path = Vec::new();
     let version = crate::instrumentation::measure_operation(
         "kernel",

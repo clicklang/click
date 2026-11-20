@@ -8435,7 +8435,17 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
         return source.clone();
     };
     let block = &pointer.address().base;
-    if let Some(entry) = source.entry_array_version(block) {
+    let entry = crate::instrumentation::measure_operation(
+        "kernel",
+        "canonical form",
+        "array-ref entry version",
+        || {
+            let entry = source.entry_array_version(block)?;
+            crate::instrumentation::record_deterministic_work(1);
+            Some(entry)
+        },
+    );
+    if let Some(entry) = entry {
         return entry;
     }
     let start = source.parameter_read_start(block);

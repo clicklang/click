@@ -3525,15 +3525,14 @@ fn array_fact_across_calls(statement_count: usize) -> (String, String) {
     (c_source, click_source)
 }
 
-/// The block version walk's own work over one fixture family, for the sizes
-/// given. A missing entry means the fixture stopped exercising the walk, which
-/// would make an assertion about its shape vacuous.
-fn block_version_walk_curve(
+/// Array-version selection work across one fixture family. Each fixture
+/// must exercise its selected operation.
+fn array_version_work_curve(
     label: &str,
     file: &str,
+    operation: &str,
     fixture: impl Fn(usize) -> (String, String),
 ) -> Vec<ScalingSample> {
-    const WALK: &str = "operation `array-ref block version walk`";
     [2, 4, 8, 16]
         .into_iter()
         .map(|size| {
@@ -3546,9 +3545,10 @@ fn block_version_walk_curve(
             });
             ScalingSample {
                 size: sample.size,
-                work: *sample.named_work.get(WALK).unwrap_or_else(|| {
-                    panic!("fixture did not reach the version walk: {sample:?}")
-                }),
+                work: *sample
+                    .named_work
+                    .get(operation)
+                    .unwrap_or_else(|| panic!("fixture did not reach {operation}: {sample:?}")),
                 named_work: BTreeMap::new(),
             }
         })
@@ -3569,27 +3569,27 @@ fn block_version_walk_curve(
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn an_array_fact_carried_across_declarations_and_calls_scales_linearly() {
     assert_near_linear_scaling(
-        "array-ref block version walk across declarations",
-        &block_version_walk_curve("array-fact-across-declarations", "bump.c", |size| {
-            array_fact_across_declarations(size)
-        }),
+        "array-ref entry version across declarations",
+        &array_version_work_curve(
+            "array-fact-across-declarations",
+            "bump.c",
+            "operation `array-ref entry version`",
+            array_fact_across_declarations,
+        ),
     );
     assert_near_linear_scaling(
         "array-ref block version walk across calls",
-        &block_version_walk_curve("array-fact-across-calls", "keep_h.c", |size| {
-            array_fact_across_calls(size)
-        }),
+        &array_version_work_curve(
+            "array-fact-across-calls",
+            "keep_h.c",
+            "operation `array-ref block version walk`",
+            array_fact_across_calls,
+        ),
     );
 }
 
-/// Carrying one array fact across N steps that cannot touch the array costs
-/// work linear in N, not quadratic.
-///
-/// The array argument names a block version, and the version is a walk back along
-/// the derivation edges to the last one that could have changed the block. Run
-/// per step with no memo, that walk is N hops at the Nth step and the proof
-/// costs N^2; memoized per interned state and block it is one hop per new
-/// state. This is the regression that tells those two apart.
+/// Each use of an array fact across disjoint local stores selects the same
+/// entry version through the recorded path index.
 #[test]
 fn an_array_fact_carried_across_local_stores_scales_linearly() {
     let samples = [4, 8, 16, 32]
@@ -3611,23 +3611,19 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
 
     assert_near_linear_scaling("array fact across unrelated local stores", &samples);
 
-    // The walk itself is the part at risk, and it is a small share of a
-    // proof's work, so assert on its own measured work rather than on the
-    // total it hides inside. A missing entry means the fixture stopped
-    // exercising the walk at all, which would make the rest vacuous.
-    const WALK: &str = "operation `array-ref block version walk`";
-    let walk = samples
+    const ENTRY: &str = "operation `array-ref entry version`";
+    let naming = samples
         .iter()
         .map(|sample| ScalingSample {
             size: sample.size,
             work: *sample
                 .named_work
-                .get(WALK)
-                .unwrap_or_else(|| panic!("fixture did not reach the version walk: {sample:?}")),
+                .get(ENTRY)
+                .unwrap_or_else(|| panic!("fixture did not use the entry index: {sample:?}")),
             named_work: BTreeMap::new(),
         })
         .collect::<Vec<_>>();
-    assert_near_linear_scaling("array-ref block version walk", &walk);
+    assert_near_linear_scaling("array-ref entry version", &naming);
 }
 
 /// The first array read after a long run of disjoint statements must not
