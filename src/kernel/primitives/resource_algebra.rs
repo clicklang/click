@@ -8567,11 +8567,84 @@ impl ResourceContext {
                 candidates.extend(remaining);
             }
         }
+        let merge_candidates = fact.is_own().then(|| candidates.clone());
         if self.consume_fact_from_candidates(fact, assumptions, candidates) {
+            return true;
+        }
+        if let Some(candidates) = merge_candidates
+            && self.consume_fact_from_merged_units(fact, assumptions, &candidates)
+        {
             return true;
         }
         fact.owned_quantity_term()
             .is_some_and(|quantity| resource_quantity_resolves_to_zero(quantity, assumptions))
+    }
+
+    /// Consume a constant owned quantity no single held unit covers from
+    /// several plain units of the same resource. A body that took one of two
+    /// `slot(pool)` and later produced another holds `slot(pool) x 1` twice;
+    /// a context only merges them when it normalizes, which consumption
+    /// deliberately does not do first. The units are those the consumption
+    /// already selected by key, merged with the family's own pair rule in
+    /// their index order until one merged unit covers `fact`. Memory keeps
+    /// its own supplier composition, and a unit with a loan, support or
+    /// witness keeps its identity.
+    fn consume_fact_from_merged_units(
+        &mut self,
+        fact: &ResourceFact,
+        assumptions: &PureFactContext,
+        candidates: &[ResourceEntryId],
+    ) -> bool {
+        if fact.memory_range().is_some()
+            || fact
+                .owned_quantity_term()
+                .and_then(MachineTerm::as_const)
+                .is_none()
+        {
+            return false;
+        }
+        let algebra = resource_family_algebra(fact.family());
+        let mut merged: Option<ResourceFact> = None;
+        let mut used = Vec::new();
+        for &entry in candidates {
+            crate::instrumentation::record_deterministic_work(1);
+            let unit = self.fact(entry);
+            if used.contains(&entry)
+                || !self.delta_normalization_eligible(entry)
+                || !unit.is_own()
+                || unit.resource() != fact.resource()
+                || unit
+                    .owned_quantity_term()
+                    .and_then(MachineTerm::as_const)
+                    .is_none()
+            {
+                continue;
+            }
+            let next = match &merged {
+                None => unit.clone(),
+                Some(merged) => {
+                    let Some(next) = normalize_resource_fact_pair(merged, unit, assumptions) else {
+                        continue;
+                    };
+                    next
+                }
+            };
+            used.push(entry);
+            if used.len() > 1
+                && let Some(ResourceFactConsumption::Replace(residual)) =
+                    algebra.consume(&next, fact, assumptions)
+            {
+                for entry in &used {
+                    self.remove_entry(*entry);
+                }
+                for residual in residual {
+                    self.insert_fact(residual);
+                }
+                return true;
+            }
+            merged = Some(next);
+        }
+        false
     }
 
     fn consume_fact_from_candidates(
