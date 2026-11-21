@@ -3756,7 +3756,10 @@ fn canonical_load_naming_retains_the_live_memory_origin() {
         crate::kernel::MachineOperandView::Legacy(&read),
     )
     .unwrap();
-    assert_eq!((observed.origin, observed.pointer), (Some(live), pointer));
+    assert_eq!(
+        (observed.origin, observed.pointer),
+        (Some(ProgramPoint::at(&live)), pointer)
+    );
     assert_eq!(crate::kernel::eval::load_variable_registry_len(), 0);
 }
 

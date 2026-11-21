@@ -3499,8 +3499,7 @@ pub(super) fn unresolved_load(value: &ProgramValue) -> Option<(SharedMemory, Add
         widened_word(term),
     ))?;
     Some((
-        read.origin
-            .unwrap_or_else(|| read.point.into_shared_memory()),
+        read.origin.unwrap_or(read.point).into_shared_memory(),
         read.pointer,
     ))
 }

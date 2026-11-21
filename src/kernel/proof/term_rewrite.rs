@@ -6914,7 +6914,7 @@ impl<'a> TermRewrite<'a> {
                 }
                 let memory = observation
                     .filter(|_| use_origin)
-                    .and_then(|read| read.origin)
+                    .and_then(|read| read.origin.map(|point| point.into_shared_memory()))
                     .unwrap_or_else(|| memory.shared_memory().clone());
                 if self.resolve_registered_loads
                     && let Some(value) = memory

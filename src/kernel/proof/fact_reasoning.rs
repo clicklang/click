@@ -3262,7 +3262,7 @@ impl<'a> OriginsUnchanged<'a> {
                 crate::kernel::MachineOperandView::Legacy(term),
             )?;
             Some(MachineTerm::MemoryLoad(
-                ProgramPoint::at(&(read.origin?)),
+                read.origin?.for_legacy_read(),
                 Box::new(read.pointer),
                 read.kind,
             ))

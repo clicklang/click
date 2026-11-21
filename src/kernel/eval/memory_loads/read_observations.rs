@@ -12,7 +12,7 @@ struct Record {
     point: ProgramPoint,
     pointer: Address,
     kind: LoadKind,
-    origin: SharedMemory,
+    origin: ProgramPoint,
     epoch: u64,
     bytes: u32,
     typed: bool,
@@ -66,14 +66,20 @@ pub(super) fn record(
     origin: &SharedMemory,
     bytes: u32,
 ) -> Id {
-    record_at(&ProgramPoint::at(memory), pointer, kind, origin, bytes)
+    record_at(
+        &ProgramPoint::at(memory),
+        pointer,
+        kind,
+        &ProgramPoint::at(origin),
+        bytes,
+    )
 }
 
 pub(super) fn record_at(
     point: &ProgramPoint,
     pointer: &Address,
     kind: LoadKind,
-    origin: &SharedMemory,
+    origin: &ProgramPoint,
     bytes: u32,
 ) -> Id {
     record_with_width(point, pointer, kind, origin, bytes, true)
@@ -89,7 +95,7 @@ pub(super) fn record_untyped(
         &ProgramPoint::at(memory),
         pointer,
         kind,
-        origin,
+        &ProgramPoint::at(origin),
         kind.unrecorded_access_byte_width(),
         false,
     )
@@ -99,7 +105,7 @@ fn record_with_width(
     point: &ProgramPoint,
     pointer: &Address,
     kind: LoadKind,
-    origin: &SharedMemory,
+    origin: &ProgramPoint,
     bytes: u32,
     typed: bool,
 ) -> Id {
@@ -141,7 +147,7 @@ fn record_with_width(
     })
 }
 
-fn refresh_record(record: &mut Record, origin: &SharedMemory, epoch: u64, bytes: u32, typed: bool) {
+fn refresh_record(record: &mut Record, origin: &ProgramPoint, epoch: u64, bytes: u32, typed: bool) {
     let first_typed = typed && !record.typed;
     if first_typed {
         record.bytes = bytes;
@@ -188,7 +194,7 @@ pub(super) fn refresh(id: Id, origin: &SharedMemory, bytes: u32) {
                 .records
                 .get_mut(&id)
                 .expect("registered read observation"),
-            origin,
+            &ProgramPoint::at(origin),
             epoch,
             bytes,
             true,
@@ -262,7 +268,7 @@ pub(super) fn origin_for_cell(
     STATE.with(|state| {
         let state = state.borrow();
         let record = state.records.get(&id)?;
-        (record.epoch == epoch).then(|| record.origin.clone())
+        (record.epoch == epoch).then(|| record.origin.shared_memory().clone())
     })
 }
 
@@ -309,7 +315,7 @@ pub(super) fn for_operand(
             pointer: pointer.clone(),
             kind,
             bytes: load_term_access_width(memory, pointer, kind),
-            origin: Some(memory.clone()),
+            origin: Some(point.clone()),
         });
     };
     if let MachineOperandView::Shared(term) = operand {
@@ -324,13 +330,53 @@ mod tests {
     use crate::kernel::{KernelTerm, MachineOperandView, VerificationSession};
 
     #[test]
+    fn indexed_read_retains_its_observation_point() {
+        let _session = VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let local = SymbolicMemory::local_pointer("unrelated");
+        let state = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_block(local.base, 4));
+        let pointer = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let origin = state.program_point();
+        let version = origin
+            .entry_integer_version(&pointer, LoadKind::Int32)
+            .expect("the unrelated block leaves the caller's cell at entry");
+        assert_ne!(origin.id(), version.id());
+
+        let path = evaluate_indexed_read(
+            version,
+            &origin,
+            pointer,
+            ProgramType::Int32,
+            ExecutionFacts::new(),
+            vec![],
+        );
+        let ExpressionOutcome::Value(ProgramValue::Int32(read)) = path.outcome else {
+            panic!("one symbolic word read");
+        };
+        let observed = for_operand(MachineOperandView::Legacy(&read)).unwrap();
+        assert_eq!(observed.point.read_version_id(), entry.program_point_id());
+        assert_eq!(observed.origin.and_then(|point| point.id()), origin.id());
+    }
+
+    #[test]
     fn cell_origin_lookup_preserves_float_width_and_epoch() {
         let _session = VerificationSession::enter();
         let address = Address::symbolic(Variable(998_708));
         let memory = intern_memory(SymbolicMemory::new());
         let origin = intern_memory(SymbolicMemory::new().with_block("float-origin", 8));
         let point = ProgramPoint::at(&memory);
-        record_at(&point, &address, LoadKind::Float32, &origin, 4);
+        record_at(
+            &point,
+            &address,
+            LoadKind::Float32,
+            &ProgramPoint::at(&origin),
+            4,
+        );
         assert_eq!(
             origin_for_cell(&point, &address, LoadKind::Float32),
             Some(origin)
@@ -407,7 +453,7 @@ mod tests {
         record(&memory, &pointer, LoadKind::Int32, &live, 4);
         let observed = for_operand(MachineOperandView::Legacy(&read)).unwrap();
         assert_eq!(observed.bytes, 4);
-        assert_eq!(observed.origin, Some(live));
+        assert_eq!(observed.origin, Some(ProgramPoint::at(&live)));
     }
 
     fn cyclic_frame_read(index: u64) -> (Proposition, Variable) {
@@ -496,10 +542,16 @@ mod tests {
         ));
         record(&memory, &pointer, LoadKind::Int32, &later, 8);
         assert_eq!(observe(&read).bytes, 8);
-        assert_eq!(observe(&other_format).origin, Some(later));
+        assert_eq!(
+            observe(&other_format).origin,
+            Some(ProgramPoint::at(&later))
+        );
         restore_load_variable_registry(&saved);
         assert_eq!(observe(&read).bytes, 4);
-        assert_eq!(observe(&other_format).origin, Some(memory));
+        assert_eq!(
+            observe(&other_format).origin,
+            Some(ProgramPoint::at(&memory))
+        );
         assert_eq!(load_variable_registry_len(), 0);
     }
 
@@ -512,8 +564,8 @@ mod tests {
         let pointer = Address::symbolic(Variable(998_707));
         let kind = LoadKind::Bits64;
         assert_eq!(first.shared_memory(), second.shared_memory());
-        let first_id = record_at(&first, &pointer, kind, first.shared_memory(), 4);
-        let second_id = record_at(&second, &pointer, kind, second.shared_memory(), 8);
+        let first_id = record_at(&first, &pointer, kind, &first, 4);
+        let second_id = record_at(&second, &pointer, kind, &second, 8);
         assert_ne!(first_id, second_id);
         let first_read = MachineTerm::MemoryLoad(first, Box::new(pointer.clone()), kind);
         let second_read = MachineTerm::MemoryLoad(second, Box::new(pointer), kind);
