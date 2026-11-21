@@ -2119,25 +2119,6 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    /// A retained read is an atom under a binder only when its explicit
-    /// address does not mention that binder. SymbolicMemory states remain immutable.
-    pub(crate) fn read_address_independent_of(
-        term: &MachineTerm,
-        bound: &BTreeSet<Variable>,
-    ) -> bool {
-        let Some(MachineTerm::MemoryLoad(_, pointer, _)) =
-            crate::kernel::eval::viewed_as_memory_load(term)
-        else {
-            return false;
-        };
-        let mut carriers = CarrierVariables::for_rewrite(true);
-        collect_pointer_carriers(&pointer, &mut carriers);
-        !carriers.exhausted()
-            && carriers.program_values.is_disjoint(bound)
-            && carriers.integer.is_disjoint(bound)
-            && carriers.algebraic.is_disjoint(bound)
-    }
-
     /// Simultaneous one-step read comparison. Only selected syntax is visited;
     /// inserted values and the contents of states remain opaque.
     #[cfg(test)]

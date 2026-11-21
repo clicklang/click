@@ -884,6 +884,7 @@ fn selected_pointer_alias_path(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum CheckedLoadEqualityEvidence {
+    #[cfg(test)]
     OriginStoredValue {
         endpoint: OriginLoadEndpoint,
         cell: MemoryDagCell,
@@ -953,6 +954,7 @@ fn origin_load_width(term: &MachineTerm) -> Option<u32> {
 }
 
 impl OriginLoadEndpoint {
+    #[cfg(test)]
     fn for_term(term: &MachineTerm) -> Option<Self> {
         if let MachineTerm::MemoryLoad(memory, pointer, kind) = term {
             return Some(Self {
@@ -988,14 +990,17 @@ impl OriginLoadEndpoint {
     }
 
     /// The access width a walk from this endpoint uses.
+    #[cfg(test)]
     fn bytes(&self) -> u32 {
         crate::kernel::load_term_access_width(&self.memory, &self.pointer, self.kind)
     }
 
+    #[cfg(test)]
     fn matches_term(&self, term: &MachineTerm) -> bool {
         Self::for_term(term).as_ref() == Some(self)
     }
 
+    #[cfg(test)]
     fn matches_observed_term(&self, term: &MachineTerm) -> bool {
         Self::for_observed_term(term).as_ref() == Some(self)
     }
@@ -1363,6 +1368,7 @@ impl CheckedLoadEquality {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn checks_with_call_events(
         &self,
         assumptions: &PureFactContext,
@@ -1682,6 +1688,7 @@ pub(crate) fn checked_recorded_atomic_load_equality(
 }
 
 /// Retain a selected stored-value path for a rewritten load representation.
+#[cfg(test)]
 pub(crate) fn checked_stored_origin_equality(
     left: &MachineTerm,
     right: &MachineTerm,
@@ -1696,7 +1703,8 @@ pub(crate) fn checked_stored_origin_equality(
 
 /// Compare a selected shared value to the native value held by its source
 /// store. The finite evidence owns that stored value, not an exported DAG.
-pub(crate) fn checked_stored_origin_operand_equality(
+#[cfg(test)]
+fn checked_stored_origin_operand_equality(
     left: crate::kernel::MachineOperandView<'_>,
     right: crate::kernel::MachineOperandView<'_>,
     assumptions: &PureFactContext,
@@ -3573,6 +3581,7 @@ pub(crate) fn pointer_load_offset_proven_equal(
 /// The write a walk stopped at: the store's pointer and value, for a `Store`
 /// edge, and for a `CellsSeeded` edge the one store of the run that writes
 /// the cell at `pointer`, asked exactly as the walk asked it.
+#[cfg(test)]
 fn stored_write_reaching(
     derivation: &MemoryDerivation,
     pointer: &Address,

@@ -242,8 +242,8 @@ the historical reads in that proof still incurs a separate version walk.
 
 Load-equality chain discovery for fixed-state goals and execution `have`
 scopes runs under `solve`. Expanded proof steps cite the selected equality
-premises. The rewritten-load evidence path still scans selected equality
-buckets. Measure that path with a fixed written goal and growing related facts.
+premises. Explicit `rewrite` substitutes the selected occurrence and checks
+that its printed goal preserves the read identities.
 
 
 ## Operation map

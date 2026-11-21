@@ -144,11 +144,22 @@ void fill(struct arena *arena, int32 start, int32 end) {
                     apply(separation::separate_elements(at(opened, arena->occupied), at(opened, i), k)) using { at(opened, i) != k; };
                 }
                 have arena->occupied == at(opened, arena->occupied) by { known(); }
-                have separate(loop(0).statement(0).footprint, memory(arena->occupied[k])) by {
-                    rewrite(arena->occupied, at(opened, arena->occupied));
-                    normalize() using {
+                // Select the preserved cell as one complete int32 observation.
+                have contains(at(opened, memory(arena->occupied[k])), at(opened, memory((&arena->occupied[k])[0..1]))) by { normalize(); }
+                have contains(at(opened, memory(arena->occupied[i])), at(opened, memory(arena->occupied[i]))) by { normalize(); }
+                have separate(at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1]))) by {
+                    apply(separation::separate_restrict(at(opened, memory(arena->occupied[i])), at(opened, memory(arena->occupied[k])), at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1])))) using {
+                        contains(at(opened, memory(arena->occupied[i])), at(opened, memory(arena->occupied[i])));
                         at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k])));
+                        contains(at(opened, memory(arena->occupied[k])), at(opened, memory((&arena->occupied[k])[0..1])));
                     };
+                }
+                have separate(loop(0).statement(0).footprint, at(opened, memory((&arena->occupied[k])[0..1]))) by {
+                    normalize() using { separate(at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1]))); };
+                }
+                have at(loop(0).statement(0).exit, load<int32>(at(opened, &arena->occupied[k])))
+                        == at(loop(0).statement(0).entry, load<int32>(at(opened, &arena->occupied[k]))) by {
+                    preserve(at(opened, memory((&arena->occupied[k])[0..1])), loop(0).statement(0));
                 }
                 have arena->occupied[k] == at(opened, arena->occupied[k]) by {
                     rewrite(arena->occupied, at(opened, arena->occupied));

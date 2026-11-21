@@ -84,8 +84,9 @@ impl CheckedEqualityRewrite {
         &self.proposition
     }
 
-    /// A proposed surface spelling may use different load names. Accept it
-    /// only through the kernel's checked, corresponding-leaf transport rule.
+    /// A presentation must round-trip to the checked result, including
+    /// each read's version and type. Exact Integer simplification only
+    /// compares the two written terms.
     pub(crate) fn try_present_as(&mut self, proposed: &Proposition) -> bool {
         // The result holds the one form of an observation comparison; a
         // presentation written the other way states the same goal.
@@ -106,15 +107,7 @@ impl CheckedEqualityRewrite {
             self.proposition = proposed.clone();
             return true;
         }
-        let Some(facts) = self
-            .facts
-            .with_checked_rewritten_loads(&self.proposition, proposed)
-        else {
-            return false;
-        };
-        self.facts = facts;
-        self.proposition = proposed.clone();
-        true
+        false
     }
 
     /// Lowering a reflexive constructor comparison in an induction case
@@ -4122,7 +4115,7 @@ mod tests {
     }
 
     #[test]
-    fn checked_rewrite_presentation_requires_checked_load_transport() {
+    fn checked_rewrite_presentation_keeps_the_read_identity() {
         let pointer = Address {
             base: "rewrite-presentation".into(),
             offset: AddressOffset::Constant(0),
@@ -4153,15 +4146,13 @@ mod tests {
         let cited = equality(x.clone(), y.clone());
         let facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
         let mut result = facts
-            .check_equality_rewrite(&equality(x, load(memory)), &cited)
+            .check_equality_rewrite(&equality(x, load(memory.clone())), &cited)
             .unwrap();
         assert!(!result.try_present_as(&equality(y.clone(), load(changed))));
-        assert!(result.try_present_as(&equality(y.clone(), MachineTerm::constant(42))));
+        assert!(!result.try_present_as(&equality(y.clone(), MachineTerm::constant(42))));
+        assert!(result.try_present_as(&equality(y.clone(), load(memory.clone()))));
         let (obligation, _) = result.into_obligation((), None::<()>);
-        assert_eq!(
-            obligation.proposition(),
-            &equality(y, MachineTerm::constant(42))
-        );
+        assert_eq!(obligation.proposition(), &equality(y, load(memory)));
     }
 
     #[test]
