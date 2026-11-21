@@ -698,9 +698,7 @@ fn recorded_point_of_load(
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, state) = slot
-            .as_ref()?
-            .point_reading_load(memory.shared_memory(), pointer)?;
+        let (selector, state) = slot.as_ref()?.point_reading_load(memory, pointer)?;
         let load = scalar_read_in_state(read, state)?;
         Some((selector.clone(), state.clone(), load))
     })
@@ -787,9 +785,7 @@ fn synthesize_recorded_held_value_local(
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, recorded) = slot
-            .as_ref()?
-            .point_reading_load(memory.shared_memory(), address)?;
+        let (selector, recorded) = slot.as_ref()?.point_reading_load(memory, address)?;
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(synthesize_held_value_local(term, pointer, recorded)?),
@@ -2623,18 +2619,14 @@ fn synthesize_surface_atomic_proposition(
                     else {
                         return None;
                     };
-                    call_arguments.push(synthesize_at_array_read_point(
-                        point,
-                        state,
-                        |selected| {
-                            synthesize_surface_pointer_expression(
-                                pointer,
-                                parameter_binding,
-                                selected,
-                                bound_variables,
-                            )
-                        },
-                    )?);
+                    call_arguments.push(synthesize_at_read_origin(point, state, |selected| {
+                        synthesize_surface_pointer_expression(
+                            pointer,
+                            parameter_binding,
+                            selected,
+                            bound_variables,
+                        )
+                    })?);
                     index += 2;
                 }
                 term_source_0 @ Term::ProgramValue(_)
@@ -4053,9 +4045,13 @@ fn raise_algebraic_read(
         SYNTHESIS_RECORDED_POINTS.with(|slot| {
             let slot = slot.borrow();
             let points = slot.as_ref()?;
-            let (selector, recorded) = points
-                .point_reading_memory(memory)
-                .or_else(|| points.point_reading_load(memory, &address.export().ok()?))?;
+            let (selector, recorded) = if point.id().is_some() {
+                points.point_naming_read(point)
+            } else {
+                points
+                    .point_reading_memory(memory)
+                    .or_else(|| points.point_reading_load(point, &address.export().ok()?))
+            }?;
             Some(SurfaceTerm::At {
                 selector: selector.clone(),
                 expression: Box::new(held_at(recorded)?),
@@ -4532,7 +4528,7 @@ fn raise_kernel_term_dispatch(
             let raise = |selected: &ExecutionState| {
                 raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
             };
-            synthesize_at_array_read_point(point, state, raise)?
+            synthesize_at_read_origin(point, state, raise)?
         }
 
         Node::PointerRead { value, .. }
@@ -6193,7 +6189,7 @@ fn synthesize_surface_bitvector(
                     // The read's memory selects `old(..)`, `at(point, ..)` or
                     // the current state; the call's result names the pointer
                     // in that state.
-                    return synthesize_at_memory(memory.shared_memory(), state, |selected| {
+                    return synthesize_at_read_origin(memory, state, |selected| {
                         Some(synthesize_memory_load(
                             call_result_pointer_expression(kernel_pointer, selected)?,
                             value_type,
@@ -6497,12 +6493,7 @@ fn synthesize_at_program_point(
     state: &ExecutionState,
     raise: impl Fn(&ExecutionState) -> Option<SurfaceTerm>,
 ) -> Option<SurfaceTerm> {
-    let id = point.id()?;
-    let matches = |state: &ExecutionState| {
-        let actual = state.program_point();
-        actual.id() == Some(id)
-            && actual.shared_memory().arena_id() == point.shared_memory().arena_id()
-    };
+    let matches = |state: &ExecutionState| state.program_point().names_read_view(point);
     if matches(state) {
         return raise(state);
     }
@@ -6514,26 +6505,24 @@ fn synthesize_at_program_point(
     let (selector, recorded) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
         let points = slot.as_ref()?;
-        let selector = points.point_name(id)?;
-        Some((selector.clone(), points.get_exact(selector)?.clone()))
+        let (selector, state) = points.point_naming_read(point)?;
+        Some((selector.clone(), state.clone()))
     })?;
-    matches(&recorded).then_some(())?;
     Some(SurfaceTerm::At {
         selector,
         expression: Box::new(raise(&recorded)?),
     })
 }
 
-fn synthesize_at_array_read_point(
+fn synthesize_at_read_origin(
     point: &crate::kernel::ProgramPoint,
     state: &ExecutionState,
     raise: impl Fn(&ExecutionState) -> Option<SurfaceTerm>,
 ) -> Option<SurfaceTerm> {
-    if point.read_version_id().is_some() {
+    if point.id().is_some() {
         synthesize_at_program_point(point, state, raise)
     } else {
-        synthesize_at_program_point(point, state, &raise)
-            .or_else(|| synthesize_at_memory(point.shared_memory(), state, raise))
+        synthesize_at_memory(point.shared_memory(), state, raise)
     }
 }
 

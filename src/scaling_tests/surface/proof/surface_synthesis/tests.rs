@@ -5,6 +5,58 @@
 use super::*;
 
 #[test]
+fn read_origin_raising_ignores_other_points_with_equal_memory() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = ExecutionState::new().begin_function_entry_memory();
+    let point = source.program_point();
+    let exact = point.clone().for_exact_read();
+    let slot = Address::symbolic(Variable(1_009_312));
+    let mark = ProgramPointSelector::Mark("original_read".into());
+    let current = ExecutionState::new().begin_function_entry_memory();
+    let operand = SurfaceTerm::IntegerLiteral("7".into());
+    let named = SurfaceTerm::At {
+        selector: mark.clone(),
+        expression: Box::new(operand.clone()),
+    };
+    let work = [4, 16, 64, 256].map(|count| {
+        let mut points = RecordedStates::new();
+        points.insert(mark.clone(), source.clone());
+        for index in 0..count {
+            let other = ExecutionState::new().begin_function_entry_memory();
+            assert_eq!(other.memory(), source.memory());
+            points.insert(ProgramPointSelector::Mark(format!("other_{index}")), other);
+        }
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(points.point_reading_load(&point, &slot).unwrap().0, &mark);
+            let _points = SynthesisRecordedPointsScope::enter(&points);
+            for retained in [&point, &exact] {
+                assert_eq!(
+                    synthesize_at_read_origin(retained, &current, |_| Some(operand.clone())),
+                    Some(named.clone()),
+                );
+            }
+        });
+        work
+    });
+    assert!(work.iter().all(|units| *units == work[0]), "{work:?}");
+
+    let replacement = source.clone().with_materialized_memory_at_current_point(
+        source
+            .memory()
+            .clone()
+            .store(slot, ProgramValue::Int32(MachineTerm::constant(7))),
+    );
+    assert_eq!(replacement.observation_point_id(), point.id());
+    let mut points = RecordedStates::new();
+    points.insert(mark, replacement);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    assert_eq!(
+        synthesize_at_read_origin(&exact, &current, |_| Some(operand.clone())),
+        None
+    );
+}
+
+#[test]
 fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
     for size in [16usize, 64, 256, 1024] {
         let mut state = ExecutionState::new();
