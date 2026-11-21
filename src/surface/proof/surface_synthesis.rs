@@ -7765,7 +7765,16 @@ fn synthesize_surface_pointer(
         }
         // A field spelling reads this state; historical reads need their
         // recorded selector before entering this C-only source fragment.
-        pointer_read_address_in_state(pointer, state)?;
+        let defining_address = pointer_read_address_in_state(pointer, state)?;
+        // A pointer loaded from a static scalar slot has the declared name
+        // and type of that very slot, including its original pointee type.
+        if let Some(name) = state.locals().name_for_slot(&defining_address)
+            && state
+                .global_object_type(name)
+                .is_some_and(ProgramType::is_object_pointer)
+        {
+            return Some(ProgramExpression::Variable(name.clone()));
+        }
         // A resource retains an address, not its source pointer type. Recover
         // that type from the field declaration instead of assuming int32*;
         // byte pointers must round-trip through their actual field load.
