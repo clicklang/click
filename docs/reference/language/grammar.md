@@ -319,8 +319,9 @@ A destination cast cannot manufacture original-class evidence. C access
 typing retains its existing declaration metadata separately. Memory access
 still requires the relevant resource permissions.
 
-A model field or pure-helper parameter declared `void*` accepts an object
-pointer through implicit coercion: its carrier changes to `void*`, preserving
+A model field, pure-helper parameter, or specification expression binding
+such as `(let pointer: void* = p; pointer)` accepts an object pointer through
+implicit coercion. Its carrier changes to `void*`, preserving
 its provenance, bounds, qualifiers, and object-type evidence. Opaque helper
 calls and unfolded bodies use this same argument conversion. Function pointers
 are excluded. An authored `p as (void *)` remains an explicit cast and selects the

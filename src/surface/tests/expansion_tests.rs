@@ -1297,6 +1297,19 @@ fn fold_initializer_obligation_expands_and_replays_without_implicit_solve() {
 }
 
 #[test]
+fn fold_pointer_coercions_expand_and_cold_replay() {
+    let (source, sources) = mdtest_sources("mdtests/fold_pointer_argument_body_fact.md");
+    let sources = crate::cli::source_refs(&sources);
+    for claim in ["clear.contract", "peek.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        check_audit_claim(claim, true, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn fold_null_pointer_obligation_expands_and_replays_without_implicit_solve() {
     let (source, sources) = mdtest_sources("mdtests/model_payload_null_pointer.md");
     let sources = crate::cli::source_refs(&sources);
@@ -5892,6 +5905,35 @@ fn return_population_proofs_expand_without_effect_clauses() {
                 .unwrap_or_else(|error| panic!("{fixture_name}: {}\n{expanded}", error.message()));
         }
     }
+}
+
+#[test]
+fn cpp_local_record_call_requirement_expands_and_replays() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/cpp_class_const_method_keeps_fields.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let inputs = crate::cli::prepare_mdtest_inputs(&fixture).unwrap();
+    let crate::cli::VerificationInput::PreparedProgram(import) = &inputs else {
+        panic!("expected a prepared C++ fixture");
+    };
+    let source = fixture.click_source.as_deref().unwrap();
+    let claim = "caller.contract";
+    let expanded = expand_claim_by_label(None, source, &inputs.program_inputs(), claim, None)
+        .unwrap_or_else(|error| panic!("{}", error.report()))
+        .source;
+    let project = crate::surface::ClickProject::new(
+        "proof.click",
+        [crate::surface::ClickModuleSource::new(
+            "proof.click",
+            &expanded,
+            [],
+        )],
+    );
+    check_audit_claim(claim, true, || {
+        crate::surface::verify_program_prepared_project(&project, import)
+            .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]
