@@ -1154,6 +1154,57 @@ fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
 }
 
 #[test]
+fn pure_function_array_keeps_its_selected_point_without_an_indexed_version() {
+    let _session = VerificationSession::enter();
+    let array = Address::symbolic(Variable(1013811));
+    let argument = SpecPureFunctionArgument::ArrayRef {
+        point: SpecPoint::Current,
+        pointer: SpecExpression::Value(ProgramValue::typed_pointer(
+            array.clone(),
+            ProgramType::Int32Pointer,
+        )),
+        element_type: ProgramType::Int32,
+    };
+    let first = ExecutionState::new().begin_function_entry_memory();
+    let second = ExecutionState::new().begin_function_entry_memory();
+    assert_eq!(first.memory(), second.memory());
+
+    for state in [&first, &second] {
+        assert!(
+            state
+                .program_point()
+                .indexed_array_version(&array.base)
+                .is_none()
+        );
+        for native in [false, true] {
+            let mut execution = ExecutionBudget::new();
+            let mut budget = SpecEvaluation::logical(&mut execution);
+            budget.machine_result_production_disabled = native;
+            let paths = evaluate_spec_pure_function_argument_paths_in(
+                SpecScope::unbound(state, None),
+                &argument,
+                &PureFactContext::new(),
+                &mut budget,
+            )
+            .unwrap();
+            let [path] = paths.as_slice() else {
+                panic!("one array argument path");
+            };
+            let argument = match &path.value {
+                SpecCallArgument::Native(argument) => argument.clone(),
+                SpecCallArgument::Shared(root) => {
+                    KernelTermExport::default().argument(root).unwrap()
+                }
+            };
+            let PureFunctionArgument::ArrayRef { point, .. } = argument else {
+                panic!("array argument retains a point");
+            };
+            assert_eq!(point.read_version_id(), state.observation_point_id());
+        }
+    }
+}
+
+#[test]
 fn declared_predicate_array_keeps_its_selected_point_without_an_indexed_version() {
     let _session = VerificationSession::enter();
     let array = Address::symbolic(Variable(1013810));

@@ -134,7 +134,7 @@ The remaining memory-state paths have production callers:
 | --- | --- |
 | Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for abstract cells supplied by bare memory producers or taken outside the verified entry path. |
 | Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` still construct memory-state observations for bare memory producers and unsupported indexed types or addresses. |
-| Preservation | `array_ref_argument_point` uses the block version walk outside the indexed entry and write paths, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
+| Preservation | `array_ref_argument_point` uses the block version walk for detached and uncertified views. The scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
 | Raising | Detached array arguments still use `synthesize_at_memory`. Detached scalar and abstract reads still use the memory and projection indexes in `RecordedStates::point_reading_load`. |
 
 Give symbolic addresses a separate slice. A loaded or opaque symbolic pointer
