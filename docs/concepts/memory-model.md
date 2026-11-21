@@ -72,6 +72,10 @@ into a local uses that source point for compact `uint32` array fields and
 to name uncached scalar fields when the appropriate typed store, entry
 version, or float read point is available. A copied object pointer field can
 retain its complete typed store, including the stored provenance and bounds.
+A caller-supplied pointer cell can also use the function-entry point when
+the recorded suffix preserves it. The read gives one identity to the
+pointer's address, provenance, and bounds owner. A stored-value equation
+requires a compatible store.
 The same source selectors apply to uncached integer and object pointer union
 members when the copy has a recorded caller source.
 A verified call also retains that source point when it copies caller storage
