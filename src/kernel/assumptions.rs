@@ -896,10 +896,7 @@ pub(in crate::kernel) fn load_state_and_pointer(
     // Checking follows the recorded observation, even when structural version
     // selection retained an earlier representative state in the term.
     Some((
-        (*read
-            .origin
-            .unwrap_or_else(|| read.point.into_shared_memory()))
-        .clone(),
+        read.origin.unwrap_or(read.point).memory().clone(),
         read.pointer,
         read.kind,
     ))
@@ -2869,7 +2866,7 @@ fn collect_memory_read_descriptor(
         .then(|| crate::kernel::eval::scalar_read_observation(operand).expect("selected read"));
     let memory = observation
         .as_ref()
-        .map(|read| read.origin.as_ref().unwrap_or(read.point.shared_memory()))
+        .map(|read| read.origin.as_ref().unwrap_or(&read.point).shared_memory())
         .unwrap_or(point.shared_memory());
     if MemoryStateIdentity::of(memory.memory()) == MemoryStateIdentity::of(current_memory) {
         // A point-named read can have a typed access width even when it did

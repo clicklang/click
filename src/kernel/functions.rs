@@ -5743,9 +5743,7 @@ fn source_load_state_for_proposition(
                     crate::kernel::MachineOperandView::Legacy(term),
                 )
                 .expect("structural read observation");
-                let origin = read
-                    .origin
-                    .unwrap_or_else(|| read.point.into_shared_memory());
+                let origin = read.origin.unwrap_or(read.point);
                 let identity = MemoryStateIdentity::of(origin.memory());
                 if memory_identity.is_some_and(|known| known != identity) {
                     return Ok(None);

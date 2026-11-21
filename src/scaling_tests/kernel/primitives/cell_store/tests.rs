@@ -20,7 +20,10 @@ fn retained_run_reads_refresh_load_origins_without_scanning_the_run() {
             crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
                 read,
             ))
-            .and_then(|read| read.origin.map(|origin| (origin, read.pointer)))
+            .and_then(|read| {
+                read.origin
+                    .map(|origin| (origin.into_shared_memory(), read.pointer))
+            })
         };
         assert!(matches!(read, crate::kernel::MachineTerm::MemoryLoad(..)));
         assert!(observation().is_some());
