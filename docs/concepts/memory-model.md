@@ -84,10 +84,10 @@ For indexed parameter and heap addresses, byte displacements from one
 symbolic origin can be compared directly. A write with a different origin
 retires that storage bucket. Parameter bases share one bucket because
 different parameters can alias. A freshly allocated heap object has its
-own bucket. Unclassified writes retire all buckets. Logical reads and
-resource expressions can name a caller-supplied pointer cell at its verified
-function-entry point when the recorded effects preserve that cell. Its address,
-provenance, and bounds owner share that read identity.
+own bucket. Unclassified writes retire all buckets. Logical reads, resource
+expressions, and nonvolatile C loads can name a caller-supplied pointer cell
+at its verified function-entry point when the recorded effects preserve
+that cell. Its address, provenance, and bounds owner share that read identity.
 
 A declared little-endian `uint32` can be read as four complete indexed byte
 reads. Each byte uses its own version. Click spells it with the bitwise OR

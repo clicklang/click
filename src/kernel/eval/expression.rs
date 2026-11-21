@@ -3582,12 +3582,8 @@ fn read_retained_lvalue_paths_without_ranges(
                     }
                 }
                 let can_name_read = !lvalue.is_volatile() || SpecificationAccessScope::is_active();
-                // A pointer in a resource expression names the same entry
-                // cell as a logical read of that field.
-                let names_entry_pointer =
-                    lvalue.value_type.is_object_pointer() && SpecificationReadScope::is_active();
                 let uses_entry_version = has_read_resource
-                    && (names_entry_pointer
+                    && (lvalue.value_type.is_object_pointer()
                         || matches!(
                             lvalue.value_type,
                             ProgramType::Int32 | ProgramType::UInt32 | ProgramType::Parameter(_)
