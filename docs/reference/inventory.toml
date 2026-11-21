@@ -1695,6 +1695,10 @@ id = "cli.expand.--claim"
 path = "reference/cli/expand.md#options"
 
 [[item]]
+id = "cli.expand.--migrate-normalize"
+path = "reference/cli/expand.md#options"
+
+[[item]]
 id = "cli.expand.--help"
 path = "reference/cli/expand.md#options"
 
