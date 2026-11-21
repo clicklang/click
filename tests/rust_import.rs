@@ -2663,6 +2663,15 @@ fn rust_moves_drop_effect_and_return_capture_verify() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "restore"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
     for wrong in [
         sidecar.replace("ensures *value == old(*value);", "ensures *value == 7;"),
         sidecar.replace(

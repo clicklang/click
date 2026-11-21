@@ -1556,7 +1556,8 @@ These still stay a temporary:
   loop's `next` result is one and a proof sees it;
 - a borrow, unless its one read in its block takes it whole: a call
   argument (`t = &mut x; f(t)` is `f(&mut x)`, whose borrow lasts the call), a
-  local's whole value (`let r = &mut x`), or a reborrow (`&mut *t` is the
+  local's whole value (`let r = &mut x`), a record's first field
+  (`Guard { slot: &mut *value, saved }`), or a reborrow (`&mut *t` is the
   borrow). A borrow of a place rooted at a local moves past statements that
   do not name that local;
 - a slice;

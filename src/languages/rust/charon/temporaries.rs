@@ -197,6 +197,12 @@ pub(super) fn substitute_pure_values(
                         target: E::Local { .. },
                         value: E::Local { name },
                     } => Some(name.clone()),
+                    // A record's first field takes the reference whole and
+                    // writes it before preparing any later field.
+                    S::Initialize { fields, .. } => match fields.first() {
+                        Some(E::Local { name }) => Some(name.clone()),
+                        _ => None,
+                    },
                     // A reborrow, `&mut *t`, of a borrow `t = &mut x` is
                     // `&mut x`.
                     S::Assign {
