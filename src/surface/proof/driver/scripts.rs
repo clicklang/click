@@ -637,7 +637,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
                             let selected = scope.driver().try_solve_closure()?;
                             if selected.is_none() {
-                                *declined = Some(LinearScriptDecline::Search(index));
+                                *declined = Some(LinearScriptDecline::UnsuccessfulSearch(index));
                                 return Ok(None);
                             }
                             selected

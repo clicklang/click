@@ -1686,7 +1686,7 @@ pub(in crate::surface::proof) enum LinearScriptDecline {
     /// The written tactic at this position declined.
     Step(usize),
     /// The tactic ran a proof search that could not close the goal.
-    Search(usize),
+    UnsuccessfulSearch(usize),
 }
 
 /// A branch continuation is checked in each selected arm. Borrow terminal

@@ -2722,7 +2722,7 @@ fn check_pure_script_with_proof(
             }
             Some(
                 super::smart_closures::LinearScriptDecline::Step(index)
-                | super::smart_closures::LinearScriptDecline::Search(index),
+                | super::smart_closures::LinearScriptDecline::UnsuccessfulSearch(index),
             ) => format!(
                 "could not complete tactic {} (`{}`)",
                 prefix + index + 1,
@@ -2736,7 +2736,7 @@ fn check_pure_script_with_proof(
             .step_error(format!("checked pure script for `{claim_label}` {detail}"))
             .with_proof_refusal(match declined {
                 None => crate::surface::ProofRefusal::UnprovedGoal,
-                Some(super::smart_closures::LinearScriptDecline::Search(_)) => {
+                Some(super::smart_closures::LinearScriptDecline::UnsuccessfulSearch(_)) => {
                     crate::surface::ProofRefusal::UnsuccessfulSearch
                 }
                 Some(_) => crate::surface::ProofRefusal::Tactic,

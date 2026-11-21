@@ -2399,7 +2399,7 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
                         let detail = match declined {
                             Some(
                                 LinearScriptDecline::Step(index)
-                                | LinearScriptDecline::Search(index),
+                                | LinearScriptDecline::UnsuccessfulSearch(index),
                             ) => match body.get(index) {
                                 Some(tactic) => format!(
                                     "step {} of its body, `{}`, declined",
@@ -2425,7 +2425,7 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
                             .step_error(format!("`have {goal}` was not proved: {detail}"))
                             .with_proof_refusal(match declined {
                                 None => crate::surface::ProofRefusal::UnprovedGoal,
-                                Some(LinearScriptDecline::Search(_)) => {
+                                Some(LinearScriptDecline::UnsuccessfulSearch(_)) => {
                                     crate::surface::ProofRefusal::UnsuccessfulSearch
                                 }
                                 Some(_) => crate::surface::ProofRefusal::Tactic,
