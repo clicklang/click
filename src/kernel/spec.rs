@@ -6258,9 +6258,7 @@ fn lower_spec_predicate_proposition_at_state_in(
                         SpecPoint::At(point) => point.clone(),
                     };
                     let point = match argument_path.value.native().as_ref() {
-                        ProgramValue::Pointer(pointer)
-                            if pointer.program_type() == ProgramType::Int32Pointer =>
-                        {
+                        ProgramValue::Pointer(pointer) => {
                             indexed_array_version(&source, &pointer.address().base)
                         }
                         _ => None,
