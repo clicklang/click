@@ -1563,7 +1563,11 @@ fn collect_integer_substitution_term_variables(term: &Term, variables: &mut Carr
             collect_pointer_offset_carriers(value.native_compat(), variables)
         }
         Term::Algebraic(value) => collect_algebraic_carriers(value.native_compat(), variables),
-        Term::Sequence(value) if matches!(value.element_type, Some(ProgramType::Int32) | None) => {
+        Term::Sequence(value)
+            if value
+                .element_type
+                .is_none_or(crate::kernel::spec::retained_sequence_element_type) =>
+        {
             collect_sequence_carriers(value, variables)
         }
         _ => {}
@@ -3784,7 +3788,10 @@ impl<'a> TermRewrite<'a> {
             Term::ProgramValue(v) => Term::ProgramValue(self.value(v.native_compat()).into()),
             Term::Condition(v) => Term::Condition(self.condition(v.native_compat()).into()),
             Term::PointerOffset(v) => Term::PointerOffset(self.contract_offset(v)),
-            Term::Sequence(v) if matches!(v.element_type, Some(ProgramType::Int32) | None) => {
+            Term::Sequence(v)
+                if v.element_type
+                    .is_none_or(crate::kernel::spec::retained_sequence_element_type) =>
+            {
                 Term::Sequence(
                     v.map_program_values(&mut |value| self.rewrite_sequence_value(value)),
                 )

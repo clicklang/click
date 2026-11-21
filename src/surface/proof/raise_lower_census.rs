@@ -612,6 +612,67 @@ mod tests {
     }
 
     #[test]
+    fn pure_uint64_sequences_raise_after_intro_and_rewrite() {
+        let fixture = include_str!("../../../mdtests/pure_uint64_sequences_keep_structure.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        for (claim, tactic, kind, written) in [
+            (
+                "wide_sequence_equality",
+                "intro()",
+                "equal:sequence",
+                "[] ++ [a] ++ [b] == [a, b] ++ []",
+            ),
+            (
+                "wide_literal_membership",
+                "intro()",
+                "sequence-membership",
+                "18446744073709551615u64 in [] ++ [0u64, 18446744073709551615u64]",
+            ),
+            (
+                "wide_empty_membership",
+                "intro()",
+                "not/sequence-membership",
+                "not (a in [])",
+            ),
+            (
+                "wide_rewritten_membership",
+                "rewrite",
+                "sequence-membership",
+                "b in [] ++ [b]",
+            ),
+            (
+                "wide_rewritten_equality",
+                "rewrite",
+                "equal:sequence",
+                "[b] ++ [] == [b]",
+            ),
+        ] {
+            let prefix = format!("raised\tgoal\t{kind}\t{claim}.ensures_0\t{tactic}\twritten\t");
+            assert!(
+                lines
+                    .iter()
+                    .any(|line| line.trim_end().strip_prefix(&prefix) == Some(written)),
+                "{prefix:?}: {lines:#?}"
+            );
+        }
+        let wrong = source.replacen("[a, b] ++ []", "[b, a] ++ []", 1);
+        let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
+        assert!(
+            error.to_string().contains("goal did not normalize to true"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn algebraic_match_arm_values_name_unfold_facts() {
         let source = r#"
 verifying "keep.c";

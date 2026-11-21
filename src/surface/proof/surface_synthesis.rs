@@ -2578,11 +2578,13 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let Proposition::SequenceMembership { element, sequence } = proposition {
-        let ProgramValue::Int32(element) = element.native_compat() else {
-            return None;
-        };
         return Some(ClickProposition::Comparison {
-            left: synthesize_surface_bitvector(element, parameter_binding, state, bound_variables)?,
+            left: synthesize_surface_sequence_element(
+                element.native_compat(),
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
             operator: ComparisonOperator::In,
             right: synthesize_surface_sequence(
                 sequence,
@@ -5624,6 +5626,20 @@ fn synthesize_typed_word_read(
     })
 }
 
+fn synthesize_surface_sequence_element(
+    value: &ProgramValue,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<ContractExpression> {
+    match value {
+        ProgramValue::Int32(word) | ProgramValue::UInt64(word) => {
+            synthesize_surface_bitvector(word, parameter_binding, state, bound)
+        }
+        _ => None,
+    }
+}
+
 fn synthesize_surface_sequence(
     value: &crate::kernel::SequenceTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -5636,10 +5652,7 @@ fn synthesize_surface_sequence(
             values
                 .iter()
                 .map(|value| {
-                    let ProgramValue::Int32(value) = value else {
-                        return None;
-                    };
-                    synthesize_surface_bitvector(value, parameter_binding, state, bound)
+                    synthesize_surface_sequence_element(value, parameter_binding, state, bound)
                 })
                 .collect::<Option<Vec<_>>>()?,
         ),

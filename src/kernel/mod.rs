@@ -146,7 +146,7 @@ pub(crate) use spec::{
     capture_spec_integer_value, capture_spec_integer_value_with_guards,
     refine_object_pointer_argument_using_facts,
 };
-pub(crate) use spec::{int32_sequence_equality_view, sequence_membership_view};
+pub(crate) use spec::{retained_sequence_equality_view, sequence_membership_view};
 mod termination;
 pub(crate) use termination::StatementProofInput;
 pub(crate) use termination::descent_completion::DescentStep;

@@ -232,7 +232,7 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             sequence_terms_equal_by_elements(left, right)
         }
         Proposition::SequenceMembership { .. } => {
-            crate::kernel::spec::checks_int32_sequence_comparison(
+            crate::kernel::spec::checks_retained_sequence_comparison(
                 proposition,
                 true,
                 |condition, truth| {
@@ -328,7 +328,7 @@ pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> boo
             sequence_terms_definitely_distinct(left, right)
         }
         Proposition::SequenceMembership { .. } => {
-            crate::kernel::spec::checks_int32_sequence_comparison(
+            crate::kernel::spec::checks_retained_sequence_comparison(
                 proposition,
                 false,
                 |condition, truth| {

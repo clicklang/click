@@ -5095,7 +5095,7 @@ impl PureFactContext {
         if solve_builtin_prop(proposition) {
             return true;
         }
-        if crate::kernel::spec::checks_int32_sequence_comparison(
+        if crate::kernel::spec::checks_retained_sequence_comparison(
             proposition,
             true,
             |condition, truth| self.decide(condition) == Some(truth),

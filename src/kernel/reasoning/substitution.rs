@@ -4787,7 +4787,7 @@ fn substitute_integer_pure_term_with_walker(
 }
 
 fn integer_atomic_term_supported(term: &Term) -> bool {
-    matches!(term, Term::Sequence(sequence) if matches!(sequence.element_type, Some(ProgramType::Int32) | None))
+    matches!(term, Term::Sequence(sequence) if sequence.element_type.is_none_or(crate::kernel::spec::retained_sequence_element_type))
         || matches!(
             term,
             Term::Integer(_)
