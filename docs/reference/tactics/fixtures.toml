@@ -153,16 +153,6 @@ path = "mdtests/composite_resource_observe_nested_fact.md"
 needle = "observe(live_fd(fd));"
 
 [[form]]
-id = "observe-named-resource"
-path = "mdtests/observe_named_resource.md"
-needle = "observe(c);"
-
-[[form]]
-id = "observe-saved-memory"
-path = "mdtests/observe_saved_pointer_memory_range.md"
-needle = "observe(at(saved, memory(box->data[0..count])));"
-
-[[form]]
 id = "witness"
 path = "mdtests/witness_and_choose.md"
 needle = "witness(0)"

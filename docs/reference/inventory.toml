@@ -1511,12 +1511,6 @@ path = "reference/tactics/index.md#execution"
 id = "tactic-form.observe-resource"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
-id = "tactic-form.observe-named-resource"
-path = "reference/tactics/index.md#observing-resources"
-[[item]]
-id = "tactic-form.observe-saved-memory"
-path = "reference/tactics/index.md#observing-resources"
-[[item]]
 id = "tactic-form.witness"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
