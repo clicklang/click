@@ -513,6 +513,48 @@ mod tests {
     }
 
     #[test]
+    fn closed_word_equality_guards_keep_their_conditional() {
+        let fixture = include_str!("../../../mdtests/closed_word_equality_conditionals.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        for (theorem, arms) in [
+            ("signed_words", ["x", "y"]),
+            ("unsigned_words", ["9u32", "3u32"]),
+        ] {
+            for index in 0..2 {
+                let claim = format!("\t{theorem}.ensures_{index}\tintro()\twritten\t");
+                let written = lines
+                    .iter()
+                    .filter(|line| line.starts_with("raised\tgoal\t"))
+                    .find_map(|line| line.split_once(&claim).map(|(_, written)| written))
+                    .unwrap_or_else(|| panic!("missing {claim:?}: {lines:#?}"));
+                let (_, conditional) = written
+                    .split_once("if ")
+                    .unwrap_or_else(|| panic!("expected a conditional: {written}"));
+                let (guard, _) = conditional.split_once(" {").unwrap();
+                assert!(guard.contains(" == "), "{written}");
+                for arm in arms {
+                    assert!(conditional.contains(&format!("{{ {arm} }}")), "{written}");
+                }
+            }
+        }
+        let wrong = source.replacen("else { y }) == x", "else { y }) == y", 1);
+        let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
+        assert!(
+            error.to_string().contains("goal did not normalize to true"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn empty_int32_range_fold_raises_bounds_seed_and_body() {
         let fixture =
             include_str!("../../../mdtests/pure_empty_int32_range_folds_keep_structure.md");

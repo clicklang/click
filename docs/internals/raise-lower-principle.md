@@ -536,8 +536,11 @@ family without exporting arithmetic DAGs or using ambient facts to select an arm
 A Boolean or 32/64-bit machine conditional can retain identical arms after an
 exact rewrite. Logical lowering keeps that conditional when its guard is
 representable and symbolic. Checking can then use the common value.
-Other result families retain their existing selected-arm behavior; literal Boolean
-and closed 32-bit equality guards keep their normal forms.
+Closed machine equality guards keep the comparison and both arms when
+the result is a retained scalar. A 32-bit equality retains a conditional
+whose arms have the same 32-bit or 64-bit machine integer type. Introducing
+an Integer binder preserves that conditional. Literal Boolean guards keep
+their selected-arm behavior.
 
 Checked rewriting reconstructs native 32-bit comparisons with word-form literal
 operands, matching logical lowering even when selecting a conditional's unsigned

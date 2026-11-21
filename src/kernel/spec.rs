@@ -9404,6 +9404,7 @@ fn evaluate_spec_if_paths_in(
         // A retained comparison guard is part of the conditional's syntax even
         // when its operands determine its truth intrinsically. Checking may
         // select an arm; logical lowering retains both guarded values.
+        let mut closed_word_equality = false;
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
                 Proposition::ConditionIs(condition, _)
@@ -9454,17 +9455,14 @@ fn evaluate_spec_if_paths_in(
                     _,
                     _,
                 ) if let Some((ConditionTerm::Compare {
-                        format,
+                        format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     }, _)) = condition_source_0.condition_native() => {
                     // Wide equality reads words, including unsigned literal
                     // payloads filed under the native Int64 equality format.
-                    matches!(
-                        format,
-                        MachineIntegerType::Int64 | MachineIntegerType::UInt64
-                    ) && left.bitvector64_as_const().is_some()
+                    left.bitvector64_as_const().is_some()
                         && right.bitvector64_as_const().is_some()
                 }
                 condition_source_0 @ Proposition::ConditionIs(
@@ -9472,18 +9470,21 @@ fn evaluate_spec_if_paths_in(
                     _,
                 ) if let Some((ConditionTerm::Compare {
                         format,
+                        relation,
                         left,
                         right,
-                        ..
                     }, _)) = condition_source_0.condition_native() => {
-                    matches!(
+                    let closed = matches!(
                         format,
                         MachineIntegerType::Int32
                             | MachineIntegerType::UInt32
                             | MachineIntegerType::Int64
                             | MachineIntegerType::UInt64
                     ) && format.constant_from_term(left).is_some()
-                        && format.constant_from_term(right).is_some()
+                        && format.constant_from_term(right).is_some();
+                    closed_word_equality =
+                        closed && format.format().bits() == 32 && *relation == CompareRelation::Equal;
+                    closed && (!closed_word_equality || !budget.checked_reads)
                 }
                 _ => false,
             };
@@ -9523,7 +9524,7 @@ fn evaluate_spec_if_paths_in(
                                 | MachineIntegerType::Int64
                                 | MachineIntegerType::UInt64
                         )
-                    }) || path.value.boolean().is_some()
+                    }) || (!closed_word_equality && path.value.boolean().is_some())
                 };
                 let mut evaluate = |expression| {
                     evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -9552,10 +9553,18 @@ fn evaluate_spec_if_paths_in(
                 } else {
                     (evaluate(then_branch)?, evaluate(else_branch)?)
                 };
-                let scalar_arms = then_paths
-                    .first()
-                    .zip(else_paths.first())
-                    .is_some_and(|(left, right)| scalar(left) && scalar(right));
+                let scalar_arms =
+                    then_paths
+                        .first()
+                        .zip(else_paths.first())
+                        .is_some_and(|(left, right)| {
+                            scalar(left)
+                            && scalar(right)
+                            // A closed 32-bit equality previously used its selected
+                            // arm's type. Joining mixed machine types would promote it.
+                            && (!closed_word_equality
+                                || left.value.program_type() == right.value.program_type())
+                        });
                 if retained_comparison
                     && !scalar_arms
                     && let Some(truth) = constant_spec_condition_value(condition)
