@@ -2247,6 +2247,7 @@ fn evaluate_spec_integer_expression_paths_in(
             else_branch,
             assumptions,
             budget,
+            false,
         ),
         SpecIntegerExpression::FromMachine(machine) => {
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -3122,6 +3123,28 @@ fn evaluate_spec_integer_comparison_operand_in(
             true,
         );
     }
+    if !budget.checked_reads
+        && !budget.machine_result_production_disabled
+        && let SpecIntegerExpression::If {
+            condition,
+            then_branch,
+            else_branch,
+        } = expression
+        && simple_integer_if_arm(then_branch)
+        && simple_integer_if_arm(else_branch)
+        && super::functions::spec_proposition_is_state_independent(condition)
+    {
+        budget.consume_expression_step()?;
+        return evaluate_spec_integer_if_paths_in(
+            scope,
+            condition,
+            then_branch,
+            else_branch,
+            assumptions,
+            budget,
+            true,
+        );
+    }
     evaluate_spec_integer_expression_paths_in(scope, expression, assumptions, budget)
 }
 
@@ -3581,7 +3604,7 @@ fn lower_spec_algebraic_comparison_at_state_in(
         && super::functions::spec_algebraic_expression_is_obligation_free(left)
         && super::functions::spec_algebraic_expression_is_state_independent(left);
     for left_path in
-        evaluate_spec_algebraic_at_state_with_bindings_in(scope, left, assumptions, budget)?
+        evaluate_spec_algebraic_comparison_operand_in(scope, left, assumptions, budget)?
     {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
@@ -3594,12 +3617,7 @@ fn lower_spec_algebraic_comparison_at_state_in(
                 obligations: Vec::new(),
             }]
         } else {
-            evaluate_spec_algebraic_at_state_with_bindings_in(
-                scope,
-                right,
-                &right_assumptions,
-                budget,
-            )?
+            evaluate_spec_algebraic_comparison_operand_in(scope, right, &right_assumptions, budget)?
         };
         for right_path in right_paths {
             if left_path.value.algebraic_type() != right_path.value.algebraic_type() {
@@ -3636,6 +3654,38 @@ fn lower_spec_algebraic_comparison_at_state_in(
         }
     }
     Ok(paths)
+}
+
+fn evaluate_spec_algebraic_comparison_operand_in(
+    scope: SpecScope<'_>,
+    expression: &SpecAlgebraicExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecAlgebraicPath>> {
+    if !budget.checked_reads
+        && !budget.machine_result_production_disabled
+        && let SpecAlgebraicExpressionNode::If {
+            condition,
+            then_branch,
+            else_branch,
+        } = &expression.node
+        && simple_algebraic_if_arm(then_branch)
+        && simple_algebraic_if_arm(else_branch)
+        && super::functions::spec_proposition_is_state_independent(condition)
+    {
+        budget.consume_expression_step()?;
+        return evaluate_spec_algebraic_if_paths_in(
+            scope,
+            &expression.algebraic_type,
+            condition,
+            then_branch,
+            else_branch,
+            assumptions,
+            budget,
+            true,
+        );
+    }
+    evaluate_spec_algebraic_at_state_with_bindings_in(scope, expression, assumptions, budget)
 }
 
 #[cfg(test)]
@@ -3906,6 +3956,7 @@ fn evaluate_spec_algebraic_non_call_in(
             else_branch,
             assumptions,
             budget,
+            false,
         ),
         SpecAlgebraicExpressionNode::Match { scrutinee, arms } => {
             if !spec_algebraic_result_match_arms_are_well_formed(&scrutinee.algebraic_type, arms) {
@@ -9788,9 +9839,43 @@ fn obligations_owed_under(
         .collect()
 }
 
-/// An algebraic `if`, as [`evaluate_spec_if_paths_in`] evaluates a scalar
-/// one: a literally constant condition selects its branch, and any other
-/// lowers both into one conditional term.
+fn simple_integer_if_arm(expression: &SpecIntegerExpression) -> bool {
+    matches!(
+        expression,
+        SpecIntegerExpression::Term(IntegerTerm::Constant(_) | IntegerTerm::Variable(_))
+    )
+}
+
+/// Constructor trees with literal or bound fields require no evaluation
+/// domain. Partial operations and calls still use the selected-arm evaluator.
+fn simple_algebraic_if_arm(expression: &SpecAlgebraicExpression) -> bool {
+    use walk::{SpecNode, Visit, spec_tree_all};
+    spec_tree_all(SpecNode::Algebraic(expression), |node| {
+        crate::instrumentation::record_deterministic_work(1);
+        match node {
+            SpecNode::Algebraic(value) => match value.node {
+                SpecAlgebraicExpressionNode::Variable(_)
+                | SpecAlgebraicExpressionNode::Binding(_) => Visit::Skip,
+                SpecAlgebraicExpressionNode::Constructor { .. } => Visit::Descend,
+                _ => Visit::Stop(()),
+            },
+            SpecNode::AlgebraicValue(_) => Visit::Descend,
+            SpecNode::Integer(value) if simple_integer_if_arm(value) => Visit::Skip,
+            SpecNode::Expression(SpecExpression::Value(_)) => Visit::Skip,
+            _ => Visit::Stop(()),
+        }
+    })
+}
+
+fn retains_closed_value_if(proposition: &Proposition) -> bool {
+    proposition
+        .condition_native()
+        .is_some_and(|(condition, _)| {
+            crate::kernel::proof::fact_reasoning::literal_value_if_guard(condition).is_some()
+        })
+}
+
+/// Preserve a closed guard over simple arms in a logical comparison.
 fn evaluate_spec_algebraic_if_paths_in(
     scope: SpecScope<'_>,
     algebraic_type: &AlgebraicType,
@@ -9799,6 +9884,7 @@ fn evaluate_spec_algebraic_if_paths_in(
     else_branch: &SpecAlgebraicExpression,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
+    retain_closed: bool,
 ) -> ExecutionResult<Vec<SpecAlgebraicPath>> {
     if then_branch.algebraic_type != *algebraic_type
         || else_branch.algebraic_type != *algebraic_type
@@ -9817,7 +9903,11 @@ fn evaluate_spec_algebraic_if_paths_in(
             &condition_path.facts,
             &condition_path.obligations,
         );
-        let branch_paths = match constant_spec_condition_value(&condition_path.proposition) {
+        let retain_closed = retain_closed && retains_closed_value_if(&condition_path.proposition);
+        let branch_paths = match (!retain_closed)
+            .then(|| constant_spec_condition_value(&condition_path.proposition))
+            .flatten()
+        {
             Some(truth) => evaluate_spec_algebraic_at_state_with_bindings_in(
                 scope,
                 if truth { then_branch } else { else_branch },
@@ -9875,7 +9965,16 @@ fn evaluate_spec_algebraic_if_paths_in(
                             (else_path.value.clone(), then_path.value.clone())
                         };
                         branch_paths.push(SpecAlgebraicPath {
-                            value: if budget.machine_result_production_disabled {
+                            value: if retain_closed {
+                                AlgebraicResult::Shared(KernelTerm::algebraic_if_raw(
+                                    algebraic_type.clone(),
+                                    [
+                                        KernelTermImport::default().condition(&condition),
+                                        then_value.into_kernel(),
+                                        else_value.into_kernel(),
+                                    ],
+                                ))
+                            } else if budget.machine_result_production_disabled {
                                 AlgebraicTerm::if_then_else(
                                     condition.clone(),
                                     then_value.into_native_compat(),
@@ -9917,9 +10016,7 @@ fn evaluate_spec_algebraic_if_paths_in(
     Ok(paths)
 }
 
-/// An Integer `if`, as [`evaluate_spec_if_paths_in`] evaluates a scalar
-/// one: a literally constant condition selects its branch, and any other
-/// lowers both into one conditional term.
+/// Preserve a closed guard over simple arms in a logical comparison.
 fn evaluate_spec_integer_if_paths_in(
     scope: SpecScope<'_>,
     condition: &SpecProposition,
@@ -9927,6 +10024,7 @@ fn evaluate_spec_integer_if_paths_in(
     else_branch: &SpecIntegerExpression,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
+    retain_closed: bool,
 ) -> ExecutionResult<Vec<SpecIntegerPath>> {
     let mut paths = Vec::new();
     for condition_path in {
@@ -9942,7 +10040,11 @@ fn evaluate_spec_integer_if_paths_in(
             &condition_path.facts,
             &condition_path.obligations,
         );
-        let branch_paths = match constant_spec_condition_value(&condition_path.proposition) {
+        let retain_closed = retain_closed && retains_closed_value_if(&condition_path.proposition);
+        let branch_paths = match (!retain_closed)
+            .then(|| constant_spec_condition_value(&condition_path.proposition))
+            .flatten()
+        {
             Some(truth) => evaluate_spec_integer_expression_paths_in(
                 scope,
                 if truth { then_branch } else { else_branch },
@@ -10000,11 +10102,19 @@ fn evaluate_spec_integer_if_paths_in(
                             (else_path.value.clone(), then_path.value.clone())
                         };
                         branch_paths.push(SpecIntegerPath {
-                            value: IntegerResult::conditional(
-                                condition.clone(),
-                                then_value,
-                                else_value,
-                            ),
+                            value: if retain_closed {
+                                IntegerResult::from_kernel(KernelTerm::integer_if_raw([
+                                    KernelTermImport::default().condition(&condition),
+                                    then_value.into_kernel(),
+                                    else_value.into_kernel(),
+                                ]))
+                            } else {
+                                IntegerResult::conditional(
+                                    condition.clone(),
+                                    then_value,
+                                    else_value,
+                                )
+                            },
                             facts,
                             obligations,
                         });

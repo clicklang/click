@@ -517,6 +517,13 @@ path. Regressions: `mdtests/closed_machine_order_comparisons.md`,
 unchanged, and the shared comparison constructors used by checking still
 fold.
 
+Direct logical comparisons also retain a closed `if` over simple
+`Integer` or algebraic arms. The arms can be literals or bound values, and
+algebraic arms can be constructors with simple fields. Checking reads the
+selected arm, and admission of a comparison makes the equivalent selected
+comparison available through the existing fact indexes. Partial and
+state-dependent operands use the existing evaluation paths.
+
 Machine conditionals with closed 32/64-bit order guards, closed 64-bit equality
 guards, or same-variable 32/64-bit comparison guards retain their `if` node and
 guard during logical lowering. Their arm domains remain guarded, including
