@@ -5347,6 +5347,18 @@ fn rust_fixed_array_references_indexing_and_reborrows_verify() {
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
 
+    for function in ["length", "empty"] {
+        let output = p.cli(&["verify", "--trace-proof", function]);
+        let trace = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(trace.contains("proof trace"), "{trace}");
+        assert!(!trace.contains("__rust_mir_"), "{trace}");
+    }
+
     assert!(
         ProgramVerificationSession::new_program_prepared(
             &sidecar.replace("ensures words[1] == 7u32", "ensures words[1] == 8u32"),
