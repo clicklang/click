@@ -63,6 +63,20 @@ fn copy_source_after_call_project() -> Project {
 fn charon_array_copy_preserves_symbolic_source_across_by_value_call() {
     let p = copy_source_after_call_project();
     let prepared = p.prepared().unwrap();
+    let folded_argument = prepared
+        .export()
+        .functions
+        .iter()
+        .filter_map(|function| function.mir.as_ref())
+        .flat_map(|mir| &mir.blocks)
+        .any(|block| {
+            matches!(
+                &block.terminator,
+                click::languages::rust::schema::MirTerminator::Call { owned_arguments, .. }
+                    if owned_arguments.iter().any(|arg| arg.local == "words" && !arg.moved)
+            )
+        });
+    assert!(folded_argument);
     ProgramVerificationSession::new_program_prepared(COPY_SOURCE_AFTER_CALL, &prepared).unwrap();
     for (before, after) in [
         (

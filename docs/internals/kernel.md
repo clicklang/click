@@ -1474,6 +1474,15 @@ the step number in `result`, the read is `Expression::CallResult`, and the
 lowering emits `ProgramStatement::CallResult`. A proof names its result
 `call(f, j).result`, among the function's calls.
 
+A two-arm enum match that tests a call result and reads its payload once
+uses that same result for the test and the payload. The proof can split
+on the written call's `.result`.
+
+When the last argument of a call is a by-value copy of a record,
+`temporaries::bind_copied_call_arguments` can give the call the original
+place directly. The callee's parameter copies the value, and the caller
+has no additional named object for the argument.
+
 MIR builds a `for` loop's range in a temporary and moves it, often twice,
 into the loop's own iterator. `temporaries::collapse_iterator_moves` builds
 the range in the loop's iterator directly, so its state is the proof's
@@ -1551,12 +1560,14 @@ These still stay a temporary:
   loop's `next` result is one and a proof sees it;
 - a borrow, unless its one read in its block takes it whole: a call
   argument (`t = &mut x; f(t)` is `f(&mut x)`, whose borrow lasts the call), a
-  local's whole value (`let r = &mut x`), or a reborrow (`&mut *t` is the
+  local's whole value (`let r = &mut x`), a record's first field
+  (`Guard { slot: &mut *value, saved }`), or a reborrow (`&mut *t` is the
   borrow). A borrow of a place rooted at a local moves past statements that
   do not name that local;
 - a slice;
 - a local that roots a place (`&t`, `t.f`, `t[i]`);
-- an enum `match` scrutinee, whose proof split names a local.
+- an enum `match` scrutinee that still needs a local to supply its test and
+  payloads.
 
 This temporary is a defect to remove, not a design to extend. A proof should
 never see `__rust_mir_<N>` or any other name a front end or compiler invented. Do not add a temporary, a name check, or a special case

@@ -3816,6 +3816,7 @@ pub(super) fn decode_crate(
             &mut blocks,
             &anonymous_slice_components,
         );
+        temporaries::bind_copied_call_arguments(&mut locals, &mut blocks, &temporaries);
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
         temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
         let kept: BTreeSet<_> = locals.iter().map(|local| local.name.as_str()).collect();

@@ -1289,9 +1289,11 @@ scope starts before its initializer. `f.statement(3).local(word)` names the
 `word` that statement declares, and `f.local(i)` names a declaration by its
 position among the function's locals; diagnostics write a repeated name in
 that canonical form, `"lib.rs"::f.local(5)`
-(`charon_repeated_source_names_are_distinct_declarations`). Other unnamed
-locals use collision-checked `__rust_mir_ID` identities from the locked
-artifact. These compiler identities can change when the artifact is refreshed.
+(`charon_repeated_source_names_are_distinct_declarations`). The importer
+can retain an unnamed operand as an expression value, including some
+arithmetic operands and enum call results. When the importer still lowers
+an unnamed MIR local as a binding, its compiler identity can change when
+the artifact is refreshed.
 
 Conditions currently support scalar comparisons, boolean combinations,
 negation, casts, and builtin `.len()`. Calls, indexing, and arithmetic in a
