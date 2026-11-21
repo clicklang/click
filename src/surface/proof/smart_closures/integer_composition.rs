@@ -1407,8 +1407,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 continue;
             };
-            let Some(query) =
-                crate::kernel::machine_integer::definedness::range_domain_query(&kernel)
+            // The signed-definedness search below serves a range domain whose
+            // operands owe nothing. A candidate whose operand is itself an
+            // operation or a read is kept only when it closes directly: the
+            // theorem's own arguments carry that operand's domain.
+            let Some(query) = (!domain_has_compound_operand(&domain))
+                .then(|| crate::kernel::machine_integer::definedness::range_domain_query(&kernel))
+                .flatten()
             else {
                 // Reads can carry a separate domain as well. Retain that
                 // exact established fact for theorem-argument checking.
@@ -1901,4 +1906,43 @@ mod tests {
 mod scaling_tests {
     use super::tests::*;
     include!("../../../scaling_tests/surface/proof/smart_closures/integer_composition/tests.rs");
+}
+
+/// Whether a `defined` candidate's root operation has an operand that owes a
+/// domain of its own: an operation or a read rather than a name or literal.
+/// Its claim is then that operation's domain alone, over operand values
+/// whose own domains the theorem's arguments carry.
+pub(super) fn domain_has_compound_operand(domain: &ClickProposition) -> bool {
+    let ClickProposition::Defined { expression } = domain else {
+        return false;
+    };
+    let mut root = expression;
+    loop {
+        match root {
+            ContractExpression::Old(inner)
+            | ContractExpression::IntegerContext(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => root = inner,
+            ContractExpression::CUnary { operand, .. } => root = operand,
+            _ => break,
+        }
+    }
+    let compound = |operand: &ContractExpression| {
+        !matches!(
+            operand,
+            ContractExpression::Binding(_)
+                | ContractExpression::ProgramBinding(_)
+                | ContractExpression::IntegerLiteral(_)
+                | ContractExpression::ProgramExpression(
+                    ProgramExpression::Value(_) | ProgramExpression::Variable(_)
+                )
+        )
+    };
+    match root {
+        ContractExpression::Add(left, right)
+        | ContractExpression::Subtract(left, right)
+        | ContractExpression::Multiply(left, right) => compound(left) || compound(right),
+        _ => false,
+    }
 }
