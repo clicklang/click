@@ -737,7 +737,7 @@ uint64 spell(const uint8* b, uint64 n) {
     }
 
     #[test]
-    fn verify_traces_an_obligation_refused_at_execution_completion() {
+    fn execution_completion_uses_the_guarded_call_paths_facts() {
         let directory = tempfile::tempdir().unwrap();
         fs::write(
             directory.path().join("demo.c"),
@@ -783,41 +783,13 @@ theorem clear_has_contract() executes clear(int32* p, const int32* q) {
         )
         .unwrap();
 
-        let trace = entry([
+        entry([
             "verify".to_owned(),
             "--trace-proof".to_owned(),
             "clear_has_contract".to_owned(),
             sidecar.display().to_string(),
         ])
-        .unwrap_err();
-        let (prefix, failed) = trace
-            .split_once("\nfailed check:\n")
-            .unwrap_or_else(|| panic!("{trace}"));
-        assert!(
-            prefix.contains("proof trace (checked tactics and branch facts)"),
-            "{trace}"
-        );
-        assert!(prefix.contains("branch (then arm)"), "{trace}");
-        assert!(!prefix.contains("branch (else arm)"), "{trace}");
-        assert!(prefix.contains("step(clear"), "{trace}");
-        assert!(
-            failed.contains("stage: execution path certification"),
-            "{trace}"
-        );
-        assert!(
-            failed.contains("clear_has_contract.contract path 0"),
-            "{trace}"
-        );
-        assert!(
-            failed.contains(
-                "goal: memory(p[Int32:0..1], stride=4) separate memory(q[Int32:0..1], stride=4)"
-            ),
-            "{trace}"
-        );
-        assert!(
-            failed.contains("available premises at the failed check"),
-            "{trace}"
-        );
+        .expect("the nonnull path proves its write separate from the view");
     }
 
     #[test]
