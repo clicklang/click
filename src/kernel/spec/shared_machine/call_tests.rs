@@ -1011,6 +1011,79 @@ fn static_array_versions_select_their_own_write_across_disjoint_calls() {
 }
 
 #[test]
+fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
+    let _session = VerificationSession::enter();
+    let array = SymbolicMemory::local_pointer("array");
+    let other = SymbolicMemory::local_pointer("other");
+    let argument = ProgramValue::typed_pointer(array.clone(), ProgramType::Int32Pointer);
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let declared = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_block(array.base.clone(), 4)
+            .with_block(other.base.clone(), 4),
+    );
+    let assumptions = PureFactContext::new();
+    let call = |state: &ExecutionState, address: &Address, id| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().with_call_memory_havoc(
+                Variable(id),
+                &[MemoryRange::new(address.clone(), 0.into(), 1.into())],
+                &assumptions,
+                None,
+            ))
+    };
+    let version =
+        |state: &ExecutionState| array_ref_argument_point(&state.program_point(), &argument);
+    let write = |state: &ExecutionState| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().store(array.clone(), int32(7)))
+    };
+    let unknown = call(&declared, &Address::symbolic(Variable(1013600)), 1013601);
+    assert!(
+        unknown
+            .program_point()
+            .indexed_array_version(&array.base)
+            .is_none()
+    );
+
+    let first = write(&unknown);
+    let expected = version(&first);
+    assert_eq!(expected.read_version_id(), first.observation_point_id());
+    let second = write(&first);
+    assert_eq!(first.memory(), second.memory());
+    assert_ne!(expected, version(&second));
+    let ended = second.clone().with_memory(
+        second
+            .memory()
+            .clone()
+            .store(array.clone(), int32(8))
+            .without_local_block(&array.base),
+    );
+    assert!(
+        ended
+            .program_point()
+            .indexed_array_version(&array.base)
+            .is_none()
+    );
+
+    let work = [1, 8, 64, 256].map(|count| {
+        let mut state = first.clone();
+        for index in 0..count {
+            state = call(&state, &other, 1013700 + index);
+        }
+        let (observed, work) =
+            crate::instrumentation::measure_deterministic_work(|| version(&state));
+        assert_eq!(observed, expected);
+        work
+    });
+    assert!(work.iter().all(|units| *units <= work[0] + 4), "{work:?}");
+}
+
+#[test]
 fn declared_predicate_array_names_its_entry_point_after_local_calls() {
     let _session = VerificationSession::enter();
     let array = Address {

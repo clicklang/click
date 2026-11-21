@@ -267,7 +267,7 @@ struct PointNode {
     /// Array version carried across this point's checked call. The ordinary
     /// local suffix can reach this point without crossing the call for scalars.
     array_version_after_call: Option<ReadVersionPoint>,
-    static_array_versions: Option<StaticArrayVersions>,
+    array_block_versions: Option<ArrayBlockVersions>,
 }
 
 #[derive(Clone, Debug)]
@@ -277,13 +277,13 @@ struct ReadVersionPoint {
     memory: SharedMemory,
 }
 
-#[derive(Clone, Debug)]
-struct StaticArrayVersions {
-    entry: ReadVersionPoint,
+#[derive(Clone, Debug, Default)]
+struct ArrayBlockVersions {
+    static_entry: Option<ReadVersionPoint>,
     writes: PersistentMap<AddressBase, Weak<PointNode>>,
 }
 
-impl StaticArrayVersions {
+impl ArrayBlockVersions {
     fn after(
         predecessors: &[PathLink],
         steps: Option<&StepLog>,
@@ -310,42 +310,63 @@ impl StaticArrayVersions {
         }
         let mut versions = if before.function_entry {
             Self {
-                entry: ReadVersionPoint {
+                static_entry: Some(ReadVersionPoint {
                     point: Arc::downgrade(before),
                     view: view.clone(),
                     memory: source.clone(),
-                },
+                }),
                 writes: PersistentMap::default(),
             }
         } else {
-            before.static_array_versions.clone()?
+            before.array_block_versions.clone().unwrap_or_default()
         };
-        for log in std::iter::successors(steps, |log| log.previous.as_deref()) {
-            use crate::kernel::resource_tracker::step_effect::{
-                BlockVersionEffect, block_version_effect,
-            };
-
-            crate::instrumentation::record_deterministic_work(1);
-            let mut record = |block: &AddressBase| {
-                if block.is_static_storage_block() {
-                    versions.writes.insert(block.clone(), point.clone());
-                    true
-                } else {
-                    indexed_local(block) || matches!(block, AddressBase::Temporary(_))
+        if let Some(log) = steps {
+            if log.previous.is_none() {
+                versions.record(&log.step, point)?;
+            } else {
+                let effects =
+                    std::iter::successors(steps, |log| log.previous.as_deref()).collect::<Vec<_>>();
+                for effect in effects.into_iter().rev() {
+                    versions.record(&effect.step, point)?;
                 }
-            };
-            match block_version_effect(&log.step) {
-                BlockVersionEffect::Object(block, _) if record(block) => {}
-                BlockVersionEffect::WriteSet(ranges)
-                    if ranges.iter().all(|range| {
-                        crate::instrumentation::record_deterministic_work(1);
-                        record(&range.base().base)
-                    }) => {}
-                BlockVersionEffect::Unchanged => {}
-                _ => return None,
             }
         }
-        Some(versions)
+        (versions.static_entry.is_some() || !versions.writes.is_empty()).then_some(versions)
+    }
+
+    fn record(&mut self, step: &MemoryDerivation, point: &Weak<PointNode>) -> Option<()> {
+        use crate::kernel::resource_tracker::step_effect::{
+            BlockVersionEffect, block_version_effect,
+        };
+
+        crate::instrumentation::record_deterministic_work(1);
+        if let MemoryDerivation::LocalLifetimeEnded { block, .. } = step
+            && indexed_local(block)
+        {
+            self.writes.remove(block);
+            return Some(());
+        }
+        let mut record_object = |block: &AddressBase| {
+            if block.is_static_storage_block() || indexed_local(block) {
+                self.writes.insert(block.clone(), point.clone());
+                true
+            } else {
+                matches!(block, AddressBase::Temporary(_))
+            }
+        };
+        match block_version_effect(step) {
+            BlockVersionEffect::Object(block, _) if record_object(block) => Some(()),
+            BlockVersionEffect::WriteSet(ranges)
+                if ranges.iter().all(|range| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    record_object(&range.base().base)
+                }) =>
+            {
+                Some(())
+            }
+            BlockVersionEffect::Unchanged => Some(()),
+            _ => None,
+        }
     }
 }
 
@@ -519,7 +540,7 @@ impl PathLink {
                 point_read_index,
                 external_read_start,
                 array_version_after_call: None,
-                static_array_versions: None,
+                array_block_versions: None,
             })),
             IndexedView::Recorded,
         )
@@ -551,7 +572,7 @@ impl PathLink {
                     id,
                     transition,
                 );
-                let static_array_versions = StaticArrayVersions::after(
+                let array_block_versions = ArrayBlockVersions::after(
                     &predecessors,
                     steps.as_deref(),
                     &memory,
@@ -568,7 +589,7 @@ impl PathLink {
                     point_read_index,
                     external_read_start,
                     array_version_after_call,
-                    static_array_versions,
+                    array_block_versions,
                 }
             })),
             IndexedView::Recorded,
@@ -1385,10 +1406,10 @@ impl ProgramPoint {
         self.clone()
     }
 
-    /// A recorded version for an array in static or caller-owned storage.
+    /// A recorded version for an array in automatic, static or caller storage.
     pub(in crate::kernel) fn indexed_array_version(&self, block: &AddressBase) -> Option<Self> {
-        if block.is_static_storage_block() {
-            return self.indexed_static_array_version(block);
+        if block.is_static_storage_block() || indexed_local(block) {
+            return self.indexed_block_array_version(block);
         }
         if !external_storage(block) {
             return None;
@@ -1405,15 +1426,15 @@ impl ProgramPoint {
         })
     }
 
-    fn indexed_static_array_version(&self, block: &AddressBase) -> Option<Self> {
+    fn indexed_block_array_version(&self, block: &AddressBase) -> Option<Self> {
         if !self.path.matches_indexed_view(&self.memory) {
             return None;
         }
         let current = self.path.0.as_ref()?;
-        if current.function_entry {
+        if current.function_entry && block.is_static_storage_block() {
             return Some(self.clone().for_exact_read());
         }
-        let versions = current.static_array_versions.as_ref()?;
+        let versions = current.array_block_versions.as_ref()?;
         if let Some(version) = versions.writes.get(block) {
             let version = version.upgrade()?;
             return Some(Self {
@@ -1422,7 +1443,10 @@ impl ProgramPoint {
                 read: ReadSelection::Exact,
             });
         }
-        let entry = &versions.entry;
+        if !block.is_static_storage_block() {
+            return None;
+        }
+        let entry = versions.static_entry.as_ref()?;
         Some(Self {
             memory: entry.memory.clone(),
             path: PathLink(Some(entry.point.upgrade()?), entry.view.clone()),
