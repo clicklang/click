@@ -178,6 +178,101 @@ fn aggregate_copy_array_keeps_its_caller_source_point_after_an_earlier_field() {
     assert_eq!(version.read_version_id(), entry.program_point_id());
 }
 
+#[test]
+fn aggregate_copy_names_uncached_scalar_fields_at_the_caller_versions() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let target = SymbolicMemory::frame_local_pointer(1, "scalar_record_copy");
+    let layout = AggregateLayout::new(
+        24,
+        8,
+        vec![
+            AggregateField::new("tag", 0, ProgramType::Int32),
+            AggregateField::new("count", 4, ProgramType::UInt32),
+            AggregateField::new("x", 8, ProgramType::Float32),
+            AggregateField::new("y", 16, ProgramType::Float64),
+        ],
+    );
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let state = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_block(target.base.clone(), layout.size_bytes()),
+    );
+    let entry_id = entry.program_point_id();
+    let copy_id = state.observation_point_id();
+    assert_ne!(entry_id, copy_id);
+    let copied = copy_aggregate_fields_checked_at(&state, &source, &target, &layout).unwrap();
+    for (offset, ty, expected) in [
+        (0, ProgramType::Int32, entry_id),
+        (4, ProgramType::UInt32, entry_id),
+        (8, ProgramType::Float32, copy_id),
+        (16, ProgramType::Float64, copy_id),
+    ] {
+        assert!(
+            state
+                .memory()
+                .known_value(&source.offset_by_bytes(offset))
+                .is_none()
+        );
+        let value = copied.known_value(&target.offset_by_bytes(offset)).unwrap();
+        assert_eq!(value.program_type(), ty);
+        let Some(MachineTerm::MemoryLoad(point, address, kind)) =
+            crate::kernel::spec::program_value_bitvector_term(&value)
+        else {
+            panic!("expected a typed source read");
+        };
+        assert_eq!(point.read_version_id(), expected);
+        assert_eq!(*address, source.offset_by_bytes(offset));
+        assert_eq!(Some(kind), LoadKind::of_type(ty));
+    }
+}
+
+#[test]
+fn aggregate_copy_names_forgotten_integer_fields_by_their_typed_stores() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let target = SymbolicMemory::frame_local_pointer(1, "forgotten_record_copy");
+    for value in [
+        crate::kernel::uint8(17),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(42)),
+    ] {
+        let ty = value.program_type();
+        let bytes = ty.byte_width();
+        let layout = AggregateLayout::new(bytes, bytes, vec![AggregateField::new("value", 0, ty)]);
+        let initial = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(target.base.clone(), bytes));
+        let stored = initial
+            .clone()
+            .with_memory(initial.memory().clone().store(source.clone(), value));
+        let forgotten = stored.memory().without_possible_aliasing_cells(
+            &source,
+            bytes,
+            &PureFactContext::new(),
+        );
+        let before = stored.clone().with_memory(forgotten);
+        assert!(before.memory().known_value(&source).is_none());
+        let copied = copy_aggregate_fields_checked_at(&before, &source, &target, &layout).unwrap();
+        let value = copied.known_value(&target).unwrap();
+        assert_eq!(value.program_type(), ty);
+        let Some(MachineTerm::MemoryLoad(point, address, kind)) =
+            crate::kernel::spec::program_value_bitvector_term(&value)
+        else {
+            panic!("expected a typed source read");
+        };
+        assert_eq!(point.read_version_id(), stored.observation_point_id());
+        assert_eq!(*address, source);
+        assert_eq!(Some(kind), LoadKind::of_type(ty));
+    }
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/aggregate_union_copy_tests.rs");

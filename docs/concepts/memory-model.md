@@ -68,7 +68,9 @@ program point. A symbolic index into a copied run uses the same displacement
 within the captured source range and retains its recorded read version when
 available. A checked scalar-array copy captures unknown source slots at the
 point before the copy. A checked aggregate assignment from caller storage
-into a local uses that same source point for compact `uint32` array fields.
+into a local uses that source point for compact `uint32` array fields and
+to name uncached scalar fields when the appropriate typed store, entry
+version, or float read point is available.
 
 `exact(place)` keys the read by the selected program point when one is
 available. Raising uses `exact` at that point, even if another point has
