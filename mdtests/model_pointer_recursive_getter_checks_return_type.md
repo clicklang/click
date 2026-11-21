@@ -18,7 +18,7 @@ function parent(t: Tree) -> struct node* decreases t {
     }
 }
 theorem getter(t: Tree) {
-    ensures typed(parent(t)) == typed(parent(t)) by normalize();
+    ensures typed(parent(t)) == typed(parent(t)) by known();
 }
 ```
 

@@ -26,7 +26,7 @@ void f(int32* p, int32 end, int32 count, int32 k) {
         invariant forall (j: int32) { 0 <= j and j < start implies p[j] == old(p[j]) };
         initialize by {
             have forall (j: int32) { 0 <= j and j < start implies p[j] == old(p[j]) } by {
-                intro(); intro(); normalize();
+                intro(); intro(); known();
             }
         }
         maintain by {

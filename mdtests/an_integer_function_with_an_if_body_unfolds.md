@@ -12,7 +12,7 @@ function pick(n: Integer, c: Bool) -> Integer { if c { n + 1 } else { n } }
 theorem pick_true(n: Integer) {
     ensures pick(n, true) == n + 1 by {
         unfold(pick(n, true));
-        normalize();
+        known();
     }
 }
 

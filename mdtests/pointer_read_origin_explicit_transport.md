@@ -22,22 +22,22 @@ int32 read_after_write(int32** slot, int32* target, int32* other) {
     mark before;
     step();
     have separate(statement(0).footprint, memory(*slot)) by {
-        normalize() using { separate(memory(*other), memory(*slot)); };
+        solve() using { separate(memory(*other), memory(*slot)); };
     }
     have separate(statement(0).footprint, memory(*target)) by {
-        normalize() using { separate(memory(*other), memory(*target)); };
+        solve() using { separate(memory(*other), memory(*target)); };
     }
     have *slot == at(before, *slot) by {
         preserve(memory(*slot), statement(0));
     }
     have *slot == target by {
-        normalize() using { *slot == at(before, *slot); at(before, *slot) == target; };
+        solve() using { *slot == at(before, *slot); at(before, *slot) == target; };
     }
     have *target == at(before, *target) by {
         preserve(memory(*target), statement(0));
     }
     have *target == 7 by {
-        normalize() using { *target == at(before, *target); at(before, *target) == 7; };
+        solve() using { *target == at(before, *target); at(before, *target) == 7; };
     }
     step();
 }

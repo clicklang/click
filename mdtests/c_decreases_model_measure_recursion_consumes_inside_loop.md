@@ -44,7 +44,7 @@ theorem tree_size_is_nonnegative(m: Tree) {
         match m {
             Tree::Leaf => {
                 unfold(tree_size(Tree::Leaf));
-                normalize();
+                known();
             }
             Tree::Node(child, sibling) => {
                 apply(ih(child));
@@ -94,7 +94,7 @@ void destroy(struct tree* t) {
                     have tree_size(x.model) == tree_size(child_model) + tree_size(sibling_model) + 1 by {
                         rewrite(x.model, Tree::Node(child_model, sibling_model));
                         unfold(tree_size(Tree::Node(child_model, sibling_model)));
-                        normalize();
+                        known();
                     }
                     have tree_size(child_model) < tree_size(old(x.model)) by {
                         solve() using {

@@ -64,13 +64,13 @@ void roundtrip(struct node* p, struct node* q) {
             mark before_store;
             step();
             have separate(statement(0).footprint, memory(id->left)) by {
-                normalize() using { separate(memory((&q->tag)[0..1]), memory(id->left)); };
+                solve() using { separate(memory((&q->tag)[0..1]), memory(id->left)); };
             }
             have id->left == at(before_store, id->left) by {
                 preserve(memory(id->left), statement(0));
             }
             have separate(statement(0).footprint, memory(id->right)) by {
-                normalize() using { separate(memory((&q->tag)[0..1]), memory(id->right)); };
+                solve() using { separate(memory((&q->tag)[0..1]), memory(id->right)); };
             }
             have id->right == at(before_store, id->right) by {
                 preserve(memory(id->right), statement(0));

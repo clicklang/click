@@ -28,7 +28,7 @@ struct sized_node* enclosing(struct rb_node* rb) {
 verifying "container.c";
 struct sized_node* enclosing(struct rb_node* rb) {
     ensures address(result) == address(rb);
-} by { step_until(function.exit); normalize(); }
+} by { step_until(function.exit); known(); }
 ```
 
 ```expect

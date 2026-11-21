@@ -25,7 +25,7 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
     ensures zeros(a, 0, n) == old(zeros(a, 0, n));
 } by {
     mark entry;
-    have zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n) by normalize();
+    have zeros(at(entry, a), 0, n) == zeros(at(entry, a), 0, n) by known();
     have contains(memory(b[0..n]), memory(b[j])) by {
         apply(click::separation::contains_element(b, 0, n, j)) using { 0 <= j; j < n; };
     }
@@ -39,7 +39,7 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
             contains(memory(a[0..n]), memory(a[0..n]));
         };
     }
-    have 0 <= 0 by { normalize(); }
+    have 0 <= 0 by { known(); }
     have 0 <= n by { solve(); }
     have viewable(a[0..n]) by { observe(a[0..n]); known(); }
     step();
@@ -60,7 +60,7 @@ void mark_other(int32 *a, int32 *b, int32 j, int32 n) {
                 };
             }
             have separate(statement(0).footprint, memory(a[k])) by {
-                normalize() using { separate(memory(b[j]), memory(a[k])); };
+                solve() using { separate(memory(b[j]), memory(a[k])); };
             }
             preserve(memory(a[k]), statement(0));
         }

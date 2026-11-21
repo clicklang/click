@@ -20,7 +20,7 @@ theorem four_is_even() {
         unfold(even((4 - 1) - 1));
         unfold(odd(((4 - 1) - 1) - 1));
         unfold(even((((4 - 1) - 1) - 1) - 1));
-        normalize();
+        known();
     }
 }
 
@@ -30,7 +30,7 @@ theorem three_is_odd() {
         unfold(even(3 - 1));
         unfold(odd((3 - 1) - 1));
         unfold(even(((3 - 1) - 1) - 1));
-        normalize();
+        known();
     }
 }
 ```
