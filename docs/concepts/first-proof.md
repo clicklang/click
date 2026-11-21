@@ -66,7 +66,7 @@ Click refuses it:
 
 ```console
 $ click verify increment.click
-proof error:
+unsuccessful search:
   `increment.ensures_0` tactic 0
   `step()` requires proof excluding signed overflow
   C statement at increment.c:2:5

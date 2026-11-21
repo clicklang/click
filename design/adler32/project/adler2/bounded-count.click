@@ -46,7 +46,7 @@ theorem adler_bounded_count_lower(count: uint64, low: int32) {
  requires low as uint64 <= count;
  ensures low <= count as uint32 as int32 by {
   apply(adler_bounded_count(count));
-  have low <= 2147483647 by normalize();
+  have low <= 2147483647 by known();
   have to_integer(low as uint64) == to_integer(low) by {
    solve() using { 0 <= to_integer(low); to_integer(low) <= 2147483647; };
   }
@@ -65,7 +65,7 @@ theorem adler_bounded_count_upper(count: uint64, high: int32) {
  requires count <= high as uint64;
  ensures count as uint32 as int32 <= high by {
   apply(adler_bounded_count(count));
-  have high <= 2147483647 by normalize();
+  have high <= 2147483647 by known();
   have to_integer(high as uint64) == to_integer(high) by {
    solve() using { 0 <= to_integer(high); to_integer(high) <= 2147483647; };
   }

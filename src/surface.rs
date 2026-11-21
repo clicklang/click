@@ -8909,6 +8909,8 @@ pub struct ClickError {
     rendered: std::sync::OnceLock<Box<str>>,
     kind: ClickErrorKind,
     failed_tactic: Option<&'static str>,
+    proof_refusal: Option<ProofRefusal>,
+    work_limit_exhausted: bool,
     diagnostic: Option<std::sync::Arc<proof_diagnostics::ProofFailureDiagnostic>>,
     search_failures: Option<std::sync::Arc<Vec<proof_diagnostics::ProofSearchFailure>>>,
     unresolved_requirement: Option<std::sync::Arc<UnresolvedRequirement>>,
@@ -8953,8 +8955,29 @@ impl ClickErrorKind {
             Self::Syntax => "syntax error",
             Self::Limit => "limit error",
             Self::Type => "type error",
-            Self::Proof => "proof error",
+            Self::Proof => "verification error",
             Self::Internal => "internal error",
+        }
+    }
+}
+
+/// The reason a proof operation was refused, when the verifier can classify it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProofRefusal {
+    Tactic,
+    UnsuccessfulSearch,
+    ImplicitStatementSearch,
+    UnprovedGoal,
+    Verification,
+}
+
+impl ProofRefusal {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Tactic => "tactic error",
+            Self::UnsuccessfulSearch | Self::ImplicitStatementSearch => "unsuccessful search",
+            Self::UnprovedGoal => "unproved goal",
+            Self::Verification => "verification error",
         }
     }
 }
@@ -10749,12 +10772,13 @@ impl ClickError {
 
     fn new(message: impl Into<String>) -> Self {
         let message = Self::summary_without_rendered_diagnostic(message.into());
-        let message = match crate::instrumentation::exceeded_verification_limit_context() {
+        let work_limit = crate::instrumentation::exceeded_verification_limit_context();
+        let message = match &work_limit {
             // Deliberate limit diagnostics already include the active context
             // and often add useful target/premise detail. Preserve those;
             // replace only an unrelated semantic error constructed from a
             // conservative false/none after the limit fired.
-            Some(context) if !message.contains(&context) => {
+            Some(context) if !message.contains(context) => {
                 format!("verification budget exhausted inside {context}")
             }
             _ => message,
@@ -10765,6 +10789,8 @@ impl ClickError {
             rendered: std::sync::OnceLock::new(),
             kind,
             failed_tactic: None,
+            proof_refusal: None,
+            work_limit_exhausted: work_limit.is_some(),
             diagnostic: None,
             search_failures: None,
             unresolved_requirement: None,
@@ -10780,8 +10806,9 @@ impl ClickError {
     ) -> Self {
         let summary = Self::summary_without_rendered_diagnostic(summary.into());
         diagnostic.reason = Self::summary_without_rendered_diagnostic(diagnostic.reason);
-        let summary = match crate::instrumentation::exceeded_verification_limit_context() {
-            Some(context) if !summary.contains(&context) => {
+        let work_limit = crate::instrumentation::exceeded_verification_limit_context();
+        let summary = match &work_limit {
+            Some(context) if !summary.contains(context) => {
                 format!("verification budget exhausted inside {context}")
             }
             _ => summary,
@@ -10792,6 +10819,8 @@ impl ClickError {
             rendered: std::sync::OnceLock::new(),
             kind,
             failed_tactic: None,
+            proof_refusal: None,
+            work_limit_exhausted: work_limit.is_some(),
             diagnostic: Some(std::sync::Arc::new(diagnostic)),
             search_failures: None,
             unresolved_requirement: None,
@@ -10869,7 +10898,7 @@ impl ClickError {
             .as_deref()
             .unwrap_or_else(|| self.message());
         let (summary, context) = message.split_once('\n').unwrap_or((message, ""));
-        let mut report = format!("{summary}\n  error kind: {}", self.kind.label());
+        let mut report = format!("{summary}\n  error kind: {}", self.report_label());
         if let Some(tactic) = self.failed_tactic {
             report.push_str("\n  tactic: ");
             report.push_str(tactic);
@@ -10945,7 +10974,10 @@ impl ClickError {
                         .then_some(obligation)
                 });
             (
-                format!("proof error in `{function}` during contract certification:"),
+                format!(
+                    "{} in `{function}` during contract certification:",
+                    self.report_label()
+                ),
                 obligation.unwrap_or(detail),
                 obligation.is_some(),
             )
@@ -10957,12 +10989,12 @@ impl ClickError {
                 .map(|(function, _)| function)
         {
             (
-                format!("{} in `{function}`:", self.kind.label()),
+                format!("{} in `{function}`:", self.report_label()),
                 reason,
                 false,
             )
         } else {
-            (format!("{}:", self.kind.label()), reason, false)
+            (format!("{}:", self.report_label()), reason, false)
         };
         for (nested, line) in concise_reason_lines(reason) {
             report.push_str(if nested { "\n    " } else { "\n  " });
@@ -11029,7 +11061,7 @@ impl ClickError {
                     );
                     if !premises.is_empty() {
                         let mut available = format!(
-                            "available premises at the failed check (showing up to 8 relevant facts from {} recorded premises):",
+                            "premises in scope (showing up to 8 relevant facts from {} recorded premises):",
                             state.premise_count(),
                         );
                         for premise in premises.iter().take(8) {
@@ -11217,6 +11249,39 @@ impl ClickError {
 
     pub fn kind(&self) -> ClickErrorKind {
         self.kind
+    }
+
+    /// The proof refusal the terminal report attributes to this error.
+    pub fn proof_refusal(&self) -> Option<ProofRefusal> {
+        if self.kind != ClickErrorKind::Proof || self.work_limit_exhausted {
+            return None;
+        }
+        self.proof_refusal.or_else(|| {
+            (self.failed_tactic.is_some() || self.proof_source_tactic_path().is_some())
+                .then_some(ProofRefusal::Tactic)
+        })
+    }
+
+    fn report_label(&self) -> &'static str {
+        if self.kind == ClickErrorKind::Proof && self.work_limit_exhausted {
+            return ClickErrorKind::Limit.label();
+        }
+        self.proof_refusal()
+            .map_or(self.kind.label(), ProofRefusal::label)
+    }
+
+    pub(crate) fn with_proof_refusal(mut self, refusal: ProofRefusal) -> Self {
+        // Preserve the innermost operation's classification through wrappers.
+        if self.proof_refusal.is_none()
+            || self.proof_refusal == Some(ProofRefusal::Verification)
+                && matches!(
+                    refusal,
+                    ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch
+                )
+        {
+            self.proof_refusal = Some(refusal);
+        }
+        self
     }
 
     /// The claim that supplied this proof failure's checked state, if any.
@@ -11550,7 +11615,7 @@ impl ClickError {
         mut self,
         checks: proof_diagnostics::CheckObservations,
     ) -> Self {
-        // The innermost failed check owns its observations. An enclosing
+        // The innermost proof refusal owns its observations. An enclosing
         // scope's capture may be empty because the nested collector already
         // consumed them; preserve that more precise record.
         if let Some(diagnostic) = &mut self.diagnostic
@@ -11642,6 +11707,8 @@ impl ClickError {
             rendered: std::sync::OnceLock::new(),
             kind: self.kind,
             failed_tactic: self.failed_tactic,
+            proof_refusal: self.proof_refusal,
+            work_limit_exhausted: self.work_limit_exhausted,
             diagnostic: self.diagnostic,
             search_failures: self.search_failures,
             unresolved_requirement: self.unresolved_requirement,
@@ -11676,6 +11743,8 @@ impl Clone for ClickError {
             rendered: std::sync::OnceLock::new(),
             kind: self.kind,
             failed_tactic: self.failed_tactic,
+            proof_refusal: self.proof_refusal,
+            work_limit_exhausted: self.work_limit_exhausted,
             diagnostic: self.diagnostic.clone(),
             search_failures: self.search_failures.clone(),
             unresolved_requirement: self.unresolved_requirement.clone(),
@@ -11691,6 +11760,8 @@ impl PartialEq for ClickError {
         self.message == other.message
             && self.kind == other.kind
             && self.failed_tactic == other.failed_tactic
+            && self.proof_refusal == other.proof_refusal
+            && self.work_limit_exhausted == other.work_limit_exhausted
             && self.diagnostic == other.diagnostic
             && self.search_failures == other.search_failures
             && self.unresolved_requirement == other.unresolved_requirement

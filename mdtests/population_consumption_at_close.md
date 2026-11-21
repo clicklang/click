@@ -126,7 +126,7 @@ uint32 contribute_early(struct counter* p) {
         rewrite(at(function.entry, to_integer(p->value)), at(function.entry, (3 - to_integer(count(remaining(p))))));
         rewrite(to_integer(p->value), (3 - to_integer(count(remaining(p)))));
         rewrite(to_integer(count(remaining(p))), (to_integer(old(count(remaining(p)))) - 1));
-        normalize();
+        known();
     }
     known();
     known();
@@ -328,7 +328,7 @@ uint32 contribute_branch(struct counter* p, int32 report) {
             rewrite(at(function.entry, to_integer(p->value)), at(function.entry, (3 - to_integer(count(remaining(p))))));
             rewrite(to_integer(p->value), (3 - to_integer(count(remaining(p)))));
             rewrite(to_integer(count(remaining(p))), (to_integer(old(count(remaining(p)))) - 1));
-            normalize();
+            known();
         }
         known();
         known();
@@ -355,7 +355,7 @@ uint32 contribute_branch(struct counter* p, int32 report) {
             rewrite(at(function.entry, to_integer(p->value)), at(function.entry, (3 - to_integer(count(remaining(p))))));
             rewrite(to_integer(p->value), (3 - to_integer(count(remaining(p)))));
             rewrite(to_integer(count(remaining(p))), (to_integer(old(count(remaining(p)))) - 1));
-            normalize();
+            known();
         }
         known();
         known();

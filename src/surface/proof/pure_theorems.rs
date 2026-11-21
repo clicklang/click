@@ -2720,7 +2720,10 @@ fn check_pure_script_with_proof(
             Some(super::smart_closures::LinearScriptDecline::Shape) => {
                 "contains an unsupported operation or control-flow shape".to_string()
             }
-            Some(super::smart_closures::LinearScriptDecline::Step(index)) => format!(
+            Some(
+                super::smart_closures::LinearScriptDecline::Step(index)
+                | super::smart_closures::LinearScriptDecline::UnsuccessfulSearch(index),
+            ) => format!(
                 "could not complete tactic {} (`{}`)",
                 prefix + index + 1,
                 tactic_name(&tactics[index])
@@ -2731,6 +2734,13 @@ fn check_pure_script_with_proof(
             .as_ref()
             .unwrap_or(&root)
             .step_error(format!("checked pure script for `{claim_label}` {detail}"))
+            .with_proof_refusal(match declined {
+                None => crate::surface::ProofRefusal::UnprovedGoal,
+                Some(super::smart_closures::LinearScriptDecline::UnsuccessfulSearch(_)) => {
+                    crate::surface::ProofRefusal::UnsuccessfulSearch
+                }
+                Some(_) => crate::surface::ProofRefusal::Tactic,
+            })
             .with_search_failures(search.finish()));
     };
     search.succeed();

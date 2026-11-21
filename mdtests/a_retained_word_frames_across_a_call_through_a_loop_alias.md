@@ -107,7 +107,7 @@ void probe(struct node* g, struct node* n) {
 
                     have n->word == at(before_call, n->word) by {
                         have n->word == at(before_call, n->word) by {
-                            normalize() using {
+                            solve() using {
                                 at(before_call, n->word) == at(before_call, n->word);
                                 n == old(n);
                             };

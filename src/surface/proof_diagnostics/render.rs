@@ -966,7 +966,7 @@ pub(crate) fn render_memory_history_check(
         })
         .unwrap_or_default();
     Some(format!(
-        "memory history without the failed check's facts stops at {retained_state}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}{miss}\n    supplemental history explanation: equality and ownership facts from the failed check are not used by this walk, so a store the check itself crosses (by a quantified fact's guard, for one) can stop it; it does not say why the check failed",
+        "memory history without facts at the refusal stops at {retained_state}:\n    store: {} bytes at {written}\n    read range checked: {bytes} bytes at {read}{miss}\n    supplemental history explanation: equality and ownership facts at the refusal are not used by this walk, so a store the check itself crosses (by a quantified fact's guard, for one) can stop it; it does not say why the check failed",
         written_bytes,
     ))
 }

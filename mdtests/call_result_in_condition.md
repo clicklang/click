@@ -43,7 +43,7 @@ int classify(int x) {
             step();
             have result == classified(x) by {
                 unfold(classified(x));
-                normalize() using { x == 0; };
+                solve() using { x == 0; };
             }
             solve();
         }
@@ -52,7 +52,7 @@ int classify(int x) {
     step();
     have result == classified(x) by {
         unfold(classified(x));
-        normalize() using { not(x == 0); };
+        solve() using { not(x == 0); };
     }
     solve();
 }
@@ -86,7 +86,7 @@ int forward_class(int x) {
     step();
     have result == classified(x) by {
         rewrite(r, classified(x));
-        normalize();
+        known();
     }
     solve();
 }

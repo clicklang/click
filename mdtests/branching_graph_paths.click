@@ -18,7 +18,7 @@ theorem left_path(left: int32[], right: int32[], from: int32, rest: Path) {
     ensures walk(left, right, from, Path::Left(rest))
         == walk(left, right, left[from], rest) by {
         unfold(walk(left, right, from, Path::Left(rest)));
-        normalize();
+        known();
     }
 }
 
@@ -26,7 +26,7 @@ theorem right_path(left: int32[], right: int32[], from: int32, rest: Path) {
     ensures walk(left, right, from, Path::Right(rest))
         == walk(left, right, right[from], rest) by {
         unfold(walk(left, right, from, Path::Right(rest)));
-        normalize();
+        known();
     }
 }
 
@@ -71,7 +71,7 @@ theorem walk_frame(a: int32[], b: int32[], c: int32[], d: int32[], n: int32, fro
             Path::Here => {
                 unfold(walk(a, b, from, Path::Here));
                 unfold(walk(c, d, from, Path::Here));
-                normalize();
+                known();
             }
             Path::Left(rest) => {
                 have 0 <= a[from] and a[from] < n by {

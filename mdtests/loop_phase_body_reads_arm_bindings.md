@@ -150,7 +150,7 @@ int spin_ranked(struct node* p, int n) {
                 maintain by {
                     have head_value(Tree::Node(id, value, left_model)) == value by {
                         unfold(head_value(Tree::Node(id, value, left_model)));
-                        normalize();
+                        known();
                     }
                     step();
                 }

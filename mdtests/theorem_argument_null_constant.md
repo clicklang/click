@@ -39,7 +39,7 @@ function tree_parent_is_null(t: Tree) -> int32 {
 
 theorem parent_is_stable(t: Tree, p: struct node*) {
     ensures parent_is(t, p) == parent_is(t, p) by {
-        normalize();
+        known();
     }
 }
 

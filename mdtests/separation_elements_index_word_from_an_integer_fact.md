@@ -47,7 +47,7 @@ int32 read_first(int32 m) {
             };
         }
         have separate(statement(3).footprint, memory(q[0])) by {
-            normalize() using { separate(memory(q[m - 1]), memory(q[0])); };
+            solve() using { separate(memory(q[m - 1]), memory(q[0])); };
         }
         have q[0] == at(before_store, q[0]) by {
             preserve(memory(q[0]), statement(3));

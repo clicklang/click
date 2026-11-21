@@ -66,16 +66,16 @@ int32 ring_buffer_push_wrap(
     ensures owner->tail == 1;
 } by {
     step(); step();
-    have old(owner->data) == data by { normalize(); }
+    have old(owner->data) == data by { known(); }
     have separate(memory(data[0]), memory(owner->data));
     have separate(memory(data[0]), memory(owner->tail));
     have separate(memory(owner->tail), memory(owner->data));
     step();
-    have data[0] == value by { normalize(); }
+    have data[0] == value by { known(); }
     mark filled;
     step();
     have separate(statement(3).footprint, memory(data[0])) by {
-        normalize() using { separate(memory(data[0]), memory(owner->tail)); };
+        solve() using { separate(memory(data[0]), memory(owner->tail)); };
     }
     have data[0] == at(filled, data[0]) by {
         preserve(memory(data[0]), statement(3));
@@ -142,7 +142,7 @@ int32 ring_buffer_pipeline(
     fold(linear_ring(owner));
     have result == replacement by {
         rewrite(at(region(4).entry, pushed), at(region(4).entry, replacement));
-        normalize();
+        known();
     }
     have owner->tail == 4 by {
         known();
@@ -152,7 +152,7 @@ int32 ring_buffer_pipeline(
     }
     known();
     known();
-    normalize();
+    known();
     known();
     known();
     known();

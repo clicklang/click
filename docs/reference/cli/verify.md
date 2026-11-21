@@ -76,7 +76,7 @@ rather than checking their proofs.
 | `--locked` | Require existing, current captures and skip compiler invocation. |
 | `--work-limit UNITS` | Set the deterministic whole-run work budget independently for each selected sidecar, mdtest, or proof unit. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound independently for each selected sidecar, mdtest, or proof unit. The default is `10m`. This is not a verdict about the proof; see [Deterministic verdicts](#deterministic-verdicts). |
-| `--trace-proof PROOF` | Verify only this C function, theorem, or user-defined tactic of one sidecar, selected by name (a Rust item by its path or, for an operator-trait method, its qualified form such as `<adler2::algo::U32X4 as MulAssign<u32>>::mul_assign`), or by `PATH:LINE[:COLUMN]` of the target, which selects the function, theorem, or tactic owning the claim whose clause or proof covers that line ([claim labels](expand.md#claim-labels)), and, on a proof error, show checked steps on its failing path with added facts and changed resource counts. A sidecar cannot declare one name as both a C function and a theorem, so the name alone selects the proof. Other tactic contracts stay assumptions when tracing a tactic. Theorems that the traced theorem cites stay assumptions, and no C function is verified for a theorem trace. If the script completes but contract certification fails, show the failed obligation and a bounded view of facts available to that check. Trace length and total output size are not capped; individual fact previews remain bounded. |
+| `--trace-proof PROOF` | Verify only this C function, theorem, or user-defined tactic of one sidecar, selected by name (a Rust item by its path or, for an operator-trait method, its qualified form such as `<adler2::algo::U32X4 as MulAssign<u32>>::mul_assign`), or by `PATH:LINE[:COLUMN]` of the target, which selects the function, theorem, or tactic owning the claim whose clause or proof covers that line ([claim labels](expand.md#claim-labels)), and, on a verification refusal, show checked steps on its failing path with added facts and changed resource counts. A sidecar cannot declare one name as both a C function and a theorem, so the name alone selects the proof. Other tactic contracts stay assumptions when tracing a tactic. Theorems that the traced theorem cites stay assumptions, and no C function is verified for a theorem trace. If the script completes but contract certification fails, show the failed obligation and a bounded view of facts available to that check. Trace length and total output size are not capped; individual fact previews remain bounded. |
 | `--trace-to LINE[:COLUMN]` | Focus `--trace-proof` on a written tactic at this source location, including in a successful proof; the tactic may sit inside a proof `match` arm, an arm of a proof `if`, `cases` or `all`, or a loop's `maintain` body, whose trace is shown under the enclosing proof's path up to the `loop`. A target after a proof `if` or `cases` whose arms both check it is traced through the first arm. Without it, the trace follows the failing tactic. |
 | `--changed-since REVISION` | Select claims affected since a Git revision. Reuse requires a valid full-verification marker for the baseline and verifier binary. |
 | `--explain` | With `--changed-since`, print the incremental selection without verifying it. |
@@ -168,7 +168,20 @@ bound stops the run. A proof failure is a correctness
 result; repair it before using `click profile` unless unexpected slowness is
 itself the failure being investigated.
 
-When a proof error identifies a C function, theorem, or user-defined tactic that the sidecar
+Verification reports use these headings:
+
+| Heading | When Click uses it |
+| --- | --- |
+| `tactic error` | Click refused a specific tactic invocation, for example `step()` with no statement left. |
+| `unsuccessful search` | A proof search ran and could not close a goal, for example a written `solve()` or a statement’s implicit closer. |
+| `unproved goal` | A goal was still open when the script finished. |
+| `verification error` | A check such as opening a contract entry or certifying a contract was refused. |
+| `syntax error` | Input did not parse. |
+| `type error` | The source did not pass checking of names or types. |
+| `limit error` | A configured verification limit stopped the command. |
+| `internal error` | Click detected a verifier failure. |
+
+When a verification refusal identifies a C function, theorem, or user-defined tactic that the sidecar
 selects, the CLI suggests a rerun with `--trace-proof` and fills in the proof
 name and sidecar path. The suggestion is printed only when that command is
 accepted: `--trace-proof` resolves the name the same way. A traced sidecar that
@@ -181,7 +194,7 @@ the same formatted failure report, including the written tactic and its source
 location. A separate `To get a trace:` section gives the command to rerun.
 The source excerpt points to the failing written tactic (including steps inside
 `have` and `with`), and the ordinary error omits the internal premise dump.
-A proof error prints the proposition it could not prove on a `goal:` line: a
+When the report has a proposition to prove, it prints it on a `goal:` line: a
 claim's remaining goal, or a refused C statement's requirement at the
 statement's pre-state, such as a call precondition, the condition that rules
 out a signed overflow, or a missing resource. A statement's goal is followed by

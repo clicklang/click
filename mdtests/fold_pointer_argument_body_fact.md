@@ -83,7 +83,7 @@ void clear(struct cell* c) {
             unfold(t);
             have is_owner(Owned::Held(c, 0), c) == 1 by {
                 unfold(is_owner(Owned::Held(c, 0), c));
-                normalize();
+                known();
             }
             step_until(function.exit);
             let u = fold(cell_at(c), { model: Owned::Held(c, 0) });

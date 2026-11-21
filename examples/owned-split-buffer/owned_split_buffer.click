@@ -116,7 +116,7 @@ int32 owned_split_buffer_set_left(
     have separate(memory(owner->data[index]), memory(*owner)) by { solve(); }
     step();
     have separate(statement(0).footprint, memory(owner->data)) by {
-        normalize() using {
+        solve() using {
             at(before_store, separate(memory(owner->data), memory(owner->data[index])));
         };
     }
@@ -184,7 +184,7 @@ int32 owned_split_buffer_set_right(
     have separate(memory(owner->data[index]), memory(*owner)) by { solve(); }
     step();
     have separate(statement(0).footprint, memory(owner->data)) by {
-        normalize() using {
+        solve() using {
             at(before_store, separate(memory(owner->data), memory(owner->data[index])));
         };
     }
@@ -269,14 +269,14 @@ int32 owned_split_buffer_pipeline(
     step();
     have separate(memory(owner->split), memory(data[1])) by { solve(); }
     have separate(statement(5).call(0).footprint, memory(data[1])) by {
-        normalize() using { separate(memory(owner->split), memory(data[1])); };
+        solve() using { separate(memory(owner->split), memory(data[1])); };
     }
     have at(statement(5).call(0).exit, data[1]) == at(statement(5).call(0).entry, data[1]) by {
         preserve(memory(data[1]), statement(5).call(0));
     }
     have separate(memory(ignored), memory(data[1])) by { known(); }
     have separate(statement(5).assignment(ignored, 0).footprint, memory(data[1])) by {
-        normalize() using { separate(memory(ignored), memory(data[1])); };
+        solve() using { separate(memory(ignored), memory(data[1])); };
     }
     have at(statement(5).assignment(ignored, 0).exit, data[1]) == at(statement(5).assignment(ignored, 0).entry, data[1]) by {
         preserve(memory(data[1]), statement(5).assignment(ignored, 0));
@@ -294,7 +294,7 @@ int32 owned_split_buffer_pipeline(
     step();
     have separate(memory(result), memory(data[1])) by { known(); }
     have separate(statement(6).assignment(result, 0).footprint, memory(data[1])) by {
-        normalize() using { separate(memory(result), memory(data[1])); };
+        solve() using { separate(memory(result), memory(data[1])); };
     }
     have at(statement(6).assignment(result, 0).exit, data[1]) == at(statement(6).assignment(result, 0).entry, data[1]) by {
         preserve(memory(data[1]), statement(6).assignment(result, 0));

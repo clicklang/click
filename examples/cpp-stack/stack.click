@@ -175,11 +175,11 @@ Stack<int>::~Stack() {
                     };
                     mark before_node;
                     step();
-                    have separate(region(1).footprint, memory(this->head)) by { normalize() using {}; }
+                    have separate(region(1).footprint, memory(this->head)) by { solve() using {}; }
                     have this->head == at(before_node, this->head) by {
                         preserve(memory(this->head), region(1));
                     }
-                    have separate(region(1).footprint, memory(this->head->next)) by { normalize() using {}; }
+                    have separate(region(1).footprint, memory(this->head->next)) by { solve() using {}; }
                     have this->head->next == at(before_node, this->head->next) by {
                         preserve(memory(this->head->next), region(1));
                     }
@@ -191,7 +191,7 @@ Stack<int>::~Stack() {
                     mark before_delete;
                     step();
                     have separate(region(3).footprint, memory(this->head)) by {
-                        normalize() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
+                        solve() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
                     }
                     have this->head == at(before_delete, this->head) by {
                         preserve(memory(this->head), region(3));
@@ -253,12 +253,12 @@ unsigned long pushed_size(int x) {
         requires aligned(&stack, 8) by solve();
     }
     step();
-    have separate(region(15).footprint, memory(stack.head)) by { normalize() using {}; }
+    have separate(region(15).footprint, memory(stack.head)) by { solve() using {}; }
     have stack.head == at(region(15).entry, stack.head) by {
         preserve(memory(stack.head), region(15));
     }
     step();
-    have separate(region(16).footprint, memory(stack.head)) by { normalize() using {}; }
+    have separate(region(16).footprint, memory(stack.head)) by { solve() using {}; }
     have stack.head == at(region(16).entry, stack.head) by {
         preserve(memory(stack.head), region(16));
     }

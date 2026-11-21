@@ -29,7 +29,7 @@ theorem adler_sum_append(bytes: uint8[], n: int32) {
   have 0 <= to_integer(n - 1) by { solve() using { 0 < n; }; }
   have to_integer(n - 1) < 2147483647 by { solve() using { 0 < n; }; }
   unfold(adler_byte_sum(bytes, n));
-  normalize();
+  known();
  }
 }
 theorem adler_weighted_append(bytes: uint8[], n: int32, weight_end: int32) {
@@ -230,7 +230,7 @@ theorem adler_spec_b_canonical(bytes: uint8[], n: int32, a0: Integer, b0: Intege
  requires 0 <= b0;
  ensures 0 <= adler_spec_b(bytes, n, a0, b0) and adler_spec_b(bytes, n, a0, b0) <= 65520 by {
   apply(adler_weighted_nonnegative(bytes, n)) using { 0 <= n; };
-  have n <= 2147483647 by { normalize(); }
+  have n <= 2147483647 by { known(); }
   have 0 <= to_integer(n) * a0 by {
    solve() using { 0 <= to_integer(n); to_integer(n) <= 2147483647; 0 <= a0; a0 <= 65520; };
   }
@@ -283,7 +283,7 @@ theorem adler_spec_empty(bytes: uint8[], a0: Integer, b0: Integer) {
   apply(adler_residue_unique(b0, 0, b0)) using { 0 <= b0; b0 == 0 * 65521 + b0; 0 <= b0; b0 <= 65520; };
   unfold(adler_spec_b(bytes, 0, a0, b0));
   rewrite(adler_weighted_sum(bytes, 0, 0), 0);
-  have b0 + 0 * a0 + 0 == b0 by { normalize(); }
+  have b0 + 0 * a0 + 0 == b0 by { known(); }
   rewrite(b0 + 0 * a0 + 0, b0);
   known();
  }
@@ -291,7 +291,7 @@ theorem adler_spec_empty(bytes: uint8[], a0: Integer, b0: Integer) {
 
 theorem adler_byte_observation_same_index(bytes: uint8[], i: int32, j: int32) {
  requires i == j;
- ensures to_integer(bytes[i] as int32) == to_integer(bytes[j] as int32) by { rewrite(i, j); normalize(); }
+ ensures to_integer(bytes[i] as int32) == to_integer(bytes[j] as int32) by { rewrite(i, j); known(); }
 }
 
 theorem adler_sum_append_four(bytes: uint8[], n: int32) {
@@ -423,7 +423,7 @@ theorem adler_spec_one(bytes: uint8[]) {
 theorem adler_byte_offset_association(bytes: uint8[], prefix: int32, suffix: int32) {
  requires defined(prefix + suffix);
  ensures to_integer((bytes + prefix)[suffix] as int32) == to_integer(bytes[prefix + suffix] as int32) by {
-  have (bytes + prefix) + suffix == bytes + (prefix + suffix) by { normalize() using { defined(prefix + suffix); }; }
+  have (bytes + prefix) + suffix == bytes + (prefix + suffix) by { solve() using { defined(prefix + suffix); }; }
   have (bytes + prefix)[suffix] as int32 == bytes[prefix + suffix] as int32 by {
    rewrite((bytes + prefix) + suffix, bytes + (prefix + suffix)); solve();
   }

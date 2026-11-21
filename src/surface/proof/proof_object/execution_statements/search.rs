@@ -147,6 +147,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     ));
                 }
                 ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {reason}"))
+                    .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
             })?
         };
         search_input.driver().apply_step(ProofStep::TransportUsing {
@@ -223,6 +224,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 source_refusal,
             );
             ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {reason}"))
+                .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
         })?;
         search_input.driver().apply_step(ProofStep::TransportUsing {
             source: surface_source.clone(),

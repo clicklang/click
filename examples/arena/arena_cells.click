@@ -293,12 +293,12 @@ int32 arena_init(struct arena* arena, int32 capacity) {
                         apply(separation::separate_elements(occupied, at(iteration, i), k)) using { at(iteration, i) != k; };
                     }
                     have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
-                        normalize() using { at(iteration, separate(memory(occupied[i]), memory(occupied[k]))); };
+                        solve() using { at(iteration, separate(memory(occupied[i]), memory(occupied[k]))); };
                     }
                     have at(loop(0).statement(0).exit, occupied[k]) == at(iteration, occupied[k]) by {
                         preserve(memory(occupied[k]), loop(0).statement(0));
                     }
-                    have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { normalize() using {}; }
+                    have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { solve() using {}; }
                     have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
                         preserve(memory(occupied[k]), loop(0).statement(1));
                     }
@@ -306,7 +306,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
                 } else {
                     have k == at(iteration, i) by { solve(); }
                     rewrite(k, at(iteration, i));
-                    normalize();
+                    known();
                 }
             }
             solve();
@@ -324,7 +324,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
         };
     }
     have separate(initialize_occupied.footprint, memory(arena->live_regions)) by {
-        normalize() using { separate(memory(occupied[0..capacity]), memory(arena->live_regions)); };
+        solve() using { separate(memory(occupied[0..capacity]), memory(arena->live_regions)); };
     }
     have arena->live_regions == at(initialize_entry, arena->live_regions) by {
         preserve(memory(arena->live_regions), initialize_occupied);
@@ -2414,26 +2414,26 @@ void arena_free(struct region* region) {
         invariant region->arena == old(region->arena);
         initialize by {
             have w.next == i by {
-                normalize();
+                known();
             }
             have forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } by {
                 intro();
                 intro();
-                normalize();
+                known();
             }
             have forall (k: int32) { region->end <= k and k < arena->capacity implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } by {
                 intro();
                 intro();
-                normalize();
+                known();
             }
             have arena->data == at(clear_occupied.entry, arena->data) by {
-                normalize();
+                known();
             }
             have arena->occupied == at(clear_occupied.entry, arena->occupied) by {
-                normalize();
+                known();
             }
             have region->arena == old(region->arena) by {
-                normalize();
+                known();
             }
         }
         maintain by {
@@ -2617,7 +2617,7 @@ void arena_free(struct region* region) {
                     }
                     rewrite(k, at(opened, i));
                     rewrite(arena->occupied, at(opened, arena->occupied));
-                    normalize();
+                    known();
                 }
             }
             have forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } by {
@@ -2739,10 +2739,10 @@ void arena_free(struct region* region) {
             }
             have (to_integer(region->end) - to_integer(i)) < (to_integer(region->end) - to_integer(at(opened, i))) by {
                 rewrite(to_integer(i), (to_integer(at(opened, i)) + 1));
-                normalize();
+                known();
             }
             have w.next == i by {
-                normalize();
+                known();
             }
             have w.next == i implies forall (k: int32) { 0 <= k and k < region->start implies arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k]) } by {
                 intro();
@@ -2855,10 +2855,10 @@ void arena_free(struct region* region) {
         known();
     }
     have at(cleared, separate(memory(arena->live_regions), memory(arena->data))) by {
-        normalize();
+        known();
     }
     have at(cleared, separate(memory(arena->live_regions), memory(arena->occupied))) by {
-        normalize();
+        known();
     }
     have 1 <= n by {
         known();
