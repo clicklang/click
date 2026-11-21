@@ -60,9 +60,8 @@ pub(crate) enum LoopControlExit {
     Break,
     /// A `continue`: the path reaches the back edge before the body's end.
     Continue,
-    /// The natural cycle's checked forward `goto` leaves the loop at its
-    /// named exit target.
-    NaturalExit(crate::kernel::ControlTargetId),
+    /// A checked forward `goto` leaves the loop for a function label.
+    Jump(crate::kernel::ControlTargetId),
     /// The loop's own test is false: the path leaves the loop there.
     TestFalse,
 }
@@ -70,7 +69,7 @@ pub(crate) enum LoopControlExit {
 impl LoopControlExit {
     /// Whether this path leaves the loop rather than returning to its head.
     pub(crate) fn is_exit(self) -> bool {
-        matches!(self, Self::Break | Self::NaturalExit(_) | Self::TestFalse)
+        matches!(self, Self::Break | Self::Jump(_) | Self::TestFalse)
     }
 }
 
@@ -8828,9 +8827,9 @@ impl ExecutionProofCore {
                     self.evidence_completed = true;
                     return Ok(());
                 }
-                if self.frontier.natural_exit_target == Some(target) && self.frontier.in_loop_body {
+                if self.frontier.in_loop_body && function.control_target(target).is_some() {
                     self.frontier.position = FrontierPosition::RegionBoundary;
-                    self.frontier.loop_control = LoopControlExit::NaturalExit(target);
+                    self.frontier.loop_control = LoopControlExit::Jump(target);
                     self.evidence_state = Some(*state);
                     self.evidence_completed = true;
                     return Ok(());
@@ -8838,6 +8837,7 @@ impl ExecutionProofCore {
                 let target = function
                     .control_target(target)
                     .ok_or_else(|| EvidenceRefusal::from("goto target is not in its function"))?;
+                self.frontier.continuations.clear();
                 self.frontier.next_statement_index = target.statement_index;
                 self.frontier.position = FrontierPosition::StatementEntry {
                     remaining: target.remaining.clone(),
@@ -9626,7 +9626,9 @@ impl ExecutionProofCore {
             };
         match (&**proved_statement, outcome) {
             (
-                ProgramStatement::Goto { target: expected },
+                ProgramStatement::Goto {
+                    target: expected, ..
+                },
                 StatementOutcome::Jump { target: actual, .. },
             ) if expected == actual && function.control_target(*actual).is_some() => {}
             (ProgramStatement::Goto { .. }, _) => {
@@ -9640,8 +9642,16 @@ impl ExecutionProofCore {
                 },
                 StatementOutcome::Jump { target: actual, .. },
             ) if expected == actual && function.control_target(*actual).is_some() => {}
+            (
+                ProgramStatement::Loop {
+                    backedge_target: None,
+                    ..
+                }
+                | ProgramStatement::Switch { .. },
+                StatementOutcome::Jump { target, .. },
+            ) if function.control_target(*target).is_some() => {}
             (_, StatementOutcome::Jump { .. }) => {
-                return Err("non-goto evidence carries a control-flow jump".into());
+                return Err("statement evidence carries an invalid control-flow jump".into());
             }
             _ => {}
         }

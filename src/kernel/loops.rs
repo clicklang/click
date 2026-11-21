@@ -4602,15 +4602,14 @@ fn execute_program_loop_exit_paths(
         for candidate in final_exit_candidates {
             if let Some(target) = candidate.jump_target() {
                 let mut obligations = loop_check_obligations.clone();
-                if backedge_target.is_none() || natural_exit_target != Some(target) {
+                if backedge_target.is_some() && natural_exit_target != Some(target) {
                     obligations.push(
                         ProofObligation::verification_condition(false_equals_true_proposition())
                             .with_context("natural loop exit target"),
                     );
                 }
-                // This body path already executed its forward goto. Its
-                // successor is the named label, independent of the synthetic
-                // loop guard, which never becomes false in a natural cycle.
+                // This path executed a forward goto. Its successor is the
+                // label even when the loop guard is still true.
                 jump_exit_entries.entry(target).or_default().push((
                     head.restored_exit_state(candidate.state(), assumptions),
                     candidate.pure_facts().certified_facts(),
@@ -5817,7 +5816,7 @@ pub(super) fn collect_loop_preservation_summary(
                             });
                         }
                         StatementOutcome::Jump { target, state }
-                            if natural_exit_target == Some(target) =>
+                            if backedge_target.is_none() || natural_exit_target == Some(target) =>
                         {
                             let effect_obligations = collect_loop_effect_check_obligations(
                                 top_state,
