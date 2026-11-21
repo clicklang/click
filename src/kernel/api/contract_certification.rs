@@ -1174,6 +1174,9 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::OverlappingOwnedMemoryResources { .. } => {
             "two owned memory resource clauses overlap".to_string()
         }
+        RuntimeError::OverlappingContractInputView { .. } => {
+            "the contract's `views` clause overlaps its own `owns` clause".to_string()
+        }
         RuntimeError::ProducedCompositeOverlapsHeldResource { .. } => {
             "a produced composite's body overlaps a resource the caller already holds".to_string()
         }

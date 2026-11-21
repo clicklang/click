@@ -2548,6 +2548,8 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
                 format!(
                     r#"verifying "f.c";
 resource cell(p: int32*) {{ owns p[0]; }}
+resource read_cell(p: int32*) {{ views p[0]; }}
+resource wrapped_cell(p: int32*) {{ owns cell(p); }}
 void hold(int32 *x, int32 *y) {{ {clauses} }}
 "#
                 ),
@@ -2555,18 +2557,34 @@ void hold(int32 *x, int32 *y) {{ {clauses} }}
             .unwrap();
             entry(["verify".to_string(), sidecar.display().to_string()])
         };
-        for (clauses, view) in [
-            ("owns cell(x); views cell(x);", "cell(x)"),
-            ("views cell(x); owns cell(x);", "cell(x)"),
-            ("requires y == x; owns cell(x); views cell(y);", "cell(y)"),
+        for (clauses, owner, view) in [
+            ("owns cell(x); views cell(x);", "cell(x)", "cell(x)"),
+            ("views cell(x); owns cell(x);", "cell(x)", "cell(x)"),
+            (
+                "requires y == x; owns cell(x); views cell(y);",
+                "cell(x)",
+                "cell(y)",
+            ),
+            ("owns cell(x); views x[0];", "cell(x)", "x[0]"),
+            (
+                "owns cell(x); views read_cell(x);",
+                "cell(x)",
+                "read_cell(x)",
+            ),
+            (
+                "requires y == x; owns wrapped_cell(x); views read_cell(y);",
+                "wrapped_cell(x)",
+                "read_cell(y)",
+            ),
         ] {
             let error = verify(clauses).unwrap_err();
             assert!(error.starts_with("contract error:\n"), "{error}");
             assert!(error.contains(&format!("`views {view}`")), "{error}");
-            assert!(error.contains("`owns cell(x)`"), "{error}");
+            assert!(error.contains(&format!("`owns {owner}`")), "{error}");
         }
         verify("views cell(x);").unwrap();
         verify("owns cell(x); views cell(y);").unwrap();
+        verify("owns wrapped_cell(x); views read_cell(y);").unwrap();
     }
 
     #[test]

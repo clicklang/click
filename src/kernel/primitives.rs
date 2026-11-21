@@ -8266,6 +8266,10 @@ pub enum RuntimeError {
     FunctionContract(String),
     /// A resource clause violates a contract rule.
     InvalidContractResource(String),
+    OverlappingContractInputView {
+        owned: Box<ResourceFact>,
+        viewed: Box<ResourceFact>,
+    },
     /// A verified call may write memory for which it has no checked byte bound.
     UnboundedWriteWithLiveView {
         callee: String,
@@ -8534,7 +8538,9 @@ impl RuntimeError {
         self.missing_contract_read().is_some()
             || matches!(
                 self,
-                Self::InvalidContractResource(_) | Self::OverlappingOwnedMemoryResources { .. }
+                Self::InvalidContractResource(_)
+                    | Self::OverlappingOwnedMemoryResources { .. }
+                    | Self::OverlappingContractInputView { .. }
             )
     }
 

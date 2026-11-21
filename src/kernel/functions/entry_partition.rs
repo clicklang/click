@@ -28,23 +28,23 @@ pub(crate) fn admit_declared_entry_resources(
         .assume_entry_clause_spans()
         .assume_held_resource_domains();
     enum Work {
-        Clause(ResourceFact, bool),
+        Clause(ResourceFact, bool, usize),
         EndBody(String),
     }
     // Keep the original heads: normalization may already have joined two
     // identical written clauses into one stored head with quantity two.
     let mut pending = written
         .iter()
+        .enumerate()
         .rev()
-        .map(|clause| &clause.fact)
-        .filter(|fact| {
-            fact.is_own()
+        .filter(|(_, clause)| {
+            clause.fact.is_own()
                 && matches!(
-                    fact.resource(),
+                    clause.fact.resource(),
                     Resource::Composite { .. } | Resource::Instance(_)
                 )
         })
-        .map(|fact| Work::Clause(fact.clone(), false))
+        .map(|(source, clause)| Work::Clause(clause.fact.clone(), false, source))
         .collect::<Vec<_>>();
     // Retain the section producer's flat partition. Only newly elaborated
     // body descriptions need admission beside it; never readmit that prefix.
@@ -68,12 +68,12 @@ pub(crate) fn admit_declared_entry_resources(
     let mut active = BTreeSet::new();
     let mut memory = Vec::new();
     while let Some(work) = pending.pop() {
-        let (fact, inherited_multiple) = match work {
+        let (fact, inherited_multiple, source) = match work {
             Work::EndBody(name) => {
                 active.remove(&name);
                 continue;
             }
-            Work::Clause(fact, multiple) => (fact, multiple),
+            Work::Clause(fact, multiple, source) => (fact, multiple, source),
         };
         crate::instrumentation::record_deterministic_work(1);
         if !fact.is_own() || !fact.has_proven_positive_quantity(assumptions) {
@@ -114,7 +114,7 @@ pub(crate) fn admit_declared_entry_resources(
                         right: Box::new(range.clone()),
                     });
                 }
-                memory.push(fact);
+                memory.push((fact, source));
                 continue;
             }
             Resource::Instance(instance) => instance.name(),
@@ -229,11 +229,63 @@ pub(crate) fn admit_declared_entry_resources(
             children
                 .into_iter()
                 .rev()
-                .map(|child| Work::Clause(child.fact, multiple)),
+                .map(|child| Work::Clause(child.fact, multiple, source)),
         );
     }
+    if !memory.is_empty() {
+        check_folded_owner_view_overlap(&memory, written, &state, definitions, assumptions)?;
+    }
     frontier
-        .install_established_partition(memory, assumptions)
+        .install_established_partition(memory.into_iter().map(|(leaf, _)| leaf), assumptions)
         .map_err(resource_context_runtime_error)?;
     Ok(descriptions)
+}
+
+/// Compare authored view inputs with checked memory inside the written
+/// owners. An observation published by an owner is never an input view.
+fn check_folded_owner_view_overlap(
+    owned_leaves: &[(ResourceFact, usize)],
+    written: &[CheckedResourceFact],
+    state: &ExecutionState,
+    definitions: &[CompositeResourceDefinition],
+    assumptions: &PureFactContext,
+) -> Result<(), RuntimeError> {
+    for input in written.iter().filter(|input| input.fact.is_view()) {
+        let expanded;
+        let viewed = if matches!(input.fact.resource(), Resource::Composite { .. }) {
+            let head = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(input.fact.clone());
+            let Some(body) = expand_all_composite_resource_facts(
+                &head,
+                definitions,
+                &state.program_point(),
+                assumptions,
+            ) else {
+                // An opaque view can still go through ordinary borrow setup.
+                continue;
+            };
+            expanded = body;
+            expanded.facts()
+        } else {
+            std::slice::from_ref(&input.fact)
+        };
+        for range in viewed.iter().filter_map(ResourceFact::memory_view_range) {
+            for (owner, source) in owned_leaves {
+                let Some(owned_range) = owner.memory_own_range() else {
+                    continue;
+                };
+                if crate::kernel::primitives::contract_entry_memory_overlap(
+                    owned_range,
+                    range,
+                    assumptions,
+                ) {
+                    return Err(RuntimeError::OverlappingContractInputView {
+                        owned: Box::new(written[*source].fact.clone()),
+                        viewed: Box::new(input.fact.clone()),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
 }
