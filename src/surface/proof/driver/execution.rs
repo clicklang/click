@@ -4977,6 +4977,19 @@ fn advance_linear_open_scope<'a>(
             })?;
             continue;
         }
+        if matches!(indexed.tactic, ProofTactic::StepProved { .. }) {
+            let body = scope.body().with_execution_tactic_index(indexed.index)?;
+            let stepped = driven!(apply_frontier_source_tactic(
+                body,
+                indexed,
+                expansion_capture.as_deref_mut(),
+                proof_site,
+                owning_source_index,
+                Some(scope.body().claim_label()),
+            ));
+            scope = scope.join_nested_result(stepped)?;
+            continue;
+        }
         if let ProofTactic::ApplyFact(fact) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
             let Some(applied) = scope.driver().apply_fact_application(fact)? else {
