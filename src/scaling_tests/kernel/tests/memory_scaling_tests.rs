@@ -703,7 +703,7 @@ fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_
             access_class: None,
             pointer: ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(element),
-                bytes: 4,
+                bytes: 4.into(),
             },
             value: ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::constant(9))),
             value_type: ProgramType::UInt32,
@@ -1164,7 +1164,7 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
                     crate::kernel::resource_tracker::last_same_version_point(
                         crate::kernel::resource_tracker::TrackedResource::Cell {
                             pointer: cell,
-                            bytes: 4,
+                            bytes: crate::kernel::AccessExtent::from(4),
                         },
                         &point,
                     );
@@ -1185,7 +1185,7 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
         let named = crate::kernel::resource_tracker::last_same_version_point(
             crate::kernel::resource_tracker::TrackedResource::Cell {
                 pointer: &field,
-                bytes: 4,
+                bytes: crate::kernel::AccessExtent::from(4),
             },
             &crate::kernel::resource_tracker::ProgramPoint::at(&intern_memory_ref(&memory)),
         )

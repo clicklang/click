@@ -2159,12 +2159,12 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
     let left_effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: left.memory().clone(),
-        writes: vec![(left_pointer.clone(), 8)],
+        writes: vec![(left_pointer.clone(), crate::kernel::AccessExtent::from(8))],
     });
     let right_effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: right.memory().clone(),
-        writes: vec![(right_pointer.clone(), 4)],
+        writes: vec![(right_pointer.clone(), crate::kernel::AccessExtent::from(4))],
     });
     let parent = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
     let mut left_core = parent.clone();
@@ -2212,7 +2212,11 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
             Proposition::MemoryMutatesOnly { before: effect_before, after, writes }
                 if effect_before == before.memory()
                     && after == joined.memory()
-                    && writes == &vec![(left_pointer, 8), (right_pointer, 4)]
+                    && writes
+                    == &vec![
+                        (left_pointer, crate::kernel::AccessExtent::from(8)),
+                        (right_pointer, crate::kernel::AccessExtent::from(4)),
+                    ]
         )
     ));
 }
@@ -2230,7 +2234,7 @@ fn checked_interface_effects_reject_uncertified_memory_effects() {
     let effect = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: after.memory().clone(),
-        writes: vec![(pointer, 4)],
+        writes: vec![(pointer, crate::kernel::AccessExtent::from(4))],
     });
     let parent = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
     let mut changed_core = parent.clone();
@@ -2271,7 +2275,10 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     let mutation = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: after.memory().clone(),
-        writes: vec![(declared_pointer.clone(), 4)],
+        writes: vec![(
+            declared_pointer.clone(),
+            crate::kernel::AccessExtent::from(4),
+        )],
     });
     let mut mutation_core = parent.clone();
     mutation_core.state = after.clone().into();

@@ -4193,10 +4193,10 @@ fn contains_local_aggregate_pipeline(statement: &ProgramStatement, local: &str) 
                 if let ProgramExpression::PointerOffsetBytes { pointer, bytes } = pointer
                     && matches!(pointer.as_ref(), ProgramExpression::Variable(name) if name.is_named(local))
                 {
-                    if *bytes == 0 && *value_type == ProgramType::Int32Pointer {
+                    if *bytes == 0.into() && *value_type == ProgramType::Int32Pointer {
                         found[1] = true;
                     }
-                    if *bytes == 8 && *value_type == ProgramType::Int32 {
+                    if *bytes == 8.into() && *value_type == ProgramType::Int32 {
                         found[2] = true;
                     }
                 }

@@ -48,7 +48,7 @@ fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
         let expected = last_same_version_point(
             TrackedResource::Cell {
                 pointer: &cell,
-                bytes: 8,
+                bytes: crate::kernel::AccessExtent::from(8),
             },
             &point(&before),
         );
@@ -56,7 +56,7 @@ fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
             last_same_version_point(
                 TrackedResource::Cell {
                     pointer: &cell,
-                    bytes: 8,
+                    bytes: crate::kernel::AccessExtent::from(8),
                 },
                 &point(&joined),
             )
@@ -77,7 +77,7 @@ fn branch_join_nested_naming_work_tracks_new_branches() {
     let expected = last_same_version_point(
         TrackedResource::Cell {
             pointer: &cell,
-            bytes: 8,
+            bytes: crate::kernel::AccessExtent::from(8),
         },
         &point(&memory),
     );
@@ -103,7 +103,7 @@ fn branch_join_nested_naming_work_tracks_new_branches() {
             last_same_version_point(
                 TrackedResource::Cell {
                     pointer: &cell,
-                    bytes: 8,
+                    bytes: crate::kernel::AccessExtent::from(8),
                 },
                 &point(&memory),
             )
@@ -168,7 +168,9 @@ fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
         let _session = crate::kernel::VerificationSession::enter();
         let cell = at(block("global:g"), 0);
         let mut memory = entry_memory().store(cell.clone(), one());
-        let expected = last_same_named_cell(&cell, 4, &point(&memory)).unwrap();
+        let expected =
+            last_same_named_cell(&cell, crate::kernel::AccessExtent::from(4), &point(&memory))
+                .unwrap();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 0..size {
                 memory = memory.clone().store(
@@ -177,12 +179,12 @@ fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
                 );
                 let here = point(&memory);
                 assert_eq!(
-                    last_same_named_cell(&cell, 4, &here),
+                    last_same_named_cell(&cell, crate::kernel::AccessExtent::from(4), &here),
                     Some(expected.clone())
                 );
                 let (again, repeat_work) =
                     crate::instrumentation::measure_deterministic_work(|| {
-                        last_same_named_cell(&cell, 4, &here)
+                        last_same_named_cell(&cell, crate::kernel::AccessExtent::from(4), &here)
                     });
                 assert_eq!(again, Some(expected.clone()));
                 assert_eq!(repeat_work, 0);
@@ -197,13 +199,17 @@ fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = entry_memory();
         for i in 0..size {
-            last_same_named_cell(&at(block("global:g"), i * 4), 4, &point(&memory));
+            last_same_named_cell(
+                &at(block("global:g"), i * 4),
+                crate::kernel::AccessExtent::from(4),
+                &point(&memory),
+            );
         }
         let cell = at(block("global:h"), 0);
         let here = point(&memory);
-        let expected = last_same_named_cell(&cell, 4, &here);
+        let expected = last_same_named_cell(&cell, crate::kernel::AccessExtent::from(4), &here);
         let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
-            last_same_named_cell(&cell, 4, &here)
+            last_same_named_cell(&cell, crate::kernel::AccessExtent::from(4), &here)
         });
         assert_eq!(answer, expected);
         assert_eq!(work, 0, "unrelated names: {size}");
@@ -227,7 +233,7 @@ fn fresh_cell_offsets_share_the_whole_block_version_prefix() {
                     last_same_version_point(
                         TrackedResource::Cell {
                             pointer: &pointer,
-                            bytes: 4
+                            bytes: crate::kernel::AccessExtent::from(4)
                         },
                         &current
                     )
@@ -494,7 +500,13 @@ fn shared_conditional_guard_reads_keep_state_identity_in_linear_work() {
             super::super::collect_operand_reads(MachineOperandView::Shared(&root), &mut reads);
         });
         assert_eq!(reads.len(), 1);
-        assert_eq!(reads[0].resource, OwnedResource::Cell { pointer, bytes: 4 });
+        assert_eq!(
+            reads[0].resource,
+            OwnedResource::Cell {
+                pointer,
+                bytes: crate::kernel::AccessExtent::from(4)
+            }
+        );
         assert_eq!(reads[0].point, ProgramPoint::at(&memory));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(work <= size * 32 + 16, "size={size}, work={work}");

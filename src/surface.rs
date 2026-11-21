@@ -1943,8 +1943,13 @@ pub(in crate::surface) fn scalar_field_places(
             if field.union_name().is_some() || field.is_long_double() {
                 continue;
             }
+            // A symbolic layout's fields are at `offsetof` terms, which
+            // these byte places do not hold.
+            let Some(field_offset) = field.offset().bytes() else {
+                continue;
+            };
             let name = format!("{prefix}{name}");
-            let offset_bytes = base + field.offset_bytes();
+            let offset_bytes = base + field_offset;
             if field.array_element_width().is_some() {
                 let element = match field.interface_type() {
                     InterfaceType::Int32Array(length) => Some((ProgramType::Int32, 4, length)),
@@ -3389,7 +3394,8 @@ pub enum SurfaceTerm {
         /// Byte offset of `field` from the address denoted by `base`.
         /// Keeping this separately lets lowering rebuild the field load when
         /// `base` is evaluated in a different state from the field value.
-        offset_bytes: u32,
+        /// A number, or in a symbolic layout the field's `offsetof` term.
+        offset_bytes: crate::kernel::LayoutOffset,
     },
     /// `program::name`: a binding from the verified program function's
     /// lexical environment, in any source language.
@@ -5104,7 +5110,7 @@ impl RecordedStates {
             operand: Box::new(name_base(&base)?),
             lowered: ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
-                bytes,
+                bytes: bytes.into(),
             },
         })
     }
@@ -5963,7 +5969,18 @@ impl ContractSegment {
         }
     }
 
+    /// Whether the segment is a whole object of a symbolic layout, its end
+    /// that layout's `sizeof`: a range of bytes, whatever its base's type.
+    pub(crate) fn spans_symbolic_object(&self) -> bool {
+        matches!(&self.end, ProgramExpression::Value(ProgramValue::UInt64(end))
+            if matches!(crate::kernel::SymbolicLayoutName::of_term(end), Some((_, None)))
+                || crate::kernel::TypeParameterName::of_size_term(end).is_some())
+    }
+
     pub(crate) fn field_element_width(&self) -> Option<u32> {
+        if self.spans_symbolic_object() {
+            return Some(1);
+        }
         match &self.surface {
             ContractSegmentSurface::Field { element_width, .. } => *element_width,
             ContractSegmentSurface::StructRange { layout, .. } => Some(layout.layout.size_bytes()),

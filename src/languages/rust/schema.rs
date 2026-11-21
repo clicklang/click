@@ -202,6 +202,11 @@ pub struct Record {
     pub alignment: u32,
     pub fields: Vec<Field>,
     pub destructor: Option<String>,
+    /// An instance of a generic struct at an abstract type, `Cell<T>`: its
+    /// size and its fields' offsets are terms the instance fixes, so `size`
+    /// and each field's `offset` are 0 and unused.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub symbolic: bool,
 }
 /// An enum whose fields are scalars: its values are values of the
 /// `spec enum` of the same name, which the import declares for the sidecar.

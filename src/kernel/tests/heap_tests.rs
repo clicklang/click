@@ -871,7 +871,7 @@ mod a_free_reaches_every_element_of_its_block {
                 &produced,
                 TrackedResource::Cell {
                     pointer: cell,
-                    bytes: 4,
+                    bytes: crate::kernel::AccessExtent::from(4),
                 },
                 &Evidence {
                     assumptions: &no_facts,

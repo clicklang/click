@@ -5255,6 +5255,22 @@ pub(in crate::surface) fn external_c_function_with_layouts(
                     }
                     None => program_parameter,
                 };
+                // A Rust reference or box to a symbolic struct designates
+                // its whole object, as the import states for the signature.
+                let program_parameter = match parameter
+                    .struct_name()
+                    .filter(|_| {
+                        !program_parameter.is_struct_value()
+                            && parameter.interface_type().is_pointer()
+                    })
+                    .and_then(|name| struct_layouts.get(name))
+                    .map(|layout| layout.size())
+                {
+                    Some(size @ crate::kernel::LayoutSize::Of(_)) => {
+                        program_parameter.with_fixed_reference_bounds(size)
+                    }
+                    _ => program_parameter,
+                };
                 program_parameter
                     .with_constant(parameter.is_constant())
                     .with_pointee_constant(parameter.pointee_is_constant())

@@ -80,7 +80,6 @@ pub(super) use memory_loads::evaluate_memory_load_paths;
 pub(crate) use memory_loads::is_load_variable;
 pub(crate) use memory_loads::is_load_variable_defining_fact;
 pub(crate) use memory_loads::is_store_fact;
-pub(crate) use memory_loads::load_access_width_at_address_or_widest;
 pub(crate) use memory_loads::load_access_width_or_widest;
 #[cfg(test)]
 pub(crate) use memory_loads::load_registry_entry_count;
@@ -138,6 +137,9 @@ pub(crate) use memory_loads::{
     scalar_read_for_exact_cell, scalar_read_for_exact_cell_at, scalar_read_observation,
 };
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
+pub(crate) use memory_loads::{
+    load_access_extent, load_access_width_at_address_or_widest, loaded_pointer_stored_address,
+};
 #[cfg(test)]
 pub(super) use memory_loads::{load_substitution_term_visits, reset_load_substitution_term_visits};
 #[cfg(test)]

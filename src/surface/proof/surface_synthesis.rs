@@ -368,7 +368,7 @@ fn owner_field_pointer(base: &ProgramExpression, offset_bytes: u32) -> ProgramEx
     } else {
         ProgramExpression::PointerOffsetBytes {
             pointer: Box::new(base.clone()),
-            bytes: offset_bytes,
+            bytes: offset_bytes.into(),
         }
     }
 }
@@ -560,7 +560,7 @@ fn field_pointer_bases(
                     base: Box::new(ContractExpression::ProgramExpression(owner.base.clone())),
                     field: field_name.clone(),
                     lowered: lowered.clone(),
-                    offset_bytes: field.offset_bytes(),
+                    offset_bytes: field.offset_bytes().into(),
                 },
                 lowered,
                 pointer: loaded,
@@ -5016,29 +5016,38 @@ pub(super) fn synthesize_surface_resource_subject(
             bound_variables,
         )?
     };
-    let surface_base =
-        if let Some(saved_result) = synthesize_saved_result_range_base(&surface_base, range) {
-            saved_result
-        } else {
-            // A range counts its retained element width, which need not be the
-            // pointee width of the name (for example, a struct field's backing).
-            // Spell scalar coordinates explicitly; pointer casts retain provenance.
-            // A character-to-character cast preserves a narrow byte view. For a
-            // range that already names root byte coordinates, the void cast makes
-            // that root explicit regardless of the source pointer's type.
-            let surface_base = if range.element_width() == 1 && range.carrier_has_known_bounds() {
+    let surface_base = if let Some(saved_result) =
+        synthesize_saved_result_range_base(&surface_base, range)
+    {
+        saved_result
+    } else {
+        // A range counts its retained element width, which need not be the
+        // pointee width of the name (for example, a struct field's backing).
+        // Spell scalar coordinates explicitly; pointer casts retain provenance.
+        // A character-to-character cast preserves a narrow byte view. For a
+        // range that already names root byte coordinates, the void cast makes
+        // that root explicit regardless of the source pointer's type.
+        // The whole object of an abstract type, `[p, p + sizeof(T))`, is
+        // spelled over its own pointer, which lowers back to that object.
+        let abstract_object = range.wide_bounds().is_some_and(|(start, end)| {
+            start.uint64_as_const() == Some(0)
+                && crate::kernel::TypeParameterName::of_size_term(end).is_some()
+        });
+        let surface_base =
+            if range.element_width() == 1 && range.carrier_has_known_bounds() && !abstract_object {
                 synthesize_observation_operand(surface_base, ProgramType::VoidPointer)?
             } else {
                 surface_base
             };
-            match range.element_width() {
-                1 => synthesize_observation_operand(surface_base, ProgramType::UInt8Pointer)?,
-                2 => synthesize_observation_operand(surface_base, ProgramType::UInt16Pointer)?,
-                4 => synthesize_observation_operand(surface_base, ProgramType::Int32Pointer)?,
-                8 => synthesize_observation_operand(surface_base, ProgramType::UInt64Pointer)?,
-                _ => surface_base,
-            }
-        };
+        match range.element_width() {
+            _ if abstract_object => surface_base,
+            1 => synthesize_observation_operand(surface_base, ProgramType::UInt8Pointer)?,
+            2 => synthesize_observation_operand(surface_base, ProgramType::UInt16Pointer)?,
+            4 => synthesize_observation_operand(surface_base, ProgramType::Int32Pointer)?,
+            8 => synthesize_observation_operand(surface_base, ProgramType::UInt64Pointer)?,
+            _ => surface_base,
+        }
+    };
     // The bounds are spelled as the terms they are, in either index kind.
     let (range_start, range_end) = range.bound_terms();
     let surface_start =
@@ -5237,7 +5246,7 @@ fn synthesize_parameter_field_pointer_value(
             } else {
                 ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(base_expression.clone()),
-                    bytes: field.offset_bytes(),
+                    bytes: field.offset_bytes().into(),
                 }
             };
             return Some(ContractExpression::Field {
@@ -5252,7 +5261,7 @@ fn synthesize_parameter_field_pointer_value(
                     access_class: None,
                     source: Default::default(),
                 },
-                offset_bytes: field.offset_bytes(),
+                offset_bytes: field.offset_bytes().into(),
             });
         }
     }
@@ -5289,7 +5298,7 @@ fn synthesize_parameter_field_pointer_value(
                     access_class: None,
                     source: Default::default(),
                 },
-                offset_bytes: field.offset_bytes(),
+                offset_bytes: field.offset_bytes().into(),
             });
         }
     }
@@ -6430,6 +6439,15 @@ fn synthesize_surface_bitvector(
         MachineTerm::RangeFold { .. } => {
             folds::raise_machine_fold(term, parameter_binding, state, bound_variables)
         }
+        // A size or offset term is the value `sizeof(T)` or `offsetof(L, f)`
+        // lowers to, kept whole.
+        MachineTerm::PureFunctionApplication { name, arguments }
+            if crate::kernel::layout_term_spelling(name, arguments.len()).is_some() =>
+        {
+            Some(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(ProgramValue::UInt64(term.clone())),
+            ))
+        }
         MachineTerm::PureFunctionApplication {
             name,
             arguments: values,
@@ -6813,7 +6831,7 @@ fn synthesize_local_struct_pointer_field(
                     access_class: None,
                     source: Default::default(),
                 },
-                offset_bytes: field.offset_bytes(),
+                offset_bytes: field.offset_bytes().into(),
             });
         }
     }
@@ -6882,7 +6900,7 @@ fn synthesize_local_aggregate_field(
                     } else {
                         ProgramExpression::PointerOffsetBytes {
                             pointer: Box::new(base.clone()),
-                            bytes: field.offset_bytes(),
+                            bytes: field.offset_bytes().into(),
                         }
                     };
                     let field_expression = ContractExpression::Field {
@@ -6897,7 +6915,7 @@ fn synthesize_local_aggregate_field(
                             access_class: None,
                             source: Default::default(),
                         },
-                        offset_bytes: field.offset_bytes(),
+                        offset_bytes: field.offset_bytes().into(),
                     };
                     if element_count == 1 {
                         Some(field_expression)
@@ -7119,7 +7137,7 @@ fn synthesize_parameter_field_load_matching(
         } else {
             ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(base.clone()),
-                bytes: offset_bytes,
+                bytes: offset_bytes.into(),
             }
         };
         return Some(ContractExpression::Field {
@@ -7134,7 +7152,7 @@ fn synthesize_parameter_field_load_matching(
                 access_class: None,
                 source: Default::default(),
             },
-            offset_bytes,
+            offset_bytes: offset_bytes.into(),
         });
     }
     None
@@ -7189,7 +7207,7 @@ fn synthesize_local_field_load_matching(
                 access_class: None,
                 source: Default::default(),
             },
-            offset_bytes: field.offset_bytes(),
+            offset_bytes: field.offset_bytes().into(),
         });
     }
     None
@@ -7318,7 +7336,7 @@ fn synthesize_owned_field_at_address(
             access_class: None,
             source: Default::default(),
         },
-        offset_bytes: field.offset_bytes(),
+        offset_bytes: field.offset_bytes().into(),
     })
 }
 
@@ -7382,7 +7400,7 @@ fn synthesize_owned_pointer_field(
             access_class: None,
             source: Default::default(),
         },
-        offset_bytes: field.offset_bytes(),
+        offset_bytes: field.offset_bytes().into(),
     })
 }
 
@@ -7511,23 +7529,33 @@ fn synthesize_surface_pointer(
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width();
-            let element_width = parameter
-                .pointee_struct_layout()
-                .or_else(|| parameter.struct_layout())
-                .map_or(
-                    element_width,
-                    crate::languages::interface::RecordLayout::size_bytes,
-                );
             let name = ProgramExpression::Variable(crate::surface::surface_parameter_binding(
                 parameter.binding_name(),
             ));
+            let element_width = match parameter
+                .pointee_struct_layout()
+                .or_else(|| parameter.struct_layout())
+                .map(crate::languages::interface::RecordLayout::size)
+            {
+                None => element_width,
+                Some(crate::kernel::LayoutSize::Bytes(size)) => size,
+                // A symbolic struct has no element stride; its pointer is
+                // spelled only at its own address.
+                Some(crate::kernel::LayoutSize::Of(_)) => {
+                    return (pointer
+                        .element_index_from_base_with_width(base, 1)?
+                        .as_const()
+                        == Some(0))
+                    .then_some(name);
+                }
+            };
             let Some(index) = synthesis_element_index(pointer, base, element_width) else {
                 let bytes = pointer
                     .element_index_from_base_with_width(base, 1)?
                     .as_const()?;
                 return (bytes <= i32::MAX as u32).then(|| ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(name),
-                    bytes,
+                    bytes: bytes.into(),
                 });
             };
             let base = name;
@@ -7554,22 +7582,33 @@ fn synthesize_surface_pointer(
                 return None;
             }
             let element_width = base.program_type().pointee_type()?.byte_width();
-            let element_width = SYNTHESIS_STRUCT_OWNERS
-                .with(|slot| {
-                    slot.borrow()
-                        .as_ref()
-                        .and_then(|owners| owners.locals.get(name))
-                        .map(crate::languages::interface::RecordLayout::size_bytes)
-                })
-                .unwrap_or(element_width);
+            let size = SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .and_then(|owners| owners.locals.get(name))
+                    .map(crate::languages::interface::RecordLayout::size)
+            });
             let name = ProgramExpression::Variable(surface_local_name(name));
+            let element_width = match size {
+                None => element_width,
+                Some(crate::kernel::LayoutSize::Bytes(size)) => size,
+                // A symbolic struct has no element stride; its pointer is
+                // spelled only at its own address.
+                Some(crate::kernel::LayoutSize::Of(_)) => {
+                    return (pointer
+                        .element_index_from_base_with_width(base, 1)?
+                        .as_const()
+                        == Some(0))
+                    .then_some(name);
+                }
+            };
             let Some(index) = synthesis_element_index(pointer, base, element_width) else {
                 let bytes = pointer
                     .element_index_from_base_with_width(base, 1)?
                     .as_const()?;
                 return (bytes <= i32::MAX as u32).then(|| ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(name),
-                    bytes,
+                    bytes: bytes.into(),
                 });
             };
             let base = name;
@@ -7608,7 +7647,7 @@ fn synthesize_surface_pointer(
         } else {
             ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(base),
-                bytes,
+                bytes: bytes.into(),
             }
         });
     }
@@ -7633,7 +7672,7 @@ fn synthesize_surface_pointer(
                 } else {
                     ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(base),
-                        bytes,
+                        bytes: bytes.into(),
                     }
                 })
             })
@@ -7665,7 +7704,7 @@ fn synthesize_surface_pointer(
                     state,
                     bound_variables,
                 )?),
-                bytes: u32::try_from(bytes).ok()?,
+                bytes: u32::try_from(bytes).ok()?.into(),
             });
         }
         if read.displacement != AddressOffset::Constant(0) {

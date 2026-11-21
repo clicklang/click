@@ -3879,6 +3879,9 @@ fn resource_types_compatible(
                 | InterfaceType::Float64Pointer
                 | InterfaceType::Float32PointerPointer
                 | InterfaceType::Float64PointerPointer
+                // A value of an abstract type in its own allocation, a
+                // `Box<T>`'s.
+                | InterfaceType::ParameterPointer(_)
                 | InterfaceType::Int32Array(_)
                 | InterfaceType::CharArray(_, _)
                 | InterfaceType::UInt8Array(_)

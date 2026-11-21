@@ -298,7 +298,7 @@ pub(in crate::kernel) fn separation_check(
 fn cell_effect(
     step: &MemoryDerivation,
     pointer: &Address,
-    bytes: u32,
+    extent: AccessExtent,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
     let assumptions = evidence.assumptions;
@@ -306,11 +306,21 @@ fn cell_effect(
     let unknown = || {
         StepEffect::NotShownSeparate(separation_check(
             step,
-            TrackedResource::Cell { pointer, bytes },
+            TrackedResource::Cell {
+                pointer,
+                bytes: extent,
+            },
         ))
     };
+    // A value of abstract type reaches `sizeof(T)` bytes, a number Click does
+    // not know: the rungs that count bytes do not apply to it, and only the
+    // store rungs that take an extent may carry it.
+    let bytes = extent.bytes();
     match step {
         MemoryDerivation::BranchJoin { base, incoming } => {
+            let Some(bytes) = bytes else {
+                return unknown();
+            };
             let arms = incoming
                 .iter()
                 .map(|memory| {
@@ -325,9 +335,12 @@ fn cell_effect(
         }
         MemoryDerivation::Store { .. } | MemoryDerivation::RepresentationWrite { .. } => {
             let (write, width) = step.single_write().expect("one checked write");
-            store_cell_effect(step, write, width, pointer, bytes, evidence)
+            store_cell_effect(step, write, width, pointer, extent, evidence)
         }
         MemoryDerivation::CellsSeeded { .. } => {
+            let Some(bytes) = bytes else {
+                return unknown();
+            };
             match seeded_cell_effect(step, pointer, bytes, evidence) {
                 SeededCellEffect::Written(..) => StepEffect::Affected,
                 SeededCellEffect::Separate(mut hops)
@@ -392,6 +405,7 @@ fn cell_effect(
                 StepEffect::Affected
             } else if extended_dag_bridging_active()
                 && block.is_local_block()
+                && let Some(bytes) = bytes
                 && let Some(size) = step
                     .base()
                     .block_size(block)
@@ -500,6 +514,9 @@ fn cell_effect(
             kept_by_caller,
             ..
         } => {
+            let Some(bytes) = bytes else {
+                return unknown();
+            };
             // Keep this producer's selected range, including a miss. The
             // fallback below asks the same question when explicit endpoint
             // evidence cannot be formed; it must not rebuild the frame.
@@ -571,6 +588,9 @@ fn cell_effect(
             {
                 return hop(MemoryDagHopJustification::LoopHavocWriteSetInDistinctObjects);
             }
+            let Some(bytes) = bytes else {
+                return unknown();
+            };
             if !evidence.cross_loop_havoc
                 || !extended_dag_bridging_active()
                 || !explicit_dag_check_active()
@@ -631,7 +651,7 @@ fn store_cell_effect(
     write: &Address,
     write_bytes: u32,
     pointer: &Address,
-    bytes: u32,
+    extent: AccessExtent,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
     let assumptions = evidence.assumptions;
@@ -639,7 +659,10 @@ fn store_cell_effect(
     let unknown = || {
         StepEffect::NotShownSeparate(separation_check(
             step,
-            TrackedResource::Cell { pointer, bytes },
+            TrackedResource::Cell {
+                pointer,
+                bytes: extent,
+            },
         ))
     };
     if write_is_at_read_address(write, pointer, assumptions) {
@@ -655,10 +678,46 @@ fn store_cell_effect(
     // question outright, so take that answer first: overlapping
     // bytes mean the store wrote this cell, whatever the addresses
     // are called.
-    let overlap = access_byte_overlap(write, write_bytes, pointer, bytes, assumptions);
+    let overlap = access_byte_overlap(write, write_bytes, pointer, extent, assumptions);
     if overlap == AccessByteOverlap::Overlaps {
         return StepEffect::Affected;
     }
+    // Two fields of one object of a symbolic layout are apart by the
+    // layout's rule, whatever their offsets are.
+    let write_extent = step
+        .single_write_extent()
+        .filter(|(written, _)| *written == write)
+        .map_or(AccessExtent::Bytes(write_bytes), |(_, extent)| extent);
+    if symbolic_fields_apart(write, write_extent, pointer, extent) {
+        return hop(MemoryDagHopJustification::StoreSymbolicFieldsApart);
+    }
+    // A value of abstract type reaches `sizeof(T)` bytes: only the rungs
+    // that take an extent rather than a count can carry it.
+    let Some(bytes) = extent.bytes() else {
+        return if write.blocks_proven_distinct(pointer) {
+            hop(MemoryDagHopJustification::StoreDistinctBlocks)
+        } else if explicit_dag_check_active()
+            && let Some(justification) = typed_store_separated_ranges_evidence(
+                write,
+                write_extent,
+                pointer,
+                extent,
+                assumptions,
+            )
+        {
+            hop(justification)
+        } else if let Some(justification) = owned_composition_store_separated_evidence(
+            write,
+            write_bytes,
+            pointer,
+            extent,
+            assumptions,
+        ) {
+            hop(justification)
+        } else {
+            unknown()
+        };
+    };
     // Otherwise the ladders may speak, but the two that rest on
     // address inequality alone may only stand in for byte separation
     // when the gap they establish is at least as wide as the wider
@@ -747,7 +806,7 @@ fn store_cell_effect(
         hop(justification)
     } else if explicit_dag_check_active()
         && let Some(justification) =
-            typed_store_separated_ranges_evidence(write, write_bytes, pointer, bytes, assumptions)
+            typed_store_separated_ranges_evidence(write, write_extent, pointer, bytes, assumptions)
     {
         hop(justification)
     } else if explicit_dag_check_active()
@@ -905,7 +964,14 @@ fn seeded_cell_effect_store_by_store(
         crate::instrumentation::record_deterministic_work(1);
         let write = run.slot_pointer(index);
         let value = run.value(index);
-        match store_cell_effect(step, &write, value.byte_width(), pointer, bytes, evidence) {
+        match store_cell_effect(
+            step,
+            &write,
+            value.byte_width(),
+            pointer,
+            bytes.into(),
+            evidence,
+        ) {
             StepEffect::Affected => return SeededCellEffect::Written(write, value),
             StepEffect::Separate(Separation::Cell(justification)) => hops.push(justification),
             StepEffect::Separate(_) | StepEffect::NotShownSeparate(_) => {

@@ -171,12 +171,12 @@ thread_local! {
     /// The latest producer observation of a named value read. Every stored
     /// edge is structural and valid only for its recorded access width.
     static VALUE_LOAD_ORIGINS: std::cell::RefCell<
-        std::collections::HashMap<(super::SharedMemory, Address, u32), super::SharedMemory>,
+        std::collections::HashMap<(super::SharedMemory, Address, crate::kernel::AccessExtent), super::SharedMemory>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// Reverse definitions select a name from the exact observation. Keeping
     /// this direction preserves earlier observations when a name is reused.
     static VALUE_LOAD_NAMES: std::cell::RefCell<
-        std::collections::HashMap<(super::SharedMemory, Address, u32), super::SharedMemory>,
+        std::collections::HashMap<(super::SharedMemory, Address, crate::kernel::AccessExtent), super::SharedMemory>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     static LOAD_DEFINITION_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Every exact producer-known projection triple. Evidence checks this
@@ -256,8 +256,9 @@ pub(in crate::kernel) fn record_value_load_origin(
     origin: &super::SharedMemory,
     named: &super::SharedMemory,
     pointer: &Address,
-    bytes: u32,
+    bytes: impl Into<crate::kernel::AccessExtent>,
 ) {
+    let bytes = bytes.into();
     if origin != named {
         let changed_origin = VALUE_LOAD_ORIGINS.with(|origins| {
             origins
@@ -282,8 +283,9 @@ pub(in crate::kernel) fn record_value_load_origin(
 pub(in crate::kernel) fn value_load_origin(
     named: &super::SharedMemory,
     pointer: &Address,
-    bytes: u32,
+    bytes: impl Into<crate::kernel::AccessExtent>,
 ) -> Option<super::SharedMemory> {
+    let bytes = bytes.into();
     VALUE_LOAD_ORIGINS.with(|origins| {
         origins
             .borrow()
@@ -296,8 +298,9 @@ pub(in crate::kernel) fn value_load_origin(
 pub(in crate::kernel) fn value_load_name(
     origin: &super::SharedMemory,
     pointer: &Address,
-    bytes: u32,
+    bytes: impl Into<crate::kernel::AccessExtent>,
 ) -> Option<super::SharedMemory> {
+    let bytes = bytes.into();
     VALUE_LOAD_NAMES.with(|names| {
         names
             .borrow()
@@ -4783,11 +4786,35 @@ pub(in crate::kernel) enum AccessByteOverlap {
 /// proving `i != j` would separate the indices happily enough.
 pub(in crate::kernel) fn access_byte_overlap(
     left: &Address,
-    left_bytes: u32,
+    left_bytes: impl Into<crate::kernel::AccessExtent>,
     right: &Address,
-    right_bytes: u32,
+    right_bytes: impl Into<crate::kernel::AccessExtent>,
     assumptions: &PureFactContext,
 ) -> AccessByteOverlap {
+    let (left_extent, right_extent) = (left_bytes.into(), right_bytes.into());
+    if symbolic_fields_apart(left, left_extent, right, right_extent) {
+        return AccessByteOverlap::Separate;
+    }
+    // A whole object of abstract size has no byte count: it is apart from
+    // another access by the layout rule above, or as a range held separate
+    // from the other's by a separation fact.
+    let (Some(left_bytes), Some(right_bytes)) = (left_extent.bytes(), right_extent.bytes()) else {
+        if left_extent == crate::kernel::AccessExtent::Bytes(0)
+            || right_extent == crate::kernel::AccessExtent::Bytes(0)
+        {
+            return AccessByteOverlap::Separate;
+        }
+        let decided = assumptions
+            .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                &MemoryRange::of_access(left, left_extent),
+                &MemoryRange::of_access(right, right_extent),
+            );
+        return if decided {
+            AccessByteOverlap::Separate
+        } else {
+            AccessByteOverlap::Unknown
+        };
+    };
     if let Some(overlap) = assumptions
         .numeric_access_byte_overlap(left, left_bytes, right, right_bytes)
         .or_else(|| exact_access_byte_overlap(left, left_bytes, right, right_bytes))
@@ -4805,13 +4832,19 @@ pub(in crate::kernel) fn access_byte_overlap(
 /// memory history. Suitable for admitting one select-over-store graph edge.
 pub(in crate::kernel) fn exact_access_byte_overlap(
     left: &Address,
-    left_bytes: u32,
+    left_bytes: impl Into<crate::kernel::AccessExtent>,
     right: &Address,
-    right_bytes: u32,
+    right_bytes: impl Into<crate::kernel::AccessExtent>,
 ) -> Option<AccessByteOverlap> {
-    if left.blocks_proven_distinct(right) {
+    let (left_extent, right_extent) = (left_bytes.into(), right_bytes.into());
+    if left.blocks_proven_distinct(right)
+        || symbolic_fields_apart(left, left_extent, right, right_extent)
+    {
         return Some(AccessByteOverlap::Separate);
     }
+    let (Some(left_bytes), Some(right_bytes)) = (left_extent.bytes(), right_extent.bytes()) else {
+        return None;
+    };
     let shift = constant_byte_shift(left, right)?;
     Some(
         if crate::kernel::byte_intervals_disjoint(
@@ -4825,6 +4858,51 @@ pub(in crate::kernel) fn exact_access_byte_overlap(
             AccessByteOverlap::Overlaps
         },
     )
+}
+
+/// Whether two accesses are in distinct fields of one object of a symbolic
+/// layout, each reaching no further than its field: distinct fields never
+/// share a byte, by the layout's rule, decided by lookup on the two fields.
+pub(in crate::kernel) fn symbolic_fields_apart(
+    left: &Address,
+    left_extent: crate::kernel::AccessExtent,
+    right: &Address,
+    right_extent: crate::kernel::AccessExtent,
+) -> bool {
+    if left.base != right.base {
+        return false;
+    }
+    // A term field starts at or after the fixed prefix, so an access inside
+    // the prefix of the same object misses it.
+    let prefix_apart = |field_side: &Address,
+                        field_extent: crate::kernel::AccessExtent,
+                        other: &Address,
+                        other_extent: crate::kernel::AccessExtent| {
+        let Some((rest, layout, field)) =
+            crate::kernel::SymbolicLayoutName::field_displacement(&field_side.offset)
+        else {
+            return false;
+        };
+        layout.within_field(field, field_extent)
+            && crate::kernel::SymbolicLayoutName::constant_displacement(rest, &other.offset)
+                .is_some_and(|offset| layout.within_prefix(offset, other_extent))
+    };
+    if prefix_apart(left, left_extent, right, right_extent)
+        || prefix_apart(right, right_extent, left, left_extent)
+    {
+        return true;
+    }
+    let (Some((left_rest, left_layout, left_field)), Some((right_rest, right_layout, right_field))) = (
+        crate::kernel::SymbolicLayoutName::field_displacement(&left.offset),
+        crate::kernel::SymbolicLayoutName::field_displacement(&right.offset),
+    ) else {
+        return false;
+    };
+    left_layout == right_layout
+        && left_field != right_field
+        && left_rest == right_rest
+        && left_layout.within_field(left_field, left_extent)
+        && right_layout.within_field(right_field, right_extent)
 }
 
 /// The constant byte distance from `base` to `pointer`, when exact byte
@@ -5338,7 +5416,7 @@ pub(in crate::kernel) fn memory_matches_effect_summary_endpoint(
 
 pub(in crate::kernel) fn collect_memory_effect_write_accesses(
     facts: &(impl ExecutionFactSource + ?Sized),
-) -> BTreeSet<(Address, u32)> {
+) -> BTreeSet<(Address, crate::kernel::AccessExtent)> {
     // Concrete stores certify exact pointer-width pairs. Abstract calls and
     // loops certify ranges separately through MemoryEffectSummary; comparing
     // endpoint memories would mistake join abstraction and call havoc for

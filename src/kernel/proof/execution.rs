@@ -1196,7 +1196,9 @@ fn describe_unnamed_cell_addition(
     let version_note = match crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Cell {
             pointer,
-            bytes: crate::kernel::resource_tracker::widest_scalar_access_bytes(),
+            bytes: crate::kernel::AccessExtent::from(
+                crate::kernel::resource_tracker::widest_scalar_access_bytes(),
+            ),
         },
         &crate::kernel::resource_tracker::ProgramPoint::at(base),
     ) {
@@ -5111,7 +5113,7 @@ fn arm_effect_deltas_are_exact(
 fn memory_diff_is_covered_by_writes(
     before: &SymbolicMemory,
     after: &SymbolicMemory,
-    changed: &[(Address, u32)],
+    changed: &[(Address, crate::kernel::AccessExtent)],
     assumptions: &PureFactContext,
     fact: &ExecutionPureFact,
 ) -> bool {
@@ -5120,7 +5122,9 @@ fn memory_diff_is_covered_by_writes(
             store.before == *before
                 && store.after == *after
                 && changed.iter().any(|(changed_pointer, bytes)| {
-                    changed_pointer == &store.pointer && *bytes == store.value.byte_width()
+                    changed_pointer == &store.pointer
+                        && *bytes
+                            == crate::kernel::assumptions::access_extent_of_value(&store.value)
                 })
         });
     if erased_cells_are_certified_store_bookkeeping {
@@ -5137,15 +5141,18 @@ fn memory_diff_is_covered_by_writes(
             let Some(value) = after.known_value(&diff_pointer) else {
                 return false;
             };
-            changed.iter().any(|(changed_pointer, bytes)| {
-                assumptions.pointer_access_in_range(
+            changed.iter().any(|(changed_pointer, bytes)| match bytes {
+                crate::kernel::AccessExtent::Bytes(bytes) => assumptions.pointer_access_in_range(
                     &diff_pointer,
                     value.byte_width(),
                     changed_pointer,
                     &MachineTerm::constant(0),
                     &MachineTerm::constant(1),
                     *bytes,
-                )
+                ),
+                // A whole object of abstract size changes the cell at its
+                // own address.
+                crate::kernel::AccessExtent::Object(_) => *changed_pointer == diff_pointer,
             })
         })
 }
@@ -5450,12 +5457,7 @@ fn checked_interface_effect_facts_along(
         }
     } else {
         for (pointer, bytes) in writes {
-            let range = MemoryRange::new_with_element_width(
-                pointer,
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
-                bytes,
-            );
+            let range = MemoryRange::of_access(&pointer, bytes);
             if !ranges.contains(&range) {
                 ranges.push(range);
             }

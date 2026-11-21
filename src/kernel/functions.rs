@@ -8034,7 +8034,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     prepared_projection: Option<&FunctionMemoryEffectProjection>,
 ) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
     let is_storage = |pointer: &Address| pointer.base.is_static_storage_block();
-    let storage_writes: Vec<(Address, u32)> =
+    let storage_writes: Vec<(Address, crate::kernel::AccessExtent)> =
         crate::kernel::reasoning::memory_effect_write_accesses(facts)
             .into_iter()
             .filter(|(pointer, _)| is_storage(pointer))
@@ -8069,11 +8069,27 @@ pub(crate) fn storage_writes_outside_owned_footprint(
         }
     };
     let mut outside = Vec::new();
-    for (pointer, write_bytes) in &storage_writes {
-        if !storage_write_within_owned_footprint(pointer, *write_bytes, &owned, assumptions) {
+    for (pointer, write_extent) in &storage_writes {
+        let within = match write_extent {
+            crate::kernel::AccessExtent::Bytes(write_bytes) => {
+                storage_write_within_owned_footprint(pointer, *write_bytes, &owned, assumptions)
+            }
+            // A whole object of abstract size lies in an owned range that
+            // covers it.
+            extent => owned.iter().any(|range| {
+                memory_range_covers(
+                    range,
+                    &MemoryRange::of_access(pointer, *extent),
+                    assumptions,
+                )
+            }),
+        };
+        if !within {
             outside.push(StorageWriteOutsideFootprint::Write {
                 pointer: pointer.clone(),
-                bytes: *write_bytes,
+                bytes: write_extent
+                    .bytes()
+                    .unwrap_or(crate::kernel::ABSTRACT_VALUE_WIDTH),
             });
         }
     }
@@ -19650,12 +19666,13 @@ fn resolve_retained_aggregate_fields(
             }
             ProgramExpression::Subobject { pointer, .. } => projection(pointer),
             ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
+                let bytes = bytes.bytes()?;
                 let (name, pointer) = projection(pointer)?;
                 Some((
                     name,
                     SpecExpression::PointerOffset {
                         pointer: Box::new(pointer),
-                        elements: Box::new(SpecExpression::Value(int32(*bytes))),
+                        elements: Box::new(SpecExpression::Value(int32(bytes))),
                         byte_width: 1,
                     },
                 ))

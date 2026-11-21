@@ -1582,7 +1582,7 @@ fn program_function_contract_entry_facts(
                 if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
                     pointer.address().clone(),
                     MachineTerm::uint64_constant(0),
-                    MachineTerm::uint64_constant(u64::from(bytes)),
+                    bytes.term(),
                     1,
                 )) {
                     assumptions =

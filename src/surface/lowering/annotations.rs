@@ -3544,9 +3544,13 @@ pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
                 .or_else(|| {
                     parameter
                         .pointee_struct_layout()
-                        .map(|layout| layout.size_bytes())
+                        .and_then(|layout| layout.size().bytes())
                 })
-                .or_else(|| parameter.struct_layout().map(|layout| layout.size_bytes()))
+                .or_else(|| {
+                    parameter
+                        .struct_layout()
+                        .and_then(|layout| layout.size().bytes())
+                })
                 .map(|width| (parameter.name().to_string(), width))
         })
         .collect()
@@ -3577,7 +3581,9 @@ pub(in crate::surface) fn click_parameter_pointer_element_widths_with_layouts(
                     parameter
                         .struct_name()
                         .and_then(|name| struct_layouts.get(name))
-                        .map(|layout| (parameter.name().to_string(), layout.size_bytes()))
+                        .and_then(|layout| {
+                            Some((parameter.name().to_string(), layout.size().bytes()?))
+                        })
                 })
                 .or_else(|| {
                     parameter
@@ -6697,16 +6703,16 @@ impl AnnotationLowerer<'_> {
         &mut self,
         base: &ContractExpression,
         lowered: &ProgramExpression,
-        offset_bytes: u32,
+        offset_bytes: crate::kernel::LayoutOffset,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         let pointer = self.lower_contract_expression_to_spec(base, environment)?;
-        let pointer = if offset_bytes == 0 {
+        let pointer = if offset_bytes == crate::kernel::LayoutOffset::Bytes(0) {
             pointer
         } else {
             SpecExpression::PointerOffset {
                 pointer: Box::new(pointer),
-                elements: Box::new(SpecExpression::Value(int32(offset_bytes))),
+                elements: Box::new(layout_offset_elements(offset_bytes)),
                 byte_width: 1,
             }
         };
@@ -6933,7 +6939,7 @@ impl AnnotationLowerer<'_> {
                     ProgramExpression::PointerOffsetBytes { bytes, .. } => {
                         Ok(SpecExpression::PointerOffset {
                             pointer: Box::new(value),
-                            elements: Box::new(SpecExpression::Value(int32(*bytes))),
+                            elements: Box::new(layout_offset_elements(*bytes)),
                             byte_width: 1,
                         })
                     }
@@ -9838,7 +9844,7 @@ impl AnnotationLowerer<'_> {
             ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
                 Ok(SpecExpression::PointerOffset {
                     pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
-                    elements: Box::new(SpecExpression::Value(int32(*bytes))),
+                    elements: Box::new(layout_offset_elements(*bytes)),
                     byte_width: 1,
                 })
             }
@@ -11385,5 +11391,16 @@ fn literal_element_index(index: &ContractExpression) -> Option<u32> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+/// A member offset as byte elements of a pointer offset: its number, or a
+/// symbolic layout's 64-bit `offsetof` term.
+fn layout_offset_elements(bytes: crate::kernel::LayoutOffset) -> SpecExpression {
+    match bytes {
+        crate::kernel::LayoutOffset::Bytes(bytes) => SpecExpression::Value(int32(bytes)),
+        crate::kernel::LayoutOffset::Field(..) => {
+            SpecExpression::Value(ProgramValue::UInt64(bytes.term()))
+        }
     }
 }

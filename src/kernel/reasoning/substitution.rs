@@ -3637,7 +3637,11 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
             pointer,
         } => {
             collect_algebraic_value_bound_variables(
-                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(
+                    memory,
+                    pointer,
+                    &term.algebraic_type,
+                ),
                 variables,
             );
         }
@@ -3835,7 +3839,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
                         pointer,
                     } => {
                         match substitute_bitvector_variable_in_algebraic_value(
-                            &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                            &AlgebraicTermNode::memory_load_carrier_value(
+                                memory,
+                                pointer,
+                                &term.native_compat().algebraic_type,
+                            ),
                             from,
                             to,
                         ) {
@@ -6990,7 +6998,11 @@ fn substitute_pointer_variable_in_algebraic_term_node(
             pointer,
         } => {
             match substitute_pointer_variable_in_algebraic_value(
-                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(
+                    memory,
+                    pointer,
+                    &term.algebraic_type,
+                ),
                 from,
                 to,
             ) {

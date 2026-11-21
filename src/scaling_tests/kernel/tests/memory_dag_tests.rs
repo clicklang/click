@@ -18,7 +18,10 @@ fn seeded_edge_justification(
     ) = crate::kernel::resource_tracker::step_effect::affects(
         &derivation,
         edge,
-        crate::kernel::resource_tracker::TrackedResource::Cell { pointer, bytes },
+        crate::kernel::resource_tracker::TrackedResource::Cell {
+            pointer,
+            bytes: crate::kernel::AccessExtent::from(bytes),
+        },
         &crate::kernel::resource_tracker::step_effect::Evidence {
             assumptions,
             cross_loop_havoc: false,
@@ -846,7 +849,11 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
                 true,
             );
         let ((step, result), work) = crate::instrumentation::measure_deterministic_work(|| {
-            classify(left.offset_by_bytes(8), 8, &context)
+            classify(
+                left.offset_by_bytes(8),
+                crate::kernel::AccessExtent::from(8),
+                &context,
+            )
         });
         samples.push(work);
         let StepEffect::Separate(Separation::Cell(
@@ -860,20 +867,32 @@ fn aliased_store_byte_frame_checks_width_context_and_scales() {
         // The same certificate cannot be moved onto a different store or a
         // read wide enough to reach a store on its other side.
         for offset in [12, 16, 20] {
-            let (changed, effect) = classify(left.offset_by_bytes(offset), 8, &context);
+            let (changed, effect) = classify(
+                left.offset_by_bytes(offset),
+                crate::kernel::AccessExtent::from(8),
+                &context,
+            );
             assert!(
                 !matches!(effect, StepEffect::Separate(_)),
                 "overlap at {offset}"
             );
             assert!(!hop.checks(&changed, &read, 8, &context));
         }
-        let (after, effect) = classify(left.offset_by_bytes(24), 8, &context);
+        let (after, effect) = classify(
+            left.offset_by_bytes(24),
+            crate::kernel::AccessExtent::from(8),
+            &context,
+        );
         let StepEffect::Separate(Separation::Cell(after_hop)) = effect else {
             panic!("the adjacent field is separate");
         };
         assert!(after_hop.checks(&after, &read, 8, &context));
         assert!(!after_hop.checks(&after, &read, 12, &context));
-        let (_, bare_effect) = classify(left.offset_by_bytes(8), 8, &PureFactContext::new());
+        let (_, bare_effect) = classify(
+            left.offset_by_bytes(8),
+            crate::kernel::AccessExtent::from(8),
+            &PureFactContext::new(),
+        );
         assert!(!matches!(bare_effect, StepEffect::Separate(_)));
     }
     assert!(samples[3] <= samples[0] * 4 + 32, "{samples:?}");
@@ -1042,7 +1061,7 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
                     &after,
                     crate::kernel::resource_tracker::TrackedResource::Cell {
                         pointer: &read,
-                        bytes: 8,
+                        bytes: crate::kernel::AccessExtent::from(8),
                     },
                     &step_effect::Evidence {
                         assumptions: &assumptions,

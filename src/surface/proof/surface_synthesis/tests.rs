@@ -4063,7 +4063,7 @@ fn pointee_layout_spells_a_field_load_at_its_byte_offset() {
         expression: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
             pointer: Box::new(ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(ProgramExpression::Variable("p".into())),
-                bytes: 8,
+                bytes: 8.into(),
             }),
             value_type: ProgramType::Int32,
             volatile: false,

@@ -951,9 +951,14 @@ fn condition_carrier(condition: &ConditionTerm) -> AlgebraicValue {
 fn load_carrier(
     memory: &crate::kernel::SharedMemory,
     pointer: &crate::kernel::Address,
+    algebraic_type: &crate::kernel::AlgebraicType,
 ) -> AlgebraicValue {
     AlgebraicValue::Program(ProgramValue::UInt64(
-        AlgebraicTermNode::memory_load_carrier(&crate::kernel::ProgramPoint::at(memory), pointer),
+        AlgebraicTermNode::memory_load_carrier(
+            &crate::kernel::ProgramPoint::at(memory),
+            pointer,
+            algebraic_type,
+        ),
     ))
 }
 
@@ -977,7 +982,7 @@ fn collect_algebraic_term_bitvector_variables(
             pointer,
         } => {
             collect_algebraic_value_bitvector_variables(
-                &load_carrier(memory.shared_memory(), pointer),
+                &load_carrier(memory.shared_memory(), pointer, &term.algebraic_type),
                 variables,
             );
         }
@@ -1500,7 +1505,7 @@ fn collect_algebraic_term_bound_identities(
             pointer,
         } => {
             collect_algebraic_value_bound_identities(
-                &load_carrier(memory.shared_memory(), pointer),
+                &load_carrier(memory.shared_memory(), pointer, &term.algebraic_type),
                 variables,
                 integer_seen,
             );
@@ -2957,7 +2962,7 @@ fn collect_algebraic_free_integer_variables(
             pointer,
         } => {
             collect_algebraic_value_integer_variables(
-                &load_carrier(memory.shared_memory(), pointer),
+                &load_carrier(memory.shared_memory(), pointer, &term.algebraic_type),
                 variables,
                 seen,
             );
@@ -3163,7 +3168,7 @@ fn collect_algebraic_integer_variables(
             pointer,
         } => {
             collect_algebraic_value_integer_variables(
-                &load_carrier(memory.shared_memory(), pointer),
+                &load_carrier(memory.shared_memory(), pointer, &term.algebraic_type),
                 variables,
                 seen,
             );
@@ -3996,7 +4001,7 @@ fn collect_capture_variables_in_algebraic_term(
             pointer,
         } => {
             collect_capture_variables_in_algebraic_value(
-                &load_carrier(memory.shared_memory(), pointer),
+                &load_carrier(memory.shared_memory(), pointer, &term.algebraic_type),
                 variables,
                 integer_seen,
             );
@@ -4910,7 +4915,7 @@ fn collect_algebraic_scope_summary(
             point: memory,
             pointer,
         } => collect_algebraic_value_scope_summary(
-            &load_carrier(memory.shared_memory(), pointer),
+            &load_carrier(memory.shared_memory(), pointer, &term.algebraic_type),
             summaries,
         ),
         AlgebraicTermNode::If {
@@ -5752,7 +5757,7 @@ fn collect_binder_variables_in_algebraic_term(
             pointer,
         } => {
             collect_binder_variables_in_algebraic_value(
-                &load_carrier(memory.shared_memory(), pointer),
+                &load_carrier(memory.shared_memory(), pointer, &term.algebraic_type),
                 integer_variables,
                 bitvector_variables,
                 integer_seen,

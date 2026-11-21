@@ -165,12 +165,12 @@ pub(super) fn set_contract_result(
                     state
                         .memory
                         .clone()
-                        .with_block_without_derivation(pointer.base.clone(), layout.size_bytes())
+                        .with_block_without_derivation(pointer.base.clone(), layout.size())
                 } else {
                     state
                         .memory
                         .clone()
-                        .with_block(pointer.base.clone(), layout.size_bytes())
+                        .with_block(pointer.base.clone(), layout.size())
                 },
             );
         }
@@ -231,7 +231,7 @@ pub(super) fn complete_aggregate_return(
         state
             .memory
             .clone()
-            .with_block(destination.base.clone(), layout.size_bytes()),
+            .with_block(destination.base.clone(), layout.size()),
     );
     state.set_memory(copy_aggregate_fields(
         state.memory.clone(),
@@ -1058,7 +1058,7 @@ fn bind_program_function_arguments_impl(
                 callee_state
                     .memory
                     .clone()
-                    .with_block(slot.base.clone(), layout.size_bytes()),
+                    .with_block(slot.base.clone(), layout.size()),
             );
             callee_state.locals.set_aggregate_object_at(
                 parameter.binding_name().clone(),
@@ -1232,7 +1232,7 @@ pub(super) fn bind_contract_arguments(
                 callee_state
                     .memory
                     .clone()
-                    .with_block(slot.base.clone(), layout.size_bytes()),
+                    .with_block(slot.base.clone(), layout.size()),
             );
             callee_state.locals.set_aggregate_object_at(
                 parameter.binding_name().clone(),

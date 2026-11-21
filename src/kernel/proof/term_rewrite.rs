@@ -801,7 +801,11 @@ fn collect_algebraic_carriers_seen(
             pointer,
         } => {
             collect_algebraic_value_carriers(
-                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(
+                    memory,
+                    pointer,
+                    &term.algebraic_type,
+                ),
                 variables,
                 seen,
             );
@@ -3867,7 +3871,7 @@ impl<'a> TermRewrite<'a> {
                             &crate::kernel::memory_history::canonical_value_load_memory(
                                 point.shared_memory(),
                                 &pointer,
-                                crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                crate::kernel::AccessExtent::of_algebraic(&term.algebraic_type),
                             ),
                         ),
                         pointer: Box::new(pointer),
@@ -3878,7 +3882,11 @@ impl<'a> TermRewrite<'a> {
                 point: memory,
                 pointer,
             } => {
-                let carrier = AlgebraicTermNode::memory_load_carrier_value(memory, pointer);
+                let carrier = AlgebraicTermNode::memory_load_carrier_value(
+                    memory,
+                    pointer,
+                    &term.algebraic_type,
+                );
                 match self.field(&carrier) {
                     AlgebraicValue::Program(value) => {
                         let rewritten = AlgebraicTermNode::memory_load_from_carrier(&value)
@@ -3891,10 +3899,12 @@ impl<'a> TermRewrite<'a> {
                                 // A projection names the original selected cell.
                                 // Moving the read names the substituted cell at
                                 // its recorded observation, as lowering does.
+                                let extent =
+                                    crate::kernel::AccessExtent::of_algebraic(&term.algebraic_type);
                                 let origin = crate::kernel::prelude::value_load_origin(
                                     memory.shared_memory(),
                                     pointer,
-                                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                    extent,
                                 )
                                 .unwrap_or_else(|| memory.shared_memory().clone());
                                 AlgebraicTermNode::MemoryLoad {
@@ -3902,7 +3912,7 @@ impl<'a> TermRewrite<'a> {
                                         &crate::kernel::memory_history::canonical_value_load_memory(
                                             &origin,
                                             &moved_pointer,
-                                            crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                            extent,
                                         ),
                                     ),
                                     pointer: moved_pointer,

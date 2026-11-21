@@ -66,7 +66,7 @@ mod tests {
             base: Box::new(base),
             steps: vec![
                 SpecAddressStep::Subobject { width: 4 },
-                SpecAddressStep::OffsetBytes { bytes: 8 },
+                SpecAddressStep::OffsetBytes { bytes: 8.into() },
             ],
             value_type: ProgramType::Int32,
             volatile: false,
@@ -115,7 +115,7 @@ mod tests {
                 ProgramExpression::Subobject {
                     pointer: Box::new(ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(ProgramExpression::Value(first_value.clone())),
-                        bytes: 8,
+                        bytes: 8.into(),
                     }),
                     width: 4,
                 },

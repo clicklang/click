@@ -878,7 +878,7 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
         ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
             before: before.clone(),
             after: after.clone(),
-            writes: vec![(pointer.clone(), 4)],
+            writes: vec![(pointer.clone(), crate::kernel::AccessExtent::from(4))],
         }),
         ExecutionPureFact::new(Proposition::MemoryEffectSummary {
             before: before.clone(),
@@ -1590,7 +1590,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
         ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
             before: before.clone(),
             after: after.clone(),
-            writes: vec![(alias.clone(), 4)],
+            writes: vec![(alias.clone(), crate::kernel::AccessExtent::from(4))],
         }),
         ExecutionPureFact::new(Proposition::MemoryEffectSummary {
             before,

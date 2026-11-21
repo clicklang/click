@@ -426,7 +426,7 @@ impl Parser {
                             function_pointer_signature: Some(function_pointer_signature),
                             array_element_width: None,
                             array_shape: None,
-                            offset_bytes,
+                            offset: offset_bytes.into(),
                             byte_width: field_size,
                         },
                     )
@@ -495,7 +495,7 @@ impl Parser {
                                 .clone(),
                             array_element_width,
                             array_shape,
-                            offset_bytes,
+                            offset: offset_bytes.into(),
                             byte_width: field_size,
                         },
                     )
@@ -535,7 +535,7 @@ impl Parser {
             fields,
             aggregate_fields,
             aggregate_unions,
-            size_bytes,
+            size: size_bytes.into(),
             alignment_bytes: struct_alignment,
             class: Some(class),
         };
@@ -653,7 +653,7 @@ impl Parser {
                     })
                 })?;
                 let field_size = nested_layout
-                    .size_bytes
+                    .size_bytes()
                     .checked_mul(element_count)
                     .ok_or_else(|| {
                         self.error_here(format!("struct `{struct_name}` layout is too large"))
