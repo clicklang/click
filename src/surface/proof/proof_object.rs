@@ -631,6 +631,8 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// finalization; joins carry each arm's suffix.
     pub(in crate::surface::proof) post_execution_tactics:
         PersistentSequence<DeferredPostExecutionTactic>,
+    /// Names introduced by obtains scheduled directly on this frontier.
+    pub(in crate::surface::proof) deferred_obtain_names: PersistentBinderMap<()>,
     /// Deferred source prefix already visited while preparing case obligations.
     pub(in crate::surface::proof) partitioned_post_execution_tactics:
         PersistentSequence<DeferredPostExecutionTactic>,
@@ -913,6 +915,7 @@ impl ExecutionProofState {
                 path_branch_premises: PersistentSequence::default(),
                 frontier_loop_clauses: FrontierLoopClauses::default(),
                 post_execution_tactics: PersistentSequence::default(),
+                deferred_obtain_names: PersistentBinderMap::default(),
                 partitioned_post_execution_tactics: PersistentSequence::default(),
                 call_outcome_edges: None,
                 terminal_call_payloads: [None, None],
@@ -4032,9 +4035,16 @@ impl ExecutionProofPresentation {
         tactic: PostExecutionTactic,
         lexical_bindings: Option<PersistentBinderMap<ContractExpression>>,
     ) {
+        let reads_deferred_obtain = tactic.reads_deferred_obtain(&self.deferred_obtain_names);
+        if let PostExecutionTactic::Leaf(ProofTactic::LetSatisfy(binding)) = &tactic {
+            for (name, _) in &binding.bindings {
+                self.deferred_obtain_names.insert(name.clone(), ());
+            }
+        }
         self.post_execution_tactics
             .push(DeferredPostExecutionTactic {
                 lexical_bindings,
+                reads_deferred_obtain,
                 tactic_index,
                 source_index,
                 tactic,

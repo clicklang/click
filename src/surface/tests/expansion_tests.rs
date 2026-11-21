@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn decided_outcome_if_keeps_its_obtain_scope_in_expansion() {
+fn outcome_if_keeps_its_obtain_scopes_in_expansion() {
     let (source, program) = mdtest_sources("mdtests/obtain_outcome_binding_is_local_to_its_arm.md");
     let branched_source = source.replace(
         "step_until(function.exit);",
@@ -11,19 +11,60 @@ fn decided_outcome_if_keeps_its_obtain_scope_in_expansion() {
         program[0].0.clone(),
         "int reuse_name(int n) { if (n < 0) { return n; } else { return n; } }".to_string(),
     )];
+    let opposite_arms = branched_source
+        .replace("if result == n {", "if n < 0 {")
+        .replace(
+            "    } else {\n    }",
+            "    } else {\n        let k = obtain(exists (k: int32) { k < n });\n        have k < n by known();\n    }",
+        );
     let claim = "reuse_name.contract";
-    for (source, program) in [(source, program), (branched_source, branched_program)] {
+    for (source, program, condition, arm_count) in [
+        (source, program, "result == n", 1),
+        (branched_source, branched_program.clone(), "result == n", 1),
+        (opposite_arms, branched_program, "n < 0", 2),
+    ] {
         let program = crate::cli::source_refs(&program);
         let expanded = expand_c_claim_source_by_label(&source, &program, claim)
             .unwrap_or_else(|error| panic!("{}", error.report()));
-        assert!(expanded.contains("\n    if result == n {"), "{expanded}");
-        assert!(expanded.contains("\n        let k = obtain("), "{expanded}");
-        assert!(expanded.contains("\n    let k = obtain("), "{expanded}");
+        assert!(
+            expanded.contains(&format!("\n    if {condition} {{")),
+            "{expanded}"
+        );
+        assert_eq!(
+            expanded.matches("\n        let k = obtain(").count(),
+            arm_count,
+            "{expanded}"
+        );
+        assert_eq!(
+            expanded.matches("\n    let k = obtain(").count(),
+            1,
+            "{expanded}"
+        );
         without_implicit_solve_for_claim(claim, || {
             verify_c_sources(&expanded, &program).map_err(|error| error.report())
         })
         .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
     }
+}
+
+#[test]
+fn outcome_if_guard_reads_a_preceding_obtain() {
+    let (source, program) = mdtest_sources("mdtests/obtain_in_outcome_if_guard.md");
+    let program = crate::cli::source_refs(&program);
+    let claim = "use_obtain.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &program).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+
+    let undecided = source.replace("if k < n {", "if k == 0 {");
+    let error = verify_c_sources(&undecided, &program).unwrap_err().report();
+    assert!(
+        error.contains("does not decide the post-execution `if` condition"),
+        "{error}"
+    );
 }
 
 #[test]

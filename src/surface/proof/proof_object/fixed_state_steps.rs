@@ -63,6 +63,9 @@ fn outcome_case_region_in_scope<'a>(
     scope: Option<usize>,
 ) -> Option<usize> {
     for tactic in tactics.iter().rev() {
+        if tactic.reads_deferred_obtain {
+            continue;
+        }
         match &tactic.tactic {
             PostExecutionTactic::If {
                 condition,
@@ -70,6 +73,7 @@ fn outcome_case_region_in_scope<'a>(
                 execution_route,
                 then_tactics,
                 else_tactics,
+                ..
             } => {
                 let arms = [
                     outcome_case_region_in_scope(then_tactics, next, nodes, scope),
@@ -2961,6 +2965,16 @@ impl<'a> Proof<'a> {
         if let Some(value) = recorded_value {
             return Ok(value);
         }
+        self.decide_outcome_if_from_facts(condition)
+    }
+
+    /// A guard that refers to an outcome-local obtain must be lowered in
+    /// the current scope. An earlier decision with the same written names
+    /// may refer to different bindings.
+    pub(in crate::surface::proof) fn decide_outcome_if_from_facts(
+        &self,
+        condition: &ClickProposition,
+    ) -> Result<bool, ClickError> {
         let negative_surface = ClickProposition::Not(Box::new(condition.clone()));
         let positive =
             self.lower_surface_proposition(condition, "post-execution `if` condition")?;

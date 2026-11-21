@@ -1491,24 +1491,13 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
     }
 
     if let SurfacePathSelector::Proposition(condition) = &first_choice.selector
-        && (then_paths.is_empty() || else_paths.is_empty())
-    {
-        let (selected, taken) = if then_paths.is_empty() {
-            (else_paths, false)
-        } else {
-            (then_paths, true)
-        };
-        return if selected.iter().any(|path| {
+        && then_paths.iter().chain(&else_paths).any(|path| {
             path.choices[path.choice - 1]
                 .if_arm_end
                 .is_some_and(|end| end.binds_obtain)
-        }) {
-            synthesize_scoped_decided_if(prefix, condition, selected, taken)
-        } else {
-            let mut steps = prefix;
-            steps.extend(synthesize_surface_cursors(selected)?);
-            Ok(steps)
-        };
+        })
+    {
+        return synthesize_scoped_if(prefix, condition, then_paths, else_paths);
     }
 
     let binds_payload = matches!(
@@ -1561,41 +1550,39 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
     Ok(steps)
 }
 
-/// Keep bindings local to the selected arm and serialize its checked
-/// continuation after the original source scope.
-fn synthesize_scoped_decided_if(
+/// Keep bindings local to their arm and emit the checked continuation after
+/// the source scope, including when different outcomes select different arms.
+fn synthesize_scoped_if<'p>(
     mut prefix: Vec<ProofStep>,
     condition: &ClickProposition,
-    selected: Vec<SurfacePathCursor<'_>>,
-    taken: bool,
+    then_paths: Vec<SurfacePathCursor<'p>>,
+    else_paths: Vec<SurfacePathCursor<'p>>,
 ) -> Result<Vec<ProofStep>, String> {
-    let mut arms = Vec::with_capacity(selected.len());
-    let mut continuations = Vec::with_capacity(selected.len());
-    for path in selected {
-        let end = path.choices[path.choice - 1]
-            .if_arm_end
-            .ok_or_else(|| "a retained if arm has no checked end".to_string())?;
-        let choice_end = path.choice + end.nested_choices;
-        arms.push(SurfacePathCursor {
-            steps: &path.steps[..end.step_offset],
-            choices: &path.choices[..choice_end],
-            ..path
-        });
-        continuations.push(SurfacePathCursor {
-            step: end.step_offset,
-            choice: choice_end,
-            ..path
-        });
-    }
-    let arm = Box::new(
+    let mut continuations = Vec::with_capacity(then_paths.len() + else_paths.len());
+    let mut synthesize_arm = |paths: Vec<SurfacePathCursor<'p>>| {
+        let mut arms = Vec::with_capacity(paths.len());
+        for path in paths {
+            let end = path.choices[path.choice - 1]
+                .if_arm_end
+                .ok_or_else(|| "a retained if arm has no checked end".to_string())?;
+            let choice_end = path.choice + end.nested_choices;
+            arms.push(SurfacePathCursor {
+                steps: &path.steps[..end.step_offset],
+                choices: &path.choices[..choice_end],
+                ..path
+            });
+            continuations.push(SurfacePathCursor {
+                step: end.step_offset,
+                choice: choice_end,
+                ..path
+            });
+        }
         ProofCertificate::from_steps_checking_arithmetic_later(synthesize_surface_cursors(arms)?)
-            .map_err(|error| error.raw_summary().to_string())?,
-    );
-    let empty = Box::new(
-        ProofCertificate::from_steps_checking_arithmetic_later(Vec::new())
-            .map_err(|error| error.raw_summary().to_string())?,
-    );
-    let (then_proof, else_proof) = if taken { (arm, empty) } else { (empty, arm) };
+            .map(Box::new)
+            .map_err(|error| error.raw_summary().to_string())
+    };
+    let then_proof = synthesize_arm(then_paths)?;
+    let else_proof = synthesize_arm(else_paths)?;
     prefix.push(ProofStep::If {
         ensuring: None,
         condition: condition.clone(),
@@ -1710,6 +1697,28 @@ pub(super) enum PostExecutionTactic {
 pub(super) type DeferredArm = Arc<Vec<DeferredPostExecutionTactic>>;
 
 impl PostExecutionTactic {
+    pub(super) fn reads_deferred_obtain(&self, obtains: &PersistentBinderMap<()>) -> bool {
+        if obtains.is_empty() {
+            return false;
+        }
+        let proposition = match self {
+            Self::If {
+                condition,
+                disjunction: false,
+                execution_route: None,
+                ..
+            } => condition,
+            Self::Have(have) => &have.proposition,
+            _ => return false,
+        };
+        let mut names = BTreeSet::new();
+        crate::surface::lowering::collect_click_proposition_referenced_names(
+            proposition,
+            &mut names,
+        );
+        names.iter().any(|name| obtains.contains_key(name))
+    }
+
     /// The deferred tactics written in this control tactic's arms, every
     /// arm in source order; empty for a leaf.
     pub(super) fn nested_tactics(&self) -> impl Iterator<Item = &DeferredPostExecutionTactic> {
@@ -1752,6 +1761,9 @@ pub(super) struct LoopReturnProof {
 #[derive(Clone)]
 pub(super) struct DeferredPostExecutionTactic {
     pub(super) lexical_bindings: Option<PersistentBinderMap<ContractExpression>>,
+    /// Whether case preparation must leave this proposition for the ordered
+    /// outcome checker, which has the bindings produced by earlier obtains.
+    pub(super) reads_deferred_obtain: bool,
     pub(super) tactic_index: usize,
     pub(super) source_index: usize,
     pub(super) tactic: PostExecutionTactic,
