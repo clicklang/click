@@ -1370,10 +1370,14 @@ impl LocalEnvironment {
     pub(crate) fn resolve_binding(&self, name: &BindingName) -> BindingName {
         if let Some(place) = name.unresolved_slice_length() {
             crate::instrumentation::record_deterministic_work(1);
-            return match self.resolve_binding(&BindingName::from(place)) {
-                BindingName::Local(id) => BindingName::lexical_local_slice_length(&id),
-                _ => name.clone(),
-            };
+            if let Some((_, BindingName::Local(id))) = self
+                .visible_names
+                .get(place)
+                .and_then(|entries| entries.last())
+            {
+                return BindingName::lexical_local_slice_length(id, true);
+            }
+            return BindingName::slice_length(place);
         }
         if matches!(name, BindingName::ReferenceCarrier(_)) {
             crate::instrumentation::record_deterministic_work(1);

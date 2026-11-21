@@ -840,22 +840,30 @@ impl Hash for SliceLengthBinding {
 
 impl BindingName {
     pub(crate) fn slice_length(slice: &str) -> Self {
-        Self::slice_length_binding(SliceLengthOwner::Parameter(Arc::from(slice)), slice)
+        Self::slice_length_binding(SliceLengthOwner::Parameter(Arc::from(slice)), slice, false)
     }
     pub(crate) fn local_slice_length(declaration: LocalBindingId) -> Self {
         let place = declaration.spelling().expect("Rust slice place");
-        Self::slice_length_binding(SliceLengthOwner::Local(declaration.clone()), place)
+        Self::slice_length_binding(SliceLengthOwner::Local(declaration.clone()), place, false)
     }
-    pub(crate) fn lexical_local_slice_length(declaration: &LocalBindingId) -> Self {
+    pub(crate) fn lexical_local_slice_length(
+        declaration: &LocalBindingId,
+        qualified: bool,
+    ) -> Self {
         Self::slice_length_binding(
             SliceLengthOwner::LexicalLocal(declaration.clone()),
             declaration.spelling().expect("Rust slice place"),
+            qualified,
         )
     }
-    fn slice_length_binding(owner: SliceLengthOwner, slice: &str) -> Self {
+    pub(crate) fn program_slice_length(slice: &str) -> Self {
+        Self::slice_length_binding(SliceLengthOwner::Source(Arc::from(slice)), slice, true)
+    }
+    fn slice_length_binding(owner: SliceLengthOwner, slice: &str, qualified: bool) -> Self {
+        let prefix = if qualified { "program::" } else { "" };
         Self::SliceLength(SliceLengthBinding(Arc::new(SliceLengthMetadata {
             owner,
-            spelling: Arc::from(format!("{slice}.len()")),
+            spelling: Arc::from(format!("{prefix}{slice}.len()")),
         })))
     }
 
@@ -871,10 +879,11 @@ impl BindingName {
         Some(Self::slice_length_binding(
             SliceLengthOwner::Source(Arc::from(place)),
             place,
+            false,
         ))
     }
 
-    pub(super) fn unresolved_slice_length(&self) -> Option<&str> {
+    pub(crate) fn unresolved_slice_length(&self) -> Option<&str> {
         let Self::SliceLength(length) = self else {
             return None;
         };

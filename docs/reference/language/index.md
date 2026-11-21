@@ -3923,6 +3923,10 @@ After function exit, a parameter reference denotes its logical input value.
 Use `old(program::result)` or `at(function.entry, program::result)` to refer explicitly to
 the parameter's entry value.
 
+In a Rust proof, `program::bytes.len()` reads the length of the slice binding
+that is in scope at the selected point. If a Rust local shadows a slice
+parameter, plain `bytes.len()` still denotes the parameter length.
+
 C locals exist only while they are in scope. After function exit, refer to a
 local through a recorded point:
 

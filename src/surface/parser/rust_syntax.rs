@@ -1229,7 +1229,11 @@ impl Parser {
             .map_err(|message| self.error(message))
     }
 
-    pub(super) fn take_rust_slice_len(&mut self, name: &str) -> Option<crate::kernel::BindingName> {
+    pub(super) fn take_rust_slice_len(
+        &mut self,
+        name: &str,
+        qualified: bool,
+    ) -> Option<crate::kernel::BindingName> {
         if self.peek() != Some(&Token::Dot)
             || self.peek_next() != Some(&Token::Ident("len".into()))
             || self.tokens.get(self.position + 2) != Some(&Token::LParen)
@@ -1237,10 +1241,14 @@ impl Parser {
         {
             return None;
         }
-        let length = if self.rust_slice_params.contains(name) {
+        let local = self.rust_slice_locals.get(name);
+        let parameter = self.rust_slice_params.contains(name);
+        let length = if qualified && (parameter || local?.unresolved_slice_length().is_some()) {
+            crate::kernel::BindingName::program_slice_length(name)
+        } else if parameter {
             crate::kernel::BindingName::slice_length(name)
         } else {
-            self.rust_slice_locals.get(name)?.clone()
+            local?.clone()
         };
         self.position += 4;
         Some(length)
