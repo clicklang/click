@@ -25,9 +25,108 @@
 //! not name that local, since the place's address is unchanged.
 
 use super::super::schema::{
-    Expression as E, MirBlock, MirStatement as S, MirTerminator as T, Place, Type,
+    Expression as E, MirBlock, MirBody, MirStatement as S, MirTerminator as T, Place, Type,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Select scalar expression results with one producer and reads along one
+/// straight-line fragment. The final reader ends the result. A slot read
+/// through its address, written by another operation, or live across a
+/// control-flow edge where other paths can enter still needs storage.
+pub(in crate::languages::rust) fn scalar_expression_operands(
+    mir: &MirBody,
+) -> BTreeMap<String, super::super::borrow_frontiers::MirPoint> {
+    use super::super::borrow_frontiers::MirPoint;
+    if mir.unnamed_locals.is_empty() {
+        return BTreeMap::new();
+    }
+    let is_candidate = |name: &str| mir.unnamed_locals.contains(name);
+    let mut definitions = BTreeMap::new();
+    let mut reads_by_local = BTreeMap::new();
+    let mut excluded = BTreeSet::new();
+
+    // A forward goto into a block with exactly one incoming edge continues
+    // the fragment. In particular a join or a loop back edge starts another.
+    let mut incoming = vec![0usize; mir.blocks.len()];
+    let mut predecessor = vec![None; mir.blocks.len()];
+    for (index, block) in mir.blocks.iter().enumerate() {
+        for successor in successors(&block.terminator) {
+            if let Some(count) = incoming.get_mut(successor) {
+                *count += 1;
+            }
+        }
+        if let T::Goto { target } = block.terminator
+            && index < target
+            && let Some(entry) = predecessor.get_mut(target)
+        {
+            *entry = Some(index);
+        }
+    }
+    let mut fragments: Vec<usize> = Vec::with_capacity(mir.blocks.len());
+    for (block, code) in mir.blocks.iter().enumerate() {
+        let fragment = match predecessor[block] {
+            Some(previous) if incoming[block] == 1 => fragments[previous],
+            _ => block,
+        };
+        fragments.push(fragment);
+        for (statement, code) in code.statements.iter().enumerate() {
+            let point = MirPoint { block, statement };
+            if let S::Assign {
+                target: E::Local { name },
+                value,
+            } = code
+                && is_candidate(name)
+                && (matches!(value, E::Call { .. } | E::ClosureInstance { .. })
+                    || definitions.insert(name.clone(), point).is_some())
+            {
+                excluded.insert(name.clone());
+            }
+            let mut reads = BTreeMap::new();
+            statement_uses(code, &mut reads, &mut excluded);
+            let value_reader = matches!(
+                code,
+                S::Assert { .. } | S::Assign { .. } | S::SliceSplit { .. }
+            );
+            for (name, count) in reads {
+                if !is_candidate(&name) {
+                    continue;
+                }
+                if !value_reader {
+                    excluded.insert(name);
+                    continue;
+                }
+                let uses = reads_by_local
+                    .entry(name.clone())
+                    .or_insert((point, point, count));
+                if fragments[uses.0.block] != fragment {
+                    excluded.insert(name);
+                }
+                uses.1 = point;
+                uses.2 = count;
+            }
+        }
+        let mut reads = BTreeMap::new();
+        terminator_uses(&code.terminator, &mut reads, &mut excluded);
+        excluded.extend(reads.into_keys());
+        excluded.extend(call_destination(&code.terminator).cloned());
+    }
+
+    mir.locals
+        .iter()
+        .filter_map(|local| {
+            let name = &local.name;
+            if !local.value_type.is_scalar() || excluded.contains(name) {
+                return None;
+            }
+            let producer = definitions.get(name)?;
+            let &(first, last, last_read_count) = reads_by_local.get(name)?;
+            (last_read_count == 1
+                && fragments[producer.block] == fragments[first.block]
+                && *producer < first)
+                .then(|| (name.clone(), last))
+        })
+        .collect()
+}
 
 /// Substitutes each pure temporary of `temporaries` into its one read, and
 /// removes it from `locals` and its block.
