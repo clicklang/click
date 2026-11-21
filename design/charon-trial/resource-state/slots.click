@@ -56,9 +56,7 @@ impl resource_state::Store<u32> for resource_state::Slot {
                 have at(statement(1).region(13).exit, self.item) != 0 by solve();
                 have at(region(36).exit, self.item) == at(statement(1).region(13).exit, self.item) by solve();
                 have at(region(36).exit, self.item) != 0 by solve();
-                have separate(region(39).footprint, memory(self.item)) by { normalize() using {
-                    at(before_put, separate(memory(*self.item), memory(self.item)));
-                }; }
+                have separate(region(39).footprint, memory(self.item)) by { known(); }
                 have at(region(39).exit, self.item) == at(region(39).entry, self.item) by {
                     preserve(memory(self.item), region(39));
                 }

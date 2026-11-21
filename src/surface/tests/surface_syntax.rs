@@ -1753,7 +1753,7 @@ fn verifies_explicit_structural_logic_tactics() {
         theorem intro_forall_rule() {
             ensures forall (k: int32) { k == k } by {
                 intro();
-                normalize();
+                known();
             }
         }
 
@@ -3261,7 +3261,7 @@ fn integer_datatype_match_bindings_shadow_each_source_carrier() {
         theorem extraction(value: Integer) {
             ensures match Pair::Make(0, value) {
                 Pair::Make(value, inner) => inner,
-            } == value by { normalize(); }
+            } == value by { known(); }
         }
     "#;
     verify_click_theorems(source).unwrap();

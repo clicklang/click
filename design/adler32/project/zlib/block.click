@@ -11,13 +11,14 @@ theorem zlib_component_step(bytes: uint8[], n: int32) {
   apply(adler_sum_append(bytes, n + 1));
   have to_integer(n + 1 - 1) == to_integer(n) by solve() using { 0 <= n; n < 2147483647; };
   unfold(zlib_byte_integer(bytes[n]));
-  normalize() using { adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n + 1 - 1) + to_integer(bytes[n + 1 - 1] as int32); to_integer(n + 1 - 1) == to_integer(n); };
+  rewrite(to_integer(n), to_integer(((n + 1) - 1)));
+  known();
  }
  ensures adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n, n) + adler_byte_sum(bytes, n + 1) by {
   have 0 < to_integer(n + 1) by solve() using { 0 <= n; n < 2147483647; };
   apply(adler_weighted_prefix_step(bytes, n + 1));
   have to_integer(n + 1 - 1) == to_integer(n) by solve() using { 0 <= n; n < 2147483647; };
-  normalize() using { adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n + 1 - 1, n + 1 - 1) + adler_byte_sum(bytes, n + 1); to_integer(n + 1 - 1) == to_integer(n); };
+  known();
  }
 }
 

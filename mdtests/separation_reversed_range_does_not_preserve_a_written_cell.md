@@ -16,7 +16,7 @@ void overwrite(int32 *p) {
     ensures *p == 0;
 } by {
     step();
-    have separate(memory(*p), memory(p[0..-1073741823])) by { normalize(); }
+    have separate(memory(*p), memory(p[0..-1073741823])) by { known(); }
     have separate(statement(0).footprint, memory(p[0..-1073741823])) by {
         normalize() using { separate(memory(*p), memory(p[0..-1073741823])); };
     }

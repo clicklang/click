@@ -103,16 +103,10 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
     }
     have old as (void *) as (struct rb_node *) == rb_old;
     have old->rb.rb_left != old as (void *) as (struct rb_node *) by {
-        normalize() using {
-            old->rb.rb_left != rb_old;
-            old as (void *) as (struct rb_node *) == rb_old;
-        };
+        rewrite(old as (void *) as (struct rb_node *), rb_old); known();
     }
     have old->rb.rb_right != old as (void *) as (struct rb_node *) by {
-        normalize() using {
-            old->rb.rb_right != rb_old;
-            old as (void *) as (struct rb_node *) == rb_old;
-        };
+        rewrite(old as (void *) as (struct rb_node *), rb_old); known();
     }
     fold(source);
     let target = fold(size_metadata(rb_new), { value: old(source.value) });

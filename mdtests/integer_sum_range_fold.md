@@ -53,9 +53,7 @@ int32 sum(int32 a[], int32 n) {
         };
     }
     have 0 == (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-        normalize() using {
-            (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0;
-        };
+        known();
     }
     have 0 <= (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
         solve() using { (0..0).fold(0, |acc, k| { (acc + to_integer(a[k])) }) == 0; };

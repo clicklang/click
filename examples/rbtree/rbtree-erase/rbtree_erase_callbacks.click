@@ -28,7 +28,7 @@ void dummy_copy(struct rb_node* old, struct rb_node* new) {
     requires old != 0;
     requires new != 0;
     ensures 1 == 1;
-} by { step_until(function.exit); normalize(); }
+} by { step_until(function.exit); solve(); }
 void dummy_rotate(struct rb_node* old, struct rb_node* new) {
     requires new != 0;
     ensures 1 == 1;

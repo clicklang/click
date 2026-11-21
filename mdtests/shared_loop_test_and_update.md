@@ -115,7 +115,7 @@ int32 shared_do(int32 n) {
                         known();
                     } else {
                         have (if at(statement(0).call(again, 0).entry, n) > 0 { 1 } else { 0 }) == 0 by {
-                            normalize() using { at(statement(0).call(again, 0).entry, n) <= 0; };
+                            known();
                         }
                         have statement(0).call(again, 0).result == 0 by {
                             solve() using {

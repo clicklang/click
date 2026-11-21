@@ -151,7 +151,8 @@ void fill(struct arena *arena, int32 start, int32 end) {
                 have arena->occupied == at(opened, arena->occupied) by { known(); }
                 // Select the preserved cell as one complete int32 observation.
                 have contains(at(opened, memory(arena->occupied[k])), at(opened, memory((&arena->occupied[k])[0..1]))) by { normalize(); }
-                have contains(at(opened, memory(arena->occupied[i])), at(opened, memory(arena->occupied[i]))) by { normalize(); }
+                have contains(at(opened, memory(arena->occupied[i])), at(opened, memory(arena->occupied[i]))) by { transport(at(function.entry, contains(at(opened, memory(load<int32*>(byte_offset(arena, 8))[i])), at(opened, memory(load<int32*>(byte_offset(arena, 8))[i])))), contains(at(opened, memory(load<int32*>(byte_offset(arena, 8))[i])), at(opened, memory(load<int32*>(byte_offset(arena, 8))[i])))) using {
+                    }; }
                 have separate(at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1]))) by {
                     apply(separation::separate_restrict(at(opened, memory(arena->occupied[i])), at(opened, memory(arena->occupied[k])), at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1])))) using {
                         contains(at(opened, memory(arena->occupied[i])), at(opened, memory(arena->occupied[i])));
@@ -160,7 +161,7 @@ void fill(struct arena *arena, int32 start, int32 end) {
                     };
                 }
                 have separate(loop(0).statement(0).footprint, at(opened, memory((&arena->occupied[k])[0..1]))) by {
-                    normalize() using { separate(at(opened, memory(arena->occupied[i])), at(opened, memory((&arena->occupied[k])[0..1]))); };
+                    known();
                 }
                 have at(loop(0).statement(0).exit, load<int32>(at(opened, &arena->occupied[k])))
                         == at(loop(0).statement(0).entry, load<int32>(at(opened, &arena->occupied[k]))) by {

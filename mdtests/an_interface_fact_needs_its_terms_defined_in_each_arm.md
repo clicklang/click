@@ -53,7 +53,7 @@ int32 bubble_pass3(int32 p[3]) {
             have p[0] <= p[j] by {
                 if j == 0 {
                     rewrite(j, 0);
-                    normalize();
+                    known();
                 } else {
                     solve();
                 }

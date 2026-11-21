@@ -52,7 +52,7 @@ theorem sized_double_cached_shape(g: struct rb_node*, p: struct rb_node*, node: 
         unfold(sized_context_double_subtree_after(g, p, node, above, far, ml, mr, uncle));
         rewrite(sized_shape(sized_reparent(ml, p)), rb_reparent(sized_shape(ml), p));
         rewrite(sized_shape(sized_reparent(mr, g)), rb_reparent(sized_shape(mr), g));
-        normalize();
+        known();
     }
 }
 

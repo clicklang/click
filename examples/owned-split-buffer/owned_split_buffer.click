@@ -99,7 +99,8 @@ int32 owned_split_buffer_set_left(
             contains(memory(*owner), memory(owner->data));
         };
     }
-    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { normalize(); }
+    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { transport(at(function.entry, contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))), contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))) using {
+        }; }
     have contains(memory(owner->data), memory(owner->data)) by { apply(click::separation::contains_refl(memory(owner->data))) using {}; }
     have separate(memory(owner->data), memory(owner->data[index])) by {
         apply(separation::separate_restrict(memory(owner->data), memory(owner->data[index..index + 1]),
@@ -167,7 +168,8 @@ int32 owned_split_buffer_set_right(
             contains(memory(*owner), memory(owner->data));
         };
     }
-    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { normalize(); }
+    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { transport(at(function.entry, contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))), contains(memory(owner->data[index..(index + 1)]), memory(load<int32*>(byte_offset(owner, 8))[index]))) using {
+        }; }
     have contains(memory(owner->data), memory(owner->data)) by { apply(click::separation::contains_refl(memory(owner->data))) using {}; }
     have separate(memory(owner->data), memory(owner->data[index])) by {
         apply(separation::separate_restrict(memory(owner->data), memory(owner->data[index..index + 1]),
@@ -260,10 +262,9 @@ int32 owned_split_buffer_pipeline(
     have owner->data == data by { known(); }
     have 1 < owner->len by { known(); }
     have data[1] == right_value by {
-        normalize() using {
-            at(statement(5).entry, *(owner->data + 1)) == at(statement(5).entry, right_value);
-            owner->data == data;
-        };
+        rewrite(at(statement(5).entry, right_value), at(statement(5).entry, *(load<int32*>(byte_offset(owner, 8)) + 1)));
+        rewrite(data, owner->data);
+        known();
     }
     step();
     step();
