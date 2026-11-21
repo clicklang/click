@@ -293,10 +293,23 @@ pub(in crate::kernel) fn evaluate_indexed_read(
     obligations: Vec<ProofObligation>,
 ) -> ExpressionPath {
     if let ProgramType::Parameter(parameter) = value_type {
+        let value = AlgebraicTermNode::parameter_load_at(version.clone(), pointer, parameter);
+        if let Some(stored) = version.indexed_stored_value() {
+            let (ProgramValue::Parameter(read), ProgramValue::Parameter(stored)) =
+                (&value, stored.native())
+            else {
+                unreachable!("indexed opaque store");
+            };
+            facts.push(ExecutionPureFact {
+                logical_read_equation: true,
+                ..ExecutionPureFact::certified(Proposition::condition_is(
+                    ConditionTerm::AlgebraicEqual(read.clone(), stored.clone()),
+                    true,
+                ))
+            });
+        }
         return ExpressionPath {
-            outcome: ExpressionOutcome::Value(AlgebraicTermNode::parameter_load_at(
-                version, pointer, parameter,
-            )),
+            outcome: ExpressionOutcome::Value(value),
             facts,
             obligations,
         };

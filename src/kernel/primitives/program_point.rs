@@ -789,6 +789,15 @@ fn record_point_read_effect(
             ..
         } if read_bucket(&pointer.base).is_some() => {
             let bucket = read_bucket(&pointer.base).expect("indexed write bucket");
+            // A symbolic-size write can overlap other fields of the object
+            // even when its modeled carrier width does not.
+            if indexed_local(&pointer.base)
+                && step
+                    .single_write_extent()
+                    .is_some_and(|(_, extent)| extent.bytes().is_none())
+            {
+                index.blocks.remove(bucket);
+            }
             let call_word = matches!(
                 step.as_ref(),
                 MemoryDerivation::ObjectInitializationRecorded {
@@ -1430,7 +1439,12 @@ impl ProgramPoint {
         pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
-        if value_type == ProgramType::Bool || value_type.is_pointer() {
+        let indexed_algebraic = matches!(value_type, ProgramType::Parameter(ty)
+            if indexed_local(&pointer.base)
+                && matches!(pointer.offset, AddressOffset::Constant(_))
+                && !ty.is_enum()
+                && !ty.has_abstract_size());
+        if value_type == ProgramType::Bool || value_type.is_pointer() || indexed_algebraic {
             return self.indexed_version(pointer, value_type.byte_width(), |store| {
                 matches!(store, MemoryDerivation::Store { value, .. } if value.program_type() == value_type)
             });
