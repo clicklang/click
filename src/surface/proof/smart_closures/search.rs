@@ -7974,6 +7974,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             _ => false,
         };
+        let pointer_addresses = match kernel.condition_native() {
+            Some((ConditionTerm::AddressEqual(left, right), _)) => {
+                Some([left.as_ref(), right.as_ref()])
+            }
+            Some((ConditionTerm::PointerEqual(left, right), _)) => {
+                Some([left.address(), right.address()])
+            }
+            _ => None,
+        };
+        let pointer_read_equality = pointer_addresses.is_some_and(|addresses| {
+            addresses
+                .iter()
+                .any(|address| address.as_loaded_value().is_some())
+        });
         let matches_kernel = |candidate: &ClickProposition, allow_recorded_pair: bool| {
             if crate::instrumentation::deadline_exceeded() {
                 return None;
@@ -8059,10 +8073,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         })
                     });
                 // A statement selector can be recorded again on a later
-                // loop iteration. Its old pair remains a checked fact, but
-                // an explicit state spelling must still denote it now.
+                // iteration, and a store can change the value an unanchored
+                // pointer read names. Check that those spellings still name
+                // the fact here.
                 let state_spelling = proposition_contains_at_expression(candidate);
-                if !constructor_equation && !names_a_dead_local && !state_spelling {
+                if !constructor_equation
+                    && !names_a_dead_local
+                    && !state_spelling
+                    && !pointer_read_equality
+                {
                     // The recorded pair is authoritative for this shape.
                     return Some(());
                 }
@@ -8107,6 +8126,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .is_some())
             .then_some(())
         };
+        // A store of an allocation result can retain the assignment's hidden
+        // temporary. The allocation's address has a source name at the
+        // producing region, which survives the temporary's scope.
+        let view = search_input.premise_fixed_state_view();
+        if let (Some(addresses), Some(view)) = (pointer_addresses, view)
+            && addresses.into_iter().any(|address| {
+                view.fixed_state
+                    .recorded_states
+                    .allocation_result(address)
+                    .is_some()
+            })
+            && let Some(surface) = search_input.structural_proposition_candidate(kernel)
+            && matches_kernel(&surface, false).is_some()
+        {
+            return Some(surface);
+        }
         if let Some(surface) = surface_facts.surfaces(kernel).find(|surface| {
             (proposition_contains_at_expression(surface)
                 || proposition_contains_old_expression(surface))
@@ -8126,7 +8161,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Some(surface.clone());
         }
         if pointer_goal
-            && let Some(view) = search_input.premise_fixed_state_view()
+            && let Some(view) = view
             && let Some(surface) = synthesize_surface_proposition(
                 kernel,
                 view.parameter_binding,
@@ -8205,12 +8240,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // binders name, entry reads as `old(..)`, and a read of any other
         // recorded memory at the point that recorded it, found by its memory
         // in one lookup.
-        let _recorded_points = search_input.premise_fixed_state_view().map(|view| {
+        let _recorded_points = view.map(|view| {
             super::surface_synthesis::SynthesisRecordedPointsScope::enter(
                 view.fixed_state.recorded_states,
             )
         });
-        if let Some(view) = search_input.premise_fixed_state_view() {
+        if let Some(view) = view {
             let (bound_variable_names, binder_names) = search_input.binder_variable_names();
             let surface = super::surface_synthesis::with_proof_binder_names(
                 std::sync::Arc::new(binder_names),
