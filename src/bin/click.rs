@@ -127,10 +127,7 @@ mod tests {
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(
-            error.contains("`step()` requires an explicit prerequisite proof"),
-            "{error}"
-        );
+        assert!(error.contains("this write overlaps a live view"), "{error}");
         assert!(error.contains("\ngoal: separate("), "{error}");
         assert!(error.contains("words[1..2]"), "{error}");
         assert!(
@@ -740,6 +737,90 @@ uint64 spell(const uint8* b, uint64 n) {
     }
 
     #[test]
+    fn verify_traces_an_obligation_refused_at_execution_completion() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("demo.c"),
+            "void clear(int *p, const int *q) { if (p) *p = 0; }",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("demo.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "demo.c";
+resource maybe_cell(p: int32*) {
+    field value: int32;
+    if p != 0 { owns p[0..1]; }
+}
+void clear(int32* p, const int32* q) {
+    views q[0..1];
+    owns cell: maybe_cell(p);
+    requires p == 0 or separate(memory(p[0..1]), memory(q[0..1]));
+}
+contract void Clear(int32* p, const int32* q) {
+    views q[0..1];
+    owns cell: maybe_cell(p);
+    requires p == 0 or separate(memory(p[0..1]), memory(q[0..1]));
+}
+theorem clear_has_contract() executes clear(int32* p, const int32* q) {
+    ensures Clear(&clear) as { cell: c } by {
+        if p != 0 {
+            have separate(memory(p[0..1]), memory(q[0..1])) by {
+                cases {
+                    p == 0 => { contradiction(p == 0); }
+                    separate(memory(p[0..1]), memory(q[0..1])) => { known(); }
+                }
+            }
+            step(clear, { cell: c });
+            solve();
+        } else {
+            step(clear, { cell: c });
+            solve();
+        }
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let trace = entry([
+            "verify".to_owned(),
+            "--trace-proof".to_owned(),
+            "clear_has_contract".to_owned(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        let (prefix, failed) = trace
+            .split_once("\nfailed check:\n")
+            .unwrap_or_else(|| panic!("{trace}"));
+        assert!(
+            prefix.contains("proof trace (checked tactics and branch facts)"),
+            "{trace}"
+        );
+        assert!(prefix.contains("branch (then arm)"), "{trace}");
+        assert!(!prefix.contains("branch (else arm)"), "{trace}");
+        assert!(prefix.contains("step(clear"), "{trace}");
+        assert!(
+            failed.contains("stage: execution path certification"),
+            "{trace}"
+        );
+        assert!(
+            failed.contains("clear_has_contract.contract path 0"),
+            "{trace}"
+        );
+        assert!(
+            failed.contains(
+                "goal: memory(p[Int32:0..1], stride=4) separate memory(q[Int32:0..1], stride=4)"
+            ),
+            "{trace}"
+        );
+        assert!(
+            failed.contains("available premises at the failed check"),
+            "{trace}"
+        );
+    }
+
+    #[test]
     fn verify_names_the_failed_simple_tactic() {
         let directory =
             std::env::temp_dir().join(format!("click-failed-step-report-{}", std::process::id()));
@@ -808,7 +889,7 @@ uint64 spell(const uint8* b, uint64 n) {
             nested.contains("location: tactic 1 > have body tactic 1"),
             "{nested}"
         );
-        assert!(nested.contains("goal: false"), "{nested}");
+        assert!(nested.contains("goal: 0 == 1"), "{nested}");
         assert!(nested.contains("steps through: declare x"), "{nested}");
 
         let wrong = entry([
@@ -1802,7 +1883,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         ])
         .expect("click expand should emit the ordinary arithmetic proof");
         let expanded = fs::read_to_string(&expanded_path).unwrap();
-        assert!(expanded.contains("normalize() using {"), "{expanded}");
+        assert!(expanded.contains("known();"), "{expanded}");
         assert!(!expanded.contains("solve() using"), "{expanded}");
 
         entry(["verify".to_string(), expanded_path.display().to_string()])

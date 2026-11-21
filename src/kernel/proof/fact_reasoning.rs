@@ -1,8 +1,11 @@
 mod computation;
 mod intervals;
 mod known_bridges;
+mod machine_ranges;
 pub(crate) use computation::{computes_leaf, trivial_condition_value};
-pub(crate) use known_bridges::{is_quotient_remainder_order, known_bridge_leaf};
+pub(crate) use known_bridges::{
+    is_quotient_remainder_order, known_bridge_leaf, pointer_projection_source,
+};
 
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
@@ -30,8 +33,13 @@ pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
 }
 
 fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
+    if let Proposition::ConditionIs(condition, expected) = goal
+        && let Some(actual) = condition.operand_view().closed_float_predicate_value()
+    {
+        return actual == *expected;
+    }
     if let Some(holds) =
-        crate::kernel::spec::checks_int32_sequence_comparison(goal, true, |condition, truth| {
+        crate::kernel::spec::checks_retained_sequence_comparison(goal, true, |condition, truth| {
             normalizes_context_free_reduced(&Proposition::condition_is(condition.clone(), truth))
         })
     {
@@ -303,7 +311,7 @@ fn normalize_condition_selection(
     for (index, premise) in premises.iter().enumerate() {
         // A complete arithmetic domain supplies its two ordinary bounds.
         // Keep shared operands intact; no private overflow spelling is needed.
-        let sequence = crate::kernel::spec::int32_sequence_equalities(premise);
+        let sequence = crate::kernel::spec::retained_sequence_equalities(premise);
         let leaves = if let Some(sequence) = &sequence {
             sequence.iter().collect()
         } else if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(
@@ -515,7 +523,7 @@ fn normalize_condition_selection(
         crate::instrumentation::record_deterministic_work(1);
         selected = selected.assume_condition(condition, value);
     }
-    if crate::kernel::spec::checks_int32_sequence_comparison(goal, true, |condition, truth| {
+    if crate::kernel::spec::checks_retained_sequence_comparison(goal, true, |condition, truth| {
         selected.decide(condition) == Some(truth)
     }) == Some(true)
     {
@@ -2247,7 +2255,7 @@ mod tests {
         let effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
             before: before.memory().clone(),
             after: after.memory().clone(),
-            writes: vec![(actual.clone(), 1)],
+            writes: vec![(actual.clone(), crate::kernel::AccessExtent::from(1))],
         });
         let footprint = Resource::Footprint(crate::kernel::RegionFootprint::transition(
             "byte store".into(),
@@ -2576,7 +2584,7 @@ mod tests {
             PureFactContext::new().assume_proposition(Proposition::MemoryMutatesOnly {
                 before: before.clone(),
                 after: after.clone(),
-                writes: vec![(written, 4)],
+                writes: vec![(written, crate::kernel::AccessExtent::from(4))],
             });
         // The canonical memories are the cells' versions. SymbolicMemory states that
         // differ only by a declared block or a write to another cell share

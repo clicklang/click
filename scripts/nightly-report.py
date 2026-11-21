@@ -10,10 +10,17 @@ Reads the result directories the nightly jobs fill when
   junit-*.xml  nextest's JUnit results for each nightly test run
   phases.tsv   `name<TAB>seconds<TAB>exit status` per phase
   jobs.tsv     `job<TAB>result` written by the workflow
+  counts.tsv   `audit<TAB>outcome<TAB>count` from `scripts/lowering-audits.sh`,
+               with `fact-stability.tsv` holding that audit's own records
 
 and writes `report.md` and `report.json` to `--out`. With `--previous` (the
 last night's `report.json`) each failure is marked new or persisting, and
 failures that ran clean tonight are listed as fixed.
+
+A fact-stability `differs` or `paths` line is a failure: it breaks a rule
+lowering enforces. The raise/lower round trip is tracked, not enforced: its
+counts are listed beside the previous night's, and a rise in an outcome that
+is not `same` is flagged.
 """
 import argparse
 import json
@@ -29,7 +36,16 @@ UNIT_ENV = "RUST_MIN_STACK=8388608 CLICK_NIGHTLY=1"
 # The aggregate tests whose fixtures are recorded one by one in *.jsonl.
 # The checks each workflow job records, to tell a job that failed without
 # recording any of them (a build error, a crash, a timeout).
-JOB_KINDS = {"nightly": {"mdtest", "example", "test", "clippy"}, "audit": {"audit"}}
+JOB_KINDS = {
+    "nightly": {"mdtest", "example", "test", "clippy"},
+    "audit": {"audit"},
+    "lowering": {"lowering"},
+}
+# The lowering audits' phases, and the fact-stability outcomes that fail.
+LOWERING_AUDITS = {"fact-stability": "scripts/fact-stability.sh", "raise-lower": "scripts/raise-lower.sh"}
+ENFORCED = {("fact-stability", "differs"), ("fact-stability", "paths")}
+# The outcomes whose rise is flagged: everything but a faithful round trip.
+TRACKED_GOOD = {"same"}
 HARNESSES = {("mdtests", "mdtests"): "mdtest", ("examples", "example_projects"): "example"}
 
 
@@ -50,6 +66,8 @@ def nextest_target(binary):
 
 
 def reproduce(kind, name, binary=None):
+    if kind == "lowering":
+        return LOWERING_AUDITS[name.split(" ", 1)[0]]
     if kind == "mdtest":
         return f"RUST_MIN_STACK=8388608 MDTEST_FILTER={shell_quote(name)} cargo test --test mdtests -- --exact mdtests"
     if kind == "example":
@@ -151,8 +169,24 @@ def read_tsv(path):
     return [line.split("\t") for line in path.read_text().splitlines() if line.strip()]
 
 
+def read_counts(directory):
+    counts = {}
+    for row in read_tsv(directory / "counts.tsv"):
+        counts[(row[0], row[1])] = int(row[2])
+    return counts
+
+
+def first_record(directory, audit, outcome):
+    """The fixture of the first `outcome` record `audit` wrote."""
+    for row in read_tsv(directory / f"{audit}.tsv"):
+        if row[0].startswith(outcome):
+            return row[4] if len(row) > 4 else row[-1]
+    return None
+
+
 def collect(directories):
     failures, ran, timings, phases, jobs = {}, set(), [], [], []
+    counts = {}
     harness_failed = {"mdtest": False, "example": False}
     for directory in directories:
         for record in read_jsonl(directory):
@@ -172,6 +206,19 @@ def collect(directories):
         for phase in read_tsv(directory / "phases.tsv"):
             phases.append({"name": phase[0], "seconds": int(phase[1]), "status": int(phase[2])})
         jobs.extend(read_tsv(directory / "jobs.tsv"))
+        for (audit, outcome), count in read_counts(directory).items():
+            counts[(audit, outcome)] = count
+            key = f"lowering:{audit} {outcome}"
+            if (audit, outcome) not in ENFORCED:
+                continue
+            ran.add(key)
+            if count:
+                example = first_record(directory, audit, outcome)
+                failures[key] = {
+                    "kind": "lowering", "name": f"{audit} {outcome}",
+                    "summary": f"{count} `{outcome}` lowerings" + (f"; first in {example}" if example else ""),
+                    "seconds": None, "reproduce": reproduce("lowering", audit),
+                }
     for directory in directories:
         for binary, name, seconds, failure in read_junit(directory):
             short_binary = binary.split("::", 1)[-1] if "::" in binary else binary
@@ -192,18 +239,41 @@ def collect(directories):
                     "reproduce": reproduce("test", name, binary),
                 }
     for phase in phases:
+        if phase["name"] in LOWERING_AUDITS:
+            key = f"lowering:{phase['name']} run"
+            ran.add(key)
+            if phase["status"] != 0:
+                failures[key] = {
+                    "kind": "lowering", "name": f"{phase['name']} run",
+                    "summary": f"the mdtest corpus exited {phase['status']} under the audit; "
+                               "an audit must not change a proof's outcome",
+                    "seconds": phase["seconds"], "reproduce": reproduce("lowering", phase["name"]),
+                }
         if phase["name"] == "clippy" and phase["status"] != 0:
             failures["clippy:clippy"] = {
                 "kind": "clippy", "name": "clippy",
                 "summary": f"cargo clippy exited with {phase['status']}",
                 "seconds": phase["seconds"], "reproduce": reproduce("clippy", "clippy"),
             }
-    return failures, ran, timings, phases, jobs
+    return failures, ran, timings, phases, jobs, counts
+
+
+def lowering_counts(counts, previous):
+    """Tonight's audit counts beside the previous night's."""
+    before = {(c["audit"], c["outcome"]): c["count"] for c in (previous or {}).get("counts", [])}
+    rows = []
+    for (audit, outcome), count in counts.items():
+        earlier = before.get((audit, outcome))
+        rows.append({
+            "audit": audit, "outcome": outcome, "count": count, "previous": earlier,
+            "rose": earlier is not None and count > earlier and outcome not in TRACKED_GOOD,
+        })
+    return rows
 
 
 def build(arguments):
     directories = [Path(d) for d in arguments.input if Path(d).is_dir()]
-    failures, ran, timings, phases, jobs = collect(directories)
+    failures, ran, timings, phases, jobs, counts = collect(directories)
     for job, result in jobs:
         own = JOB_KINDS.get(job, set())
         if result not in ("success", "skipped") and not any(
@@ -220,6 +290,7 @@ def build(arguments):
         previous = json.loads(Path(arguments.previous).read_text())
     previous_ids = {f["id"] for f in previous["failures"]} if previous else set()
     audit_ran = any(job == "audit" and result in ("success", "failure") for job, result in jobs)
+    lowering_ran = any(job == "lowering" and result in ("success", "failure") for job, result in jobs)
     for key, failure in failures.items():
         failure["id"] = key
         failure["status"] = "persisting" if key in previous_ids else ("new" if previous else "unknown")
@@ -227,6 +298,7 @@ def build(arguments):
     fixed = sorted(
         key for key in previous_ids - failures.keys()
         if key in ran or (key.startswith("audit:") and audit_ran)
+        or (key.startswith("lowering:") and lowering_ran)
     )
     not_run = sorted(previous_ids - failures.keys() - set(fixed))
     groups = {}
@@ -248,6 +320,7 @@ def build(arguments):
         ),
         "slowest": [{"id": key, "seconds": round(seconds, 2)}
                     for seconds, key in sorted(timings, reverse=True)[:SLOWEST]],
+        "counts": lowering_counts(counts, previous),
     }
     return report
 
@@ -277,6 +350,10 @@ def render(report):
         counts += (f": {len(new)} new, {len(failures) - len(new)} persisting; "
                    f"{len(report['fixed'])} fixed since {report['previous_commit'][:12]}")
     lines += [counts, ""]
+    rose = [c for c in report["counts"] if c["rose"]]
+    if rose:
+        lines += ["**Lowering audits rose:** " + ", ".join(
+            f"{c['audit']} `{c['outcome']}` {c['previous']} → {c['count']}" for c in rose), ""]
     if report["jobs"] or report["phases"]:
         lines += ["| Job or phase | Result | Time |", "|---|---|---|"]
         for job in report["jobs"]:
@@ -311,6 +388,18 @@ def render(report):
     if report["not_run"]:
         lines += ["## Failing last night, not run tonight", ""]
         lines += [f"- `{i}`" for i in report["not_run"]] + [""]
+    if report["counts"]:
+        lines += ["## Lowering audits", "",
+                  "Fact-stability `differs` and `paths` fail the night; the raise/lower "
+                  "counts are tracked, and a rise in any outcome but `same` is flagged.", "",
+                  "| Audit | Outcome | Tonight | Previous | Change |", "|---|---|---|---|---|"]
+        for c in report["counts"]:
+            earlier = "" if c["previous"] is None else str(c["previous"])
+            change = "" if c["previous"] is None else f"{c['count'] - c['previous']:+d}"
+            if c["rose"]:
+                change = f"**{change}** (rose)"
+            lines.append(f"| {c['audit']} | `{c['outcome']}` | {c['count']} | {earlier} | {change} |")
+        lines.append("")
     if report["slowest"]:
         lines += ["## Slowest checks", "", "| Check | Time |", "|---|---|"]
         lines += [f"| `{cell(s['id'])}` | {s['seconds']:.1f}s |" for s in report["slowest"]]

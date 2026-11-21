@@ -523,7 +523,8 @@ impl PureFactContext {
             LoadKind::UInt16 => Some(memory.symbolic_uint16_load(pointer)),
             LoadKind::Int32 => Some(memory.symbolic_int32_load(pointer)),
             LoadKind::UInt32 => Some(memory.symbolic_uint32_load(pointer)),
-            LoadKind::Bits64 => Some(memory.symbolic_int64_load(pointer)),
+            // A value of abstract type's stand-in is the 64-bit carrier.
+            LoadKind::Bits64 | LoadKind::Abstract(_) => Some(memory.symbolic_int64_load(pointer)),
             LoadKind::Int128 => {
                 memory.symbolic_wide_integer_load(pointer, MachineIntegerType::Int128)
             }

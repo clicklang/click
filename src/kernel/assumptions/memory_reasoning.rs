@@ -1974,8 +1974,9 @@ impl PureFactContext {
     pub(in crate::kernel) fn owned_store_footprint(
         &self,
         write: &Address,
-        bytes: u32,
+        bytes: impl Into<AccessExtent>,
     ) -> OwnedStoreFootprint<'_> {
+        let bytes = bytes.into();
         if self.resource_compositions.is_empty() {
             return OwnedStoreFootprint::Members(Vec::new());
         }
@@ -2000,7 +2001,7 @@ impl PureFactContext {
         &self,
         compositions: impl IntoIterator<Item = &'a ResourceContext>,
         spellings: &[(Address, Address)],
-        bytes: u32,
+        bytes: AccessExtent,
     ) -> OwnedStoreMembers<'a> {
         let mut members = Vec::new();
         // A range restated by multiple candidate compositions needs only
@@ -2012,7 +2013,7 @@ impl PureFactContext {
                 if let Some((entry, range)) = resources.unique_owned_memory_member_with_base(base) {
                     let contains = *decided
                         .entry(range)
-                        .or_insert_with(|| self.access_within_memory_range(access, bytes, range));
+                        .or_insert_with(|| self.access_held_by_range(access, bytes, range));
                     if contains {
                         members.push((resources, entry, range));
                     }
@@ -2167,8 +2168,9 @@ impl PureFactContext {
         footprint: &OwnedStoreFootprint<'a>,
         write: &Address,
         pointer: &Address,
-        bytes: u32,
+        bytes: impl Into<AccessExtent>,
     ) -> bool {
+        let bytes = bytes.into();
         if matches!(footprint, OwnedStoreFootprint::Members(members) if members.is_empty()) {
             return false;
         }
@@ -2219,7 +2221,7 @@ impl PureFactContext {
                         .unique_owned_memory_member_with_base(base)
                         .is_some_and(|(entry, range)| {
                             entry != *write_entry
-                                && self.access_within_memory_range(access, bytes, range)
+                                && self.access_held_by_range(access, bytes, range)
                                 && !self
                                     .memory_ranges_overlap_after_base_equality(write_range, range)
                         })
@@ -2236,6 +2238,33 @@ impl PureFactContext {
             &Proposition::ResourceComposition((*resources).clone()),
         );
         true
+    }
+
+    /// Whether `range` holds every byte an access of `extent` at `access`
+    /// reaches: a whole object of abstract type is held when the range
+    /// covers `[access, access + sizeof(T))`, empty or not.
+    pub(in crate::kernel) fn access_held_by_range(
+        &self,
+        access: &Address,
+        extent: AccessExtent,
+        range: &MemoryRange,
+    ) -> bool {
+        // A field of a symbolic layout's object lies inside it by the
+        // layout's rule.
+        if crate::kernel::primitives::symbolic_object_holds_field_access(range, access, extent) {
+            return true;
+        }
+        match extent {
+            AccessExtent::Bytes(bytes) => self.access_within_memory_range(access, bytes, range),
+            AccessExtent::Object(parameter) => crate::kernel::memory_range_covers(
+                range,
+                &MemoryRange::access(
+                    access.clone(),
+                    crate::kernel::ProgramType::Parameter(parameter),
+                ),
+                self,
+            ),
+        }
     }
 
     /// Whether one owned memory member of `resources` holds every byte of an
@@ -2394,6 +2423,10 @@ impl PureFactContext {
         pointer: &Address,
         bytes: u32,
     ) -> bool {
+        // A range with holes holds only its other fields, by the field rules.
+        if range.has_holes() {
+            return false;
+        }
         let width = range.element_width();
         if width == 0 {
             return false;
@@ -2469,6 +2502,10 @@ impl PureFactContext {
         bytes: u32,
         range: &MemoryRange,
     ) -> bool {
+        // A range with holes holds only its other fields, by the field rules.
+        if range.has_holes() {
+            return false;
+        }
         if range.wide_bounds().is_some() {
             return self.pointer_access_in_wide_range(pointer, bytes, range);
         }
@@ -3689,10 +3726,15 @@ impl PureFactContext {
     ) -> Option<(u64, &'a MemoryRange)> {
         // Keep symbolic and wide exact ownership on the fast path above.
         // A fixed-size field/range uses the same complete-access membership
-        // judgment as memory framing, including mixed element widths.
-        let elements = requested
-            .signed_constant_end()?
-            .checked_sub(requested.signed_constant_start()?)?;
+        // judgment as memory framing, including mixed element widths. A
+        // range of symbolic size is a member only as itself.
+        let (Some(end), Some(start)) = (
+            requested.signed_constant_end(),
+            requested.signed_constant_start(),
+        ) else {
+            return resources.exact_owned_memory_member(requested);
+        };
+        let elements = end.checked_sub(start)?;
         let bytes = u32::try_from(elements)
             .ok()?
             .checked_mul(requested.element_width())?;
@@ -3784,7 +3826,8 @@ impl PureFactContext {
             }
         }
         if let (Resource::Memory(left), Resource::Memory(right)) = (left, right)
-            && left.base().blocks_proven_distinct(right.base())
+            && (left.base().blocks_proven_distinct(right.base())
+                || crate::kernel::primitives::symbolic_ranges_disjoint(left, right))
         {
             return true;
         }
@@ -4796,6 +4839,10 @@ impl PureFactContext {
         byte_width: u32,
         range: &MemoryRange,
     ) -> bool {
+        // A range with holes holds only its other fields, by the field rules.
+        if range.has_holes() {
+            return false;
+        }
         let Some((start, end)) = range.wide_bounds() else {
             return false;
         };
@@ -4932,6 +4979,19 @@ impl PureFactContext {
                     return false;
                 }
                 let covered = if let Some(range) = SubobjectBounds::covered_wide_range(fact) {
+                    // A field of the symbolic object these bounds cover is
+                    // inside it, by the layout's rule.
+                    if crate::kernel::primitives::symbolic_object_covers_field(
+                        &range,
+                        &MemoryRange::new_with_element_width(
+                            position.clone(),
+                            0u32.into(),
+                            bytes.into(),
+                            1,
+                        ),
+                    ) {
+                        return true;
+                    }
                     let contains = |pointer| {
                         crate::kernel::primitives::pointer_formation_in_range(
                             pointer,
@@ -5825,11 +5885,25 @@ impl PureFactContext {
 /// Current store owners' containing members, or the write keys needed to
 /// select historical compositions once the read is known; see
 /// [`PureFactContext::owned_store_footprint`].
+pub(in crate::kernel) use crate::kernel::AccessExtent;
+
+/// The extent an access of `value`, stored or read whole, reaches.
+pub(in crate::kernel) fn access_extent_of_value(
+    value: &crate::kernel::ProgramValue,
+) -> AccessExtent {
+    match value.program_type() {
+        crate::kernel::ProgramType::Parameter(parameter) if parameter.has_abstract_size() => {
+            AccessExtent::Object(parameter)
+        }
+        _ => AccessExtent::Bytes(crate::kernel::reasoning::cell_access_byte_width(value)),
+    }
+}
+
 pub(in crate::kernel) enum OwnedStoreFootprint<'a> {
     Members(OwnedStoreMembers<'a>),
     Indexed {
         spellings: Vec<(Address, Address)>,
-        bytes: u32,
+        bytes: AccessExtent,
         // Keys are storage identities; the borrowed context keeps all their
         // compositions alive, even cached misses with no member reference.
         members: std::cell::RefCell<BTreeMap<usize, OwnedStoreMembers<'a>>>,

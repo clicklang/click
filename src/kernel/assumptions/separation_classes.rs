@@ -22,7 +22,7 @@ struct Index {
     graph: Option<EqualityGraph>,
     sources: PersistentMap<Proposition, (Address, Address)>,
     pairs: PersistentMap<Pair, PersistentSet<Proposition>>,
-    exact_spans: PersistentMap<Pair, PersistentMap<(u32, u32), Proposition>>,
+    exact_spans: PersistentMap<Pair, PersistentMap<(SpanWidth, SpanWidth), Proposition>>,
     incident: PersistentMap<u64, PersistentSet<Pair>>,
 }
 
@@ -49,17 +49,40 @@ fn pair(left: u64, right: u64) -> Pair {
 
 // A fixed nonempty byte interval is identified by its start address and
 // span, independently of the pointer spelling or element type.
-fn fixed_span_bytes(range: &MemoryRange) -> Option<u32> {
+/// The size of a fixed nonempty interval: a byte count, or all the bytes of
+/// one object whose size is a term, `sizeof(L)` or `sizeof(T)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+enum SpanWidth {
+    Bytes(u32),
+    Layout(SymbolicLayoutName),
+    Parameter(TypeParameterName),
+}
+
+fn fixed_span_bytes(range: &MemoryRange) -> Option<SpanWidth> {
+    if let Some(layout) = range.symbolic_object() {
+        return Some(SpanWidth::Layout(layout));
+    }
+    if let Some((start, end)) = range.wide_bounds() {
+        return (range.element_width() == 1 && start.uint64_as_const() == Some(0))
+            .then(|| TypeParameterName::of_size_term(end))
+            .flatten()
+            .map(SpanWidth::Parameter);
+    }
     let elements = range
         .signed_constant_end()?
         .checked_sub(range.signed_constant_start()?)?;
     let bytes = u32::try_from(elements)
         .ok()?
         .checked_mul(range.element_width())?;
-    (bytes != 0).then_some(bytes)
+    (bytes != 0).then_some(SpanWidth::Bytes(bytes))
 }
 
-fn span_key(left: u64, right: u64, left_bytes: u32, right_bytes: u32) -> (Pair, (u32, u32)) {
+fn span_key(
+    left: u64,
+    right: u64,
+    left_bytes: SpanWidth,
+    right_bytes: SpanWidth,
+) -> (Pair, (SpanWidth, SpanWidth)) {
     if (left, left_bytes) <= (right, right_bytes) {
         ((left, right), (left_bytes, right_bytes))
     } else {
@@ -90,7 +113,7 @@ impl Index {
         }
     }
 
-    fn attach_exact(&mut self, key: Pair, widths: (u32, u32), fact: Proposition) {
+    fn attach_exact(&mut self, key: Pair, widths: (SpanWidth, SpanWidth), fact: Proposition) {
         crate::instrumentation::record_deterministic_work(1);
         let spans = self.exact_spans.get(&key).cloned().unwrap_or_default();
         // Equal address classes and spans denote the same physical spans;

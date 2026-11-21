@@ -137,7 +137,7 @@ pub(super) struct UnfoldedCompositeResource {
 fn unique_borrowed_resource_dependency(
     state: &ExecutionState,
     resource: &ResourceFact,
-) -> Result<Option<crate::kernel::LoanViewBinding>, String> {
+) -> Result<Option<crate::kernel::BorrowBinding>, String> {
     state.unique_borrowed_resource_dependency(resource)
 }
 
@@ -148,14 +148,14 @@ fn unique_borrowed_resource_dependency(
 /// `project` re-checks every child against that expansion (D2 law 10).
 fn project_children_into_ledger(
     state: ExecutionState,
-    binding: &crate::kernel::LoanViewBinding,
+    binding: &crate::kernel::BorrowBinding,
     children: impl IntoIterator<Item = ResourceFact>,
     memory: &SymbolicMemory,
     assumptions: &PureFactContext,
     definitions: &[CompositeResourceDefinition],
     context_label: &str,
 ) -> Result<ExecutionState, ClickError> {
-    let (Some(ledger), Some(holder)) = (state.loan_ledger().cloned(), state.loan_participant())
+    let (Some(ledger), Some(holder)) = (state.borrow_ledger().cloned(), state.borrow_participant())
     else {
         return Ok(state);
     };
@@ -177,21 +177,21 @@ fn project_children_into_ledger(
     let mut ledger = ledger;
     for child in children {
         ledger = ledger
-            .project(holder, binding.loan, &binding.viewed, &evidence, child)
+            .project(holder, binding.borrow, &binding.viewed, &evidence, child)
             .map_err(|refusal| {
                 ClickError::new(format!(
                     "{context_label} cannot project a child of the viewed composite: {refusal}"
                 ))
             })?;
     }
-    Ok(state.with_loan_ledger(Some(ledger)))
+    Ok(state.with_borrow_ledger(Some(ledger)))
 }
 
-fn same_loan_authority(
-    left: &crate::kernel::LoanViewBinding,
-    right: &crate::kernel::LoanViewBinding,
+fn same_borrow_authority(
+    left: &crate::kernel::BorrowBinding,
+    right: &crate::kernel::BorrowBinding,
 ) -> bool {
-    left.loan == right.loan
+    left.borrow == right.borrow
         && left.scope == right.scope
         && left.share == right.share
         && left.support == right.support
@@ -202,8 +202,7 @@ fn same_loan_authority(
 /// rather than multiplying every body fact by every temporary view.
 struct DynamicViewDependencyIndex {
     bound: ResourceContext,
-    bound_dependencies:
-        BTreeMap<crate::kernel::ResourceOccurrenceId, crate::kernel::LoanViewBinding>,
+    bound_dependencies: BTreeMap<crate::kernel::ResourceOccurrenceId, crate::kernel::BorrowBinding>,
     unbound: ResourceContext,
     /// Owned memory an unfold is about to insert. The folded instance held
     /// it exclusively, so a body fact over it needs no borrow: it is supported
@@ -218,7 +217,7 @@ struct DynamicViewDependencyIndex {
 
 impl DynamicViewDependencyIndex {
     fn new(
-        bound_views: &[(ResourceFact, crate::kernel::LoanViewBinding)],
+        bound_views: &[(ResourceFact, crate::kernel::BorrowBinding)],
         unbound_views: &[ResourceFact],
         assumptions: &PureFactContext,
     ) -> Self {
@@ -226,7 +225,7 @@ impl DynamicViewDependencyIndex {
     }
 
     fn with_owned(
-        bound_views: &[(ResourceFact, crate::kernel::LoanViewBinding)],
+        bound_views: &[(ResourceFact, crate::kernel::BorrowBinding)],
         unbound_views: &[ResourceFact],
         owned: &[ResourceFact],
         assumptions: &PureFactContext,
@@ -269,7 +268,7 @@ fn dynamic_body_fact_dependency(
     state: &ExecutionState,
     assumptions: &PureFactContext,
     temporary_views: &DynamicViewDependencyIndex,
-) -> Result<Option<crate::kernel::LoanViewBinding>, String> {
+) -> Result<Option<crate::kernel::BorrowBinding>, String> {
     fn check_load(
         pointer: Address,
         width: u32,
@@ -277,7 +276,7 @@ fn dynamic_body_fact_dependency(
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
         binder: QuantifiedBinder<'_>,
-        selected: &mut Option<crate::kernel::LoanViewBinding>,
+        selected: &mut Option<crate::kernel::BorrowBinding>,
     ) -> Result<(), String> {
         // A read under a guarded universal, `forall v { lo <= v < hi implies
         // ... p[v] ... }`, reads only cells of `p[lo..hi]`. Require a live
@@ -314,7 +313,7 @@ fn dynamic_body_fact_dependency(
             .resources()
             .view_occurrences_for_fact(&required_view, assumptions)
         {
-            let Some(candidate) = state.resources().loan_dependency(occurrence) else {
+            let Some(candidate) = state.resources().borrow_dependency(occurrence) else {
                 // A view the instance being opened publishes over its own
                 // bytes (an owned `cstr_at` held folded across `with`)
                 // borrows nothing: its authority is that live owner, so the
@@ -365,11 +364,11 @@ fn dynamic_body_fact_dependency(
                 "current body fact reads memory outside every live viewed-memory dependency".into(),
             );
         }
-        let ledger = state.loan_ledger().ok_or_else(|| {
+        let ledger = state.borrow_ledger().ok_or_else(|| {
             "current viewed-memory dependency has no active borrow ledger".to_string()
         })?;
         let holder = state
-            .loan_participant()
+            .borrow_participant()
             .ok_or_else(|| "current viewed-memory dependency has no borrow holder".to_string())?;
         for checked in candidates {
             // The occurrence lookup above established coverage using the
@@ -383,7 +382,7 @@ fn dynamic_body_fact_dependency(
                 })?;
             if selected
                 .as_ref()
-                .is_some_and(|existing| !same_loan_authority(existing, &checked))
+                .is_some_and(|existing| !same_borrow_authority(existing, &checked))
             {
                 return Err("one body fact depends on different stable-view authorities".into());
             }
@@ -397,7 +396,7 @@ fn dynamic_body_fact_dependency(
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
         binder: QuantifiedBinder<'_>,
-        selected: &mut Option<crate::kernel::LoanViewBinding>,
+        selected: &mut Option<crate::kernel::BorrowBinding>,
     ) -> Result<(), String> {
         walk_loads(
             crate::kernel::current_memory_loads_in_term(term, state.memory())?,
@@ -414,7 +413,7 @@ fn dynamic_body_fact_dependency(
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
         binder: QuantifiedBinder<'_>,
-        selected: &mut Option<crate::kernel::LoanViewBinding>,
+        selected: &mut Option<crate::kernel::BorrowBinding>,
     ) -> Result<(), String> {
         for (pointer, width) in loads {
             check_load(
@@ -435,7 +434,7 @@ fn dynamic_body_fact_dependency(
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
         binder: QuantifiedBinder<'_>,
-        selected: &mut Option<crate::kernel::LoanViewBinding>,
+        selected: &mut Option<crate::kernel::BorrowBinding>,
     ) -> Result<(), String> {
         match proposition {
             Proposition::ConditionIs(condition, _) => walk_term(
@@ -1869,7 +1868,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     // A viewed composite is itself a checked borrow projection.  Its children
     // are fresh occurrences, so remember the exact bundle before projecting
     // the body; equal resource terms are not sufficient to recover it later.
-    let borrowed_parent_binding = if state.loan_view_bindings().is_empty() {
+    let borrowed_parent_binding = if state.borrow_bindings().is_empty() {
         None
     } else {
         unique_borrowed_resource_dependency(&state, &abstract_resource)
@@ -1970,7 +1969,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             })? {
                 if borrowed_parent_binding
                     .as_ref()
-                    .is_none_or(|parent| !same_loan_authority(parent, &binding))
+                    .is_none_or(|parent| !same_borrow_authority(parent, &binding))
                 {
                     return Err(ClickError::new(format!(
                         "`{claim_label}` tactic {tactic_index}: `observe` cannot package a current viewed-memory fact without its parent borrow"
@@ -1978,7 +1977,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 }
                 if dynamic_dependency
                     .as_ref()
-                    .is_some_and(|existing| !same_loan_authority(existing, &binding))
+                    .is_some_and(|existing| !same_borrow_authority(existing, &binding))
                 {
                     return Err(ClickError::new(format!(
                         "`{claim_label}` tactic {tactic_index}: observed body facts depend on different stable-view authorities"
@@ -3641,9 +3640,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             let Some(occurrence) = preexisting_child_sources.get(child) else {
                 return false;
             };
-            let existing = state.resources().loan_dependency(*occurrence);
+            let existing = state.resources().borrow_dependency(*occurrence);
             match (borrowed_parent_binding.as_ref(), existing) {
-                (Some(parent), Some(existing)) => same_loan_authority(parent, existing),
+                (Some(parent), Some(existing)) => same_borrow_authority(parent, existing),
                 (Some(_), None) => !state.resources().view_occurrence_is_principal(*occurrence),
                 (None, None) => true,
                 _ => false,
@@ -3787,7 +3786,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         })?
             && borrowed_parent_binding
                 .as_ref()
-                .is_none_or(|parent| !same_loan_authority(parent, &binding))
+                .is_none_or(|parent| !same_borrow_authority(parent, &binding))
         {
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `unfold({})` cannot publish a current viewed-memory fact without its parent borrow",
@@ -3825,7 +3824,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             state = state.with_resource_context(resources);
         } else if let Some(binding) = held_piece_binding.as_ref() {
             let assumptions = available_pure_facts.assumptions().clone();
-            let ledger = state.loan_ledger().ok_or_else(|| {
+            let ledger = state.borrow_ledger().ok_or_else(|| {
                 ClickError::new("an unfolded borrowing composite has no active borrow ledger")
             })?;
             let dependencies = inserted
@@ -3834,7 +3833,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                     child.is_view()
                         && ledger
                             .selected_return_permission(
-                                binding.loan,
+                                binding.borrow,
                                 child,
                                 &binding.viewed,
                                 &assumptions,
@@ -3843,14 +3842,14 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 })
                 .map(|(_, occurrence)| (occurrence, binding.clone()))
                 .collect::<Vec<_>>();
-            state = state.with_resource_context_and_loan_dependencies(resources, dependencies);
+            state = state.with_resource_context_and_borrow_dependencies(resources, dependencies);
         } else {
             state = state.with_resource_context(resources);
         }
     }
 
     // Finalizing a viewed composite replaces its folded occurrence with fresh
-    // viewed children.  Keep the exact loan/share/support bundle on each
+    // viewed children.  Keep the exact borrow/share/support bundle on each
     // child.  An exclusive instance view has already been rejected above by
     // the resource-kind check and never enters this projection path.
     if let Some(binding) = borrowed_parent_binding {
@@ -3864,7 +3863,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             .map(|(child, occurrence)| {
                 (
                     occurrence,
-                    crate::kernel::LoanViewBinding {
+                    crate::kernel::BorrowBinding {
                         viewed: child,
                         ..binding.clone()
                     },
@@ -3879,18 +3878,19 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             }
             let occurrence = preexisting_child_sources.get(child).copied().ok_or_else(||
                 ClickError::new(format!("`{claim_label}` tactic {tactic_index}: `unfold` produced no exact destination for a viewed child")))?;
-            let child_binding = state.resources().loan_dependency(occurrence);
+            let child_binding = state.resources().borrow_dependency(occurrence);
             if child_binding.is_none()
                 && !state.resources().view_occurrence_is_principal(occurrence)
             {
                 dependencies.push((
                     occurrence,
-                    crate::kernel::LoanViewBinding {
+                    crate::kernel::BorrowBinding {
                         viewed: child.clone(),
                         ..binding.clone()
                     },
                 ));
-            } else if child_binding.is_none_or(|existing| !same_loan_authority(existing, &binding))
+            } else if child_binding
+                .is_none_or(|existing| !same_borrow_authority(existing, &binding))
             {
                 return Err(ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: `unfold` cannot reuse an unbound or differently bound child for a viewed composite"
@@ -3912,7 +3912,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             &format!("`{claim_label}` tactic {tactic_index}: `unfold`"),
         )?;
         let resources = state.resources().clone();
-        state = state.with_resource_context_and_loan_dependencies(resources, dependencies);
+        state = state.with_resource_context_and_borrow_dependencies(resources, dependencies);
     }
 
     if !already_unfolded && !body_was_already_exposed {
@@ -3980,7 +3980,7 @@ fn fold_composite_resources_on_outcome_with_facts(
     family_reaches_population: bool,
 ) -> Result<FoldedOutcome, ClickError> {
     let mut selections = Vec::with_capacity(resource_folds.len());
-    let mut loan_holds = Vec::new();
+    let mut borrow_holds = Vec::new();
     for resource in resource_folds {
         let definition = composite_resource_law_definition(
             resource_environment,
@@ -4273,7 +4273,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             &[]
         };
         let body_assumptions = pure_facts.assumptions().clone();
-        let mut body_loan_dependency = None;
+        let mut body_borrow_dependency = None;
         let mut temporary_unbound_views = Vec::new();
         for contained in contained_clauses {
             let contained = instantiate_resource_clause(contained, &substitutions).map_err(|message| {
@@ -4361,16 +4361,16 @@ fn fold_composite_resources_on_outcome_with_facts(
                     describe_resource_clause(resource)
                 ))
             })? {
-                if body_loan_dependency
+                if body_borrow_dependency
                     .as_ref()
-                    .is_some_and(|existing| !same_loan_authority(existing, &binding))
+                    .is_some_and(|existing| !same_borrow_authority(existing, &binding))
                 {
                     return Err(ClickError::new(format!(
                         "`{claim_label}` path {path_index}: `fold({})` body facts depend on different stable-view authorities",
                         describe_resource_clause(resource)
                     )));
                 }
-                body_loan_dependency = Some(binding);
+                body_borrow_dependency = Some(binding);
             }
             // Available facts may write this body fact through loads recorded
             // at an earlier state. Decide those forms with the bounded
@@ -4605,8 +4605,8 @@ fn fold_composite_resources_on_outcome_with_facts(
                 match binding {
                     Some((occurrence, binding)) => {
                         if body_has_unbound_view
-                            || body_loan_dependency.as_ref().is_some_and(|existing| {
-                                !same_loan_authority(existing, &binding)
+                            || body_borrow_dependency.as_ref().is_some_and(|existing| {
+                                !same_borrow_authority(existing, &binding)
                                     || (existing.hold.is_some() && existing.hold != binding.hold)
                             })
                         {
@@ -4633,9 +4633,9 @@ fn fold_composite_resources_on_outcome_with_facts(
                         {
                             held_view_children.insert(occurrence);
                         }
-                        body_loan_dependency = Some(binding);
+                        body_borrow_dependency = Some(binding);
                     }
-                    None if body_loan_dependency.is_some() => {
+                    None if body_borrow_dependency.is_some() => {
                         return Err(ClickError::new(format!(
                             "`{claim_label}` path {path_index}: `fold` cannot combine its body views under one borrow hold"
                         )));
@@ -4758,16 +4758,16 @@ fn fold_composite_resources_on_outcome_with_facts(
                 }
                 post_state = Box::new(post_state.with_resource_context(resources));
             }
-            let mut body_loan_dependency = body_loan_dependency;
-            if let Some(binding) = body_loan_dependency.as_mut()
+            let mut body_borrow_dependency = body_borrow_dependency;
+            if let Some(binding) = body_borrow_dependency.as_mut()
                 && !abstract_resource.is_view()
                 && binding.hold.is_none_or(|hold| {
-                    post_state.loan_view_bindings().hold_occurrence_count(hold) != 0
+                    post_state.borrow_bindings().hold_occurrence_count(hold) != 0
                 })
             {
                 let (Some(ledger), Some(holder)) = (
-                    post_state.loan_ledger().cloned(),
-                    post_state.loan_participant(),
+                    post_state.borrow_ledger().cloned(),
+                    post_state.borrow_participant(),
                 ) else {
                     return Err(ClickError::new(format!(
                         "`{claim_label}` path {path_index}: `fold({})` packages a borrow-backed view without a borrow ledger",
@@ -4785,8 +4785,8 @@ fn fold_composite_resources_on_outcome_with_facts(
                 binding.hold = Some(hold);
                 // The kernel checks the fold's ledger change against this
                 // exact transition.
-                loan_holds.push(transition);
-                post_state = Box::new(post_state.with_loan_ledger(Some(ledger)));
+                borrow_holds.push(transition);
+                post_state = Box::new(post_state.with_borrow_ledger(Some(ledger)));
             }
             // Authority rewrites authenticate the selected exchange only;
             // normalizing unrelated memory changes the checked frame.
@@ -4833,7 +4833,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             }
 
             if let (Some(occurrence), Some(binding)) =
-                (folded_authority_occurrence, body_loan_dependency.clone())
+                (folded_authority_occurrence, body_borrow_dependency.clone())
             {
                 // A viewed fold describes the head itself under the borrow; an
                 // owned fold keeps the packaged piece's description, which is
@@ -4844,11 +4844,11 @@ fn fold_composite_resources_on_outcome_with_facts(
                     binding.viewed.clone()
                 };
                 let resources = post_state.resources().clone();
-                post_state = Box::new(post_state.with_resource_context_and_loan_dependencies(
+                post_state = Box::new(post_state.with_resource_context_and_borrow_dependencies(
                     resources,
                     [(
                         occurrence,
-                        crate::kernel::LoanViewBinding { viewed, ..binding },
+                        crate::kernel::BorrowBinding { viewed, ..binding },
                     )],
                 ));
             }
@@ -4954,7 +4954,7 @@ fn fold_composite_resources_on_outcome_with_facts(
         };
     }
 
-    Ok((outcome, selections, loan_holds))
+    Ok((outcome, selections, borrow_holds))
 }
 
 pub(super) struct CheckedResourceFold {
@@ -4963,7 +4963,7 @@ pub(super) struct CheckedResourceFold {
     pub(super) facts: PureFactStore,
     /// The hold a borrowing fold placed on the borrow behind its viewed body,
     /// which the kernel checks as the fold's only ledger change.
-    pub(super) loan_holds: Vec<crate::kernel::CheckedLoanTransition>,
+    pub(super) borrow_holds: Vec<crate::kernel::CheckedBorrowTransition>,
 }
 
 /// A folded outcome, the resources it selected, and the borrow holds its
@@ -4971,7 +4971,7 @@ pub(super) struct CheckedResourceFold {
 type FoldedOutcome = (
     FunctionOutcome,
     Vec<ResourceFact>,
-    Vec<crate::kernel::CheckedLoanTransition>,
+    Vec<crate::kernel::CheckedBorrowTransition>,
 );
 
 pub(super) struct CheckedOutcomeResourceFold {
@@ -5146,7 +5146,7 @@ fn fold_composite_resource_for_proof_with_closure(
         value: ProgramValue::Int32(MachineTerm::constant(0)).into(),
         state: Box::new(state),
     };
-    let (outcome, mut selections, loan_holds) = fold_composite_resources_on_outcome_with_facts(
+    let (outcome, mut selections, borrow_holds) = fold_composite_resources_on_outcome_with_facts(
         resource_environment,
         std::slice::from_ref(resource),
         Some(source_resource),
@@ -5170,7 +5170,7 @@ fn fold_composite_resource_for_proof_with_closure(
             .expect("one fold has one selected resource"),
         state: *state,
         facts: facts.facts,
-        loan_holds,
+        borrow_holds,
     })
 }
 
@@ -5543,6 +5543,24 @@ fn materialize_composite_resource_cells_from_state(
     }) else {
         return memory;
     };
+    // A whole object of a symbolic layout, `[p, p + sizeof(S))`, has its
+    // fields at their `offsetof` terms: each is observed as a concrete
+    // object's is.
+    if let Some(layout) = range.symbolic_object()
+        && !range.has_holes()
+    {
+        for field in 0..layout.field_count() {
+            // An embedded record holds no one cell.
+            let Some(field_type) = layout.field_type(field) else {
+                continue;
+            };
+            let pointer = range.base().offset_by_layout(layout.field_offset(field));
+            if !matches!(memory.load(&pointer), ExpressionOutcome::Value(_)) {
+                memory = memory.materialize_cell_at(pointer, field_type, naming_point);
+            }
+        }
+        return memory;
+    }
     // Only signed constant spans have the bounded cell-materialization rule.
     let Some((int32_constant!(start), bits32_constant!(end))) = range.int32_bounds() else {
         return memory;
@@ -5633,9 +5651,20 @@ fn materialize_composite_resource_cells_from_state(
         return memory.materialize_entry_integer_cell_at(range.base().clone(), naming_point);
     }
     if run_type.byte_width() <= element_width {
-        let source = if point_named
-            || matches!(run_type, ProgramType::Parameter(parameter)
-                if naming_point.generic_entry_version(range.base(), parameter).is_some())
+        let indexed_pointer_field = run_type.is_object_pointer()
+            && start == 0
+            && end == 1
+            && naming_point
+                .indexed_typed_version(range.base(), run_type)
+                .is_some();
+        let point_named_float = crate::kernel::KernelFloatType::from_program_type(run_type)
+            .is_some()
+            && naming_point.has_certified_read_view();
+        let source = if point_named_float
+            || indexed_pointer_field
+            || naming_point
+                .entry_cell_version(range.base(), run_type)
+                .is_some()
         {
             naming_point.clone()
         } else {
@@ -5797,14 +5826,14 @@ void child_release(struct child* obj) {
     fn binding_for(
         support: crate::kernel::ResourceOccurrenceId,
         viewed: ResourceFact,
-    ) -> crate::kernel::LoanViewBinding {
+    ) -> crate::kernel::BorrowBinding {
         let ledger = crate::kernel::BorrowLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let reader = ledger.fresh_participant().unwrap();
         let escrow = ResourceFact::own_token("v11_surface_support".into(), Vec::new());
         let opening = ledger.lend(owner, reader, support, escrow).unwrap();
-        crate::kernel::LoanViewBinding {
-            loan: opening.loan,
+        crate::kernel::BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support,
@@ -5825,7 +5854,7 @@ void child_release(struct child* obj) {
         let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
         let occurrences = resources.occurrences_for_fact(&child);
         let binding = binding_for(support_occurrence, child.clone());
-        let state = ExecutionState::new().with_resource_context_and_loan_dependencies(
+        let state = ExecutionState::new().with_resource_context_and_borrow_dependencies(
             resources,
             [(occurrences[0], binding.clone())],
         );
@@ -5835,8 +5864,10 @@ void child_release(struct child* obj) {
         let mut different = binding;
         different.viewed = second;
         let resources = state.resources().clone();
-        let state = state
-            .with_resource_context_and_loan_dependencies(resources, [(occurrences[1], different)]);
+        let state = state.with_resource_context_and_borrow_dependencies(
+            resources,
+            [(occurrences[1], different)],
+        );
         assert!(unique_borrowed_resource_dependency(&state, &child).is_err());
     }
 
@@ -5851,7 +5882,7 @@ void child_release(struct child* obj) {
     }
 
     #[test]
-    fn dynamic_definedness_uses_the_observation_point_for_loan_dependencies() {
+    fn dynamic_definedness_uses_the_observation_point_for_borrow_dependencies() {
         let _session = crate::kernel::VerificationSession::enter();
         let earlier = ExecutionState::new().with_memory(SymbolicMemory::new());
         let current = earlier.clone().with_memory(earlier.memory().clone());
@@ -5943,8 +5974,8 @@ void child_release(struct child* obj) {
         let lender = ledger.fresh_participant().unwrap();
         let opening = ledger.lend(lender, lender, support, own).unwrap();
         let ledger = ledger.apply(&opening.transition).unwrap();
-        let binding = crate::kernel::LoanViewBinding {
-            loan: opening.loan,
+        let binding = crate::kernel::BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support,
@@ -5955,12 +5986,12 @@ void child_release(struct child* obj) {
         let view_occurrence = bound_resources.occurrences_for_fact(&view)[0];
         let state = ExecutionState::new()
             .with_memory(memory.clone())
-            .with_resource_context_and_loan_dependencies(
+            .with_resource_context_and_borrow_dependencies(
                 bound_resources,
                 [(view_occurrence, binding)],
             )
-            .with_loan_ledger(Some(ledger))
-            .with_loan_participant(Some(lender));
+            .with_borrow_ledger(Some(ledger))
+            .with_borrow_participant(Some(lender));
         let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], &PureFactContext::new());
         let dependency = |fact: &Proposition| {
             dynamic_body_fact_dependency(fact, &state, &PureFactContext::new(), &no_temporary_views)
@@ -6046,8 +6077,8 @@ void child_release(struct child* obj) {
         let reader = ledger.fresh_participant().unwrap();
         let opening = ledger.lend(lender, lender, support, own.clone()).unwrap();
         let ledger = ledger.apply(&opening.transition).unwrap();
-        let binding = crate::kernel::LoanViewBinding {
-            loan: opening.loan,
+        let binding = crate::kernel::BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support,
@@ -6060,12 +6091,12 @@ void child_release(struct child* obj) {
         let view_occurrence = bound_resources.occurrences_for_fact(&view)[0];
         let bound_state = ExecutionState::new()
             .with_memory(memory.clone())
-            .with_resource_context_and_loan_dependencies(
+            .with_resource_context_and_borrow_dependencies(
                 bound_resources,
                 [(view_occurrence, binding)],
             )
-            .with_loan_ledger(Some(ledger.clone()))
-            .with_loan_participant(Some(lender));
+            .with_borrow_ledger(Some(ledger.clone()))
+            .with_borrow_participant(Some(lender));
         let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], &assumptions);
         let dependency = dynamic_body_fact_dependency(
             &proposition,
@@ -6094,7 +6125,7 @@ void child_release(struct child* obj) {
         assert!(
             dynamic_body_fact_dependency(
                 &proposition,
-                &bound_state.clone().with_loan_participant(Some(reader)),
+                &bound_state.clone().with_borrow_participant(Some(reader)),
                 &assumptions,
                 &no_temporary_views,
             )
@@ -6107,7 +6138,7 @@ void child_release(struct child* obj) {
         assert!(
             dynamic_body_fact_dependency(
                 &proposition,
-                &bound_state.clone().with_loan_ledger(Some(ended.clone())),
+                &bound_state.clone().with_borrow_ledger(Some(ended.clone())),
                 &assumptions,
                 &no_temporary_views,
             )
@@ -6115,8 +6146,11 @@ void child_release(struct child* obj) {
             "an ended scope cannot validate the binding"
         );
         assert!(
-            unique_borrowed_resource_dependency(&bound_state.with_loan_ledger(Some(ended)), &view,)
-                .is_err(),
+            unique_borrowed_resource_dependency(
+                &bound_state.with_borrow_ledger(Some(ended)),
+                &view,
+            )
+            .is_err(),
             "a historical-only operation must still reject an ended binding"
         );
 
@@ -6972,6 +7006,83 @@ mod declared_scalar_field_observation_tests {
             named.load(&base.offset_by_bytes(8)),
             ExpressionOutcome::Value(_)
         ));
+    }
+
+    #[test]
+    fn declared_pointer_field_retains_its_recorded_store() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let ty = ProgramType::Int32Pointer;
+        let stored = ExecutionState::new().with_memory(SymbolicMemory::new().store(
+            base.clone(),
+            ProgramValue::typed_pointer(Address::symbolic(Variable(985_804)), ty),
+        ));
+        let source = stored.program_point();
+        let segment = field(
+            ProgramExpression::Value(ProgramValue::pointer(base.clone())),
+            ty,
+        );
+        let named = materialize_composite_resource_cells_from_state(
+            SymbolicMemory::new(),
+            &source,
+            &ResourceClause::OwnMemory(segment),
+            &ResourceFact::own_memory(MemoryRange::new(base.clone(), 0.into(), 2.into())),
+            &[],
+            false,
+        );
+        let ExpressionOutcome::Value(ProgramValue::Pointer(named)) = named.load(&base) else {
+            panic!("expected a complete pointer observation");
+        };
+        let read = named.address().as_loaded_value().expect("pointer read");
+        assert_eq!(read.point.read_version_id(), stored.observation_point_id());
+        assert_eq!(read.defining_address, base);
+        assert_eq!(read.value_type, Some(ty));
+    }
+
+    #[test]
+    fn declared_float_field_retains_its_resource_source_point() {
+        use crate::kernel::KernelFloatType;
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let state = ExecutionState::new().begin_function_entry_memory();
+        let source = state.program_point();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let ty = format.program_type();
+            let segment = field(
+                ProgramExpression::Value(ProgramValue::typed_pointer(
+                    base.clone(),
+                    ty.pointer_to().unwrap(),
+                )),
+                ty,
+            );
+            let named = materialize_composite_resource_cells_from_state(
+                SymbolicMemory::new(),
+                &source,
+                &ResourceClause::OwnMemory(segment),
+                &ResourceFact::own_memory(MemoryRange::new(base.clone(), 0.into(), 2.into())),
+                &[],
+                false,
+            );
+            let ExpressionOutcome::Value(value) = named.load(&base) else {
+                panic!("expected an observed float field");
+            };
+            assert_eq!(value.program_type(), ty);
+            let (ProgramValue::Float32(term) | ProgramValue::Float64(term)) = value else {
+                panic!("expected a float value");
+            };
+            let MachineTerm::MemoryLoad(point, address, kind) = term else {
+                panic!("expected a float read");
+            };
+            assert_eq!(point.read_version_id(), state.observation_point_id());
+            assert_eq!(*address, base);
+            assert_eq!(kind, format.load_kind());
+        }
     }
 
     #[test]

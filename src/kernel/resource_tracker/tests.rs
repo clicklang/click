@@ -42,7 +42,7 @@ fn a_store_to_another_object_keeps_one_version() {
         same(
             TrackedResource::Cell {
                 pointer: &cell,
-                bytes: 4
+                bytes: crate::kernel::AccessExtent::from(4)
             },
             &point(&after),
             &point(&entry)
@@ -69,7 +69,7 @@ fn a_store_to_the_cell_reports_changed() {
     let outcome = same(
         TrackedResource::Cell {
             pointer: &written,
-            bytes: 4,
+            bytes: crate::kernel::AccessExtent::from(4),
         },
         &point(&after),
         &point(&entry),
@@ -103,7 +103,7 @@ fn a_narrow_store_inside_a_wide_cell_reports_changed() {
             same(
                 TrackedResource::Cell {
                     pointer: &cell,
-                    bytes: 8,
+                    bytes: crate::kernel::AccessExtent::from(8),
                 },
                 &point(&after),
                 &point(&entry)
@@ -114,7 +114,7 @@ fn a_narrow_store_inside_a_wide_cell_reports_changed() {
         let four_byte_answer = same(
             TrackedResource::Cell {
                 pointer: &cell,
-                bytes: 4,
+                bytes: crate::kernel::AccessExtent::from(4),
             },
             &point(&after),
             &point(&entry),
@@ -147,7 +147,7 @@ fn a_store_that_may_alias_reports_unknown_and_the_check_it_needs() {
     let outcome = same(
         TrackedResource::Cell {
             pointer: &cell,
-            bytes: 4,
+            bytes: crate::kernel::AccessExtent::from(4),
         },
         &point(&after),
         &point(&entry),
@@ -182,7 +182,7 @@ fn a_call_havoc_carries_a_cell_outside_its_write_set_only() {
         same(
             TrackedResource::Cell {
                 pointer: &outside,
-                bytes: 4
+                bytes: crate::kernel::AccessExtent::from(4)
             },
             &point(&after),
             &point(&entry)
@@ -195,7 +195,7 @@ fn a_call_havoc_carries_a_cell_outside_its_write_set_only() {
     let outcome = same(
         TrackedResource::Cell {
             pointer: &inside,
-            bytes: 4,
+            bytes: crate::kernel::AccessExtent::from(4),
         },
         &point(&after),
         &point(&entry),
@@ -286,7 +286,7 @@ fn a_loop_havoc_carries_a_block_outside_its_checked_write_set() {
         MachineTerm::constant(0),
         MachineTerm::constant(4),
     )];
-    let after = entry.clone().with_loop_memory_havoc_preserving_loans(
+    let after = entry.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(904),
         &std::collections::BTreeSet::new(),
         Some(&ranges),
@@ -321,7 +321,7 @@ fn a_loop_havoc_carries_a_block_outside_its_checked_write_set() {
 #[test]
 fn a_loop_without_a_write_set_needs_no_separation_check() {
     let entry = entry_memory();
-    let after = entry.clone().with_loop_memory_havoc_preserving_loans(
+    let after = entry.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(902),
         &std::collections::BTreeSet::new(),
         None,
@@ -331,7 +331,7 @@ fn a_loop_without_a_write_set_needs_no_separation_check() {
     let outcome = same(
         TrackedResource::Cell {
             pointer: &cell,
-            bytes: 4,
+            bytes: crate::kernel::AccessExtent::from(4),
         },
         &point(&after),
         &point(&entry),
@@ -360,7 +360,7 @@ fn a_declaration_of_another_object_keeps_one_version() {
         same(
             TrackedResource::Cell {
                 pointer: &cell,
-                bytes: 4
+                bytes: crate::kernel::AccessExtent::from(4)
             },
             &point(&after),
             &point(&entry)
@@ -614,7 +614,7 @@ fn one_sided_explanation_reaches_the_beginning_of_the_history() {
     let explanation = explain_last_same(
         TrackedResource::Cell {
             pointer: &cell,
-            bytes: 4,
+            bytes: crate::kernel::AccessExtent::from(4),
         },
         &point(&entry),
     );
@@ -626,7 +626,7 @@ fn one_sided_explanation_reaches_the_beginning_of_the_history() {
     let explanation = explain_last_same(
         TrackedResource::Cell {
             pointer: &cell,
-            bytes: 4,
+            bytes: crate::kernel::AccessExtent::from(4),
         },
         &point(&after),
     );
@@ -638,7 +638,7 @@ fn one_sided_explanation_reaches_the_beginning_of_the_history() {
         explanation.resource,
         OwnedResource::Cell {
             pointer: cell,
-            bytes: 4
+            bytes: crate::kernel::AccessExtent::from(4)
         }
     );
 }
@@ -659,7 +659,7 @@ fn an_explanation_counts_the_steps_it_crossed() {
     let explanation = explain(
         TrackedResource::Cell {
             pointer: &cell,
-            bytes: 4,
+            bytes: crate::kernel::AccessExtent::from(4),
         },
         &point(&after),
         &point(&entry),
@@ -710,7 +710,9 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
             // width. A typed producer can record its precise scalar width.
             OwnedResource::Cell {
                 pointer: cell.clone(),
-                bytes: crate::kernel::LoadKind::Int32.unrecorded_access_byte_width(),
+                bytes: crate::kernel::AccessExtent::from(
+                    crate::kernel::LoadKind::Int32.unrecorded_access_byte_width()
+                ),
             },
             point(&after),
             point(&entry)
@@ -1097,7 +1099,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     let effect = Proposition::MemoryMutatesOnly {
         before: before.clone(),
         after: after.memory().clone(),
-        writes: vec![(written, 4)],
+        writes: vec![(written, crate::kernel::AccessExtent::from(4))],
     };
     let (old, new, equality) = crate::kernel::tests::explicit_frame(
         &before,
@@ -1173,7 +1175,7 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
             same(
                 TrackedResource::Cell {
                     pointer: &cell,
-                    bytes
+                    bytes: crate::kernel::AccessExtent::from(bytes)
                 },
                 &point(&joined),
                 &point(&before)
@@ -1198,7 +1200,7 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
             same(
                 TrackedResource::Cell {
                     pointer: &cell,
-                    bytes
+                    bytes: crate::kernel::AccessExtent::from(bytes)
                 },
                 &point(&bad),
                 &point(&before)
@@ -1390,7 +1392,8 @@ fn named_cell_stop_retains_the_decision_made_by_its_walk() {
     let write = Address::symbolic(crate::kernel::Variable(981_202));
     let memory = intern_memory(SymbolicMemory::new().store(write.clone(), one()));
     let here = ProgramPoint::at(&memory);
-    let named = last_same_named_cell(&read, 4, &here).expect("named cell");
+    let named = last_same_named_cell(&read, crate::kernel::AccessExtent::from(4), &here)
+        .expect("named cell");
     assert!(matches!(
         named.stopped_by.reason,
         StopReason::NotShownSeparate(_)
@@ -1406,7 +1409,7 @@ fn named_cell_stop_retains_the_decision_made_by_its_walk() {
         last_same(
             TrackedResource::Cell {
                 pointer: &read,
-                bytes: 4,
+                bytes: crate::kernel::AccessExtent::from(4),
             },
             &here,
         )
@@ -1495,7 +1498,13 @@ fn structural_read_dependencies_keep_the_observed_point_and_exact_width() {
     let fact = Proposition::condition_is(ConditionTerm::equal(read.clone(), 0u32.into()), true);
     let reads = reads_of_proposition(&fact);
     assert_eq!(reads.len(), 1);
-    assert_eq!(reads[0].resource, OwnedResource::Cell { pointer, bytes: 4 });
+    assert_eq!(
+        reads[0].resource,
+        OwnedResource::Cell {
+            pointer,
+            bytes: crate::kernel::AccessExtent::from(4)
+        }
+    );
     assert_eq!(reads[0].point, ProgramPoint::at(&origin));
     assert_eq!(crate::kernel::eval::load_variable_registry_len(), 0);
 }
@@ -1512,7 +1521,7 @@ fn a_cell_version_point_is_the_same_whichever_point_is_asked_first() {
         MachineTerm::constant(0),
         MachineTerm::constant(4),
     )];
-    let after_loop = entry.clone().with_loop_memory_havoc_preserving_loans(
+    let after_loop = entry.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(904),
         &std::collections::BTreeSet::new(),
         Some(&ranges),
@@ -1521,7 +1530,11 @@ fn a_cell_version_point_is_the_same_whichever_point_is_asked_first() {
     let after_store = after_loop.clone().store(at(block("global:h"), 4), one());
     let cell = at(block("global:h"), 0);
     let ask = |memory: &SymbolicMemory| {
-        cell_last_same_version_point(&intern_memory(memory.clone()), &cell, 4)
+        cell_last_same_version_point(
+            &intern_memory(memory.clone()),
+            &cell,
+            crate::kernel::AccessExtent::from(4),
+        )
     };
     clear_version_memos();
     let store_first = (ask(&after_store), ask(&after_loop));
@@ -1695,7 +1708,10 @@ fn boolean_reads_report_only_the_one_byte_cell() {
     collect_condition_operand_reads(BooleanOperandView::Shared(&root), &mut shared);
     assert_eq!(
         native[0].resource,
-        OwnedResource::Cell { pointer, bytes: 1 }
+        OwnedResource::Cell {
+            pointer,
+            bytes: 1.into()
+        }
     );
     assert_eq!(native.len(), 1);
     assert_eq!(shared, native);
@@ -1725,7 +1741,12 @@ fn start_with(names: &[&str]) -> ExecutionState {
 }
 
 fn version_on_path(state: &ExecutionState, name: &str) -> Option<ProgramPointId> {
-    cell_version_on_path(state.path_link(), &at(block(name), 0), 4).and_then(|point| point.id())
+    cell_version_on_path(
+        state.path_link(),
+        &at(block(name), 0),
+        crate::kernel::AccessExtent::from(4),
+    )
+    .and_then(|point| point.id())
 }
 
 /// The walk crosses steps that write other objects and stops at the store to
@@ -1766,7 +1787,11 @@ fn a_path_version_crosses_an_unchanged_continuation_from_a_named_cell_view() {
     assert_ne!(continued.program_point_id(), source);
     let pointer = at(block("slot"), 0);
     assert_eq!(
-        cell_last_same_version_point(continued.program_point().shared_memory(), &pointer, 4),
+        cell_last_same_version_point(
+            continued.program_point().shared_memory(),
+            &pointer,
+            4.into()
+        ),
         Some(intern_memory_ref(state.memory())),
     );
     assert_eq!(version_on_path(&continued, "slot"), source);
@@ -1837,7 +1862,10 @@ fn contract_offset_reads_keep_order_and_distinct_versions() {
     assert!(stored.root().is_some());
     let mut reads = Vec::new();
     collect_term_reads(&Term::PointerOffset(stored), &mut reads);
-    let cell = OwnedResource::Cell { pointer, bytes: 4 };
+    let cell = OwnedResource::Cell {
+        pointer,
+        bytes: 4.into(),
+    };
     assert_eq!(
         reads,
         [
@@ -1898,4 +1926,50 @@ fn static_array_version_uses_derivations_attached_after_a_suffix_was_recorded() 
     );
     assert!(root.derivation().is_some());
     assert_eq!(query(), Some(point(&entry)));
+}
+
+#[test]
+fn indexed_static_cell_names_the_latest_overlapping_write() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let array = block("global:g");
+    let address = at(array.clone(), 0);
+    let entry = SymbolicMemory::new().with_block(array.clone(), 32);
+    let wide = entry.clone().store(address.clone(), one());
+    let narrow = wide.clone().store(address.clone(), crate::kernel::uint8(2));
+    let after = narrow.clone().store(at(array.clone(), 16), one());
+    let source = point(&after);
+    for (address, bytes, expected) in [
+        (address.clone(), 1, &narrow),
+        (address.offset_by_bytes(1), 1, &wide),
+        (address.clone(), 4, &narrow),
+    ] {
+        let named = last_same_named_cell(&address, bytes.into(), &source).expect("cell version");
+        assert_eq!(named.point, point(expected));
+        assert_eq!(named.stopped_by.reason, StopReason::Affected);
+    }
+    let untouched =
+        last_same_named_cell(&at(array, 8), 4.into(), &source).expect("entry cell version");
+    assert_eq!(
+        untouched.point.shared_memory(),
+        &point(&entry).shared_memory().unchanged_bytes_source()
+    );
+    assert_eq!(untouched.stopped_by.reason, StopReason::HistoryEnds);
+}
+
+#[test]
+fn indexed_static_cell_still_stops_at_a_symbolic_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let array = block("global:g");
+    let earlier = entry_memory().store(at(array.clone(), 0), one());
+    let symbolic =
+        at(array.clone(), 0).offset_by_int32_elements(MachineTerm::Variable(Variable(935_104)));
+    let barrier = earlier.store(symbolic, one());
+    let after = barrier.clone().store(at(array.clone(), 12), one());
+    let named =
+        last_same_named_cell(&at(array, 0), 4.into(), &point(&after)).expect("cell version");
+    assert_eq!(named.point, point(&barrier));
+    assert!(matches!(
+        named.stopped_by.reason,
+        StopReason::NotShownSeparate(_)
+    ));
 }

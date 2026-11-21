@@ -65,6 +65,10 @@ impl Proposition {
 mod allocation_size_tests;
 mod bool_sort;
 mod contracts;
+mod symbolic_layout;
+pub use symbolic_layout::{
+    AccessExtent, LayoutOffset, LayoutSize, SymbolicField, SymbolicLayoutName, layout_term_spelling,
+};
 pub(in crate::kernel) mod float_conversion;
 #[cfg(test)]
 mod memory_construction_tests;
@@ -567,6 +571,10 @@ pub enum LoadKind {
     Int32,
     UInt32,
     Bits64,
+    /// A read of a whole value of an abstract type `T`, the stand-in an
+    /// algebraic read of a `T` takes in memory reasoning: it reaches
+    /// `sizeof(T)` bytes ([`Self::extent`]), not a word's.
+    Abstract(TypeParameterName),
     /// Wide loads retain signedness because their constant payloads are typed.
     Int128,
     UInt128,
@@ -695,6 +703,30 @@ impl LoadKind {
             Self::Int32 | Self::UInt32 | Self::Float32 => 4,
             Self::Bits64 | Self::Float64 => 8,
             Self::Int128 | Self::UInt128 => 16,
+            // A cell holding a value of abstract type keeps the model width;
+            // the bytes the read reaches are its extent.
+            Self::Abstract(_) => ABSTRACT_VALUE_WIDTH,
+        }
+    }
+
+    /// The bytes a read of this kind reaches: its width, or the whole
+    /// object of an abstract type.
+    pub(crate) fn extent(self) -> crate::kernel::AccessExtent {
+        match self {
+            Self::Abstract(parameter) => {
+                crate::kernel::AccessExtent::of_type(ProgramType::Parameter(parameter))
+            }
+            other => crate::kernel::AccessExtent::Bytes(other.byte_width()),
+        }
+    }
+
+    /// The kind of the stand-in load an algebraic read of `algebraic_type`
+    /// takes: [`Self::Abstract`] for a type Click knows nothing of but its
+    /// name, else the model's 64-bit word.
+    pub(crate) fn of_algebraic(algebraic_type: &AlgebraicType) -> Self {
+        match crate::kernel::AccessExtent::of_algebraic(algebraic_type) {
+            crate::kernel::AccessExtent::Object(parameter) => Self::Abstract(parameter),
+            crate::kernel::AccessExtent::Bytes(_) => Self::Bits64,
         }
     }
 }
@@ -3963,9 +3995,11 @@ pub enum ProgramExpression {
     /// live storage. Unlike C's &* cancellation, this excludes one-past and
     /// expired addresses. It performs no load and grants no access authority.
     CheckedObjectAddress(Box<ProgramExpression>),
+    /// The address `bytes` into the object `pointer` designates: a member's
+    /// offset, a number or a symbolic layout's `offsetof` term.
     PointerOffsetBytes {
         pointer: Box<ProgramExpression>,
-        bytes: u32,
+        bytes: LayoutOffset,
     },
     /// The pointer narrowed to the `width`-byte subobject that starts at its
     /// address: a member access selects the member's own bounds
@@ -4355,7 +4389,7 @@ pub enum SpecExpression {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecAddressStep {
     Subobject { width: u32 },
-    OffsetBytes { bytes: u32 },
+    OffsetBytes { bytes: LayoutOffset },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -4926,8 +4960,16 @@ impl AlgebraicTermNode {
     /// The scalar load term at the same memory and address as a
     /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
     /// address as it reaches a scalar load's.
-    pub(crate) fn memory_load_carrier(point: &ProgramPoint, pointer: &Address) -> MachineTerm {
-        MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
+    pub(crate) fn memory_load_carrier(
+        point: &ProgramPoint,
+        pointer: &Address,
+        algebraic_type: &AlgebraicType,
+    ) -> MachineTerm {
+        MachineTerm::MemoryLoad(
+            point.clone(),
+            Box::new(pointer.clone()),
+            LoadKind::of_algebraic(algebraic_type),
+        )
     }
 
     /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
@@ -4935,12 +4977,14 @@ impl AlgebraicTermNode {
     /// address. `None` when the rewrite replaced the load.
     pub(crate) fn memory_load_from_carrier(carrier: &ProgramValue) -> Option<Self> {
         match carrier {
-            ProgramValue::UInt64(MachineTerm::MemoryLoad(point, pointer, LoadKind::Bits64)) => {
-                Some(Self::MemoryLoad {
-                    point: point.clone(),
-                    pointer: pointer.clone(),
-                })
-            }
+            ProgramValue::UInt64(MachineTerm::MemoryLoad(
+                point,
+                pointer,
+                LoadKind::Bits64 | LoadKind::Abstract(_),
+            )) => Some(Self::MemoryLoad {
+                point: point.clone(),
+                pointer: pointer.clone(),
+            }),
             _ => None,
         }
     }
@@ -4957,20 +5001,21 @@ impl AlgebraicTermNode {
         let memory = crate::kernel::memory_history::canonical_value_load_memory(
             &memory,
             &pointer,
-            ABSTRACT_VALUE_WIDTH,
+            AccessExtent::of_algebraic(&parameter.algebraic_type()),
         );
         Self::parameter_load_at(ProgramPoint::at(&memory), pointer, parameter)
     }
 
-    /// A checked cell observation uses the entry version when the point
-    /// establishes that the caller's storage is unchanged.
+    /// A checked cell observation uses the same typed version as a logical read.
     pub(crate) fn parameter_cell_load(
         source: &ProgramPoint,
         pointer: Address,
         parameter: TypeParameterName,
     ) -> ProgramValue {
-        if let Some(entry) = source.generic_entry_version(&pointer, parameter) {
-            return Self::parameter_load_at(entry, pointer, parameter);
+        if let Some(version) =
+            source.ordinary_typed_version(&pointer, ProgramType::Parameter(parameter))
+        {
+            return Self::parameter_load_at(version, pointer, parameter);
         }
         Self::parameter_load(source.shared_memory().clone(), pointer, parameter)
     }
@@ -4993,9 +5038,12 @@ impl AlgebraicTermNode {
     pub(crate) fn memory_load_carrier_value(
         point: &ProgramPoint,
         pointer: &Address,
+        algebraic_type: &AlgebraicType,
     ) -> AlgebraicValue {
         AlgebraicValue::Program(ProgramValue::UInt64(Self::memory_load_carrier(
-            point, pointer,
+            point,
+            pointer,
+            algebraic_type,
         )))
     }
 }
@@ -5126,7 +5174,11 @@ impl AlgebraicTerm {
                         pointer,
                     } => {
                         visit(MachineOperandView::Legacy(
-                            &AlgebraicTermNode::memory_load_carrier(memory, pointer),
+                            &AlgebraicTermNode::memory_load_carrier(
+                                memory,
+                                pointer,
+                                &term.algebraic_type,
+                            ),
                         ));
                     }
                     AlgebraicTermNode::If {
@@ -5248,30 +5300,32 @@ impl AlgebraicTerm {
                     && else_term.is_well_formed()
             }
             AlgebraicTermNode::Match { scrutinee, arms } => {
-                !scrutinee.algebraic_type.rigid
-                    && scrutinee.is_well_formed()
-                    && arms.len() == scrutinee.algebraic_type.variants.len()
+                if scrutinee.algebraic_type.rigid
+                    || arms.len() != scrutinee.algebraic_type.variants.len()
+                    || !scrutinee.is_well_formed()
+                {
+                    return false;
+                }
+                crate::instrumentation::record_deterministic_work(arms.len());
+                let arms_by_variant: std::collections::HashMap<_, _> =
+                    arms.iter().map(|arm| (arm.variant.as_str(), arm)).collect();
+                arms_by_variant.len() == arms.len()
                     && scrutinee.algebraic_type.variants.iter().all(|variant| {
-                        arms.iter()
-                            .filter(|arm| arm.variant == variant.name)
-                            .count()
-                            == 1
-                            && arms
-                                .iter()
-                                .find(|arm| arm.variant == variant.name)
-                                .is_some_and(|arm| {
-                                    arm.bindings.len() == variant.fields.len()
-                                        && arm.bindings.iter().zip(&variant.fields).all(
-                                            |(binding, expected)| {
-                                                binding.is_well_formed_for(
-                                                    expected,
-                                                    &scrutinee.algebraic_type.schemas,
-                                                )
-                                            },
-                                        )
-                                        && arm.body.algebraic_type == self.algebraic_type
-                                        && arm.body.is_well_formed()
-                                })
+                        arms_by_variant
+                            .get(variant.name.as_str())
+                            .is_some_and(|arm| {
+                                arm.bindings.len() == variant.fields.len()
+                                    && arm.bindings.iter().zip(&variant.fields).all(
+                                        |(binding, expected)| {
+                                            binding.is_well_formed_for(
+                                                expected,
+                                                &scrutinee.algebraic_type.schemas,
+                                            )
+                                        },
+                                    )
+                                    && arm.body.algebraic_type == self.algebraic_type
+                                    && arm.body.is_well_formed()
+                            })
                     })
             }
         }
@@ -6138,6 +6192,11 @@ pub struct MemoryRange {
     /// Parent-member bounds established while evaluating this footprint.
     /// Evidence only: it never changes the identity or authority of the range.
     pub(super) formation_coverage: Arc<[Proposition]>,
+    /// For the whole object of a symbolic layout, `[p, p + sizeof(L))`, the
+    /// fields of `L` taken out of it, sorted: the range holds the object's
+    /// bytes but theirs. Empty for every other range. Only the field rules
+    /// read a range with holes; every other route refuses it.
+    pub(super) holes: Arc<[u32]>,
 }
 
 impl MemoryRange {
@@ -6153,6 +6212,7 @@ impl MemoryRange {
         &StoredMachineTerm,
         u32,
         RangeIndexKind,
+        &[u32],
     ) {
         (
             &self.base,
@@ -6162,6 +6222,7 @@ impl MemoryRange {
             &self.end_bound,
             self.element_width,
             self.kind,
+            &self.holes,
         )
     }
 }
@@ -6215,7 +6276,9 @@ pub struct ProgramParameter {
     pub(super) slice_length_parameter: Option<usize>,
     /// Byte width of the bounds of a valid fixed-size Rust array reference. This grants
     /// pointer formation bounds, independently of byte access authority.
-    pub(super) fixed_reference_bounds: Option<u32>,
+    /// The bytes a Rust array or struct reference designates: a number,
+    /// or a symbolic struct's `sizeof`.
+    pub(super) fixed_reference_bounds: Option<LayoutSize>,
 }
 
 /// A linked file-scope scalar. Globals use one stable memory block across all
@@ -6548,7 +6611,8 @@ pub struct StringLiteral {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct AggregateField {
     pub(super) name: String,
-    pub(super) offset_bytes: u32,
+    /// A number, or in a symbolic layout the field's `offsetof` term.
+    pub(super) offset: LayoutOffset,
     pub(super) program_type: ProgramType,
     /// The source dimensions of an array field with more than one, outermost
     /// first. `program_type` holds such a field as one flat array; nothing reasons
@@ -6571,6 +6635,11 @@ impl AggregateUnionField {
             offset_bytes,
             program_type,
         }
+    }
+
+    /// The member's offset, a number: unions have concrete layouts.
+    pub fn offset(&self) -> LayoutOffset {
+        LayoutOffset::Bytes(self.offset_bytes)
     }
 
     pub fn offset_bytes(&self) -> u32 {
@@ -6619,10 +6688,14 @@ impl AggregateUnion {
 }
 
 impl AggregateField {
-    pub fn new(name: impl Into<String>, offset_bytes: u32, program_type: ProgramType) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        offset: impl Into<LayoutOffset>,
+        program_type: ProgramType,
+    ) -> Self {
         Self {
             name: name.into(),
-            offset_bytes,
+            offset: offset.into(),
             program_type,
             array_shape: None,
         }
@@ -6642,8 +6715,14 @@ impl AggregateField {
         &self.name
     }
 
+    /// The field's byte offset in a concrete layout. A symbolic layout's
+    /// field has [`Self::offset`] only.
     pub fn offset_bytes(&self) -> u32 {
-        self.offset_bytes
+        self.offset.concrete()
+    }
+
+    pub fn offset(&self) -> LayoutOffset {
+        self.offset
     }
 
     pub fn program_type(&self) -> ProgramType {
@@ -6686,7 +6765,8 @@ pub struct AggregateLayout {
     /// The declared bits copied by an assignment of a local C bit-field
     /// record. Padding is outside the assigned value.
     pub(super) bit_field_bytes: Option<BitFieldBytes>,
-    pub(super) size_bytes: u32,
+    /// A number, or a symbolic layout's `sizeof` term.
+    pub(super) size: LayoutSize,
     pub(super) alignment_bytes: u32,
     pub(super) fields: Vec<AggregateField>,
     pub(super) unions: Vec<AggregateUnion>,
@@ -6697,10 +6777,14 @@ pub struct AggregateLayout {
 }
 
 impl AggregateLayout {
-    pub fn new(size_bytes: u32, alignment_bytes: u32, fields: Vec<AggregateField>) -> Self {
+    pub fn new(
+        size: impl Into<LayoutSize>,
+        alignment_bytes: u32,
+        fields: Vec<AggregateField>,
+    ) -> Self {
         assert!(alignment_bytes.is_power_of_two());
         Self {
-            size_bytes,
+            size: size.into(),
             alignment_bytes,
             fields,
             unions: Vec::new(),
@@ -6731,14 +6815,14 @@ impl AggregateLayout {
     }
 
     pub fn with_unions(
-        size_bytes: u32,
+        size: impl Into<LayoutSize>,
         alignment_bytes: u32,
         fields: Vec<AggregateField>,
         unions: Vec<AggregateUnion>,
     ) -> Self {
         assert!(alignment_bytes.is_power_of_two());
         Self {
-            size_bytes,
+            size: size.into(),
             alignment_bytes,
             fields,
             unions,
@@ -6747,8 +6831,14 @@ impl AggregateLayout {
         }
     }
 
+    /// The size of a concrete layout. A symbolic layout has [`Self::size`]
+    /// only.
     pub fn size_bytes(&self) -> u32 {
-        self.size_bytes
+        self.size.concrete()
+    }
+
+    pub fn size(&self) -> LayoutSize {
+        self.size
     }
 
     pub fn alignment_bytes(&self) -> u32 {
@@ -8251,7 +8341,7 @@ pub enum RuntimeError {
         piece: Box<ResourceFact>,
         held: Box<ResourceFact>,
     },
-    LoanRefusal(Box<crate::kernel::LoanRefusalDiagnostic>),
+    BorrowRefusal(Box<crate::kernel::BorrowRefusalDiagnostic>),
     /// A call needs `assembled`, a viewed composite the caller holds the
     /// pieces of but not the instance, and assembling it is a fold: `fact`
     /// is the first body fact, lowered at the caller's memory, the caller
@@ -9719,6 +9809,36 @@ impl SharedMemory {
         })
     }
 
+    /// Resolve a fixed-width static cell within a suffix of recorded scalar
+    /// stores. A miss returns the first edge outside that suffix.
+    pub(in crate::kernel) fn indexed_static_cell_store_version(
+        &self,
+        pointer: &Address,
+        bytes: u32,
+    ) -> Option<StaticCellStoreVersion> {
+        let span = static_cell_byte_span(pointer, bytes)?;
+        C_MEMORY_ARENA.with(|arena| {
+            let arena = arena.borrow();
+            if arena.0 != self.arena {
+                return None;
+            }
+            let index = arena.1.static_cell_store_versions[self.id as usize].as_ref()?;
+            crate::instrumentation::record_deterministic_work(1);
+            // All these IDs are on this chain, where each derivation
+            // points back to a strictly older arena state.
+            let latest = index
+                .changed
+                .get(&pointer.base)
+                .and_then(|block| span.filter_map(|byte| block.get(&byte).copied()).max());
+            Some(match latest {
+                Some(id) => StaticCellStoreVersion::Written(arena.1.memory_handle(self.arena, id)),
+                None => StaticCellStoreVersion::Boundary(
+                    arena.1.memory_handle(self.arena, index.boundary),
+                ),
+            })
+        })
+    }
+
     /// SymbolicMemory state identity for definedness of a direct automatic object.
     /// A producer updates only the local it stores; every other transition
     /// starts a fresh identity unless it merely forgets cached values.
@@ -9757,14 +9877,7 @@ impl SharedMemory {
             if source == self.id {
                 return self.clone();
             }
-            let memory = arena.1.memories[source as usize].clone();
-            let (_, content_hash) = arena.1.shallow_identities[&MemoryShallowIdentity::of(&memory)];
-            Self {
-                arena: self.arena,
-                id: source,
-                content_hash,
-                memory,
-            }
+            arena.1.memory_handle(self.arena, source)
         })
     }
 
@@ -9902,6 +10015,9 @@ pub(crate) struct CallRequirementSource {
     pub(crate) site: std::sync::Arc<CallRequirementSite>,
     pub(crate) requirement_ordinal: usize,
     pub(crate) source_requirement_ordinal: Option<usize>,
+    /// The checked resource clause that requires a symbolic range's bytes
+    /// to be initialized at the call.
+    pub(crate) initialization_clause: Option<usize>,
     /// Exact state identity of the source-side load carrier, when this
     /// requirement is stateful and its lowering registered one.  This is
     /// separate from `site.source_memory_state`, which identifies the caller's
@@ -9926,12 +10042,18 @@ impl CallRequirementSource {
             site,
             requirement_ordinal,
             source_requirement_ordinal,
+            initialization_clause: None,
             source_load_state,
             // Generated requirements and contracts without a source registry
             // must never advertise source-side capabilities.
             source_requirement_is_state_independent: source_requirement_ordinal.is_some()
                 && source_requirement_is_state_independent,
         }
+    }
+
+    pub(crate) fn with_initialization_clause(mut self, index: usize) -> Self {
+        self.initialization_clause = Some(index);
+        self
     }
 }
 
@@ -10155,6 +10277,21 @@ impl MemoryDerivation {
         }
     }
 
+    /// [`Self::single_write`] with the write's extent: a stored value of an
+    /// abstract type reaches its whole object, `sizeof(T)` bytes.
+    pub(in crate::kernel) fn single_write_extent(&self) -> Option<(&Address, AccessExtent)> {
+        match self {
+            Self::Store { pointer, value, .. }
+                if let ProgramValue::Parameter(term) = value.native() =>
+            {
+                Some((pointer, AccessExtent::of_algebraic(&term.algebraic_type)))
+            }
+            _ => self
+                .single_write()
+                .map(|(pointer, bytes)| (pointer, AccessExtent::Bytes(bytes))),
+        }
+    }
+
     /// The stores a `CellsSeeded` edge stands for, newest first: the order a
     /// walk from the produced state meets them in. `None` for every other
     /// edge kind.
@@ -10247,6 +10384,81 @@ struct MemoryArena {
     local_definedness_versions: Vec<LocalDefinednessVersions>,
     /// Block versions follow the same first-recorded edges as derivations.
     static_block_versions: Vec<Option<StaticBlockVersions>>,
+    /// Fixed-offset scalar stores, indexed along the cell walk's byte sources.
+    static_cell_store_versions: Vec<Option<StaticCellStoreVersions>>,
+}
+
+impl MemoryArena {
+    fn memory_handle(&self, arena: u32, id: u32) -> SharedMemory {
+        let memory = self.memories[id as usize].clone();
+        let (_, content_hash) = self.shallow_identities[&MemoryShallowIdentity::of(&memory)];
+        SharedMemory {
+            arena,
+            id,
+            content_hash,
+            memory,
+        }
+    }
+
+    fn record_static_cell_stores(&mut self, step: &MemoryDerivation, id: u32) {
+        let Some((pointer, bytes)) = step.single_write() else {
+            return;
+        };
+        // The cell walk normalizes the base to the retained bytes source
+        // after each hop. Index exactly that chain.
+        let before = self.read_identities[step.base().id as usize];
+        let previous = &self.static_cell_store_versions[before as usize];
+        if pointer.base.is_local_block() {
+            // A store through a recorded local block is structurally
+            // disjoint from static storage, even with a symbolic offset.
+            self.static_cell_store_versions[id as usize] = previous.clone();
+            return;
+        }
+        let Some(span) = static_cell_byte_span(pointer, bytes) else {
+            return;
+        };
+        let mut index = previous.clone().unwrap_or_else(|| StaticCellStoreVersions {
+            boundary: before,
+            changed: Default::default(),
+        });
+        let mut block = index
+            .changed
+            .get(&pointer.base)
+            .cloned()
+            .unwrap_or_default();
+        for byte in span {
+            block.insert(byte, id);
+        }
+        index.changed.insert(pointer.base.clone(), block);
+        self.static_cell_store_versions[id as usize] = Some(index);
+    }
+}
+
+#[derive(Clone)]
+struct StaticCellStoreVersions {
+    boundary: u32,
+    // A scalar touches at most MAX_SCALAR_ACCESS_BYTES keys. Each key keeps
+    // the most recent store to that byte, even after a partial overwrite.
+    changed: PersistentMap<AddressBase, PersistentMap<i64, u32>>,
+}
+
+pub(in crate::kernel) enum StaticCellStoreVersion {
+    Written(SharedMemory),
+    Boundary(SharedMemory),
+}
+
+fn static_cell_byte_span(pointer: &Address, bytes: u32) -> Option<std::ops::Range<i64>> {
+    let AddressOffset::Constant(start) = pointer.offset else {
+        return None;
+    };
+    let bytes = i64::from(bytes);
+    if !pointer.base.is_static_storage_block()
+        || start < 0
+        || !(1..=MAX_SCALAR_ACCESS_BYTES).contains(&bytes)
+    {
+        return None;
+    }
+    Some(start..start.checked_add(bytes)?)
 }
 
 #[derive(Clone)]
@@ -10562,10 +10774,7 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
                 arena.local_definedness_versions[derived.id as usize] = versions;
             }
         }
-        let Some(slot) = arena.derivations.get_mut(derived.id as usize) else {
-            return;
-        };
-        if slot.is_some() {
+        if arena.derivations[derived.id as usize].is_some() {
             return;
         }
         if derivation.base().id >= derived.id {
@@ -10589,7 +10798,8 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
             &derivation,
             &derived,
         ));
-        *slot = Some(derivation);
+        arena.record_static_cell_stores(&derivation, derived.id);
+        arena.derivations[derived.id as usize] = Some(derivation);
         arena
             .derived_children
             .entry((base_id, derived.content_hash))
@@ -10786,6 +10996,7 @@ fn intern_memory_with(
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
         arena.static_block_versions.push(None);
+        arena.static_cell_store_versions.push(None);
         arena
             .local_definedness_versions
             .push(LocalDefinednessVersions::fresh(id));
@@ -10850,14 +11061,14 @@ pub struct ExecutionState {
     pub(super) resources: ResourceContext,
     /// Active stable-view authority. `None` is the canonical empty ledger so
     /// independently constructed states retain ordinary structural equality.
-    pub(super) loan_ledger: Option<super::loans::BorrowLedger>,
+    pub(super) borrow_ledger: Option<super::borrows::BorrowLedger>,
     /// Holder identity for the authority carried by this state. Keeping it
     /// beside the immutable ledger lets nested candidate calls reuse the
     /// caller's participant when lending a view.
-    pub(super) loan_participant: Option<super::loans::LoanParticipantId>,
+    pub(super) borrow_participant: Option<super::borrows::BorrowParticipantId>,
     /// Exact resource-occurrence bindings for live borrowed views. This map
     /// is carried with checked state so nested calls can reborrow by identity.
-    pub(super) loan_view_bindings: super::loans::LoanViewBindings,
+    pub(super) borrow_bindings: super::borrows::BorrowBindings,
     /// Live child completion rights travel with the C path through ordinary
     /// statements. `None` is the canonical state before any thread operation.
     pub(super) thread_ledger: Option<super::threads::ThreadLedger>,
@@ -11155,7 +11366,7 @@ pub struct ResourceContext {
     /// resource algebra's support graph: equal resource terms can have
     /// different borrow origins, and a rewrite must preserve the opaque
     /// occurrence identity rather than rediscovering it from the term.
-    pub(super) loan_dependencies: std::sync::Arc<crate::kernel::loans::LoanViewBindingsState>,
+    pub(super) borrow_dependencies: std::sync::Arc<crate::kernel::borrows::BorrowBindingsState>,
     pub(super) structural_witnesses:
         Option<std::sync::Arc<crate::kernel::termination::resource_descent::ResourceWitnesses>>,
 }
@@ -11167,7 +11378,7 @@ impl Clone for ResourceContext {
             storage: self.storage.clone(),
             framed_origins: self.framed_origins.clone(),
             observable_projection: self.observable_projection.clone(),
-            loan_dependencies: self.loan_dependencies.clone(),
+            borrow_dependencies: self.borrow_dependencies.clone(),
             structural_witnesses: self.structural_witnesses.clone(),
             memory_equalities: std::sync::Mutex::new(
                 self.memory_equalities
@@ -11215,20 +11426,20 @@ impl ResourceContext {
             && self.storage.supported_by.is_empty()
             && self.storage.support_occurrence_by_projection.is_empty()
             && self.storage.expansions_by_support_entry.is_empty()
-            && self.loan_dependencies.map.is_empty()
+            && self.borrow_dependencies.map.is_empty()
     }
 
     /// Return a live dependency for an exact occurrence.  The occurrence
     /// lookup is checked against this context so stale sidecar entries can
     /// never authorize a rewritten or removed resource.
-    pub(crate) fn loan_dependency(
+    pub(crate) fn borrow_dependency(
         &self,
         occurrence: ResourceOccurrenceId,
-    ) -> Option<&crate::kernel::loans::LoanViewBinding> {
+    ) -> Option<&crate::kernel::borrows::BorrowBinding> {
         self.storage
             .entry_by_occurrence
             .contains_key(&occurrence)
-            .then(|| self.loan_dependencies.map.get(&occurrence))
+            .then(|| self.borrow_dependencies.map.get(&occurrence))
             .flatten()
     }
 
@@ -11236,20 +11447,20 @@ impl ResourceContext {
     /// Callers must identify the destination occurrence returned by the
     /// resource insertion operation; value equality is intentionally not a
     /// valid substitute for that identity.
-    pub(crate) fn with_loan_dependency(
+    pub(crate) fn with_borrow_dependency(
         mut self,
         occurrence: ResourceOccurrenceId,
-        dependency: crate::kernel::loans::LoanViewBinding,
+        dependency: crate::kernel::borrows::BorrowBinding,
     ) -> Self {
         if self.storage.entry_by_occurrence.contains_key(&occurrence) {
-            if let Some(existing) = self.loan_dependencies.map.get(&occurrence) {
+            if let Some(existing) = self.borrow_dependencies.map.get(&occurrence) {
                 if existing != &dependency {
                     return self;
                 }
                 return self;
             }
-            self.loan_dependencies = self.loan_dependencies.updated(
-                self.loan_dependencies
+            self.borrow_dependencies = self.borrow_dependencies.updated(
+                self.borrow_dependencies
                     .map
                     .with_inserted(occurrence, dependency),
                 [occurrence],
@@ -11258,45 +11469,45 @@ impl ResourceContext {
         self
     }
 
-    pub(crate) fn loan_dependency_state(
+    pub(crate) fn borrow_dependency_state(
         &self,
-    ) -> std::sync::Arc<crate::kernel::loans::LoanViewBindingsState> {
-        self.loan_dependencies.clone()
+    ) -> std::sync::Arc<crate::kernel::borrows::BorrowBindingsState> {
+        self.borrow_dependencies.clone()
     }
 
-    pub(crate) fn with_loan_dependency_state(
+    pub(crate) fn with_borrow_dependency_state(
         mut self,
-        state: std::sync::Arc<crate::kernel::loans::LoanViewBindingsState>,
+        state: std::sync::Arc<crate::kernel::borrows::BorrowBindingsState>,
     ) -> Self {
-        self.loan_dependencies = state;
+        self.borrow_dependencies = state;
         self
     }
 
-    pub(crate) fn live_loan_dependencies(
+    pub(crate) fn live_borrow_dependencies(
         &self,
-    ) -> impl Iterator<Item = (ResourceOccurrenceId, &crate::kernel::loans::LoanViewBinding)> {
+    ) -> impl Iterator<Item = (ResourceOccurrenceId, &crate::kernel::borrows::BorrowBinding)> {
         // A filtered observation shares the current borrow state, which may
         // also contain excluded occurrences. Query the smaller side of the
         // intersection; never walk all excluded borrows for a small frame.
-        let by_entries = self.storage.facts.len() < self.loan_dependencies.map.len();
+        let by_entries = self.storage.facts.len() < self.borrow_dependencies.map.len();
         let mut selected = Vec::new();
         if by_entries {
             for (_, occurrence) in self.storage.occurrence_by_entry.iter() {
                 crate::instrumentation::record_deterministic_work(1);
-                if let Some(binding) = self.loan_dependencies.map.get(occurrence) {
+                if let Some(binding) = self.borrow_dependencies.map.get(occurrence) {
                     selected.push((*occurrence, binding));
                 }
             }
             // Preserve the original occurrence ordering for every caller.
             selected.sort_unstable_by_key(|(occurrence, _)| *occurrence);
         }
-        self.loan_dependencies
+        self.borrow_dependencies
             .map
             .iter()
             .take(if by_entries {
                 0
             } else {
-                self.loan_dependencies.map.len()
+                self.borrow_dependencies.map.len()
             })
             .filter_map(|(occurrence, binding)| {
                 crate::instrumentation::record_deterministic_work(1);
@@ -11641,7 +11852,7 @@ impl std::fmt::Debug for ResourceContext {
 impl PartialEq for ResourceContext {
     fn eq(&self, other: &Self) -> bool {
         if std::sync::Arc::ptr_eq(&self.storage, &other.storage)
-            && std::sync::Arc::ptr_eq(&self.loan_dependencies, &other.loan_dependencies)
+            && std::sync::Arc::ptr_eq(&self.borrow_dependencies, &other.borrow_dependencies)
         {
             return true;
         }
@@ -11652,7 +11863,7 @@ impl PartialEq for ResourceContext {
             && self.storage.supported_by == other.storage.supported_by
             && compare_support_graph(self, other) == std::cmp::Ordering::Equal
             && self.storage.expansions_by_support_entry == other.storage.expansions_by_support_entry
-            && compare_loan_dependencies(self, other) == std::cmp::Ordering::Equal
+            && compare_borrow_dependencies(self, other) == std::cmp::Ordering::Equal
     }
 }
 
@@ -11682,9 +11893,9 @@ impl std::hash::Hash for ResourceContext {
                 entry.hash(state);
             }
         }
-        // Hash the same structure-derived keys `compare_loan_dependencies`
+        // Hash the same structure-derived keys `compare_borrow_dependencies`
         // orders by, so two contexts that compare equal never hash apart.
-        for dependency in stable_loan_dependencies(self) {
+        for dependency in stable_borrow_dependencies(self) {
             dependency.hash(state);
         }
     }
@@ -11700,7 +11911,7 @@ impl Ord for ResourceContext {
     /// consistent with `Eq` and deterministic.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         if std::sync::Arc::ptr_eq(&self.storage, &other.storage)
-            && std::sync::Arc::ptr_eq(&self.loan_dependencies, &other.loan_dependencies)
+            && std::sync::Arc::ptr_eq(&self.borrow_dependencies, &other.borrow_dependencies)
         {
             return std::cmp::Ordering::Equal;
         }
@@ -11729,7 +11940,7 @@ impl ResourceContext {
             })
             .then_with(|| compare_support_graph(self, other))
             .then_with(|| compare_cached_expansions(self, other))
-            .then_with(|| compare_loan_dependencies(self, other))
+            .then_with(|| compare_borrow_dependencies(self, other))
     }
 }
 
@@ -11759,7 +11970,7 @@ fn compare_cached_expansions(
 /// One live borrow dependency, reduced to keys that do not name a process-local
 /// counter.
 ///
-/// `ResourceOccurrenceId`, `LoanId`, `LoanScopeId`, and `LoanShareId` are all
+/// `ResourceOccurrenceId`, `BorrowId`, `BorrowScopeId`, and `BorrowShareId` are all
 /// fresh arena/ordinal pairs. Comparing them directly makes two structurally
 /// identical contexts unequal whenever their bindings came from different
 /// ledgers or were allocated in a different order, which silently costs loop
@@ -11770,14 +11981,14 @@ fn compare_cached_expansions(
 /// share a borrow, scope, or share without naming any of them.
 ///
 /// This changes only how dependencies compare. Their meaning, and every
-/// authority check that reads `loan_dependency`, still uses the exact
+/// authority check that reads `borrow_dependency`, still uses the exact
 /// identities.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-struct StableLoanDependency<'a> {
+struct StableBorrowDependency<'a> {
     entry: ResourceEntryId,
     viewed: &'a ResourceFact,
-    support: StableLoanSupport,
-    loan: usize,
+    support: StableBorrowSupport,
+    borrow: usize,
     scope: usize,
     share: usize,
     hold: Option<usize>,
@@ -11785,7 +11996,7 @@ struct StableLoanDependency<'a> {
 
 /// Where a dependency's supporting occurrence lives, without naming its arena.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum StableLoanSupport {
+enum StableBorrowSupport {
     /// The support is an entry of this context; its stable ordinal names it.
     Entry(ResourceEntryId),
     /// The support is not an entry here, so only the position of its first
@@ -11803,9 +12014,9 @@ fn first_appearance<K: Ord>(seen: &mut std::collections::BTreeMap<K, usize>, key
 /// The context's live borrow dependencies in a canonical, structure-derived
 /// order. Ordering by the stable entry ordinal is a total order because
 /// `entry_by_occurrence` maps distinct occurrences to distinct entries.
-fn stable_loan_dependencies(context: &ResourceContext) -> Vec<StableLoanDependency<'_>> {
+fn stable_borrow_dependencies(context: &ResourceContext) -> Vec<StableBorrowDependency<'_>> {
     let mut ordered = context
-        .live_loan_dependencies()
+        .live_borrow_dependencies()
         .filter_map(|(occurrence, binding)| {
             context
                 .storage
@@ -11815,7 +12026,7 @@ fn stable_loan_dependencies(context: &ResourceContext) -> Vec<StableLoanDependen
         })
         .collect::<Vec<_>>();
     ordered.sort_unstable_by_key(|(entry, _)| *entry);
-    let mut loans = std::collections::BTreeMap::new();
+    let mut borrows = std::collections::BTreeMap::new();
     let mut scopes = std::collections::BTreeMap::new();
     let mut shares = std::collections::BTreeMap::new();
     let mut supports = std::collections::BTreeMap::new();
@@ -11823,21 +12034,21 @@ fn stable_loan_dependencies(context: &ResourceContext) -> Vec<StableLoanDependen
     ordered
         .into_iter()
         .map(|(entry, binding)| {
-            let loan = first_appearance(&mut loans, binding.loan);
+            let borrow = first_appearance(&mut borrows, binding.borrow);
             let scope = first_appearance(&mut scopes, binding.scope);
             let share = first_appearance(&mut shares, binding.share);
             let hold = binding.hold.map(|hold| first_appearance(&mut holds, hold));
             let support = match context.storage.entry_by_occurrence.get(&binding.support) {
-                Some(entry) => StableLoanSupport::Entry(*entry),
+                Some(entry) => StableBorrowSupport::Entry(*entry),
                 None => {
-                    StableLoanSupport::Position(first_appearance(&mut supports, binding.support))
+                    StableBorrowSupport::Position(first_appearance(&mut supports, binding.support))
                 }
             };
-            StableLoanDependency {
+            StableBorrowDependency {
                 entry,
                 viewed: &binding.viewed,
                 support,
-                loan,
+                borrow,
                 scope,
                 share,
                 hold,
@@ -11846,11 +12057,11 @@ fn stable_loan_dependencies(context: &ResourceContext) -> Vec<StableLoanDependen
         .collect()
 }
 
-fn compare_loan_dependencies(
+fn compare_borrow_dependencies(
     left: &ResourceContext,
     right: &ResourceContext,
 ) -> std::cmp::Ordering {
-    stable_loan_dependencies(left).cmp(&stable_loan_dependencies(right))
+    stable_borrow_dependencies(left).cmp(&stable_borrow_dependencies(right))
 }
 
 impl PartialOrd for ResourceContext {
@@ -12058,7 +12269,7 @@ impl ConditionalMutexGuard {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MutexUseIdentity {
     pub(in crate::kernel) protected: Option<super::ResourceDescription>,
-    pub(in crate::kernel) binding: Option<super::loans::MutexUseBinding>,
+    pub(in crate::kernel) binding: Option<super::borrows::MutexUseBinding>,
     pub(in crate::kernel) initialization: Option<u64>,
     pub(in crate::kernel) mutex: Address,
 }
@@ -14137,7 +14348,7 @@ pub enum Proposition {
     MemoryMutatesOnly {
         before: SymbolicMemory,
         after: SymbolicMemory,
-        writes: Vec<(Address, u32)>,
+        writes: Vec<(Address, AccessExtent)>,
     },
     /// Internal write bound expressed as [`MemoryRange`] descriptors, including
     /// symbolic spans. Like [`Self::MemoryMutatesOnly`], this bounds possible
@@ -14845,6 +15056,7 @@ pub struct FunctionContractRefinementContext {
 /// Kernel-generated sufficient logical obligations for one contract relation.
 /// The states and proposition cannot be supplied by the language layer.
 pub struct FunctionContractRefinementObligations {
+    pub(super) context: FunctionContractRefinementContext,
     pub(super) entry: ExecutionState,
     pub(super) post: ExecutionState,
     pub(super) proposition: Proposition,
@@ -16158,7 +16370,7 @@ impl CheckedFunctionExecution {
             if left.obligations != right.obligations {
                 return Err(format!("path {index}: the obligations differ"));
             }
-            if left.loan_evidence != right.loan_evidence {
+            if left.borrow_evidence != right.borrow_evidence {
                 return Err(format!("path {index}: the borrow evidence differs"));
             }
             same_proposition(left.theorem.proposition(), right.theorem.proposition())
@@ -16186,7 +16398,7 @@ pub struct SymbolicExecutionPath {
     pub(super) effect_facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) theorem: Theorem,
-    pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
+    pub(super) borrow_evidence: super::borrows::CheckedBorrowCallEvidenceSequence,
 }
 
 // Retaining a context changes neither a path's evidence nor its identity.
@@ -16200,7 +16412,7 @@ impl PartialEq for SymbolicExecutionPath {
             && self.effect_facts == other.effect_facts
             && self.obligations == other.obligations
             && self.theorem == other.theorem
-            && self.loan_evidence == other.loan_evidence
+            && self.borrow_evidence == other.borrow_evidence
     }
 }
 
@@ -16256,7 +16468,7 @@ pub(super) struct FunctionExecutionCandidateData {
     /// retained. Derived only from the stored facts; carries no authority.
     pub(super) effects_public_first: bool,
     pub(super) obligations: Arc<Vec<ProofObligation>>,
-    pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
+    pub(super) borrow_evidence: super::borrows::CheckedBorrowCallEvidenceSequence,
 }
 
 impl PartialEq for FunctionExecutionCandidateData {
@@ -16266,7 +16478,7 @@ impl PartialEq for FunctionExecutionCandidateData {
             && self.effect_facts == other.effect_facts
             && self.effects_public_first == other.effects_public_first
             && self.obligations == other.obligations
-            && self.loan_evidence == other.loan_evidence
+            && self.borrow_evidence == other.borrow_evidence
     }
 }
 impl Eq for FunctionExecutionCandidateData {}
@@ -16331,7 +16543,7 @@ pub(super) struct StatementExecutionPath {
     pub(super) outcome: StatementOutcome,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
-    pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
+    pub(super) borrow_evidence: super::borrows::CheckedBorrowCallEvidenceSequence,
 }
 
 impl StatementExecutionPath {
@@ -16361,7 +16573,7 @@ impl StatementExecutionPath {
             outcome,
             facts,
             obligations,
-            loan_evidence: super::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: super::borrows::empty_checked_borrow_evidence_sequence(),
         }
     }
 }
@@ -16371,7 +16583,7 @@ pub(super) struct FunctionPath {
     pub(super) outcome: FunctionOutcome,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
-    pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
+    pub(super) borrow_evidence: super::borrows::CheckedBorrowCallEvidenceSequence,
     /// The callee's by-value aggregate parameters as a contract call bound
     /// them; `None` for every other path.
     pub(super) call_parameters: Option<CallParameters>,
@@ -16430,7 +16642,7 @@ impl FunctionPath {
             outcome,
             facts,
             obligations,
-            loan_evidence: super::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: super::borrows::empty_checked_borrow_evidence_sequence(),
             call_parameters: None,
         }
     }
@@ -16634,12 +16846,16 @@ struct TypeParameterNames {
     types: Vec<&'static AlgebraicType>,
     // Rigid values use only their name, never the unrelated enum definitions.
     rigid: std::collections::BTreeMap<String, TypeParameterName>,
+    // Rigid names of library instances, `Vec<uint32>`: opaque values of a
+    // fixed width, not of a size Click does not know.
+    library_instances: std::collections::BTreeSet<String>,
 }
 
 static TYPE_PARAMETER_NAMES: std::sync::Mutex<TypeParameterNames> =
     std::sync::Mutex::new(TypeParameterNames {
         types: Vec::new(),
         rigid: std::collections::BTreeMap::new(),
+        library_instances: std::collections::BTreeSet::new(),
     });
 
 impl TypeParameterName {
@@ -16673,6 +16889,52 @@ impl TypeParameterName {
             names.rigid.insert(algebraic_type.name.clone(), id);
         }
         id
+    }
+
+    /// Whether Click knows nothing of this type but its name, as of a type
+    /// parameter: its values are opaque and its size is `sizeof(T)`. An
+    /// enum, with its variants, or an instance such as `Vec<u32>` is not.
+    pub fn has_abstract_size(self) -> bool {
+        let names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        let algebraic_type = names.types[self.0 as usize];
+        algebraic_type.rigid
+            && algebraic_type.arguments.is_empty()
+            && algebraic_type.variants.is_empty()
+            && !names.library_instances.contains(&algebraic_type.name)
+    }
+
+    /// Records that the rigid type `name` is an instance of a library type,
+    /// such as `Vec<uint32>`, whose values are opaque but of a fixed width.
+    pub fn declare_library_instance(name: &str) {
+        let mut names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        if !names.library_instances.contains(name) {
+            names.library_instances.insert(name.to_string());
+        }
+    }
+
+    /// The bytes a value of this type takes in memory, `sizeof(T)`: a
+    /// number the type fixes and Click does not know. Two uses of one type
+    /// name the same term; a proof learns of it only the facts the program's
+    /// language states for every type, and an instance reads it as its own
+    /// type's size.
+    /// The type whose `sizeof(T)` `term` is, for a type of abstract size.
+    pub fn of_size_term(term: &MachineTerm) -> Option<Self> {
+        let MachineTerm::PureFunctionApplication { name, arguments } = term else {
+            return None;
+        };
+        let type_name = name.strip_prefix("sizeof<")?.strip_suffix('>')?;
+        if !arguments.is_empty() {
+            return None;
+        }
+        let parameter = Self::intern(type_name);
+        (parameter.has_abstract_size() && parameter.size_term() == *term).then_some(parameter)
+    }
+
+    pub fn size_term(self) -> MachineTerm {
+        MachineTerm::PureFunctionApplication {
+            name: format!("sizeof<{}>", self.name()),
+            arguments: Vec::new(),
+        }
     }
 
     pub fn name(self) -> &'static str {

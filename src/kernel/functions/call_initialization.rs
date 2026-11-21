@@ -17,17 +17,19 @@ use super::*;
 /// array.
 const DEFINED_EVIDENCE_ELEMENT_LIMIT: u32 = 4096;
 
-/// The refusal for the first plain memory input whose caller bytes are not
-/// all initialized, if any. A recognized byte copy's source is exempt: the
+/// Check plain memory inputs, deferring symbolic byte ranges to a checked
+/// proof obligation when their initialization records are insufficient.
+/// A recognized byte copy's source is exempt: the
 /// copy carries each byte's initialization across, as C allows for the
 /// indeterminate bytes of an object representation.
-pub(super) fn uninitialized_call_input<'a>(
-    memory: &SymbolicMemory,
+pub(super) fn call_input_initialization<'a>(
+    state: &ExecutionState,
     interface: &FunctionContractInterface,
     inputs: impl Iterator<Item = &'a CheckedResourceFact>,
     representation_copy: bool,
     assumptions: &PureFactContext,
-) -> Option<String> {
+    can_name_symbolic_range: bool,
+) -> Result<Vec<(usize, Proposition, String)>, String> {
     let requires = interface.resource_requires();
     // A constructor, or a function that constructs its result in place, runs
     // on raw storage: its proof starts with the object unwritten, so the
@@ -40,6 +42,7 @@ pub(super) fn uninitialized_call_input<'a>(
             (interface.aggregate_return_mode() == AggregateReturnMode::Construction)
                 .then_some(&crate::kernel::CONTRACT_RESULT)
         });
+    let mut unresolved = Vec::new();
     for input in inputs {
         let Resource::Memory(range) = input.fact.resource() else {
             continue;
@@ -59,7 +62,7 @@ pub(super) fn uninitialized_call_input<'a>(
             continue;
         }
         if memory_range_is_initialized(
-            memory,
+            state.memory(),
             range,
             segment.and_then(MemorySegment::value_runs),
             assumptions,
@@ -70,11 +73,26 @@ pub(super) fn uninitialized_call_input<'a>(
             Some((index, total)) => resource_clause_position_note(index, total),
             None => "a memory clause".to_string(),
         };
-        return Some(format!(
+        let message = format!(
             "{clause} holds its range as initialized, but the caller has not initialized every byte of it; a callee that writes the range before reading it holds it as `uninitialized(...)`"
-        ));
+        );
+        if can_name_symbolic_range
+            && range.wide_bounds().is_some()
+            && let Some(index) = input.section_index
+            && let Some(segment) = segment
+            && crate::kernel::eval::program_expression_pointee_type(state, &segment.base)
+                == Some(ProgramType::UInt8)
+            && let Some(requirement) =
+                crate::kernel::api::contract_certification::input_initialization::initialized_input_range_fact(
+                    state, interface, segment, range,
+                )?
+        {
+            unresolved.push((index, requirement, message));
+            continue;
+        }
+        return Err(message);
     }
-    None
+    Ok(unresolved)
 }
 
 /// The parameter a segment's address is computed from.

@@ -694,8 +694,8 @@ void make(int32 x) {{ requires x > 0; produces positive(x); }} by {{
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: loan-backed call preparation and replay"]
-fn prepared_view_call_does_not_retry_loan_recovery() {
+#[ignore = "nightly: borrow-backed call preparation and replay"]
+fn prepared_view_call_does_not_retry_borrow_recovery() {
     let mut samples = Vec::new();
     for callback in [false, true] {
         for size in [1, 8, 32] {

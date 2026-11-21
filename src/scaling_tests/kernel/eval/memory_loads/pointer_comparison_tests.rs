@@ -1,6 +1,54 @@
 use super::*;
 
 #[test]
+fn exact_pointer_read_reuses_the_indexed_store_across_local_history() {
+    let work = [4u32, 16, 64, 256].map(|count| {
+        let _session = VerificationSession::enter();
+        let slot = Address {
+            base: "local:pointer-holding-slot".into(),
+            offset: AddressOffset::Constant(0),
+        };
+        let unrelated = Address {
+            base: "local:unrelated-scalar".into(),
+            offset: AddressOffset::Constant(0),
+        };
+        let value_type = ProgramType::Int32Pointer;
+        let target = Pointer::new(Address::symbolic(Variable(989_013)), value_type);
+        let mut state = ExecutionState::new().with_memory(
+            SymbolicMemory::new()
+                .with_block(slot.base.clone(), value_type.byte_width())
+                .with_block(unrelated.base.clone(), 4)
+                .store(slot.clone(), ProgramValue::Pointer(target.clone())),
+        );
+        for index in 0..count {
+            let memory = state
+                .memory()
+                .clone()
+                .store(unrelated.clone(), ProgramValue::Int32(index.into()));
+            state = state.with_memory(memory);
+        }
+        let read = |state: &ExecutionState| {
+            Pointer::from_point_read(state.program_point().for_exact_read(), value_type, &slot)
+        };
+        let exact = read(&state);
+        let (stored, work) = crate::instrumentation::measure_deterministic_work(|| {
+            pointer_read_over_write_program_value(exact.address())
+        });
+        assert_eq!(stored, Some(target));
+        let memory = state
+            .memory()
+            .clone()
+            .store(slot.clone(), ProgramValue::Int32(0u32.into()));
+        assert_eq!(
+            pointer_read_over_write_program_value(read(&state.with_memory(memory)).address()),
+            None
+        );
+        work
+    });
+    assert!(work.iter().all(|units| *units == work[0]), "{work:?}");
+}
+
+#[test]
 fn stored_address_base_queries_scale_with_new_read_definitions() {
     fn work(steps: u64, unrelated: u64) -> usize {
         let _session = VerificationSession::enter();
@@ -106,6 +154,8 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
             base: AddressBase::Heap(index),
             offset: AddressOffset::Constant(0),
         };
+        // A library instance, as Surface registers it: opaque, of fixed width.
+        TypeParameterName::declare_library_instance("SliceIter<uint8>");
         let algebraic_type = AlgebraicType {
             rigid: true,
             name: "SliceIter<uint8>".into(),

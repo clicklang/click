@@ -132,6 +132,333 @@ fn copying_a_never_written_union_member_stays_an_uninitialized_read() {
     );
 }
 
+#[test]
+fn aggregate_copy_array_keeps_its_caller_source_point_after_an_earlier_field() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let target = SymbolicMemory::frame_local_pointer(1, "record_copy");
+    let layout = AggregateLayout::new(
+        20,
+        4,
+        vec![
+            AggregateField::new("tag", 0, ProgramType::UInt32),
+            AggregateField::new("data", 4, ProgramType::UInt32Array(4)),
+        ],
+    );
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let state = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_block(target.base.clone(), layout.size_bytes()),
+    );
+    let point = state.program_point();
+    let copied = copy_aggregate_fields_checked_at(&state, &source, &target, &layout).unwrap();
+    assert!(
+        copied.known_value(&target).is_some(),
+        "the earlier scalar field was copied"
+    );
+    let mut runs = copied.cells.runs_in_block(&target.base);
+    let run = runs
+        .next()
+        .expect("compact capture of the unknown array field");
+    assert!(runs.next().is_none());
+    assert_eq!(run.count(), 4);
+    assert_eq!(run.source_point().id(), point.id());
+    let Some(ProgramValue::UInt32(MachineTerm::MemoryLoad(version, address, kind))) =
+        copied.known_value(&target.offset_by_bytes(8))
+    else {
+        panic!("a typed read from the caller's field");
+    };
+    assert_eq!(kind, LoadKind::UInt32);
+    assert_eq!(*address, source.offset_by_bytes(8));
+    assert_eq!(version.read_version_id(), entry.program_point_id());
+}
+
+#[test]
+fn aggregate_copy_names_uncached_scalar_fields_at_the_caller_versions() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let target = SymbolicMemory::frame_local_pointer(1, "scalar_record_copy");
+    let layout = AggregateLayout::new(
+        24,
+        8,
+        vec![
+            AggregateField::new("tag", 0, ProgramType::Int32),
+            AggregateField::new("count", 4, ProgramType::UInt32),
+            AggregateField::new("x", 8, ProgramType::Float32),
+            AggregateField::new("y", 16, ProgramType::Float64),
+        ],
+    );
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let state = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_block(target.base.clone(), layout.size_bytes()),
+    );
+    let entry_id = entry.program_point_id();
+    let copy_id = state.observation_point_id();
+    assert_ne!(entry_id, copy_id);
+    let copied = copy_aggregate_fields_checked_at(&state, &source, &target, &layout).unwrap();
+    for (offset, ty, expected) in [
+        (0, ProgramType::Int32, entry_id),
+        (4, ProgramType::UInt32, entry_id),
+        (8, ProgramType::Float32, copy_id),
+        (16, ProgramType::Float64, copy_id),
+    ] {
+        assert!(
+            state
+                .memory()
+                .known_value(&source.offset_by_bytes(offset))
+                .is_none()
+        );
+        let value = copied.known_value(&target.offset_by_bytes(offset)).unwrap();
+        assert_eq!(value.program_type(), ty);
+        let Some(MachineTerm::MemoryLoad(point, address, kind)) =
+            crate::kernel::spec::program_value_bitvector_term(&value)
+        else {
+            panic!("expected a typed source read");
+        };
+        assert_eq!(point.read_version_id(), expected);
+        assert_eq!(*address, source.offset_by_bytes(offset));
+        assert_eq!(Some(kind), LoadKind::of_type(ty));
+    }
+}
+
+#[test]
+fn aggregate_copy_names_forgotten_integer_fields_by_their_typed_stores() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let target = SymbolicMemory::frame_local_pointer(1, "forgotten_record_copy");
+    for value in [
+        crate::kernel::uint8(17),
+        ProgramValue::UInt64(MachineTerm::uint64_constant(42)),
+    ] {
+        let ty = value.program_type();
+        let bytes = ty.byte_width();
+        let layout = AggregateLayout::new(bytes, bytes, vec![AggregateField::new("value", 0, ty)]);
+        let initial = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(target.base.clone(), bytes));
+        let stored = initial
+            .clone()
+            .with_memory(initial.memory().clone().store(source.clone(), value));
+        let forgotten = stored.memory().without_possible_aliasing_cells(
+            &source,
+            bytes,
+            &PureFactContext::new(),
+        );
+        let before = stored.clone().with_memory(forgotten);
+        assert!(before.memory().known_value(&source).is_none());
+        let copied = copy_aggregate_fields_checked_at(&before, &source, &target, &layout).unwrap();
+        let value = copied.known_value(&target).unwrap();
+        assert_eq!(value.program_type(), ty);
+        let Some(MachineTerm::MemoryLoad(point, address, kind)) =
+            crate::kernel::spec::program_value_bitvector_term(&value)
+        else {
+            panic!("expected a typed source read");
+        };
+        assert_eq!(point.read_version_id(), stored.observation_point_id());
+        assert_eq!(*address, source);
+        assert_eq!(Some(kind), LoadKind::of_type(ty));
+    }
+}
+
+#[test]
+fn aggregate_copy_names_forgotten_pointer_fields_by_the_complete_typed_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let field = source.offset_by_bytes(8);
+    let target = SymbolicMemory::frame_local_pointer(1, "pointer_record_copy");
+    for ty in [ProgramType::UInt8Pointer, ProgramType::UInt32Pointer] {
+        let layout = AggregateLayout::new(
+            16,
+            8,
+            vec![
+                AggregateField::new("tag", 0, ProgramType::UInt32),
+                AggregateField::new("link", 8, ty),
+            ],
+        );
+        let domain = Address::symbolic(Variable(986_246));
+        let value = Pointer::new(domain.offset_by_bytes(4), ty).with_bounds(Some(
+            crate::kernel::SubobjectBounds {
+                start: domain,
+                width: 16u32.into(),
+            },
+        ));
+        let initial = ExecutionState::new().with_memory(
+            SymbolicMemory::new().with_block(target.base.clone(), layout.size_bytes()),
+        );
+        let stored = initial.clone().with_memory(
+            initial
+                .memory()
+                .clone()
+                .store(field.clone(), ProgramValue::Pointer(value.clone())),
+        );
+        let forgotten = stored.memory().without_possible_aliasing_cells(
+            &field,
+            ty.byte_width(),
+            &PureFactContext::new(),
+        );
+        let before = stored.clone().with_memory(forgotten);
+        assert!(before.memory().known_value(&field).is_none());
+        let copied = copy_aggregate_fields_checked_at(&before, &source, &target, &layout).unwrap();
+        let Some(ProgramValue::Pointer(read)) = copied.known_value(&target.offset_by_bytes(8))
+        else {
+            panic!("expected a complete pointer read");
+        };
+        let descriptor = read.address().as_loaded_value().expect("read pointer");
+        assert_eq!(
+            descriptor.point.read_version_id(),
+            stored.observation_point_id()
+        );
+        assert_eq!(descriptor.defining_address, field);
+        assert_eq!(descriptor.value_type, Some(ty));
+        assert_eq!(read.provenance(), read.address());
+        assert_eq!(read.bounds_owner(), Some(read.address()));
+        assert_eq!(
+            crate::kernel::eval::pointer_read_over_write_program_value(read.address()),
+            Some(value),
+        );
+    }
+}
+
+#[test]
+fn aggregate_copy_union_reads_keep_the_caller_versions() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let source_member = source.offset_by_bytes(8);
+    let target = SymbolicMemory::frame_local_pointer(1, "union_record_copy");
+    let target_member = target.offset_by_bytes(8);
+    let pointer_type = ProgramType::UInt32Pointer;
+    let layout = AggregateLayout::with_unions(
+        16,
+        8,
+        vec![AggregateField::new("tag", 0, ProgramType::UInt32)],
+        vec![AggregateUnion::new(
+            "payload",
+            8,
+            8,
+            vec![
+                AggregateUnionField::new("word", 0, ProgramType::Int32),
+                AggregateUnionField::new("link", 0, pointer_type),
+            ],
+        )],
+    );
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let initial = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_block(target.base.clone(), layout.size_bytes()),
+    );
+
+    let copied = copy_aggregate_fields_checked_at(&initial, &source, &target, &layout).unwrap();
+    let Some(ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, kind))) =
+        copied.known_union_value(&target_member, ProgramType::Int32)
+    else {
+        panic!("expected a typed caller word");
+    };
+    assert_eq!(kind, LoadKind::Int32);
+    assert_eq!(point.read_version_id(), entry.program_point_id());
+    assert_eq!(*address, source_member);
+
+    let domain = Address::symbolic(Variable(986_247));
+    let value = Pointer::new(domain.offset_by_bytes(4), pointer_type).with_bounds(Some(
+        crate::kernel::SubobjectBounds {
+            start: domain,
+            width: 16u32.into(),
+        },
+    ));
+    let stored = initial.clone().with_memory(
+        initial
+            .memory()
+            .clone()
+            .store(source_member.clone(), ProgramValue::Pointer(value.clone())),
+    );
+    let forgotten = stored.memory().without_possible_aliasing_cells(
+        &source_member,
+        pointer_type.byte_width(),
+        &PureFactContext::new(),
+    );
+    let before = stored.clone().with_memory(forgotten);
+    assert!(before.memory().known_value(&source_member).is_none());
+    let copied = copy_aggregate_fields_checked_at(&before, &source, &target, &layout).unwrap();
+    let Some(ProgramValue::Pointer(read)) = copied.known_union_value(&target_member, pointer_type)
+    else {
+        panic!("expected a complete pointer read");
+    };
+    let descriptor = read.address().as_loaded_value().expect("read pointer");
+    assert_eq!(
+        descriptor.point.read_version_id(),
+        stored.observation_point_id()
+    );
+    assert_eq!(descriptor.defining_address, source_member);
+    assert_eq!(descriptor.value_type, Some(pointer_type));
+    assert_eq!(
+        crate::kernel::eval::pointer_read_over_write_program_value(read.address()),
+        Some(value),
+    );
+}
+
+#[test]
+fn verified_aggregate_argument_keeps_caller_entry_read() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let caller = ExecutionState::new().begin_function_entry_memory();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let layout = AggregateLayout::new(
+        4,
+        4,
+        vec![AggregateField::new("word", 0, ProgramType::Int32)],
+    );
+    let function = program_function(
+        ProgramType::Void,
+        "by_value",
+        vec![
+            ProgramParameter::new("input", ProgramType::VoidPointer).with_aggregate_layout(layout),
+        ],
+        program_return(program_void_value()),
+    );
+    let argument = ProgramValue::typed_pointer(source.clone(), ProgramType::VoidPointer);
+    let bound = bind_contract_arguments(
+        &caller,
+        function.contract_interface(),
+        &VerifiedCallArguments::Native(vec![argument.clone()]),
+        None,
+        &[argument.into()],
+        &mut Vec::new(),
+    )
+    .expect("bind a checked aggregate argument");
+
+    let slot = bound.locals.slot("input").expect("private argument slot");
+    let Some(ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, kind))) =
+        bound.memory().known_value(slot)
+    else {
+        panic!("expected a typed caller word");
+    };
+    assert_eq!(kind, LoadKind::Int32);
+    assert_eq!(point.read_version_id(), caller.program_point_id());
+    assert_eq!(*address, source);
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/aggregate_union_copy_tests.rs");
@@ -201,6 +528,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
         &PureFactContext::new(),
         false,
         false,
+        None,
         None,
         None,
     );

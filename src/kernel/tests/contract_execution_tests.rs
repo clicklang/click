@@ -1,6 +1,6 @@
 // These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
-use crate::kernel::LoanRefusalCategory;
+use crate::kernel::BorrowRefusalCategory;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
@@ -161,7 +161,7 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
         after: state.memory().clone(),
         writes: vec![],
     });
-    let original = program_function_execution_candidates_from_outcomes_with_loan_evidence(
+    let original = program_function_execution_candidates_from_outcomes_with_borrow_evidence(
         state.clone(),
         program_function(
             ProgramType::Int32,
@@ -177,7 +177,7 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
             },
             [public.clone(), effect.clone()].into(),
             vec![ProofObligation::new(public.proposition().clone())],
-            crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         )],
     );
     let mut retained = original.paths()[0].clone();
@@ -212,7 +212,7 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
         assert!(extended.facts()[0].is_certified());
         let mut combined = source.execution_facts();
         combined.extend_shared(&additional);
-        let rebuilt = program_function_execution_candidates_from_outcomes_with_loan_evidence(
+        let rebuilt = program_function_execution_candidates_from_outcomes_with_borrow_evidence(
             original.state().clone(),
             original.function().clone(),
             original.arguments().to_vec(),
@@ -220,7 +220,7 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
                 source.outcome().clone(),
                 combined,
                 source.obligations().to_vec(),
-                source.loan_evidence().clone(),
+                source.borrow_evidence().clone(),
             )],
         );
         assert_eq!(
@@ -232,17 +232,18 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
             &extended,
             &ExecutionFacts::new(),
         );
-        let rebuilt_again = program_function_execution_candidates_from_outcomes_with_loan_evidence(
-            original.state().clone(),
-            original.function().clone(),
-            original.arguments().to_vec(),
-            vec![(
-                extended.outcome().clone(),
-                extended.execution_facts(),
-                extended.obligations().to_vec(),
-                extended.loan_evidence().clone(),
-            )],
-        );
+        let rebuilt_again =
+            program_function_execution_candidates_from_outcomes_with_borrow_evidence(
+                original.state().clone(),
+                original.function().clone(),
+                original.arguments().to_vec(),
+                vec![(
+                    extended.outcome().clone(),
+                    extended.execution_facts(),
+                    extended.obligations().to_vec(),
+                    extended.borrow_evidence().clone(),
+                )],
+            );
         assert_eq!(&republished, &rebuilt_again.paths()[0]);
         assert!(std::ptr::eq(extended.outcome(), republished.outcome()));
         let retained_private = extended
@@ -367,16 +368,16 @@ fn borrowed_contract_input_roots_only_the_exact_principal_view() {
     )
     .expect("a checked principal input view receives external shared authority");
 
-    assert!(rooted.loan_ledger().is_some());
-    assert!(rooted.loan_participant().is_some());
+    assert!(rooted.borrow_ledger().is_some());
+    assert!(rooted.borrow_participant().is_some());
     assert_eq!(
         rooted
-            .loan_view_bindings()
+            .borrow_bindings()
             .get(&occurrence)
             .map(|binding| &binding.viewed),
         Some(&viewed)
     );
-    assert!(rooted.loan_bindings_are_consistent());
+    assert!(rooted.borrow_bindings_are_consistent());
 }
 
 /// Every proof unit of one function shares one installed root: a second
@@ -402,8 +403,8 @@ fn borrowed_contract_input_roots_are_shared_across_proof_units_of_one_function()
         &PureFactContext::new(),
     )
     .expect("second install on the same entry state");
-    assert_eq!(first.loan_ledger(), second.loan_ledger());
-    assert_eq!(first.loan_participant(), second.loan_participant());
+    assert_eq!(first.borrow_ledger(), second.borrow_ledger());
+    assert_eq!(first.borrow_participant(), second.borrow_participant());
     assert_eq!(first, second);
 
     let other_resources = ResourceContext::new().unchecked_with_facts([
@@ -417,7 +418,7 @@ fn borrowed_contract_input_roots_are_shared_across_proof_units_of_one_function()
         &PureFactContext::new(),
     )
     .expect("install on a changed entry state");
-    assert_ne!(first.loan_ledger(), changed.loan_ledger());
+    assert_ne!(first.borrow_ledger(), changed.borrow_ledger());
 }
 
 /// An owned clause that provably overlaps a viewed clause of the same
@@ -474,7 +475,7 @@ fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
         &PureFactContext::new(),
     )
     .expect_err("an owned clause inside the viewed range is refused at entry");
-    assert_eq!(refusal.category(), LoanRefusalCategory::ProvenOverlap);
+    assert_eq!(refusal.category(), BorrowRefusalCategory::ProvenOverlap);
 }
 
 #[test]
@@ -497,7 +498,7 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
         &PureFactContext::new(),
     )
     .expect_err("a projection derived from owned authority is not an external root");
-    assert_eq!(refusal.category(), LoanRefusalCategory::Missing);
+    assert_eq!(refusal.category(), BorrowRefusalCategory::Missing);
 
     let duplicate = ResourceContext::new().unchecked_with_facts([viewed.clone(), viewed]);
     let refusal = execution_state_with_borrowed_contract_inputs(
@@ -507,7 +508,7 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
         &PureFactContext::new(),
     )
     .expect_err("equal principal occurrences are ambiguous authority anchors");
-    assert_eq!(refusal.category(), LoanRefusalCategory::Missing);
+    assert_eq!(refusal.category(), BorrowRefusalCategory::Missing);
 }
 
 /// The aggregate-copy path is the same shape at a wider width: the copy's
@@ -530,7 +531,7 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
     let resources =
         ResourceContext::new().unchecked_with_facts([owned_target, owned_source, viewed.clone()]);
     let support = resources.occurrences_for_fact(&viewed)[0];
-    let ledger = crate::kernel::loans::BorrowLedger::new();
+    let ledger = crate::kernel::borrows::BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("a fresh participant");
     let opening = ledger
         .borrowed_contract_input(participant, support, viewed.clone(), None)
@@ -538,10 +539,10 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
     let ledger = ledger
         .apply(&opening.transition)
         .expect("the input root applies");
-    let bindings = crate::kernel::loans::LoanViewBindings::default().with_inserted(
+    let bindings = crate::kernel::borrows::BorrowBindings::default().with_inserted(
         support,
-        crate::kernel::loans::LoanViewBinding {
-            loan: opening.loan,
+        crate::kernel::borrows::BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support,
@@ -551,9 +552,9 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
     );
     let state = ExecutionState::new()
         .with_resource_context(resources)
-        .with_loan_ledger(Some(ledger))
-        .with_loan_participant(Some(participant))
-        .with_loan_view_bindings(bindings);
+        .with_borrow_ledger(Some(ledger))
+        .with_borrow_participant(Some(participant))
+        .with_borrow_bindings(bindings);
     let layout = AggregateLayout::new(
         8,
         4,
@@ -619,7 +620,7 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
     let resources = ResourceContext::new().unchecked_with_facts([owned, viewed.clone()]);
     let support = resources.occurrences_for_fact(&viewed)[0];
-    let ledger = crate::kernel::loans::BorrowLedger::new();
+    let ledger = crate::kernel::borrows::BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("a fresh participant");
     let opening = ledger
         .borrowed_contract_input(participant, support, viewed.clone(), None)
@@ -627,10 +628,10 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
     let ledger = ledger
         .apply(&opening.transition)
         .expect("the input root applies");
-    let bindings = crate::kernel::loans::LoanViewBindings::default().with_inserted(
+    let bindings = crate::kernel::borrows::BorrowBindings::default().with_inserted(
         support,
-        crate::kernel::loans::LoanViewBinding {
-            loan: opening.loan,
+        crate::kernel::borrows::BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support,
@@ -640,9 +641,9 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
     );
     let state = ExecutionState::new()
         .with_resource_context(resources)
-        .with_loan_ledger(Some(ledger))
-        .with_loan_participant(Some(participant))
-        .with_loan_view_bindings(bindings);
+        .with_borrow_ledger(Some(ledger))
+        .with_borrow_participant(Some(participant))
+        .with_borrow_bindings(bindings);
     let function = program_function(
         ProgramType::Void,
         "write_owned_lent_cell",
@@ -699,7 +700,7 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
     let viewed = view_memory_fact(pointer.clone(), 0, 1);
     let resources = ResourceContext::new().unchecked_with_facts([owned, viewed.clone()]);
     let support = resources.occurrences_for_fact(&viewed)[0];
-    let ledger = crate::kernel::loans::BorrowLedger::new();
+    let ledger = crate::kernel::borrows::BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("a fresh participant");
     let opening = ledger
         .borrowed_contract_input(participant, support, viewed.clone(), None)
@@ -707,10 +708,10 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
     let ledger = ledger
         .apply(&opening.transition)
         .expect("the input root applies");
-    let bindings = crate::kernel::loans::LoanViewBindings::default().with_inserted(
+    let bindings = crate::kernel::borrows::BorrowBindings::default().with_inserted(
         support,
-        crate::kernel::loans::LoanViewBinding {
-            loan: opening.loan,
+        crate::kernel::borrows::BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support,
@@ -725,9 +726,9 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
     let state = ExecutionState::new()
         .with_memory(populated.clone())
         .with_resource_context(resources)
-        .with_loan_ledger(Some(ledger))
-        .with_loan_participant(Some(participant))
-        .with_loan_view_bindings(bindings);
+        .with_borrow_ledger(Some(ledger))
+        .with_borrow_participant(Some(participant))
+        .with_borrow_bindings(bindings);
     let function = program_function(
         ProgramType::Void,
         "store_the_same_value_into_a_lent_cell",

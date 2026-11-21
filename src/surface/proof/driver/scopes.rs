@@ -3,6 +3,24 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    pub(in crate::surface::proof) fn try_signed_definedness_bounds(
+        &self,
+        width: crate::kernel::SignedDefinedWidth,
+        premises: Vec<ClickProposition>,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_signed_definedness_bounds(
+            &self.proof.body,
+            width,
+            premises,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Expand a mathematical identity inside its owned have body.
     pub(in crate::surface::proof) fn try_integer_algebra(
         &self,

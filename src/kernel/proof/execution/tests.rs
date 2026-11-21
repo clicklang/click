@@ -65,21 +65,21 @@ use crate::kernel::{
 };
 
 /// One arm state holding a checked view rooted in a fresh borrow.
-fn arm_holding_a_view(name: &str) -> (ExecutionState, crate::kernel::loans::LoanViewBinding) {
+fn arm_holding_a_view(name: &str) -> (ExecutionState, crate::kernel::borrows::BorrowBinding) {
     let support_fact = ResourceFact::own_token(format!("{name}_support"), Vec::new());
     let viewed = ResourceFact::view_token(format!("{name}_view"), Vec::new());
     let resources = crate::kernel::ResourceContext::new()
         .unchecked_with_facts([support_fact.clone(), viewed.clone()]);
     let support = resources.owned_occurrences_for_fact(&support_fact)[0];
     let occurrence = resources.occurrences_for_fact(&viewed)[0];
-    let ledger = crate::kernel::loans::BorrowLedger::new();
+    let ledger = crate::kernel::borrows::BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner identity");
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
         .lend(owner, reader, support, support_fact)
         .expect("the arm's view is backed by a fresh borrow");
-    let binding = crate::kernel::loans::LoanViewBinding {
-        loan: opening.loan,
+    let binding = crate::kernel::borrows::BorrowBinding {
+        borrow: opening.borrow,
         scope: opening.scope,
         share: opening.root_share,
         support,
@@ -87,9 +87,9 @@ fn arm_holding_a_view(name: &str) -> (ExecutionState, crate::kernel::loans::Loan
         hold: None,
     };
     let state = ExecutionState::new()
-        .with_loan_ledger(Some(ledger))
-        .with_loan_participant(Some(reader))
-        .with_resource_context_and_loan_dependencies(resources, [(occurrence, binding.clone())]);
+        .with_borrow_ledger(Some(ledger))
+        .with_borrow_participant(Some(reader))
+        .with_resource_context_and_borrow_dependencies(resources, [(occurrence, binding.clone())]);
     (state, binding)
 }
 
@@ -104,55 +104,55 @@ fn frame_exchange_retains_the_exits_exact_stable_view_dependency() {
         .unwrap()
         .unchecked_with_facts_and_occurrences([binding.viewed.clone()]);
     let final_occurrence = inserted[0].1;
-    let exit = exit.with_loan_dependency(final_occurrence, binding.clone());
+    let exit = exit.with_borrow_dependency(final_occurrence, binding.clone());
     let outside = ResourceFact::own_composite("outside".into(), Vec::new());
     let frame = body.clone().unchecked_with_fact(outside.clone());
     let restored = exit
         .restore_frame_after_exchange(body, &frame, &PureFactContext::new())
         .unwrap();
     assert!(restored.contains_exact_representation(&outside));
-    assert_eq!(restored.loan_dependency(final_occurrence), Some(&binding));
-    assert!(restored.loan_dependency(original).is_none());
+    assert_eq!(restored.borrow_dependency(final_occurrence), Some(&binding));
+    assert!(restored.borrow_dependency(original).is_none());
     assert!(restored.view_fact_at_occurrence(original).is_none());
 }
 
-fn successor_carrying(binding: &crate::kernel::loans::LoanViewBinding) -> ExecutionState {
+fn successor_carrying(binding: &crate::kernel::borrows::BorrowBinding) -> ExecutionState {
     let resources =
         crate::kernel::ResourceContext::new().unchecked_with_facts([binding.viewed.clone()]);
     let occurrence = resources.occurrences_for_fact(&binding.viewed)[0];
     // A fresh interface context: the occurrence is new, so only the
     // binding's own content can connect it to an arm's authority.
     ExecutionState::new()
-        .with_resource_context_and_loan_dependencies(resources, [(occurrence, binding.clone())])
+        .with_resource_context_and_borrow_dependencies(resources, [(occurrence, binding.clone())])
 }
 
 #[test]
-fn an_interface_successor_may_only_carry_a_loan_an_arm_held() {
+fn an_interface_successor_may_only_carry_a_borrow_an_arm_held() {
     let (left, left_binding) = arm_holding_a_view("left");
     let (right, right_binding) = arm_holding_a_view("right");
 
     // No claimed authority at all is always inherited.
-    assert!(interface_successor_loans_are_inherited(
+    assert!(interface_successor_borrows_are_inherited(
         &ExecutionState::new(),
         [&left, &right]
     ));
     // Either arm's own root is, whichever arm held it.
-    assert!(interface_successor_loans_are_inherited(
+    assert!(interface_successor_borrows_are_inherited(
         &successor_carrying(&left_binding),
         [&left, &right]
     ));
-    assert!(interface_successor_loans_are_inherited(
+    assert!(interface_successor_borrows_are_inherited(
         &successor_carrying(&right_binding),
         [&left, &right]
     ));
     // A root neither arm reached is not admitted by the join.
     let (_, outside) = arm_holding_a_view("outside");
-    assert!(!interface_successor_loans_are_inherited(
+    assert!(!interface_successor_borrows_are_inherited(
         &successor_carrying(&outside),
         [&left, &right]
     ));
     // Nor is one arm's root once that arm is not part of the join.
-    assert!(!interface_successor_loans_are_inherited(
+    assert!(!interface_successor_borrows_are_inherited(
         &successor_carrying(&right_binding),
         [&left, &left]
     ));
@@ -166,7 +166,7 @@ fn interface_inheritance_tracks_duplicate_bindings_and_replacement() {
     assert_ne!(binding, replacement);
     let claim = successor_carrying(&binding);
     let replacement_claim = successor_carrying(&replacement);
-    assert!(!interface_successor_loans_are_inherited(
+    assert!(!interface_successor_borrows_are_inherited(
         &replacement_claim,
         [&arm, &arm],
     ));
@@ -178,32 +178,30 @@ fn interface_inheritance_tracks_duplicate_bindings_and_replacement() {
         .unchecked_with_facts_and_occurrences([binding.viewed.clone()]);
     let duplicate = inserted[0].1;
     let once = duplicated
-        .with_loan_dependency(duplicate, binding.clone())
+        .with_borrow_dependency(duplicate, binding.clone())
         .without_bound_view_occurrence(original, &binding)
         .expect("the original binding can be removed independently");
     let once = arm.clone().with_resource_context(once);
-    assert!(interface_successor_loans_are_inherited(
+    assert!(interface_successor_borrows_are_inherited(
         &claim,
         [&once, &once]
     ));
 
-    let rebound_bindings = once
-        .loan_view_bindings()
-        .with_inserted(duplicate, replacement);
+    let rebound_bindings = once.borrow_bindings().with_inserted(duplicate, replacement);
     let rebound = once.clone().with_resource_context(
         once.resources()
             .clone()
-            .with_loan_dependency_state(rebound_bindings.state()),
+            .with_borrow_dependency_state(rebound_bindings.state()),
     );
-    assert!(!interface_successor_loans_are_inherited(
+    assert!(!interface_successor_borrows_are_inherited(
         &claim,
         [&rebound, &rebound],
     ));
-    assert!(interface_successor_loans_are_inherited(
+    assert!(interface_successor_borrows_are_inherited(
         &replacement_claim,
         [&rebound, &rebound],
     ));
-    assert!(interface_successor_loans_are_inherited(
+    assert!(interface_successor_borrows_are_inherited(
         &claim,
         [&arm, &arm]
     ));
@@ -760,7 +758,7 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
                 effect_facts: effects.clone(),
                 effects_public_first: true,
                 obligations: Arc::new(vec![]),
-                loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+                borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
             }),
         };
         let context = CheckedReturnContext::from_candidate(
@@ -2161,12 +2159,12 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
     let left_effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: left.memory().clone(),
-        writes: vec![(left_pointer.clone(), 8)],
+        writes: vec![(left_pointer.clone(), crate::kernel::AccessExtent::from(8))],
     });
     let right_effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: right.memory().clone(),
-        writes: vec![(right_pointer.clone(), 4)],
+        writes: vec![(right_pointer.clone(), crate::kernel::AccessExtent::from(4))],
     });
     let parent = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
     let mut left_core = parent.clone();
@@ -2214,7 +2212,11 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
             Proposition::MemoryMutatesOnly { before: effect_before, after, writes }
                 if effect_before == before.memory()
                     && after == joined.memory()
-                    && writes == &vec![(left_pointer, 8), (right_pointer, 4)]
+                    && writes
+                    == &vec![
+                        (left_pointer, crate::kernel::AccessExtent::from(8)),
+                        (right_pointer, crate::kernel::AccessExtent::from(4)),
+                    ]
         )
     ));
 }
@@ -2232,7 +2234,7 @@ fn checked_interface_effects_reject_uncertified_memory_effects() {
     let effect = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: after.memory().clone(),
-        writes: vec![(pointer, 4)],
+        writes: vec![(pointer, crate::kernel::AccessExtent::from(4))],
     });
     let parent = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
     let mut changed_core = parent.clone();
@@ -2273,7 +2275,10 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     let mutation = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: after.memory().clone(),
-        writes: vec![(declared_pointer.clone(), 4)],
+        writes: vec![(
+            declared_pointer.clone(),
+            crate::kernel::AccessExtent::from(4),
+        )],
     });
     let mut mutation_core = parent.clone();
     mutation_core.state = after.clone().into();
@@ -3517,6 +3522,99 @@ fn resource_cell_naming_checks_the_recorded_integer_version_after_forgetting_a_n
     let other = without_name();
     assert_eq!(before.memory(), other.memory());
     assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+}
+
+#[test]
+fn resource_pointer_cell_keeps_the_complete_read_from_its_recorded_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let ty = ProgramType::Int32Pointer;
+    let bytes = ty.byte_width();
+    let initial = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("other", 4));
+    let without_name = || {
+        let stored = initial.clone().with_memory(initial.memory().clone().store(
+            slot.clone(),
+            ProgramValue::typed_pointer(Address::symbolic(Variable(986_220)), ty),
+        ));
+        let forgotten =
+            stored
+                .memory()
+                .without_possible_aliasing_cells(&slot, bytes, &PureFactContext::new());
+        stored.with_memory(forgotten)
+    };
+    let before = without_name();
+    assert!(before.memory().known_value(&slot).is_none());
+    let source = before.program_point();
+    let version = source.indexed_typed_version(&slot, ty).unwrap();
+    let pointer = crate::kernel::Pointer::from_point_read(version, ty, &slot);
+    let expected = ProgramValue::Pointer(pointer.clone());
+    let named = before
+        .memory()
+        .clone()
+        .materialize_cell_at(slot.clone(), ty, &source);
+    assert_eq!(named.known_value(&slot), Some(expected.clone()));
+    assert!(super::memory_only_adds_named_cells(&before, &named).is_ok());
+
+    let work = [1, 8, 64, 256].map(|count| {
+        let run = before
+            .memory()
+            .clone()
+            .with_named_cell_run(slot.clone(), bytes, ty, 0, count, source.clone())
+            .unwrap();
+        let ((value, checked), work) = crate::instrumentation::measure_deterministic_work(|| {
+            (
+                run.known_value(&slot),
+                super::memory_only_adds_named_cells(&before, &run),
+            )
+        });
+        assert_eq!(value, Some(expected.clone()));
+        assert!(checked.is_ok());
+        work
+    });
+    assert!(work.iter().all(|units| *units <= work[0] + 8), "{work:?}");
+
+    let forged = before.memory().clone().materialize_named_cell(
+        slot.clone(),
+        ProgramValue::Pointer(pointer.with_provenance(std::sync::Arc::new(Address::null()))),
+    );
+    assert!(super::memory_only_adds_named_cells(&before, &forged).is_err());
+    let other = without_name();
+    assert_eq!(before.memory(), other.memory());
+    assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+}
+
+#[test]
+fn resource_float_cell_naming_distinguishes_equal_memory_source_points() {
+    use crate::kernel::KernelFloatType;
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let before = ExecutionState::new().begin_function_entry_memory();
+    let other = before.clone().begin_function_entry_memory();
+    assert_eq!(before.memory(), other.memory());
+    for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+        let point = before.program_point();
+        let named = before.memory().clone().materialize_cell_at(
+            slot.clone(),
+            format.program_type(),
+            &point,
+        );
+        assert_eq!(
+            named.known_value(&slot),
+            Some(format.value(MachineTerm::MemoryLoad(
+                point.for_exact_read(),
+                Box::new(slot.clone()),
+                format.load_kind(),
+            ))),
+        );
+        assert!(super::memory_only_adds_named_cells(&before, &named).is_ok());
+        assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+    }
 }
 
 #[test]

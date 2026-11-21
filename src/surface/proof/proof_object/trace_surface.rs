@@ -218,7 +218,7 @@ fn immutable_field_hint(
         }
         _ => return None,
     };
-    let expected = base.address().offset_by_bytes(*offset_bytes);
+    let expected = base.address().offset_by_layout(*offset_bytes);
     (expected.base == address.base
         && crate::kernel::offsets_have_same_canonical_form(&expected.offset, &address.offset))
     .then(|| crate::surface::diagnostics::describe_field_place(&name.to_string(), field))
@@ -238,7 +238,7 @@ mod pointer_trace_tests {
             pointee_struct: None,
             base: Box::new(base_expression),
             field: "left".into(),
-            offset_bytes: 8,
+            offset_bytes: 8.into(),
             lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(ProgramExpression::Value(value.clone())),
                 value_type,

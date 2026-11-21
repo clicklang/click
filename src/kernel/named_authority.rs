@@ -182,7 +182,7 @@ impl NamedMutexAuthorities {
     /// A stale same-address alias is not selected by this indexed lookup.
     pub(in crate::kernel) fn apply_checked_mutex_updates(
         &self,
-        updates: &[super::loans::mutex_calls::MutexAuthorityUpdate],
+        updates: &[super::borrows::mutex_calls::MutexAuthorityUpdate],
         state: &ExecutionState,
     ) -> Result<Self, NamedMutexAuthorityError> {
         let mut next = self.clone();

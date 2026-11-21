@@ -89,22 +89,44 @@ Named scalar observations and read congruence use indexed versions where the
 producer has a recorded typed write or one of the supported entry versions.
 Concrete resource cells and compact runs can retain their source point.
 Indexed abstract reads of a directly written local use its typed store in
-equality and raising. Native and shared array arguments carry the same source
-point. External arrays can use function entry after disjoint local
-declarations, stores and checked calls whose write set is one range in an automatic
-object. Declared predicates also retain that entry version for external
-`int32` array arguments, including when unfolding their bodies or raising
-a predicate fact. Scalar fold instantiation keeps a selected entry point
-when the substituted index still uses the indexed entry selector. Checked
+equality and raising. Materialized fixed-width opaque resource fields at
+constant offsets in local objects use the same indexed store as logical
+reads. Symbolic-sized fields still use the memory view. Native and shared
+array arguments carry the same source point. External arrays can use function
+entry after disjoint local declarations, stores and checked calls whose write
+ranges all name automatic objects, including when several effects are recorded
+together. The shared caller storage can also name an array by a recorded
+write point and retain that version across local stores and local-only calls.
+Named static arrays retain entry or write points across recorded writes and
+calls confined to named static and automatic objects. Automatic arrays retain
+points from their declarations and writes across those effects. A join keeps
+a common static or automatic array version and names a changed object at the
+join when the incoming indexes share a lineage. Declared predicates share
+the block version selector for array arguments of all admitted element types,
+including when unfolding their bodies or raising a predicate fact. A static
+scalar spanning its block can use the same version when that point ends
+with a complete typed store. Scalar fold instantiation keeps a selected entry point when the substituted index
+still uses the indexed entry selector. Checked
 resource quantities and materialized resource cells share that entry point for
 an `int32` field at a fixed displacement from its external parameter. Computed
 scalar fold endpoints, ordinary checked reads, loop boundaries and iterated
 ownership guards also carry the selected entry point. Generic cells at a
 verified function entry keep that point through individual observations,
-compact runs, and substitution. A join retains the entry point when all
+compact runs, and substitution. Entry setup passes its original point through
+declared loadable ranges, resource segments and named composite openings so
+supported scalar fields and compact cells use the same selector. A join retains the entry point when all
 incoming paths establish the same unchanged entry version. Scalar
 canonicalization, congruence and Integer arithmetic retain the point through
 comparison.
+
+Exact pointer reads can recover the complete stored pointer from a typed
+index entry at their selected point, with the value's provenance and bounds.
+Address-only recovery for symbolic layout checks uses that same typed store,
+including after the cache drops the cell. Resource pointer cells, including
+named run slots, can use the same typed store when the source point is
+retained. Raising uses retained point IDs to name array arguments and
+historical reads.
+An indexed read can raise through a certified materialized view of its point.
 
 The remaining memory-state paths have production callers:
 
@@ -112,8 +134,8 @@ The remaining memory-state paths have production callers:
 | --- | --- |
 | Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for abstract cells supplied by bare memory producers or taken outside the verified entry path. |
 | Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` still construct memory-state observations for bare memory producers and unsupported indexed types or addresses. |
-| Preservation | `array_ref_argument_point` uses the block version walk outside the indexed suffix, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
-| Raising | `synthesize_at_memory` still raises function and predicate array arguments that carry a bare memory view. Legacy scalar and abstract reads use `RecordedStates::point_reading_load`. |
+| Preservation | `array_ref_argument_point` uses the block version walk outside the indexed entry and write paths, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
+| Raising | Detached array arguments still use `synthesize_at_memory`. Detached scalar and abstract reads still use the memory and projection indexes in `RecordedStates::point_reading_load`. |
 
 Give symbolic addresses a separate slice. A loaded or opaque symbolic pointer
 can refer to the same storage as a write. Producers need checked evidence
@@ -229,9 +251,9 @@ follow it. None of these whole-operation rows is marked complete.
 | Prepare selected code and function entry; pay once for selected declarations and clauses | `surface/verification.rs`, `kernel/functions.rs`, `kernel/termination.rs` | `surface/tests/step_shape_scaling_tests.rs`: `entry_setup_is_linear_in_owned_parameters`; `kernel/termination/termination_scaling_tests.rs`: call-chain, fan-out and cycle controls | Coverage gap: complete frontend/lowering/termination dependency map; no per-step rebuilding of prepared input. These are setup costs, not constant-size steps. |
 | Execute a scalar statement or access; pay for selected expression and affected storage | `kernel/eval.rs`, `kernel/proof/execution.rs`, `kernel/primitives/memory_state.rs` | `kernel/tests/memory_scaling_tests.rs`: `one_store_is_logarithmic_in_unrelated_cells`, `sequential_owned_parameter_stores_ignore_earlier_cached_fields`; source step-shape tests | Memory/cache candidates M1; ownership and borrow checks below are dependencies of the whole step. A flat store helper alone is insufficient. |
 | Admit facts and decide a condition; pay for named terms and justified incremental updates | `kernel/assumptions.rs`, `kernel/equality_graph.rs`, `kernel/difference_graph.rs`, `kernel/assumptions/condition_reasoning/decision.rs` | `kernel/assumptions/condition_buckets.rs`: `equality_class_hits_and_anchored_misses_stay_indexed`, `interval_queries_do_not_walk_symbolic_order_components`; graph late-merge/fork controls | Pointer distinctness uses explicit separation; ownership discovery is removed. Coverage gap: total admission/propagation work across growing shared classes, beyond covered shapes. |
-| Select, consume, fold or unfold ownership; pay for explicitly selected pieces/body | `ResourceContext::{satisfies_fact,without_fact_incrementally_impl,consume_unit_owned_memory}`, `ExecutionProofCore` fold construction | `kernel/loans/tests.rs`: `call_fragment_composition_stops_at_a_fixed_gap`; `kernel/proof/execution/tests.rs`: `constructing_an_instance_fold_pays_for_its_body_once`; source fold/unfold controls | R1 reachability gap for other quantities; R2 source candidates for ownership validity, alias/root discovery and overlap. |
+| Select, consume, fold or unfold ownership; pay for explicitly selected pieces/body | `ResourceContext::{satisfies_fact,without_fact_incrementally_impl,consume_unit_owned_memory}`, `ExecutionProofCore` fold construction | `kernel/borrows/tests.rs`: `call_fragment_composition_stops_at_a_fixed_gap`; `kernel/proof/execution/tests.rs`: `constructing_an_instance_fold_pays_for_its_body_once`; source fold/unfold controls | R1 reachability gap for other quantities; R2 source candidates for ownership validity, alias/root discovery and overlap. |
 | Observe separation or resource facts; pay for selected operands/evidence | `surface/proof/proof_object/splits_and_scopes.rs`, `kernel/proof/facts.rs`, `kernel/assumptions/memory_reasoning.rs` | source `observing_one_owner_ignores_unused_parameters`; transport footprint tests, including `two_footprints_do_not_expand_into_a_cartesian_product` | F2: composition/member bucket growth remains a coverage gap; frontier opening no longer reconstructs a composition-only context. |
-| Check a write against borrows; pay for the selected evidence | `BorrowLedger::memory_access_requirement` and statement prerequisite checking | `loan_access_requirement_is_retained_and_branch_local`, `stated_symbolic_write_separation_ignores_nearby_facts_and_aliases` | L1 covers the scoped write path and its evidence lookup. The old alias-enumerating guard is test-only. |
+| Check a write against borrows; pay for the selected evidence | `BorrowLedger::memory_access_requirement` and statement prerequisite checking | `borrow_access_requirement_is_retained_and_branch_local`, `stated_symbolic_write_separation_ignores_nearby_facts_and_aliases` | L1 covers the scoped write path and its evidence lookup. The old alias-enumerating guard is test-only. |
 | Apply a modular call, transfer resources and finish it; pay for selected contract and effects | `kernel/functions.rs`: `execute_verified_function_applications_with_suspension`, `call_kept_ownership`; `kernel/proof/execution.rs` | source `a_call_ignores_unrelated_owned_objects`; `kernel/functions/stable_view_call_tests.rs`: `returning_one_borrowed_owner_does_not_rebuild_its_memory_block` | C1: resource-family selection and selected-address composite candidates; non-direct member-count preparation is now flat. E1: execution/publication/completion accounting. |
 | Split/join branches and enter/exit loops; pay for explicit arms/interfaces and actual changes | `kernel/api.rs`: `abstract_c_state_for_interface_join_across`; `kernel/loops.rs`; `kernel/proof/execution.rs` | `kernel/loops/contract_exit_join_tests.rs`, `kernel/loops/frame_resource_tests.rs`; branch availability and interface-join controls | J1 coverage gap: fixed-delta joins across growing stable state; loop-head abstraction uses a different policy. Existing growth allowances do not establish ambient independence. |
 | Apply an explicit equality, arithmetic step or preservation step; pay for written nodes/premises | `kernel/proof/{preservation,integer_arithmetic,term_rewrite}.rs` | `kernel/proof/preservation.rs`: history independence, explicit-step linearity, selected resource fields; `kernel/proof/integer_arithmetic/tests.rs`: repeated premise and shared-DAG controls | Coverage gap: map every Surface certificate driver through lowering, premise lookup, application and publication; preserve cold expansion/replay evidence. Do not re-enter discovery during application. |
@@ -552,8 +574,8 @@ and `separate_symm` applications. Restricting a larger separation emits
 containment proofs and `separation::separate_restrict`; candidate selection belongs only
 to `ProofSearch`. The store adds no e-graph facts; the separate
 `contains_element` library axiom supplies explicit interval-to-cell containment.
-`one_write_with_a_loan_does_not_walk_unrelated_aliases` measures the complete
-source write with one view and 4/16/64 aliases; `loan_access_requirement_is_retained_and_branch_local`
+`one_write_with_a_borrow_does_not_walk_unrelated_aliases` measures the complete
+source write with one view and 4/16/64 aliases; `borrow_access_requirement_is_retained_and_branch_local`
 covers descriptor generation and persistent closes with 4/16/64/256 borrows.
 These scoped controls do not certify every borrow caller or proof-publication cost.
 

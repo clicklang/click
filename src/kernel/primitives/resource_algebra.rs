@@ -1918,7 +1918,7 @@ impl ResourceContext {
             }
         }
         self.shares_storage_with(other)
-            && std::sync::Arc::ptr_eq(&self.loan_dependencies, &other.loan_dependencies)
+            && std::sync::Arc::ptr_eq(&self.borrow_dependencies, &other.borrow_dependencies)
             && self.framed_origins.shares_root_with(&other.framed_origins)
             && same_root(&self.instance_consumptions, &other.instance_consumptions)
             && same_root(&self.structural_witnesses, &other.structural_witnesses)
@@ -1941,6 +1941,27 @@ impl ResourceContext {
             })
             .map(|entry| self.fact(*entry).clone())
             .collect()
+    }
+
+    /// The owned memory member that is exactly `range`, by its spatial key:
+    /// how a range whose bounds are not constants, such as a whole object
+    /// of abstract size, is found as a member of the partition.
+    pub(in crate::kernel) fn exact_owned_memory_member(
+        &self,
+        range: &MemoryRange,
+    ) -> Option<(u64, &MemoryRange)> {
+        crate::instrumentation::record_deterministic_work(1);
+        let key = spatial_memory_fact_key(&ResourceFact::own(Resource::Memory(range.clone())))?;
+        let entry = *self.storage.index.spatial_memory.get(&key)?.iter().next()?;
+        if self.storage.supported_by.contains_key(&entry)
+            || self
+                .storage
+                .support_occurrence_by_projection
+                .contains_key(&entry)
+        {
+            return None;
+        }
+        Some((entry, self.fact(entry).memory_own_range()?))
     }
 
     /// Separation of two explicitly selected, independently held resources.
@@ -2154,8 +2175,8 @@ impl ResourceContext {
                     .cloned(),
                 Some(occurrence),
             );
-            if let Some(binding) = after.loan_dependency(occurrence) {
-                self = self.with_loan_dependency(occurrence, binding.clone());
+            if let Some(binding) = after.borrow_dependency(occurrence) {
+                self = self.with_borrow_dependency(occurrence, binding.clone());
             }
         }
         // Folded expansions retain the state at which their body was
@@ -2572,7 +2593,7 @@ impl ResourceContext {
         let dependencies = additions
             .iter()
             .filter_map(|(_, occurrence)| {
-                self.loan_dependency(*occurrence)
+                self.borrow_dependency(*occurrence)
                     .map(|binding| (*occurrence, binding.clone()))
             })
             .collect::<Vec<_>>();
@@ -2603,7 +2624,7 @@ impl ResourceContext {
             }
         }
         for (occurrence, binding) in dependencies {
-            restored = restored.with_loan_dependency(occurrence, binding);
+            restored = restored.with_borrow_dependency(occurrence, binding);
         }
         Some(restored)
     }
@@ -2669,11 +2690,11 @@ impl ResourceContext {
     pub(crate) fn without_bound_view_occurrence(
         mut self,
         occurrence: ResourceOccurrenceId,
-        binding: &crate::kernel::loans::LoanViewBinding,
+        binding: &crate::kernel::borrows::BorrowBinding,
     ) -> Option<Self> {
         if !self.view_occurrence_is_principal(occurrence)
             || self.view_fact_at_occurrence(occurrence) != Some(&binding.viewed)
-            || self.loan_dependency(occurrence) != Some(binding)
+            || self.borrow_dependency(occurrence) != Some(binding)
         {
             return None;
         }
@@ -3065,14 +3086,14 @@ impl ResourceContext {
         // beside it, which is checked by pointer identity.
         if removed_occurrences
             .iter()
-            .any(|occurrence| self.loan_dependencies.map.get(occurrence).is_some())
+            .any(|occurrence| self.borrow_dependencies.map.get(occurrence).is_some())
         {
             let map = removed_occurrences
                 .iter()
-                .fold(self.loan_dependencies.map.clone(), |map, occurrence| {
+                .fold(self.borrow_dependencies.map.clone(), |map, occurrence| {
                     map.without_key(occurrence)
                 });
-            self.loan_dependencies = self.loan_dependencies.updated(map, removed_occurrences);
+            self.borrow_dependencies = self.borrow_dependencies.updated(map, removed_occurrences);
         }
         fact
     }
@@ -5218,8 +5239,9 @@ impl ResourceContext {
             .copied()
             .find_map(|entry| {
                 let available = self.fact(entry).memory_own_range()?;
-                crate::kernel::assumptions::memory_range_shallowly_contained(range, available)
-                    .then_some((entry, available))
+                (crate::kernel::assumptions::memory_range_shallowly_contained(range, available)
+                    || symbolic_range_shallowly_contained(range, available))
+                .then_some((entry, available))
             })
     }
 
@@ -5460,7 +5482,7 @@ impl ResourceContext {
                     crate::instrumentation::record_deterministic_work(1);
                     let fact = self.fact(*entry);
                     let range = if borrowed {
-                        let Some(binding) = self.loan_dependency(self.occurrence(*entry)) else {
+                        let Some(binding) = self.borrow_dependency(self.occurrence(*entry)) else {
                             continue;
                         };
                         if binding.viewed != *fact {
@@ -7090,8 +7112,8 @@ impl ResourceContext {
             if let Some(error) = self.exclusive_validity_error(fact) {
                 return Err(error);
             }
-            if let Some(binding) = outputs.loan_dependency(occurrence) {
-                self = self.with_loan_dependency(occurrence, binding.clone());
+            if let Some(binding) = outputs.borrow_dependency(occurrence) {
+                self = self.with_borrow_dependency(occurrence, binding.clone());
             }
             if let Some(expansion) = outputs
                 .storage
@@ -7455,7 +7477,7 @@ impl ResourceContext {
         if composition.storage.index.owned_count >= 2
             || composition.storage.index.owned_composite_count != 0
             || (composition.storage.index.owned_count == 1
-                && !composition.loan_dependencies.map.is_empty())
+                && !composition.borrow_dependencies.map.is_empty())
         {
             vec![Proposition::ResourceComposition(composition)]
         } else {
@@ -7660,6 +7682,9 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
+        if self.symbolic_object_holds_field(pointer, provenance, byte_width, assumptions) {
+            return true;
+        }
         if let Some(entries) = self.read_access(pointer, byte_width, assumptions) {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
@@ -7692,6 +7717,16 @@ impl ResourceContext {
         provenance: (&Address, Option<&Address>),
         assumptions: &PureFactContext,
     ) -> bool {
+        // A field of a symbolic layout formed from `operand` is inside the
+        // whole object held at `operand`, by the layout's rule.
+        if crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset).is_some()
+            && let Some(entries) = self.read_access(operand, 0, assumptions)
+            && let Some(range) = resource_fact_read_core_range(self.fact(entries.entry()))
+            && assumptions.access_provenance_matches_bytes(provenance, operand, 0, &range)
+            && pointer_formation_in_range(pointer, operand, &range, assumptions)
+        {
+            return true;
+        }
         let Some(entries) = self.read_access(pointer, 0, assumptions) else {
             return false;
         };
@@ -7782,6 +7817,9 @@ impl ResourceContext {
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> bool {
+        if self.symbolic_object_holds_field(pointer, provenance, bytes, assumptions) {
+            return true;
+        }
         let Some(entries) = self.read_access(pointer, bytes, assumptions) else {
             return false;
         };
@@ -7806,6 +7844,100 @@ impl ResourceContext {
             return true;
         }
         false
+    }
+
+    /// Whether the `bytes` at `pointer`, a field of a symbolic layout, lie in
+    /// the whole object held at that object's start: the owner is found at
+    /// the object's address, and the field is inside it by the layout's rule.
+    fn symbolic_object_holds_field(
+        &self,
+        pointer: &Address,
+        provenance: Option<(&Address, Option<&Address>)>,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        self.symbolic_object_holding_field(pointer, provenance, bytes, false, assumptions)
+            .is_some()
+    }
+
+    /// The range of the whole symbolic object, owned for a `write`, that
+    /// holds the `bytes` at `pointer`, a field of its layout: found at the
+    /// object's start, the field inside it by the layout's rule.
+    fn symbolic_object_holding_field(
+        &self,
+        pointer: &Address,
+        provenance: Option<(&Address, Option<&Address>)>,
+        bytes: u32,
+        write: bool,
+        assumptions: &PureFactContext,
+    ) -> Option<&MemoryRange> {
+        let (rest, layout, field) =
+            crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset)?;
+        let object = Address {
+            base: pointer.base.clone(),
+            offset: rest.cloned().unwrap_or(AddressOffset::Constant(0)),
+        };
+        let entries = if write {
+            self.write_access(&object, 0, assumptions)
+        } else {
+            self.read_access(&object, 0, assumptions)
+        };
+        // An object of abstract size has no byte span for the access index:
+        // its one owned member at the object's base, or at an exact alias
+        // of it, holds the field.
+        let by_member = || -> Option<&MemoryRange> {
+            let stored = match &object.base {
+                AddressBase::LoadedPointer(identity) => {
+                    crate::kernel::eval::loaded_pointer_stored_address(*identity).and_then(
+                        |stored| (object.offset == AddressOffset::Constant(0)).then_some(stored),
+                    )
+                }
+                _ => None,
+            };
+            std::iter::once(object.clone())
+                .chain(stored)
+                .chain(assumptions.exact_pointer_aliases(&object).cloned())
+                .find_map(|alias| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let (_, range) = self.unique_owned_memory_member_with_base(&alias)?;
+                    let field_pointer = alias.offset_by_layout(layout.field_offset(field));
+                    symbolic_object_covers_field(
+                        range,
+                        &MemoryRange::new_with_element_width(
+                            field_pointer,
+                            0u32.into(),
+                            bytes.into(),
+                            1,
+                        ),
+                    )
+                    .then_some(range)
+                })
+        };
+        let Some(entries) = entries else {
+            return by_member();
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        let fact = self.fact(entries.entry());
+        let range = if write {
+            fact.memory_own_range()?
+        } else {
+            fact.memory_range()?
+        };
+        // The held range is the whole object at `object`, so an access
+        // through a pointer whose bounds are that object's matches it even
+        // through a byte view of the object.
+        let provenance_matches = provenance.is_none_or(|provenance| {
+            assumptions.access_provenance_matches_bytes(provenance, &object, 0, range)
+                || (assumptions.provenance_equal(provenance.0, &range.provenance)
+                    && provenance.1.is_none_or(|owner| *owner == object))
+        });
+        (provenance_matches
+            && symbolic_object_covers_field(
+                range,
+                &MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), bytes.into(), 1),
+            ))
+        .then_some(range)
+        .or_else(by_member)
     }
 
     /// Storage authority uses the same retained occurrence and graph alignment
@@ -7874,6 +8006,41 @@ impl ResourceContext {
         None
     }
 
+    /// Whether a held resource grants the whole object `required`, for a
+    /// write when `write` and a read otherwise: the owner its first byte
+    /// selects covers it, as an access of a value of an abstract type,
+    /// `[p, p + sizeof(T))`, needs ([`MemoryRange::access`]).
+    pub(in crate::kernel) fn permits_object_access(
+        &self,
+        required: &MemoryRange,
+        write: bool,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        let pointer = required.base();
+        let entries = if write {
+            self.write_access(pointer, 1, assumptions)
+        } else {
+            self.read_access(pointer, 1, assumptions)
+        };
+        // An object of abstract size has no byte span for the interval
+        // index; its one owned member at the object's own base holds it.
+        let Some(entry) = entries.map(|entries| entries.entry()).or_else(|| {
+            self.unique_owned_memory_member_with_base(pointer)
+                .map(|(entry, _)| entry)
+        }) else {
+            return false;
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        let resource = self.fact(entry);
+        let held = if write {
+            resource.memory_own_range()
+        } else {
+            resource.memory_range()
+        };
+        (!write || resource.has_proven_positive_quantity(assumptions))
+            && held.is_some_and(|held| memory_range_covers(held, required, assumptions))
+    }
+
     pub(in crate::kernel) fn memory_write_range(
         &self,
         pointer: &Address,
@@ -7890,6 +8057,11 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> Option<&MemoryRange> {
+        if let Some(range) =
+            self.symbolic_object_holding_field(pointer, provenance, byte_width, true, assumptions)
+        {
+            return Some(range);
+        }
         if let Some(entries) = self.write_access(pointer, byte_width, assumptions) {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
@@ -7936,6 +8108,29 @@ impl ResourceContext {
             return None;
         }
         None
+    }
+
+    /// [`Self::owned_memory_member_covering_access`] for an access of any
+    /// extent: a whole object of abstract size has no byte span for the
+    /// access index, so its member is the one owned at its address.
+    pub(in crate::kernel) fn owned_memory_member_covering_extent(
+        &self,
+        pointer: &Address,
+        extent: crate::kernel::AccessExtent,
+        assumptions: &PureFactContext,
+    ) -> Option<(u64, &MemoryRange)> {
+        let crate::kernel::AccessExtent::Object(_) = extent else {
+            return self.owned_memory_member_covering_access(
+                pointer,
+                extent.bytes().expect("a byte extent"),
+                assumptions,
+            );
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        let (entry, range) = self.unique_owned_memory_member_with_base(pointer)?;
+        (self.fact(entry).has_proven_positive_quantity(assumptions)
+            && assumptions.access_held_by_range(pointer, extent, range))
+        .then_some((entry, range))
     }
 
     pub fn without_fact(self, fact: &ResourceFact, assumptions: &PureFactContext) -> Option<Self> {
@@ -8240,7 +8435,7 @@ impl ResourceContext {
             || entries.iter().any(|entry| {
                 self.storage.supported_by.contains_key(entry)
                     || self
-                        .loan_dependencies
+                        .borrow_dependencies
                         .map
                         .contains_key(&self.occurrence(*entry))
             })
@@ -8587,7 +8782,7 @@ impl ResourceContext {
     /// deliberately does not do first. The units are those the consumption
     /// already selected by key, admitted with the family's own pair rule in
     /// their index order until their constant total covers `fact`. Memory keeps
-    /// its own supplier composition, and a unit with a loan, support,
+    /// its own supplier composition, and a unit with a borrow, support,
     /// projection or witness keeps its identity.
     fn consume_fact_from_merged_units(
         &mut self,
@@ -8755,7 +8950,7 @@ impl ResourceContext {
                 crate::instrumentation::record_deterministic_work(1);
                 (matches!(support, ResourceFact::Own(Resource::Instance(_), _))
                     && self.fact(*entry).memory_view_range().is_some()
-                    && self.loan_dependency(self.occurrence(*entry)).is_none())
+                    && self.borrow_dependency(self.occurrence(*entry)).is_none())
                 .then_some(*entry)
             })
             .collect::<Vec<_>>();
@@ -8784,7 +8979,7 @@ impl ResourceContext {
                     && support
                         .owned_quantity_term()
                         .is_some_and(|q| q.as_const() == Some(1))
-                    && self.loan_dependency(occurrence).is_none())
+                    && self.borrow_dependency(occurrence).is_none())
                 .then_some(*entry)
             })
             .collect::<Vec<_>>();
@@ -8922,7 +9117,7 @@ impl ResourceContext {
                 .storage
                 .projections_by_support_occurrence
                 .contains_key(&occurrence)
-            && self.loan_dependency(occurrence).is_none()
+            && self.borrow_dependency(occurrence).is_none()
             && !self
                 .structural_witnesses
                 .as_ref()
@@ -8940,7 +9135,7 @@ impl ResourceContext {
                 .storage
                 .expansions_by_support_occurrence
                 .contains_key(&occurrence)
-            && self.loan_dependency(occurrence).is_none()
+            && self.borrow_dependency(occurrence).is_none()
             && !self
                 .structural_witnesses
                 .as_ref()
@@ -9046,9 +9241,9 @@ impl ResourceContext {
         // authorizes reading it. Under stable-borrow semantics the split
         // representation is the checked one; keep it. The map is empty under
         // legacy semantics, so this costs nothing and changes nothing there.
-        let loan_bound = |occurrence: &Option<ResourceOccurrenceId>| {
+        let borrow_bound = |occurrence: &Option<ResourceOccurrenceId>| {
             occurrence.is_some_and(|occurrence| {
-                self.loan_dependencies.map.get(&occurrence).is_some()
+                self.borrow_dependencies.map.get(&occurrence).is_some()
                     || self
                         .structural_witnesses
                         .as_ref()
@@ -9061,7 +9256,7 @@ impl ResourceContext {
                 i += 1;
                 continue;
             };
-            if loan_bound(&occurrence) {
+            if borrow_bound(&occurrence) {
                 i += 1;
                 continue;
             }
@@ -9071,7 +9266,7 @@ impl ResourceContext {
                 let Some((right_occurrence, right)) = slots[j].as_ref() else {
                     continue;
                 };
-                if loan_bound(right_occurrence) {
+                if borrow_bound(right_occurrence) {
                     continue;
                 }
                 if let Some(merged) = normalize_resource_fact_pair(&fact, right, assumptions) {
@@ -9282,6 +9477,38 @@ enum ResourceNormalizationKey {
     MemoryNativeEnd(Address, u32, bool, WideNormalizationEndpointKey),
     MemoryByteStart(MemoryBaseRoot, bool, i64),
     MemoryByteEnd(MemoryBaseRoot, bool, i64),
+    /// A field of a symbolic object: the object with that field as a hole,
+    /// and the field's own range, meet here to be joined again.
+    SymbolicField(Address, crate::kernel::SymbolicLayoutName, u32, bool),
+}
+
+/// The [`ResourceNormalizationKey::SymbolicField`] keys of `fact`: one per
+/// hole of a symbolic object, or the one of a whole field's range.
+fn symbolic_field_keys(fact: &ResourceFact) -> Vec<ResourceNormalizationKey> {
+    let Some(range) = fact.memory_range() else {
+        return Vec::new();
+    };
+    if let Some(layout) = range.symbolic_object() {
+        return range
+            .holes()
+            .iter()
+            .map(|hole| {
+                ResourceNormalizationKey::SymbolicField(
+                    range.base().clone(),
+                    layout,
+                    *hole,
+                    fact.is_own(),
+                )
+            })
+            .collect();
+    }
+    range
+        .symbolic_field()
+        .map(|(object, layout, field)| {
+            ResourceNormalizationKey::SymbolicField(object, layout, field, fact.is_own())
+        })
+        .into_iter()
+        .collect()
 }
 
 /// Written normalization candidates are maintained with each resource delta.
@@ -9316,6 +9543,7 @@ impl WrittenNormalizationIndex {
                     | ResourceNormalizationKey::MemoryNativeEnd(..)
                     | ResourceNormalizationKey::MemoryByteStart(..)
                     | ResourceNormalizationKey::MemoryByteEnd(..)
+                    | ResourceNormalizationKey::SymbolicField(..)
             )
         })
         .collect()
@@ -9469,6 +9697,7 @@ impl ResourceNormalizationIndex {
         let mut keys = vec![ResourceNormalizationKey::TrackedResource(
             fact.resource().clone(),
         )];
+        keys.extend(symbolic_field_keys(fact));
         match fact.resource() {
             Resource::Footprint(_) | Resource::Parameter(_) | Resource::Emp | Resource::Star(_) => {
             }
@@ -9624,6 +9853,7 @@ impl ResourceNormalizationIndex {
         let mut keys = vec![ResourceNormalizationKey::TrackedResource(
             fact.resource().clone(),
         )];
+        keys.extend(symbolic_field_keys(fact));
         match fact.resource() {
             Resource::Memory(range) if self.written_only => {
                 if let Some((base, start, end)) = native_wide_normalization_key(range) {
@@ -10757,11 +10987,11 @@ fn consume_exact_resource_fact(
 /// recovery entitlement, so this merge is sound exactly while the view it
 /// swallows is unbound.
 ///
-/// A **bound** view — one whose occurrence carries a live `loan_dependency` —
+/// A **bound** view — one whose occurrence carries a live `borrow_dependency` —
 /// must never be absorbed: the merged fact is a new authority with no
 /// occurrence, so the dependency that authorizes reading it would vanish and
 /// the borrow would disappear with it. `ResourceContext::normalized` is the
-/// only caller, and its `loan_bound` guard skips both sides of every pair
+/// only caller, and its `borrow_bound` guard skips both sides of every pair
 /// whose occurrence has a live dependency, and detaches supported projections
 /// before normalizing at all. That guard, not this function, is what makes
 /// the merge safe: `normalize_pair` sees two bare facts and cannot tell a
@@ -10801,7 +11031,7 @@ fn combine_exact_resource_facts(
 ///   (`memory_resource_fact_permits_read`), and which
 ///   [`consume_memory_resource_fact`] reuses to discharge a resource body's
 ///   viewed clause at a fold, an unfold, or an observation;
-/// * the escrow record in `crate::kernel::loans`, which names the viewed
+/// * the escrow record in `crate::kernel::borrows`, which names the viewed
 ///   description a checked lend transition hands the callee.
 ///
 /// It never answers a *call's* `views` requirement on its own. Meeting one
@@ -10900,7 +11130,7 @@ impl ResourceFamilyAlgebra for MemoryResourceAlgebra {
     /// overlapping a *view* is decided by the view's binding, which this
     /// check cannot see (the owner-observation rule in docs/internals/stable-views.md).
     ///
-    /// A **bound** view — one carrying a live `loan_dependency` — beside a
+    /// A **bound** view — one carrying a live `borrow_dependency` — beside a
     /// usable owner of the same bytes is invalid: lending escrows the owner
     /// out of the caller residual, so the two cannot coexist. That is
     /// enforced where the binding is visible, not here: the planner refuses
@@ -11846,6 +12076,23 @@ pub(in crate::kernel) fn pointer_formation_in_range(
     range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A field of a symbolic layout lies inside its object, by the layout's
+    // rule found by lookup: `p + offsetof(L, f)` formed from `p` is in the
+    // object `[p, p + sizeof(L))`.
+    if let Some((rest, layout, _)) =
+        crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset)
+        && pointer.base == operand.base
+        && rest.map_or(operand.offset.as_const() == Some(0), |rest| {
+            *rest == operand.offset
+        })
+        && range.base() == operand
+        && range.element_width() == 1
+        && range.wide_bounds().is_some_and(|(start, end)| {
+            start.uint64_as_const() == Some(0) && *end == layout.size_term()
+        })
+    {
+        return true;
+    }
     let width = range.element_width();
     let nonempty = match range.wide_bounds() {
         Some((start, end)) => ConditionTerm::uint64_less_than(start.clone(), end.clone()),
@@ -11941,7 +12188,195 @@ pub(in crate::kernel) fn memory_range_covers(
     required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
-    memory_range_covers_by_routes(available, required, assumptions)
+    if available.has_holes() || required.has_holes() {
+        return symbolic_object_covers_field(available, required)
+            || symbolic_object_covers_object(available, required);
+    }
+    symbolic_object_covers_field(available, required)
+        || memory_range_covers_by_routes(available, required, assumptions)
+}
+
+/// Whether `available` holds every byte of `required`, both the object of
+/// one symbolic layout at one base: `required` takes out every field
+/// `available` does.
+fn symbolic_object_covers_object(available: &MemoryRange, required: &MemoryRange) -> bool {
+    available.base() == required.base()
+        && available.symbolic_object().is_some()
+        && available.symbolic_object() == required.symbolic_object()
+        && available
+            .holes()
+            .iter()
+            .all(|hole| required.holes().contains(hole))
+}
+
+/// Whether two ranges share no byte by the symbolic layout rules alone: two
+/// whole fields of one object, or a field and the object with that field
+/// as a hole.
+pub(in crate::kernel) fn symbolic_ranges_disjoint(left: &MemoryRange, right: &MemoryRange) -> bool {
+    let hole_of = |object: &MemoryRange, field: &MemoryRange| {
+        object.symbolic_object().is_some_and(|layout| {
+            field
+                .symbolic_field()
+                .is_some_and(|(base, field_layout, index)| {
+                    field_layout == layout
+                        && base == *object.base()
+                        && object.holes().contains(&index)
+                })
+        })
+    };
+    if let (
+        Some((left_object, left_layout, left_field)),
+        Some((right_object, right_layout, right_field)),
+    ) = (left.symbolic_field(), right.symbolic_field())
+    {
+        return left_layout == right_layout
+            && left_object == right_object
+            && left_field != right_field;
+    }
+    hole_of(left, right) || hole_of(right, left)
+}
+
+/// Whether `range` lies in `available` by the symbolic layout rules alone,
+/// with no arithmetic: the same object, holes allowing, or one whole field
+/// of it.
+fn symbolic_range_shallowly_contained(range: &MemoryRange, available: &MemoryRange) -> bool {
+    symbolic_object_covers_object(available, range)
+        || symbolic_object_covers_field(available, range)
+}
+
+/// `object` with the field `field` names taken out: the residue of handing
+/// out one whole field of a symbolic object, by the layout's rule that the
+/// field lies inside the object and no other field shares its bytes.
+fn symbolic_object_without_field(object: &MemoryRange, field: &MemoryRange) -> Option<MemoryRange> {
+    let layout = object.symbolic_object()?;
+    let (base, field_layout, field_index) = field.symbolic_field()?;
+    if field_layout != layout
+        || base != *object.base()
+        || field.has_holes()
+        || object.holes().contains(&field_index)
+    {
+        return None;
+    }
+    let mut holes = object.holes().to_vec();
+    holes.push(field_index);
+    holes.sort_unstable();
+    Some(object.clone().with_holes(holes))
+}
+
+/// `object` with the field `field` names given back: the inverse of
+/// [`symbolic_object_without_field`].
+fn symbolic_object_with_field(
+    object: &MemoryRange,
+    field: &MemoryRange,
+    assumptions: &PureFactContext,
+) -> Option<MemoryRange> {
+    let layout = object.symbolic_object()?;
+    let (base, field_layout, field_index) = field.symbolic_field()?;
+    if field_layout != layout
+        || base != *object.base()
+        || field.has_holes()
+        || !object.holes().contains(&field_index)
+        || !assumptions.provenance_equal(&object.provenance, &field.provenance)
+    {
+        return None;
+    }
+    let holes = object
+        .holes()
+        .iter()
+        .copied()
+        .filter(|hole| *hole != field_index)
+        .collect();
+    Some(object.clone().with_holes(holes))
+}
+
+/// Whether `available` is the whole object of a symbolic layout,
+/// `[p, p + sizeof(L))`, and `required` lies in one of its fields: at
+/// `p + offsetof(L, f)`, reaching no further than `f`. Fields lie inside
+/// their object by the layout's rule, decided by lookup.
+pub(in crate::kernel) fn symbolic_object_covers_field(
+    available: &MemoryRange,
+    required: &MemoryRange,
+) -> bool {
+    let field = crate::kernel::SymbolicLayoutName::field_displacement(&required.base().offset)
+        .map(|(_, layout, field)| (layout, field));
+    if required.has_holes() {
+        return false;
+    }
+    // The required bytes from the field's start: a count, or the whole
+    // object of an abstract type.
+    let extent = match required.wide_bounds() {
+        Some((start, end)) if start.uint64_as_const() == Some(0) => match end.uint64_as_const() {
+            Some(count) => u32::try_from(count)
+                .ok()
+                .and_then(|count| count.checked_mul(required.element_width()))
+                .map(crate::kernel::AccessExtent::Bytes),
+            None => field
+                .filter(|_| required.element_width() == 1)
+                .map(|(layout, field)| layout.field_extent(field))
+                .filter(|extent| extent.term() == *end),
+        },
+        Some(_) => None,
+        None => (required.constant_start() == Some(0))
+            .then(|| required.constant_end())
+            .flatten()
+            .and_then(|count| u32::try_from(count).ok())
+            .and_then(|count| count.checked_mul(required.element_width()))
+            .map(crate::kernel::AccessExtent::Bytes),
+    };
+    extent.is_some_and(|extent| {
+        symbolic_object_holds_field_access(available, required.base(), extent)
+    })
+}
+
+/// Whether `available` is the whole object of a symbolic layout,
+/// `[p, p + sizeof(L))`, and an access of `extent` at `pointer` lies in one of
+/// its fields that is not a hole: `pointer` is `p + offsetof(L, f)` and the
+/// access reaches no further than `f`. Decided by lookup on the two terms.
+pub(in crate::kernel) fn symbolic_object_holds_field_access(
+    available: &MemoryRange,
+    pointer: &Address,
+    extent: crate::kernel::AccessExtent,
+) -> bool {
+    let object = available.base();
+    let Some((rest, layout, field)) =
+        crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset)
+    else {
+        // An access in the fixed prefix lies inside the object too.
+        return available.element_width() == 1
+            && pointer.base == object.base
+            && available.wide_bounds().is_some_and(|(start, end)| {
+                start.uint64_as_const() == Some(0)
+                    && crate::kernel::SymbolicLayoutName::of_term(end).is_some_and(
+                        |(layout, field)| {
+                            field.is_none()
+                                && crate::kernel::SymbolicLayoutName::constant_displacement(
+                                    Some(&object.offset),
+                                    &pointer.offset,
+                                )
+                                .is_some_and(|offset| {
+                                    layout.within_prefix(offset, extent)
+                                        && !available.holes().iter().any(|hole| {
+                                            layout.fixed_field_meets(
+                                                *hole,
+                                                offset,
+                                                extent.bytes().unwrap_or(0),
+                                            )
+                                        })
+                                })
+                        },
+                    )
+            });
+    };
+    !available.holes().contains(&field)
+        && pointer.base == object.base
+        && rest.map_or(object.offset.as_const() == Some(0), |rest| {
+            *rest == object.offset
+        })
+        && available.element_width() == 1
+        && available.wide_bounds().is_some_and(|(start, end)| {
+            start.uint64_as_const() == Some(0) && *end == layout.size_term()
+        })
+        && layout.within_field(field, extent)
 }
 
 /// A field-sized footprint lies in one whole element of an unscaled range.
@@ -11952,6 +12387,10 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
     required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A range with holes holds only its other fields, by the field rules.
+    if available.has_holes() {
+        return false;
+    }
     if available.constant_start() != Some(0) {
         return false;
     }
@@ -12065,6 +12504,10 @@ fn memory_range_covers_by_routes(
     required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A range with holes holds only its other fields, by the field rules.
+    if available.has_holes() {
+        return false;
+    }
     if available.element_width() != required.element_width() {
         if memory_range_covers_interior_element(available, required, assumptions)
             || memory_range_covers_struct_array_field(available, required, assumptions)
@@ -12201,6 +12644,10 @@ pub(in crate::kernel) fn wide_memory_range_covers(
     required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A range with holes holds only its other fields, by the field rules.
+    if available.has_holes() {
+        return false;
+    }
     if available.element_width() != required.element_width() {
         return false;
     }
@@ -12644,6 +13091,10 @@ fn memory_range_structurally_covers(
     required: &MemoryRange,
     assumptions: Option<&PureFactContext>,
 ) -> Option<bool> {
+    // A range with holes holds only its other fields, by the field rules.
+    if available.has_holes() {
+        return None;
+    }
     if available.element_width() != required.element_width() {
         return None;
     }
@@ -12660,7 +13111,7 @@ fn memory_range_structurally_covers(
 }
 
 fn memory_ranges_structurally_disjoint(left: &MemoryRange, right: &MemoryRange) -> bool {
-    if left.base().blocks_proven_distinct(right.base()) {
+    if left.base().blocks_proven_distinct(right.base()) || symbolic_ranges_disjoint(left, right) {
         return true;
     }
     // A wide range has no constant bounds to compare structurally.
@@ -12968,6 +13419,14 @@ pub(in crate::kernel) fn split_memory_range(
     required: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<Vec<MemoryRange>> {
+    // One whole field out of a symbolic object leaves the object with a
+    // hole: its fields' order is not known, so no byte interval is.
+    if let Some(residue) = symbolic_object_without_field(available, required) {
+        return Some(vec![residue]);
+    }
+    if available.has_holes() || required.has_holes() {
+        return (available == required).then(Vec::new);
+    }
     if available.wide_bounds().is_some() || required.wide_bounds().is_some() {
         if available.element_width() != required.element_width() {
             // As coverage does: rewrite the requirement into the owner's
@@ -13206,7 +13665,7 @@ pub(in crate::kernel) fn contract_entry_memory_overlap(
     let _fast = crate::kernel::search::FastOperationScope::enter("contract entry view overlap");
     let wide = owned.wide_bounds().is_some() || viewed.wide_bounds().is_some();
     let overlap = |left: &MemoryRange, right: &MemoryRange| {
-        super::super::loans::protected_ranges_constant_overlap(left, right).unwrap_or_else(|| {
+        super::super::borrows::protected_ranges_constant_overlap(left, right).unwrap_or_else(|| {
             // Wide range comparison can consult memory-resolution separation
             // while matching bases. Entry needs a common base established
             // by the pointer graph alone, or exact byte geometry.
@@ -13260,6 +13719,11 @@ fn memory_ranges_proven_overlapping_with_separation(
     assumptions: &PureFactContext,
     use_separation: bool,
 ) -> bool {
+    // A symbolic object with holes overlaps only its remaining fields, which
+    // no rule here decides; it is never proven to overlap.
+    if left.has_holes() || right.has_holes() {
+        return false;
+    }
     #[cfg(test)]
     let _fast = crate::kernel::search::FastOperationScope::enter("selected ownership overlap");
     if memory_ranges_proven_overlapping_without_aliases(left, right, assumptions, use_separation) {
@@ -13833,7 +14297,7 @@ impl ResourceFact {
 /// of ownership this context holds, and dropping a description changes no
 /// live access share (the owner-observation rule and law 4 in docs/internals/stable-views.md). It is sound only because a
 /// *bound* view never reaches here — `ResourceContext::normalized` skips any
-/// entry with a live `loan_dependency` and detaches supported projections
+/// entry with a live `borrow_dependency` and detaches supported projections
 /// first. See [`combine_exact_resource_facts`] for the full argument; the
 /// same guard covers both families.
 fn combine_memory_resource_facts(
@@ -13841,6 +14305,25 @@ fn combine_memory_resource_facts(
     right: &ResourceFact,
     assumptions: &PureFactContext,
 ) -> Option<ResourceFact> {
+    // A field given back to the symbolic object holding it as a hole: the
+    // two are disjoint, and joined they are the object again.
+    match (left, right) {
+        (ResourceFact::View(Resource::Memory(l)), ResourceFact::View(Resource::Memory(r))) => {
+            if let Some(joined) = symbolic_object_with_field(l, r, assumptions)
+                .or_else(|| symbolic_object_with_field(r, l, assumptions))
+            {
+                return Some(ResourceFact::view_memory(joined));
+            }
+        }
+        (ResourceFact::Own(Resource::Memory(l), _), ResourceFact::Own(Resource::Memory(r), _)) => {
+            if let Some(joined) = symbolic_object_with_field(l, r, assumptions)
+                .or_else(|| symbolic_object_with_field(r, l, assumptions))
+            {
+                return Some(ResourceFact::own_memory(joined));
+            }
+        }
+        _ => {}
+    }
     if let (Some(left_range), Some(right_range)) = (
         memory_resource_fact_range(left),
         memory_resource_fact_range(right),
@@ -13891,6 +14374,15 @@ fn merge_memory_ranges(
     right: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<MemoryRange> {
+    // A field given back to the symbolic object it was taken from.
+    if let Some(merged) = symbolic_object_with_field(left, right, assumptions)
+        .or_else(|| symbolic_object_with_field(right, left, assumptions))
+    {
+        return Some(merged);
+    }
+    if left.has_holes() || right.has_holes() {
+        return None;
+    }
     if !assumptions.provenance_equal(&left.provenance, &right.provenance)
         || !match (left.bounds_owner.as_deref(), right.bounds_owner.as_deref()) {
             (None, None) => true,

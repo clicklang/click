@@ -165,12 +165,12 @@ pub(super) fn set_contract_result(
                     state
                         .memory
                         .clone()
-                        .with_block_without_derivation(pointer.base.clone(), layout.size_bytes())
+                        .with_block_without_derivation(pointer.base.clone(), layout.size())
                 } else {
                     state
                         .memory
                         .clone()
-                        .with_block(pointer.base.clone(), layout.size_bytes())
+                        .with_block(pointer.base.clone(), layout.size())
                 },
             );
         }
@@ -231,7 +231,7 @@ pub(super) fn complete_aggregate_return(
         state
             .memory
             .clone()
-            .with_block(destination.base.clone(), layout.size_bytes()),
+            .with_block(destination.base.clone(), layout.size()),
     );
     state.set_memory(copy_aggregate_fields(
         state.memory.clone(),
@@ -985,9 +985,9 @@ fn bind_program_function_arguments_impl(
     // Preserve an already-active candidate borrow through calls whose resource
     // interface is empty; the resource-transfer planner may replace these
     // fields with a checked callee participant when it lends new views.
-    callee_state.loan_ledger = caller_state.loan_ledger.clone();
-    callee_state.loan_participant = caller_state.loan_participant;
-    callee_state.loan_view_bindings = caller_state.loan_view_bindings.clone();
+    callee_state.borrow_ledger = caller_state.borrow_ledger.clone();
+    callee_state.borrow_participant = caller_state.borrow_participant;
+    callee_state.borrow_bindings = caller_state.borrow_bindings.clone();
     callee_state = initialize_program_function_globals(&callee_state, function);
     for (index, (parameter, value)) in function.parameters().iter().zip(values).enumerate() {
         if let Some(layout) = parameter.aggregate_layout() {
@@ -1058,7 +1058,7 @@ fn bind_program_function_arguments_impl(
                 callee_state
                     .memory
                     .clone()
-                    .with_block(slot.base.clone(), layout.size_bytes()),
+                    .with_block(slot.base.clone(), layout.size()),
             );
             callee_state.locals.set_aggregate_object_at(
                 parameter.binding_name().clone(),
@@ -1196,9 +1196,9 @@ pub(super) fn bind_contract_arguments(
         .creation
         .as_ref()
         .map(|events| events.enter_call());
-    callee_state.loan_ledger = caller_state.loan_ledger.clone();
-    callee_state.loan_participant = caller_state.loan_participant;
-    callee_state.loan_view_bindings = caller_state.loan_view_bindings.clone();
+    callee_state.borrow_ledger = caller_state.borrow_ledger.clone();
+    callee_state.borrow_participant = caller_state.borrow_participant;
+    callee_state.borrow_bindings = caller_state.borrow_bindings.clone();
     if let Some(function) = storage {
         callee_state = initialize_program_function_globals(&callee_state, function);
     }
@@ -1222,17 +1222,23 @@ pub(super) fn bind_contract_arguments(
             }
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
-            callee_state.set_memory(copy_aggregate_fields(
+            // Argument preparation checked the read in the caller. The fresh
+            // callee slot and any earlier parameter copies leave caller storage
+            // intact, so use that point for the uncached source fields.
+            let source_state =
+                (source.base == AddressBase::ExternalArgument).then_some(caller_state);
+            callee_state.set_memory(copy_aggregate_fields_from(
                 callee_state.memory.clone(),
                 &source,
                 &slot,
                 layout,
+                source_state,
             ));
             callee_state.set_memory(
                 callee_state
                     .memory
                     .clone()
-                    .with_block(slot.base.clone(), layout.size_bytes()),
+                    .with_block(slot.base.clone(), layout.size()),
             );
             callee_state.locals.set_aggregate_object_at(
                 parameter.binding_name().clone(),

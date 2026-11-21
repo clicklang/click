@@ -20,26 +20,50 @@ fn charon_range_loops_verify_from_their_bounds() {
     let gate = with_rust_fixture_contract(SIDECAR, "grid", witness);
     ProgramVerificationSession::new_program_prepared(&gate, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    for (before, after, expected) in [
-        // The count trails the yielded value, it does not lead it.
-        (
-            "        invariant total == iter.start;\n",
-            "        invariant total == iter.start + 1u32;\n",
-            "count_to",
-        ),
-        // The last iteration reads the final byte, not the first.
-        (
-            "    ensures bytes.len() != 0u64 implies result == bytes[bytes.len() - 1u64];\n",
-            "    ensures bytes.len() != 0u64 implies result == bytes[0u64];\n",
-            "last_byte",
-        ),
-        // The count starts at zero, so it trails the yielded value by `a`.
-        (
-            "        invariant count == iter.start - a;\n",
-            "        invariant count == iter.start;\n",
-            "span",
-        ),
-    ] {
+    reject_range_mutations(
+        &prepared,
+        &[
+            // The count trails the yielded value, it does not lead it.
+            (
+                "        invariant total == iter.start;\n",
+                "        invariant total == iter.start + 1u32;\n",
+                "count_to",
+            ),
+        ],
+    );
+}
+
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+#[ignore = "nightly: additional range last-element and nonzero-start mutations"]
+fn charon_range_loops_refuse_additional_mutations() {
+    let p = Project::from_fixture("design/charon-trial/ranges");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    reject_range_mutations(
+        &prepared,
+        &[
+            // The last iteration reads the final byte, not the first.
+            (
+                "    ensures bytes.len() != 0u64 implies result == bytes[bytes.len() - 1u64];\n",
+                "    ensures bytes.len() != 0u64 implies result == bytes[0u64];\n",
+                "last_byte",
+            ),
+            // The count starts at zero, so it trails the yielded value by `a`.
+            (
+                "        invariant count == iter.start - a;\n",
+                "        invariant count == iter.start;\n",
+                "span",
+            ),
+        ],
+    );
+}
+
+fn reject_range_mutations(
+    prepared: &click::languages::rust::PreparedRustImport,
+    cases: &[(&str, &str, &str)],
+) {
+    for &(before, after, expected) in cases {
         // Only the function that holds the change is verified again.
         let function = SIDECAR
             .split("\nfn ")
@@ -50,7 +74,7 @@ fn charon_range_loops_verify_from_their_bounds() {
             "verifying \"ranges.rs\";\nfn {}",
             function.replacen(before, after, 1)
         );
-        let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = ProgramVerificationSession::new_program_prepared(&invalid, prepared)
             .err()
             .unwrap_or_else(|| panic!("`{before}` -> `{after}` must fail"));
         let rendered = format!("{error:?} {error}");

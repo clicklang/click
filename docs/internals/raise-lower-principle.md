@@ -415,6 +415,19 @@ Baseline (2026-11-16, ordinary mdtest corpus, both runs passing):
   (`p == p` to `true`, 75 records); casts raised differently on the two
   sides of an equality; and reads raised at a neighbouring program point.
 
+Baseline (2026-11-20, ordinary mdtest corpus, both runs passing):
+fact stability 0 `differs`, 0 `paths:N`, 129 `refused`; round trip 76,957
+records, of which 34,508 `same`, 932 `polarity`, 1,076 `differs`, 338
+`unlowered`, 1,650 `unraised` and 38,453 `no-state`. The two runs take about
+18 minutes together.
+
+The nightly workflow's `lowering` job runs both audits
+(`scripts/lowering-audits.sh`). A fact-stability `differs` or `paths:N` line
+fails the nightly report, since it breaks the enforced rule. The round trip
+is tracked instead: the report lists each outcome's count beside the
+previous night's and flags a rise in any outcome but `same`
+([Nightly report](testing.md#nightly-report)).
+
 ## Lowering is structural
 
 A lowered term has the structure of the surface text it lowers: each
@@ -476,6 +489,11 @@ Lowering never folds a comparison of two literals.
   (`SpecProposition::Truth`). The raiser raises a constant condition to the
   same literal, so `false` round-trips without a comparison.
 
+Closed float comparisons and classifications retain a directly written
+negation or binary operation over same-width literal operands. Checking
+computes each operation at its written IEEE precision. Float comparisons
+retain their polarity for NaN, including negated order comparisons.
+
 Checking decides a closed condition from its literal roots with
 `machine_integer::comparison::closed_condition_value`, including when exact
 rewriting removed the last variable before the comparison was printed. It
@@ -523,8 +541,11 @@ family without exporting arithmetic DAGs or using ambient facts to select an arm
 A Boolean or 32/64-bit machine conditional can retain identical arms after an
 exact rewrite. Logical lowering keeps that conditional when its guard is
 representable and symbolic. Checking can then use the common value.
-Other result families retain their existing selected-arm behavior; literal Boolean
-and closed 32-bit equality guards keep their normal forms.
+Closed machine equality guards keep the comparison and both arms when
+the result is a retained scalar. A 32-bit equality retains a conditional
+whose arms have the same 32-bit or 64-bit machine integer type. Introducing
+an Integer binder preserves that conditional. Literal Boolean guards keep
+their selected-arm behavior.
 
 Checked rewriting reconstructs native 32-bit comparisons with word-form literal
 operands, matching logical lowering even when selecting a conditional's unsigned
@@ -647,16 +668,16 @@ A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
 not consult facts or change the Boolean term inside a larger expression.
 
-Pure finite `int32` sequence comparisons preserve both operands, including
-concatenation with an empty sequence. The checker compares corresponding
-elements in order and distinguishes different lengths. Admitting a sequence
-equality also publishes its element equalities through the existing fact
-propagation path.
-Pure finite `int32` membership also keeps the element and the sequence as
-operands of `in`. Checking proves membership from one equal element or
-nonmembership from every element's disequality. Held membership exposes the
-same element disjunction to `cases`, and held nonmembership supplies the
-individual disequalities.
+Pure finite `int32` and `uint64` sequence comparisons preserve both
+operands, including concatenation with an empty sequence. The checker
+compares corresponding elements in order and distinguishes different lengths.
+Admitting a sequence equality also publishes its element equalities through
+the existing fact propagation path.
+Pure finite membership over those same types keeps the element and the
+sequence as operands of `in`. Checking proves membership from one equal
+element or nonmembership from every element's disequality. Held membership
+exposes the same element disjunction to `cases`, and held nonmembership
+supplies the individual disequalities.
 
 Arithmetic domains raise as ordinary comparisons and conjunctions, including
 the negation of a range conjunction on an overflowing execution branch.

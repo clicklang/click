@@ -629,6 +629,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_descriptor_rewrite_closure	requirement_kernel_atoms_for_search	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_linked_pointer_viewability	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_leaf	try_linked_pointer_viewability	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_leaf	try_indexed_read_preservation	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_viewability_restriction_closure	driver	6
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_viewability_restriction_closure	requirement_kernel_atoms_for_search	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_ordinary_viewability_restriction_closure	1
@@ -640,6 +641,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_ste
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	try_ordinary_viewability_restriction_closure	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_history_indexed_equalities	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_history_indexed_equalities	driver	3
+src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_indexed_read_preservation	driver	3
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_history_indexed_equalities	try_returned_index_preservation	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_returned_index_preservation	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_integer_composition_using	1
@@ -748,7 +750,7 @@ src/surface/proof/smart_closures/quotient_shifts.rs	search	ProofSearch::try_quot
 src/surface/proof/smart_closures/quotient_shifts.rs	search	ProofSearch::try_quotient_shift_using	try_integer_algebra	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_integer_algebra	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_quotient_shift_using	1
-src/surface/proof/smart_closures/address_words.rs	search	ProofSearch::try_address_words_using	driver	5
+src/surface/proof/smart_closures/address_words.rs	search	ProofSearch::try_address_words_using	driver	6
 src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_address_words_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_address_words_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_address_words_using	1
@@ -786,7 +788,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalizati
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_pointer_translation_using	1
 src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_pointer_translation_using	1
 src/surface/proof/smart_closures/pointer_offsets.rs	mixed	Emitter::apply	driver	1
-src/surface/proof/smart_closures/pointer_offsets.rs	mixed	Emitter::arithmetic	driver	2
+src/surface/proof/smart_closures/pointer_offsets.rs	mixed	Emitter::arithmetic	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_pointer_translation_closure	1
 src/surface/proof/smart_closures/pointer_offsets.rs	search	ProofSearch::try_pointer_translation_closure	resolve_solve_premises	1
 src/surface/proof/smart_closures/pointer_offsets.rs	search	ProofSearch::try_pointer_translation_closure	try_pointer_translation_using	1
@@ -833,3 +835,7 @@ src/surface/proof/smart_closures/signed_order.rs	mixed	::retain	driver	2
 src/surface/proof/smart_closures/signed_order.rs	search	ProofSearch::close_selected_signed_order	driver	1
 src/surface/proof/smart_closures/signed_order.rs	search	ProofSearch::retain_statement_order_bounds	resolve_solve_premises_unmeasured	1
 src/surface/proof/smart_closures/signed_order.rs	search	ProofSearch::retain_statement_order_bounds	signed_order_chain_premises	1
+src/surface/proof/smart_closures/pointer_offsets.rs	mixed	Emitter::arithmetic	try_signed_definedness_bounds	1
+src/surface/proof/smart_closures/pointer_offsets.rs	search	ProofSearch::try_pointer_translation_using	driver	3
+src/surface/proof/smart_closures/pointer_offsets.rs	search	ProofSearch::try_pointer_translation_using	try_integer_composition_using	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_signed_definedness_bounds	try_signed_definedness_bounds	1

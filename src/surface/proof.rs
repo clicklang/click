@@ -1838,6 +1838,7 @@ pub(in crate::surface) struct ProofEntryContext {
     pub(in crate::surface) state: ExecutionState,
     pub(in crate::surface) arguments: Vec<ProgramExpression>,
     pub(in crate::surface) pure_facts: PureFactList,
+    pub(in crate::surface) contract_value_parameters: Option<Arc<ContractValueParameters>>,
 }
 
 impl PartialEq for ProofEntryContext {
@@ -3119,7 +3120,7 @@ fn install_borrowed_contract_inputs(
     .map_err(|diagnostic| {
         ClickError::new(format!(
             "`{proof_label}` could not establish stable authority for a contract input view: {}",
-            crate::surface::diagnostics::describe_loan_refusal(&diagnostic, parameter_binding,)
+            crate::surface::diagnostics::describe_borrow_refusal(&diagnostic, parameter_binding,)
         ))
     })
 }

@@ -126,7 +126,7 @@ pub(super) fn select_comparison_identity(
     let version = crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Cell {
             pointer: &pointer,
-            bytes,
+            bytes: bytes.into(),
         },
         &memory,
     )

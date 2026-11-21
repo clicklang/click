@@ -821,7 +821,8 @@ pub(super) fn program_expression_parameter_offset(
             Some(0)
         }
         ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
-            program_expression_parameter_offset(pointer, parameter_name)?.checked_add(*bytes)
+            program_expression_parameter_offset(pointer, parameter_name)?
+                .checked_add(bytes.bytes()?)
         }
         ProgramExpression::Subobject { pointer, .. } => {
             program_expression_parameter_offset(pointer, parameter_name)

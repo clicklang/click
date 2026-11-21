@@ -107,12 +107,8 @@ impl RegionFootprint {
                 Proposition::MemoryMutatesOnly { writes, .. } => {
                     extra_effect |= !writes.is_empty();
                     for (pointer, bytes) in writes {
-                        members.push_back(Resource::Memory(MemoryRange::new_with_element_width(
-                            pointer.clone(),
-                            0u32.into(),
-                            (*bytes).into(),
-                            1,
-                        )));
+                        members
+                            .push_back(Resource::Memory(MemoryRange::of_access(pointer, *bytes)));
                     }
                 }
                 Proposition::MemoryEffectSummary { mutable_ranges, .. } => {
@@ -314,7 +310,11 @@ pub(crate) fn separate_members(
             (Resource::Token { .. }, Resource::Memory(_))
             | (Resource::Memory(_), Resource::Token { .. }) => {}
             (Resource::Memory(left), Resource::Memory(right))
-                if left.base().blocks_proven_distinct(right.base()) => {}
+                if left.base().blocks_proven_distinct(right.base())
+                    // Distinct fields of one symbolic object, by its layout.
+                    || crate::kernel::primitives::symbolic_ranges_disjoint(left, right) => {}
+            _ if field_of_separate_object(left, right, &available)
+                || field_of_separate_object(right, left, &available) => {}
             _ => {
                 let forward = Proposition::ResourceSeparate {
                     left: Box::new(left.clone()),
@@ -333,10 +333,43 @@ pub(crate) fn separate_members(
     true
 }
 
+/// Whether `field` is a whole field of a symbolic object known separate from
+/// `other`: a field lies inside its object, so it is separate from what the
+/// object is separate from.
+fn field_of_separate_object(
+    field: &Resource,
+    other: &Resource,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let Resource::Memory(range) = field else {
+        return false;
+    };
+    let Some((object, layout, _)) = range.symbolic_field() else {
+        return false;
+    };
+    let object = Resource::Memory(
+        MemoryRange::object(object, crate::kernel::LayoutSize::Of(layout)).with_carrier_of(range),
+    );
+    [
+        Proposition::ResourceSeparate {
+            left: Box::new(object.clone()),
+            right: Box::new(other.clone()),
+        },
+        Proposition::ResourceSeparate {
+            left: Box::new(other.clone()),
+            right: Box::new(object),
+        },
+    ]
+    .iter()
+    .any(available)
+}
+
 /// Compare spatial resources in byte coordinates, independently of their C
 /// element types. Unsupported wide intervals decline instead of narrowing.
 pub(crate) fn byte_resource(resource: &Resource) -> Option<Resource> {
     match resource {
+        // A whole symbolic object is already in bytes.
+        Resource::Memory(range) if range.symbolic_object().is_some() => Some(resource.clone()),
         Resource::Memory(range) => {
             if range.wide_bounds().is_some() {
                 return None;

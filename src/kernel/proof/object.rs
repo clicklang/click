@@ -1105,13 +1105,27 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         {
             return Ok(self.closed_focused());
         }
+        let bridge_available = |goal: &Proposition| {
+            super::fact_reasoning::known_bridge_leaf(goal, &|premise| {
+                // Adjacent footprint bounds use the exact endpoint order
+                // in this context.
+                if matches!(goal, Proposition::ResourceSeparate { .. })
+                    && matches!(premise, Proposition::ConditionIs(..))
+                {
+                    facts.pure_known_available(premise)
+                } else {
+                    available(premise)
+                }
+            })
+        };
         if super::fact_reasoning::computes_leaf(proposition)
-            || super::fact_reasoning::known_bridge_leaf(proposition, &available)
+            || super::arithmetic_special::known_pointer_alignment(proposition, facts.assumptions())
+            || bridge_available(proposition)
             || crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                 proposition,
             )
             .iter()
-            .any(|reading| super::fact_reasoning::known_bridge_leaf(reading, &available))
+            .any(bridge_available)
         {
             return Ok(self.closed_focused());
         }
@@ -1130,7 +1144,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     .iter()
                     .any(|form| facts.contains(form))
                 || super::fact_reasoning::computes_leaf(side)
-                || super::fact_reasoning::known_bridge_leaf(side, &available)
+                || super::arithmetic_special::known_pointer_alignment(side, facts.assumptions())
+                || bridge_available(side)
         };
         match first_unavailable_connective_side(proposition, &side_available) {
             None => Ok(self.closed_focused()),
@@ -1873,7 +1888,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let ProofObligation::Proposition(goal) = &branch.obligation else {
             return Err("`both` requires a proposition goal");
         };
-        let sequence = crate::kernel::spec::int32_sequence_equality_view(goal.proposition());
+        let sequence = crate::kernel::spec::retained_sequence_equality_view(goal.proposition());
         let Proposition::And(left, right) = sequence.as_ref().unwrap_or_else(|| goal.proposition())
         else {
             return Err("`both` requires an `and` goal");

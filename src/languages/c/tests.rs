@@ -6085,7 +6085,7 @@ fn c_tagged_union_member_addresses_preserve_member_type_and_offset() {
     };
     assert!(matches!(
         pointer.as_ref(),
-        crate::kernel::ProgramExpression::PointerOffsetBytes { bytes, .. } if *bytes == payload_offset
+        crate::kernel::ProgramExpression::PointerOffsetBytes { bytes, .. } if *bytes == payload_offset.into()
     ));
 
     let address_pointer = functions
@@ -10376,7 +10376,10 @@ fn c_struct_field_lowering_uses_explicit_byte_offsets() {
     };
     assert!(matches!(
         pointer.as_ref(),
-        crate::kernel::ProgramExpression::PointerOffsetBytes { bytes: 8, .. }
+        crate::kernel::ProgramExpression::PointerOffsetBytes {
+            bytes: crate::kernel::LayoutOffset::Bytes(8),
+            ..
+        }
     ));
 }
 
@@ -10616,7 +10619,10 @@ fn c_struct_field_address_lowering_preserves_nested_byte_offset() {
     else {
         panic!("nested field address should include the inner field offset")
     };
-    assert_eq!(*inner_offset, std::mem::offset_of!(HostInner, value) as u32);
+    assert_eq!(
+        *inner_offset,
+        (std::mem::offset_of!(HostInner, value) as u32).into()
+    );
     let crate::kernel::ProgramExpression::Subobject {
         pointer: inner_pointer,
         ..
@@ -10627,7 +10633,7 @@ fn c_struct_field_address_lowering_preserves_nested_byte_offset() {
     assert!(matches!(
         inner_pointer.as_ref(),
         crate::kernel::ProgramExpression::PointerOffsetBytes { bytes, .. }
-            if *bytes == std::mem::offset_of!(HostOuter, inner) as u32
+            if *bytes == (std::mem::offset_of!(HostOuter, inner) as u32).into()
     ));
 }
 

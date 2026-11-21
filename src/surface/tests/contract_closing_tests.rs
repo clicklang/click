@@ -112,6 +112,30 @@ fn expansion_writes_each_closing_step_and_requires_them_when_cold() {
 }
 
 #[test]
+fn expansion_closes_each_rewritten_postcondition() {
+    let inputs = [("closing.c", "int32 value(int32 *p) { return *p; }")];
+    let source = r#"
+        verifying "closing.c";
+        int32 value(int32* p) {
+            requires p[0] == 7;
+            owns p[0];
+            ensures result == old(p[0]);
+            ensures result == 7;
+        } by {
+            step_until(function.exit);
+            rewrite(result, old(p[0]));
+            solve();
+        }
+    "#;
+    let claim = "value.contract";
+    let expanded = expand_c_claim_source_by_label(source, &inputs, claim).unwrap();
+    crate::surface::check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &inputs).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
 fn proposition_closers_name_the_pending_closing_goal() {
     for closer in [

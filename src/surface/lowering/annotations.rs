@@ -46,8 +46,7 @@ fn integer_comparison_operator(
     })
 }
 
-/// The cells whose ordinary reads name their version point, and so have an
-/// `exact` read too: integer, `bool` and pointer cells.
+/// The scalar cell types supported by `exact`.
 fn exact_readable_type(value_type: ProgramType) -> bool {
     matches!(
         value_type,
@@ -60,6 +59,8 @@ fn exact_readable_type(value_type: ProgramType) -> bool {
             | ProgramType::UInt32
             | ProgramType::Int64
             | ProgramType::UInt64
+            | ProgramType::Float32
+            | ProgramType::Float64
     ) || value_type.is_pointer()
 }
 
@@ -3544,9 +3545,13 @@ pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
                 .or_else(|| {
                     parameter
                         .pointee_struct_layout()
-                        .map(|layout| layout.size_bytes())
+                        .and_then(|layout| layout.size().bytes())
                 })
-                .or_else(|| parameter.struct_layout().map(|layout| layout.size_bytes()))
+                .or_else(|| {
+                    parameter
+                        .struct_layout()
+                        .and_then(|layout| layout.size().bytes())
+                })
                 .map(|width| (parameter.name().to_string(), width))
         })
         .collect()
@@ -3577,7 +3582,9 @@ pub(in crate::surface) fn click_parameter_pointer_element_widths_with_layouts(
                     parameter
                         .struct_name()
                         .and_then(|name| struct_layouts.get(name))
-                        .map(|layout| (parameter.name().to_string(), layout.size_bytes()))
+                        .and_then(|layout| {
+                            Some((parameter.name().to_string(), layout.size().bytes()?))
+                        })
                 })
                 .or_else(|| {
                     parameter
@@ -6697,16 +6704,16 @@ impl AnnotationLowerer<'_> {
         &mut self,
         base: &ContractExpression,
         lowered: &ProgramExpression,
-        offset_bytes: u32,
+        offset_bytes: crate::kernel::LayoutOffset,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         let pointer = self.lower_contract_expression_to_spec(base, environment)?;
-        let pointer = if offset_bytes == 0 {
+        let pointer = if offset_bytes == crate::kernel::LayoutOffset::Bytes(0) {
             pointer
         } else {
             SpecExpression::PointerOffset {
                 pointer: Box::new(pointer),
-                elements: Box::new(SpecExpression::Value(int32(offset_bytes))),
+                elements: Box::new(layout_offset_elements(offset_bytes)),
                 byte_width: 1,
             }
         };
@@ -6780,7 +6787,7 @@ impl AnnotationLowerer<'_> {
         match exact_read(self.lower_contract_expression_to_spec(place, environment)?) {
             Ok(read) => Ok(read),
             Err(SpecExpression::MemoryLoad { .. }) => Err(format!(
-                "`exact` reads an integer or pointer cell; `{}` reads neither",
+                "`exact` does not support the cell type of `{}`",
                 diagnostics::describe_contract_expression(place)
             )),
             Err(_) => Err(refuse()),
@@ -6933,7 +6940,7 @@ impl AnnotationLowerer<'_> {
                     ProgramExpression::PointerOffsetBytes { bytes, .. } => {
                         Ok(SpecExpression::PointerOffset {
                             pointer: Box::new(value),
-                            elements: Box::new(SpecExpression::Value(int32(*bytes))),
+                            elements: Box::new(layout_offset_elements(*bytes)),
                             byte_width: 1,
                         })
                     }
@@ -7763,8 +7770,7 @@ impl AnnotationLowerer<'_> {
         }
     }
 
-    /// The Rust enum type of the value `expression` names: a C name that
-    /// holds one, or `*r` for a reference `r` to one.
+    /// The enum or library value type named by a program binding or read.
     fn enum_program_value_type(
         &self,
         expression: &ContractExpression,
@@ -7777,18 +7783,21 @@ impl AnnotationLowerer<'_> {
                 crate::kernel::BindingName::Named(name),
             )) => self.enum_program_name_type(name, environment),
             ContractExpression::ProgramExpression(ProgramExpression::Load(pointer)) => {
-                let ProgramExpression::Variable(name) = pointer.as_ref() else {
-                    return None;
-                };
-                match self.program_name_type(name, environment)? {
-                    ProgramType::ParameterPointer(enum_type)
-                        if crate::surface::holds_spec_value(enum_type) =>
-                    {
-                        Some(enum_type)
+                let value_type = match pointer.as_ref() {
+                    ProgramExpression::Variable(name) => {
+                        self.program_name_type(name, environment)?.pointee_type()?
                     }
+                    _ => self.program_expression_array_element_type(pointer, environment)?,
+                };
+                match value_type {
+                    ProgramType::Parameter(ty) if crate::surface::holds_spec_value(ty) => Some(ty),
                     _ => None,
                 }
             }
+            ContractExpression::MemoryLoad {
+                value_type: ProgramType::Parameter(ty),
+                ..
+            } if crate::surface::holds_spec_value(*ty) => Some(*ty),
             ContractExpression::Old(inner) => self.enum_program_value_type(inner, environment),
             // The enum value a call returned.
             ContractExpression::RegionResult(region) => {
@@ -9465,6 +9474,19 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecExpression, String> {
         let name = name.into();
         crate::instrumentation::record_deterministic_work(1);
+        let name = if name.unresolved_slice_length().is_some() {
+            let state = environment
+                .reference_state
+                .as_ref()
+                .or(if environment.at_function_entry {
+                    Some(self.entry_state)
+                } else {
+                    self.local_type_state
+                });
+            state.map_or(name.clone(), |state| state.locals().resolve_binding(&name))
+        } else {
+            name
+        };
         if let Some(id) = name.static_id() {
             let metadata = id
                 .metadata()
@@ -9823,7 +9845,7 @@ impl AnnotationLowerer<'_> {
             ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
                 Ok(SpecExpression::PointerOffset {
                     pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
-                    elements: Box::new(SpecExpression::Value(int32(*bytes))),
+                    elements: Box::new(layout_offset_elements(*bytes)),
                     byte_width: 1,
                 })
             }
@@ -11370,5 +11392,16 @@ fn literal_element_index(index: &ContractExpression) -> Option<u32> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+/// A member offset as byte elements of a pointer offset: its number, or a
+/// symbolic layout's 64-bit `offsetof` term.
+fn layout_offset_elements(bytes: crate::kernel::LayoutOffset) -> SpecExpression {
+    match bytes {
+        crate::kernel::LayoutOffset::Bytes(bytes) => SpecExpression::Value(int32(bytes)),
+        crate::kernel::LayoutOffset::Field(..) => {
+            SpecExpression::Value(ProgramValue::UInt64(bytes.term()))
+        }
     }
 }

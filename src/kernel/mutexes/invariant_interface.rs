@@ -496,17 +496,17 @@ mod tests {
 
     #[test]
     fn preserving_use_calls_bind_concrete_interface_through_nested_reborrows() {
-        use crate::kernel::loans::mutex_calls::MutexUseCallTransfer;
+        use crate::kernel::borrows::mutex_calls::MutexUseCallTransfer;
         let assumptions = PureFactContext::new();
         let (published, payload) = published();
         let protocols = published.state.mutex_ledger.as_ref().unwrap();
         let owner = protocols.live_resource(&address()).unwrap();
-        let loans = BorrowLedger::new();
-        let caller = loans.fresh_participant().unwrap();
-        let helper = loans.fresh_participant().unwrap();
-        let nested = loans.fresh_participant().unwrap();
+        let borrows = BorrowLedger::new();
+        let caller = borrows.fresh_participant().unwrap();
+        let helper = borrows.fresh_participant().unwrap();
+        let nested = borrows.fresh_participant().unwrap();
         let mut transfer = MutexUseCallTransfer::prepare(
-            &loans,
+            &borrows,
             caller,
             helper,
             &published.state.resources,
@@ -515,7 +515,7 @@ mod tests {
         )
         .unwrap();
         transfer.bind_interface(protocols).unwrap();
-        transfer.recheck_entry(&loans).unwrap();
+        transfer.recheck_entry(&borrows).unwrap();
         let usage = transfer
             .ledger
             .mutex_use_resource(transfer.usage, helper)
@@ -580,17 +580,17 @@ mod tests {
 
     #[test]
     fn use_call_interface_rejects_stale_initialization_and_binding_erasure() {
-        use crate::kernel::loans::mutex_calls::MutexUseCallTransfer;
+        use crate::kernel::borrows::mutex_calls::MutexUseCallTransfer;
         let assumptions = PureFactContext::new();
         let (first, _) = published();
         let (replacement, _) = published();
         let first_protocols = first.state.mutex_ledger.as_ref().unwrap();
         let owner = first_protocols.live_resource(&address()).unwrap();
-        let loans = BorrowLedger::new();
-        let caller = loans.fresh_participant().unwrap();
-        let helper = loans.fresh_participant().unwrap();
+        let borrows = BorrowLedger::new();
+        let caller = borrows.fresh_participant().unwrap();
+        let helper = borrows.fresh_participant().unwrap();
         let mut transfer = MutexUseCallTransfer::prepare(
-            &loans,
+            &borrows,
             caller,
             helper,
             &first.state.resources,

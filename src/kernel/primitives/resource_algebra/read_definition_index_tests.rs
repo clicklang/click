@@ -136,8 +136,8 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
                     .unwrap();
                 assert!(std::sync::Arc::ptr_eq(&context.storage, &remaining.storage));
                 assert!(std::sync::Arc::ptr_eq(
-                    &context.loan_dependencies,
-                    &remaining.loan_dependencies,
+                    &context.borrow_dependencies,
+                    &remaining.borrow_dependencies,
                 ));
                 assert_eq!(
                     context.directly_supporting_fact(&required, &facts),

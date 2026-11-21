@@ -7,7 +7,7 @@ use crate::kernel::{
 use crate::kernel::{MachineCastSpelling, cast_term};
 
 mod contract_claims;
-mod input_initialization;
+pub(in crate::kernel) mod input_initialization;
 mod retained_syntax;
 pub use contract_claims::*;
 
@@ -1179,40 +1179,40 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::UnboundedWriteWithLiveView { callee, .. } => {
             format!("call to `{callee}` has a write effect without a checked byte bound while a view is live")
         }
-        RuntimeError::LoanRefusal(diagnostic) => format_loan_refusal_diagnostic(diagnostic),
+        RuntimeError::BorrowRefusal(diagnostic) => format_borrow_refusal_diagnostic(diagnostic),
     }
 }
 
-fn format_loan_refusal_diagnostic(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> String {
+fn format_borrow_refusal_diagnostic(diagnostic: &crate::kernel::BorrowRefusalDiagnostic) -> String {
     format!(
         "stable-view {} refused: {}; {}{}",
-        format_loan_operation(diagnostic.operation),
-        format_loan_category(diagnostic.category),
-        format_loan_subject(diagnostic),
-        format_loan_ids(diagnostic),
+        format_borrow_operation(diagnostic.operation),
+        format_borrow_category(diagnostic.category),
+        format_borrow_subject(diagnostic),
+        format_borrow_ids(diagnostic),
     )
 }
 
-fn format_loan_category(category: crate::kernel::LoanRefusalCategory) -> &'static str {
+fn format_borrow_category(category: crate::kernel::BorrowRefusalCategory) -> &'static str {
     match category {
-        crate::kernel::LoanRefusalCategory::ProvenOverlap => "a required resource overlaps",
-        crate::kernel::LoanRefusalCategory::SeparationUnproved => {
+        crate::kernel::BorrowRefusalCategory::ProvenOverlap => "a required resource overlaps",
+        crate::kernel::BorrowRefusalCategory::SeparationUnproved => {
             "resource separation was not proved"
         }
-        crate::kernel::LoanRefusalCategory::WrongHolder => "the holder is wrong",
-        crate::kernel::LoanRefusalCategory::WrongArena => "the authority arena is wrong",
-        crate::kernel::LoanRefusalCategory::WrongScope => "the borrow scope is wrong",
-        crate::kernel::LoanRefusalCategory::ActiveDependency => "an active dependency remains",
-        crate::kernel::LoanRefusalCategory::StalePredecessor => "the predecessor is stale",
-        crate::kernel::LoanRefusalCategory::Recovery => "recovery evidence is invalid",
-        crate::kernel::LoanRefusalCategory::Lifetime => "the borrow lifetime is invalid",
-        crate::kernel::LoanRefusalCategory::Unsupported => "the resource shape is unsupported",
-        crate::kernel::LoanRefusalCategory::Missing => "borrow backing or binding is missing",
-        crate::kernel::LoanRefusalCategory::InvalidEvidence => "borrow evidence is invalid",
+        crate::kernel::BorrowRefusalCategory::WrongHolder => "the holder is wrong",
+        crate::kernel::BorrowRefusalCategory::WrongArena => "the authority arena is wrong",
+        crate::kernel::BorrowRefusalCategory::WrongScope => "the borrow scope is wrong",
+        crate::kernel::BorrowRefusalCategory::ActiveDependency => "an active dependency remains",
+        crate::kernel::BorrowRefusalCategory::StalePredecessor => "the predecessor is stale",
+        crate::kernel::BorrowRefusalCategory::Recovery => "recovery evidence is invalid",
+        crate::kernel::BorrowRefusalCategory::Lifetime => "the borrow lifetime is invalid",
+        crate::kernel::BorrowRefusalCategory::Unsupported => "the resource shape is unsupported",
+        crate::kernel::BorrowRefusalCategory::Missing => "borrow backing or binding is missing",
+        crate::kernel::BorrowRefusalCategory::InvalidEvidence => "borrow evidence is invalid",
     }
 }
 
-fn format_loan_subject(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> &'static str {
+fn format_borrow_subject(diagnostic: &crate::kernel::BorrowRefusalDiagnostic) -> &'static str {
     let subject = diagnostic.subject();
     if subject.resource_fact().is_some() {
         "selected resource"
@@ -1223,10 +1223,10 @@ fn format_loan_subject(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> &'s
     }
 }
 
-fn format_loan_ids(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> String {
+fn format_borrow_ids(diagnostic: &crate::kernel::BorrowRefusalDiagnostic) -> String {
     let subject = diagnostic.subject();
     let mut ids = Vec::new();
-    if let Some((arena, ordinal)) = subject.loan_id() {
+    if let Some((arena, ordinal)) = subject.borrow_id() {
         ids.push(format!("borrow {arena}:{ordinal}"));
     }
     if let Some((arena, ordinal)) = subject.scope_id() {
@@ -1251,14 +1251,14 @@ fn format_loan_ids(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> String 
     }
 }
 
-fn format_loan_operation(operation: crate::kernel::LoanRefusalOperation) -> &'static str {
+fn format_borrow_operation(operation: crate::kernel::BorrowRefusalOperation) -> &'static str {
     match operation {
-        crate::kernel::LoanRefusalOperation::Validate => "validation",
-        crate::kernel::LoanRefusalOperation::Plan => "planning",
-        crate::kernel::LoanRefusalOperation::Entry => "entry transition",
-        crate::kernel::LoanRefusalOperation::Recovery => "recovery",
-        crate::kernel::LoanRefusalOperation::Transition => "transition",
-        crate::kernel::LoanRefusalOperation::MemoryAccess => "memory access",
+        crate::kernel::BorrowRefusalOperation::Validate => "validation",
+        crate::kernel::BorrowRefusalOperation::Plan => "planning",
+        crate::kernel::BorrowRefusalOperation::Entry => "entry transition",
+        crate::kernel::BorrowRefusalOperation::Recovery => "recovery",
+        crate::kernel::BorrowRefusalOperation::Transition => "transition",
+        crate::kernel::BorrowRefusalOperation::MemoryAccess => "memory access",
     }
 }
 
@@ -1582,7 +1582,7 @@ fn program_function_contract_entry_facts(
                 if let Some(coverage) = pointer.opaque_coverage_fact(&MemoryRange::new_wide(
                     pointer.address().clone(),
                     MachineTerm::uint64_constant(0),
-                    MachineTerm::uint64_constant(u64::from(bytes)),
+                    bytes.term(),
                     1,
                 )) {
                     assumptions =
@@ -2439,7 +2439,7 @@ pub(super) fn prove_symbolic_program_function_verification_paths(
                         effect_facts,
                         obligations: path.obligations,
                         theorem,
-                        loan_evidence: path.loan_evidence,
+                        borrow_evidence: path.borrow_evidence,
                     }
                 })
                 .collect()
@@ -2460,7 +2460,7 @@ pub fn program_function_execution_candidates_from_outcomes(
         Vec<ProofObligation>,
     )>,
 ) -> FunctionExecutionCandidates {
-    program_function_execution_candidates_from_outcomes_with_loan_evidence(
+    program_function_execution_candidates_from_outcomes_with_borrow_evidence(
         state,
         function,
         arguments,
@@ -2471,7 +2471,7 @@ pub fn program_function_execution_candidates_from_outcomes(
                     outcome,
                     facts.into(),
                     obligations,
-                    crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+                    crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
                 )
             })
             .collect(),
@@ -2479,7 +2479,7 @@ pub fn program_function_execution_candidates_from_outcomes(
 }
 
 #[cfg(test)]
-pub(crate) fn program_function_execution_candidates_from_outcomes_with_loan_evidence(
+pub(crate) fn program_function_execution_candidates_from_outcomes_with_borrow_evidence(
     state: ExecutionState,
     function: ProgramFunction,
     arguments: Vec<ProgramExpression>,
@@ -2487,7 +2487,7 @@ pub(crate) fn program_function_execution_candidates_from_outcomes_with_loan_evid
         FunctionOutcome,
         ExecutionFacts,
         Vec<ProofObligation>,
-        crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+        crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
     )>,
 ) -> FunctionExecutionCandidates {
     program_function_execution_candidates_from_completed_outcomes(
@@ -2496,12 +2496,12 @@ pub(crate) fn program_function_execution_candidates_from_outcomes_with_loan_evid
         arguments,
         paths
             .into_iter()
-            .map(|(outcome, facts, obligations, loan_evidence)| {
+            .map(|(outcome, facts, obligations, borrow_evidence)| {
                 (
                     outcome,
                     crate::kernel::proof::CompletedExecutionFacts::from_facts(facts),
                     obligations,
-                    loan_evidence,
+                    borrow_evidence,
                 )
             })
             .collect(),
@@ -2516,12 +2516,12 @@ pub(crate) fn program_function_execution_candidates_from_completed_outcomes(
         FunctionOutcome,
         crate::kernel::proof::CompletedExecutionFacts,
         Vec<ProofObligation>,
-        crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+        crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
     )>,
 ) -> FunctionExecutionCandidates {
     let paths: Vec<_> = paths
         .into_iter()
-        .map(|(outcome, publication, obligations, loan_evidence)| {
+        .map(|(outcome, publication, obligations, borrow_evidence)| {
             let crate::kernel::proof::CompletedExecutionFacts { facts, additional } = publication;
             let completion_delta = additional.map(|facts| public_execution_pure_facts(&facts));
             let effect_facts = memory_effect_execution_facts(&facts);
@@ -2534,7 +2534,7 @@ pub(crate) fn program_function_execution_candidates_from_completed_outcomes(
                     effects_public_first: execution_effects_are_public_first(&effect_facts),
                     effect_facts,
                     obligations: Arc::new(obligations),
-                    loan_evidence,
+                    borrow_evidence,
                 }),
             }
         })

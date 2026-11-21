@@ -58,7 +58,7 @@ fn folded_view_preparation_uses_the_indexed_owner() {
         let tail = MemoryRange::new(pointer, 1u32.into(), 2u32.into());
         assert_eq!(
             plan.ledger.permits_memory_access(&tail),
-            Err(LoanRefusal::ActiveDependency)
+            Err(BorrowRefusal::ActiveDependency)
         );
         work
     });
@@ -157,7 +157,7 @@ fn preparing_a_reserved_fold_leaves_unrelated_caller_heads_unmaterialized() {
 }
 
 #[test]
-fn verified_call_loan_requirement_building_does_not_visit_live_loans() {
+fn verified_call_borrow_requirement_building_does_not_visit_live_borrows() {
     let effects = [MemoryRange::new(pointer(), 0u32.into(), 1u32.into())];
     let samples = [4, 16, 64].map(|count| {
         let mut ledger = BorrowLedger::new();
@@ -177,12 +177,12 @@ fn verified_call_loan_requirement_building_does_not_visit_live_loans() {
         }
         let memory = SymbolicMemory::new();
         let (requirements, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verified_call_loan_requirements(
+            verified_call_borrow_requirements(
                 Some(&ledger),
                 &effects,
                 || CallRequirementSite::for_requirement("write", "write", 0, &[], &memory),
                 0,
-                CallLoanEffect::CallRetirement,
+                CallBorrowEffect::CallRetirement,
             )
         });
         assert_eq!(requirements.len(), 1);

@@ -1764,6 +1764,12 @@ impl Printer<'_> {
                     body?.text
                 )))
             }
+            B::PureFunctionApplication { name, arguments }
+                if let Some(spelled) =
+                    crate::kernel::layout_term_spelling(name, arguments.len()) =>
+            {
+                Some(atom(crate::languages::display_source_names(&spelled)))
+            }
             B::PureFunctionApplication { name, arguments } => {
                 let mut spelled_arguments = Vec::new();
                 for argument in arguments {
@@ -2754,7 +2760,7 @@ impl Printer<'_> {
                 point: memory,
                 pointer,
             } => self.bitvector(
-                &AlgebraicTermNode::memory_load_carrier(memory, pointer),
+                &AlgebraicTermNode::memory_load_carrier(memory, pointer, &value.algebraic_type),
                 None,
                 depth + 1,
             ),
@@ -3001,7 +3007,7 @@ fn load_type_spelling(kind: crate::kernel::LoadKind) -> &'static str {
         K::UInt16 => "uint16",
         K::Int32 => "int32",
         K::UInt32 => "uint32",
-        K::Bits64 => "int64",
+        K::Bits64 | K::Abstract(_) => "int64",
         K::Int128 => "int128",
         K::UInt128 => "uint128",
         K::Float32 => "float",

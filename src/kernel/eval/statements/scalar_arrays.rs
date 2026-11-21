@@ -32,6 +32,7 @@ pub(super) fn execute(
             vec![],
         )]);
     };
+    let copy_source = std::cell::OnceCell::new();
     for target in evaluate_program_expression_paths(state, target, assumptions, budget)? {
         let target_pointer = match target.outcome {
             ExpressionOutcome::Value(ProgramValue::Pointer(pointer)) => pointer,
@@ -140,7 +141,7 @@ pub(super) fn execute(
             } else if fresh && target.base.is_local_block() {
                 memory_write_storage_outcome(state, target, bytes, &selected).or_else(|| {
                     state
-                        .automatic_storage_loan_refusal(&target.base)
+                        .automatic_storage_borrow_refusal(&target.base)
                         .map(StatementOutcome::RuntimeError)
                 })
             } else {
@@ -211,25 +212,19 @@ pub(super) fn execute(
                     continue;
                 }
             }
-            let memory = if fresh {
-                state.memory.clone().initialize_scalar_array(
-                    target,
-                    element_type,
-                    count,
-                    value,
-                    copy,
-                )
-            } else {
-                state.memory.clone().write_scalar_array_region(
-                    target,
-                    element_type,
-                    count,
-                    value,
-                    copy,
-                    false,
-                    &selected,
-                )
-            };
+            let source_point =
+                (copy && bytes != 0).then(|| copy_source.get_or_init(|| state.program_point()));
+            let fresh_assumptions = fresh.then(PureFactContext::new);
+            let memory = state.memory.clone().write_scalar_array_region_at(
+                target,
+                element_type,
+                count,
+                value,
+                copy,
+                fresh,
+                fresh_assumptions.as_ref().unwrap_or(&selected),
+                source_point,
+            );
             let outcome = match memory {
                 Ok(memory) => {
                     let mut next = state.clone();

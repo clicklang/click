@@ -63,6 +63,8 @@ pub(in crate::kernel) use byte_view::{
 pub(super) use expression::*;
 #[cfg(test)]
 pub(in crate::kernel) use memory_loads::abstract_value_source;
+#[cfg(test)]
+pub(crate) use memory_loads::canonical_cell_load;
 pub(crate) use memory_loads::canonical_condition;
 pub(crate) use memory_loads::canonical_condition_fact;
 pub(in crate::kernel) use memory_loads::canonical_scalar_read;
@@ -80,7 +82,6 @@ pub(super) use memory_loads::evaluate_memory_load_paths;
 pub(crate) use memory_loads::is_load_variable;
 pub(crate) use memory_loads::is_load_variable_defining_fact;
 pub(crate) use memory_loads::is_store_fact;
-pub(crate) use memory_loads::load_access_width_at_address_or_widest;
 pub(crate) use memory_loads::load_access_width_or_widest;
 #[cfg(test)]
 pub(crate) use memory_loads::load_registry_entry_count;
@@ -124,20 +125,25 @@ pub(crate) use memory_loads::{
 pub(in crate::kernel) use memory_loads::{
     cached_symbolic_storage_cell_value, symbolic_storage_cell_value,
 };
-pub(crate) use memory_loads::{canonical_cell_load, canonical_form_of_load};
+pub(crate) use memory_loads::{
+    canonical_cell_value, canonical_form_of_load, indexed_pointer_cell_read,
+};
 pub(super) use memory_loads::{
     canonical_offset_term, evaluate_exact_logical_memory_load_paths, evaluate_indexed_read,
-    evaluate_logical_memory_load_paths, evaluate_retained_memory_load_paths,
-    evaluate_spec_memory_load_paths, symbolic_load_value,
+    evaluate_logical_memory_load_paths, evaluate_logical_memory_load_paths_at,
+    evaluate_retained_memory_load_paths, evaluate_spec_memory_load_paths, symbolic_load_value,
 };
 pub(in crate::kernel) use memory_loads::{
-    expected_point_named_cell_read, observe_entry_integer_cell,
+    expected_point_named_cell_read, observe_entry_integer_cell, point_named_cell_load,
 };
 pub(crate) use memory_loads::{
     is_selected_scalar_read, latest_scalar_read_observation, registered_scalar_read_term,
     scalar_read_for_exact_cell, scalar_read_for_exact_cell_at, scalar_read_observation,
 };
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
+pub(crate) use memory_loads::{
+    load_access_extent, load_access_width_at_address_or_widest, loaded_pointer_stored_address,
+};
 #[cfg(test)]
 pub(super) use memory_loads::{load_substitution_term_visits, reset_load_substitution_term_visits};
 #[cfg(test)]

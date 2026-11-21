@@ -59,7 +59,23 @@ An object-pointer read names its address, provenance and bounds owner by
 the same read, and the recorded store can supply its complete typed value.
 A function-pointer read has its declared callback signature and the store
 can supply the call target. Floating-point lowering still uses its existing
-rule, which preserves stored bits, including signed zeros and NaNs.
+rule that preserves stored bits, including signed zeros and NaNs. The
+typed evaluator can name a new symbolic float read by the point where
+the read is taken when that point has a certified view. Float resource cells
+and their named runs can use the certified point where they were observed.
+An explicit `exact(place)` of a float cell names its bits at the selected
+program point. A symbolic index into a copied run uses the same displacement
+within the captured source range and retains its recorded read version when
+available. A checked scalar-array copy captures unknown source slots at the
+point before the copy. A checked aggregate assignment from caller storage
+into a local uses that source point for compact `uint32` array fields and
+to name uncached scalar fields when the appropriate typed store, entry
+version, or float read point is available. A copied object pointer field can
+retain its complete typed store, including the stored provenance and bounds.
+The same source selectors apply to uncached integer and object pointer union
+members when the copy has a recorded caller source.
+A verified call also retains that source point when it copies caller storage
+into a fresh by-value parameter for the callee's contract.
 
 `exact(place)` keys the read by the selected program point when one is
 available. Raising uses `exact` at that point, even if another point has
@@ -666,6 +682,10 @@ some global ambient predicate memory. The element type decides pointer scaling
 and whether the load yields an `int32` or `uint8` value. This lets
 `same_first(p, old(p))`, or the standard `permutation::permutation(p, old(p), lo, hi)`,
 compare post-state `p` to entry-state `p` without copying an array.
+
+A recorded heap array can use its allocation point or a later write as its
+version. Effects on other known objects preserve that version. Releasing the
+allocation retires its indexed version.
 
 See [Surface Click and Kernel Click](surface-and-kernel.md) for the full C-pointer versus Click-array-ref
 model.

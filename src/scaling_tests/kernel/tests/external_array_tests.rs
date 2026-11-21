@@ -109,6 +109,61 @@ fn external_array_execution_requires_full_authority_and_mutability() {
 }
 
 #[test]
+fn external_array_copy_statement_retains_the_uncached_source_point() {
+    let mut samples = Vec::new();
+    for count in [2, 8, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = external(933_002);
+        let target = external(933_003);
+        let state = ExecutionState::new()
+            .begin_function_entry_memory()
+            .with_resource_context(ResourceContext::new().unchecked_with_facts([
+                view_memory_fact(source.clone(), 0, count),
+                own_memory_fact(target.clone(), 0, count),
+            ]));
+        let point = state.program_point();
+        assert!(state.memory().known_value(&source).is_none());
+        let statement = program_write_scalar_array_region(
+            crate::kernel::program_expression::pointer_value(target.clone()),
+            crate::kernel::program_expression::pointer_value(source.clone()),
+            ProgramType::UInt32,
+            count,
+            true,
+        );
+        let (theorem, work) = crate::instrumentation::measure_deterministic_work(|| {
+            prove_execution_statement_execution(state, statement).unwrap()
+        });
+        let Proposition::ProgramStatementVerifies {
+            outcome: StatementOutcome::Normal(copied),
+            ..
+        } = theorem.proposition()
+        else {
+            panic!("the authorized region copy must execute");
+        };
+        let mut runs = copied.memory().cells.runs_in_block(&target.base);
+        let run = runs.next().expect("a compact run for the unknown lanes");
+        assert!(runs.next().is_none());
+        assert_eq!(run.source_point().id(), point.id());
+        assert_eq!(run.count(), count);
+        let ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::MemoryLoad(
+            version,
+            address,
+            LoadKind::UInt32,
+        ))) = copied.memory().load(&target.offset_by_bytes(4))
+        else {
+            panic!("expected a typed copied read");
+        };
+        assert_eq!(version.read_version_id(), point.id());
+        assert_eq!(*address, source.offset_by_bytes(4));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|units| *units <= samples[0] * 2 + 128),
+        "{samples:?}"
+    );
+}
+
+#[test]
 fn external_array_source_selection_skips_unrelated_parameter_cells() {
     let mut samples = Vec::new();
     for siblings in [1, 64, 2048] {

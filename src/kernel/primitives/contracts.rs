@@ -34,8 +34,8 @@ impl ProgramParameter {
         self
     }
 
-    pub(crate) fn with_fixed_reference_bounds(mut self, bytes: u32) -> Self {
-        self.fixed_reference_bounds = Some(bytes);
+    pub(crate) fn with_fixed_reference_bounds(mut self, bytes: impl Into<LayoutSize>) -> Self {
+        self.fixed_reference_bounds = Some(bytes.into());
         self
     }
 
@@ -1929,7 +1929,7 @@ impl CompositeResourceDefinition {
     /// on is stable for the borrow. The body's memory and tokens are; a
     /// population count the caller may change elsewhere and the liveness of
     /// storage the fact names are not (D12).
-    pub fn facts_are_loan_stable(&self) -> bool {
+    pub fn facts_are_borrow_stable(&self) -> bool {
         !self.facts_read_counts && !self.facts_claim_liveness
     }
 
@@ -2382,6 +2382,12 @@ impl LoopEffectCheck {
 }
 
 impl MemorySegment {
+    pub(crate) fn source_expressions(
+        &self,
+    ) -> (&ProgramExpression, &ProgramExpression, &ProgramExpression) {
+        (&self.base, &self.start, &self.end)
+    }
+
     pub fn new(base: ProgramExpression, start: ProgramExpression, end: ProgramExpression) -> Self {
         Self {
             base,
@@ -2502,7 +2508,75 @@ impl MemoryRange {
             element_width,
             kind: RangeIndexKind::Int32,
             formation_coverage: Default::default(),
+            holes: Default::default(),
         }
+    }
+
+    /// The fields of a symbolic object taken out of this range.
+    pub(crate) fn holes(&self) -> &[u32] {
+        &self.holes
+    }
+
+    pub(crate) fn has_holes(&self) -> bool {
+        !self.holes.is_empty()
+    }
+
+    /// This whole symbolic object with `holes` taken out; with none, the
+    /// whole object.
+    pub(crate) fn with_holes(mut self, holes: Vec<u32>) -> Self {
+        self.holes = holes.into();
+        self
+    }
+
+    /// The symbolic layout this range is the whole object of,
+    /// `[p, p + sizeof(L))` in bytes, holes aside.
+    pub(crate) fn symbolic_object(&self) -> Option<super::SymbolicLayoutName> {
+        let (start, end) = self.wide_bounds()?;
+        if self.element_width != 1 || start.uint64_as_const() != Some(0) {
+            return None;
+        }
+        match super::SymbolicLayoutName::of_term(end)? {
+            (layout, None) => Some(layout),
+            _ => None,
+        }
+    }
+
+    /// The object and field this range is exactly, when it is all the bytes
+    /// of one field of a symbolic layout: at `object + offsetof(L, f)`,
+    /// spanning `f`'s extent, in bytes or in whole elements.
+    pub(crate) fn symbolic_field(&self) -> Option<(Address, super::SymbolicLayoutName, u32)> {
+        let (rest, layout, field) =
+            super::SymbolicLayoutName::field_displacement(&self.base.offset)?;
+        let extent = layout.field_extent(field);
+        let exact = match self.wide_bounds() {
+            Some((start, end)) => {
+                start.uint64_as_const() == Some(0)
+                    && match (end.uint64_as_const(), extent) {
+                        (Some(count), super::AccessExtent::Bytes(bytes)) => {
+                            count.checked_mul(u64::from(self.element_width))
+                                == Some(u64::from(bytes))
+                        }
+                        (None, _) => self.element_width == 1 && *end == extent.term(),
+                        _ => false,
+                    }
+            }
+            None => {
+                self.constant_start() == Some(0)
+                    && matches!(extent, super::AccessExtent::Bytes(bytes)
+                        if self.constant_end().and_then(|end| end.checked_mul(self.element_width))
+                            == Some(bytes))
+            }
+        };
+        exact.then(|| {
+            (
+                Address {
+                    base: self.base.base.clone(),
+                    offset: rest.cloned().unwrap_or(AddressOffset::Constant(0)),
+                },
+                layout,
+                field,
+            )
+        })
     }
 
     /// A typed clause carries the complete pointer's origin, independently of
@@ -3015,6 +3089,73 @@ impl MemoryRange {
             }
             RangeIndexKind::UInt64 => Self::new_wide(base, lower, upper, element_width),
         })
+    }
+
+    /// The bytes an access of `extent` at `pointer` reaches: a byte count,
+    /// or a whole object of abstract type ([`Self::access`]).
+    pub(crate) fn of_access(pointer: &Address, extent: super::AccessExtent) -> Self {
+        match extent {
+            super::AccessExtent::Bytes(bytes) => Self::new_with_element_width(
+                pointer.clone(),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
+                bytes,
+            ),
+            super::AccessExtent::Object(parameter) => {
+                Self::access(pointer.clone(), ProgramType::Parameter(parameter))
+            }
+        }
+    }
+
+    /// The bytes an access of a value of `program_type` at `pointer`
+    /// reaches: one element of the type's width, or, for a value of an
+    /// abstract type, its whole object, `[pointer, pointer + sizeof(T))`,
+    /// whose size is the type's and no number Click knows.
+    pub(crate) fn access(pointer: Address, program_type: ProgramType) -> Self {
+        match program_type {
+            ProgramType::Parameter(parameter) if parameter.has_abstract_size() => Self::new_wide(
+                pointer,
+                MachineTerm::uint64_constant(0),
+                parameter.size_term(),
+                1,
+            ),
+            other => Self::new_with_element_width(
+                pointer,
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
+                other.byte_width(),
+            ),
+        }
+    }
+
+    /// The bytes of a whole object of `size` at `pointer`: `[0, size)` bytes,
+    /// or for a symbolic layout `[0, sizeof(S))`, the range a value of the
+    /// struct held whole reaches.
+    pub(crate) fn object(pointer: Address, size: super::LayoutSize) -> Self {
+        match size {
+            super::LayoutSize::Bytes(bytes) => Self::new_with_element_width(
+                pointer,
+                MachineTerm::constant(0),
+                MachineTerm::constant(bytes),
+                1,
+            ),
+            super::LayoutSize::Of(layout) => {
+                Self::access(pointer, ProgramType::Parameter(layout.value_type()))
+            }
+        }
+    }
+
+    /// [`Self::access`] through the pointer value `value`, keeping its
+    /// origin as a typed clause's range does.
+    pub(crate) fn access_through(value: &Pointer, program_type: ProgramType) -> Self {
+        Self::access(value.address().clone(), program_type).with_pointer_carrier(value)
+    }
+
+    /// The width of the one element this range is, when it is one element
+    /// of a known width at its base: not an object of abstract size.
+    pub(crate) fn single_element_width(&self) -> Option<u32> {
+        (self.constant_start() == Some(0) && self.constant_end() == Some(1))
+            .then_some(self.element_width)
     }
 
     /// A range whose bounds are unsigned 64-bit element indices.
@@ -4235,12 +4376,12 @@ impl ExecutionEnvironment {
             // A retained head obligation names the borrows of its checked
             // entry. An equal resource description may have different live
             // borrows, including when the original entry had none.
-            let active_loans = |state: &ExecutionState| {
-                state.loan_ledger()
-                    .filter(|ledger| ledger.has_active_memory_loans())
-                    .map(crate::kernel::loans::BorrowLedger::state_identity)
+            let active_borrows = |state: &ExecutionState| {
+                state.borrow_ledger()
+                    .filter(|ledger| ledger.has_active_memory_borrows())
+                    .map(crate::kernel::borrows::BorrowLedger::state_identity)
             };
-            let state_matches = active_loans(&rule.symbolic_entry_state) == active_loans(state)
+            let state_matches = active_borrows(&rule.symbolic_entry_state) == active_borrows(state)
                 && rule.symbolic_entry_state.locals == state.locals
                 && rule.symbolic_entry_state.memory == state.memory
                 && crate::kernel::api::contract_certification::resource_contexts_definitionally_equal_with_definitions(

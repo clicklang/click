@@ -830,7 +830,7 @@ fn modeled_pthread_create_refuses_a_wrong_worker_abi() {
 }
 
 #[test]
-fn worker_write_retains_preexisting_loan_separation_at_create_entry() {
+fn worker_write_retains_preexisting_borrow_separation_at_create_entry() {
     let (worker, termination) = worker();
     let parent = ThreadContext::new(parent(2)).unwrap();
     let mut budget = ExecutionBudget::new();
@@ -863,7 +863,7 @@ fn worker_write_retains_preexisting_loan_separation_at_create_entry() {
 }
 
 #[test]
-fn thread_join_preserves_other_child_loans_in_both_orders() {
+fn thread_join_preserves_other_child_borrows_in_both_orders() {
     let (worker, termination) = worker();
     let assumptions = PureFactContext::new();
     for reverse in [false, true] {
@@ -897,12 +897,12 @@ fn thread_join_preserves_other_child_loans_in_both_orders() {
         assert!(
             joined
                 .parent()
-                .loan_ledger()
+                .borrow_ledger()
                 .unwrap()
                 .memory_access_refusal(
                     &range(last_index, 1, 2),
                     &assumptions,
-                    crate::kernel::LoanRefusalOperation::MemoryAccess,
+                    crate::kernel::BorrowRefusalOperation::MemoryAccess,
                 )
                 .is_some(),
             "the other child's stable job view must remain protected"
@@ -933,12 +933,12 @@ fn thread_join_preserves_other_child_loans_in_both_orders() {
             assert!(
                 finished
                     .parent()
-                    .loan_ledger()
+                    .borrow_ledger()
                     .unwrap()
                     .memory_access_refusal(
                         &range(index, 1, 2),
                         &assumptions,
-                        crate::kernel::LoanRefusalOperation::MemoryAccess,
+                        crate::kernel::BorrowRefusalOperation::MemoryAccess,
                     )
                     .is_none()
             );
@@ -1176,8 +1176,8 @@ fn thread_reborrowed_view_stays_pinned_until_child_joins() {
     )
     .unwrap();
     let occurrence = state.resources().occurrences_for_fact(&view)[0];
-    let binding = state.loan_view_bindings().get(&occurrence).unwrap().clone();
-    let participant = state.loan_participant().unwrap();
+    let binding = state.borrow_bindings().get(&occurrence).unwrap().clone();
+    let participant = state.borrow_participant().unwrap();
     let parent = ThreadContext::new(state).unwrap();
     let mut budget = ExecutionBudget::new();
     for reverse in [false, true] {
@@ -1186,22 +1186,22 @@ fn thread_reborrowed_view_stays_pinned_until_child_joins() {
         assert!(
             second
                 .parent()
-                .loan_ledger()
+                .borrow_ledger()
                 .unwrap()
                 .validate_view_binding(binding.clone(), participant)
                 .is_err(),
             "the original whole share is split while children are live"
         );
-        assert!(second.parent().loan_bindings_are_consistent());
+        assert!(second.parent().borrow_bindings_are_consistent());
         assert!(
             !second
                 .parent()
                 .thread_ledger
                 .as_ref()
                 .unwrap()
-                .witnesses_loan_recovery(
-                    parent.parent().loan_ledger().unwrap(),
-                    second.parent().loan_ledger().unwrap(),
+                .witnesses_borrow_recovery(
+                    parent.parent().borrow_ledger().unwrap(),
+                    second.parent().borrow_ledger().unwrap(),
                     participant,
                 )
         );
@@ -1212,7 +1212,7 @@ fn thread_reborrowed_view_stays_pinned_until_child_joins() {
                 &PureFactContext::new(),
             )
             .unwrap();
-        assert!(joined.parent().loan_bindings_are_consistent());
+        assert!(joined.parent().borrow_bindings_are_consistent());
         let (finished, _) = joined
             .join(
                 if reverse { a } else { b },
@@ -1221,20 +1221,20 @@ fn thread_reborrowed_view_stays_pinned_until_child_joins() {
             )
             .unwrap();
         assert_eq!(
-            finished.parent().loan_view_bindings().get(&occurrence),
+            finished.parent().borrow_bindings().get(&occurrence),
             Some(&binding),
             "the exact root share must be reconstructed after both joins"
         );
-        assert!(finished.parent().loan_bindings_are_consistent());
+        assert!(finished.parent().borrow_bindings_are_consistent());
         assert!(
             finished
                 .parent()
                 .thread_ledger
                 .as_ref()
                 .unwrap()
-                .witnesses_loan_recovery(
-                    parent.parent().loan_ledger().unwrap(),
-                    finished.parent().loan_ledger().unwrap(),
+                .witnesses_borrow_recovery(
+                    parent.parent().borrow_ledger().unwrap(),
+                    finished.parent().borrow_ledger().unwrap(),
                     participant,
                 )
         );
@@ -1319,7 +1319,7 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
             .unwrap()
             .local_view_binding(&view)
             .unwrap();
-        assert_eq!(first_binding.loan, second_binding.loan);
+        assert_eq!(first_binding.borrow, second_binding.borrow);
         assert_eq!(first_binding.scope, second_binding.scope);
         assert_ne!(first_binding.share, second_binding.share);
         assert!(second.parent().resources().facts().is_empty());
@@ -1340,7 +1340,7 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
         );
         assert!(
             once.parent()
-                .loan_ledger()
+                .borrow_ledger()
                 .unwrap()
                 .permits_memory_access(view.memory_range().unwrap())
                 .is_err()
@@ -1364,9 +1364,9 @@ fn two_workers_share_one_implicit_local_root_until_both_join() {
         assert!(
             !finished
                 .parent()
-                .loan_ledger()
+                .borrow_ledger()
                 .unwrap()
-                .has_active_memory_loans()
+                .has_active_memory_borrows()
         );
         assert!(finished.parent().resources().facts().is_empty());
     }
@@ -1417,8 +1417,8 @@ fn two_workers_recover_one_escrowed_owner_only_after_both_join() {
         .failure();
     assert_eq!(failed.parent().resources(), original.parent().resources());
     assert_eq!(
-        failed.parent().loan_ledger(),
-        original.parent().loan_ledger()
+        failed.parent().borrow_ledger(),
+        original.parent().borrow_ledger()
     );
     assert!(
         !failed
@@ -1461,7 +1461,7 @@ fn two_workers_recover_one_escrowed_owner_only_after_both_join() {
         );
         assert!(
             once.parent()
-                .loan_ledger()
+                .borrow_ledger()
                 .unwrap()
                 .permits_memory_access(&range(0, 0, 1))
                 .is_err()
@@ -1489,11 +1489,11 @@ fn two_workers_recover_one_escrowed_owner_only_after_both_join() {
         assert!(
             !finished
                 .parent()
-                .loan_ledger()
+                .borrow_ledger()
                 .unwrap()
-                .has_active_memory_loans()
+                .has_active_memory_borrows()
         );
-        assert!(finished.parent().loan_bindings_are_consistent());
+        assert!(finished.parent().borrow_bindings_are_consistent());
     }
 }
 
@@ -1566,9 +1566,9 @@ fn shared_reader_completion_right_is_consumed_once_on_its_own_path() {
     assert!(
         after_a
             .parent()
-            .loan_ledger()
+            .borrow_ledger()
             .unwrap()
-            .has_active_memory_loans()
+            .has_active_memory_borrows()
     );
     let (finished, _) = after_a
         .join(
@@ -1577,7 +1577,7 @@ fn shared_reader_completion_right_is_consumed_once_on_its_own_path() {
             &PureFactContext::new(),
         )
         .unwrap();
-    assert!(finished.parent().loan_bindings_are_consistent());
+    assert!(finished.parent().borrow_bindings_are_consistent());
 }
 
 #[test]
@@ -1758,9 +1758,9 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     assert!(
         active
             .parent()
-            .loan_ledger()
+            .borrow_ledger()
             .unwrap()
-            .has_active_memory_loans()
+            .has_active_memory_borrows()
     );
     let names = vec!["job".into()];
     assert!(crate::kernel::eval::end_scope_automatic_lifetimes(active.parent(), &names).is_err());
@@ -1791,13 +1791,13 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
                 obligations: vec![],
                 loop_invariant_correspondence: Default::default(),
                 call_result: None,
-                loan_evidence: crate::kernel::empty_checked_loan_evidence_sequence(),
+                borrow_evidence: crate::kernel::empty_checked_borrow_evidence_sequence(),
             }],
             &names,
         );
         assert!(matches!(
             paths[0].outcome,
-            StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
+            StatementOutcome::RuntimeError(RuntimeError::BorrowRefusal(_))
         ));
     }
     let writer = program_function(
@@ -1863,9 +1863,9 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
     assert!(
         !joined
             .parent()
-            .loan_ledger()
+            .borrow_ledger()
             .unwrap()
-            .has_active_memory_loans()
+            .has_active_memory_borrows()
     );
     let theorem = prove_symbolic_program_function_execution_with_environment(
         joined.parent().clone(),

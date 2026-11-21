@@ -29,6 +29,35 @@ fn comparison_holds(
             .any(|form| form != &premise && available(form))
 }
 
+/// Compare the result of a retained fold against the same written operand.
+/// The reduced comparison names a single premise for the exact-fact lookup.
+fn trivial_fold_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let integer_comparison_condition!(left, right) = condition else {
+        return None;
+    };
+    let reduce = |operand: &SharedIntegerTerm| {
+        let IntegerTerm::Machine(machine) = operand.as_ref() else {
+            return None;
+        };
+        super::computation::observe_trivial_int32_fold(machine)
+    };
+    let (left_result, right_result) = (reduce(left), reduce(right));
+    if left_result.is_none() && right_result.is_none() {
+        return None;
+    }
+    let left = left_result.unwrap_or_else(|| left.clone());
+    let right = right_result.unwrap_or_else(|| right.clone());
+    Some(match condition {
+        ConditionTerm::IntegerLessThan(..) => ConditionTerm::IntegerLessThan(left, right),
+        ConditionTerm::IntegerLessEqual(..) => ConditionTerm::IntegerLessEqual(left, right),
+        ConditionTerm::IntegerGreaterThan(..) => ConditionTerm::IntegerGreaterThan(left, right),
+        ConditionTerm::IntegerGreaterEqual(..) => ConditionTerm::IntegerGreaterEqual(left, right),
+        ConditionTerm::IntegerEqual(..) => ConditionTerm::IntegerEqual(left, right),
+        ConditionTerm::IntegerNotEqual(..) => ConditionTerm::IntegerNotEqual(left, right),
+        _ => unreachable!(),
+    })
+}
+
 fn in_range(
     value: &IntegerTerm,
     format: crate::kernel::primitives::MachineIntegerFormat,
@@ -456,19 +485,67 @@ pub(crate) fn is_quotient_remainder_order(goal: &Proposition) -> bool {
     }
 }
 
+/// The first range ends where the second starts. Ordering its endpoints
+/// makes the element count nonnegative, so even a modular byte count can
+/// only shorten the first range. The second range occupies bytes forward
+/// from that shared address.
+fn adjacent_range_separation(
+    first: &MemoryRange,
+    second: &MemoryRange,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    first.wide_bounds().is_none()
+        && first.end_pointer() == second.start_pointer()
+        && comparison_holds(
+            ConditionTerm::signed_less_equal(first.start().clone(), first.end().clone()),
+            true,
+            available,
+        )
+}
+
 pub(crate) fn known_bridge_leaf(
     goal: &Proposition,
     available: &impl Fn(&Proposition) -> bool,
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match goal {
+        Proposition::ConditionIs(condition, truth)
+            if let Some(reduced) = trivial_fold_comparison(condition.native_compat())
+                && comparison_holds(reduced, *truth, available) =>
+        {
+            true
+        }
+        Proposition::ConditionIs(condition, true)
+            if let Some(wide) = pointer_projection_source(condition.native_compat()) =>
+        {
+            comparison_holds(
+                ConditionTerm::IntegerLessEqual(
+                    wide.into(),
+                    IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
+                ),
+                true,
+                available,
+            )
+        }
         Proposition::ResourceSeparate { left, right }
             if matches!(
                 (left.as_ref(), right.as_ref()),
                 (Resource::Footprint(_), _) | (_, Resource::Footprint(_))
             ) =>
         {
-            crate::kernel::region_footprint::separate_members(left, right, available)
+            crate::kernel::region_footprint::separate_members(left, right, |fact| {
+                available(fact)
+                    || match fact {
+                        Proposition::ResourceSeparate { left, right }
+                            if let (Resource::Memory(left), Resource::Memory(right)) =
+                                (left.as_ref(), right.as_ref()) =>
+                        {
+                            adjacent_range_separation(left, right, available)
+                                || adjacent_range_separation(right, left, available)
+                        }
+                        _ => false,
+                    }
+            })
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
@@ -529,11 +606,59 @@ pub(crate) fn known_bridge_leaf(
     }
 }
 
+/// Read the full-width source of a signed low-word projection at the same
+/// base and stride. A bound on that source gives equality of the offsets.
+/// Raw complete pointer comparisons retain their own domain requirements.
+pub(crate) fn pointer_projection_source(condition: &ConditionTerm) -> Option<IntegerTerm> {
+    if !matches!(
+        condition,
+        ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..)
+    ) {
+        return None;
+    }
+    let (a, b) = condition.pointer_offset_sides()?;
+    // A pointer parameter is itself an exact offset in the abstract
+    // argument block. Cancel that common prefix before comparing its indices.
+    let (a, b) = match (a, b) {
+        (AddressOffset::Add(base, a), AddressOffset::Add(other, b)) if base == other => {
+            (a.as_ref(), b.as_ref())
+        }
+        _ => (a, b),
+    };
+    for (narrow, wide) in [(a, b), (b, a)] {
+        if let (
+            AddressOffset::Int32Scaled {
+                value: narrow,
+                byte_width,
+            },
+            AddressOffset::Int64Scaled {
+                value: wide,
+                byte_width: wide_width,
+                unsigned: true,
+            },
+        ) = (narrow, wide)
+            && byte_width == wide_width
+            && *byte_width > 0
+            && let Some((
+                _,
+                MachineIntegerType::UInt64,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                source,
+            )) = narrow.operand_view().cast()
+            && crate::kernel::machine_operand_syntax_cmp(source, wide.operand_view()).is_eq()
+        {
+            return wide.operand_view().observe(MachineIntegerType::UInt64);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::kernel::machine_integer::{Operation, representation};
     use crate::kernel::proof::PureFactStore;
+
     fn known(goal: &Proposition, premises: &[Proposition]) -> bool {
         let facts = PureFactStore::from_ordered(premises);
         known_bridge_leaf(goal, &|p| facts.pure_known_available(p))
@@ -611,6 +736,79 @@ mod tests {
             assert!(success.0 && !refusal.0);
             assert!(success.1 <= observations[0][0].1 + 16, "{observations:?}");
             assert!(refusal.1 <= observations[0][1].1 + 16, "{observations:?}");
+        }
+    }
+
+    #[test]
+    fn adjacent_footprint_needs_order_and_the_exact_boundary() {
+        let _session = VerificationSession::enter();
+        let base = Address::symbolic(Variable(997400));
+        let endpoint = MachineTerm::Variable(Variable(997401));
+        let memory = |base, end| {
+            Resource::Memory(MemoryRange::new_with_element_width(
+                base,
+                0u32.into(),
+                end,
+                4,
+            ))
+        };
+        let write = memory(base.clone(), endpoint.clone());
+        let before = ExecutionState::new();
+        let footprint = Resource::Footprint(RegionFootprint::sequence(
+            "write".into(),
+            &before,
+            &before,
+            [write].into_iter().collect(),
+            true,
+        ));
+        let boundary = base.offset_by_elements(endpoint.clone(), 4);
+        let held = Proposition::condition_is(
+            ConditionTerm::signed_less_equal(0u32.into(), endpoint),
+            true,
+        );
+        let check = |offset, facts: &PureFactStore| {
+            let goal = Proposition::ResourceSeparate {
+                left: Box::new(footprint.clone()),
+                right: Box::new(memory(
+                    Address {
+                        base: boundary.base.clone(),
+                        offset: AddressOffset::add(
+                            boundary.offset.clone(),
+                            AddressOffset::Constant(offset),
+                        ),
+                    },
+                    1u32.into(),
+                )),
+            };
+            crate::instrumentation::measure_deterministic_work(|| {
+                known_bridge_leaf(&goal, &|fact| facts.pure_known_available(fact))
+            })
+        };
+        let observations = [0, 32, 128].map(|count| {
+            let unrelated = (0..count)
+                .map(|i| {
+                    Proposition::condition_is(
+                        ConditionTerm::signed_less_equal(
+                            0u32.into(),
+                            MachineTerm::Variable(Variable(997500 + i)),
+                        ),
+                        true,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let without_order = PureFactStore::from_ordered(&unrelated);
+            let with_order = without_order.with_kernel_checked_fact(held.clone());
+            [
+                check(0, &with_order),
+                check(0, &without_order),
+                check(-1, &with_order),
+            ]
+        });
+        for checks in observations {
+            assert_eq!(checks.map(|(holds, _)| holds), [true, false, false]);
+            for ((_, work), (_, baseline)) in checks.into_iter().zip(observations[0]) {
+                assert!(work <= baseline + 16, "{observations:?}");
+            }
         }
     }
 

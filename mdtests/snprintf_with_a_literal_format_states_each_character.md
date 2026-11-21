@@ -66,7 +66,8 @@ int32 render(char buf[], uint32 n) {
             solve();
         }
         have buf[0] == 52 by {
-            solve() using { buf[0] == stdio::decimal_digit(n as uint64, 0u64); stdio::decimal_digit(n as uint64, 0u64) == 52u8; };
+            rewrite(52u8, stdio::decimal_digit(n as uint64, 0u64));
+            known();
         }
     }
 }

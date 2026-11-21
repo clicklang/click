@@ -2751,7 +2751,7 @@ impl<'a> Proof<'a> {
         let selected = &checked.selected;
         execution
             .core
-            .record_resource_rewrite_with_loan_holds(
+            .record_resource_rewrite_with_borrow_holds(
                 context.function,
                 context.arguments,
                 &before_facts,
@@ -2759,7 +2759,7 @@ impl<'a> Proof<'a> {
                 &checked.state,
                 &checked.facts,
                 None,
-                &checked.loan_holds,
+                &checked.borrow_holds,
                 crate::surface::proof::execution_planning::collecting_step_requirements(),
             )
             .map_err(|error| {

@@ -29,7 +29,7 @@ uint64 count(uint64 n) {
     <testcase name="debug_error" classname="clicklang::examples" time="2">
       <failure message="thread 'debug_error' panicked at tests/examples.rs:9:5" type="test failure">
 thread 'debug_error' panicked at tests/examples.rs:9:5:
-the rotation must recheck: ClickError { message: "`f.contract` tactic 0:\\nstep refused: a \\"loan\\" is active", rendered: OnceLock(&lt;uninit&gt;), kind: Proof }
+the rotation must recheck: ClickError { message: "`f.contract` tactic 0:\\nstep refused: a \\"borrow\\" is active", rendered: OnceLock(&lt;uninit&gt;), kind: Proof }
       </failure>
     </testcase>
   </testsuite>
@@ -107,7 +107,7 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
         "the message is the Click source it checked"), by_id["test:clicklang::examples prints_source"]
     # A debug-printed ClickError shows its message, unescaped.
     assert by_id["test:clicklang::examples debug_error"]["summary"] == (
-        'the rotation must recheck: `f.contract` tactic 0: step refused: a "loan" is active'
+        'the rotation must recheck: `f.contract` tactic 0: step refused: a "borrow" is active'
     ), by_id["test:clicklang::examples debug_error"]["summary"]
     # The aggregate mdtests failure is replaced by its fixtures.
     assert not any("clicklang::mdtests" in key for key in by_id)
@@ -147,4 +147,45 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
     )
     report = json.loads((out / "report.json").read_text())
     assert [f["id"] for f in report["failures"]] == ["job:audit"], report["failures"]
+
+    # The lowering audits: an enforced fact-stability outcome fails, an audit
+    # run whose corpus failed fails, and raise/lower counts are compared with
+    # the previous night's, a rise flagged.
+    lowering = root / "lowering"
+    lowering.mkdir()
+    (lowering / "phases.tsv").write_text("fact-stability\t600\t0\nraise-lower\t700\t100\n")
+    (lowering / "counts.tsv").write_text(
+        "fact-stability\tdiffers\t2\nfact-stability\trefused\t371\nfact-stability\tpaths\t0\n"
+        "raise-lower\tsame\t13790\nraise-lower\tdiffers\t1210\nraise-lower\tunlowered\t360\n")
+    (lowering / "fact-stability.tsv").write_text(
+        "refused\tx\tA\tB\tmdtest-r\ndiffers\tx\tA\tB\tmdtest-d\n")
+    (jobs / "jobs.tsv").write_text("nightly\tsuccess\naudit\tsuccess\nlowering\tsuccess\n")
+    previous.write_text(json.dumps({"commit": "0" * 40, "failures": [
+        {"id": "lowering:fact-stability paths"},  # clean tonight: fixed
+    ], "counts": [
+        {"audit": "raise-lower", "outcome": "same", "count": 13780},
+        {"audit": "raise-lower", "outcome": "differs", "count": 1201},
+        {"audit": "raise-lower", "outcome": "unlowered", "count": 367},
+    ]}))
+    subprocess.run(
+        ["python3", "-I", str(Path(__file__).with_name("nightly-report.py")),
+         "--input", str(jobs), "--input", str(lowering), "--previous", str(previous),
+         "--out", str(out), "--commit", "e" * 40],
+        check=True, capture_output=True, text=True,
+    )
+    report = json.loads((out / "report.json").read_text())
+    by_id = {failure["id"]: failure for failure in report["failures"]}
+    assert set(by_id) == {"lowering:fact-stability differs", "lowering:raise-lower run"}, sorted(by_id)
+    assert by_id["lowering:fact-stability differs"]["summary"] == (
+        "2 `differs` lowerings; first in mdtest-d"), by_id["lowering:fact-stability differs"]
+    assert by_id["lowering:fact-stability differs"]["reproduce"] == "scripts/fact-stability.sh"
+    assert report["fixed"] == ["lowering:fact-stability paths"], report["fixed"]
+    rows = {(c["audit"], c["outcome"]): c for c in report["counts"]}
+    assert rows[("raise-lower", "differs")]["rose"] and not rows[("raise-lower", "same")]["rose"]
+    assert not rows[("raise-lower", "unlowered")]["rose"]
+    assert rows[("fact-stability", "refused")]["previous"] is None
+    markdown = (out / "report.md").read_text()
+    assert "**Lowering audits rose:** raise-lower `differs` 1201 → 1210" in markdown, markdown
+    assert "| raise-lower | `differs` | 1210 | 1201 | **+9** (rose) |" in markdown, markdown
+    assert "| raise-lower | `unlowered` | 360 | 367 | -7 |" in markdown, markdown
 print("nightly report: synthetic run summarized")

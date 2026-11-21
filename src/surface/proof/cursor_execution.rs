@@ -1880,7 +1880,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
                     outcome,
                     completed_execution_facts,
                     obligations,
-                    execution.core.loan_evidence().clone(),
+                    execution.core.borrow_evidence().clone(),
                 ));
             }
             append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
@@ -2629,9 +2629,9 @@ fn execute_step_from_frontier_position_selecting_path(
                     outcome,
                     completed_execution_facts,
                     obligations,
-                    crate::kernel::concat_checked_loan_evidence(
-                        execution.core.loan_evidence(),
-                        &transition.loan_evidence,
+                    crate::kernel::concat_checked_borrow_evidence(
+                        execution.core.borrow_evidence(),
+                        &transition.borrow_evidence,
                     ),
                 ));
             }
@@ -3083,9 +3083,9 @@ fn execute_step_from_frontier_position_selecting_path(
                 );
             let completed_execution_facts =
                 completed_execution_facts(&parent, &returned.execution_facts);
-            let loan_evidence = crate::kernel::concat_checked_loan_evidence(
-                parent.loan_evidence(),
-                &returned.loan_evidence,
+            let borrow_evidence = crate::kernel::concat_checked_borrow_evidence(
+                parent.borrow_evidence(),
+                &returned.borrow_evidence,
             );
             execution
                 .core
@@ -3101,7 +3101,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     completed_execution_facts.into_facts(),
                     obligations,
                     returned_facts,
-                    loan_evidence,
+                    borrow_evidence,
                     loop_index,
                     return_index,
                 )
@@ -3520,7 +3520,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         outcome,
                         completed_execution_facts,
                         obligations,
-                        execution.core.loan_evidence().clone(),
+                        execution.core.borrow_evidence().clone(),
                     ));
                 }
                 append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
@@ -3657,7 +3657,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 FunctionOutcome::VerificationDiverges,
                 completed_execution_facts,
                 transition_obligations,
-                execution.core.loan_evidence().clone(),
+                execution.core.borrow_evidence().clone(),
             )];
             append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
             let completed =
@@ -4167,7 +4167,7 @@ fn append_pending_loop_returns(
         FunctionOutcome,
         crate::kernel::proof::CompletedExecutionFacts,
         Vec<ProofObligation>,
-        crate::kernel::CheckedLoanCallEvidenceSequence,
+        crate::kernel::CheckedBorrowCallEvidenceSequence,
     )>,
 ) {
     for pending in core.complete_pending_loop_returns() {
@@ -4175,7 +4175,7 @@ fn append_pending_loop_returns(
             pending.outcome,
             crate::kernel::proof::CompletedExecutionFacts::from_facts(pending.execution_facts),
             pending.obligations,
-            pending.loan_evidence,
+            pending.borrow_evidence,
         ));
     }
 }

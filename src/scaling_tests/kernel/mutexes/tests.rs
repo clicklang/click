@@ -526,7 +526,7 @@ fn automatic_use_acquisition_does_not_scan_the_resource_frame() {
 }
 
 #[test]
-fn use_loan_round_trip_does_not_scan_unrelated_mutexes() {
+fn use_borrow_round_trip_does_not_scan_unrelated_mutexes() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let assumptions = PureFactContext::new();
@@ -537,13 +537,13 @@ fn use_loan_round_trip_does_not_scan_unrelated_mutexes() {
         let ((recovered, work), persistent_work) =
             crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
-                    let (lent, loan) = initialized.lend_use(&mutex(0), &assumptions).unwrap();
+                    let (lent, borrow) = initialized.lend_use(&mutex(0), &assumptions).unwrap();
                     let (held, _) = lent
-                        .acquire_using(&mutex(0), loan.usage, &assumptions)
+                        .acquire_using(&mutex(0), borrow.usage, &assumptions)
                         .unwrap();
                     held.release_current(&mutex(0), &assumptions)
                         .unwrap()
-                        .recover_use(&loan, &assumptions)
+                        .recover_use(&borrow, &assumptions)
                         .unwrap()
                 })
             });

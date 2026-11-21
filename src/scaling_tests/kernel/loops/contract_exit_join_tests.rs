@@ -40,7 +40,12 @@ fn loop_exit_scalar_restatement_keeps_recorded_memory_effects() {
         let mut restatement = LoopExitRestatement::default();
         restatement.pin(&fresh, &held);
         let (exit, work) = crate::instrumentation::measure_deterministic_work(|| {
-            restatement.restate(facts, vec![], empty_checked_loan_evidence_sequence(), false)
+            restatement.restate(
+                facts,
+                vec![],
+                empty_checked_borrow_evidence_sequence(),
+                false,
+            )
         });
         assert!(exit.stated.contains_proposition(&original));
         let nested = Proposition::And(Box::new(effect.clone()), Box::new(guard(&fresh)));
@@ -90,7 +95,7 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
             iterations: IntegerTerm::Constant(0.into()),
             summaries: Vec::new(),
             resource_failures: Vec::new(),
-            loan_requirements: Vec::new(),
+            borrow_requirements: Vec::new(),
             effect_checks: Vec::new(),
         };
         let facts = ExecutionFacts::new();
@@ -167,8 +172,8 @@ fn a_loop_exit_join_visits_only_changed_bindings_and_cells() {
 }
 
 #[test]
-fn exit_cell_separation_shares_the_active_loan_footprint() {
-    use crate::kernel::loans::BorrowLedger;
+fn exit_cell_separation_shares_the_active_borrow_footprint() {
+    use crate::kernel::borrows::BorrowLedger;
 
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address::symbolic(Variable(927_000));
@@ -193,7 +198,7 @@ fn exit_cell_separation_shares_the_active_loan_footprint() {
         }
         let base = ExecutionState::new()
             .with_memory(memory.clone())
-            .with_loan_ledger(Some(ledger.clone()));
+            .with_borrow_ledger(Some(ledger.clone()));
         let exits = [
             base.clone()
                 .with_memory(memory.clone().store(pointer.clone(), int32(0))),

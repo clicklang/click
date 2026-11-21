@@ -37,7 +37,7 @@ removed, so it has to stay small.
 | Fact store | Hold the path's facts in persistent indexes, with the equality closure and the difference graph | fast | `PureFactStore` in `src/kernel/proof/facts.rs`, its `PureFactContext` component in `src/kernel/assumptions.rs`, `src/kernel/equality_graph*`, `src/kernel/difference_graph.rs` |
 | Condition decision | Decide one condition (order, overflow, equality, consistency) from the facts | fast | `PureFactContext::decide`, `src/kernel/assumptions/condition_reasoning/` |
 | Memory | Memory states, the memory derivation DAG, and load and store resolution | fast | `src/kernel/primitives/cell_store.rs`, `src/kernel/reasoning/memory_resolution.rs`, `src/kernel/memory_history.rs` |
-| Resources | Ownership, views, borrows, folds, and separation | fast | `src/kernel/primitives/resource_algebra.rs`, `src/kernel/resource_tracker/`, `src/kernel/loans.rs` |
+| Resources | Ownership, views, borrows, folds, and separation | fast | `src/kernel/primitives/resource_algebra.rs`, `src/kernel/resource_tracker/`, `src/kernel/borrows.rs` |
 | Simple tactics | Apply one checked step to a persistent proof state | fast | `src/kernel/proof/object.rs`, `src/surface/proof/proof_object/`, `src/surface/proof/checked_drivers/` |
 | Proof construction | Construct ordinary proof steps and check local arithmetic primitives | fast | `src/kernel/proof/{object,fact_reasoning,arithmetic_special}.rs`, `src/surface/proof_certificate.rs` |
 | Termination | Plan recursion heights over the call graph, then check them | fast | `src/kernel/termination.rs` |
@@ -570,7 +570,7 @@ or replacement updates only that branch.
 
 Call planning uses this selection for parent and callee bindings; boundary
 guards forbid observation enumeration and implicit fragment coalescing in
-`loans.rs`. Refusal classification may consult one indexed
+`borrows.rs`. Refusal classification may consult one indexed
 observation witness; that lookup grants no borrow authority and never retries. When lending a selected owner, consumption receives that occurrence
 directly, aligns the requested slice and consumes only it, retaining split
 origins with the successor. It does not rediscover a supplier or join other

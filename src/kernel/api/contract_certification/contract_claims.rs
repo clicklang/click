@@ -343,7 +343,7 @@ mod cached_read_completion_tests {
                 arguments: vec![],
                 outcome,
             }),
-            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         };
         let theorem = Theorem::new(
             Proposition::ProgramFunctionPartiallySatisfiesSpecification {
@@ -2169,9 +2169,14 @@ fn function_claim_holds_on_prepared_path(
                         .all(|(pointer, bytes)| {
                             covers_everything
                                 || is_function_fresh_heap_pointer(pointer, before)
-                                || mutable_ranges.iter().any(|range| {
-                                    assumptions
-                                        .pointer_access_in_memory_range(pointer, *bytes, range)
+                                || mutable_ranges.iter().any(|range| match bytes {
+                                    crate::kernel::AccessExtent::Bytes(bytes) => assumptions
+                                        .pointer_access_in_memory_range(pointer, *bytes, range),
+                                    extent => crate::kernel::memory_range_covers(
+                                        range,
+                                        &MemoryRange::of_access(pointer, *extent),
+                                        assumptions,
+                                    ),
                                 })
                         })
                 }
@@ -3326,7 +3331,7 @@ mod checked_proposition_index_tests {
                 &[],
             )),
 
-            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         };
         let (_, _, _, entry_assumptions) =
             super::super::certified_function_path_parts(&function, &path)

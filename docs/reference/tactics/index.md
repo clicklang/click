@@ -1399,7 +1399,16 @@ A recursive specification function applied to a known constructor is
 evaluated: `solve` unfolds it, then keeps unfolding the recursive calls the
 definition exposes while their arguments select one arm, rewriting an argument
 by a constructor equation (a supplied premise or a connected fact such as
-`u == Tree::Node(..)`) when that exposes one, for at most eight checked steps.
+`u == Tree::Node(..)`) when that exposes one. A recursion over an integer
+measure is evaluated the same way when its arguments are constants: the
+unfolded `if` arm that a constant guard such as `2 <= 0` selects is searched
+for the next call. It takes eight checked steps, plus as many as the largest
+constant argument of a call it unfolds, at most 1024 in all; each step lowers
+the whole goal again, so a long evaluation can exhaust the tactic budget
+first (about 25 calls), where a bottom-up proof, one `have` per call by
+`unfold` and `solve()`, stays linear
+(`mdtests/a_recursive_byte_function_evaluates_automatically.md`,
+`mdtests/a_recursive_byte_function_evaluates_a_string_literal.md`).
 An argument nothing fixes stays folded
 ([`solve_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_evaluates_a_recursive_function_over_known_constructors.md),
 [`solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).
@@ -1594,9 +1603,9 @@ available when one of these holds:
 
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
-- It is a viewability goal for a concrete byte span within the exact block
-  recorded in the goal's memory state. The check uses the written base
-  identity, offset, and span size.
+- It is a viewability goal for an empty byte span or for a concrete span
+  within the exact block recorded in the goal's memory state. A nonempty
+  span uses the written base identity, offset, and span size.
 - The completed execution path diverges and the goal is a return
   postcondition.
 - It is a typed read-definedness goal whose memory state holds a compatible
@@ -1605,14 +1614,17 @@ available when one of these holds:
   all four bytes are recorded initialized. These checks use the goal's
   memory state and decline if its lifetime or initialization needs further
   evidence.
-- It separates a complete recorded statement footprint from the named
+- It separates a complete recorded effect footprint from the named
   resource. For each recorded member, the checker tests intrinsic
-  separation or looks up the exact member separation. A sequence with
-  multiple effects needs individually checked steps.
-- It is a separation of memory ranges on two distinct automatic objects,
-  or between an automatic object and storage incoming to the function.
-  The check uses the exact block identities in the goal. Forming the
-  ranges still carries the ordinary range obligations.
+  separation or looks up the exact member separation. Two ranges that meet
+  at a byte boundary are separate when the signed endpoints of the leading
+  range are ordered. A sequence with multiple effects needs individually
+  checked steps.
+- It is a separation of memory ranges on distinct static objects or
+  distinct automatic objects, or between an automatic object and storage
+  incoming to the function. Two ranges on the same symbolic base can also
+  be separate by their exact constant byte intervals. Forming the ranges
+  still carries the ordinary range obligations.
 - It follows by exact Boolean unit propagation. Admitting `A or B` and
   `not A` makes `B` available; admitting `A implies B` and `A` makes `B`
   available. Either admission order works, and consequences propagate through
@@ -1649,14 +1661,22 @@ A leaf also closes by goal-local computation: a constant truth, exact
 reflexivity (excluding IEEE floating-point comparisons), equality or inequality
 of literal integers, cancellation and regrouping of additive machine or
 `Integer` expressions, and distinct algebraic constructors. Exact `Integer`
-order comparisons close when their symbolic terms cancel. Calls, reads, folds,
-and symbolic matches are opaque operands; their identical occurrences may
-cancel, but this check never unfolds a call or resolves a read. It does not
-invoke the general atomic prover.
+order comparisons close when their symbolic terms cancel. Identical calls,
+reads, folds, and symbolic matches may cancel as opaque operands. An equality
+with an `int32` union member can also use the typed value stored at its exact
+address and memory state. A by-value copy can store the source read itself
+as that value. The check uses one typed cell lookup per operand. A native
+signed `int32` comparison against a literal can also use the literal
+stored at the read's exact typed cell.
 
 A machine-valued range fold whose step returns its accumulator equals its
 initial value. This check reads only the accumulator binding and the initial
 value.
+
+After an explicit `unfold`, `known()` can check values and bounds of machine
+expressions such as decimal lengths and their padded lengths. It follows a
+decided guard and otherwise bounds both arms. Its arithmetic uses only the
+operands in the goal, with a bounded walk and checked machine ranges.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
@@ -1668,6 +1688,11 @@ alignment of a null, heap, global or static address reads only that address's
 block registration and constant byte offset. It does not search alignment facts
 or infer alignment for a symbolic offset.
 
+For a written alignment goal, `known()` may also look up the base's recorded
+alignment by coordinate. A constant byte displacement or a symbolic index at
+a stride divisible by the requested alignment preserves the corresponding
+residue. The check probes only the base and the supported alignment strengths.
+
 The same fixed local check accepts intrinsic machine type ranges and
 constant-divisor quotient, remainder, and right-shift bounds. This includes
 `x % d < d` and its exact Integer reading for a positive machine literal `d`.
@@ -1676,6 +1701,9 @@ Signed quotient and remainder bounds against zero use the named operand
 signs and the divisor's nonzero guard. Machine operations also require
 evidence that excludes the signed minimum divided by `-1` when the signs
 alone leave that pair possible.
+A full-width unsigned index agrees with its signed low word when both use
+the same base and stride and the full-width index is at most `INT32_MAX`.
+`known()` checks this bound on the full-width index itself.
 A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.

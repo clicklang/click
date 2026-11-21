@@ -1705,7 +1705,12 @@ impl PureFactContext {
         }
         // The null pointer's address is zero, which every alignment divides.
         let null_fact = ConditionTerm::address_equal(pointer.clone(), Address::null());
-        if self.decide(&null_fact) == Some(true) {
+        let null = if allow_class_witness {
+            self.decide(&null_fact)
+        } else {
+            self.exact_condition_value(&null_fact)
+        };
+        if null == Some(true) {
             return Some((true, Some(Proposition::condition_is(null_fact, true))));
         }
         let (base, displacement) = split_constant_displacement(&pointer.offset);
@@ -1737,6 +1742,9 @@ impl PureFactContext {
                 };
                 let mut probe = alignment;
                 while probe <= MAX_PROBED_ALIGNMENT {
+                    if crate::instrumentation::deadline_exceeded_with_work(1) {
+                        return None;
+                    }
                     let premise_at = |pointer: &Address, alignment| {
                         self.equality_graph
                             .admitted

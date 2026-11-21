@@ -1386,7 +1386,16 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             ranking_measures: ranking_measures.to_vec(),
             ranking_surfaces: loop_ranking_surfaces(environment, loop_index),
             structural_measure: structural_measure.map(str::to_string),
-            declared_invariant_surfaces: invariant_surfaces.clone(),
+            // Generated back-edge proofs use the invariant's written
+            // bindings from the loop's lexical scope.
+            declared_invariant_surfaces: environment
+                .function_block
+                .structural_clauses()
+                .for_loop(loop_index)
+                .into_iter()
+                .flat_map(StructuralClause::items)
+                .map(|item| item.proposition().clone())
+                .collect(),
             loop_head_premises: Vec::new(),
             binders: preservation.binders().to_vec(),
             binder_names: Arc::new({
@@ -1816,7 +1825,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             };
             return_exits.push(
                 LoopReturnExit::from_store(value.clone(), (**state).clone(), &pending.pure_facts)
-                    .with_loan_evidence(pending.loan_evidence.clone()),
+                    .with_borrow_evidence(pending.borrow_evidence.clone()),
             );
             let mut nested = (**nested).clone();
             nested.owners.push((
@@ -1848,7 +1857,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 &assumptions_from_propositions(checked.facts()),
             );
             let exit = LoopReturnExit::from_store(value, state, &exit_facts)
-                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+                .with_borrow_evidence(checked_execution.core.borrow_evidence().clone());
             // Equal semantic exits may carry different written proofs. Keep
             // each arm so no source proof disappears through deduplication.
             return_exits.push(exit);
@@ -1906,7 +1915,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             );
             let exit = LoopFinalExitCandidate::from_store(state, &exit_facts)
                 .with_jump_target(target)
-                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+                .with_borrow_evidence(checked_execution.core.borrow_evidence().clone());
             if seen_final_exits.is_new(
                 exit.state(),
                 exit.pure_facts(),
@@ -1945,7 +1954,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             let exit = LoopEarlyExit::from_store(state, checked.facts())
                 .with_guard_false(guard_false)
                 .with_guard_points_index(points_index)
-                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+                .with_borrow_evidence(checked_execution.core.borrow_evidence().clone());
             if seen_early_exits.is_new(exit.state(), exit.pure_facts(), &early_exits, &exit) {
                 early_exits.push(exit);
             }
@@ -1972,7 +1981,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             });
             let candidate = LoopFinalExitCandidate::from_store(state, &exit_facts)
                 .with_guard_points_index(points_index)
-                .with_loan_evidence(checked_execution.core.loan_evidence().clone());
+                .with_borrow_evidence(checked_execution.core.borrow_evidence().clone());
             if seen_final_exits.is_new(
                 candidate.state(),
                 candidate.pure_facts(),

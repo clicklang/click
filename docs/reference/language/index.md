@@ -3923,6 +3923,11 @@ After function exit, a parameter reference denotes its logical input value.
 Use `old(program::result)` or `at(function.entry, program::result)` to refer explicitly to
 the parameter's entry value.
 
+In a Rust proof, `bytes.len()` reads the length of the slice named by `bytes`
+at the selected point. A Rust local can shadow a slice parameter.
+`program::bytes.len()` explicitly selects the Rust binding, and
+`old(program::bytes.len())` reads the original parameter length.
+
 C locals exist only while they are in scope. After function exit, refer to a
 local through a recorded point:
 
@@ -4175,6 +4180,14 @@ path (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
 `at(...)`, reassigned parameters and declared scalar, pointer, and array
 locals resolve to their values at that point. Outside `at(...)`,
 function parameter names retain their ordinary contract meaning.
+
+A mark before the first execution step can name an incoming by-value
+aggregate used in a resource clause. For example, after `mark inputs;`,
+`at(inputs, dst.data)` and `at(inputs, dst.size)` name the pointer and
+length in the entry separation fact. The first step binds the private
+parameter object used by the body.
+
+<!-- verified-example: mdtests/by_value_parameter_entry_range_separation.md -->
 
 `at(loop_label.entry, expression)` is supported inside invariants for that
 same labeled loop code region. It evaluates `expression` at the loop's entry
@@ -4527,8 +4540,13 @@ renderer prefers `owner->field` whenever imported layout origin identifies
 the address. Expansion may emit a low-level read only when no source field
 place is available.
 
-Concrete folds are unrolled. Symbolic folds remain `RangeFold` value terms in
-the kernel and can be reasoned about by supported fold laws.
+Symbolic folds remain `RangeFold` value terms in the kernel and can be
+reasoned about by supported fold laws. Pure `int32` folds over one or two
+items can also retain their fold terms. With literal bounds, callbacks that
+return the accumulator, the item, or an `int32` literal can retain their
+fold terms at any range length. For a nonempty range, checking uses the
+seed, final item, or literal, respectively. Other concrete callbacks can
+be evaluated by unrolling.
 
 
 ### Methods

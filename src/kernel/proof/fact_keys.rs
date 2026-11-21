@@ -2462,7 +2462,7 @@ fn alpha_algebraic_key_with_bindings<const ALLOW_LOADS: bool>(
         } => AlphaAlgebraicKey::MemoryLoad {
             algebraic_type: term.algebraic_type.clone(),
             carrier: alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                &AlgebraicTermNode::memory_load_carrier(memory, pointer),
+                &AlgebraicTermNode::memory_load_carrier(memory, pointer, &term.algebraic_type),
                 bindings,
                 next_binder,
             )?,

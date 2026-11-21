@@ -7,7 +7,7 @@ the remainder of the first unit and the unit `give_back` produced. Neither
 covers the returned quantity alone, and the return check consumes without
 normalizing first, so it must take the quantity from both units together.
 It merges same-resource units it already selected, and keeps a unit with a
-loan, support, projection or witness apart.
+borrow, support, projection or witness apart.
 
 ```c filename=pool.c
 struct pool { int32 checked_out; int32 capacity; };
@@ -191,6 +191,12 @@ void give_back(struct pool* pool, struct payload* p) {
         unfold(item(pool, p));
         have separate(memory(p->value), memory(pool->checked_out));
         step();
+        have separate(statement(0).footprint, memory(p->value)) by {
+            normalize() using { separate(memory(p->value), memory(pool->checked_out)); };
+        }
+        have p->value == old(p->value) by {
+            preserve(memory(p->value), statement(0));
+        }
         fold(slot(pool));
         have 0 <= pool->checked_out by {
             solve() using { at(function.entry, 1) <= at(function.entry, pool->checked_out); };
@@ -295,9 +301,7 @@ void give_back(struct pool* pool, struct payload* p) {
     normalize();
     known();
     known();
-    transport(old(p->value) == old(p->value), p->value == old(p->value)) using {
-        separate(memory(p->value), memory(pool->checked_out));
-    };
+    have p->value == old(p->value) by known();
 }
 void pipeline(struct pool* pool, struct payload* first, struct payload* second) {
  consumes storage(pool);

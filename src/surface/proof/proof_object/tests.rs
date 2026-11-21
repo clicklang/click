@@ -435,7 +435,7 @@ fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
                             base: crate::kernel::AddressBase::ExternalArgument,
                             offset: crate::kernel::AddressOffset::Constant(index as i64 * 4),
                         },
-                        4,
+                        crate::kernel::AccessExtent::from(4),
                     )],
                 })
             })

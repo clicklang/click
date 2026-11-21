@@ -1298,12 +1298,16 @@ impl FixedStateLowering {
         for name in names {
             crate::instrumentation::record_deterministic_work(1);
             if name.named().is_none() {
-                if let Some(value) = contract_environment.parameter_value(&name) {
-                    if !entry_state.locals().contains_name(&name) {
-                        entry_state = entry_state.with_local(name.clone(), value.clone());
+                let parameter = name
+                    .unresolved_slice_length()
+                    .map(crate::kernel::BindingName::slice_length)
+                    .unwrap_or(name);
+                if let Some(value) = contract_environment.parameter_value(&parameter) {
+                    if !entry_state.locals().contains_name(&parameter) {
+                        entry_state = entry_state.with_local(parameter.clone(), value.clone());
                     }
-                    if !lowering_state.locals().contains_name(&name) {
-                        lowering_state = lowering_state.with_local(name, value.clone());
+                    if !lowering_state.locals().contains_name(&parameter) {
+                        lowering_state = lowering_state.with_local(parameter, value.clone());
                     }
                 }
                 continue;

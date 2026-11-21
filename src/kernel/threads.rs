@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use crate::persistent::PersistentMap;
 
+use super::borrows::{BorrowBinding, BorrowBindings, BorrowLedger, StableViewTransferPlan};
 use super::functions::suspend_verified_worker;
-use super::loans::{BorrowLedger, LoanViewBinding, LoanViewBindings, StableViewTransferPlan};
 use super::{
     Address, AddressBase, ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact,
     ExecutionResult, ExecutionState, MachineTerm, MemoryRange, ProgramValue, Proposition,
@@ -145,8 +145,8 @@ pub(super) enum PendingThreadMemoryDelta {
 /// stores; selecting an outcome never restores a captured parent state.
 struct PendingCreateAuthority {
     resources: ResourceContext,
-    loan_ledger: Option<BorrowLedger>,
-    loan_view_bindings: LoanViewBindings,
+    borrow_ledger: Option<BorrowLedger>,
+    borrow_bindings: BorrowBindings,
     thread_ledger: Option<ThreadLedger>,
     mutex_ledger: Option<super::mutexes::MutexLedger>,
     mutex_input_reservations: Option<super::mutexes::MutexInputReservations>,
@@ -159,8 +159,8 @@ impl PendingCreateAuthority {
     fn from_state(state: &ExecutionState) -> Self {
         Self {
             resources: state.resources.clone(),
-            loan_ledger: state.loan_ledger.clone(),
-            loan_view_bindings: state.loan_view_bindings.clone(),
+            borrow_ledger: state.borrow_ledger.clone(),
+            borrow_bindings: state.borrow_bindings.clone(),
             thread_ledger: state.thread_ledger.clone(),
             mutex_ledger: state.mutex_ledger.clone(),
             mutex_input_reservations: state.mutex_input_reservations.clone(),
@@ -172,8 +172,8 @@ impl PendingCreateAuthority {
 
     fn install(&self, state: &mut ExecutionState) {
         state.resources = self.resources.clone();
-        state.loan_ledger = self.loan_ledger.clone();
-        state.loan_view_bindings = self.loan_view_bindings.clone();
+        state.borrow_ledger = self.borrow_ledger.clone();
+        state.borrow_bindings = self.borrow_bindings.clone();
         state.thread_ledger = self.thread_ledger.clone();
         state.mutex_ledger = self.mutex_ledger.clone();
         state.mutex_input_reservations = self.mutex_input_reservations.clone();
@@ -253,8 +253,8 @@ impl PendingThreadCreate {
                 success_point: storage.success_point.clone(),
                 success: PendingCreateAuthority {
                     resources: storage.success.resources.clone(),
-                    loan_ledger: storage.success.loan_ledger.clone(),
-                    loan_view_bindings: storage.success.loan_view_bindings.clone(),
+                    borrow_ledger: storage.success.borrow_ledger.clone(),
+                    borrow_bindings: storage.success.borrow_bindings.clone(),
                     thread_ledger: storage.success.thread_ledger.clone(),
                     mutex_ledger: storage.success.mutex_ledger.clone(),
                     mutex_input_reservations: storage.success.mutex_input_reservations.clone(),
@@ -264,8 +264,8 @@ impl PendingThreadCreate {
                 },
                 failure: PendingCreateAuthority {
                     resources: storage.failure.resources.clone(),
-                    loan_ledger: storage.failure.loan_ledger.clone(),
-                    loan_view_bindings: storage.failure.loan_view_bindings.clone(),
+                    borrow_ledger: storage.failure.borrow_ledger.clone(),
+                    borrow_bindings: storage.failure.borrow_bindings.clone(),
                     thread_ledger: storage.failure.thread_ledger.clone(),
                     mutex_ledger: storage.failure.mutex_ledger.clone(),
                     mutex_input_reservations: storage.failure.mutex_input_reservations.clone(),
@@ -291,8 +291,8 @@ impl PendingThreadCreate {
         let success_memory = memory(&storage.success_memory);
         let map_authority = |authority: &PendingCreateAuthority| PendingCreateAuthority {
             resources: resources(&authority.resources),
-            loan_ledger: authority.loan_ledger.clone(),
-            loan_view_bindings: authority.loan_view_bindings.clone(),
+            borrow_ledger: authority.borrow_ledger.clone(),
+            borrow_bindings: authority.borrow_bindings.clone(),
             thread_ledger: authority.thread_ledger.clone(),
             mutex_ledger: authority.mutex_ledger.clone(),
             mutex_input_reservations: authority.mutex_input_reservations.clone(),
@@ -484,8 +484,8 @@ impl ParentOwnershipPartition {
 struct ThreadLedgerStorage {
     state: u64,
     rights: PersistentMap<ThreadHandle, Arc<CompletionRight>>,
-    loan_trace: Option<ThreadLoanTrace>,
-    local_views: PersistentMap<ResourceFact, LoanViewBinding>,
+    borrow_trace: Option<ThreadBorrowTrace>,
+    local_views: PersistentMap<ResourceFact, BorrowBinding>,
     mutex_workers: PersistentMap<Address, usize>,
     parent_partition: Option<ParentOwnershipPartition>,
 }
@@ -496,10 +496,10 @@ struct ThreadLedgerStorage {
 /// view-bearing parent after every child has joined without reconstructing
 /// unrelated ledger history.
 #[derive(Clone)]
-struct ThreadLoanTrace {
+struct ThreadBorrowTrace {
     origin: BorrowLedger,
     current: BorrowLedger,
-    participant: super::loans::LoanParticipantId,
+    participant: super::borrows::BorrowParticipantId,
 }
 
 impl ThreadLedger {
@@ -513,7 +513,7 @@ impl ThreadLedger {
             storage: Arc::new(ThreadLedgerStorage {
                 state: Self::fresh_state(),
                 rights: PersistentMap::default(),
-                loan_trace: None,
+                borrow_trace: None,
                 local_views: PersistentMap::default(),
                 mutex_workers: PersistentMap::default(),
                 parent_partition: None,
@@ -583,42 +583,42 @@ impl ThreadLedger {
         !self.storage.rights.is_empty()
     }
 
-    pub(super) fn local_view_binding(&self, fact: &ResourceFact) -> Option<&LoanViewBinding> {
+    pub(super) fn local_view_binding(&self, fact: &ResourceFact) -> Option<&BorrowBinding> {
         self.storage.local_views.get(fact)
     }
 
     #[cfg(test)]
-    pub(super) fn witnesses_loan_recovery(
+    pub(super) fn witnesses_borrow_recovery(
         &self,
         origin: &BorrowLedger,
         current: &BorrowLedger,
-        participant: super::loans::LoanParticipantId,
+        participant: super::borrows::BorrowParticipantId,
     ) -> bool {
         self.storage.rights.is_empty()
             && self.storage.local_views.is_empty()
             && self.storage.mutex_workers.is_empty()
-            && self.storage.loan_trace.as_ref().is_some_and(|trace| {
+            && self.storage.borrow_trace.as_ref().is_some_and(|trace| {
                 trace.origin == *origin
                     && trace.current == *current
                     && trace.participant == participant
             })
     }
 
-    fn advanced_loan_trace(
+    fn advanced_borrow_trace(
         &self,
         before: &BorrowLedger,
         after: &BorrowLedger,
-        participant: super::loans::LoanParticipantId,
-    ) -> Option<ThreadLoanTrace> {
-        match self.storage.loan_trace.as_ref() {
+        participant: super::borrows::BorrowParticipantId,
+    ) -> Option<ThreadBorrowTrace> {
+        match self.storage.borrow_trace.as_ref() {
             Some(trace) if trace.current == *before && trace.participant == participant => {
-                Some(ThreadLoanTrace {
+                Some(ThreadBorrowTrace {
                     origin: trace.origin.clone(),
                     current: after.clone(),
                     participant,
                 })
             }
-            _ if self.storage.rights.is_empty() => Some(ThreadLoanTrace {
+            _ if self.storage.rights.is_empty() => Some(ThreadBorrowTrace {
                 origin: before.clone(),
                 current: after.clone(),
                 participant,
@@ -633,7 +633,7 @@ impl ThreadLedger {
         right: CompletionRight,
         before: &BorrowLedger,
         after: &BorrowLedger,
-        participant: super::loans::LoanParticipantId,
+        participant: super::borrows::BorrowParticipantId,
     ) -> Self {
         let mut local_views = self.storage.local_views.clone();
         let mut mutex_workers = self.storage.mutex_workers.clone();
@@ -652,7 +652,7 @@ impl ThreadLedger {
             storage: Arc::new(ThreadLedgerStorage {
                 state: Self::fresh_state(),
                 rights: self.storage.rights.with_inserted(handle, Arc::new(right)),
-                loan_trace: self.advanced_loan_trace(before, after, participant),
+                borrow_trace: self.advanced_borrow_trace(before, after, participant),
                 local_views,
                 mutex_workers,
                 parent_partition: self.storage.parent_partition.clone(),
@@ -665,8 +665,8 @@ impl ThreadLedger {
         handle: ThreadHandle,
         before: &BorrowLedger,
         after: &BorrowLedger,
-        participant: super::loans::LoanParticipantId,
-        local_updates: &BTreeMap<ResourceFact, Option<LoanViewBinding>>,
+        participant: super::borrows::BorrowParticipantId,
+        local_updates: &BTreeMap<ResourceFact, Option<BorrowBinding>>,
     ) -> Self {
         let mut local_views = self.storage.local_views.clone();
         let mut mutex_workers = self.storage.mutex_workers.clone();
@@ -696,7 +696,7 @@ impl ThreadLedger {
             storage: Arc::new(ThreadLedgerStorage {
                 state: Self::fresh_state(),
                 rights: self.storage.rights.without_key(&handle),
-                loan_trace: self.advanced_loan_trace(before, after, participant),
+                borrow_trace: self.advanced_borrow_trace(before, after, participant),
                 local_views,
                 mutex_workers,
                 parent_partition: self.storage.parent_partition.clone(),
@@ -906,8 +906,8 @@ impl PreparedThreadCreate<'_> {
                     .caller_resources_after_requirements
                     .clone(),
             )
-            .with_loan_ledger(Some(self.completion.plan.ledger.clone()))
-            .with_loan_view_bindings(
+            .with_borrow_ledger(Some(self.completion.plan.ledger.clone()))
+            .with_borrow_bindings(
                 self.completion
                     .plan
                     .caller_view_bindings_after_requirements()
@@ -925,9 +925,12 @@ impl PreparedThreadCreate<'_> {
         }
         next.parent.mutex_ledger = self.completion.mutex_ledger.clone();
         next.parent.named_mutex_authorities = self.retained_names;
-        let before_loans = self.parent.parent.loan_ledger().expect("parent ledger");
-        let after_loans = next.parent.loan_ledger().expect("spawn ledger").clone();
-        let participant = next.parent.loan_participant().expect("parent participant");
+        let before_borrows = self.parent.parent.borrow_ledger().expect("parent ledger");
+        let after_borrows = next.parent.borrow_ledger().expect("spawn ledger").clone();
+        let participant = next
+            .parent
+            .borrow_participant()
+            .expect("parent participant");
         let ledger = next.parent.thread_ledger.as_ref().expect("thread ledger");
         let preserved_partition = ledger.storage.rights.is_empty()
             || ledger.preserves_parent_partition(self.parent.parent.resources());
@@ -938,8 +941,8 @@ impl PreparedThreadCreate<'_> {
                     CompletionRight {
                         completion: self.completion,
                     },
-                    before_loans,
-                    &after_loans,
+                    before_borrows,
+                    &after_borrows,
                     participant,
                 )
                 .with_parent_partition(next.parent.resources(), preserved_partition),
@@ -987,15 +990,15 @@ impl ThreadContext {
         {
             return Err(RuntimeError::UnsupportedConcurrentMutex);
         }
-        match (parent.loan_ledger(), parent.loan_participant()) {
+        match (parent.borrow_ledger(), parent.borrow_participant()) {
             (None, None) => {
                 let ledger = BorrowLedger::new();
                 let participant = ledger.fresh_participant().map_err(|_| {
                     RuntimeError::FunctionContract("invalid parent participant".to_string())
                 })?;
                 parent = parent
-                    .with_loan_ledger(Some(ledger))
-                    .with_loan_participant(Some(participant));
+                    .with_borrow_ledger(Some(ledger))
+                    .with_borrow_participant(Some(participant));
             }
             (Some(ledger), Some(participant)) if ledger.contains_participant(participant) => {}
             _ => {
@@ -1040,7 +1043,10 @@ impl ThreadContext {
             Err(error) => return Ok(Err(error)),
         };
         if completion.plan.caller_participant()
-            != self.parent.loan_participant().expect("parent participant")
+            != self
+                .parent
+                .borrow_participant()
+                .expect("parent participant")
         {
             return Ok(Err(super::RuntimeError::FunctionContract(
                 "worker partition belongs to a different parent".into(),
@@ -1048,7 +1054,7 @@ impl ThreadContext {
         }
         if completion
             .plan
-            .recheck_entry(self.parent.loan_ledger().expect("parent ledger"))
+            .recheck_entry(self.parent.borrow_ledger().expect("parent ledger"))
             .is_err()
         {
             return Ok(Err(super::RuntimeError::FunctionContract(
@@ -1131,8 +1137,8 @@ impl ThreadContext {
             .and_then(|ledger| ledger.right(handle))
             .ok_or("no live completion right for this handle")?;
         let completion = &right.completion;
-        let ledger = self.parent.loan_ledger().expect("parent ledger");
-        if self.parent.loan_participant() != Some(completion.plan.caller_participant()) {
+        let ledger = self.parent.borrow_ledger().expect("parent ledger");
+        if self.parent.borrow_participant() != Some(completion.plan.caller_participant()) {
             return Err("completion right belongs to a different parent");
         }
         // The worker's preserved `mutex_use` inputs are borrows of the parent's
@@ -1188,7 +1194,7 @@ impl ThreadContext {
             .recover_suspended_views_with_entry_partition(
                 ledger.clone(),
                 resources,
-                self.parent.loan_view_bindings().clone(),
+                self.parent.borrow_bindings().clone(),
                 local_bindings,
                 if framed {
                     completion.entry_partition
@@ -1205,7 +1211,7 @@ impl ThreadContext {
         {
             return Err("worker borrow recovery evidence is invalid");
         }
-        let after_loans = recovery.ledger.clone();
+        let after_borrows = recovery.ledger.clone();
         let mut next = self.clone();
         if let Some(creation) = &completion.creation {
             let current = self
@@ -1270,8 +1276,8 @@ impl ThreadContext {
         next.parent = next
             .parent
             .with_resource_context(recovery.resources)
-            .with_loan_ledger(Some(recovery.ledger))
-            .with_loan_view_bindings(recovery.view_bindings);
+            .with_borrow_ledger(Some(recovery.ledger))
+            .with_borrow_bindings(recovery.view_bindings);
         if let Some(named) = &next.parent.named_mutex_authorities {
             next.parent.named_mutex_authorities = Some(Arc::new(
                 named
@@ -1287,7 +1293,7 @@ impl ThreadContext {
                 .without_right(
                     handle,
                     ledger,
-                    &after_loans,
+                    &after_borrows,
                     completion.plan.caller_participant(),
                     &recovery.local_view_updates,
                 )

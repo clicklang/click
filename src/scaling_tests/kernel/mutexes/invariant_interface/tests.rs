@@ -45,7 +45,7 @@ fn initialized_interface_exchange_scales_independently_of_resource_frame() {
 
 #[test]
 fn use_interface_call_binding_scales_independently_of_resource_frame() {
-    use crate::kernel::loans::mutex_calls::MutexUseCallTransfer;
+    use crate::kernel::borrows::mutex_calls::MutexUseCallTransfer;
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
@@ -62,13 +62,13 @@ fn use_interface_call_binding_scales_independently_of_resource_frame() {
         }
         let protocols = context.state.mutex_ledger.as_ref().unwrap();
         let owner = protocols.live_resource(&address()).unwrap();
-        let loans = BorrowLedger::new();
-        let caller = loans.fresh_participant().unwrap();
-        let helper = loans.fresh_participant().unwrap();
+        let borrows = BorrowLedger::new();
+        let caller = borrows.fresh_participant().unwrap();
+        let helper = borrows.fresh_participant().unwrap();
         let ((returned, work), persistent) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 let mut transfer = MutexUseCallTransfer::prepare(
-                    &loans,
+                    &borrows,
                     caller,
                     helper,
                     &context.state.resources,

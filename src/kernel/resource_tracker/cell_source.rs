@@ -95,6 +95,10 @@ pub(crate) struct MemoryDagHop {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum MemoryDagHopJustification {
     StoreDistinctBlocks,
+    /// The store and the read are in two distinct fields of one object of a
+    /// symbolic layout, each reaching no further than its field: by the
+    /// layout's rule they share no byte, decided by lookup on the offsets.
+    StoreSymbolicFieldsApart,
     /// Full byte geometry in the maintained numeric-address classes.
     StoreAddressByteSeparation,
     /// The store's full address equals `write` in this checking context;
@@ -333,21 +337,36 @@ pub(in crate::kernel) fn unsigned_index_in_range(
 
 /// A complete access stays in one range when its first and last addressed
 /// elements are in that range. Both memberships retain their own premises.
+/// An access in a field of a symbolic layout's object stays in the whole
+/// object by the layout's rule, decided by lookup on the field's offset term,
+/// with no premise.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::kernel) struct AccessInRangeEvidence {
-    first: PointerInRangeEvidence,
-    last: Option<PointerInRangeEvidence>,
+pub(in crate::kernel) enum AccessInRangeEvidence {
+    Elements {
+        first: PointerInRangeEvidence,
+        last: Option<PointerInRangeEvidence>,
+    },
+    SymbolicField,
+    /// The range's whole object of an abstract type, accessed at its base.
+    WholeObject,
 }
 
 impl AccessInRangeEvidence {
     pub(in crate::kernel) fn for_access(
         pointer: &Address,
-        bytes: u32,
+        extent: impl Into<AccessExtent>,
         range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
-        let last_offset = Self::last_offset(bytes, range)?;
-        Some(Self {
+        let extent = extent.into();
+        if crate::kernel::primitives::symbolic_object_holds_field_access(range, pointer, extent) {
+            return Some(Self::SymbolicField);
+        }
+        if Self::is_whole_object(pointer, extent, range) {
+            return Some(Self::WholeObject);
+        }
+        let last_offset = Self::last_offset(extent.bytes()?, range)?;
+        Some(Self::Elements {
             first: PointerInRangeEvidence::for_pointer(pointer, range, assumptions)?,
             last: if last_offset == 0 {
                 None
@@ -361,23 +380,49 @@ impl AccessInRangeEvidence {
         })
     }
 
+    /// Whether the access is the range's whole object of an abstract type:
+    /// at its base, reaching `sizeof(T)` bytes, as `[p, p + sizeof(T))` is.
+    fn is_whole_object(pointer: &Address, extent: AccessExtent, range: &MemoryRange) -> bool {
+        let AccessExtent::Object(parameter) = extent else {
+            return false;
+        };
+        pointer == range.base()
+            && range.element_width() == 1
+            && range.wide_bounds().is_some_and(|(start, end)| {
+                start.uint64_as_const() == Some(0) && *end == parameter.size_term()
+            })
+    }
+
     fn last_offset(bytes: u32, range: &MemoryRange) -> Option<u32> {
         let width = range.element_width();
         (bytes != 0 && width != 0).then(|| ((bytes - 1) / width) * width)
     }
 
-    fn checks(
+    pub(in crate::kernel) fn checks(
         &self,
         pointer: &Address,
-        bytes: u32,
+        extent: impl Into<AccessExtent>,
         range: &MemoryRange,
         assumptions: &PureFactContext,
     ) -> bool {
-        let Some(last_offset) = Self::last_offset(bytes, range) else {
+        let extent = extent.into();
+        let (first, last) = match self {
+            Self::SymbolicField => {
+                return crate::kernel::primitives::symbolic_object_holds_field_access(
+                    range, pointer, extent,
+                );
+            }
+            Self::WholeObject => return Self::is_whole_object(pointer, extent, range),
+            Self::Elements { first, last } => (first, last),
+        };
+        let Some(last_offset) = extent
+            .bytes()
+            .and_then(|bytes| Self::last_offset(bytes, range))
+        else {
             return false;
         };
-        self.first.checks(pointer, range, assumptions)
-            && match (last_offset, &self.last) {
+        first.checks(pointer, range, assumptions)
+            && match (last_offset, last) {
                 (0, None) => true,
                 (offset, Some(last)) if offset != 0 => {
                     last.checks(&pointer.offset_by_bytes(offset), range, assumptions)
@@ -524,14 +569,21 @@ impl MemoryDagHopJustification {
         &self,
         derivation: &MemoryDerivation,
         pointer: &Address,
-        bytes: u32,
+        extent: impl Into<AccessExtent>,
         assumptions: &PureFactContext,
     ) -> bool {
+        let extent = extent.into();
+        // A value of abstract type reaches `sizeof(T)` bytes, which no rung
+        // that counts bytes can place.
+        let bytes = extent.bytes();
         match self {
             Self::StoreDistinctBlocks => derivation
                 .single_write()
                 .is_some_and(|(write, _)| write.blocks_proven_distinct(pointer)),
             Self::StoreAddressByteSeparation => {
+                let Some(bytes) = bytes else {
+                    return false;
+                };
                 let Some((write, write_bytes)) = derivation.single_write() else {
                     return false;
                 };
@@ -552,6 +604,9 @@ impl MemoryDagHopJustification {
                     == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
             }
             Self::StoreAliasedByteSeparation { write: aligned } => {
+                let Some(bytes) = bytes else {
+                    return false;
+                };
                 let Some((write, write_bytes)) = derivation.single_write() else {
                     return false;
                 };
@@ -638,7 +693,7 @@ impl MemoryDagHopJustification {
                 let retired;
                 let (write, write_bytes) = match (self, derivation) {
                     (Self::StoreSeparatedRanges { .. }, _) => {
-                        let Some(write) = derivation.single_write() else {
+                        let Some(write) = derivation.single_write_extent() else {
                             return false;
                         };
                         write
@@ -658,7 +713,7 @@ impl MemoryDagHopJustification {
                             base: block.clone(),
                             offset: AddressOffset::Constant(0),
                         };
-                        (&retired, size)
+                        (&retired, AccessExtent::Bytes(size))
                     }
                     _ => return false,
                 };
@@ -688,11 +743,11 @@ impl MemoryDagHopJustification {
                     && match orientation {
                         StoreSeparatedRangeOrientation::WriteLeftLoadRight => {
                             write_membership.checks(write, write_bytes, left, assumptions)
-                                && load_membership.checks(pointer, bytes, right, assumptions)
+                                && load_membership.checks(pointer, extent, right, assumptions)
                         }
                         StoreSeparatedRangeOrientation::WriteRightLoadLeft => {
                             write_membership.checks(write, write_bytes, right, assumptions)
-                                && load_membership.checks(pointer, bytes, left, assumptions)
+                                && load_membership.checks(pointer, extent, left, assumptions)
                         }
                     }
             }
@@ -729,6 +784,9 @@ impl MemoryDagHopJustification {
             ),
             Self::RetirementInsideItsCallHavoc => retirement_inside_its_call_havoc(derivation),
             Self::CallHavocRanges { ranges } => {
+                let Some(bytes) = bytes else {
+                    return false;
+                };
                 let MemoryDerivation::CallHavoc { mutable_ranges, .. } = derivation else {
                     return false;
                 };
@@ -739,6 +797,9 @@ impl MemoryDagHopJustification {
             }
             Self::CallHavocKeptRange { range, first, last }
             | Self::LoopHavocKeptRange { range, first, last } => {
+                let Some(bytes) = bytes else {
+                    return false;
+                };
                 let kept = match (self, derivation) {
                     (
                         Self::CallHavocKeptRange { .. },
@@ -770,6 +831,9 @@ impl MemoryDagHopJustification {
                     )
             }
             Self::JoinReadAgreement { arms } => {
+                let Some(bytes) = bytes else {
+                    return false;
+                };
                 let MemoryDerivation::BranchJoin { base, incoming } = derivation else {
                     return false;
                 };
@@ -781,6 +845,9 @@ impl MemoryDagHopJustification {
                     })
             }
             Self::LoopHavocRanges { ranges } => {
+                let Some(bytes) = bytes else {
+                    return false;
+                };
                 let MemoryDerivation::LoopHavoc {
                     mutable_ranges: Some(mutable_ranges),
                     ..
@@ -809,6 +876,9 @@ impl MemoryDagHopJustification {
                     if run.base().blocks_proven_distinct(pointer)
             ),
             Self::SeededStoresMissedByShift => {
+                let Some(bytes) = bytes else {
+                    return false;
+                };
                 let MemoryDerivation::CellsSeeded { run, .. } = derivation else {
                     return false;
                 };
@@ -837,8 +907,20 @@ impl MemoryDagHopJustification {
                                 value: value.into(),
                             },
                             pointer,
-                            bytes,
+                            extent,
                             assumptions,
+                        )
+                    })
+            }
+            Self::StoreSymbolicFieldsApart => {
+                derivation
+                    .single_write_extent()
+                    .is_some_and(|(write, write_extent)| {
+                        crate::kernel::reasoning::symbolic_fields_apart(
+                            write,
+                            write_extent,
+                            pointer,
+                            extent,
                         )
                     })
             }
@@ -1786,7 +1868,10 @@ fn memory_dag_cell_source_walk_inner(
         let justification = match super::step_effect::affects(
             derivation.as_ref(),
             &current,
-            super::TrackedResource::Cell { pointer, bytes },
+            super::TrackedResource::Cell {
+                pointer,
+                bytes: bytes.into(),
+            },
             &evidence,
         ) {
             super::step_effect::StepEffect::Affected => {
@@ -1899,7 +1984,10 @@ pub(in crate::kernel) fn join_read_agreement(
         )) = super::step_effect::affects(
             &derivation,
             current,
-            super::TrackedResource::Cell { pointer, bytes },
+            super::TrackedResource::Cell {
+                pointer,
+                bytes: bytes.into(),
+            },
             evidence,
         )
         else {
@@ -1974,7 +2062,7 @@ mod wide_range_reader_tests {
 #[cfg(test)]
 mod borrowed_range_frame_tests {
     use super::*;
-    use crate::kernel::loans::{BorrowLedger, LoanViewBinding};
+    use crate::kernel::borrows::{BorrowBinding, BorrowLedger};
     use crate::kernel::{Proposition, PureFactContext, Variable};
 
     #[cfg(test)]
@@ -2333,7 +2421,11 @@ mod cache_independence_tests {
                 "one transition must not cross the whole history"
             );
             assert_eq!(
-                super::super::cell_last_same_version_point(&after, &address, 4),
+                super::super::cell_last_same_version_point(
+                    &after,
+                    &address,
+                    crate::kernel::AccessExtent::from(4)
+                ),
                 Some(before.clone())
             );
             let (warm, warm_stop) = query();

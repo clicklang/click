@@ -130,6 +130,14 @@ resolve a read but does not choose the state named by an unresolved scalar
 result. Pointer-read naming retains its existing projection and memory-history
 behavior; its cell-version naming walk is a separate removal target.
 
+For a fixed-offset scalar read of static storage, the naming rule can skip a
+suffix of fixed-offset static stores. Recording each store retains the most
+recent version for each byte it changed. A store to a recorded local block
+carries that index forward because its storage is disjoint from static
+objects. The read selects the newest version among its bytes, or resumes the
+ordinary walk at the edge before the suffix. This preserves the older version
+of a byte left intact by a partial overwrite.
+
 ## Shared byte separation for stores
 
 Cache preservation and read-over-store use

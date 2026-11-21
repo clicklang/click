@@ -6593,7 +6593,7 @@ fn align_up(offset: u32, alignment: u32) -> Option<u32> {
 /// at an adjacent address. A union member is not narrowed; union members
 /// overlap by design.
 fn member_pointer(base: CExpression, field: &RecordField) -> CExpression {
-    let member = offset_field_pointer(base, field.offset_bytes);
+    let member = offset_field_pointer(base, field.offset_bytes());
     if field.union_name.is_some() || field.byte_width == 0 {
         return member;
     }
@@ -6865,9 +6865,10 @@ fn flatten_aggregate_layout(
             aggregate_fields.push(RecordScalarField {
                 pointee_constant: nested_field.pointee_constant,
                 name: format!("{prefix}.{}", nested_field.name),
-                offset_bytes: base_offset
-                    .checked_add(nested_field.offset_bytes)
-                    .expect("validated embedded struct field offset"),
+                offset: base_offset
+                    .checked_add(nested_field.offset_bytes())
+                    .expect("validated embedded struct field offset")
+                    .into(),
                 interface_type: nested_field.interface_type,
             });
         }
@@ -6904,13 +6905,13 @@ fn flatten_aggregate_layout(
             append_nested_fields(
                 &mut aggregate_fields,
                 field_name,
-                field.offset_bytes,
+                field.offset_bytes(),
                 nested_layout,
             );
             append_nested_unions(
                 &mut aggregate_unions,
                 field_name,
-                field.offset_bytes,
+                field.offset_bytes(),
                 nested_layout,
             );
         } else if let (Some(nested_name), Some(element_width), Some(shape)) = (
@@ -6927,7 +6928,7 @@ fn flatten_aggregate_layout(
                 .expect("validated embedded struct array field element count");
             for flat_index in 0..element_count {
                 let element_offset = field
-                    .offset_bytes
+                    .offset_bytes()
                     .checked_add(
                         flat_index
                             .checked_mul(element_width)
@@ -6954,7 +6955,7 @@ fn flatten_aggregate_layout(
                 .expect("embedded union field has a parsed layout");
             aggregate_unions.push(RecordUnionLayout {
                 name: field_name.clone(),
-                offset_bytes: field.offset_bytes,
+                offset_bytes: field.offset_bytes(),
                 size_bytes: union_layout.size_bytes,
                 fields: union_layout
                     .fields
@@ -6970,7 +6971,7 @@ fn flatten_aggregate_layout(
             aggregate_fields.push(RecordScalarField {
                 pointee_constant: field.pointee_constant,
                 name: field_name.clone(),
-                offset_bytes: field.offset_bytes,
+                offset: field.offset(),
                 interface_type: field.interface_type,
             });
         }
@@ -10510,7 +10511,7 @@ impl Parser {
                                 "unknown struct declaration `{struct_name_value}`"
                             ))
                         })?
-                        .size_bytes;
+                        .size_bytes();
                     self.variable_array_shapes
                         .insert(kernel_name.clone(), vec![1]);
                     // The declarator's bound is not part of the function's
@@ -11413,7 +11414,7 @@ impl Parser {
                 .ok_or_else(|| {
                     self.error_here(format!("unknown struct declaration `{struct_name}`"))
                 })?
-                .size_bytes;
+                .size_bytes();
             (element_width, format!("struct {struct_name}"), true)
         } else {
             if array_type_for_element(parsed_type.interface_type, 1).is_none() {
@@ -12792,7 +12793,7 @@ impl Parser {
                             .as_ref()
                             .expect("struct pointer has a struct name"),
                     )
-                    .is_some_and(|layout| !layout.size_bytes.is_multiple_of(4))
+                    .is_some_and(|layout| !layout.size_bytes().is_multiple_of(4))
             {
                 // Unaligned struct sizes cannot use the kernel's int32
                 // pointer allocation width. Use a byte-addressed local for
@@ -13546,7 +13547,7 @@ impl Parser {
             let element_width = element_type.abi_size_bytes();
             for index in 0..element_count {
                 let element_offset = field
-                    .offset_bytes
+                    .offset_bytes()
                     .checked_add(
                         index
                             .checked_mul(element_width)
@@ -14415,7 +14416,7 @@ impl Parser {
                 layout.class.clone().map(|class| {
                     (
                         crate::kernel::effective_type::CAccessClass::Struct(class),
-                        layout.size_bytes,
+                        layout.size_bytes(),
                         layout.alignment_bytes,
                     )
                 })
@@ -17989,7 +17990,7 @@ impl Parser {
             .structs
             .get(&struct_name)
             .ok_or_else(|| self.error_here("pointer arithmetic requires a complete struct layout"))?
-            .size_bytes;
+            .size_bytes();
         let byte_pointer = CExpression::Cast {
             expression: Box::new(pointer),
             interface_type: InterfaceType::UInt8Pointer,
@@ -18882,7 +18883,7 @@ impl Parser {
                                 .structs
                                 .get(struct_name)
                                 .expect("struct array has a declaration")
-                                .size_bytes;
+                                .size_bytes();
                             widened_stride(offset, element_width)
                         } else {
                             offset
@@ -18904,7 +18905,7 @@ impl Parser {
                                         "cannot index incomplete struct `{struct_name}`"
                                     ))
                                 })?
-                                .size_bytes;
+                                .size_bytes();
                             let byte_pointer = CExpression::Cast {
                                 expression: Box::new(expression),
                                 interface_type: InterfaceType::UInt8Pointer,
@@ -19012,7 +19013,7 @@ impl Parser {
         };
         Some((
             struct_name.clone(),
-            self.structs.get(struct_name)?.size_bytes,
+            self.structs.get(struct_name)?.size_bytes(),
             shape.clone(),
         ))
     }
@@ -20260,7 +20261,7 @@ impl Parser {
             .get(&member)
             .ok_or_else(|| self.error_here(format!("struct `{name}` has no member `{member}`")))?;
         // size_t is unsigned 64-bit on both supported x86-64 targets.
-        Ok(CExpression::UInt64Literal(u64::from(field.offset_bytes)))
+        Ok(CExpression::UInt64Literal(u64::from(field.offset_bytes())))
     }
 
     fn parse_types_compatible_operand(&mut self) -> Result<ParsedType, CSyntaxError> {
@@ -20327,7 +20328,7 @@ impl Parser {
                 let bytes = self
                     .structs
                     .get(&name)
-                    .map(|layout| layout.size_bytes)
+                    .map(|layout| layout.size_bytes())
                     .or_else(|| {
                         self.bit_field_records
                             .get(&name)
@@ -20395,7 +20396,7 @@ impl Parser {
                         .structs
                         .get(&name)
                         .expect("aggregate operand has a layout")
-                        .size_bytes;
+                        .size_bytes();
                     return Ok(CExpression::SizeOfStruct { name, bytes });
                 }
                 let interface_type = self
@@ -20427,7 +20428,7 @@ impl Parser {
                     .structs
                     .get(name)
                     .ok_or_else(|| self.error_here(format!("unknown struct declaration `{name}`")))?
-                    .size_bytes;
+                    .size_bytes();
                 return Ok(CExpression::SizeOfStruct {
                     name: (name.clone()),
                     bytes,
@@ -22271,7 +22272,7 @@ mod scope_metadata_tests {
             ("b".into(), InterfaceType::UInt16, 2, 2),
         ];
         let layout = RecordLayout::from_explicit_fields(fields.clone(), 4, 2).unwrap();
-        assert_eq!(layout.field("b").unwrap().offset_bytes, 2);
+        assert_eq!(layout.field("b").unwrap().offset_bytes(), 2);
         assert_eq!(layout.field("b").unwrap().byte_width, 2);
         for (offset, width) in [(1, 2), (0, 2), (2, 1), (4, 2)] {
             let mut invalid = fields.clone();

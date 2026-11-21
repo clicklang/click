@@ -621,7 +621,7 @@ mod tests {
                 pointer.clone(),
                 ProgramValue::Int32(MachineTerm::constant(9)),
             ),
-            before.clone().with_loop_memory_havoc_preserving_loans(
+            before.clone().with_loop_memory_havoc_preserving_borrows(
                 Variable(1018911),
                 &BTreeSet::new(),
                 None,
@@ -895,7 +895,7 @@ mod tests {
                 pointer.clone(),
                 ProgramValue::Int32(MachineTerm::constant(9)),
             ),
-            stored.with_loop_memory_havoc_preserving_loans(
+            stored.with_loop_memory_havoc_preserving_borrows(
                 Variable(1018950),
                 &BTreeSet::new(),
                 None,

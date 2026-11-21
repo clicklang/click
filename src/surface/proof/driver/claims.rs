@@ -718,6 +718,10 @@ fn prove_claims_by_checked_tactics(
         state: state.clone(),
         arguments: arguments.clone(),
         pure_facts: pure_facts.clone(),
+        contract_value_parameters: spec_definitions
+            .predicates
+            .contract_value_parameters
+            .clone(),
     });
     // The proof of a function that declares an expression `decreases` measure
     // steps under that function's recursion anchor, which is what makes a
@@ -2901,11 +2905,8 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 let mut tactics = direct_proof
                     .certificate_since(&direct_base)?
                     .to_proof_tactics();
-                tactics.push(match closer {
-                    ProofStep::Known => ProofTactic::Known,
-                    ProofStep::Normalize => ProofTactic::Normalize,
-                    _ => unreachable!("selected a residual closer above"),
-                });
+                // Each written closer discharges only the next claim.
+                tactics.extend(std::iter::repeat_n(closer.to_proof_tactic(), direct_claims.len()));
                 let certificate = ProofCertificate::from_proof_tactics(&tactics)
                     .map_err(|error| ClickError::new(format!(
                         "checked residual closure is not simple: {error}"
@@ -3769,26 +3770,34 @@ pub(super) fn finish_ordered_proof<'a>(
                             },
                         );
                     if let Some(refuted) = refuted_obligations.first() {
-                        return Err(ClickError::new(format!(
-                            "execution proof failed for `{proof_label}` path {path_index}: {}",
-                            describe_refuted_proof_obligation(
-                                refuted,
-                                &path_base_facts.to_vec(),
-                                parameter_binding,
-                            )
-                        )));
+                        let message = describe_refuted_proof_obligation(
+                            refuted,
+                            &path_base_facts.to_vec(),
+                            parameter_binding,
+                        );
+                        return Err(proof.execution_obligation_error(
+                            &proof_label,
+                            path_index,
+                            refuted,
+                            path_base_facts,
+                            message,
+                        ));
                     }
-                    if !missing_obligations.is_empty() {
-                        return Err(ClickError::new(format!(
-                            "execution proof failed for `{proof_label}` path {path_index}: {}",
-                            describe_missing_proof_obligations(
-                                &missing_obligations,
-                                &path_base_facts.to_vec(),
-                                pre_state.resources().facts(),
-                                parameter_binding,
-                                path.facts()
-                            )
-                        )));
+                    if let Some(missing) = missing_obligations.first() {
+                        let message = describe_missing_proof_obligations(
+                            &missing_obligations,
+                            &path_base_facts.to_vec(),
+                            pre_state.resources().facts(),
+                            parameter_binding,
+                            path.facts(),
+                        );
+                        return Err(proof.execution_obligation_error(
+                            &proof_label,
+                            path_index,
+                            missing,
+                            path_base_facts,
+                            message,
+                        ));
                     }
                     let mut outcome = path.outcome().clone();
                     let mut outcome_proof =

@@ -781,20 +781,24 @@ struct SliceLengthMetadata {
 enum SliceLengthOwner {
     Parameter(Arc<str>),
     Local(LocalBindingId),
+    LexicalLocal(LocalBindingId),
+    Source(Arc<str>),
 }
 
 impl SliceLengthBinding {
     pub(super) fn parameter(&self) -> Option<&str> {
         match &self.0.owner {
             SliceLengthOwner::Parameter(name) => Some(name),
-            SliceLengthOwner::Local(_) => None,
+            _ => None,
         }
     }
 
     pub(super) fn local(&self) -> Option<&LocalBindingId> {
         match &self.0.owner {
-            SliceLengthOwner::Local(declaration) => Some(declaration),
-            SliceLengthOwner::Parameter(_) => None,
+            SliceLengthOwner::Local(declaration) | SliceLengthOwner::LexicalLocal(declaration) => {
+                Some(declaration)
+            }
+            _ => None,
         }
     }
 }
@@ -826,27 +830,63 @@ impl Hash for SliceLengthBinding {
         match &self.0.owner {
             // Preserve the existing parameter-slot hash.
             SliceLengthOwner::Parameter(name) => name.hash(state),
-            SliceLengthOwner::Local(declaration) => declaration.hash(state),
+            SliceLengthOwner::Local(declaration) | SliceLengthOwner::LexicalLocal(declaration) => {
+                declaration.hash(state);
+            }
+            SliceLengthOwner::Source(name) => name.hash(state),
         }
     }
 }
 
 impl BindingName {
     pub(crate) fn slice_length(slice: &str) -> Self {
-        Self::SliceLength(SliceLengthBinding(Arc::new(SliceLengthMetadata {
-            owner: SliceLengthOwner::Parameter(Arc::from(slice)),
-            spelling: Arc::from(format!("{slice}.len()")),
-        })))
+        Self::slice_length_binding(SliceLengthOwner::Parameter(Arc::from(slice)), slice, false)
     }
     pub(crate) fn local_slice_length(declaration: LocalBindingId) -> Self {
-        let spelling = format!(
-            "{}.len()",
-            declaration.spelling().expect("Rust slice place")
-        );
+        let place = declaration.spelling().expect("Rust slice place");
+        Self::slice_length_binding(SliceLengthOwner::Local(declaration.clone()), place, false)
+    }
+    pub(crate) fn lexical_local_slice_length(
+        declaration: &LocalBindingId,
+        qualified: bool,
+    ) -> Self {
+        Self::slice_length_binding(
+            SliceLengthOwner::LexicalLocal(declaration.clone()),
+            declaration.spelling().expect("Rust slice place"),
+            qualified,
+        )
+    }
+    pub(crate) fn scoped_slice_length(slice: &str, qualified: bool) -> Self {
+        Self::slice_length_binding(SliceLengthOwner::Source(Arc::from(slice)), slice, qualified)
+    }
+    fn slice_length_binding(owner: SliceLengthOwner, slice: &str, qualified: bool) -> Self {
+        let prefix = if qualified { "program::" } else { "" };
         Self::SliceLength(SliceLengthBinding(Arc::new(SliceLengthMetadata {
-            owner: SliceLengthOwner::Local(declaration),
-            spelling: Arc::from(spelling),
+            owner,
+            spelling: Arc::from(format!("{prefix}{slice}.len()")),
         })))
+    }
+
+    /// A written read of a slice whose source spelling names several declarations.
+    pub(crate) fn source_slice_length(&self) -> Option<Self> {
+        let Self::SliceLength(length) = self else {
+            return None;
+        };
+        let SliceLengthOwner::LexicalLocal(declaration) = &length.0.owner else {
+            return None;
+        };
+        let place = declaration.spelling()?;
+        Some(Self::scoped_slice_length(place, false))
+    }
+
+    pub(crate) fn unresolved_slice_length(&self) -> Option<&str> {
+        let Self::SliceLength(length) = self else {
+            return None;
+        };
+        match &length.0.owner {
+            SliceLengthOwner::Source(place) => Some(place),
+            _ => None,
+        }
     }
 
     pub(crate) fn slice_length_of(&self) -> Option<&str> {
@@ -874,6 +914,16 @@ impl BindingName {
     pub(crate) fn metadata_name(&self) -> Option<&str> {
         match self {
             Self::SliceLength(length) if length.parameter().is_some() => Some(&length.0.spelling),
+            // A qualified read can resolve to the input parameter once a
+            // shadowing local has left scope. Retain the parameter metadata
+            // for that case, ahead of resolving the proof point.
+            Self::SliceLength(length) if self.unresolved_slice_length().is_some() => Some(
+                length
+                    .0
+                    .spelling
+                    .strip_prefix("program::")
+                    .unwrap_or(&length.0.spelling),
+            ),
             _ => self.unresolved_name(),
         }
     }

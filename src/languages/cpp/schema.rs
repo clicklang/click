@@ -1873,6 +1873,9 @@ pub(super) struct RecordIndex<'a> {
     declarations: BTreeMap<String, &'a CppRecord>,
     fields: BTreeMap<(&'a str, &'a str), &'a CppField>,
     has_destructors: bool,
+    /// The class template instances that hold a value of an abstract type
+    /// argument, whose fields are at their `offsetof` terms.
+    symbolic: BTreeMap<String, crate::kernel::SymbolicLayoutName>,
 }
 
 impl<'a> RecordIndex<'a> {
@@ -1896,7 +1899,45 @@ impl<'a> RecordIndex<'a> {
             declarations,
             fields,
             has_destructors,
+            symbolic: BTreeMap::new(),
         }
+    }
+
+    /// Where `field` of `record` starts: its `offsetof` term in a symbolic
+    /// record, else its byte offset.
+    pub(super) fn field_offset(
+        &self,
+        record: &CppRecord,
+        field: &CppField,
+    ) -> Result<crate::kernel::LayoutOffset, String> {
+        match self.symbolic.get(&record.name) {
+            Some(layout) => layout
+                .field_index(&field.name)
+                .map(|index| layout.field_offset(index))
+                .ok_or_else(|| {
+                    format!(
+                        "C++ symbolic record `{}` has no field `{}`",
+                        record.name, field.name
+                    )
+                }),
+            None => Ok(crate::kernel::LayoutOffset::Bytes(field.offset_bytes)),
+        }
+    }
+
+    /// This index with the symbolic layouts of `layouts`, so a projection
+    /// through a field of such a record is that field's `offsetof` term.
+    pub(super) fn with_symbolic_layouts(
+        mut self,
+        layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
+    ) -> Self {
+        self.symbolic = layouts
+            .iter()
+            .filter_map(|(name, layout)| {
+                crate::instrumentation::record_deterministic_work(1);
+                Some((name.clone(), layout.symbolic_layout()?))
+            })
+            .collect();
+        self
     }
 
     pub(super) fn has_destructors(&self) -> bool {
@@ -1907,7 +1948,7 @@ impl<'a> RecordIndex<'a> {
         &'s self,
         reference_type: &'s CppType,
         field: &CppFieldReference,
-    ) -> Result<(&'s CppType, u32), String> {
+    ) -> Result<(&'s CppType, crate::kernel::LayoutOffset), String> {
         if !matches!(reference_type, CppType::LvalueReference { pointee }
             if matches!(pointee.as_ref(), CppType::Record { .. }))
         {
@@ -1925,12 +1966,15 @@ impl<'a> RecordIndex<'a> {
         &'s self,
         root_type: &'s CppType,
         path: impl IntoIterator<Item = P>,
-    ) -> Result<(&'s CppType, u32), String> {
+    ) -> Result<(&'s CppType, crate::kernel::LayoutOffset), String> {
         let mut value_type = match root_type {
             CppType::LvalueReference { pointee } => pointee.as_ref(),
             value => value,
         };
         let mut offset = 0u32;
+        // A field of a symbolic record is at its `offsetof` term, which ends
+        // the path: its fields are scalars, pointers and abstract values.
+        let mut symbolic_field = None;
         let mut root = true;
         for reference in path {
             crate::instrumentation::record_deterministic_work(1);
@@ -1978,6 +2022,9 @@ impl<'a> RecordIndex<'a> {
                     if &base.base_declaration_id != target_id || &base.base_name != target_name {
                         return Err("C++ base projection has the wrong nominal base target".into());
                     }
+                    if symbolic_field.is_some() {
+                        return Err("C++ projection continues past a symbolic field".into());
+                    }
                     offset = offset
                         .checked_add(owner.offset_bytes)
                         .ok_or("C++ base projection offset overflows")?;
@@ -2006,12 +2053,31 @@ impl<'a> RecordIndex<'a> {
                     reference.declaration_id, field.name, reference.name
                 ));
             }
-            offset = offset
-                .checked_add(field.offset_bytes)
-                .ok_or("C++ field projection offset overflows")?;
+            if symbolic_field.is_some() {
+                return Err("C++ projection continues past a symbolic field".into());
+            }
+            if let Some(layout) = self.symbolic.get(name)
+                && let Some(index) = layout.field_index(&field.name)
+                && layout.field_offset(index).bytes().is_none()
+            {
+                if offset != 0 {
+                    return Err(format!(
+                        "C++ field `{}` of a symbolic record is reached at a byte offset",
+                        field.name
+                    ));
+                }
+                symbolic_field = Some(layout.field_offset(index));
+            } else {
+                offset = offset
+                    .checked_add(field.offset_bytes)
+                    .ok_or("C++ field projection offset overflows")?;
+            }
             value_type = &field.value_type;
         }
-        Ok((value_type, offset))
+        Ok((
+            value_type,
+            symbolic_field.unwrap_or(crate::kernel::LayoutOffset::Bytes(offset)),
+        ))
     }
 }
 

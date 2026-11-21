@@ -5194,6 +5194,21 @@ impl Address {
         }
     }
 
+    /// The address of a field `offset` into the object here: a byte count,
+    /// or a symbolic layout's `offsetof` term added as a byte index.
+    pub(crate) fn offset_by_layout(&self, offset: super::LayoutOffset) -> Self {
+        match offset {
+            super::LayoutOffset::Bytes(bytes) => self.offset_by_bytes(bytes),
+            super::LayoutOffset::Field(..) => Self {
+                base: self.base.clone(),
+                offset: AddressOffset::add(
+                    self.offset.clone(),
+                    AddressOffset::scaled_int64_node(offset.term(), 1, true),
+                ),
+            },
+        }
+    }
+
     pub(in crate::kernel) fn offset_by_shared_elements(
         &self,
         elements: SharedMachineIntegerTerm,
