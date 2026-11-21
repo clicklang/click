@@ -394,6 +394,8 @@ fn next_checked_post_execution_tactic<'a>(
                 }
                 let value = if *disjunction {
                     scoped.checked_outcome_cases_value(condition, *execution_route)
+                } else if deferred.reads_deferred_obtain {
+                    scoped.decide_outcome_if_from_facts(condition)
                 } else {
                     scoped.checked_outcome_if_value(condition, *execution_route)
                 }
@@ -4126,6 +4128,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         .unwrap_or(0);
                     let implicit_closer = DeferredPostExecutionTactic {
                         lexical_bindings: None,
+                        reads_deferred_obtain: false,
                         tactic_index: implicit_closer_index,
                         source_index: usize::MAX,
                         tactic: PostExecutionTactic::ImplicitSolve,
