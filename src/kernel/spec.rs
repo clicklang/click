@@ -4458,6 +4458,15 @@ pub(crate) fn scalar_match_has_pure_int32_arms(arms: &[SpecAlgebraicMatchArm]) -
     })
 }
 
+fn spec_scalar_match_is_pure_int32(
+    scrutinee: &SpecAlgebraicExpression,
+    arms: &[SpecAlgebraicMatchArm],
+) -> bool {
+    scalar_match_has_pure_int32_arms(arms)
+        && super::functions::spec_algebraic_expression_is_state_independent(scrutinee)
+        && super::functions::spec_algebraic_expression_is_obligation_free(scrutinee)
+}
+
 fn spec_scalar_match_arms_are_well_formed(
     algebraic_type: &AlgebraicType,
     arms: &[SpecAlgebraicMatchArm],
@@ -5895,23 +5904,28 @@ fn lower_spec_comparison_proposition_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
-    if matches!(left, SpecExpression::AlgebraicMatch { .. })
+    let share_operand = if let SpecExpression::AlgebraicMatch { scrutinee, arms } = left
         && left == right
         && matches!(
             operator,
             ComparisonOperator::Equal | ComparisonOperator::NotEqual
-        )
-    {
-        return Ok(vec![SpecPropositionPath {
-            introductions: Vec::new(),
-            proposition: Proposition::condition_is(
-                ConditionTerm::Constant(operator == ComparisonOperator::Equal),
-                true,
-            ),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-        }]);
-    }
+        ) {
+        if budget.checked_reads || !spec_scalar_match_is_pure_int32(scrutinee, arms) {
+            // Other scalar match forms still use the compatibility reflexivity rule.
+            return Ok(vec![SpecPropositionPath {
+                introductions: Vec::new(),
+                proposition: Proposition::condition_is(
+                    ConditionTerm::Constant(operator == ComparisonOperator::Equal),
+                    true,
+                ),
+                facts: ExecutionFacts::new(),
+                obligations: Vec::new(),
+            }]);
+        }
+        true
+    } else {
+        false
+    };
     let mut paths = Vec::new();
     let left_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
@@ -5926,12 +5940,21 @@ fn lower_spec_comparison_proposition_at_state_in(
     for left_path in left_paths {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
-        let right_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            scope,
-            right,
-            &right_assumptions,
-            budget,
-        )?;
+        let right_paths = if share_operand {
+            // The same pure match in the same scope can share its lowered arm binders.
+            vec![SpecExpressionPath {
+                value: left_path.value.clone(),
+                facts: ExecutionFacts::new(),
+                obligations: Vec::new(),
+            }]
+        } else {
+            evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                scope,
+                right,
+                &right_assumptions,
+                budget,
+            )?
+        };
         right_path_count = right_path_count.saturating_add(right_paths.len());
         for right_path in right_paths {
             let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
@@ -7114,15 +7137,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     && budget.retain_known_matches
                     && !budget.checked_reads
                     && !budget.machine_result_production_disabled
-                    && *pure_int32.get_or_insert_with(|| {
-                        scalar_match_has_pure_int32_arms(arms)
-                            && super::functions::spec_algebraic_expression_is_state_independent(
-                                scrutinee,
-                            )
-                            && super::functions::spec_algebraic_expression_is_obligation_free(
-                                scrutinee,
-                            )
-                    });
+                    && *pure_int32
+                        .get_or_insert_with(|| spec_scalar_match_is_pure_int32(scrutinee, arms));
                 if retain_known || !known_constructor {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
                     let mut parameter_arms = Vec::new();
