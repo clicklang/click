@@ -2866,6 +2866,48 @@ fn synthesize_surface_atomic_proposition(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
+    let raise_float = |operand: crate::kernel::FloatOperandView<'_>| {
+        let imported;
+        let root = match operand {
+            crate::kernel::FloatOperandView::Shared(root) => root,
+            crate::kernel::FloatOperandView::Native(format, term) => {
+                imported = crate::kernel::KernelTermImport::default().float(format, term);
+                &imported
+            }
+        };
+        let raised = raise_kernel_term(root, parameter_binding, state, bound_variables)?;
+        // A comparison otherwise reads a written sum as Integer arithmetic.
+        if operand.binary().is_some() || operand.negate().is_some() {
+            synthesize_observation_operand(raised, operand.format().program_type())
+        } else {
+            Some(raised)
+        }
+    };
+    let float_predicate =
+        if let Some((_, operator, [left, right])) = condition.operand_view().float_comparison() {
+            Some(ClickProposition::Comparison {
+                left: raise_float(left)?,
+                operator: surface_float_comparison_operator(operator),
+                right: raise_float(right)?,
+            })
+        } else if let Some((_, classification, operand)) =
+            condition.operand_view().float_classification()
+        {
+            Some(ClickProposition::FloatClassification {
+                expression: raise_float(operand)?,
+                classification: surface_float_classification(classification),
+            })
+        } else {
+            None
+        };
+    if let Some(predicate) = float_predicate {
+        // Opposite order operators are not equivalent under IEEE NaN semantics.
+        return Some(if *value {
+            predicate
+        } else {
+            ClickProposition::Not(Box::new(predicate))
+        });
+    }
     if let ConditionTerm::AlgebraicEqual(left, right) = condition.native_compat() {
         return Some(ClickProposition::Comparison {
             left: synthesize_surface_algebraic(left, parameter_binding, state, bound_variables)?,
@@ -2875,27 +2917,6 @@ fn synthesize_surface_atomic_proposition(
                 ComparisonOperator::NotEqual
             },
             right: synthesize_surface_algebraic(right, parameter_binding, state, bound_variables)?,
-        });
-    }
-    if let Some((format, operator, [left, right])) = condition.operand_view().float_comparison()
-        && left.literal_bits().is_some()
-        && right.literal_bits().is_some()
-    {
-        let literal = |operand: crate::kernel::FloatOperandView<'_>| {
-            Some(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
-                format.value(operand.native_compat()?.clone()),
-            )))
-        };
-        let comparison = ClickProposition::Comparison {
-            left: literal(left)?,
-            operator: surface_float_comparison_operator(operator),
-            right: literal(right)?,
-        };
-        // Negation cannot be spelled as the opposite order for a NaN.
-        return Some(if *value {
-            comparison
-        } else {
-            ClickProposition::Not(Box::new(comparison))
         });
     }
     // A closed `bool` comparison is spelled as written: `true == false`
@@ -3740,6 +3761,19 @@ fn raise_call(
     })
 }
 
+fn surface_float_classification(
+    classification: crate::kernel::FloatClassification,
+) -> syntax::CFloatClassification {
+    use crate::kernel::FloatClassification as C;
+    match classification {
+        C::Finite => syntax::CFloatClassification::Finite,
+        C::Infinite => syntax::CFloatClassification::Infinite,
+        C::Zero => syntax::CFloatClassification::Zero,
+        C::Subnormal => syntax::CFloatClassification::Subnormal,
+        C::Nan => syntax::CFloatClassification::Nan,
+    }
+}
+
 fn surface_float_comparison_operator(
     operator: crate::kernel::ComparisonOperator,
 ) -> ComparisonOperator {
@@ -3804,20 +3838,11 @@ fn raise_float_expression(
             classification,
             operand,
             ..
-        } => {
-            use crate::kernel::FloatClassification as C;
-            proposition_bool_value(ClickProposition::FloatClassification {
-                expression: recurse(operand)?,
-                classification: match classification {
-                    C::Finite => syntax::CFloatClassification::Finite,
-                    C::Infinite => syntax::CFloatClassification::Infinite,
-                    C::Zero => syntax::CFloatClassification::Zero,
-                    C::Subnormal => syntax::CFloatClassification::Subnormal,
-                    C::Nan => syntax::CFloatClassification::Nan,
-                },
-            })
-            .ok()?
-        }
+        } => proposition_bool_value(ClickProposition::FloatClassification {
+            expression: recurse(operand)?,
+            classification: surface_float_classification(*classification),
+        })
+        .ok()?,
         _ => unreachable!("float expression dispatch"),
     })
 }

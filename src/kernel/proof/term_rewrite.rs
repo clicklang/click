@@ -3612,6 +3612,16 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             Proposition::ConditionIs(condition, value) => {
+                // A closed float predicate has no occurrence of the Integer
+                // binder. Keep its arithmetic under structural substitution.
+                if self.integer_variables.is_some()
+                    && condition
+                        .operand_view()
+                        .closed_float_predicate_value()
+                        .is_some()
+                {
+                    return proposition.clone();
+                }
                 self.reserve_condition_variables_once(condition.native_compat());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();

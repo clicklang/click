@@ -489,6 +489,11 @@ Lowering never folds a comparison of two literals.
   (`SpecProposition::Truth`). The raiser raises a constant condition to the
   same literal, so `false` round-trips without a comparison.
 
+Closed float comparisons and classifications retain a directly written
+negation or binary operation over same-width literal operands. Checking
+computes each operation at its written IEEE precision. Float comparisons
+retain their polarity for NaN, including negated order comparisons.
+
 Checking decides a closed condition from its literal roots with
 `machine_integer::comparison::closed_condition_value`, including when exact
 rewriting removed the last variable before the comparison was printed. It

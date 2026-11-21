@@ -3204,9 +3204,11 @@ pub(crate) fn is_definedness_guard(proposition: &Proposition) -> bool {
 /// `true` itself is an ordinary fact and is not included.
 fn closed_condition_holds(fact: &Proposition) -> bool {
     matches!(fact, Proposition::ConditionIs(condition, value)
-        if !matches!(condition.native_compat(), ConditionTerm::Constant(_))
-            && crate::kernel::machine_integer::comparison::closed_condition_value(condition.native_compat())
-                == Some(*value))
+    if condition.operand_view().closed_float_predicate_value().map_or_else(
+        || !matches!(condition.native_compat(), ConditionTerm::Constant(_))
+            && crate::kernel::machine_integer::comparison::closed_condition_value(condition.native_compat()) == Some(*value),
+        |actual| actual == *value,
+    ))
 }
 
 fn index_guarded_implication_fact(

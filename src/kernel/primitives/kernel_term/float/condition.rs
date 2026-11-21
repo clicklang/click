@@ -106,6 +106,44 @@ impl KernelTermExport {
 }
 
 impl<'a> BooleanOperandView<'a> {
+    /// Check a closed float predicate at its written precision. Symbolic
+    /// leaves keep their ordinary comparison and classification rules.
+    pub(crate) fn closed_float_predicate_value(self) -> Option<bool> {
+        let condition = if let Some((format, operator, [left, right])) = self.float_comparison() {
+            let left = left.closed_arithmetic_bits()?;
+            let right = right.closed_arithmetic_bits()?;
+            match format {
+                KernelFloatType::Float32 => ConditionTerm::float32_compare(
+                    MachineTerm::uint32_constant(left as u32),
+                    MachineTerm::uint32_constant(right as u32),
+                    operator,
+                ),
+                KernelFloatType::Float64 => ConditionTerm::float64_compare(
+                    MachineTerm::uint64_constant(left),
+                    MachineTerm::uint64_constant(right),
+                    operator,
+                ),
+            }
+        } else {
+            let (format, classification, operand) = self.float_classification()?;
+            let bits = operand.closed_arithmetic_bits()?;
+            match format {
+                KernelFloatType::Float32 => ConditionTerm::float32_classification(
+                    MachineTerm::uint32_constant(bits as u32),
+                    classification,
+                ),
+                KernelFloatType::Float64 => ConditionTerm::float64_classification(
+                    MachineTerm::uint64_constant(bits),
+                    classification,
+                ),
+            }
+        };
+        let ConditionTerm::Constant(value) = condition else {
+            unreachable!("literal float predicate")
+        };
+        Some(value)
+    }
+
     pub(crate) fn float_comparison(
         self,
     ) -> Option<(
