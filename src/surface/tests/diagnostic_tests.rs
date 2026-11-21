@@ -2116,6 +2116,61 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
 }
 
 #[test]
+fn address_mismatch_diagnostic_compares_selected_read_points() {
+    use crate::kernel::{
+        Address, AddressBase, AddressOffset, MemoryRange, ProgramType, ResourceContext,
+        ResourceFact, SpecExpression, SpecPoint,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let first = ExecutionState::new()
+        .begin_function_entry_memory()
+        .with_local(
+            "data",
+            ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer),
+        )
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::view_memory(MemoryRange::new(
+                address.clone(),
+                MachineTerm::constant(0),
+                MachineTerm::constant(2),
+            )),
+        ));
+    let second = first.clone().begin_function_entry_memory();
+    assert_eq!(first.memory(), second.memory());
+    assert_ne!(first.observation_point_id(), second.observation_point_id());
+    let read = |state: &ExecutionState, bytes| {
+        let expression = SpecExpression::MemoryLoad {
+            point: SpecPoint::Current,
+            pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
+                address.offset_by_bytes(bytes),
+                ProgramType::Int32Pointer,
+            ))),
+            value_type: ProgramType::Int32,
+            exact: true,
+        };
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            state,
+            &expression,
+            Some(state),
+            &PureFactContext::new(),
+        )
+        .unwrap()
+        .0
+    };
+    let left = read(&first, 0);
+    let right = read(&first, 4);
+    let later = read(&second, 4);
+    let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&first, None);
+    let binding = ParameterBinding::new(&parameters, &arguments);
+    assert!(super::diagnostics::describe_read_address_mismatch(&left, &right, binding).is_some());
+    assert!(super::diagnostics::describe_read_address_mismatch(&left, &later, binding).is_none());
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_13")]
 fn read_only_wide_index_diagnostic_requests_equality_without_inventing_a_store() {
     let source = "int32 last(int32* data, uint64 length) { return *(data + (length - 1ULL)); }";

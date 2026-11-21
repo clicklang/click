@@ -198,8 +198,8 @@ pub(crate) use eval::registered_load_origin_for_variable;
 #[cfg(test)]
 pub(crate) use eval::resolve_pending_heap_allocations;
 pub(crate) use eval::resolve_pending_heap_allocations_with;
-pub(crate) use eval::scalar_read_observation;
 pub(crate) use eval::terms_have_same_canonical_form;
+pub(crate) use eval::{ScalarReadObservation, scalar_read_observation};
 pub(crate) use eval::{
     UndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
