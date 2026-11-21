@@ -5,6 +5,65 @@
 use super::*;
 
 #[test]
+fn function_return_lifetime_cleanup_ignores_value_only_parameters() {
+    let caller = ExecutionState::new();
+    let function = program_function(
+        ProgramType::Int32,
+        "scope",
+        vec![],
+        program_return(crate::kernel::program_expression::int32_literal(0)),
+    );
+    for count in [4, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let block = AddressBase::from("local:frame:live");
+        let mut state = ExecutionState::new()
+            .with_local("frame:live", int32(0))
+            .with_memory(SymbolicMemory::new().with_block(block.clone(), 4));
+        for i in 0..count {
+            let name = BindingName::from(format!("parameter_{i}"));
+            let slot = SymbolicMemory::value_parameter_pointer(&name);
+            state.locals.set_typed_qualified_with_all_qualifiers(
+                name,
+                int32(0),
+                ProgramType::Int32,
+                slot,
+                false,
+                false,
+                false,
+                false,
+            );
+        }
+        let outcome = StatementOutcome::Return {
+            value: int32(0).into(),
+            state: Box::new(state.clone()),
+        };
+        let ((result, obligations), work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                function_outcome_from_body(
+                    &caller,
+                    &function,
+                    outcome,
+                    vec![],
+                    &PureFactContext::new(),
+                    None,
+                )
+            });
+        assert!(obligations.is_empty());
+        let FunctionOutcome::Return { state: after, .. } = result else {
+            panic!("expected successful return, got {result:?}");
+        };
+        assert!(after.memory().is_ended_local_block(&block));
+        assert!(work < 64, "{count} value-only parameters: {work} units");
+
+        let (inline, work) = crate::instrumentation::measure_deterministic_work(|| {
+            end_inline_frame_automatic_lifetimes(&state).unwrap()
+        });
+        assert_eq!(inline.retired_local_blocks, vec![block]);
+        assert!(work < 16, "{count} value-only parameters: {work} units");
+    }
+}
+
+#[test]
 fn automatic_lifetime_reuse_tracks_exact_memory_and_retired_blocks() {
     for size in [16usize, 32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
