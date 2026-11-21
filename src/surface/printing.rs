@@ -1133,20 +1133,22 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             }
             line(output, &prefix, "}");
         }
-        ProofTactic::ObserveSavedMemory { base, start, end } => line(
+        ProofTactic::ObserveSubject(resource) => line(
             output,
             &prefix,
-            &format!(
-                "observe({}[{}..{}]);",
-                describe_contract_expression(base),
-                describe_contract_expression(start),
-                describe_contract_expression(end)
-            ),
+            &format!("observe({});", describe_resource_subject(resource)),
         ),
         ProofTactic::ObserveResource(resource) => line(
             output,
             &prefix,
-            &format!("observe({});", format_resource_target(resource)),
+            &format!(
+                "observe({});",
+                if matches!(resource, ResourceClause::Named { .. }) {
+                    format_resource_call(resource)
+                } else {
+                    format_resource_target(resource)
+                }
+            ),
         ),
         ProofTactic::Iterated(tactic) => line(
             output,

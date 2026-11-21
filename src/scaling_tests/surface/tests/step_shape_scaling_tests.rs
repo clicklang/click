@@ -2204,6 +2204,46 @@ fn observing_one_memory_range_ignores_unrelated_parameters_and_owners() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: explicit named-instance observation with redundant owners"]
+fn observing_one_instance_ignores_unrelated_instances() {
+    let work = [4, 16, 64].map(|count| {
+        let parameters = (0..count)
+            .map(|i| format!(", int32* spare{i}"))
+            .collect::<String>();
+        let signature = format!("void check(int32* selected{parameters})");
+        let held = (0..count)
+            .map(|i| format!("owns spare_owner{i}: cell(spare{i});"))
+            .collect::<String>();
+        let c = format!("{signature} {{ int32 scratch; scratch = 1; }}");
+        let proof = format!(
+            r#"
+            verifying "observe.c";
+            resource cell(p: int32*) {{ field tag: int32; owns p[0..1]; fact *p == tag; }}
+            {signature} {{ owns chosen: cell(selected); {held} }} by {{
+                step(); step();
+                observe(chosen);
+                step();
+            }}
+            "#,
+        );
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c_sources(&proof, &[("observe.c", c.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("{count}: {}", error.report()));
+        samples
+            .iter()
+            .find(|sample| sample.tactic.tactic_name == "observe")
+            .expect("named observation was measured")
+            .work
+    });
+    assert!(
+        work.windows(2).all(|pair| pair[1] <= pair[0] + 32),
+        "{work:?}"
+    );
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: saved memory observation parameter, alias, ownership and state scaling"]
 fn observing_saved_memory_ignores_aliases_states_and_unrelated_owners() {
     for owned in [false, true] {

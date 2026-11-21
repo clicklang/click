@@ -6193,11 +6193,7 @@ pub enum ProofTactic {
     CallOutcomes(ProofCallOutcomes),
     Loop(StructuralClause),
     ObserveResource(ResourceClause),
-    ObserveSavedMemory {
-        base: ContractExpression,
-        start: ContractExpression,
-        end: ContractExpression,
-    },
+    ObserveSubject(ResourceSubject),
     /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
     Witness(ProofWitness),
@@ -6821,7 +6817,7 @@ impl ProofTactic {
             Self::UnfoldResource(_) | Self::UnfoldWitnesses { .. } => {
                 TacticClass::Simple(SimpleTactic::UnfoldResource)
             }
-            Self::ObserveResource(_) | Self::ObserveSavedMemory { .. } => {
+            Self::ObserveResource(_) | Self::ObserveSubject(_) => {
                 TacticClass::Simple(SimpleTactic::ObserveResource)
             }
             Self::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),

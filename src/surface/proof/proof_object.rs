@@ -3927,7 +3927,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         | ProofStep::UnfoldWitnesses { .. } => "unfold",
         ProofStep::FoldResource(_) => "fold",
         ProofStep::ReleaseView(_) => "release_view",
-        ProofStep::ObserveResource(_) | ProofStep::ObserveSavedMemory { .. } => "observe",
+        ProofStep::ObserveResource(_) | ProofStep::ObserveSubject(_) => "observe",
         ProofStep::Iterated(tactic) => tactic.name(),
         ProofStep::CloseInvariantsBy(_) => "close_invariants() by",
         ProofStep::Mark(_) => "mark",

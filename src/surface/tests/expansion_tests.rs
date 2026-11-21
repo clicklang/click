@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn explicit_observation_resource_operands_replay() {
+    for (fixture, claim, operand) in [
+        (
+            "mdtests/observe_named_resource.md",
+            "read_cell.contract",
+            "observe(c);",
+        ),
+        (
+            "mdtests/observe_saved_pointer_memory_range.md",
+            "update_bounds.contract",
+            "observe(at(saved, memory(",
+        ),
+    ] {
+        let (source, program) = mdtest_sources(fixture);
+        let program = crate::cli::source_refs(&program);
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains(operand), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 fn algebraic_constructor_matches_expand_without_normalize() {
     for (fixture, claims) in [
         (

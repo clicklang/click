@@ -4102,7 +4102,7 @@ unchanged, and profiling charges one application.
 
 ### Observing resources
 
-**Form:** `observe(resource)`, `observe(p[lo..hi])`, or `observe(at(point, p)[lo..hi])`
+**Form:** `observe(resource)`. A memory operand can be a range or a resource descriptor.
 
 For an explicitly selected memory range, `observe(p[lo..hi])` adds
 `viewable(p[lo..hi])` at the current program state. The exact range must be
@@ -4122,6 +4122,9 @@ evaluated in the surrounding state. `observe(at(point, p)[lo..hi])` establishes
 current `viewable(memory(at(point, p)[lo..hi]))`. `observe(old(p)[lo..hi])` uses
 the entry pointer. Both use the same exact permission lookup as a current range;
 they do not search intervening writes or change the selected resource.
+To take both the pointer and the bounds from one point, write
+`observe(at(point, memory(p[lo..hi])))`. This selects the descriptor at
+`point` and checks its permission in the current state.
 See [`observe_saved_pointer_memory_range.md`](https://github.com/clicklang/click/blob/master/mdtests/observe_saved_pointer_memory_range.md)
 and its [missing-permission refusal](https://github.com/clicklang/click/blob/master/mdtests/observe_saved_pointer_memory_requires_ownership.md).
 
@@ -4149,6 +4152,12 @@ decided:
   and a viewed child resource, which a further `observe` reads one layer
   down.
 - The resource stays held and folded; repeating `observe` is harmless.
+
+Write `observe(c)` for a named folded instance you own. Its own fields supply the
+body arguments and its immediate memory permissions become read-only views
+supported by the instance. `observe(at(point, c))` selects the saved instance
+and requires it to still be held and folded. Use `unfold` to bind named children
+or prove facts that need their fields.
 
 **Outside it**, with what to write instead:
 

@@ -99,11 +99,7 @@ pub enum ProofStep {
         premises: Vec<ClickProposition>,
     },
     ObserveResource(ResourceClause),
-    ObserveSavedMemory {
-        base: ContractExpression,
-        start: ContractExpression,
-        end: ContractExpression,
-    },
+    ObserveSubject(ResourceSubject),
     /// Checked operation on iterated guarded ownership.
     Iterated(IteratedTactic),
     Witness(ProofWitness),
@@ -761,11 +757,7 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             ProofTactic::ObserveResource(resource) => Self::ObserveResource(resource.clone()),
-            ProofTactic::ObserveSavedMemory { base, start, end } => Self::ObserveSavedMemory {
-                base: base.clone(),
-                start: start.clone(),
-                end: end.clone(),
-            },
+            ProofTactic::ObserveSubject(resource) => Self::ObserveSubject(resource.clone()),
             ProofTactic::Iterated(tactic) => Self::Iterated(tactic.clone()),
             ProofTactic::Witness(witness) => Self::Witness(witness.clone()),
             ProofTactic::LetSatisfy(binding) => Self::LetSatisfy(binding.clone()),
@@ -950,11 +942,7 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             Self::ObserveResource(resource) => ProofTactic::ObserveResource(resource.clone()),
-            Self::ObserveSavedMemory { base, start, end } => ProofTactic::ObserveSavedMemory {
-                base: base.clone(),
-                start: start.clone(),
-                end: end.clone(),
-            },
+            Self::ObserveSubject(resource) => ProofTactic::ObserveSubject(resource.clone()),
             Self::Iterated(tactic) => ProofTactic::Iterated(tactic.clone()),
             Self::Witness(witness) => ProofTactic::Witness(witness.clone()),
             Self::LetSatisfy(binding) => ProofTactic::LetSatisfy(binding.clone()),
@@ -1204,7 +1192,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::UnfoldResource(_) | ProofStep::UnfoldWitnesses { .. } => {
             TacticClass::Simple(SimpleTactic::UnfoldResource)
         }
-        ProofStep::ObserveResource(_) | ProofStep::ObserveSavedMemory { .. } => {
+        ProofStep::ObserveResource(_) | ProofStep::ObserveSubject(_) => {
             TacticClass::Simple(SimpleTactic::ObserveResource)
         }
         ProofStep::Iterated(_) => TacticClass::Simple(SimpleTactic::IteratedOwnership),

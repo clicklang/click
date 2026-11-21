@@ -2276,81 +2276,37 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// Capture only the three explicit range operands at their named states.
-    /// Like ownership selection, observation names a range without history search.
-    fn capture_saved_memory_segment(
+    pub(super) fn apply_resource_subject_observation(
         &self,
-        base: &ContractExpression,
-        start: &ContractExpression,
-        end: &ContractExpression,
-        view: &FixedStateOperationView<'_>,
-    ) -> Result<ContractSegment, ClickError> {
-        let evaluate = |expression: &ContractExpression| {
-            let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
-            let names = contract_expression_referenced_names(&expression);
-            let (values, array_refs) = contract_environment_for_names(
-                view.parameter_binding,
-                &names,
-                view.fixed_state.state,
-            )?;
-            evaluate_fixed_state_expression_through_kernel(
-                &expression,
-                self.facts().assumptions(),
-                ContractEnvironment::new(&values, &array_refs),
-                view.fixed_state,
-                view.spec_definitions,
-                &BTreeSet::new(),
-            )
-            .map(ProgramExpression::Value)
-            .map_err(|message| self.step_error(format!("`observe` operand: {message}")))
-        };
-        let base = evaluate(base)?;
-        let start = evaluate(start)?;
-        let end = evaluate(end)?;
-        Ok(ContractSegment {
-            state: ContractSegmentState::Current,
-            surface: ContractSegmentSurface::Range {
-                base: ContractExpression::ProgramExpression(base.clone()),
-                start: ContractExpression::ProgramExpression(start.clone()),
-                end: ContractExpression::ProgramExpression(end.clone()),
-            },
-            base,
-            start,
-            end,
-            uninitialized: false,
-        })
-    }
-
-    pub(super) fn apply_saved_memory_observation(
-        &self,
-        base: &ContractExpression,
-        start: &ContractExpression,
-        end: &ContractExpression,
+        resource: &ResourceSubject,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         #[cfg(test)]
         let _operation = crate::kernel::search::FastOperationScope::enter("observe_memory");
         let view = self.premise_fixed_state_view().ok_or_else(|| {
             self.step_error("memory observation requires a concrete program state")
         })?;
-        let captured = self.capture_saved_memory_segment(base, start, end, &view)?;
-        // Captured operands are values, so there is no ambient parameter or
-        // local environment to populate for this descriptor.
-        let required = lower_resource_clause_at_state(
-            &ResourceClause::ViewMemory(captured),
-            ParameterBinding::new(&[], &[]),
-            view.fixed_state.state,
-        )?;
-        let range = required
-            .memory_range()
-            .ok_or_else(|| self.step_error("memory observation requires one memory range"))?;
-        let surface = ClickProposition::ResourceViewable {
-            resource: ResourceSubject::SavedMemory {
-                base: base.clone(),
-                start: start.clone(),
-                end: Some(end.clone()),
-            },
+        // Capture the descriptor just as a Resource theorem argument does.
+        // The evidence is for current access even when the operands are saved.
+        let descriptor = ClickProposition::Contains {
+            parent: resource.clone(),
+            child: ResourceSubject::Emp,
         };
-        self.record_memory_observation(view.fixed_state.state, range, surface)
+        let Proposition::ResourceContains { parent, .. } =
+            self.lower_surface_proposition_direct(&descriptor, "observation operand")?
+        else {
+            return Err(self.step_error("observation operand has unresolved span requirements"));
+        };
+        match parent.as_ref() {
+            crate::kernel::Resource::Memory(range) => self.record_memory_observation(
+                view.fixed_state.state,
+                range,
+                ClickProposition::ResourceViewable {
+                    resource: resource.clone(),
+                },
+            ),
+            crate::kernel::Resource::Instance(instance) => self.apply_named_observation(instance),
+            _ => Err(self.step_error("observe requires one memory range or named instance")),
+        }
     }
 
     fn apply_memory_observation(
@@ -2409,6 +2365,72 @@ impl<'a> Proof<'a> {
         Ok(self.checked_fact_transition(locals, facts, complete, added, vec![proposition]))
     }
 
+    fn apply_named_observation(
+        &self,
+        instance: &crate::kernel::ResourceInstance,
+    ) -> Result<CheckedFocusedTransition, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(
+                self.step_error("observing an instance requires an execution-frontier proof")
+            );
+        };
+        self.require_execution_frontier("observe")?;
+        let mut execution = self
+            .execution()
+            .cloned()
+            .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
+        if execution.core.frontier.is_at_function_exit() {
+            return Err(
+                self.step_error("`observe` must run before execution reaches function exit")
+            );
+        }
+        let result = execution
+            .core
+            .record_named_resource_observation(
+                context.function,
+                context.arguments,
+                self.facts(),
+                instance,
+            )
+            .map_err(|message| self.step_error(format!("`observe` refused: {message}")))?;
+        let presentations =
+            crate::surface::proof::resources::pair_instance_body_clause_presentations(
+                context.resource_environment,
+                context.spec_definitions.functions,
+                instance,
+                &result.body_clauses,
+                &ProgramValueBindings::new(),
+                None,
+            )?;
+        for clause in presentations {
+            execution
+                .presentation
+                .surface_propositions
+                .record_lowering(&clause.source, &clause.checked.proposition)?;
+            execution.presentation.resource_body_clauses.push(clause);
+        }
+        let facts = result
+            .semantic_facts
+            .iter()
+            .fold(self.facts().clone(), |facts, fact| {
+                facts.with_kernel_checked_fact(fact.clone())
+            });
+        execution.core.state = result.state.into();
+        let branch = self
+            .focused_branch()
+            .expect("resource observation requires an open goal")
+            .with_state(BranchState {
+                facts,
+                execution: Some(Arc::new(execution)),
+            });
+        Ok(CheckedFocusedTransition {
+            locals: self.state().locals().clone(),
+            branch: Some(branch),
+            added_facts: result.semantic_facts.clone(),
+            checked_facts: result.semantic_facts,
+        })
+    }
+
     pub(super) fn apply_execution_resource_observation(
         &self,
         resource: &ResourceClause,
@@ -2418,6 +2440,21 @@ impl<'a> Proof<'a> {
             ResourceClause::ViewMemory(_) | ResourceClause::OwnMemory(_)
         ) {
             return self.apply_memory_observation(resource);
+        }
+        if let ResourceClause::Named { binding, .. } = resource {
+            self.require_execution_frontier("observe")?;
+            let instance = self
+                .execution()
+                .and_then(|execution| {
+                    execution
+                        .core
+                        .state
+                        .resource_instance_at_path(binding.instance().ok()?, &binding.children)
+                })
+                .ok_or_else(|| {
+                    self.step_error("`observe` requires a held folded resource instance")
+                })?;
+            return self.apply_named_observation(instance);
         }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`observe` requires an execution-frontier proof"));
