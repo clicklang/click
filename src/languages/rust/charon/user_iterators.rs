@@ -163,7 +163,7 @@ pub(super) fn test_user_next_results(blocks: &mut [out::MirBlock], nexts: &BTree
     for index in 0..blocks.len() {
         let T::Call {
             function,
-            destination,
+            destination: Some(destination),
             target,
             ..
         } = &blocks[index].terminator

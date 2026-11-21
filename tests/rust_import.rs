@@ -5493,7 +5493,12 @@ fn rust_local_array_construction_and_whole_value_copies_verify() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
-    for function in ["argument_order", "assignment_order"] {
+    for function in [
+        "argument_order",
+        "assignment_order",
+        "zero_repeat_call",
+        "ordered_calls",
+    ] {
         let output = p.cli(&["verify", "--trace-proof", function]);
         let trace = String::from_utf8_lossy(&output.stdout);
         assert!(
@@ -5513,6 +5518,7 @@ fn rust_local_array_construction_and_whole_value_copies_verify() {
         "copy_into.contract",
         "repeat_call.contract",
         "zero_repeat_call.contract",
+        "ordered_calls.contract",
         "argument_order.contract",
         "assignment_order.contract",
     ] {
@@ -5525,6 +5531,25 @@ fn rust_local_array_construction_and_whole_value_copies_verify() {
             &prepared
         )
         .is_err()
+    );
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: live compiler extraction"]
+fn rust_array_initializer_keeps_the_first_call_result_across_the_second() {
+    assert_native_boundary_proof(
+        "fn next(value: &mut u32) -> u32 { let before = *value; *value = before + 1; before }
+        pub fn first(value: &mut u32) -> u32 { let words = [next(value), next(value)]; words[0] }",
+        "verifying \"borrow.rs\";
+        fn next(value: &mut u32) -> u32 {
+            requires *value < 255u32; owns value[0..1];
+            ensures result == old(*value); ensures *value == old(*value) + 1u32;
+        }
+        fn first(value: &mut u32) -> u32 {
+            requires *value == 4u32; owns value[0..1];
+            ensures result == 4u32; ensures *value == 6u32;
+        }",
     );
 }
 
