@@ -6,6 +6,8 @@ Subtracting a positive chunk size preserves the remainder only when the
 subtraction is nonnegative.
 
 ```click
+import click::integer;
+
 theorem tail_bounds(n: uint64, size: uint64) {
     requires 0u64 < size;
     ensures n % size <= n by { solve() using { 0u64 < size; }; }
@@ -18,8 +20,58 @@ theorem complete_prefix(n: uint64) {
     }
 }
 theorem consume_chunk(n: int32) {
+    let shorter: Integer = to_integer(n) - 4;
+    let quotient: Integer = truncating_quotient(shorter, 4);
+    let remainder: Integer = truncating_remainder(shorter, 4);
     requires 4 <= n;
-    ensures (n - 4) % 4 == n % 4 by { normalize() using { 4 <= n; }; }
+    ensures (n - 4) % 4 == n % 4 by {
+        have 0 <= to_integer(n) by {
+            apply(integer::le_transitive(0, 4, to_integer(n))) using { 0 <= 4; 4 <= to_integer(n); };
+        }
+        have 0 <= shorter by { solve() using { 4 <= to_integer(n); }; }
+        apply(integer::truncation_identity(shorter, 4)) using { 4 != 0; };
+        apply(integer::nonnegative_dividend_remainder(shorter, 4)) using {
+            4 != 0; 0 <= shorter;
+        };
+        apply(integer::positive_divisor_remainder_upper(shorter, 4)) using {
+            4 != 0; 0 < 4;
+        };
+
+        // Restoring the chunk increments the quotient and leaves the residue unchanged.
+        apply(integer::equal_add(shorter, quotient * 4 + remainder, 4, 4)) using {
+            shorter == quotient * 4 + remainder; 4 == 4;
+        };
+        apply(integer::multiply_add(quotient, 1, 4));
+        have shorter + 4 == to_integer(n) by known();
+        have (quotient * 4 + remainder) + 4 == (quotient + 1) * 4 + remainder by {
+            rewrite((quotient + 1) * 4, quotient * 4 + 1 * 4);
+            known();
+        }
+        have to_integer(n) == (quotient + 1) * 4 + remainder by known();
+        apply(integer::nonnegative_remainder_from_reconstruction(to_integer(n), 4, quotient + 1, remainder)) using {
+            4 != 0; 1 <= 4; 0 <= to_integer(n);
+            0 <= remainder; remainder <= 4 - 1;
+            to_integer(n) == (quotient + 1) * 4 + remainder;
+        };
+
+        apply(integer::int32_nonnegative_subtract_within_value_is_defined(n, 4)) using {
+            0 <= 4; 4 <= n;
+        };
+        apply(integer::int32_subtract_to_integer(n, 4)) using { defined(n - 4); };
+        apply(integer::int32_remainder_to_integer(n - 4, 4)) using {
+            defined(n - 4); defined((n - 4) % 4); to_integer(4) != 0;
+        };
+        apply(integer::int32_remainder_to_integer(n, 4)) using {
+            defined(n % 4); to_integer(4) != 0;
+        };
+        have to_integer((n - 4) % 4) == to_integer(n % 4) by {
+            rewrite(to_integer(n % 4), truncating_remainder(to_integer(n), 4));
+            rewrite(to_integer((n - 4) % 4), truncating_remainder(to_integer(n - 4), 4));
+            rewrite(to_integer(n - 4), shorter);
+            known();
+        }
+        known();
+    }
 }
 theorem short_tail(n: int32) {
     requires 0 <= n;
