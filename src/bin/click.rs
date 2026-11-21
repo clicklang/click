@@ -793,6 +793,58 @@ theorem clear_has_contract() executes clear(int32* p, const int32* q) {
     }
 
     #[test]
+    fn verify_names_a_fold_arguments_unproved_read() {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("fold.c"),
+            "struct link { int *next; };\nint check(struct link *node) { int value = 0; return value; }",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("fold.click");
+        fs::write(
+            &sidecar,
+            r#"resource tag(value: int32*) {}
+verifying "fold.c";
+int32 check(struct link* node) {
+    ensures result == 0;
+} by {
+    step();
+    fold(tag(node->next));
+    step_until(function.exit);
+    solve();
+}
+"#,
+        )
+        .unwrap();
+        let path = sidecar.display().to_string();
+        let ordinary = entry(["verify".to_owned(), path.clone()]).unwrap_err();
+        assert!(
+            ordinary.contains("could not lower resource `tag` argument 0"),
+            "{ordinary}"
+        );
+        assert!(ordinary.contains("goal: defined(node[0])"), "{ordinary}");
+
+        let trace = entry([
+            "verify".to_owned(),
+            "--trace-proof".to_owned(),
+            "check".to_owned(),
+            path,
+        ])
+        .unwrap_err();
+        let (_, failed) = trace
+            .split_once("\nfailed check:\n")
+            .unwrap_or_else(|| panic!("{trace}"));
+        assert!(
+            failed.lines().any(|line| {
+                line.starts_with("goal: defined-read(current, state#") && line.ends_with(", node)")
+            }),
+            "{trace}"
+        );
+        assert!(!trace.contains("<unrecorded point"), "{trace}");
+        assert!(!trace.contains("<pointer A>"), "{trace}");
+    }
+
+    #[test]
     fn verify_names_the_failed_simple_tactic() {
         let directory =
             std::env::temp_dir().join(format!("click-failed-step-report-{}", std::process::id()));
