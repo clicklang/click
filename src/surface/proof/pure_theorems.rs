@@ -863,7 +863,7 @@ pub(super) fn pure_theorem_context(
         &theorem.generic_pointer_parameters,
     );
     let integer_values = pure_theorem_parameter_integer_values(theorem.parameters());
-    let array_refs = pure_theorem_array_refs(theorem.parameters(), &values, &memory);
+    let array_refs = pure_theorem_array_refs(theorem.parameters(), &values, &point);
     // A theorem's premises are its `requires` clauses in source order, each
     // normalized to the proposition it states: a `views` range states its
     // readability, the same proposition `loadable` states. Keeping the list
@@ -1396,7 +1396,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
 pub(in crate::surface) fn pure_theorem_array_refs(
     parameters: &[FunctionParameter],
     values: &ProgramValueBindings,
-    memory: &SymbolicMemory,
+    point: &crate::kernel::ProgramPoint,
 ) -> ClickArrayRefs {
     parameters
         .iter()
@@ -1409,7 +1409,7 @@ pub(in crate::surface) fn pure_theorem_array_refs(
             Some((
                 parameter.name().to_string(),
                 ClickArrayRef {
-                    point: crate::kernel::ProgramPoint::of_memory(memory),
+                    point: point.clone(),
                     pointer: pointer.address().clone(),
                     element_type,
                 },
@@ -3313,6 +3313,23 @@ fn oriented_order_comparisons(proposition: &Proposition) -> Proposition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn theorem_array_parameter_retains_the_theorem_point() {
+        let file =
+            crate::surface::parse("theorem array_input(a: int32[]) { ensures true; }").unwrap();
+        let theorem = &file.theorem_definitions()[0];
+        let predicates = PredicateEnvironment::new(&[]);
+        let functions = ClickFunctionEnvironment::new(&[]);
+        let context =
+            pure_theorem_context(theorem, SpecDefinitions::new(&predicates, &functions)).unwrap();
+        let array = context
+            .array_refs
+            .get("a")
+            .expect("the theorem array parameter");
+        assert!(context.point.id().is_some());
+        assert_eq!(array.point.id(), context.point.id());
+    }
 
     #[test]
     fn axiom_comparison_states_each_order_as_less_than_or_less_equal() {
