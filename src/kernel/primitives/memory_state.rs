@@ -2045,6 +2045,22 @@ impl LocalEnvironment {
         self.slots.keys()
     }
 
+    pub(in crate::kernel) fn automatic_slots(&self) -> impl Iterator<Item = &Address> {
+        self.automatic_slots.keys()
+    }
+
+    pub(in crate::kernel) fn has_slot_in_block(&self, block: &AddressBase) -> bool {
+        let first = Address {
+            base: block.clone(),
+            offset: AddressOffset::Constant(i64::MIN),
+        };
+        self.slots.contains_key(&first)
+            || self
+                .slots
+                .get_greater_than(&first)
+                .is_some_and(|(slot, _)| &slot.base == block)
+    }
+
     pub(in crate::kernel) fn is_proof_input_slot(&self, slot: &Address) -> bool {
         self.name_for_slot(slot).is_some_and(|name| {
             matches!(
@@ -2356,6 +2372,10 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
     Some(hash.finish())
 }
 
+fn can_designate_automatic_storage(slot: &Address) -> bool {
+    slot.base.is_local_block() && !slot.base.starts_with("local:value-parameter:")
+}
+
 impl LocalEnvironment {
     /// An environment of these bindings and slots, with its held-term index
     /// built from the bindings.
@@ -2383,9 +2403,15 @@ impl LocalEnvironment {
                 pointer_objects_by_block.insert(block.clone(), names);
             }
         }
+        let automatic_slots = slots
+            .keys()
+            .filter(|slot| can_designate_automatic_storage(slot))
+            .map(|slot| (slot.clone(), ()))
+            .collect();
         let mut result = Self {
             bindings,
             slots,
+            automatic_slots,
             held_terms,
             pointer_objects_by_block,
             visible_names: Default::default(),
@@ -2434,6 +2460,12 @@ impl LocalEnvironment {
             && old_slot != slot
         {
             self.slots.remove(&old_slot);
+            if can_designate_automatic_storage(&old_slot) {
+                self.automatic_slots.remove(&old_slot);
+            }
+        }
+        if can_designate_automatic_storage(&slot) && !self.slots.contains_key(&slot) {
+            self.automatic_slots.insert(slot.clone(), ());
         }
         self.slots.insert(slot, name);
     }
@@ -2738,6 +2770,9 @@ impl LocalEnvironment {
         self.bindings.remove(&name);
         self.unindex_source_binding(&name);
         self.slots.remove(binding.slot());
+        if can_designate_automatic_storage(binding.slot()) {
+            self.automatic_slots.remove(binding.slot());
+        }
     }
 }
 

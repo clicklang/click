@@ -8779,6 +8779,9 @@ pub struct LocalEnvironment {
     /// every binding: a frame of N locals bound one at a time costs N log N.
     pub(super) bindings: crate::persistent::PersistentMap<BindingName, LocalBinding>,
     pub(super) slots: crate::persistent::PersistentMap<Address, BindingName>,
+    /// The slots that can designate automatic storage. Value-only parameter
+    /// pseudo-slots never have a block and do not participate in lifetime ends.
+    automatic_slots: crate::persistent::PersistentMap<Address, ()>,
     /// Each scalar object's name under a fingerprint of the integer term it
     /// holds, kept with `bindings`: naming a value looks up the objects that
     /// may hold it instead of comparing it with every binding.

@@ -21165,29 +21165,10 @@ fn resource_fact_containing_allocation(
         })
 }
 
-/// Ends the automatic lifetimes the returning frame created.
-///
-/// A body executed at a call site declares its locals into the caller's own
-/// memory, and nothing else retires them: without this the callee's cells stay
-/// readable under the caller's next declaration of that name, and a pointer to
-/// one of the callee's locals stays dereferenceable after the frame is gone.
-///
-/// Only identities this frame minted are retired — the generational
-/// declarations and the frame-scoped parameter slots. A value-only parameter
-/// is deliberately excluded: its pseudo-slot uses a separate value-parameter
-/// namespace and owns no block.
-///
-/// Bounded by this frame's own bindings; it reads no caller state.
-fn retired_automatistorage_creation_blocks(
-    state: &ExecutionState,
-    after: &SymbolicMemory,
-) -> Vec<AddressBase> {
-    state
-        .locals
-        .slots()
-        .filter(|slot| state.memory.has_block(&slot.base) && !after.has_block(&slot.base))
-        .map(|slot| slot.base.clone())
-        .collect()
+struct AutomaticLifetimeEnd {
+    memory: SymbolicMemory,
+    /// Retired blocks with local bindings, for population and owner bookkeeping.
+    retired_local_blocks: Vec<AddressBase>,
 }
 
 type AutomaticLifetimeInput = (usize, usize, usize, usize, usize);
@@ -21248,11 +21229,11 @@ fn retire_automatic_lifetime_blocks(
 
 fn end_inline_frame_automatic_lifetimes(
     state: &ExecutionState,
-) -> Result<SymbolicMemory, RuntimeError> {
+) -> Result<AutomaticLifetimeEnd, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
-    for slot in state.locals.slots() {
+    for slot in state.locals.automatic_slots() {
         crate::instrumentation::record_deterministic_work(1);
         if !block_is_frame_scoped_automatic_object(&slot.base) {
             continue;
@@ -21281,7 +21262,10 @@ fn end_inline_frame_automatic_lifetimes(
         }
         blocks.push(slot.base.clone());
     }
-    Ok(retire_automatic_lifetime_blocks(memory, &blocks))
+    Ok(AutomaticLifetimeEnd {
+        memory: retire_automatic_lifetime_blocks(memory, &blocks),
+        retired_local_blocks: blocks,
+    })
 }
 
 /// A non-inline body's declared locals have ended before its postconditions
@@ -21294,15 +21278,14 @@ fn end_function_body_automatic_lifetimes(
     function: &ProgramFunction,
     caller: &SymbolicMemory,
     returned: Option<&ProgramValue>,
-) -> Result<SymbolicMemory, RuntimeError> {
+) -> Result<AutomaticLifetimeEnd, RuntimeError> {
     let memory = &state.memory;
     let mut blocks = Vec::new();
     let mut selected = BTreeSet::new();
-    for slot in state.locals.slots() {
+    for slot in state.locals.automatic_slots() {
         crate::instrumentation::record_deterministic_work(1);
-        if slot.base.is_local_block()
-            && !(function.return_aggregate_layout().is_some()
-                && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.address().base == slot.base))
+        if !(function.return_aggregate_layout().is_some()
+            && matches!(returned, Some(ProgramValue::Pointer(pointer)) if pointer.address().base == slot.base))
             && (!caller.has_block(&slot.base) || state.locals.is_proof_input_slot(slot))
             && memory.has_block(&slot.base)
         {
@@ -21328,6 +21311,7 @@ fn end_function_body_automatic_lifetimes(
             blocks.push(slot.base.clone());
         }
     }
+    let named_blocks = blocks.len();
     for (_, pointer) in state.aggregate_step_objects.iter() {
         crate::instrumentation::record_deterministic_work(1);
         if !caller.has_block(&pointer.base)
@@ -21350,7 +21334,21 @@ fn end_function_body_automatic_lifetimes(
             blocks.push(pointer.base.clone());
         }
     }
-    Ok(retire_automatic_lifetime_blocks(memory, &blocks))
+    let memory = retire_automatic_lifetime_blocks(memory, &blocks);
+    // Aggregate step objects are normally anonymous. Only a block also named
+    // by a local binding participates in the caller's local bookkeeping.
+    if blocks.len() > named_blocks {
+        let temporaries = blocks.split_off(named_blocks);
+        blocks.extend(
+            temporaries
+                .into_iter()
+                .filter(|block| state.locals.has_slot_in_block(block)),
+        );
+    }
+    Ok(AutomaticLifetimeEnd {
+        memory,
+        retired_local_blocks: blocks,
+    })
 }
 
 /// Whether this block is an automatic object a call frame minted for itself,
@@ -21750,18 +21748,20 @@ fn function_outcome_from_body_with_resource_transfer(
     } else if function.return_type() != ProgramType::Void {
         set_function_result(&mut state, function, value.clone());
     }
-    let retired_memory = match end_function_body_automatic_lifetimes(
+    let AutomaticLifetimeEnd {
+        memory,
+        retired_local_blocks,
+    } = match end_function_body_automatic_lifetimes(
         &state,
         function,
         caller_state.memory(),
         value.native_payload(),
     ) {
-        Ok(memory) => memory,
+        Ok(retirement) => retirement,
         Err(error) => return Ok((FunctionOutcome::RuntimeError(error), obligations, None)),
     };
-    let retired_creation_blocks = retired_automatistorage_creation_blocks(&state, &retired_memory);
-    state.set_memory(retired_memory);
-    for block in retired_creation_blocks {
+    state.set_memory(memory);
+    for block in retired_local_blocks {
         if let Err(error) = state.retire_population_storage(&block) {
             return Ok((FunctionOutcome::RuntimeError(error), obligations, None));
         }
@@ -22744,7 +22744,7 @@ pub(super) fn function_outcome_from_body(
 
             let original_creation = caller_state.population_effects.creation.clone();
             let incoming_memory = caller_state.memory();
-            let retired_memory = if function.has_inline_body() {
+            let retirement = if function.has_inline_body() {
                 end_inline_frame_automatic_lifetimes(&state)
             } else {
                 end_function_body_automatic_lifetimes(
@@ -22754,11 +22754,13 @@ pub(super) fn function_outcome_from_body(
                     value.native_payload(),
                 )
             };
-            let memory = match retired_memory {
-                Ok(memory) => memory,
+            let AutomaticLifetimeEnd {
+                memory,
+                retired_local_blocks,
+            } = match retirement {
+                Ok(retirement) => retirement,
                 Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
             };
-            let retired_creation_blocks = retired_automatistorage_creation_blocks(&state, &memory);
             let resources = return_resources
                 .cloned()
                 .unwrap_or_else(|| state.resources.clone());
@@ -22766,7 +22768,7 @@ pub(super) fn function_outcome_from_body(
                 .clone()
                 .with_memory_and_resources_continuing(&state, memory, resources);
             let retired_creation =
-                match state.retired_population_creation_for_blocks(&retired_creation_blocks) {
+                match state.retired_population_creation_for_blocks(&retired_local_blocks) {
                     Ok(creation) => creation,
                     Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
                 };
@@ -22793,7 +22795,7 @@ pub(super) fn function_outcome_from_body(
             if return_resources.is_none() {
                 caller_state.instance_field_scope = state.instance_field_scope;
             }
-            for block in &retired_creation_blocks {
+            for block in &retired_local_blocks {
                 let Some(bytes) = state.memory.block_size(block).cloned() else {
                     continue;
                 };
@@ -22839,16 +22841,18 @@ pub(super) fn function_outcome_from_body(
             }
             let original_creation = caller_state.population_effects.creation.clone();
             let incoming_memory = caller_state.memory();
-            let retired_memory = if function.has_inline_body() {
+            let retirement = if function.has_inline_body() {
                 end_inline_frame_automatic_lifetimes(&state)
             } else {
                 end_function_body_automatic_lifetimes(&state, function, caller_state.memory(), None)
             };
-            let memory = match retired_memory {
-                Ok(memory) => memory,
+            let AutomaticLifetimeEnd {
+                memory,
+                retired_local_blocks,
+            } = match retirement {
+                Ok(retirement) => retirement,
                 Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
             };
-            let retired_creation_blocks = retired_automatistorage_creation_blocks(&state, &memory);
             let resources = return_resources
                 .cloned()
                 .unwrap_or_else(|| state.resources.clone());
@@ -22856,7 +22860,7 @@ pub(super) fn function_outcome_from_body(
                 .clone()
                 .with_memory_and_resources_continuing(&state, memory, resources);
             let retired_creation =
-                match state.retired_population_creation_for_blocks(&retired_creation_blocks) {
+                match state.retired_population_creation_for_blocks(&retired_local_blocks) {
                     Ok(creation) => creation,
                     Err(error) => return (FunctionOutcome::RuntimeError(error), obligations),
                 };
@@ -22874,7 +22878,7 @@ pub(super) fn function_outcome_from_body(
             if return_resources.is_none() {
                 caller_state.instance_field_scope = state.instance_field_scope;
             }
-            for block in &retired_creation_blocks {
+            for block in &retired_local_blocks {
                 let Some(bytes) = state.memory.block_size(block).cloned() else {
                     continue;
                 };

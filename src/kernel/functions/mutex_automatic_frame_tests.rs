@@ -27,8 +27,10 @@ fn mutex_automatic_frame_retirement_requires_destruction() {
         ));
         // The caller's object remains live across a callee return.
         assert_eq!(
-            end_function_body_automatic_lifetimes(initialized.state(), &function, &memory, None),
-            Ok(memory.clone())
+            end_function_body_automatic_lifetimes(initialized.state(), &function, &memory, None)
+                .unwrap()
+                .memory,
+            memory
         );
         if name != "holder" {
             assert!(matches!(
@@ -47,12 +49,14 @@ fn mutex_automatic_frame_retirement_requires_destruction() {
                 None
             )
             .unwrap()
+            .memory
             .has_block(&address.base)
         );
         if name != "holder" {
             assert!(
                 !end_inline_frame_automatic_lifetimes(destroyed.state())
                     .unwrap()
+                    .memory
                     .has_block(&address.base)
             );
         }
