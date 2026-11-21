@@ -6834,12 +6834,7 @@ impl SymbolicMemory {
         program_type: ProgramType,
         source: &ProgramPoint,
     ) -> Self {
-        let value = if let ProgramType::Parameter(parameter) = program_type {
-            AlgebraicTermNode::parameter_cell_load(source, pointer.clone(), parameter)
-        } else {
-            let load = crate::kernel::eval::canonical_cell_load(source, &pointer, program_type);
-            crate::kernel::cell_run_value(program_type, load)
-        };
+        let value = crate::kernel::eval::canonical_cell_value(source, &pointer, program_type);
         self.materialize_named_cell(pointer, value)
     }
 

@@ -1146,6 +1146,24 @@ fn memory_only_adds_named_cells(
             }
             continue;
         }
+        if let ProgramValue::Pointer(named) = &value
+            && named
+                .address()
+                .as_loaded_value()
+                .is_some_and(|read| read.point.read_version_id().is_some())
+        {
+            let expected = crate::kernel::eval::indexed_pointer_cell_read(
+                &source,
+                pointer,
+                named.program_type(),
+            );
+            if expected.as_ref() != Some(named) {
+                return Err(format!(
+                    "added a pointer cell at {pointer:?} without its complete indexed source read"
+                ));
+            }
+            continue;
+        }
         let Some(kind) = LoadKind::of_value(&value) else {
             return Err("added a cell no load reads".into());
         };
