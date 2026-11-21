@@ -40,7 +40,9 @@ fn charon_enumeration_rejects_shifted_yielded_index() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
+#[ignore = "nightly: additional enumerate invariant and element-bound mutations"]
 fn charon_enumeration_rejects_an_advance_before_the_first_pass() {
     // The enumerated iterator starts with every element left.
     rejects_enumeration_mutation(
@@ -50,7 +52,9 @@ fn charon_enumeration_rejects_an_advance_before_the_first_pass() {
     );
 }
 
+#[cfg(not(feature = "fast-gate"))]
 #[test]
+#[ignore = "nightly: additional enumerate invariant and element-bound mutations"]
 fn charon_enumeration_rejects_understated_element_bound() {
     // A `u16` element can be 65535.
     rejects_enumeration_mutation(
