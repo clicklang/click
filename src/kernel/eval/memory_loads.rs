@@ -2217,10 +2217,9 @@ fn symbolic_index_run_load(
             })
             .flatten()
     };
-    let run = memory
-        .cells
-        .candidate_runs(&AliasCandidates::of_block(&pointer.base))
-        .find(|run| {
+    let candidates = AliasCandidates::of_block(&pointer.base);
+    let (run, index, scale, shift, wide) =
+        memory.cells.candidate_runs(&candidates).find_map(|run| {
             crate::instrumentation::record_deterministic_work(1);
             let (index, scale, shift, wide) = match run_access(run, pointer) {
                 RunAccess::Scaled {
@@ -2233,7 +2232,7 @@ fn symbolic_index_run_load(
                     scale,
                     shift,
                 } => (index, scale, shift, true),
-                _ => return false,
+                _ => return None,
             };
             let width = i64::from(run.element_width());
             if run.element_type() != value_type
@@ -2241,18 +2240,15 @@ fn symbolic_index_run_load(
                 || scale != width
                 || shift.rem_euclid(width) != 0
             {
-                return false;
+                return None;
             }
             let first_element = shift.div_euclid(width);
             // An unsigned 64-bit index starts at zero, so its slots begin at
             // `first_element`; they all lie in one live interval when the
             // index is decided below that interval's remaining length.
-            if wide {
-                let Ok(first) = u32::try_from(first_element) else {
-                    return false;
-                };
-                return run
-                    .live_intervals()
+            let selected = if wide {
+                let first = u32::try_from(first_element).ok()?;
+                run.live_intervals()
                     .intervals()
                     .iter()
                     .any(|(live_low, live_high)| {
@@ -2270,47 +2266,87 @@ fn symbolic_index_run_load(
                                     ),
                                 ),
                             ) == Some(true)
-                    });
-            }
-            let on_live_slots = |(low, high): (i64, i64)| {
-                let (Some(first), Some(last)) = (
-                    low.checked_add(first_element),
-                    high.checked_add(first_element),
-                ) else {
-                    return false;
+                    })
+            } else {
+                let on_live_slots = |(low, high): (i64, i64)| {
+                    let (Some(first), Some(last)) = (
+                        low.checked_add(first_element),
+                        high.checked_add(first_element),
+                    ) else {
+                        return false;
+                    };
+                    let (Ok(first), Ok(last)) = (u32::try_from(first), u32::try_from(last)) else {
+                        return false;
+                    };
+                    last < run.count()
+                        && run
+                            .live_intervals()
+                            .intervals()
+                            .iter()
+                            .any(|(live_low, live_high)| *live_low <= first && last < *live_high)
                 };
-                let (Ok(first), Ok(last)) = (u32::try_from(first), u32::try_from(last)) else {
-                    return false;
-                };
-                last < run.count()
-                    && run
-                        .live_intervals()
-                        .intervals()
-                        .iter()
-                        .any(|(live_low, live_high)| *live_low <= first && last < *live_high)
+                assumptions
+                    .signed_interval_past_exclusions_view(index.operand_view())
+                    .is_some_and(on_live_slots)
+                    || path_interval(index.operand_view()).is_some_and(on_live_slots)
             };
-            assumptions
-                .signed_interval_past_exclusions_view(index.operand_view())
-                .is_some_and(on_live_slots)
-                || path_interval(index.operand_view()).is_some_and(on_live_slots)
-        })?
-        .clone();
-    // A constant run's slots are not loads of its source, which is empty:
-    // every live slot holds the run's one value, so the load reads it.
-    if let crate::kernel::primitives::RunValueMode::Constant(value) = run.value_mode() {
-        return value_type.read_cell(value);
-    }
-    if matches!(
-        run.value_mode(),
-        crate::kernel::primitives::RunValueMode::Load
-    ) && let Some(value) =
-        point_named_symbolic_float_read(Some(run.source_point()), pointer, value_type)
-    {
-        return Some(value);
-    }
+            selected.then_some((run, index, scale, shift, wide))
+        })?;
+    use crate::kernel::primitives::RunValueMode;
+    let copied_address;
+    let address = match run.value_mode() {
+        RunValueMode::Constant(value) => return value_type.read_cell(value),
+        RunValueMode::Load => {
+            if let Some(value) =
+                point_named_symbolic_float_read(Some(run.source_point()), pointer, value_type)
+            {
+                return Some(value);
+            }
+            pointer
+        }
+        RunValueMode::Copy { source_base } => {
+            // The selected index is relative to the destination run. Apply
+            // that same displacement to the captured source address.
+            let scaled = if wide {
+                AddressOffset::Int64Scaled {
+                    value: index,
+                    byte_width: scale,
+                    unsigned: true,
+                }
+            } else {
+                AddressOffset::Int32Scaled {
+                    value: index,
+                    byte_width: scale,
+                }
+            };
+            let offset = if let Some(displaced) = source_base
+                .offset
+                .as_const()
+                .and_then(|base| base.checked_add(shift))
+            {
+                AddressOffset::add(AddressOffset::Constant(displaced), scaled)
+            } else {
+                AddressOffset::add(
+                    source_base.offset.clone(),
+                    AddressOffset::add(scaled, AddressOffset::Constant(shift)),
+                )
+            };
+            copied_address = Address {
+                base: source_base.base.clone(),
+                offset,
+            };
+            let source = run.source_point();
+            if let Some(read) = expected_point_named_cell_read(source, &copied_address, value_type)
+            {
+                record_indexed_cell_read(source, &read);
+                return Some(crate::kernel::cell_run_value(value_type, read));
+            }
+            &copied_address
+        }
+    };
     canonicalized_symbolic_load_value_with_identity(
         run.source().memory(),
-        pointer,
+        address,
         value_type,
         facts,
         assumptions,
@@ -10010,6 +10046,91 @@ mod float_conversion_load_tests {
                 crate::kernel::KernelTermExport::machine_export_count(),
                 exports
             );
+        }
+    }
+}
+
+#[test]
+fn symbolic_copied_run_reads_keep_the_original_source_address_and_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let source_base = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(16),
+    };
+    let destination = Address {
+        base: "copied-run-destination".into(),
+        offset: AddressOffset::Constant(4),
+    };
+    let value_type = ProgramType::Int32;
+    let stride = value_type.byte_width();
+    let index = MachineTerm::Variable(Variable(986_235));
+    for source in [
+        entry.program_point(),
+        ProgramPoint::of_memory(entry.memory()),
+    ] {
+        for wide in [false, true] {
+            let assumptions = PureFactContext::new().assume_condition(
+                if wide {
+                    ConditionTerm::uint64_equal(index.clone(), MachineTerm::uint64_constant(0))
+                } else {
+                    ConditionTerm::equal(index.clone(), MachineTerm::constant(0))
+                },
+                true,
+            );
+            let destination_index = destination
+                .offset_by_bytes(stride)
+                .offset_by_typed_elements(index.clone(), stride, wide, wide);
+            let source_index = source_base
+                .offset_by_bytes(2 * stride)
+                .offset_by_typed_elements(index.clone(), stride, wide, wide);
+            let work = [2, 8, 64, 256].map(|count| {
+                let memory = SymbolicMemory::new()
+                    .with_block("copied-run-destination", (count + 1) * stride)
+                    .with_named_cell_run(
+                        source_base.clone(),
+                        stride,
+                        value_type,
+                        0,
+                        count + 1,
+                        source.clone(),
+                    )
+                    .unwrap();
+                let copied = memory
+                    .write_scalar_array_state(
+                        &destination,
+                        value_type,
+                        count,
+                        ProgramValue::typed_pointer(
+                            source_base.offset_by_bytes(stride),
+                            ProgramType::Int32Pointer,
+                        ),
+                        true,
+                        false,
+                        &assumptions,
+                    )
+                    .expect("copy a complete subrange of the named run");
+                let (read, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    symbolic_index_run_load(
+                        &copied,
+                        &destination_index,
+                        value_type,
+                        &mut ExecutionFacts::new(),
+                        &assumptions,
+                        None,
+                        LoadPurpose::Logical,
+                    )
+                });
+                let Some(ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, kind))) = read
+                else {
+                    panic!("expected a copied word read");
+                };
+                assert_eq!(*address, source_index);
+                assert_eq!(kind, LoadKind::Int32);
+                assert_eq!(point.read_version_id(), source.id());
+                work
+            });
+            assert!(work.iter().all(|units| *units <= work[0] + 8), "{work:?}");
         }
     }
 }
