@@ -18,7 +18,7 @@ void overwrite(int32 *p) {
     step();
     have separate(memory(*p), memory(p[0..-1073741823])) by { known(); }
     have separate(statement(0).footprint, memory(p[0..-1073741823])) by {
-        normalize() using { separate(memory(*p), memory(p[0..-1073741823])); };
+        known();
     }
     have *p == old(*p) by {
         preserve(memory(p[0..-1073741823]), statement(0));

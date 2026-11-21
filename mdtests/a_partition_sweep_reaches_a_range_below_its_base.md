@@ -111,7 +111,7 @@ int32 write_then_read(int32* a, int32* b, int32 s, int32 e, int32 i) {
     mark before;
     step();
     have separate(statement(2).footprint, memory(a[0])) by {
-        normalize() using { separate(memory(a[0]), memory(b[i])); };
+        known();
     }
     have a[0] == at(before, a[0]) by {
         preserve(memory(a[0]), statement(2));

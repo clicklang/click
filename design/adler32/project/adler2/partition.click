@@ -349,8 +349,8 @@ theorem adler_small_prefix_within_full(n: uint64) {
  }
  ensures (n - n % 4u64) as uint32 as int32 <= n as uint32 as int32 by {
   apply(adler_small_native_prefix(n)) using { n <= 22207u64; };
-  have n <= 2147483647u64 by normalize() using { n <= 22207u64; };
-  have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by normalize() using { to_integer(n - n % 4u64) <= to_integer(22204u64); };
+  have n <= 2147483647u64 by known();
+  have to_integer(n - n % 4u64) <= to_integer(2147483647u64) by known();
   apply(adler_index_observation(n)) using { n <= 2147483647u64; };
   apply(adler_index_observation(n - n % 4u64)) using { to_integer(n - n % 4u64) <= to_integer(2147483647u64); };
   have n % 4u64 <= n by known();

@@ -81,7 +81,7 @@ tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
             have ctx_depth(old(c.model)) == ctx_depth(up_model) + 1 by {
                 rewrite(old(c.model), Context::Right(identity, grandparent, color, sibling_model, up_model));
                 unfold(ctx_depth(Context::Right(identity, grandparent, color, sibling_model, up_model)));
-                normalize();
+                known();
             }
             have ctx_depth(u.model) < ctx_depth(old(c.model));
             have plug(Context::Right(identity, grandparent, color, sibling_model, up_model), old(t.model)) == plug(up_model, RbTree::Node(identity, grandparent, color, sibling_model, old(t.model)));

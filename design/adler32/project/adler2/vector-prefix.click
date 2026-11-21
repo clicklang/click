@@ -51,10 +51,10 @@ theorem adler_native_four_lane_a_prefix_step(bytes: uint8[], n: int32, a_seed: I
   have to_integer(a1 + v1) == to_integer(a1) + to_integer(v1);
   have to_integer(a2 + v2) == to_integer(a2) + to_integer(v2);
   have to_integer(a3 + v3) == to_integer(a3) + to_integer(v3);
-  have 0 <= to_integer(a0) by normalize();
-  have 0 <= to_integer(a1) by normalize();
-  have 0 <= to_integer(a2) by normalize();
-  have 0 <= to_integer(a3) by normalize();
+  have 0 <= to_integer(a0) by known();
+  have 0 <= to_integer(a1) by known();
+  have 0 <= to_integer(a2) by known();
+  have 0 <= to_integer(a3) by known();
   apply(adler_four_lane_a_prefix_step(bytes, n, a_seed, a, to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)));
   rewrite(to_integer(a0 + v0), to_integer(a0) + to_integer(v0));
   rewrite(to_integer(a1 + v1), to_integer(a1) + to_integer(v1));

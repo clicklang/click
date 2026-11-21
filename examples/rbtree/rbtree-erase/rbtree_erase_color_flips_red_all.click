@@ -960,9 +960,7 @@ theorem erase_red_near_left(id: struct rb_node*, above: struct rb_node*, pc: Col
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
                 unfold(erase_flips_red_all(Context::Left(id, above, pc, RbTree::Node(sid, sp, Color::Red, RbTree::Node(nid, np, nc, nl, nr), far), up)));
-                normalize() using {
-                    nc == Color::Black;
-                };
+                known();
             }
         }
     }
@@ -1126,9 +1124,7 @@ theorem erase_red_near_right(id: struct rb_node*, above: struct rb_node*, pc: Co
             RbTree::Node(nid, np, nc, nl, nr) => {
                 apply(outer_black_node_color(nid, np, nc, nl, nr));
                 unfold(erase_flips_red_all(Context::Right(id, above, pc, RbTree::Node(sid, sp, Color::Red, far, RbTree::Node(nid, np, nc, nl, nr)), up)));
-                normalize() using {
-                    nc == Color::Black;
-                };
+                known();
             }
         }
     }

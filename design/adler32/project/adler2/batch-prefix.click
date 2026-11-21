@@ -123,7 +123,7 @@ theorem adler_empty_full_batch_position(remaining: int32) {
  requires remaining == 22208;
  ensures to_integer(22208 - remaining) == 0 by {
   rewrite(remaining, 22208);
-  normalize();
+  known();
  }
 }
 
@@ -131,7 +131,7 @@ theorem adler_complete_full_batch_position(remaining: int32) {
  requires remaining == 0;
  ensures to_integer(22208 - remaining) == 22208 by {
   rewrite(remaining, 0);
-  normalize();
+  known();
  }
 }
 
@@ -163,7 +163,7 @@ theorem adler_native_deferred_b_prefix_step(bytes: uint8[], n: int32, pos: int32
   have defined(n + 1) by solve() using { 0 <= n; n <= 2147483643; };
   have defined(n + 2) by solve() using { 0 <= n; n <= 2147483643; };
   have defined(n + 3) by solve() using { 0 <= n; n <= 2147483643; };
-  have 0 <= to_integer(a) by normalize();
+  have 0 <= to_integer(a) by known();
   apply(adler_native_four_lane_prefix_step(bytes, n, a_seed, b_seed, to_integer(a), to_integer(b) + to_integer(pos) * to_integer(a), a0, a1, a2, a3, b0, b1, b2, b3, v0, v1, v2, v3));
   have defined(pos + 4) by solve() using { 0 <= pos; pos <= 22204; };
   have to_integer(pos + 4) == to_integer(pos) + to_integer(4);

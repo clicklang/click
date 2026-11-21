@@ -42,7 +42,7 @@ void touch(int32* flags, int32* data, int32 n) {
     step();
     have separate(memory(data[0]), memory(flags[0])) by { known(); }
     have separate(statement(0).footprint, memory(flags[0])) by {
-        normalize() using { separate(memory(data[0]), memory(flags[0])); };
+        known();
     }
     have flags[0] == old(flags[0]) by {
         preserve(memory(flags[0]), statement(0));

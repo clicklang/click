@@ -50,6 +50,6 @@ theorem adler_c_rust_reset(c_result: uint64, rust_a: uint32, rust_b: uint32) {
   rewrite(c_result, 1u64);
   rewrite(rust_a, 1u32);
   rewrite(rust_b, 0u32);
-  normalize();
+  solve();
  }
 }

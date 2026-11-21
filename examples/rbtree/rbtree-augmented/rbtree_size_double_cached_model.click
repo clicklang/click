@@ -113,7 +113,7 @@ theorem sized_mirrored_double_cached_shape(g: struct rb_node*, p: struct rb_node
         unfold(sized_mirrored_context_double_subtree_after(g, p, node, above, far, ml, mr, uncle));
         rewrite(sized_shape(sized_reparent(mr, p)), rb_reparent(sized_shape(mr), p));
         rewrite(sized_shape(sized_reparent(ml, g)), rb_reparent(sized_shape(ml), g));
-        normalize();
+        known();
     }
 }
 

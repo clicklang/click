@@ -53,9 +53,9 @@ void inspect(struct node *p) {
    mark rotation;
    step(copy_tag);
    have q->tag == at(rotation,p->tag);
-   have identity->tag == q->tag by { normalize() using { q == identity; }; }
+   have identity->tag == q->tag by { known(); }
    have identity->tag == at(rotation,p->tag) by { rewrite(identity->tag, q->tag); known(); }
-   have identity->right == q->right by { normalize() using { q == identity; }; }
+   have identity->right == q->right by { known(); }
    let child = fold(cell(q), { model: Pair::At(identity) });
    have child.model == cm by { rewrite(child.model, Pair::At(identity)); known(); }
    let t = fold(parent(root), { model: Tree::At(pid, cm), child: child });

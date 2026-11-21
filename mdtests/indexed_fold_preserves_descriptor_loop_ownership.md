@@ -228,19 +228,19 @@ void release_run(struct arena* arena, int32 start, int32 end) {
             mark opened;
             step();
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->data))) by {
-                normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->data))); };
+                known();
             }
             have arena->data == at(opened, arena->data) by {
                 preserve(at(opened, memory(arena->data)), loop(0).statement(0));
             }
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied))) by {
-                normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied))); };
+                known();
             }
             have arena->occupied == at(opened, arena->occupied) by {
                 preserve(at(opened, memory(arena->occupied)), loop(0).statement(0));
             }
             have at(opened, separate(loop(0).statement(0).footprint, memory(arena->capacity))) by {
-                normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->capacity))); };
+                known();
             }
             have arena->capacity == at(opened, arena->capacity) by { known(); }
             fold(at(opened, arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end))[i]);
@@ -273,7 +273,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                         };
                     }
                     have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                        normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                        known();
                     }
                     have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
                         preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
@@ -320,7 +320,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     };
                 }
                 have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                    normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                    known();
                 }
                 have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
                     preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));
@@ -363,7 +363,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                     };
                 }
                 have at(opened, separate(loop(0).statement(0).footprint, memory(arena->occupied[k]))) by {
-                    normalize() using { at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))); };
+                    known();
                 }
                 have at(loop(0).statement(0).exit, arena->occupied[k]) == at(opened, arena->occupied[k]) by {
                     preserve(at(opened, memory(arena->occupied[k])), loop(0).statement(0));

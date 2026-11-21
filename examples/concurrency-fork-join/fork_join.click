@@ -142,27 +142,19 @@ void *fill_range(void *argument) {
             have separate(memory(job->output[index]), memory(*job)) by { solve(); }
             mark iteration;
             step();
-            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->output))) by { normalize() using {
-                at(iteration, separate(memory(job->output[index]), memory(job->output)));
-            }; }
+            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->output))) by { known(); }
             have job->output == at(iteration, job->output) by {
                 preserve(at(iteration, memory(job->output)), loop(0).statement(0));
             }
-            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin))) by { normalize() using {
-                at(iteration, separate(memory(job->output[index]), memory(job->begin)));
-            }; }
+            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin))) by { known(); }
             have job->begin == at(iteration, job->begin) by {
                 preserve(at(iteration, memory(job->begin)), loop(0).statement(0));
             }
-            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->end))) by { normalize() using {
-                at(iteration, separate(memory(job->output[index]), memory(job->end)));
-            }; }
+            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->end))) by { known(); }
             have job->end == at(iteration, job->end) by {
                 preserve(at(iteration, memory(job->end)), loop(0).statement(0));
             }
-            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->value))) by { normalize() using {
-                at(iteration, separate(memory(job->output[index]), memory(job->value)));
-            }; }
+            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->value))) by { known(); }
             have job->value == at(iteration, job->value) by { known(); }
             have forall (k: int32) {
                 job->begin <= k and k <= index implies job->output[k] == job->value

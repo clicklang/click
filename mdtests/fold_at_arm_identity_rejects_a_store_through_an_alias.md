@@ -49,7 +49,7 @@ void roundtrip(struct node* p, struct node* q) {
             mark before;
             step();
             have separate(statement(0).footprint, memory(p->left)) by {
-                normalize() using { separate(memory(q->right), memory(p->left)); };
+                known();
             }
             have p->left == at(before, p->left) by {
                 preserve(memory(p->left), statement(0));

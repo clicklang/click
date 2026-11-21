@@ -104,9 +104,7 @@ void probe(struct node* g, struct node* n) {
 
                     have n->right == at(before_call,n->right) by {
                         have n->right == at(before_call, n->right) by {
-                            normalize() using {
-                                at(before_call, n->right) == at(before_call, n->right);
-                            };
+                            known();
                         }
                         known();
                     }

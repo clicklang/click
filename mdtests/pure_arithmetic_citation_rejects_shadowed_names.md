@@ -8,7 +8,7 @@ theorem retained_citation(n: int32) {
     requires 0 <= n;
     ensures 0 <= n by {
         have 0 <= n by known();
-        normalize() using { 0 <= n; };
+        known();
     }
 }
 theorem shadowed_citation(n: int32) {

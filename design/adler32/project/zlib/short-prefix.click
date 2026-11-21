@@ -56,7 +56,7 @@ theorem zlib_equal_byte_integers(left: uint8, right: uint8) {
  ensures zlib_byte_integer(left) == zlib_byte_integer(right) by {
   unfold(zlib_byte_integer(left));
   unfold(zlib_byte_integer(right));
-  normalize();
+  known();
  }
 }
 

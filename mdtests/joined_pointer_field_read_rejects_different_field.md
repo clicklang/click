@@ -84,18 +84,18 @@ void inspect(struct node* parent) {
                     mark before_sibling;
                     have defined(at(before_sibling, pid->right)) by { normalize(); }
                     step();
-                    have separate(loop(0).statement(0).footprint, memory(parent->right)) by { normalize() using {}; }
+                    have separate(loop(0).statement(0).footprint, memory(parent->right)) by { known(); }
                     have defined(parent->right) by {
                         preserve(memory(parent->right), loop(0).statement(0));
                     }
                     have parent->right == at(before_sibling, parent->right) by {
                         preserve(memory(parent->right), loop(0).statement(0));
                     }
-                    have separate(loop(0).statement(0).footprint, memory(parent->left)) by { normalize() using {}; }
+                    have separate(loop(0).statement(0).footprint, memory(parent->left)) by { known(); }
                     have parent->left == at(before_sibling, parent->left) by {
                         preserve(memory(parent->left), loop(0).statement(0));
                     }
-                    have separate(loop(0).statement(0).footprint, memory(parent->left->left)) by { normalize() using {}; }
+                    have separate(loop(0).statement(0).footprint, memory(parent->left->left)) by { known(); }
                     have parent->left->left == at(before_sibling, parent->left->left) by {
                         preserve(memory(parent->left->left), loop(0).statement(0));
                     }
