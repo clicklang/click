@@ -7033,12 +7033,9 @@ fn prepare_verified_function_call<'a>(
     }
 
     let call_entry_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
-    let effective_assumptions =
-        assumptions_with_propositions(&call_entry_assumptions, &established_requirements)
-            .transport_memory_load_condition_facts();
-
-    if let Some(message) = call_initialization::uninitialized_call_input(
-        &entry_contract_state.memory,
+    let before_initialization = obligations.len();
+    let initialization = match call_initialization::call_input_initialization(
+        &entry_contract_state,
         contract_interface,
         transfer
             .borrowed_inputs
@@ -7046,13 +7043,56 @@ fn prepare_verified_function_call<'a>(
             .chain(&transfer.consumed_inputs),
         application.representation_copy.is_some(),
         &call_entry_assumptions,
+        application.name == application.interface_name
+            && MemoryStateIdentity::of(entry_contract_state.memory())
+                == MemoryStateIdentity::of(caller_state.memory()),
     ) {
-        return Ok(Err(FunctionPath::new(
-            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
-            facts,
-            obligations,
-        )));
+        Ok(requirements) => requirements,
+        Err(message) => {
+            return Ok(Err(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
+                facts,
+                obligations,
+            )));
+        }
+    };
+    if !initialization.is_empty() {
+        let established = assumptions_with_path_context(assumptions, &facts, &[]);
+        for (index, requirement, message) in initialization {
+            if !assumptions.retains_required_obligations()
+                && required_obligation_is_exactly_discharged(&established, &requirement)
+            {
+                super::assumptions::record_consulted_premises(&established, &requirement);
+                continue;
+            }
+            let site = call_requirement_site
+                .get_or_insert_with(|| {
+                    Arc::new(CallRequirementSite::for_requirement(
+                        application.name,
+                        application.interface_name,
+                        candidate_ordinal,
+                        source_arguments,
+                        caller_state.memory(),
+                    ))
+                })
+                .clone();
+            let source = CallRequirementSource::new(site, index, None, false, None)
+                .with_initialization_clause(index);
+            obligations.push(
+                ProofObligation::verification_condition(requirement)
+                    .with_call_requirement_site(Arc::new(source))
+                    .with_context(message),
+            );
+        }
     }
+    let call_entry_assumptions = assumptions_with_path_context(
+        &call_entry_assumptions,
+        &[],
+        &obligations[before_initialization..],
+    );
+    let effective_assumptions =
+        assumptions_with_propositions(&call_entry_assumptions, &established_requirements)
+            .transport_memory_load_condition_facts();
 
     let footprint_state = entry_contract_state.clone();
     let footprint_timing = crate::instrumentation::OperationTiming::new(
