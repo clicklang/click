@@ -374,6 +374,12 @@ than what the verifier enforces today, and an audit that measures the gap.
 | Lowering is fact-stable | Lowering reads no facts: one text, state and set of resources lower to one term | Facts may refuse the term, discharge its obligations, add side facts, or select one of several paths; they may not change the term | `scripts/fact-stability.sh`, `differs` lines |
 | Definedness is an obligation | Lowering returns the term, its definedness obligations and its side facts; checking discharges the obligations | Ordinary arithmetic returns obligations beside the term, but lowering drops one the facts already prove, and some lowerings are refused instead of owing one | `scripts/fact-stability.sh`, `refused` and `paths:N` lines |
 
+`click audit fact-stability` and `click audit raise-lower` run these two
+audits over the examples and mdtests an expansion audit walks, and each
+ends with one headline count of the items that fail
+([`click audit`](../reference/cli/audit.md)). The scripts below run them
+over the mdtest corpus through its harness.
+
 `scripts/fact-stability.sh` reports three kinds of fact-dependent lowering.
 A `differs` line breaks the enforced rule. A `refused` line is a proposition
 that lowers with facts and not without them; a `paths:N` line is one the
