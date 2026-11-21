@@ -216,6 +216,19 @@ pub(crate) fn closed_condition_value(condition: &ConditionTerm) -> Option<bool> 
     }
 }
 
+/// Whether a written machine comparison retains a simple int32 match operand.
+pub(crate) fn retains_int32_match(
+    format: MachineIntegerType,
+    operands: [crate::kernel::MachineOperandView<'_>; 2],
+) -> bool {
+    format == MachineIntegerType::Int32
+        && operands.into_iter().any(|operand| {
+            matches!(operand, crate::kernel::MachineOperandView::Shared(root)
+                if matches!(root.node(), crate::kernel::KernelTermNode::Match(matched)
+                    if matched.has_simple_int32_arms()))
+        })
+}
+
 /// Preserve comparisons over literals, identical variables, and bounded
 /// operations during logical lowering. Inspect only operand roots.
 pub(crate) fn logical_condition_for_operand_views(

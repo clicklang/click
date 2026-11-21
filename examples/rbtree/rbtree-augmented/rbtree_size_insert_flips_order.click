@@ -19,7 +19,7 @@ theorem sized_flip_result_preserves_inorder(chain: SizedFlipChain, sub: SizedTre
             },
             SizedFlipChain::Stop(ctx) => {
                 unfold(sized_flip_result(SizedFlipChain::Stop(ctx), sub));
-                unfold(sized_flip_context(SizedFlipChain::Stop(ctx))); normalize();
+                unfold(sized_flip_context(SizedFlipChain::Stop(ctx))); known();
             },
             SizedFlipChain::LL(p, g, pv, gv, other, uncle, up) => {
                 apply(ih(up, SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, sub, other), sized_recolor(uncle, Color::Black))));

@@ -18,23 +18,6 @@
 
 #[cfg(test)]
 use crate::kernel::Proposition;
-use std::fs::File;
-use std::io::Write;
-use std::sync::{Mutex, OnceLock};
-
-fn sink() -> Option<&'static Mutex<File>> {
-    static SINK: OnceLock<Option<Mutex<File>>> = OnceLock::new();
-    SINK.get_or_init(|| {
-        let path = std::env::var_os("CLICK_RAISE_LOWER")?;
-        File::options()
-            .create(true)
-            .append(true)
-            .open(path)
-            .ok()
-            .map(Mutex::new)
-    })
-    .as_ref()
-}
 
 #[cfg(test)]
 thread_local! {
@@ -55,7 +38,7 @@ pub(super) fn enabled() -> bool {
     if CAPTURE.with(|lines| lines.borrow().is_some()) {
         return true;
     }
-    sink().is_some()
+    crate::instrumentation::RAISE_LOWER_RECORDS.enabled()
 }
 
 /// How one round trip ended.
@@ -122,6 +105,7 @@ pub(super) fn record(
     if !enabled() {
         return;
     }
+    crate::instrumentation::RAISE_LOWER_RECORDS.count_checked();
     let field = |text: &str| -> String {
         text.chars()
             .map(|c| if c == '\n' || c == '\t' { ' ' } else { c })
@@ -133,12 +117,15 @@ pub(super) fn record(
     } else {
         "written"
     };
+    // The last field is the verifier thread's name, which names the proof
+    // container under `click audit` and the mdtest harness.
     let line = format!(
-        "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{}\t{}\t{}\n",
+        "{}\t{role}\t{kind}\t{claim}\t{tactic}\t{origin}\t{}\t{}\t{}\t{}\n",
         outcome.tag(),
         field(original),
         field(raised),
         field(lowered),
+        std::thread::current().name().unwrap_or(""),
     );
     #[cfg(test)]
     if CAPTURE.with(|lines| {
@@ -150,11 +137,7 @@ pub(super) fn record(
     }) {
         return;
     }
-    if let Some(sink) = sink()
-        && let Ok(mut file) = sink.lock()
-    {
-        let _ = file.write_all(line.as_bytes());
-    }
+    crate::instrumentation::RAISE_LOWER_RECORDS.write(&line);
 }
 
 #[cfg(test)]

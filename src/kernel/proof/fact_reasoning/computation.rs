@@ -8,6 +8,7 @@ use crate::kernel::*;
 use crate::kernel::{
     constant_i64, constant_u32, constant_u64, int32_constant, int64_constant, uint64_constant,
 };
+use std::borrow::Cow;
 
 /// Whether this leaf is true by direct computation alone. A negated
 /// connective can be checked here as a leaf of the caller's structural walk.
@@ -543,7 +544,9 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
     }
 }
 
-pub(super) fn known_int32_match_comparison_value(condition: &ConditionTerm) -> Option<bool> {
+fn reduce_known_int32_match_operands(
+    condition: &ConditionTerm,
+) -> Option<(CompareRelation, [Cow<'_, MachineTerm>; 2])> {
     use crate::kernel::proof::term_rewrite::TermRewrite;
     let ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
@@ -554,13 +557,30 @@ pub(super) fn known_int32_match_comparison_value(condition: &ConditionTerm) -> O
     else {
         return None;
     };
-    let reduced_left = TermRewrite::reduce_known_int32_match(left);
-    let reduced_right = TermRewrite::reduce_known_int32_match(right);
-    if reduced_left.is_none() && reduced_right.is_none() {
-        return None;
-    }
-    let left = reduced_left.as_ref().unwrap_or(left);
-    let right = reduced_right.as_ref().unwrap_or(right);
+    let operands = [left.as_ref(), right.as_ref()].map(|operand| {
+        TermRewrite::reduce_known_int32_match(operand)
+            .map_or_else(|| Cow::Borrowed(operand), Cow::Owned)
+    });
+    operands
+        .iter()
+        .any(|operand| matches!(operand, Cow::Owned(_)))
+        .then_some((*relation, operands))
+}
+
+pub(in crate::kernel) fn reduce_known_int32_match_comparison(
+    condition: &ConditionTerm,
+) -> Option<ConditionTerm> {
+    let (relation, [left, right]) = reduce_known_int32_match_operands(condition)?;
+    Some(ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation,
+        left: Box::new(left.into_owned()),
+        right: Box::new(right.into_owned()),
+    })
+}
+
+pub(super) fn known_int32_match_comparison_value(condition: &ConditionTerm) -> Option<bool> {
+    let (relation, [left, right]) = reduce_known_int32_match_operands(condition)?;
     let ordering = if left == right {
         std::cmp::Ordering::Equal
     } else {

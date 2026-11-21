@@ -2457,6 +2457,19 @@ fn verify_program_in_context(
             .map(|function| function.signature().name().to_string())
             .collect::<Vec<_>>()
     });
+    // The written program proof addresses the sidecar's full set of bodies.
+    // For a subset, the checker uses generated obligations and assumptions
+    // about unselected callees.
+    let termination_proof = file.termination_proof.as_deref().filter(|_| {
+        selected_functions.as_ref().is_none_or(|selected| {
+            !file.function_blocks().iter().any(|function| {
+                let name = function.signature().name();
+                !function.is_external()
+                    && !selected.contains(name)
+                    && file.function_is_selected(name)
+            })
+        })
+    });
     let entry_module = file.entry_module().map(str::to_string);
     let entry_theorem_names = file
         .theorem_definitions()
@@ -2937,7 +2950,7 @@ fn verify_program_in_context(
         .map_err(|failure| program_contract_failure(failure, &declared_diverging, &tactic_names))?;
     let (proved_program, _termination_certificate) = super::proof::program_termination::prove(
         generated_program,
-        file.termination_proof.as_deref(),
+        termination_proof,
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
         &theorem_environment,
         &tactic_names,

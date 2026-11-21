@@ -180,7 +180,7 @@ needle = "normalize();"
 [[form]]
 id = "normalize-using"
 path = "mdtests/normalize_using.md"
-needle = "normalize() using { not(xs == ys); }"
+needle = "normalize() using { x < y; y == 5; };"
 
 [[form]]
 id = "intro"

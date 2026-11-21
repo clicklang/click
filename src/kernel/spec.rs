@@ -5982,6 +5982,29 @@ fn retained_integer_comparison(
     )
 }
 
+fn evaluate_spec_comparison_operand_in(
+    scope: SpecScope<'_>,
+    operand: &SpecExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    // The signed-order checker reduces a match at the operand root.
+    let previous = budget.retain_known_matches;
+    budget.retain_known_matches = previous
+        || (!budget.conditional_guard
+            && matches!(operand, SpecExpression::AlgebraicMatch { scrutinee, arms }
+                if matches!(scrutinee.node, SpecAlgebraicExpressionNode::Constructor { .. })
+                    && spec_scalar_match_is_pure_int32(scrutinee, arms)));
+    let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        scope,
+        operand,
+        assumptions,
+        budget,
+    );
+    budget.retain_known_matches = previous;
+    paths
+}
+
 fn lower_spec_comparison_proposition_at_state_in(
     scope: SpecScope<'_>,
     left: &SpecExpression,
@@ -6023,12 +6046,7 @@ fn lower_spec_comparison_proposition_at_state_in(
         false
     };
     let mut paths = Vec::new();
-    let left_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-        scope,
-        left,
-        assumptions,
-        budget,
-    )?;
+    let left_paths = evaluate_spec_comparison_operand_in(scope, left, assumptions, budget)?;
     let left_path_count = left_paths.len();
     let mut right_path_count = 0usize;
     let mut merge_failure_count = 0usize;
@@ -6044,12 +6062,7 @@ fn lower_spec_comparison_proposition_at_state_in(
                 obligations: Vec::new(),
             }]
         } else {
-            evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                scope,
-                right,
-                &right_assumptions,
-                budget,
-            )?
+            evaluate_spec_comparison_operand_in(scope, right, &right_assumptions, budget)?
         };
         right_path_count = right_path_count.saturating_add(right_paths.len());
         for right_path in right_paths {
@@ -8851,6 +8864,11 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
         return version;
     }
     let start = source.parameter_read_start(block);
+    // A certified view can name the array at this point even when the
+    // index has no earlier version for its storage.
+    if start.has_certified_read_view() {
+        return start.for_exact_read();
+    }
     let version = crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Block(block),
         &start,

@@ -51,9 +51,24 @@ const DEFAULT_PERFORMANCE_SLACK: usize = 10_000;
 const DEFAULT_TIME_LIMIT: Duration = Duration::from_secs(10 * 60);
 const RUN_LIMIT_EXHAUSTED: &str = "whole-run time limit exhausted";
 const USAGE: &str = "\
-usage: click audit [OPTIONS] <sidecar.click|example-project|examples-directory|mdtest.md|mdtests-directory|repository-root>
+usage: click audit [expansion|raise-lower|fact-stability] [OPTIONS] <sidecar.click|example-project|examples-directory|mdtest.md|mdtests-directory|repository-root>
 
-The audit inventories smart tactics without executing proofs, then audits each
+Each audit checks a promise Click makes about every proof in the selected
+proof containers, and ends with one headline: how many of the items it
+checked fail.
+
+  expansion       every smart tactic expands to a simple proof that verifies
+  raise-lower     every fact and goal a proof step holds raises to Surface
+                  syntax that lowers back to the same term
+  fact-stability  lowering never depends on the facts available
+
+With no audit named, all three run on the same path and the run ends with
+their headlines. The lowering audits verify each container once with their
+records on, writing `raise-lower.tsv` and `fact-stability.tsv` under
+`--records DIR` (default `target/click-audit`). The options below are the
+expansion audit's.
+
+The expansion audit inventories smart tactics without executing proofs, then audits each
 selected site in source order: it expands the site, verifies the rewritten
 proof unit in the retained session, reverifies that proof unit through the
 normal direct targeted entry point, and checks the rewrite is an
@@ -508,13 +523,119 @@ fn verify_in_session(
     Ok(cost)
 }
 
+/// One of the audits `click audit` runs. Each checks a promise Click makes
+/// about every proof: smart tactics expand, facts and goals round-trip
+/// through Surface, and lowering does not depend on facts.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AuditKind {
+    Expansion,
+    Lowering(click::instrumentation::LoweringAudit),
+}
+
+const ALL_AUDITS: [AuditKind; 3] = [
+    AuditKind::Expansion,
+    AuditKind::Lowering(click::instrumentation::LoweringAudit::RaiseLower),
+    AuditKind::Lowering(click::instrumentation::LoweringAudit::FactStability),
+];
+
+impl AuditKind {
+    fn parse(name: &str) -> Option<Self> {
+        use click::instrumentation::LoweringAudit;
+        Some(match name {
+            "expansion" => AuditKind::Expansion,
+            "raise-lower" => AuditKind::Lowering(LoweringAudit::RaiseLower),
+            "fact-stability" => AuditKind::Lowering(LoweringAudit::FactStability),
+            _ => return None,
+        })
+    }
+}
+
+/// Where a lowering audit writes its records unless `--records` says.
+const DEFAULT_RECORDS_DIRECTORY: &str = "target/click-audit";
+
+/// The headline the last expansion audit printed, for the run's summary.
+static EXPANSION_HEADLINE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
-    let raw = arguments.into_iter().collect::<Vec<_>>();
+    let mut raw = arguments.into_iter().collect::<Vec<_>>();
     if matches!(raw.as_slice(), [argument] if argument == "--help" || argument == "-h") {
         println!("{USAGE}");
         return Ok(());
     }
-    run_audit(parse_arguments(raw)?)
+    let kinds = match raw.first().and_then(|name| AuditKind::parse(name)) {
+        Some(kind) => {
+            raw.remove(0);
+            vec![kind]
+        }
+        None => ALL_AUDITS.to_vec(),
+    };
+    // `--records DIR` belongs to the lowering audits; the rest are the
+    // expansion audit's options.
+    let mut records = PathBuf::from(DEFAULT_RECORDS_DIRECTORY);
+    if let Some(index) = raw.iter().position(|argument| argument == "--records") {
+        if index + 1 >= raw.len() {
+            return Err(format!("missing directory after `--records`\n{USAGE}"));
+        }
+        records = PathBuf::from(raw.remove(index + 1));
+        raw.remove(index);
+    }
+    if kinds == [AuditKind::Expansion] {
+        return run_audit(parse_arguments(raw)?);
+    }
+    let expansion_arguments = if kinds.contains(&AuditKind::Expansion) {
+        Some(parse_arguments(raw.clone())?)
+    } else {
+        None
+    };
+    let path = match &expansion_arguments {
+        Some(arguments) => arguments.path.clone(),
+        None => match raw.as_slice() {
+            [path] if !path.starts_with('-') => PathBuf::from(path),
+            _ => return Err(USAGE.to_string()),
+        },
+    };
+    let mut headlines = Vec::new();
+    let mut failures = Vec::new();
+    for kind in kinds {
+        match kind {
+            AuditKind::Expansion => {
+                let arguments = expansion_arguments.clone().expect("parsed above");
+                if let Err(error) = run_audit(arguments) {
+                    failures.push(error);
+                }
+                if let Some(headline) = EXPANSION_HEADLINE.lock().ok().and_then(|slot| slot.clone())
+                {
+                    headlines.push(headline);
+                }
+            }
+            AuditKind::Lowering(audit) => {
+                let file = records.join(format!("{}.tsv", lowering::name(audit)));
+                let report = lowering::run(audit, &path, &file)?;
+                println!("{}", report.headline);
+                if !report.changed_outcomes.is_empty() {
+                    println!(
+                        "  {} proof containers verified differently from their expectation under the audit (tracked):",
+                        report.changed_outcomes.len()
+                    );
+                    for changed in report.changed_outcomes.iter().take(10) {
+                        println!("    {changed}");
+                    }
+                }
+                headlines.push(report.headline);
+            }
+        }
+    }
+    if headlines.len() > 1 {
+        println!("\nAUDITS:");
+        for headline in &headlines {
+            println!("  {headline}");
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("\n"))
+    }
 }
 
 fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Arguments, String> {
@@ -1229,6 +1350,19 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
         }
     );
     let failures = site_failures + claim_failures + session_failures;
+    let headline = format!(
+        "expansion audit: {failures} failing of {} smart-tactic sites checked{}",
+        scoped_sites.len(),
+        if out_of_time {
+            " (stopped at the run bound)"
+        } else {
+            ""
+        }
+    );
+    println!("{headline}");
+    if let Ok(mut slot) = EXPANSION_HEADLINE.lock() {
+        *slot = Some(headline);
+    }
     if out_of_time {
         if cursor < selected.len() {
             println!();
@@ -2973,6 +3107,9 @@ fn rewritten_click_source(source: &AuditSource, rewritten: &str) -> Result<Strin
         Ok(rewritten.to_string())
     }
 }
+
+#[path = "click-audit/lowering.rs"]
+mod lowering;
 
 #[cfg(test)]
 #[path = "click-audit/tests.rs"]

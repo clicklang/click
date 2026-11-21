@@ -1,6 +1,6 @@
 # Pointer values: a Surface form for a pointer's parts
 
-Status: approved (D1-D5, 2026-11-20). Not implemented.
+Status: superseded by `design/pointer-model.md` before implementation. Its decisions D1-D5 were approved on 2026-11-20.
 
 ## Problem
 

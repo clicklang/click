@@ -2,6 +2,7 @@ mod computation;
 mod intervals;
 mod known_bridges;
 mod machine_ranges;
+pub(in crate::kernel) use computation::reduce_known_int32_match_comparison;
 pub(crate) use computation::{computes_leaf, trivial_condition_value};
 pub(crate) use known_bridges::{
     is_quotient_remainder_order, known_bridge_leaf, pointer_projection_source,

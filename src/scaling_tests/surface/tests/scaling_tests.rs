@@ -11975,3 +11975,65 @@ fn recorded_call_snapshots_read_one_point_and_one_call() {
         assert_eq!(work, 1, "{count} calls and snapshots");
     }
 }
+
+#[test]
+fn have_at_frontier_shares_the_context_across_call_history() {
+    use crate::instrumentation::{VerificationEvent, collect};
+
+    let samples = [4, 16, 64, 128].map(|calls| {
+        let call_statements = "    touch();\n".repeat(calls);
+        let c = format!(
+            "int32 g[256];\nvoid touch() {{ g[255] = 1; }}\nint32 probe() {{\n    int32 x;\n{call_statements}    x = g[0];\n    return 0;\n}}"
+        );
+        let steps = "    step();\n".repeat(calls);
+        let source = format!(
+            r#"verifying "probe.c";
+void touch() {{ owns g[255..256]; }}
+int32 probe() {{
+    owns g[0..256];
+}} by {{
+{steps}    mark before;
+    step();
+    mark after;
+    have 0 != 255 by {{ known(); }}
+    have separate(memory(g[255]), memory(g[0])) by {{
+        apply(click::separation::separate_elements(g, 255, 0)) using {{ 0 != 255; }};
+    }}
+    have separate(statement({calls}).footprint, memory(g[0])) by {{
+        normalize() using {{ separate(memory(g[255]), memory(g[0])); }};
+    }}
+    have at(after, g[0]) == at(before, g[0]) by {{
+        preserve(memory(g[0]), statement({calls}));
+    }}
+    step();
+    step();
+}}
+"#
+        );
+        let (verified, events) = collect(|| verify_c_sources(&source, &[("probe.c", &c)]));
+        verified.unwrap_or_else(|error| panic!("after {calls} calls: {}", error.message()));
+        let work = events
+            .into_iter()
+            .filter_map(|event| match event {
+                VerificationEvent::TacticFinished { tactic, work, .. }
+                    if tactic.tactic_name == "have" && tactic.claim == "probe.contract" =>
+                {
+                    Some(work)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let work: [usize; 4] = work.try_into().expect("four explicit have scopes");
+        work
+    });
+    eprintln!("frontier have work at 4, 16, 64, 128 calls: {samples:?}");
+    assert!(samples.iter().all(|work| work[0] == samples[0][0]));
+    assert!(
+        samples
+            .iter()
+            .all(|work| work[1].abs_diff(samples[0][1]) <= 1)
+    );
+    assert!(samples.iter().all(|work| work[2] == samples[0][2]));
+    // The last goal checks that an explicit preservation proof still works.
+    // Naming its two historical reads has a separate version-walk cost.
+}

@@ -374,6 +374,12 @@ than what the verifier enforces today, and an audit that measures the gap.
 | Lowering is fact-stable | Lowering reads no facts: one text, state and set of resources lower to one term | Facts may refuse the term, discharge its obligations, add side facts, or select one of several paths; they may not change the term | `scripts/fact-stability.sh`, `differs` lines |
 | Definedness is an obligation | Lowering returns the term, its definedness obligations and its side facts; checking discharges the obligations | Ordinary arithmetic returns obligations beside the term, but lowering drops one the facts already prove, and some lowerings are refused instead of owing one | `scripts/fact-stability.sh`, `refused` and `paths:N` lines |
 
+`click audit fact-stability` and `click audit raise-lower` run these two
+audits over the examples and mdtests an expansion audit walks, and each
+ends with one headline count of the items that fail
+([`click audit`](../reference/cli/audit.md)). The scripts below run them
+over the mdtest corpus through its harness.
+
 `scripts/fact-stability.sh` reports three kinds of fact-dependent lowering.
 A `differs` line breaks the enforced rule. A `refused` line is a proposition
 that lowers with facts and not without them; a `paths:N` line is one the
@@ -660,10 +666,12 @@ Normalization selects the arm and compares the resulting Integer values.
 Pure, obligation-free algebraic-valued matches in comparisons also retain
 their scrutinee and arms with a known constructor. Algebraic equality
 rewriting keeps the match available for reduction during normalization.
-An equality or disequality over an `int32` match with literal arms or direct
-`int32` payload selections keeps the machine comparison and scoped match.
-Normalization checks the
-selected constructor arm using the comparison's original machine format.
+Equality, disequality, and standalone order comparisons over a pure `int32`
+match with literal arms or direct `int32` payload selections keep the machine
+comparison and scoped match. Exact rewriting preserves the match.
+Normalization checks the selected constructor arm using the comparison's
+original machine format, and `known()` can use an available comparison
+of the selected values.
 A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
 not consult facts or change the Boolean term inside a larger expression.
