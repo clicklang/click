@@ -156,10 +156,21 @@ impl<'a> Emitter<'a> {
     fn arithmetic(&mut self, proposition: ClickProposition) -> Result<(), ClickError> {
         self.charge()?;
         let scope = self.proof.driver().open_have(proposition.clone())?;
-        let closed = scope
-            .driver()
-            .apply_step(ProofStep::ArithmeticUsing(self.sources.clone()))?;
-        self.proof = closed.join()?;
+        self.proof = if matches!(proposition, ClickProposition::Defined { .. })
+            && let Some(closed) =
+                attempt::candidate_outcome(scope.driver().try_signed_definedness_bounds(
+                    crate::kernel::SignedDefinedWidth::Int32,
+                    self.sources.clone(),
+                ))?
+                .flatten()
+        {
+            closed.join()?
+        } else {
+            scope
+                .driver()
+                .apply_step(ProofStep::ArithmeticUsing(self.sources.clone()))?
+                .join()?
+        };
         self.sources.push(proposition);
         Ok(())
     }
@@ -345,6 +356,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let (Some(left), Some(right)) = (chain(left), chain(right)) else {
             return Ok(None);
         };
+        if let (Some((condition, true)), [a], [b]) = (
+            input.goal().and_then(Proposition::condition_native),
+            left.indices.as_slice(),
+            right.indices.as_slice(),
+        ) && crate::kernel::proof::fact_reasoning::pointer_projection_source(condition).is_some()
+            && let Some(index) = [a, b].into_iter().find(|index| {
+                matches!(
+                    input.capture_native_argument(index),
+                    Ok(ProgramValue::UInt64(_))
+                )
+            })
+        {
+            let bound = ClickProposition::Comparison {
+                left: observe(index.clone()),
+                operator: ComparisonOperator::LessEqual,
+                right: surface_signed_integer_literal(&BigInt::from(i32::MAX)),
+            };
+            let scope = input.driver().open_have(bound)?;
+            if let Some(closed) = scope.driver().try_integer_composition_using(sources)? {
+                let proof = closed.join()?.driver().apply_step(ProofStep::Known)?;
+                return Ok(proof.focused_discharged().then_some(proof));
+            }
+        }
         let Some(pointee) = pointee_name(&left_value) else {
             return Ok(None);
         };

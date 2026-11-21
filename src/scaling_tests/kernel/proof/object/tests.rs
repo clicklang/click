@@ -1535,3 +1535,60 @@ fn selected_match_conditionals_known_work_ignores_context_growth() {
         }
     }
 }
+
+#[test]
+fn pointer_index_projection_looks_up_only_its_full_width_bound() {
+    use crate::kernel::proof::fact_reasoning::{known_bridge_leaf, pointer_projection_source};
+    use crate::kernel::{AddressOffset, ConditionTerm, VerificationSession};
+    let _session = VerificationSession::enter();
+    let index = MachineTerm::Variable(Variable(970_020));
+    let narrow = AddressOffset::scaled_int32_node(MachineTerm::uint32_from_64(index.clone()), 4);
+    let wide = AddressOffset::scaled_int64_node(index.clone(), 4, true);
+    let at_parameter =
+        |offset| AddressOffset::add(AddressOffset::Variable(Variable(970_021)), offset);
+    let compare = ConditionTerm::address_offset_equal(at_parameter(narrow), at_parameter(wide));
+    let wide = pointer_projection_source(&compare).unwrap();
+    let goal = Proposition::condition_is(compare, true);
+    let exact = Proposition::condition_is(
+        ConditionTerm::IntegerLessEqual(
+            wide.into(),
+            crate::kernel::IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
+        ),
+        true,
+    );
+    let work = [8, 32, 64].map(|size| {
+        let mut premises = Vec::new();
+        for i in 0..size {
+            premises.push(Proposition::condition_is(
+                ConditionTerm::uint64_less_equal(
+                    index.clone(),
+                    MachineTerm::uint64_constant(4_000_000_000 + i),
+                ),
+                true,
+            ));
+            premises.push(Proposition::Predicate {
+                name: format!("projection_other_{i}"),
+                arguments: Vec::new(),
+            });
+        }
+        [false, true].map(|present| {
+            let mut premises = premises.clone();
+            if present {
+                premises.push(exact.clone());
+            }
+            let facts = PureFactStore::from_ordered(&premises);
+            let (closed, units) = crate::instrumentation::measure_deterministic_work(|| {
+                known_bridge_leaf(&goal, &|p| facts.pure_known_available(p))
+            });
+            assert_eq!(closed, present);
+            units
+        })
+    });
+    assert!(
+        work.iter().all(|pair| pair
+            .iter()
+            .zip(work[0])
+            .all(|(actual, baseline)| *actual <= baseline + 32)),
+        "{work:?}"
+    );
+}
