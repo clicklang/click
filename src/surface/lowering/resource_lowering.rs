@@ -2269,11 +2269,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 state,
                 result,
             )
-            .map_err(|message| {
-                ClickError::new(format!(
-                    "could not lower declared resource quantity: {message}"
-                ))
-            })?;
+            .map_err(|error| error.with_context("could not lower declared resource quantity"))?;
             let ProgramValue::Int32(quantity) = quantity else {
                 return Err(ClickError::new(
                     "declared resource quantity must evaluate to int32",
@@ -2385,9 +2381,9 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     state,
                     result,
                 )
-                .map_err(|message| {
-                    ClickError::new(format!(
-                        "could not lower resource `{name}` argument {index}: {message}"
+                .map_err(|error| {
+                    error.with_context(format!(
+                        "could not lower resource `{name}` argument {index}"
                     ))
                 })?;
                 let matches_type = if name == ResourceFact::ALLOCATION_RESOURCE_NAME && index == 0 {
@@ -2639,7 +2635,7 @@ fn evaluate_resource_argument_with_state(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     result: Option<&ProgramValue>,
-) -> Result<ProgramValue, String> {
+) -> Result<ProgramValue, ClickError> {
     if retained_state == crate::kernel::ResourceStateSource::Entry {
         let direct = crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
             original,
@@ -2651,7 +2647,8 @@ fn evaluate_resource_argument_with_state(
                 &ClickFunctionEnvironment::new(&[]),
             ),
             &BTreeSet::new(),
-        )?;
+        )
+        .map_err(ClickError::new)?;
         return Ok(direct);
     }
     crate::surface::proof::evaluate_resource_argument_through_kernel(
@@ -2757,11 +2754,7 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
                 state,
                 result,
             )
-            .map_err(|message| {
-                ClickError::new(format!(
-                    "could not lower declared resource quantity: {message}"
-                ))
-            })?;
+            .map_err(|error| error.with_context("could not lower declared resource quantity"))?;
             let ProgramValue::Int32(quantity) = quantity else {
                 return Err(ClickError::new(
                     "declared resource quantity must evaluate to int32",
@@ -3061,9 +3054,10 @@ fn lower_resource_segment_with_values(
                 contract_environment,
                 state,
                 result,
-            ),
+            )
+            .map_err(ClickError::new),
         };
-    let base = evaluate(&segment.base, surface_base).map_err(|message| {
+    let base = evaluate(&segment.base, surface_base).map_err(|error| {
         // A parameter or local has no storage a contract can name.
         if let ProgramExpression::AddressOf(variable) = &segment.base
             && let ProgramExpression::Variable(name) = &**variable
@@ -3073,7 +3067,8 @@ fn lower_resource_segment_with_values(
             ));
         }
         ClickError::new(format!(
-            "could not lower `{resource_name}` resource: {message} (segment {})",
+            "could not lower `{resource_name}` resource: {} (segment {})",
+            error.raw_summary(),
             super::super::diagnostics::describe_contract_segment(segment)
         ))
     })?;
@@ -3125,15 +3120,11 @@ fn lower_resource_segment_with_values(
     // A bound keeps its own integer type in the contract: a range with a
     // 64-bit bound is wide, and one with two `int32` bounds is not
     // (`design/typed-indices.md`, stage 2).
-    let start_value = evaluate(&segment.start, surface_start).map_err(|message| {
-        ClickError::new(format!(
-            "could not lower `{resource_name}` resource: {message}"
-        ))
+    let start_value = evaluate(&segment.start, surface_start).map_err(|error| {
+        error.with_context(format!("could not lower `{resource_name}` resource"))
     })?;
-    let end_value = evaluate(&segment.end, surface_end).map_err(|message| {
-        ClickError::new(format!(
-            "could not lower `{resource_name}` resource: {message}"
-        ))
+    let end_value = evaluate(&segment.end, surface_end).map_err(|error| {
+        error.with_context(format!("could not lower `{resource_name}` resource"))
     })?;
     let bound = |value: ProgramValue, which: &str| match value {
         ProgramValue::Int32(term) => Ok(term),
