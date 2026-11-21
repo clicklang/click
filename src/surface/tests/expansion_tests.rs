@@ -241,19 +241,36 @@ fn bounded_observation_identities_expand_without_normalize() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: 16s for cursor order expansion with cold replay"]
+#[ignore = "nightly: expands and cold-verifies four computed offset and projection proofs"]
+fn computed_pointer_offsets_expand_without_normalize() {
+    for (fixture, label) in [
+        ("pointer_translation_computed_index", "advance.ensures_0"),
+        ("uint64_pointer_offset_projection", "bounded.ensures_0"),
+        ("uint64_pointer_offset_projection", "widest.ensures_0"),
+        ("uint64_pointer_offset_projection", "strict.ensures_0"),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{label}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expands and cold-verifies the moving cursor contract"]
 fn selected_native_cursor_order_expands_without_normalize() {
     let (source, c_sources) = mdtest_sources("mdtests/loop_entry_memory_capture_cursor.md");
     let sources = crate::cli::source_refs(&c_sources);
     let label = "cursor.contract";
     let expanded = expand_c_claim_source_by_label(&source, &sources, label)
         .unwrap_or_else(|error| panic!("{}", error.report()));
-    assert_eq!(expanded.matches("normalize()").count(), 1, "{expanded}");
-    let (_, pointer_certificate) = expanded.split_once("normalize()").unwrap();
-    assert!(
-        pointer_certificate.contains("at(head, p) == (old(p) + (old(n) - at(head, n)))"),
-        "{pointer_certificate}"
-    );
+    assert!(!expanded.contains("normalize()"), "{expanded}");
     without_implicit_solve_for_claim(label, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })

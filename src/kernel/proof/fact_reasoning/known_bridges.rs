@@ -462,6 +462,18 @@ pub(crate) fn known_bridge_leaf(
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match goal {
+        Proposition::ConditionIs(condition, true)
+            if let Some(wide) = pointer_projection_source(condition.native_compat()) =>
+        {
+            comparison_holds(
+                ConditionTerm::IntegerLessEqual(
+                    wide.into(),
+                    IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
+                ),
+                true,
+                available,
+            )
+        }
         Proposition::ResourceSeparate { left, right }
             if matches!(
                 (left.as_ref(), right.as_ref()),
@@ -529,11 +541,59 @@ pub(crate) fn known_bridge_leaf(
     }
 }
 
+/// Read the full-width source of a signed low-word projection at the same
+/// base and stride. A bound on that source gives equality of the offsets.
+/// Raw complete pointer comparisons retain their own domain requirements.
+pub(crate) fn pointer_projection_source(condition: &ConditionTerm) -> Option<IntegerTerm> {
+    if !matches!(
+        condition,
+        ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..)
+    ) {
+        return None;
+    }
+    let (a, b) = condition.pointer_offset_sides()?;
+    // A pointer parameter is itself an exact offset in the abstract
+    // argument block. Cancel that common prefix before comparing its indices.
+    let (a, b) = match (a, b) {
+        (AddressOffset::Add(base, a), AddressOffset::Add(other, b)) if base == other => {
+            (a.as_ref(), b.as_ref())
+        }
+        _ => (a, b),
+    };
+    for (narrow, wide) in [(a, b), (b, a)] {
+        if let (
+            AddressOffset::Int32Scaled {
+                value: narrow,
+                byte_width,
+            },
+            AddressOffset::Int64Scaled {
+                value: wide,
+                byte_width: wide_width,
+                unsigned: true,
+            },
+        ) = (narrow, wide)
+            && byte_width == wide_width
+            && *byte_width > 0
+            && let Some((
+                _,
+                MachineIntegerType::UInt64,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                source,
+            )) = narrow.operand_view().cast()
+            && crate::kernel::machine_operand_syntax_cmp(source, wide.operand_view()).is_eq()
+        {
+            return wide.operand_view().observe(MachineIntegerType::UInt64);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::kernel::machine_integer::{Operation, representation};
     use crate::kernel::proof::PureFactStore;
+
     fn known(goal: &Proposition, premises: &[Proposition]) -> bool {
         let facts = PureFactStore::from_ordered(premises);
         known_bridge_leaf(goal, &|p| facts.pure_known_available(p))

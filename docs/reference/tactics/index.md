@@ -1681,6 +1681,9 @@ Signed quotient and remainder bounds against zero use the named operand
 signs and the divisor's nonzero guard. Machine operations also require
 evidence that excludes the signed minimum divided by `-1` when the signs
 alone leave that pair possible.
+A full-width unsigned index agrees with its signed low word when both use
+the same base and stride and the full-width index is at most `INT32_MAX`.
+`known()` checks this bound on the full-width index itself.
 A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.

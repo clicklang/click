@@ -33,7 +33,8 @@ int32 cursor(const uint8* p, int32 n) {
    have p == old(p) + (old(n) - n) by {
     rewrite(p, at(head, p) + 1);
     rewrite(to_integer(old(n) - n), to_integer((old(n) - at(head, n)) + 1));
-    solve() using { at(head, p) == old(p) + (old(n) - at(head, n)); 0 <= to_integer(old(n) - at(head, n)); to_integer(old(n) - at(head, n)) <= 14; };
+    have defined((old(n) - at(head, n)) + 1) by solve();
+    apply(click::integer::uint8_pointer_translate_int32(at(head, p), old(p), 0, old(n) - at(head, n), 1, (old(n) - at(head, n)) + 1));
    }
    have 0 <= n by solve() using { at(head, n) > 0; at(head, n) <= old(n); old(n) <= 15; };
    have n < at(head, n) by solve() using { at(head, n) > 0; at(head, n) <= old(n); old(n) <= 15; };

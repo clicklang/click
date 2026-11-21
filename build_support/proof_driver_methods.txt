@@ -84,3 +84,4 @@ try_restricted_signed_definedness_closure
 try_rewrite_conditional_arms_using
 try_native_integer_bound
 plan_bare_statement_step
+try_signed_definedness_bounds
