@@ -283,7 +283,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths_at(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    float_origin: Option<&ProgramPoint>,
+    origin: Option<&ProgramPoint>,
 ) -> Vec<ExpressionPath> {
     let mut paths = evaluate_logical_memory_load_paths_unbridged(
         memory,
@@ -292,7 +292,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths_at(
         facts,
         obligations,
         assumptions,
-        float_origin,
+        origin,
     );
     retain_indexed_scalar_cell_value(memory, &pointer, value_type, assumptions, &mut paths);
     #[cfg(test)]
@@ -538,6 +538,18 @@ fn point_named_symbolic_float_read(
     ProgramValue::from_bitvector_term(value_type, read)
 }
 
+fn point_named_symbolic_read(
+    origin: Option<&ProgramPoint>,
+    pointer: &Address,
+    value_type: ProgramType,
+) -> Option<ProgramValue> {
+    let point = origin?;
+    if value_type == ProgramType::Bool && point.has_certified_read_view() {
+        return exact_logical_read_value(point.clone(), pointer, value_type);
+    }
+    point_named_symbolic_float_read(Some(point), pointer, value_type)
+}
+
 fn evaluate_logical_memory_load_paths_unbridged(
     memory: &SymbolicMemory,
     pointer: Address,
@@ -545,10 +557,10 @@ fn evaluate_logical_memory_load_paths_unbridged(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    float_origin: Option<&ProgramPoint>,
+    origin: Option<&ProgramPoint>,
 ) -> Vec<ExpressionPath> {
     let symbolic_value = |facts: &mut ExecutionFacts| {
-        point_named_symbolic_float_read(float_origin, &pointer, value_type).or_else(|| {
+        point_named_symbolic_read(origin, &pointer, value_type).or_else(|| {
             canonicalized_symbolic_load_value_with_identity(
                 memory,
                 &pointer,
@@ -586,7 +598,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
             &mut MemoryLoadAliasCache::default(),
             None,
             None,
-            float_origin,
+            origin,
         );
         let mut paths: Vec<_> = paths
             .into_iter()
@@ -1001,7 +1013,7 @@ fn evaluate_retained_memory_load_case(
         splits && matches!(purpose, LoadPurpose::Program | LoadPurpose::VolatileProgram);
     let symbolic_value =
         |memory: &SymbolicMemory, facts: &mut ExecutionFacts, assumptions: &PureFactContext| {
-            point_named_symbolic_float_read(origin, &pointer, value_type)
+            point_named_symbolic_read(origin, &pointer, value_type)
                 .map(ExecutionValue::from)
                 .or_else(|| {
                     canonicalized_retained_symbolic_load_value_with_identity(

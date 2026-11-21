@@ -8263,9 +8263,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         pointer_path.facts,
                         obligations,
                         assumptions,
-                        KernelFloatType::from_program_type(*value_type)
-                            .map(|_| read_point())
-                            .as_ref(),
+                        (*value_type == ProgramType::Bool
+                            || KernelFloatType::from_program_type(*value_type).is_some())
+                        .then(read_point)
+                        .as_ref(),
                     )
                 };
                 if let Some((point, address)) = observation
