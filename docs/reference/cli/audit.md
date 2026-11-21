@@ -56,7 +56,8 @@ Every failure, with its reproduce command, is in `raise-lower.failures.tsv` or
 site, fact, raised form or fact-free lowering, lowered form, command. A
 reproduce command audits only that container, and `--claim CLAIM` (repeatable)
 counts and lists only that claim's raise-lower facts. The expansion audit
-prints a reproduce command for each failing site in the same way.
+prints a reproduce command for each failing site, and writes every failing
+site or container to `expansion.failures.tsv` in the same columns.
 
 A container that does not verify as its expectation says is counted after
 the headline and listed in `raise-lower.unexpected.tsv` or

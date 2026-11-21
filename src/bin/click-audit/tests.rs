@@ -2590,3 +2590,20 @@ fn pthread_handle_copies_expand_and_cold_replay() {
     .unwrap();
     run_audit(arguments).unwrap();
 }
+
+/// A failing site's line names its container and reproduces the site; a
+/// failing container's line reproduces the container.
+#[test]
+fn an_expansion_failure_line_reproduces_its_site() {
+    assert_eq!(
+        expansion_failure_line(
+            "examples/arena/cells.click:12:5",
+            "\nexpansion failed\nmore"
+        ),
+        "failed\tsite\texamples/arena/cells.click\texamples/arena/cells.click:12:5\texpansion failed\t\t\tclick audit expansion --claim examples/arena/cells.click:12:5 examples/arena/cells.click\n"
+    );
+    assert!(
+        expansion_failure_line("mdtests/x.md", "session failed")
+            .ends_with("\tclick audit expansion mdtests/x.md\n")
+    );
+}

@@ -826,16 +826,16 @@ placeholder, a skipped candidate, or a declining route to work around it.
 
 ## Measuring the gap
 
-`scripts/raise-lower-census.sh` runs the mdtest corpus with
-`CLICK_RAISE_LOWER_CENSUS` set (`src/surface/proof/raise_lower_census.rs`).
-Each checked step records, for every fact it adds and for the goal it leaves
-focused, whether raising produces a checked Surface form. The script
-prints the misses grouped by kind. It separates steps a person wrote from
+`click audit raise-lower` (`scripts/audit.sh raise-lower`) measures the
+canonical raiser over every example and mdtest; see above. Tests measure
+premise raising, the route `solve` takes, with the census
+(`src/surface/proof/raise_lower_census.rs`): under its `capture`, each
+checked step records, for every fact it adds and for the goal it leaves
+focused, whether raising produces a checked Surface form. It separates steps a person wrote from
 steps a smart tactic's search took: a search step needs a Surface form only when
 its search succeeds and is expanded, but a written step's facts and goal may
 be cited by the next written step. The census only observes; it does not
-change any proof. A unit test can record the same lines in memory with
-`raise_lower_census::capture` and assert that a step's facts are raised.
+change any proof, and outside a test's capture it is off.
 
 The census sorts a miss into one of three gaps, each with its own fix:
 
