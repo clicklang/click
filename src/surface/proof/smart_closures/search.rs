@@ -5167,18 +5167,38 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .collect();
         let mut fact_equations_gathered = false;
         let mut proof = search_input.clone();
-        for _ in 0..CONSTRUCTOR_EVALUATION_FUEL {
+        let mut fuel = CONSTRUCTOR_EVALUATION_FUEL;
+        let mut step = 0;
+        while step < fuel {
+            step += 1;
             check_verification_deadline()?;
             let Some(surface_goal) = proof.surface_goal() else {
                 return Ok(None);
             };
             let mut next = None;
-            for application in pure_theorems::click_function_applications(surface_goal, &[]) {
+            // The applications outside undecided guards come first. Only when
+            // none unfolds are those in an arm a constant guard selects, such
+            // as `if 2 <= 0`, tried as well.
+            let outside = pure_theorems::click_function_applications(surface_goal, &[]);
+            let in_selected_arms =
+                pure_theorems::click_function_applications_deciding_constant_guards(surface_goal)
+                    .into_iter()
+                    .filter(|application| !outside.contains(application));
+            for application in outside.iter().cloned().chain(in_selected_arms) {
                 if let Some(unfolded) = attempt::candidate_outcome(
                     proof
                         .driver()
-                        .apply_step(ProofStep::UnfoldFunction(application)),
+                        .apply_step(ProofStep::UnfoldFunction(application.clone())),
                 )? {
+                    // A recursion over a constant measure takes about that
+                    // many unfolds in all, beyond the base fuel; the measure
+                    // of the first call is the largest.
+                    fuel = fuel
+                        .max(
+                            CONSTRUCTOR_EVALUATION_FUEL
+                                + pure_theorems::largest_constant_argument(&application),
+                        )
+                        .min(MAX_CONSTRUCTOR_EVALUATION_FUEL);
                     next = Some(unfolded);
                     break;
                 }
