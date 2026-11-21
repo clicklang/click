@@ -28,12 +28,17 @@ fn identity_match_check_scales_with_its_constructor_fields() {
             Term::Algebraic(value.into()),
             Term::Algebraic(matched.into()),
         );
-        let (holds, work) =
-            crate::instrumentation::measure_deterministic_work(|| solve_builtin_prop(&goal));
-        assert!(holds);
-        assert!(
-            (size..=4 * size + 32).contains(&work),
-            "size={size} work={work}"
-        );
+        let checkers = [
+            solve_builtin_prop,
+            crate::kernel::proof::fact_reasoning::computes_leaf,
+        ];
+        for check in checkers {
+            let (holds, work) = crate::instrumentation::measure_deterministic_work(|| check(&goal));
+            assert!(holds);
+            assert!(
+                (size..=4 * size + 32).contains(&work),
+                "size={size} work={work}"
+            );
+        }
     }
 }

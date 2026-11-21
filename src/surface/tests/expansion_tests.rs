@@ -1,6 +1,67 @@
 use super::*;
 
 #[test]
+fn algebraic_constructor_matches_expand_without_normalize() {
+    for (fixture, claims) in [
+        (
+            "algebraic_nested_fields",
+            &[
+                "nested_constructors_reduce.ensures_0",
+                "nested_symbolic_reconstruction.ensures_0",
+                "algebraic_type_argument_round_trip.ensures_0",
+            ][..],
+        ),
+        (
+            "algebraic_recursive_list",
+            &[
+                "recursive_symbolic_reconstruction.ensures_0",
+                "two_recursive_fields_reconstruct.ensures_0",
+                "mutually_recursive_fields_reconstruct.ensures_0",
+            ][..],
+        ),
+        (
+            "algebraic_symbolic_values",
+            &[
+                "maybe_match_rebuilds.ensures_0",
+                "algebraic_function_parameter.ensures_1",
+            ][..],
+        ),
+    ] {
+        let (source, _) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        for label in claims {
+            let expanded = expand_c_claim_source_by_label(&source, &[], label)
+                .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+            assert!(expanded.contains("known();"), "{label}\n{expanded}");
+            assert!(!expanded.contains("normalize()"), "{label}\n{expanded}");
+            without_implicit_solve_for_claim(label, || {
+                verify_click_theorems(&expanded).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+        }
+    }
+}
+
+#[test]
+fn memcmp_stored_byte_order_expands_without_normalize() {
+    for fixture in [
+        "memcmp_orders_after_equal_prefix",
+        "memcmp_orders_high_unsigned_bytes",
+        "memcmp_orders_the_first_differing_byte",
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let label = "ordered.contract";
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{fixture}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies five decimal and padding calculations"]
 fn closed_decimal_calculations_expand_without_normalize() {

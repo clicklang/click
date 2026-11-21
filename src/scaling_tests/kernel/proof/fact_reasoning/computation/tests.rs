@@ -57,6 +57,92 @@ fn constructor_match_computation_visits_shared_terms_once() {
 }
 
 #[test]
+fn stored_byte_order_uses_only_the_exact_cells() {
+    let _session = VerificationSession::enter();
+    let block = |name: &str| Address {
+        base: AddressBase::Concrete(name.into()),
+        offset: AddressOffset::Constant(0),
+    };
+    let left = block("byte-order-left");
+    let right = block("byte-order-right");
+    let other = block("byte-order-other");
+    let format = MachineIntegerType::Int32;
+    let read = |memory: &SymbolicMemory, pointer: Address| {
+        MachineTerm::machine_integer_cast(
+            MachineIntegerType::UInt8,
+            format,
+            MachineTerm::MemoryLoad(
+                ProgramPoint::at(&crate::kernel::intern_memory(memory.clone())),
+                Box::new(pointer),
+                LoadKind::UInt8,
+            ),
+        )
+    };
+    let before = SymbolicMemory::new()
+        .with_block(left.base.clone(), 256)
+        .with_block(right.base.clone(), 1)
+        .with_block(other.base.clone(), 256);
+    let order = |memory: &SymbolicMemory, left_address, right_address| {
+        Proposition::condition_is(
+            ConditionTerm::machine_compare(
+                format,
+                CompareRelation::LessThan,
+                read(memory, left_address),
+                read(memory, right_address),
+            ),
+            true,
+        )
+    };
+    let right_only = before.store(right.clone(), uint8(255));
+    let seeded_left = right_only.clone().with_seeded_cells(
+        left.clone(),
+        1,
+        ProgramType::UInt8,
+        0,
+        16,
+        crate::kernel::intern_memory_ref(&right_only),
+    );
+    for memory in [&right_only, &seeded_left] {
+        let unknown = order(memory, left.clone(), right.clone());
+        assert!(!computes_leaf(&unknown));
+        assert!(!computes_leaf(&Proposition::Not(Box::new(unknown))));
+    }
+
+    let samples = [(4, 4), (64, 4), (256, 4), (4, 64), (4, 256)].map(|(related, unrelated)| {
+        let runs = (0..related)
+            .map(|offset| ConstantRun {
+                offset,
+                stride: 1,
+                count: 1,
+                value: uint8(if offset == 0 { 0 } else { 7 }),
+            })
+            .collect::<Vec<_>>();
+        let mut memory = right_only.clone().seed_fresh_declared_runs(&left, &runs);
+        for offset in 0..unrelated {
+            memory = memory.store(other.offset_by_bytes(offset), uint8(7));
+        }
+        let overwritten = memory.clone().store(left.clone(), uint8(255));
+        assert!(!computes_leaf(&order(
+            &overwritten,
+            left.clone(),
+            right.clone()
+        )));
+        let increasing = order(&memory, left.clone(), right.clone());
+        let decreasing = order(&memory, right.clone(), left.clone());
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(computes_leaf(&increasing));
+            assert!(!computes_leaf(&decreasing));
+            assert!(computes_leaf(&Proposition::Not(Box::new(decreasing))));
+        });
+        work
+    });
+    assert!(
+        samples[0] > 0 && samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
 fn cached_read_definedness_checks_only_the_selected_typed_cell() {
     let _session = VerificationSession::enter();
     let selected = Address {

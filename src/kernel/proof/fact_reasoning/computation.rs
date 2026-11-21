@@ -312,6 +312,47 @@ fn stored_int32_literal(term: &MachineTerm) -> Option<MachineIntegerConstant> {
     MachineIntegerType::Int32.constant_from_term(stored)
 }
 
+/// An unsigned byte promotion preserves the value of the exact selected
+/// cell. The value can be compared as a byte or promoted to C's int.
+fn stored_uint8_literal(
+    format: MachineIntegerType,
+    operand: MachineOperandView<'_>,
+) -> Option<MachineIntegerConstant> {
+    let byte = match format {
+        MachineIntegerType::UInt8 => operand,
+        MachineIntegerType::Int32 => {
+            let (
+                MachineCastSpelling::Generic,
+                MachineIntegerType::UInt8,
+                MachineIntegerType::Int32,
+                byte,
+            ) = operand.cast()?
+            else {
+                return None;
+            };
+            byte
+        }
+        _ => return None,
+    };
+    let (point, pointer, LoadKind::UInt8) = byte.read_point()? else {
+        return None;
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    let ProgramValue::UInt8(stored) = point.memory().indexed_stored_value(pointer)? else {
+        return None;
+    };
+    let value = MachineIntegerType::UInt8.constant_from_term(stored)?;
+    MachineIntegerConstant::from_unsigned(format.format(), value.bits())
+}
+
+/// Retained native comparisons may read the operands as exact Integers.
+fn stored_uint8_observation(term: &IntegerTerm) -> Option<num_bigint::BigInt> {
+    let IntegerTerm::Machine(value) = term else {
+        return None;
+    };
+    stored_uint8_literal(value.ty(), value.operand_view()).map(|byte| byte.to_integer())
+}
+
 fn condition_value(condition: &ConditionTerm) -> Option<bool> {
     match condition {
         ConditionTerm::Constant(value) => Some(*value),
@@ -351,6 +392,24 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             ) && let Some(equal) = conditional_int32_equality(left, right)
             {
                 return Some(equal == matches!(condition, ConditionTerm::IntegerEqual(..)));
+            }
+            let left_byte = stored_uint8_observation(left);
+            let right_byte = stored_uint8_observation(right);
+            if (left_byte.is_some() || right_byte.is_some())
+                && let (Some(a), Some(b)) = (
+                    left_byte.as_ref().or_else(|| left.as_const()),
+                    right_byte.as_ref().or_else(|| right.as_const()),
+                )
+            {
+                return Some(match condition {
+                    ConditionTerm::IntegerEqual(..) => a == b,
+                    ConditionTerm::IntegerNotEqual(..) => a != b,
+                    ConditionTerm::IntegerLessThan(..) => a < b,
+                    ConditionTerm::IntegerLessEqual(..) => a <= b,
+                    ConditionTerm::IntegerGreaterThan(..) => a > b,
+                    ConditionTerm::IntegerGreaterEqual(..) => a >= b,
+                    _ => unreachable!(),
+                });
             }
             super::super::integer_arithmetic::literal_integer_comparison_value(condition)
                 .or_else(|| integer_affine_comparison(condition))
@@ -413,7 +472,11 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             } else {
                 literals
             };
-            if let (Some(left), Some(right)) = literals {
+            let (left_literal, right_literal) = literals;
+            if let (Some(left), Some(right)) = (
+                left_literal.or_else(|| stored_uint8_literal(*format, a)),
+                right_literal.or_else(|| stored_uint8_literal(*format, b)),
+            ) {
                 let (left, right) = (left.to_integer(), right.to_integer());
                 return Some(match relation {
                     CompareRelation::Equal => left == right,
@@ -587,6 +650,21 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     if left == right {
         return Some(true);
     }
+    use crate::kernel::reasoning::path_facts::algebraic_match_rebuilds_scrutinee;
+    if (algebraic_match_rebuilds_scrutinee(left, right)
+        || algebraic_match_rebuilds_scrutinee(right, left))
+        && left.is_well_formed()
+        && right.is_well_formed()
+    {
+        return Some(true);
+    }
+    let projected_left = constructor_match_projection(left);
+    let projected_right = constructor_match_projection(right);
+    let left = projected_left.unwrap_or(left);
+    let right = projected_right.unwrap_or(right);
+    if (projected_left.is_some() || projected_right.is_some()) && left == right {
+        return Some(true);
+    }
     match (&left.node, &right.node) {
         (
             AlgebraicTermNode::Constructor { variant: left, .. },
@@ -612,6 +690,39 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
             .then_some(false),
         _ => None,
     }
+}
+
+/// Select an algebraic field when the match names its constructor and
+/// the selected arm returns that field's binder directly.
+fn constructor_match_projection(term: &AlgebraicTerm) -> Option<&AlgebraicTerm> {
+    let AlgebraicTermNode::Match { scrutinee, arms } = &term.node else {
+        return None;
+    };
+    let AlgebraicTermNode::Constructor { variant, fields } = &scrutinee.node else {
+        return None;
+    };
+    crate::instrumentation::record_deterministic_work(arms.len());
+    let arm = arms.iter().find(|arm| arm.variant == *variant)?;
+    let AlgebraicTermNode::Variable(variable) = arm.body.node else {
+        return None;
+    };
+    crate::instrumentation::record_deterministic_work(arm.bindings.len());
+    let mut selected = None;
+    use crate::kernel::proof::term_rewrite::{BindingCarrier, typed_declaration_variable};
+    let mut binders = std::collections::HashSet::with_capacity(arm.bindings.len());
+    for (binding, field) in arm.bindings.iter().zip(fields) {
+        let (carrier, binder) = typed_declaration_variable(binding)?;
+        if !binders.insert(binder) {
+            return None;
+        }
+        if matches!(carrier, BindingCarrier::Algebraic) && binder == variable {
+            let AlgebraicValue::Algebraic(field) = field else {
+                return None;
+            };
+            selected = Some(field);
+        }
+    }
+    selected.filter(|_| term.is_well_formed())
 }
 
 /// Decide a C machine equality whose sides are sums and differences, at
