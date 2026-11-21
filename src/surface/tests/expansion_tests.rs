@@ -5892,6 +5892,23 @@ fn return_population_proofs_expand_without_effect_clauses() {
 }
 
 #[test]
+fn expansion_keeps_explicit_return_fold_inside_with() {
+    let (source, sources) = mdtest_sources("mdtests/with_accepts_an_already_restored_instance.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "read_at_return.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    let (_, expanded_body) = expanded.split_once("int32 read_at_return(").unwrap();
+    assert!(
+        expanded_body.contains("        fold(c);\n    }"),
+        "{expanded}"
+    );
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_20")]
 fn return_population_count_is_not_an_assumed_invariant() {
     let c_source =

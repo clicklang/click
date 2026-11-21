@@ -818,7 +818,7 @@ impl<'a> ProofScope<'a> {
                 Arc::new(ProofStep::Open {
                     resource: resource.clone(),
                     proof: Box::new(body_certificate),
-                    deferred_tail: false,
+                    deferred_tail: None,
                 }),
             ),
         })

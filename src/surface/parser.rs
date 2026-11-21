@@ -11170,7 +11170,7 @@ impl Parser {
             return Ok(ProofTactic::Open(ProofOpen {
                 resource,
                 tactics,
-                deferred_tail: false,
+                deferred_tail: None,
             }));
         }
         if name == "cases" {
