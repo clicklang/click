@@ -45,40 +45,111 @@ fn evaluated_sequence_handoffs_keep_growing_dags_without_exports() {
 }
 #[test]
 fn pure_sequence_lowering_and_checking_scale_with_selected_elements() {
-    let mut previous = None;
-    for size in [8, 32, 128] {
-        let _session = VerificationSession::enter();
-        let elements = SpecSequenceExpression::Literal(vec![SpecExpression::Value(int32(7)); size]);
-        let proposition = SpecProposition::SequenceComparison {
-            left: SpecSequenceExpression::Concat(
-                Box::new(SpecSequenceExpression::Literal(vec![])),
-                Box::new(elements.clone()),
-            ),
-            equal: true,
-            right: elements,
-        };
-        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-            let mut fuel = ExecutionBudget::default();
-            let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
-                SpecScope::new(&ExecutionState::new(), None, &NO_ALGEBRAIC_BINDINGS),
-                &proposition,
-                &PureFactContext::new(),
-                &mut SpecEvaluation::logical(&mut fuel),
-            )
-            .unwrap();
-            let proposition = paths.pop().unwrap().proposition;
-            let Proposition::Equal(Term::Sequence(left), Term::Sequence(_)) = &proposition else {
-                panic!("retained sequence equality")
+    for member in [int32(7), uint64(MachineTerm::uint64_constant(u64::MAX))] {
+        let mut previous = None;
+        for size in [8, 32, 128] {
+            let _session = VerificationSession::enter();
+            let elements =
+                SpecSequenceExpression::Literal(vec![SpecExpression::Value(member.clone()); size]);
+            let proposition = SpecProposition::SequenceComparison {
+                left: SpecSequenceExpression::Concat(
+                    Box::new(SpecSequenceExpression::Literal(vec![])),
+                    Box::new(elements.clone()),
+                ),
+                equal: true,
+                right: elements,
             };
-            assert!(matches!(left.node.as_ref(), SequenceTermNode::Concat(..)));
-            assert_eq!(int32_sequence_equalities(&proposition).unwrap().len(), size);
-        });
-        if let Some(previous) = previous {
-            assert!(
-                work <= 5 * previous,
-                "size={size}, work={work}, previous={previous}"
-            );
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut fuel = ExecutionBudget::default();
+                let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
+                    SpecScope::new(&ExecutionState::new(), None, &NO_ALGEBRAIC_BINDINGS),
+                    &proposition,
+                    &PureFactContext::new(),
+                    &mut SpecEvaluation::logical(&mut fuel),
+                )
+                .unwrap();
+                let proposition = paths.pop().unwrap().proposition;
+                let Proposition::Equal(Term::Sequence(left), Term::Sequence(_)) = &proposition
+                else {
+                    panic!("retained sequence equality")
+                };
+                assert!(matches!(left.node.as_ref(), SequenceTermNode::Concat(..)));
+                assert_eq!(
+                    retained_sequence_equalities(&proposition).unwrap().len(),
+                    size
+                );
+            });
+            if let Some(previous) = previous {
+                assert!(
+                    work <= 5 * previous,
+                    "size={size}, work={work}, previous={previous}"
+                );
+            }
+            previous = Some(work);
         }
-        previous = Some(work);
+    }
+}
+#[test]
+fn pure_membership_visits_only_the_selected_sequence() {
+    for (member, nonmember) in [
+        (int32(7), int32(8)),
+        (
+            uint64(MachineTerm::uint64_constant(u64::MAX)),
+            uint64(MachineTerm::uint64_constant(u64::MAX - 1)),
+        ),
+    ] {
+        let mut previous = None;
+        for size in [8, 32, 128] {
+            let _session = VerificationSession::enter();
+            let sequence =
+                SpecSequenceExpression::Literal(vec![SpecExpression::Value(member.clone()); size]);
+            let proposition = SpecProposition::SequenceMembership {
+                element: SpecExpression::Value(nonmember.clone()),
+                sequence,
+            };
+            let (proposition, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut fuel = ExecutionBudget::default();
+                let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
+                    SpecScope::new(&ExecutionState::new(), None, &NO_ALGEBRAIC_BINDINGS),
+                    &proposition,
+                    &PureFactContext::new(),
+                    &mut SpecEvaluation::logical(&mut fuel),
+                )
+                .unwrap();
+                let proposition = paths.pop().unwrap().proposition;
+                assert!(matches!(
+                    &proposition,
+                    Proposition::SequenceMembership { .. }
+                ));
+                assert!(crate::kernel::reasoning::path_facts::disprove_builtin_prop(
+                    &proposition
+                ));
+                proposition
+            });
+            if let Some(previous) = previous {
+                assert!(
+                    work <= 5 * previous,
+                    "size={size}, work={work}, previous={previous}"
+                );
+            }
+            previous = Some(work);
+            let goal = Proposition::Not(Box::new(proposition));
+            let ambient = (0..size).fold(PureFactContext::new(), |facts, n| {
+                facts.assume_condition(
+                    ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(1000 + n as u64)),
+                        MachineTerm::constant(0),
+                    ),
+                    true,
+                )
+            });
+            let check = |context: &PureFactContext| {
+                crate::instrumentation::measure_deterministic_work(|| context.contains_known(&goal))
+            };
+            let (empty, empty_work) = check(&PureFactContext::new());
+            let (with_ambient, ambient_work) = check(&ambient);
+            assert!(empty && with_ambient);
+            assert_eq!(empty_work, ambient_work);
+        }
     }
 }

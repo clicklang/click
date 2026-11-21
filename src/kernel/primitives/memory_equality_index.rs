@@ -901,7 +901,7 @@ pub(in crate::kernel) struct ObjectEvidenceSources {
 }
 impl ObjectEvidenceSources {
     pub(in crate::kernel) fn admit(&mut self, source: &ResourceContext) {
-        if !source.loan_dependencies.map.is_empty() {
+        if !source.borrow_dependencies.map.is_empty() {
             let origin = std::sync::Arc::as_ptr(&source.storage.origin) as usize;
             let delta = self
                 .source_checkpoints
@@ -916,10 +916,10 @@ impl ObjectEvidenceSources {
                 .collect::<std::collections::BTreeSet<_>>();
             if let Some(prior) = self.source_checkpoints.get(&origin) {
                 for occurrence in source
-                    .loan_dependencies
-                    .changed_occurrences_since(&prior.loan_dependencies)
+                    .borrow_dependencies
+                    .changed_occurrences_since(&prior.borrow_dependencies)
                 {
-                    if let Some(binding) = source.loan_dependency(occurrence)
+                    if let Some(binding) = source.borrow_dependency(occurrence)
                         && let Some(range) = binding.viewed.memory_range()
                     {
                         bases.insert(range.base().clone());

@@ -978,8 +978,8 @@ fn checks_population_member_exchange(
         .resources
         .same_exchange_from(&expected_resources, &before.resources)
         || !Arc::ptr_eq(
-            &after.resources.loan_dependencies,
-            &expected_resources.loan_dependencies,
+            &after.resources.borrow_dependencies,
+            &expected_resources.borrow_dependencies,
         )
     {
         return Err("population member rewrite has the wrong resource exchange".into());
@@ -993,8 +993,8 @@ fn checks_population_member_exchange(
         &before.instance_field_scope.storage,
         &after.instance_field_scope.storage,
     ) || !Arc::ptr_eq(
-        &before.instance_field_scope.loan_dependencies,
-        &after.instance_field_scope.loan_dependencies,
+        &before.instance_field_scope.borrow_dependencies,
+        &after.instance_field_scope.borrow_dependencies,
     ) || !same_bindings
         || !before
             .locals
@@ -1002,9 +1002,9 @@ fn checks_population_member_exchange(
             .shares_root_with(&after.locals.bindings)
         || !before.locals.slots.shares_root_with(&after.locals.slots)
         || before.memory.diagnostic_identity() != after.memory.diagnostic_identity()
-        || before.loan_ledger != after.loan_ledger
-        || before.loan_participant != after.loan_participant
-        || before.loan_view_bindings != after.loan_view_bindings
+        || before.borrow_ledger != after.borrow_ledger
+        || before.borrow_participant != after.borrow_participant
+        || before.borrow_bindings != after.borrow_bindings
         || before.thread_ledger != after.thread_ledger
         || before.mutex_ledger != after.mutex_ledger
         || before.preserves_mutex_protocols != after.preserves_mutex_protocols
@@ -1136,8 +1136,8 @@ fn memory_only_adds_named_cells(
         // A cell of an abstract type holds the load of its type, which no
         // machine load kind reads.
         if let ProgramValue::Parameter(term) = &value {
-            let load = crate::kernel::AlgebraicTermNode::parameter_load(
-                base.clone(),
+            let load = crate::kernel::AlgebraicTermNode::parameter_cell_load(
+                &source,
                 pointer.clone(),
                 crate::kernel::TypeParameterName::of(&term.algebraic_type),
             );
@@ -1196,7 +1196,9 @@ fn describe_unnamed_cell_addition(
     let version_note = match crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Cell {
             pointer,
-            bytes: crate::kernel::resource_tracker::widest_scalar_access_bytes(),
+            bytes: crate::kernel::AccessExtent::from(
+                crate::kernel::resource_tracker::widest_scalar_access_bytes(),
+            ),
         },
         &crate::kernel::resource_tracker::ProgramPoint::at(base),
     ) {
@@ -1413,10 +1415,10 @@ impl CheckedResourceRewrite {
             return Err("authority control requires one whole owned composite".into());
         }
         let assumptions = before_facts.assumptions();
-        if !before_state.loan_bindings_are_consistent()
-            || !after_state.loan_bindings_are_consistent()
+        if !before_state.borrow_bindings_are_consistent()
+            || !after_state.borrow_bindings_are_consistent()
         {
-            return Err("authority control changed loan bindings".into());
+            return Err("authority control changed borrow bindings".into());
         }
         let before_folded = before_state
             .resources()
@@ -1488,10 +1490,12 @@ impl CheckedResourceRewrite {
                 return Err("authority control body exceeds live storage".into());
             }
             if folded
-                .loan_ledger()
-                .is_some_and(|ledger| !ledger.rewrite_separates_from_loans(range, assumptions))
+                .borrow_ledger()
+                .is_some_and(|ledger| !ledger.rewrite_separates_from_borrows(range, assumptions))
             {
-                return Err("authority control body requires separation from active loans".into());
+                return Err(
+                    "authority control body requires separation from active borrows".into(),
+                );
             }
         }
         let expected_resources = if exposing {
@@ -1530,8 +1534,8 @@ impl CheckedResourceRewrite {
             .resources()
             .same_exchange_from(&expected_resources, before_state.resources())
             || !Arc::ptr_eq(
-                &after_state.resources.loan_dependencies,
-                &expected_resources.loan_dependencies,
+                &after_state.resources.borrow_dependencies,
+                &expected_resources.borrow_dependencies,
             )
         {
             return Err("authority control has the wrong resource exchange".into());
@@ -1750,14 +1754,14 @@ impl CheckedResourceRewrite {
                     format!("transfer wrapper duplicates its folded resource: {error}")
                 })?
         };
-        if !before_state.loan_bindings_are_consistent()
-            || !after_state.loan_bindings_are_consistent()
+        if !before_state.borrow_bindings_are_consistent()
+            || !after_state.borrow_bindings_are_consistent()
             || !after_state
                 .resources()
                 .same_exchange_from(&expected, before_state.resources())
             || !Arc::ptr_eq(
-                &after_state.resources.loan_dependencies,
-                &expected.loan_dependencies,
+                &after_state.resources.borrow_dependencies,
+                &expected.borrow_dependencies,
             )
         {
             return Err("transfer wrapper has the wrong resource exchange".into());
@@ -1788,12 +1792,12 @@ impl CheckedResourceRewrite {
                 &after_state.instance_field_scope.storage,
             )
             || !Arc::ptr_eq(
-                &before_state.instance_field_scope.loan_dependencies,
-                &after_state.instance_field_scope.loan_dependencies,
+                &before_state.instance_field_scope.borrow_dependencies,
+                &after_state.instance_field_scope.borrow_dependencies,
             )
-            || before_state.loan_ledger != after_state.loan_ledger
-            || before_state.loan_participant != after_state.loan_participant
-            || before_state.loan_view_bindings != after_state.loan_view_bindings
+            || before_state.borrow_ledger != after_state.borrow_ledger
+            || before_state.borrow_participant != after_state.borrow_participant
+            || before_state.borrow_bindings != after_state.borrow_bindings
             || before_state.thread_ledger != after_state.thread_ledger
             || before_state.mutex_ledger != after_state.mutex_ledger
             || before_state.preserves_mutex_protocols != after_state.preserves_mutex_protocols
@@ -1884,7 +1888,7 @@ impl CheckedResourceRewrite {
         after_facts: &PureFactStore,
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, InstanceId)]>>,
-        loan_holds: &[crate::kernel::CheckedLoanTransition],
+        borrow_holds: &[crate::kernel::CheckedBorrowTransition],
     ) -> Result<Self, ResourceRewriteCheckError> {
         Self::check_with_return_observation(
             function,
@@ -1896,7 +1900,7 @@ impl CheckedResourceRewrite {
             call_events,
             selected_children,
             None,
-            loan_holds,
+            borrow_holds,
             None,
         )
     }
@@ -1949,7 +1953,7 @@ impl CheckedResourceRewrite {
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, InstanceId)]>>,
         return_observation: Option<Arc<ReturnResourceObservation>>,
-        loan_holds: &[crate::kernel::CheckedLoanTransition],
+        borrow_holds: &[crate::kernel::CheckedBorrowTransition],
         prepared_instance: Option<&crate::kernel::functions::ResourceInstanceRewriteResult>,
     ) -> Result<Self, ResourceRewriteCheckError> {
         let mut rejected_fact = None;
@@ -1964,7 +1968,7 @@ impl CheckedResourceRewrite {
             selected_children,
             &mut rejected_fact,
             return_observation,
-            loan_holds,
+            borrow_holds,
             prepared_instance,
         )
         .map_err(|message| ResourceRewriteCheckError {
@@ -1985,10 +1989,10 @@ impl CheckedResourceRewrite {
         selected_children: Option<Arc<[(String, InstanceId)]>>,
         rejected_fact: &mut Option<Arc<RejectedResourceRewriteFact>>,
         return_observation: Option<Arc<ReturnResourceObservation>>,
-        loan_holds: &[crate::kernel::CheckedLoanTransition],
+        borrow_holds: &[crate::kernel::CheckedBorrowTransition],
         prepared_instance: Option<&crate::kernel::functions::ResourceInstanceRewriteResult>,
     ) -> Result<Self, String> {
-        if !loan_holds.is_empty() {
+        if !borrow_holds.is_empty() {
             // Check the hold on its own, then check the fold as a
             // definitional rewrite from the input state with that one hold
             // already placed. The event keeps the true input state.
@@ -1998,7 +2002,7 @@ impl CheckedResourceRewrite {
                 before_facts,
                 selected,
                 after_state,
-                loan_holds,
+                borrow_holds,
             )?;
             let mut checked = Self::check_with_children_recording(
                 function,
@@ -2119,10 +2123,10 @@ impl CheckedResourceRewrite {
                     "member body access requires a private body of owned memory or declared resources".into(),
                 );
                 }
-                if !before_state.loan_bindings_are_consistent()
-                    || !after_state.loan_bindings_are_consistent()
+                if !before_state.borrow_bindings_are_consistent()
+                    || !after_state.borrow_bindings_are_consistent()
                 {
-                    return Err("member body access changed loan bindings".into());
+                    return Err("member body access changed borrow bindings".into());
                 }
                 if !before_state
                     .resources()
@@ -2191,11 +2195,11 @@ impl CheckedResourceRewrite {
                     {
                         return Err("member private body exceeds live storage".into());
                     }
-                    if before_state.loan_ledger().is_some_and(|ledger| {
-                        !ledger.rewrite_separates_from_loans(range, assumptions)
+                    if before_state.borrow_ledger().is_some_and(|ledger| {
+                        !ledger.rewrite_separates_from_borrows(range, assumptions)
                     }) {
                         return Err(
-                            "member private body requires separation from active loans".into()
+                            "member private body requires separation from active borrows".into(),
                         );
                     }
                 }
@@ -2283,8 +2287,8 @@ impl CheckedResourceRewrite {
                     .resources()
                     .same_exchange_from(&expected_resources, before_state.resources())
                     || !Arc::ptr_eq(
-                        &after_state.resources.loan_dependencies,
-                        &expected_resources.loan_dependencies,
+                        &after_state.resources.borrow_dependencies,
+                        &expected_resources.borrow_dependencies,
                     )
                 {
                     return Err("member body access has the wrong resource exchange".into());
@@ -2320,12 +2324,12 @@ impl CheckedResourceRewrite {
                         &after_state.instance_field_scope.storage,
                     )
                     || !Arc::ptr_eq(
-                        &before_state.instance_field_scope.loan_dependencies,
-                        &after_state.instance_field_scope.loan_dependencies,
+                        &before_state.instance_field_scope.borrow_dependencies,
+                        &after_state.instance_field_scope.borrow_dependencies,
                     )
-                    || before_state.loan_ledger != after_state.loan_ledger
-                    || before_state.loan_participant != after_state.loan_participant
-                    || before_state.loan_view_bindings != after_state.loan_view_bindings
+                    || before_state.borrow_ledger != after_state.borrow_ledger
+                    || before_state.borrow_participant != after_state.borrow_participant
+                    || before_state.borrow_bindings != after_state.borrow_bindings
                     || before_state.thread_ledger != after_state.thread_ledger
                     || before_state.mutex_ledger != after_state.mutex_ledger
                     || before_state.preserves_mutex_protocols
@@ -2363,10 +2367,12 @@ impl CheckedResourceRewrite {
                 });
             }
         }
-        if !before_state.loan_bindings_are_consistent()
-            || !after_state.loan_bindings_are_consistent()
+        if !before_state.borrow_bindings_are_consistent()
+            || !after_state.borrow_bindings_are_consistent()
         {
-            return Err("resource rewrite carries mismatched loan dependency sidecar".to_string());
+            return Err(
+                "resource rewrite carries mismatched borrow dependency sidecar".to_string(),
+            );
         }
         let load_equality_capture =
             crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(call_events);
@@ -2546,26 +2552,26 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
     }
 }
 
-/// The input state of a proof `fold` with its one loan hold placed.
+/// The input state of a proof `fold` with its one borrow hold placed.
 ///
-/// A fold whose owned head packages a loan-backed view is a borrowing
+/// A fold whose owned head packages a borrow-backed view is a borrowing
 /// composite (escaping borrows in `docs/internals/stable-views.md`): the head
-/// carries body facts read through the loan, so the fold places a hold on the
-/// loan's scope and the head's binding names it. While the hold exists the
-/// scope cannot end, so the owner behind the loan cannot be recovered and
+/// carries body facts read through the borrow, so the fold places a hold on the
+/// borrow's scope and the head's binding names it. While the hold exists the
+/// scope cannot end, so the owner behind the borrow cannot be recovered and
 /// written while the head still describes its memory. The hold grants nothing:
-/// it creates no loan, share or view, changes no memory and no resource, and
+/// it creates no borrow, share or view, changes no memory and no resource, and
 /// only removes the scope's ability to end. A ledger with it permits a subset
 /// of what the input ledger permits.
 ///
-/// Checked here, without trusting the proof driver's choice of loan:
+/// Checked here, without trusting the proof driver's choice of borrow:
 /// - `selected` is one owned composite folded by this step: no input
 ///   occurrence supports it, and the successor holds an owned occurrence of
-///   it whose loan binding carries a hold;
-/// - that binding's loan is the dependency of a view the composite's body
-///   names in the input state, so the hold is on the loan the body reads
+///   it whose borrow binding carries a hold;
+/// - that binding's borrow is the dependency of a view the composite's body
+///   names in the input state, so the hold is on the borrow the body reads
 ///   through;
-/// - the one transition is exactly that hold, placed by this state's loan
+/// - the one transition is exactly that hold, placed by this state's borrow
 ///   participant on that authority, applied to the exact input ledger, and
 ///   its result is the successor's ledger.
 ///
@@ -2577,13 +2583,13 @@ fn checked_borrowing_fold_hold(
     before_facts: &PureFactStore,
     selected: &ResourceFact,
     after_state: &ExecutionState,
-    loan_holds: &[crate::kernel::CheckedLoanTransition],
+    borrow_holds: &[crate::kernel::CheckedBorrowTransition],
 ) -> Result<ExecutionState, String> {
-    let [hold] = loan_holds else {
-        return Err("a fold places at most one loan hold".into());
+    let [hold] = borrow_holds else {
+        return Err("a fold places at most one borrow hold".into());
     };
     if !matches!(selected, ResourceFact::Own(Resource::Composite { .. }, _)) {
-        return Err("a loan hold requires the fold of one owned composite".into());
+        return Err("a borrow hold requires the fold of one owned composite".into());
     }
     let assumptions = before_facts.assumptions();
     if before_state
@@ -2591,24 +2597,23 @@ fn checked_borrowing_fold_hold(
         .directly_supporting_fact(selected, assumptions)
         .is_some()
     {
-        return Err("a loan hold requires a fold of a composite the input does not hold".into());
+        return Err("a borrow hold requires a fold of a composite the input does not hold".into());
     }
-    if before_state.loan_participant() != after_state.loan_participant() {
-        return Err("a loan hold changed the loan participant".into());
+    if before_state.borrow_participant() != after_state.borrow_participant() {
+        return Err("a borrow hold changed the borrow participant".into());
     }
     let holder = before_state
-        .loan_participant()
-        .ok_or("a loan hold requires a loan participant")?;
+        .borrow_participant()
+        .ok_or("a borrow hold requires a borrow participant")?;
     let ledger = before_state
-        .loan_ledger()
-        .ok_or("a loan hold requires a loan ledger")?;
+        .borrow_ledger()
+        .ok_or("a borrow hold requires a borrow ledger")?;
     let binding = after_state
         .resources()
-        .owned_occurrences_for_fact(selected)
-        .into_iter()
-        .filter_map(|occurrence| after_state.resources().loan_dependency(occurrence))
-        .find(|binding| binding.hold.is_some())
-        .ok_or("a loan hold is not carried by the folded composite")?;
+        .unique_owned_occurrence_for_fact(selected)
+        .and_then(|(occurrence, _)| after_state.resources().borrow_dependency(occurrence))
+        .filter(|binding| binding.hold.is_some())
+        .ok_or("a borrow hold is not carried by the folded composite")?;
     let temporary =
         ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(selected.clone());
     let body = crate::kernel::functions::expand_composite_resource_fact(
@@ -2618,35 +2623,34 @@ fn checked_borrowing_fold_hold(
         &before_state.program_point(),
         assumptions,
     )
-    .ok_or("a loan hold's composite body could not be instantiated")?;
-    let same_authority = |dependency: &crate::kernel::LoanViewBinding| {
-        dependency.loan == binding.loan
+    .ok_or("a borrow hold's composite body could not be instantiated")?;
+    let same_authority = |dependency: &crate::kernel::BorrowBinding| {
+        dependency.borrow == binding.borrow
             && dependency.scope == binding.scope
             && dependency.share == binding.share
             && dependency.support == binding.support
     };
-    let body_reads_through_loan = body
+    let body_reads_through_borrow = body
         .facts()
         .iter()
         .filter(|child| *child != selected && child.is_view())
         .any(|child| {
             before_state
-                .resources()
-                .view_occurrences_for_fact(child, assumptions)
-                .into_iter()
-                .filter_map(|occurrence| before_state.resources().loan_dependency(occurrence))
-                .any(same_authority)
+                .fold_view_dependency(child, assumptions)
+                .is_ok_and(|dependency| {
+                    dependency.is_some_and(|(_, dependency)| same_authority(&dependency))
+                })
         });
-    if !body_reads_through_loan {
-        return Err("a loan hold is not on a loan the folded body views".into());
+    if !body_reads_through_borrow {
+        return Err("a borrow hold is not on a borrow the folded body views".into());
     }
     let held = ledger
         .apply_borrowing_fold_hold(hold, binding, holder)
-        .map_err(|refusal| format!("a fold's loan hold is not checked: {refusal:?}"))?;
-    if after_state.loan_ledger() != Some(&held) {
-        return Err("a fold changed the loan ledger beyond its one hold".into());
+        .map_err(|refusal| format!("a fold's borrow hold is not checked: {refusal:?}"))?;
+    if after_state.borrow_ledger() != Some(&held) {
+        return Err("a fold changed the borrow ledger beyond its one hold".into());
     }
-    Ok(before_state.clone().with_loan_ledger(Some(held)))
+    Ok(before_state.clone().with_borrow_ledger(Some(held)))
 }
 
 /// An exact automatic-storage retirement, retained beside the C transition
@@ -2843,8 +2847,8 @@ impl CheckedResourceObservation {
                 definition: None,
             });
         }
-        if !before_state.loan_bindings_are_consistent() {
-            return Err("resource observation carries mismatched loan dependency sidecar");
+        if !before_state.borrow_bindings_are_consistent() {
+            return Err("resource observation carries mismatched borrow dependency sidecar");
         }
         let load_equality_capture =
             crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(call_events);
@@ -2870,7 +2874,7 @@ impl CheckedResourceObservation {
         let (after_state, construct) = match input {
             ResourceObservationInput::NamedCells(memory) => {
                 // The input describes memory naming only. No caller-supplied
-                // locals, resource context, or loan ledger enters construction.
+                // locals, resource context, or borrow ledger enters construction.
                 named_state = before_state
                     .clone()
                     .with_materialized_memory_at_current_point(memory.clone());
@@ -2882,8 +2886,10 @@ impl CheckedResourceObservation {
             }
             #[cfg(test)]
             ResourceObservationInput::Legacy(after_state) => {
-                if !after_state.loan_bindings_are_consistent() {
-                    return Err("resource observation carries mismatched loan dependency sidecar");
+                if !after_state.borrow_bindings_are_consistent() {
+                    return Err(
+                        "resource observation carries mismatched borrow dependency sidecar",
+                    );
                 }
                 let mut concrete_after = after_state.clone();
                 concrete_after.set_memory(before_state.memory.clone());
@@ -2945,12 +2951,12 @@ impl CheckedResourceObservation {
                         .directly_supporting_fact(fact, assumptions)
                         .is_some()
                 });
-        let borrowed = if before_state.loan_view_bindings().is_empty() {
+        let borrowed = if before_state.borrow_bindings().is_empty() {
             None
         } else {
             before_state
                 .unique_borrowed_resource_dependency(observed)
-                .map_err(|_| "resource observation refused ambiguous or inactive parent loan")?
+                .map_err(|_| "resource observation refused ambiguous or inactive parent borrow")?
         };
         let all_views = raw_children
             .iter()
@@ -2965,10 +2971,10 @@ impl CheckedResourceObservation {
                     let existing = before_state
                         .unique_borrowed_resource_dependency(&child)
                         .map_err(
-                            |_| "resource observation refused ambiguous or inactive child loan",
+                            |_| "resource observation refused ambiguous or inactive child borrow",
                         )?;
                     if existing.as_ref().is_none_or(|binding| {
-                        binding.loan != parent.loan
+                        binding.borrow != parent.borrow
                             || binding.scope != parent.scope
                             || binding.share != parent.share
                             || binding.support != parent.support
@@ -3006,28 +3012,28 @@ impl CheckedResourceObservation {
             let mut next = after_state.clone();
             if let Some(binding) = borrowed.filter(|_| !inserted.is_empty()) {
                 let evidence =
-                    crate::kernel::loans::CompositeProjectionEvidence::from_checked_expansion(
+                    crate::kernel::borrows::CompositeProjectionEvidence::from_checked_expansion(
                         observed.clone(),
                         inserted.iter().map(|(child, _)| child.clone()).collect(),
                     )
-                    .ok_or("resource observation cannot project a non-view child of a loan")?;
+                    .ok_or("resource observation cannot project a non-view child of a borrow")?;
                 let ledger = before_state
-                    .loan_ledger()
-                    .zip(before_state.loan_participant())
-                    .ok_or("resource observation has no active loan holder")?;
+                    .borrow_ledger()
+                    .zip(before_state.borrow_participant())
+                    .ok_or("resource observation has no active borrow holder")?;
                 let ledger = ledger
                     .0
                     .project_observed_body(ledger.1, &binding, evidence)
                     .map_err(
                         |_| "resource observation cannot project a child of the viewed composite",
                     )?;
-                next = next.with_loan_ledger(Some(ledger));
-                next.with_resource_context_and_loan_dependencies(
+                next = next.with_borrow_ledger(Some(ledger));
+                next.with_resource_context_and_borrow_dependencies(
                     resources,
                     inserted.into_iter().map(|(viewed, occurrence)| {
                         (
                             occurrence,
-                            crate::kernel::LoanViewBinding {
+                            crate::kernel::BorrowBinding {
                                 viewed,
                                 ..binding.clone()
                             },
@@ -4508,7 +4514,7 @@ fn construct_interface_abstraction(
             .unproved_memory_separation(root_facts)
             .is_some()
     {
-        return Err("branch memory join requires separation from active loans at the split");
+        return Err("branch memory join requires separation from active borrows at the split");
     }
     // Both abstractions derive from the memory at the split, so they are
     // compared by what each changed from it.
@@ -4521,7 +4527,7 @@ fn construct_interface_abstraction(
     }
     // The successor and the arm abstraction reach an empty resource
     // context by different routes, so compare the shape with the context
-    // dropped the same way on both sides, then check the successor's loan
+    // dropped the same way on both sides, then check the successor's borrow
     // authority explicitly. The shape comparison still covers the ledger
     // and the participant, because dropping a resource context does not
     // touch either.
@@ -4533,10 +4539,10 @@ fn construct_interface_abstraction(
         return Err("the interface successor is not the checked arm abstraction");
     }
     // D2 law 9: a join keeps the arms' authority, it never sums it. Every
-    // loan dependency the successor's interface carries must be one an arm
+    // borrow dependency the successor's interface carries must be one an arm
     // already held; a changed or invented root is not admitted here.
-    if !interface_successor_loans_are_inherited(joined_state, sibling_states) {
-        return Err("the interface successor claims a loan dependency no arm held");
+    if !interface_successor_borrows_are_inherited(joined_state, sibling_states) {
+        return Err("the interface successor claims a borrow dependency no arm held");
     }
     let InterfaceJoinResources {
         arm_interface_resources,
@@ -5071,20 +5077,20 @@ impl CheckedExecutionBranch {
     }
 }
 
-/// Whether every stable-view loan dependency the interface successor carries
+/// Whether every stable-view borrow dependency the interface successor carries
 /// was already held by a concrete arm.
 ///
-/// Check the exact authority (including the loan, share, scope, support,
+/// Check the exact authority (including the borrow, share, scope, support,
 /// viewed fact and hold) of each claimed binding. Interface publication can
 /// give a held view a fresh occurrence, so membership is by binding value
 /// and the arms maintain that index as their bindings change (D2 law 9).
-fn interface_successor_loans_are_inherited(
+fn interface_successor_borrows_are_inherited(
     successor: &ExecutionState,
     arms: [&ExecutionState; 2],
 ) -> bool {
-    successor.loan_view_bindings().iter().all(|(_, binding)| {
+    successor.borrow_bindings().iter().all(|(_, binding)| {
         arms.iter()
-            .any(|arm| arm.loan_view_bindings().contains_binding(binding))
+            .any(|arm| arm.borrow_bindings().contains_binding(binding))
     })
 }
 
@@ -5107,7 +5113,7 @@ fn arm_effect_deltas_are_exact(
 fn memory_diff_is_covered_by_writes(
     before: &SymbolicMemory,
     after: &SymbolicMemory,
-    changed: &[(Address, u32)],
+    changed: &[(Address, crate::kernel::AccessExtent)],
     assumptions: &PureFactContext,
     fact: &ExecutionPureFact,
 ) -> bool {
@@ -5116,7 +5122,9 @@ fn memory_diff_is_covered_by_writes(
             store.before == *before
                 && store.after == *after
                 && changed.iter().any(|(changed_pointer, bytes)| {
-                    changed_pointer == &store.pointer && *bytes == store.value.byte_width()
+                    changed_pointer == &store.pointer
+                        && *bytes
+                            == crate::kernel::assumptions::access_extent_of_value(&store.value)
                 })
         });
     if erased_cells_are_certified_store_bookkeeping {
@@ -5133,15 +5141,18 @@ fn memory_diff_is_covered_by_writes(
             let Some(value) = after.known_value(&diff_pointer) else {
                 return false;
             };
-            changed.iter().any(|(changed_pointer, bytes)| {
-                assumptions.pointer_access_in_range(
+            changed.iter().any(|(changed_pointer, bytes)| match bytes {
+                crate::kernel::AccessExtent::Bytes(bytes) => assumptions.pointer_access_in_range(
                     &diff_pointer,
                     value.byte_width(),
                     changed_pointer,
                     &MachineTerm::constant(0),
                     &MachineTerm::constant(1),
                     *bytes,
-                )
+                ),
+                // A whole object of abstract size changes the cell at its
+                // own address.
+                crate::kernel::AccessExtent::Object(_) => *changed_pointer == diff_pointer,
             })
         })
 }
@@ -5190,7 +5201,7 @@ fn memory_diff_is_covered_by_ranges(
 /// and leaves no effect, so the recorded memory may hold tombstones the
 /// effects do not produce. Those objects are ended here the same way before
 /// the comparison. The join carries every arm's tombstones on its own
-/// ([`SymbolicMemory::with_interface_memory_havoc_preserving_loans`]), so this
+/// ([`SymbolicMemory::with_interface_memory_havoc_preserving_borrows`]), so this
 /// admits no write the effects do not cover.
 fn interface_chain_memory_matches(
     produced: &SymbolicMemory,
@@ -5446,12 +5457,7 @@ fn checked_interface_effect_facts_along(
         }
     } else {
         for (pointer, bytes) in writes {
-            let range = MemoryRange::new_with_element_width(
-                pointer,
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
-                bytes,
-            );
+            let range = MemoryRange::of_access(&pointer, bytes);
             if !ranges.contains(&range) {
                 ranges.push(range);
             }
@@ -6451,7 +6457,7 @@ pub(crate) struct PendingLoopReturnPath {
     pub(crate) execution_facts: ExecutionFacts,
     pub(crate) obligations: Vec<crate::kernel::ProofObligation>,
     pub(crate) pure_facts: PureFactStore,
-    pub(crate) loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+    pub(crate) borrow_evidence: crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
 }
 
 /// Surface-independent execution state owned by a checked proof branch.
@@ -6526,7 +6532,7 @@ pub(crate) struct ExecutionProofCore {
     /// Stable-view call evidence retained along the focused execution path.
     /// This is kept beside the checked event trace so loop planning can pass
     /// the exact path evidence into its exit candidates.
-    pub(crate) loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+    pub(crate) borrow_evidence: crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
     /// One kernel publication shared by post-return proofs on each path.
     return_proof_contexts: crate::persistent::PersistentMap<usize, Arc<CheckedReturnContext>>,
     /// Completed pure proofs awaiting a resource exchange that needs them.
@@ -8325,7 +8331,7 @@ impl ExecutionProofCore {
             pending_loop_returns: Default::default(),
             completed_pending_loop_returns: None,
             pending_loop_return_start: None,
-            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
             return_resource_rewrites: Default::default(),
             return_producers: Default::default(),
             return_proof_contexts: Default::default(),
@@ -8521,19 +8527,19 @@ impl ExecutionProofCore {
         execution_facts: &(impl ExecutionFactSource + ?Sized),
         obligations: &[crate::kernel::ProofObligation],
     ) -> Result<(), EvidenceRefusal> {
-        self.record_statement_transition_with_loan_evidence(
+        self.record_statement_transition_with_borrow_evidence(
             function,
             arguments,
             theorem,
             context,
             execution_facts,
             obligations,
-            &crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            &crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         )
     }
 
     #[cfg(test)]
-    pub(crate) fn record_statement_transition_with_loan_evidence(
+    pub(crate) fn record_statement_transition_with_borrow_evidence(
         &mut self,
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
@@ -8541,7 +8547,7 @@ impl ExecutionProofCore {
         context: PureFactContext,
         execution_facts: &(impl ExecutionFactSource + ?Sized),
         obligations: &[crate::kernel::ProofObligation],
-        loan_evidence: &crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+        borrow_evidence: &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
     ) -> Result<(), EvidenceRefusal> {
         if let Some(opened) = &self.descent {
             opened.accept(None).map_err(EvidenceRefusal::from)?;
@@ -8553,7 +8559,7 @@ impl ExecutionProofCore {
             context,
             execution_facts,
             obligations,
-            loan_evidence,
+            borrow_evidence,
         )
     }
 
@@ -8577,7 +8583,7 @@ impl ExecutionProofCore {
             context,
             execution_facts,
             &native_step.obligations,
-            &native_step.loan_evidence,
+            &native_step.borrow_evidence,
         )
     }
 
@@ -8591,13 +8597,15 @@ impl ExecutionProofCore {
         context: PureFactContext,
         execution_facts: &(impl ExecutionFactSource + ?Sized),
         _obligations: &[crate::kernel::ProofObligation],
-        loan_evidence: &crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+        borrow_evidence: &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
     ) -> Result<(), EvidenceRefusal> {
         debug_assert_eq!(self.execution_evidence.len(), 1);
         let (outcome, source_after) =
             self.check_statement_evidence(function, arguments, &theorem, &context)?;
-        self.loan_evidence =
-            crate::kernel::loans::concat_checked_loan_evidence(&self.loan_evidence, loan_evidence);
+        self.borrow_evidence = crate::kernel::borrows::concat_checked_borrow_evidence(
+            &self.borrow_evidence,
+            borrow_evidence,
+        );
         let call_events = statement_call_havoc_views(&theorem)
             .into_iter()
             .map(|view| self.checked_call_events.new_event(view))
@@ -8985,7 +8993,7 @@ impl ExecutionProofCore {
         completed_execution_facts: ExecutionFacts,
         completed_obligations: Vec<crate::kernel::ProofObligation>,
         pure_facts: PureFactStore,
-        loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+        borrow_evidence: crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
         loop_index: Option<usize>,
         return_index: usize,
     ) -> Result<(), EvidenceRefusal> {
@@ -9037,7 +9045,7 @@ impl ExecutionProofCore {
             execution_facts: completed_execution_facts,
             obligations: completed_obligations,
             pure_facts,
-            loan_evidence,
+            borrow_evidence,
         });
         Ok(())
     }
@@ -9283,8 +9291,10 @@ impl ExecutionProofCore {
         self.evidence_state.as_ref().unwrap_or(&self.state)
     }
 
-    pub(crate) fn loan_evidence(&self) -> &crate::kernel::loans::CheckedLoanCallEvidenceSequence {
-        &self.loan_evidence
+    pub(crate) fn borrow_evidence(
+        &self,
+    ) -> &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence {
+        &self.borrow_evidence
     }
 
     /// The state the frontier's next theorem must start from: the state the
@@ -9768,7 +9778,7 @@ impl ExecutionProofCore {
                         return Ok(());
                     }
                     Err(EvidenceRefusal {
-                        reason: "successful realloc requires separation from its call-entry loans",
+                        reason: "successful realloc requires separation from its call-entry borrows",
                         expected: None,
                         proved: None,
                         premise: Some(premise.clone()),
@@ -11074,7 +11084,7 @@ impl ExecutionProofCore {
         after_facts: &PureFactStore,
         selected_children: Option<Arc<[(String, InstanceId)]>>,
     ) -> Result<(), ResourceRewriteCheckError> {
-        self.record_resource_rewrite_with_loan_holds(
+        self.record_resource_rewrite_with_borrow_holds(
             function,
             arguments,
             before_facts,
@@ -11187,11 +11197,11 @@ impl ExecutionProofCore {
         Ok((result, after_facts))
     }
 
-    /// A proof `fold` whose owned head packages a loan-backed view places one
-    /// hold on that loan's scope. The rewrite check applies that exact hold
+    /// A proof `fold` whose owned head packages a borrow-backed view places one
+    /// hold on that borrow's scope. The rewrite check applies that exact hold
     /// transition to the input ledger rather than accepting any ledger change.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn record_resource_rewrite_with_loan_holds(
+    pub(crate) fn record_resource_rewrite_with_borrow_holds(
         &mut self,
         function: &ProgramFunction,
         arguments: &[ProgramExpression],
@@ -11200,7 +11210,7 @@ impl ExecutionProofCore {
         after_state: &ExecutionState,
         after_facts: &PureFactStore,
         selected_children: Option<Arc<[(String, InstanceId)]>>,
-        loan_holds: &[crate::kernel::CheckedLoanTransition],
+        borrow_holds: &[crate::kernel::CheckedBorrowTransition],
         defer: bool,
     ) -> Result<(), ResourceRewriteCheckError> {
         if self.evidence_completed {
@@ -11217,7 +11227,7 @@ impl ExecutionProofCore {
             after_facts,
             &self.checked_call_events,
             selected_children,
-            loan_holds,
+            borrow_holds,
         )?;
         self.retain_resource_rewrite(
             function,
@@ -12257,7 +12267,7 @@ impl ExecutionProofCore {
             let (
                 outcome,
                 obligations,
-                loan_evidence,
+                borrow_evidence,
                 deferred_contract_exit,
                 deferred_contract_exit_error,
             ) = match crate::kernel::functions::checked_contract_exit_outcome_with_boundary_transfer(
@@ -12306,15 +12316,15 @@ impl ExecutionProofCore {
                 ),
                 Err(_) => return Err("the contract's exit rule hit an execution limit"),
             };
-            let loan_evidence = match loan_evidence {
-                Some(evidence) => crate::kernel::loans::concat_checked_loan_evidence(
-                    candidate.loan_evidence(),
-                    &crate::kernel::loans::append_checked_loan_evidence(
-                        &crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            let borrow_evidence = match borrow_evidence {
+                Some(evidence) => crate::kernel::borrows::concat_checked_borrow_evidence(
+                    candidate.borrow_evidence(),
+                    &crate::kernel::borrows::append_checked_borrow_evidence(
+                        &crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
                         Some(evidence),
                     ),
                 ),
-                None => candidate.loan_evidence().clone(),
+                None => candidate.borrow_evidence().clone(),
             };
             let proposition = Proposition::ProgramFunctionVerifies {
                 state: Box::new(candidates.state().clone()),
@@ -12376,7 +12386,7 @@ impl ExecutionProofCore {
                 effect_facts: candidate.effect_facts().clone(),
                 obligations,
                 theorem,
-                loan_evidence,
+                borrow_evidence,
             };
             publications.push(crate::kernel::PublishedFunctionOutcome::from_execution(
                 candidates.state(),
@@ -12489,16 +12499,16 @@ pub(crate) fn old_reference_state<'a>(
 #[cfg(test)]
 mod tests;
 
-/// Deterministic four-size curves for the loan machinery an interface join
+/// Deterministic four-size curves for the borrow machinery an interface join
 /// and a loop-head havoc run (R32; docs/internals/stable-views.md). Both axes
 /// grow with proof length rather than with the selected contract: the binding
 /// count grows by one per exposed child per unfold or observe, and the cell
-/// and symbolic-loan counts grow with the memory a proof has named. Neither
+/// and symbolic-borrow counts grow with the memory a proof has named. Neither
 /// is output the checker must produce, so a quadratic curve here is a scaling
 /// defect rather than output-sensitive work. Work is counted with the
 /// deterministic counter; host time never decides these tests.
 #[cfg(test)]
-mod loan_scaling_tests;
+mod borrow_scaling_tests;
 
 #[cfg(test)]
 mod automatic_lifetime_tests;

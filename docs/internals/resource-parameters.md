@@ -54,7 +54,7 @@ footprint must not depend on changing model fields. Model fields currently
 support C and integer types. Nested type/reference arguments, owned children,
 and resource-type parameters on user-defined resource constructors remain
 unsupported and are rejected. As with the concrete mutex path, unlock currently
-requires outstanding memory loans to have returned. Named lock/unlock payload transport currently
+requires outstanding memory borrows to have returned. Named lock/unlock payload transport currently
 applies to independent typed-use contracts; the existing implicit concrete
 mutex path remains available. Typed permissions also cross worker boundaries:
 create retains a parent share, transfers a checked worker share, and leaves
@@ -137,7 +137,7 @@ let { guard: g, state: s } =
 ```
 
 This remains a target, not implemented protected-state output syntax. The
-checked lifetime-to-use loan determines the association. There is no separate
+checked lifetime-to-use borrow determines the association. There is no separate
 resource-description argument to infer or supply.
 
 Initialization establishes the association from the owned state and mutex.
@@ -146,14 +146,14 @@ is required.
 Unlock requires the exact acquisition and actual ownership of the full
 protected assertion. A replacement instance is valid when that assertion
 permits it; matching only the family is insufficient. Outstanding payload
-loans must still be discharged. Returning ownership does not preserve old
+borrows must still be discharged. Returning ownership does not preserve old
 field observations without a contract guarantee.
 
 ## Independent helpers and diagnostics
 
 An independently checked helper receives only the information its contract
 provides. A use permission with an opaque association must preserve that
-association through loans and returns, but does not expose a guessed payload
+association through borrows and returns, but does not expose a guessed payload
 schema. The implementation must establish how a helper's input authority
 determines its output resource before enabling protected-state outputs.
 Concrete call-site information alone cannot justify a generic body proof.
@@ -292,7 +292,7 @@ function proof parameters and the instruction to connect ordinary typed state
 transfer. Named storage transport and destruction's named state output remain
 proposals in the mutex contract design. New transport must preserve resource
 type, initialization/acquisition identity and actual authority, with fresh
-observations after acquisition and no recovery while loans or guards survive.
+observations after acquisition and no recovery while borrows or guards survive.
 
 The [historical investigation](https://github.com/clicklang/click/blob/2175760b9/docs/internals/resource-parameters.md)
 retains the withdrawn syntax and staged implementation notes. It is not an

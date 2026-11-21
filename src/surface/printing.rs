@@ -5,6 +5,53 @@ use super::diagnostics::{
 };
 use super::*;
 
+thread_local! {
+    static CONTRACT_VALUE_PARAMETERS: std::cell::RefCell<Option<std::sync::Arc<ContractValueParameters>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The contract declaration names available while writing a checked proof.
+pub(super) struct ContractValueParameterScope(Option<std::sync::Arc<ContractValueParameters>>);
+
+impl ContractValueParameterScope {
+    pub(super) fn enter(parameters: &std::sync::Arc<ContractValueParameters>) -> Self {
+        Self(CONTRACT_VALUE_PARAMETERS.with(|slot| slot.replace(Some(parameters.clone()))))
+    }
+
+    pub(super) fn for_file(file: &ClickFile) -> Option<Self> {
+        contract_value_parameter_names(file.contract_definitions())
+            .as_ref()
+            .map(Self::enter)
+    }
+}
+
+impl Drop for ContractValueParameterScope {
+    fn drop(&mut self) {
+        CONTRACT_VALUE_PARAMETERS.with(|slot| slot.replace(self.0.take()));
+    }
+}
+
+fn source_contract_application(name: &str, arguments: &[ContractExpression]) -> Option<String> {
+    CONTRACT_VALUE_PARAMETERS.with(|slot| {
+        let scope = slot.borrow();
+        let parameters = scope.as_ref()?.get(name)?;
+        let (function, values) = arguments.split_first()?;
+        if values.len() != parameters.len() {
+            return None;
+        }
+        let bindings = parameters
+            .iter()
+            .zip(values)
+            .map(|(parameter, value)| {
+                format!("{parameter}: {}", describe_contract_expression(value))
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let function = describe_contract_expression(function);
+        Some(format!("{name}({function}, {{ {bindings} }})"))
+    })
+}
+
 /// Click source that parses back. Every spelling is chosen by its caller;
 /// no output depends on who else is printing.
 /// Diagnostic spelling for a kernel conjunction without complete Surface labels.
@@ -546,14 +593,21 @@ pub(super) fn print_proposition(
                 .join(", ");
             format!("{name}({arguments})")
         }
-        ClickProposition::PredicateCall { name, arguments } => format!(
-            "{name}({})",
-            arguments
-                .iter()
-                .map(describe_contract_expression)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
+        ClickProposition::PredicateCall { name, arguments } => {
+            if mode == PropositionSpelling::Source
+                && let Some(application) = source_contract_application(name, arguments)
+            {
+                return application;
+            }
+            format!(
+                "{name}({})",
+                arguments
+                    .iter()
+                    .map(describe_contract_expression)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
     }
 }
 
@@ -920,7 +974,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             line(
                 output,
                 &prefix,
-                &format!("open({}) {{", format_resource_call(&open.resource)),
+                &format!("with({}) {{", format_resource_call(&open.resource)),
             );
             write_tactics(output, &open.tactics, indent + 1);
             line(output, &prefix, "}");
@@ -1168,9 +1222,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
         ProofTactic::NormalizeUsing(premises) => {
             write_using_premises(output, "normalize()", premises, indent)
-        }
-        ProofTactic::OrderChain(premises) => {
-            write_using_premises(output, "order_chain()", premises, indent)
         }
         ProofTactic::ArithmeticUsing(premises) => {
             write_using_premises(output, "solve()", premises, indent)
@@ -1802,7 +1853,7 @@ mod tests {
                 lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(ProgramExpression::Variable("p".into())),
-                        bytes: 4,
+                        bytes: 4.into(),
                     }),
                     value_type: ProgramType::UInt32Array(3),
                     volatile: false,
@@ -1810,7 +1861,7 @@ mod tests {
                     access_class: None,
                     source: Default::default(),
                 },
-                offset_bytes: 4,
+                offset_bytes: 4.into(),
             }),
             Box::new(ContractExpression::ProgramExpression(
                 ProgramExpression::Variable("index".into()),

@@ -218,7 +218,7 @@ fn construction_return_rejects_missing_binding_authority_and_partial_values() {
 }
 
 #[test]
-fn construction_binding_retains_the_full_destination_loan_requirement() {
+fn construction_binding_retains_the_full_destination_borrow_requirement() {
     let _session = crate::kernel::VerificationSession::enter();
     let state = allocate_destination(&ExecutionState::new(), "node");
     let destination = state.locals.slot("node").unwrap().clone();
@@ -230,7 +230,7 @@ fn construction_binding_retains_the_full_destination_loan_requirement() {
     ));
     let (_, occurrences) =
         ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let holder = ledger.fresh_participant().unwrap();
     let opening = ledger
         .borrowed_contract_input(holder, occurrences[0].1, view, None)
@@ -238,9 +238,9 @@ fn construction_binding_retains_the_full_destination_loan_requirement() {
     let ledger = ledger.apply(&opening.transition).unwrap();
     let caller = state
         .with_aggregate_return_destination(destination.clone(), node_layout())
-        .with_loan_ledger(Some(ledger.clone()))
-        .with_loan_participant(Some(holder));
-    let function = construction_function("loaned_destination", node_construction_body());
+        .with_borrow_ledger(Some(ledger.clone()))
+        .with_borrow_participant(Some(holder));
+    let function = construction_function("borrowed_destination", node_construction_body());
     let mut callee = ExecutionState::new();
     let mut obligations = Vec::new();
     assert!(
@@ -287,7 +287,7 @@ fn construction_binding_retains_the_full_destination_loan_requirement() {
     );
     assert_eq!(entry.memory(), caller.memory());
     assert_eq!(entry.resources(), caller.resources());
-    assert_eq!(entry.loan_ledger(), caller.loan_ledger());
+    assert_eq!(entry.borrow_ledger(), caller.borrow_ledger());
 }
 
 #[test]
@@ -305,17 +305,17 @@ fn direct_native_construction_distinguishes_fields_from_padding() {
     let arguments = [ProgramValue::pointer(destination.clone())];
 
     // The 16-byte layout writes an 8-byte pointer and a 4-byte scalar.
-    // A loan at byte 12 covers only padding. A loan at byte 8 covers a field.
-    for (loan_offset, separates) in [(12, true), (8, false)] {
+    // A borrow at byte 12 covers only padding. A borrow at byte 8 covers a field.
+    for (borrow_offset, separates) in [(12, true), (8, false)] {
         let view = ResourceFact::view_memory(MemoryRange::new_with_element_width(
-            destination.offset_by_bytes(loan_offset),
+            destination.offset_by_bytes(borrow_offset),
             0u32.into(),
             1u32.into(),
             1,
         ));
         let (_, occurrences) =
             ResourceContext::new().unchecked_with_facts_and_occurrences([view.clone()]);
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let holder = ledger.fresh_participant().unwrap();
         let opening = ledger
             .borrowed_contract_input(holder, occurrences[0].1, view, None)
@@ -323,8 +323,8 @@ fn direct_native_construction_distinguishes_fields_from_padding() {
         let ledger = ledger.apply(&opening.transition).unwrap();
         let caller = state
             .clone()
-            .with_loan_ledger(Some(ledger))
-            .with_loan_participant(Some(holder));
+            .with_borrow_ledger(Some(ledger))
+            .with_borrow_participant(Some(holder));
         let mut obligations = Vec::new();
         assert!(
             bind_program_function_arguments_retained(
@@ -1000,7 +1000,7 @@ fn symbolic_construction_storage_respects_known_aliases() {
                     memory = memory.store(alias.clone(), ProgramValue::Int32(37u32.into()));
                 }
                 if forgotten {
-                    memory = memory.with_loop_memory_havoc_preserving_loans(
+                    memory = memory.with_loop_memory_havoc_preserving_borrows(
                         Variable(870_020),
                         &BTreeSet::new(),
                         None,
@@ -1085,7 +1085,7 @@ fn symbolic_construction_initialization_survives_havoc_and_intersects_at_join() 
     let full = partial
         .clone()
         .store(source.offset_by_bytes(4), ProgramValue::Int32(42u32.into()));
-    let forgotten = full.with_loop_memory_havoc_preserving_loans(
+    let forgotten = full.with_loop_memory_havoc_preserving_borrows(
         Variable(870_010),
         &BTreeSet::new(),
         None,
@@ -1192,7 +1192,7 @@ fn forgotten_construction_writes_keep_their_address_variables_reserved() {
     let mut variables = BTreeSet::new();
     crate::kernel::reasoning::collect_shared_memory_bitvector_variables(&before, &mut variables);
     assert!(variables.contains(&alias_variable));
-    let forgotten = written.with_loop_memory_havoc_preserving_loans(
+    let forgotten = written.with_loop_memory_havoc_preserving_borrows(
         Variable(870_019),
         &BTreeSet::new(),
         None,

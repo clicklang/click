@@ -468,7 +468,7 @@ uint64 label_copy(char* dst, const char* src) {
         apply(separation::contains_element(dst, 0u64, 32u64, n)) using { 0u64 <= n; n < 32u64; };
     }
     have separate(memory(dst[n]), memory(src[0u64..len + 1u64])) by { solve(); }
-    open(cstr_at(src, len)) {
+    with(cstr_at(src, len)) {
         step();
         mark copied;
         unfold(at(copied, bytes::equal(dst, 0u64, old(src), 0u64, n)));

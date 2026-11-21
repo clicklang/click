@@ -19,7 +19,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
             .mutex_use_candidate_at(&mutex())
             .unwrap()
             .clone();
-        let holder = state.loan_participant.unwrap();
+        let holder = state.borrow_participant.unwrap();
         for index in 0..size {
             let marker = ResourceFact::own(Resource::Token {
                 name: format!("unrelated_helper_frame_{index}"),
@@ -32,7 +32,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
                 .unwrap()
                 .0;
             let (ledger, other) = state
-                .loan_ledger
+                .borrow_ledger
                 .as_ref()
                 .unwrap()
                 .borrowed_mutex_use_input(holder, support, Address::symbolic(Variable(900 + index)))
@@ -40,7 +40,7 @@ fn helper_transfers_ignore_unrelated_resources_protocols_and_history() {
             state.resources = state
                 .resources
                 .unchecked_with_fact(ledger.mutex_use_resource(other.usage, holder).unwrap());
-            state.loan_ledger = Some(ledger);
+            state.borrow_ledger = Some(ledger);
             let (held, _, _) = apply_call_effect(
                 &state,
                 &source,

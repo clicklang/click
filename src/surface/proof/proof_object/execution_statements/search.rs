@@ -41,6 +41,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_planned_fact_transport_inner");
+        if crate::instrumentation::replay_forbids_discovery("fact transport search") {
+            return Err(search_input.step_error("fact transport discovery needs explicit premises"));
+        }
         let resolved_source =
             search_input.substitute_fixed_state_locals_in_proposition(surface_source)?;
         let resolved_target =
@@ -164,6 +167,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("apply_planned_outcome_fact_transport");
+        if crate::instrumentation::replay_forbids_discovery("fact transport search") {
+            return Err(search_input.step_error("fact transport discovery needs explicit premises"));
+        }
         let ProofContext::Execution(context) = search_input.context.as_ref() else {
             return Err(search_input.step_error("`transport` requires an execution proof"));
         };

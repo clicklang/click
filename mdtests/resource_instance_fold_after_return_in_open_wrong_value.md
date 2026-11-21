@@ -24,7 +24,7 @@ int32 f(int32* p, int32* q) {
     ensures result == 0;
 } by {
     unfold(input);
-    open(borrowed(p)) {
+    with(borrowed(p)) {
         step_until(function.exit);
         let output = fold(cell(q), { value: 8 });
         solve();

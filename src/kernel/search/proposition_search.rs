@@ -184,7 +184,9 @@ impl super::ProofSearch<PureFactContext> {
     pub(crate) fn proves(context: &PureFactContext, proposition: &Proposition) -> bool {
         #[cfg(test)]
         crate::kernel::search::record_discovery("proves");
-        if reasoning_interrupted() {
+        if crate::instrumentation::replay_forbids_discovery("proposition search")
+            || reasoning_interrupted()
+        {
             return false;
         }
         // One id resolution up front so every decision this proof attempt

@@ -186,6 +186,125 @@ mod tests {
         );
     }
 
+    #[test]
+    fn retained_machine_folds_round_trip_with_fresh_binders() {
+        let c = "int32 projection(int32 seed) { return seed; }
+                 int32 short_sum(int32 seed) { return seed; }";
+        let source = r#"verifying "folds.c";
+
+int32 projection(int32 seed) {
+    ensures forall (unused: Integer) {
+        (1..4).fold(seed, |acc: int32, k: int32| -> int32 { acc }) == seed
+    };
+} by { step_until(function.exit); intro(); normalize(); }
+
+int32 short_sum(int32 seed) {
+    ensures forall (unused: Integer) {
+        (1..3).fold(5, |acc: int32, k: int32| -> int32 { acc + k }) == 8
+    };
+} by { step_until(function.exit); intro(); normalize(); }
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[("folds.c", c)]).unwrap();
+        });
+        for claim in ["projection", "short_sum"] {
+            let marker = format!("\t{claim}.contract\tintro()\twritten\t");
+            assert!(
+                lines.iter().any(|line| line.starts_with("same\tgoal\t")
+                    && line.contains(&marker)
+                    && line.contains(".fold(")),
+                "{claim}: {lines:#?}"
+            );
+        }
+    }
+
+    /// A pointer a pure function returns raises as that call, and a read
+    /// through it as a typed read through the call; a pointer argument of a
+    /// Click call with no proof name raises as the pointer itself; and a
+    /// constant byte span that is not a whole number of words raises over a
+    /// byte view.
+    #[test]
+    fn pure_call_pointers_pointer_arguments_and_byte_spans_round_trip() {
+        for (name, text, original) in [
+            (
+                "resource_child_pure_arguments.md",
+                include_str!("../../../mdtests/resource_child_pure_arguments.md"),
+                "model_pointer(Address::At(p)) == p",
+            ),
+            (
+                "resource_child_pure_arguments_recursive.md",
+                include_str!("../../../mdtests/resource_child_pure_arguments_recursive.md"),
+                "old(*root_pointer(Tree::Leaf(left, 2))) == 2",
+            ),
+            (
+                "const_pointer_parameter_fact_survives_a_step.md",
+                include_str!("../../../mdtests/const_pointer_parameter_fact_survives_a_step.md"),
+                "same(p, p) == 1",
+            ),
+            (
+                "an_ordinary_exit_produces_a_composite_whose_body_facts_hold.md",
+                include_str!(
+                    "../../../mdtests/an_ordinary_exit_produces_a_composite_whose_body_facts_hold.md"
+                ),
+                "viewable(p[0..6])",
+            ),
+        ] {
+            let lines = round_trips(name, text);
+            assert!(
+                lines.contains(&("same".to_string(), original.to_string())),
+                "{name}: {original}: {lines:#?}"
+            );
+            assert!(
+                !lines
+                    .iter()
+                    .any(|(outcome, line)| line == original && outcome != "same"),
+                "{name}: {original}: {lines:#?}"
+            );
+        }
+    }
+
+    /// A read through a pointer a call returned raises as a read through
+    /// that call's result, at the read's own state, whether at the result
+    /// or displaced from it.
+    #[test]
+    fn reads_through_a_call_result_round_trip() {
+        for (name, text, original) in [
+            (
+                "a_call_result_is_spelled_by_its_call.md",
+                include_str!("../../../mdtests/a_call_result_is_spelled_by_its_call.md"),
+                "old(*statement(0).call(make, 0).result) == 7",
+            ),
+            (
+                "undeclared_aggregate_call_has_a_separate_copy.md",
+                include_str!("../../../mdtests/undeclared_aggregate_call_has_a_separate_copy.md"),
+                "old(*&statement(0).call(make_pair, 0).result[4]) == 4",
+            ),
+        ] {
+            let lines = round_trips(name, text);
+            assert!(
+                lines.contains(&("same".to_string(), original.to_string())),
+                "{name}: {original}: {lines:#?}"
+            );
+        }
+    }
+
+    /// A checked read of a caller's struct field the path leaves unchanged
+    /// reads the cell at its function-entry version; it raises as the field
+    /// read at entry.
+    #[test]
+    fn an_entry_version_field_read_round_trips() {
+        let lines = round_trips(
+            "arena_prefix_free_reads_region_arena.md",
+            include_str!("../../../mdtests/arena_prefix_free_reads_region_arena.md"),
+        );
+        for original in ["old(region->start) == s", "old(region->end) == e"] {
+            assert!(
+                lines.contains(&("same".to_string(), original.to_string())),
+                "{original}: {lines:#?}"
+            );
+        }
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();

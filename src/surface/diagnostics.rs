@@ -323,7 +323,7 @@ fn strip_byte_offsets(mut pointer: &ProgramExpression) -> Option<(&ProgramExpres
                 pointer: base,
                 bytes,
             } => {
-                offset_bytes = offset_bytes.checked_add(*bytes)?;
+                offset_bytes = offset_bytes.checked_add(bytes.bytes()?)?;
                 pointer = base;
             }
             ProgramExpression::Subobject { pointer: base, .. } => pointer = base,
@@ -2026,8 +2026,8 @@ pub(super) fn describe_runtime_error(
             render_resource_fact_diagnostic(piece, parameter_binding),
             render_resource_fact_diagnostic(held, parameter_binding)
         ),
-        crate::kernel::RuntimeError::LoanRefusal(diagnostic) => {
-            describe_loan_refusal(diagnostic, parameter_binding)
+        crate::kernel::RuntimeError::BorrowRefusal(diagnostic) => {
+            describe_borrow_refusal(diagnostic, parameter_binding)
         }
     }
 }
@@ -2061,6 +2061,9 @@ fn describe_returned_borrow(
     };
     let prefix = format!("cannot produce `{output}` as a borrow");
     match &refusal.reason {
+        ReturnedBorrowReason::ExplicitSourceRequired => format!(
+            "the produced borrowing composite `{output}` needs an explicit borrow source declared with `from`"
+        ),
         ReturnedBorrowReason::UnevaluableSource => {
             format!("{prefix}. The input view named by `from` could not be evaluated at entry.")
         }
@@ -2100,14 +2103,14 @@ fn describe_returned_borrow(
 /// where the borrow came from, what it protects, and what
 /// the refused operation attempted. Both halves are bounded facts from the
 /// refusal subject; nothing here reads the ledger or the resource frame.
-fn describe_loan_conflict(
-    diagnostic: &crate::kernel::LoanRefusalDiagnostic,
+fn describe_borrow_conflict(
+    diagnostic: &crate::kernel::BorrowRefusalDiagnostic,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let subject = diagnostic.subject();
     let conflicting = subject.conflicting_resource_fact()?;
     let conflicting = render_resource_fact_diagnostic(conflicting, parameter_binding);
-    if diagnostic.operation() == crate::kernel::LoanRefusalOperation::Entry {
+    if diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Entry {
         let viewed = subject.resource_fact()?;
         // This message follows the proof's own sentence about the contract
         // input, so it names the two clauses directly and adds no prefix.
@@ -2121,20 +2124,20 @@ fn describe_loan_conflict(
     if subject.origin().is_none() {
         let attempted = describe_memory_range(attempted, parameter_binding);
         return match diagnostic.category() {
-            crate::kernel::LoanRefusalCategory::ProvenOverlap => Some(format!(
+            crate::kernel::BorrowRefusalCategory::ProvenOverlap => Some(format!(
                 "the call's write range `{attempted}` overlaps the live view `{conflicting}`"
             )),
-            crate::kernel::LoanRefusalCategory::SeparationUnproved => Some(format!(
+            crate::kernel::BorrowRefusalCategory::SeparationUnproved => Some(format!(
                 "the call's write range `{attempted}` must be proved separate from the live view `{conflicting}`"
             )),
             _ => None,
         };
     }
     let origin = match subject.origin()? {
-        crate::kernel::LoanOriginKind::LocalStorage => "a borrow of local storage",
-        crate::kernel::LoanOriginKind::ContractInputView => "an input `views` clause",
-        crate::kernel::LoanOriginKind::LentOwner => "ownership lent at an earlier call",
-        crate::kernel::LoanOriginKind::Reborrow => "a borrow of an existing view",
+        crate::kernel::BorrowOriginKind::LocalStorage => "a borrow of local storage",
+        crate::kernel::BorrowOriginKind::ContractInputView => "an input `views` clause",
+        crate::kernel::BorrowOriginKind::LentOwner => "ownership lent at an earlier call",
+        crate::kernel::BorrowOriginKind::Reborrow => "a borrow of an existing view",
     };
     Some(format!(
         "the attempted access to `{}` overlaps the live borrow of `{conflicting}` from {origin}",
@@ -2142,18 +2145,18 @@ fn describe_loan_conflict(
     ))
 }
 
-pub(in crate::surface) fn describe_loan_refusal(
-    diagnostic: &crate::kernel::LoanRefusalDiagnostic,
+pub(in crate::surface) fn describe_borrow_refusal(
+    diagnostic: &crate::kernel::BorrowRefusalDiagnostic,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    if let Some(conflict) = describe_loan_conflict(diagnostic, parameter_binding) {
+    if let Some(conflict) = describe_borrow_conflict(diagnostic, parameter_binding) {
         return conflict;
     }
-    use crate::kernel::{LoanRefusalCategory, LoanRefusalOperation};
+    use crate::kernel::{BorrowRefusalCategory, BorrowRefusalOperation};
 
     let subject = diagnostic.subject();
-    if diagnostic.category() == LoanRefusalCategory::Missing
-        && diagnostic.operation() == LoanRefusalOperation::Plan
+    if diagnostic.category() == BorrowRefusalCategory::Missing
+        && diagnostic.operation() == BorrowRefusalOperation::Plan
         && let Some(view) = subject
             .resource_fact()
             .filter(|resource| resource.is_view())
@@ -2164,26 +2167,28 @@ pub(in crate::surface) fn describe_loan_refusal(
         );
     }
     let operation = match diagnostic.operation() {
-        LoanRefusalOperation::Validate => "cannot use this borrow",
-        LoanRefusalOperation::Plan => "cannot prepare the call's borrow",
-        LoanRefusalOperation::Entry => "cannot establish the input borrow",
-        LoanRefusalOperation::Recovery => "cannot recover the borrowed resource",
-        LoanRefusalOperation::Transition => "cannot change this borrow",
-        LoanRefusalOperation::MemoryAccess => "cannot access the borrowed resource",
+        BorrowRefusalOperation::Validate => "cannot use this borrow",
+        BorrowRefusalOperation::Plan => "cannot prepare the call's borrow",
+        BorrowRefusalOperation::Entry => "cannot establish the input borrow",
+        BorrowRefusalOperation::Recovery => "cannot recover the borrowed resource",
+        BorrowRefusalOperation::Transition => "cannot change this borrow",
+        BorrowRefusalOperation::MemoryAccess => "cannot access the borrowed resource",
     };
     let reason = match diagnostic.category() {
-        LoanRefusalCategory::ProvenOverlap => "A required resource overlaps a live borrow",
-        LoanRefusalCategory::SeparationUnproved => "The requested ranges must be proved separate",
-        LoanRefusalCategory::WrongHolder => "This path does not hold the required borrow",
-        LoanRefusalCategory::WrongArena => "The borrow belongs to another proof",
-        LoanRefusalCategory::WrongScope => "The borrow belongs to a different scope",
-        LoanRefusalCategory::ActiveDependency => "A live borrow still depends on this resource",
-        LoanRefusalCategory::StalePredecessor => "The borrow evidence is from an earlier state",
-        LoanRefusalCategory::Recovery => "The borrow cannot be recovered from this state",
-        LoanRefusalCategory::Lifetime => "The required borrow is outside its lifetime",
-        LoanRefusalCategory::Unsupported => "Borrowing this resource shape is unsupported",
-        LoanRefusalCategory::Missing => "The required view or its backing resource is unavailable",
-        LoanRefusalCategory::InvalidEvidence => "The borrow evidence is invalid",
+        BorrowRefusalCategory::ProvenOverlap => "A required resource overlaps a live borrow",
+        BorrowRefusalCategory::SeparationUnproved => "The requested ranges must be proved separate",
+        BorrowRefusalCategory::WrongHolder => "This path does not hold the required borrow",
+        BorrowRefusalCategory::WrongArena => "The borrow belongs to another proof",
+        BorrowRefusalCategory::WrongScope => "The borrow belongs to a different scope",
+        BorrowRefusalCategory::ActiveDependency => "A live borrow still depends on this resource",
+        BorrowRefusalCategory::StalePredecessor => "The borrow evidence is from an earlier state",
+        BorrowRefusalCategory::Recovery => "The borrow cannot be recovered from this state",
+        BorrowRefusalCategory::Lifetime => "The required borrow is outside its lifetime",
+        BorrowRefusalCategory::Unsupported => "Borrowing this resource shape is unsupported",
+        BorrowRefusalCategory::Missing => {
+            "The required view or its backing resource is unavailable"
+        }
+        BorrowRefusalCategory::InvalidEvidence => "The borrow evidence is invalid",
     };
     let selected = subject
         .resource_fact()
@@ -2303,7 +2308,7 @@ fn describe_layout_place_range(
     low: u64,
     high: u64,
 ) -> Option<String> {
-    let size = u64::from(layout.size_bytes());
+    let size = u64::from(layout.size().bytes()?);
     if size == 0 || low >= high {
         return None;
     }
@@ -2328,6 +2333,8 @@ fn describe_layout_place_range(
             format!("{name}[{index}].{field}")
         }
     };
+    // A symbolic layout's fields have no byte places.
+    layout.size().bytes()?;
     let mut fields = layout.fields().iter().collect::<Vec<_>>();
     fields.sort_by_key(|(_, field)| field.offset_bytes());
     for (position, (field_name, field)) in fields.iter().enumerate() {
@@ -2573,6 +2580,7 @@ fn scalar_array_field_indices<'a>(
     end: &MachineTerm,
 ) -> Option<(&'a str, MachineTerm, MachineTerm)> {
     let anchor = constant_addend(start)?;
+    layout.size().bytes()?;
     let (name, field) = layout.fields().iter().find(|(_, field)| {
         let low = i64::from(field.offset_bytes());
         !field.interface_type().is_pointer()
@@ -3239,7 +3247,7 @@ pub(super) fn describe_missing_range_end_note(
             let resources = state.resources();
             if let Some((owner, fact)) = resources.owned_projection_support(occurrence)
                 && resources
-                    .loan_dependency(owner)
+                    .borrow_dependency(owner)
                     .is_some_and(|binding| binding.hold.is_some())
             {
                 note.push_str(&format!(
@@ -3247,10 +3255,9 @@ pub(super) fn describe_missing_range_end_note(
                     render_resource_diagnostic(fact.resource(), parameter_binding)
                 ));
             } else if resources.view_occurrence_is_principal(occurrence)
-                && let Some(hold) = resources
-                    .loan_dependency(occurrence)
-                    .and_then(|binding| binding.hold)
-                && state.loan_view_bindings().hold_occurrence_count(hold) == 1
+                && resources
+                    .borrow_dependency(occurrence)
+                    .is_some_and(|binding| binding.hold.is_some())
             {
                 note.push_str("\n  borrow: use `release_view` to give up this view when it is no longer needed.");
             }
@@ -3447,6 +3454,7 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
         LoadKind::UInt16 => "an unsigned two-byte integer",
         LoadKind::Int32 | LoadKind::UInt32 => "a four-byte word",
         LoadKind::Bits64 => "an eight-byte word",
+        LoadKind::Abstract(_) => "a value of an abstract type",
         LoadKind::Int128 => "a signed sixteen-byte integer",
         LoadKind::UInt128 => "an unsigned sixteen-byte integer",
         LoadKind::Float32 => "a `float32`",
@@ -3545,7 +3553,9 @@ pub(super) fn describe_unseparated_write(
     let explanation = resource_tracker::explain_last_same(
         resource_tracker::TrackedResource::Cell {
             pointer: &load,
-            bytes: crate::kernel::load_access_width_or_widest(&memory, &load),
+            bytes: crate::kernel::AccessExtent::from(crate::kernel::load_access_width_or_widest(
+                &memory, &load,
+            )),
         },
         &resource_tracker::ProgramPoint::at(&memory),
     );
@@ -3805,7 +3815,10 @@ pub(super) fn describe_two_sided_version_mismatch(
     let explanation = resource_tracker::explain(
         resource_tracker::TrackedResource::Cell {
             pointer: &left_load,
-            bytes: crate::kernel::load_access_width_or_widest(&left_memory, &left_load),
+            bytes: crate::kernel::AccessExtent::from(crate::kernel::load_access_width_or_widest(
+                &left_memory,
+                &left_load,
+            )),
         },
         &resource_tracker::ProgramPoint::at(&left_memory),
         &resource_tracker::ProgramPoint::at(&right_memory),
@@ -4115,7 +4128,8 @@ fn describe_block_fact_stop(
 /// present: it is read off the recorded edge, which carries the value.
 #[derive(Clone, Copy)]
 struct AccessWidths {
-    read: u32,
+    /// The read's bytes: a count, or `sizeof(T)` for a value of abstract type.
+    read: crate::kernel::AccessExtent,
     store: Option<u32>,
 }
 
@@ -4143,7 +4157,7 @@ fn describe_cell_version_stop(
     stated: &[&Proposition],
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    let cell = describe_source_cell_of_width(pointer, Some(widths.read), parameter_binding);
+    let cell = describe_source_cell_of_width(pointer, widths.read.bytes(), parameter_binding);
     // Without the C names — a pure theorem has none — the address has no
     // source spelling, so the sentence says "this read" rather than repeating
     // a verifier-owned one.
@@ -4530,7 +4544,7 @@ pub(in crate::surface) fn diagnostic_source_pointer_cell(
             continue;
         };
         let mut fields = layout.fields().iter().filter(|(_, field)| {
-            let expected = base.address().offset_by_bytes(field.offset_bytes());
+            let expected = base.address().offset_by_layout(field.offset());
             expected.base == pointer.base
                 && crate::kernel::offsets_have_same_canonical_form(
                     &expected.offset,
@@ -4606,7 +4620,7 @@ pub(in crate::surface) fn store_cause_between_indexes_with_facts_for_tests(
         &spelled(read_index),
         &spelled(written_index),
         AccessWidths {
-            read: read_bytes,
+            read: read_bytes.into(),
             store: store_bytes,
         },
         stated,
@@ -4657,7 +4671,7 @@ fn describe_wide_store_byte_reach(
         store.object,
         store.text()
     );
-    Some(if widths.read <= element {
+    Some(if widths.read.bytes().is_some_and(|read| read <= element) {
         format!(
             "{cause} State `{read_index} < {written_index}`, which puts `{}` below every byte the \
              store writes.",
@@ -5142,7 +5156,7 @@ pub(in crate::surface) fn describe_mutex_pointer(
         if let Some((name, _)) = layout
             .fields()
             .iter()
-            .find(|(_, field)| field.offset_bytes() == offset)
+            .find(|(_, field)| field.offset().bytes() == Some(offset))
         {
             let selector = if parameter.is_struct_value() {
                 "."
@@ -5421,7 +5435,7 @@ fn describe_parameter_struct_field_pointer(
             return None;
         }
         let field_offset = diagnostic_pointer_element_index_from_base(&loaded_at, base, 1)?;
-        (field_offset == MachineTerm::constant(field.offset_bytes())).then(|| {
+        (field.offset().bytes().map(MachineTerm::constant) == Some(field_offset)).then(|| {
             describe_field_place(
                 &crate::surface::surface_parameter_binding(parameter.binding_name()).to_string(),
                 name,
@@ -5469,6 +5483,17 @@ fn describe_struct_member_from(
     let layout = parameter
         .pointee_struct_layout()
         .or_else(|| parameter.struct_layout())?;
+    // A symbolic layout's field is named by its `offsetof` term.
+    if let Some(symbolic) = layout.symbolic_layout() {
+        let rest = pointer.offset_from_base(base)?;
+        let (None, field_layout, field) =
+            crate::kernel::SymbolicLayoutName::field_displacement(&rest)?
+        else {
+            return None;
+        };
+        return (field_layout == symbolic)
+            .then(|| format!("{name}{select}{}", symbolic.field_name(field)));
+    }
     let size = i64::from(layout.size_bytes());
     if size == 0 {
         return None;
@@ -5547,17 +5572,22 @@ pub(super) fn diagnostic_parameter_element_width(
     {
         return i64::from(pointee.to_kernel_type().byte_width());
     }
-    if let Some(layout) = parameter.pointee_struct_layout() {
-        return i64::from(layout.size_bytes());
+    if let Some(size) = parameter
+        .pointee_struct_layout()
+        .and_then(|layout| layout.size().bytes())
+    {
+        return i64::from(size);
     }
     if !parameter.is_struct_value()
         && parameter
             .interface_type()
             .pointee_type()
             .is_some_and(|pointee| !pointee.is_pointer())
-        && let Some(layout) = parameter.struct_layout()
+        && let Some(size) = parameter
+            .struct_layout()
+            .and_then(|layout| layout.size().bytes())
     {
-        return i64::from(layout.size_bytes());
+        return i64::from(size);
     }
     // A pointer to (or array of) one scalar type is indexed by that scalar's
     // width, whatever the pointer itself occupies.
@@ -6454,15 +6484,7 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
                 describe_program_expression(base),
                 describe_program_expression(index),
             );
-            match object_at_address(&base) {
-                Some(object) if index == "0" => object.to_string(),
-                // An element of a slice value reads through its data
-                // pointer; Rust writes it `x[i]`.
-                _ => match base.strip_suffix(".as_ptr()") {
-                    Some(slice) => format!("{slice}[{index}]"),
-                    None => format!("{base}[{index}]"),
-                },
-            }
+            describe_indexed_place(&base, &index)
         }
     }
 }
@@ -6486,7 +6508,7 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
     let layout =
         object_fields::ambient_struct_layout(&pointee_struct_at(&address, parameter_binding)?)?;
     let mut fields = layout.fields().iter().filter(|(_, field)| {
-        u64::from(field.offset_bytes()) == offset
+        field.offset().bytes().map(u64::from) == Some(offset)
             && crate::kernel::LoadKind::of_type(field.interface_type().to_kernel_type())
                 .is_some_and(|read| read.reads_word_of(kind))
     });
@@ -6695,7 +6717,8 @@ fn pointee_struct_at_depth(
     }
     let field_at = |layout: &crate::languages::interface::RecordLayout, offset: u64| {
         let mut pointers = layout.fields().iter().filter(|(_, field)| {
-            u64::from(field.offset_bytes()) == offset && field.interface_type().is_pointer()
+            field.offset().bytes().map(u64::from) == Some(offset)
+                && field.interface_type().is_pointer()
         });
         match (pointers.next(), pointers.next()) {
             (Some((_, field)), None) => field.struct_name().map(str::to_string),
@@ -6792,6 +6815,21 @@ pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
     rendered
         .strip_prefix('&')
         .filter(|name| !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_'))
+}
+
+fn describe_indexed_place(base: &str, index: &str) -> String {
+    if index == "0"
+        && let Some(object) = object_at_address(base)
+    {
+        return object.to_string();
+    }
+    // An element of a Rust slice reads through the slice's data pointer.
+    let base = base.strip_suffix(".as_ptr()").unwrap_or(base);
+    if base.starts_with(['&', '*', '-', '!', '~']) {
+        format!("({base})[{index}]")
+    } else {
+        format!("{base}[{index}]")
+    }
 }
 
 /// A field of the struct `base` points at: `c.field` through an object's
@@ -7662,15 +7700,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 return describe_program_expression(object);
             }
             let base = describe_contract_expression(base);
-            match object_at_address(&base) {
-                Some(object) if index == "0" => object.to_string(),
-                // An element of a slice value reads through its data
-                // pointer; Rust writes it `x[i]`.
-                _ => match base.strip_suffix(".as_ptr()") {
-                    Some(slice) => format!("{slice}[{index}]"),
-                    None => format!("{base}[{index}]"),
-                },
-            }
+            describe_indexed_place(&base, &index)
         }
         ContractExpression::ArrayIndex { base, indexes, .. } => format!(
             "{}{}",
@@ -8268,6 +8298,11 @@ pub(super) fn describe_bitvector_with_context(
                 describe_bitvector_with_context(initial, parameter_binding),
                 describe_bitvector_with_context(body, parameter_binding)
             )
+        }
+        MachineTerm::PureFunctionApplication { name, arguments }
+            if let Some(spelled) = crate::kernel::layout_term_spelling(name, arguments.len()) =>
+        {
+            crate::languages::display_source_names(&spelled).into_owned()
         }
         MachineTerm::PureFunctionApplication {
             name,

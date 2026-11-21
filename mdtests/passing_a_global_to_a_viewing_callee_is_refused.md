@@ -2,7 +2,7 @@
 
 A callee that declares `views a[0..n]` beside `owns g[0..1]` cannot be called
 with `g` as `a`: the caller would have to lend a view of the same bytes it
-hands over as the owned global. The loan planner refuses that call, so the
+hands over as the owned global. The borrow planner refuses that call, so the
 caller cannot reach the callee's postcondition at all.
 
 This is the call-site half of `global_may_alias_an_array_argument.md`, where

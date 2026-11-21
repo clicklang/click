@@ -145,7 +145,7 @@ not the resource, it first folds it, as a written `fold(R(...))` after the C
 would; a fold that does not check leaves the path as it was
 (`mdtests/an_omitted_proof_folds_the_resource_its_contract_produces.md`). A proof
 script that ends with a claim still open closes it the same way, so a script
-needs no final closer and no final step to function exit. The body of an `open` scope is
+needs no final closer and no final step to function exit. The body of a `with` scope is
 the exception: the scope closes where its body ends, before the tail runs, so
 a body that must reach the function's return steps there itself with
 `step_until(function.exit)`. On a stated fact,
@@ -1122,7 +1122,6 @@ step is still checked.
 | `known()` | simple | Expansion output | Close a goal from available facts or goal-local computation. | [Reference](#available-facts) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
-| `order_chain() using { P; ... }` | simple | Expansion output | Check a listed signed order chain. | [Reference](#signed-order-chains) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
@@ -1142,7 +1141,7 @@ step is still checked.
 | `have P by { ... }` | control | Core | Prove and retain a named or unnamed fact. | [Reference](#intermediate-facts) |
 | `if P [ensuring { ... } then] { ... } else { ... }` | control | Core | Split a proof on a chosen proposition. | [Reference](#proposition-branches) |
 | `cases { A => { ... } B => { ... } }` | control | Specialized | Prove a written collection of cases. | [Reference](#explicit-cases) |
-| `open(resource) { ... }` | control | Specialized | Unfold a resource for a nested proof. | [Reference](#scoped-resource-opening) |
+| `with(resource) { ... }` | control | Specialized | Expose a resource body and restore it at scope exit. | [Reference](#scoped-resource-opening) |
 | `witness(value, ...);` | simple | Specialized | Supply values for existential binders. | [Reference](#existential-witnesses) |
 | `let name = obtain(exists (k: Type) { P });` | simple | Specialized | Name witnesses from an available existential fact. | [Reference](#obtaining-witnesses) |
 
@@ -1400,7 +1399,16 @@ A recursive specification function applied to a known constructor is
 evaluated: `solve` unfolds it, then keeps unfolding the recursive calls the
 definition exposes while their arguments select one arm, rewriting an argument
 by a constructor equation (a supplied premise or a connected fact such as
-`u == Tree::Node(..)`) when that exposes one, for at most eight checked steps.
+`u == Tree::Node(..)`) when that exposes one. A recursion over an integer
+measure is evaluated the same way when its arguments are constants: the
+unfolded `if` arm that a constant guard such as `2 <= 0` selects is searched
+for the next call. It takes eight checked steps, plus as many as the largest
+constant argument of a call it unfolds, at most 1024 in all; each step lowers
+the whole goal again, so a long evaluation can exhaust the tactic budget
+first (about 25 calls), where a bottom-up proof, one `have` per call by
+`unfold` and `solve()`, stays linear
+(`mdtests/a_recursive_byte_function_evaluates_automatically.md`,
+`mdtests/a_recursive_byte_function_evaluates_a_string_literal.md`).
 An argument nothing fixes stays folded
 ([`solve_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_evaluates_a_recursive_function_over_known_constructors.md),
 [`solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).
@@ -1595,9 +1603,9 @@ available when one of these holds:
 
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
-- It is a viewability goal for a concrete byte span within the exact block
-  recorded in the goal's memory state. The check uses the written base
-  identity, offset, and span size.
+- It is a viewability goal for an empty byte span or for a concrete span
+  within the exact block recorded in the goal's memory state. A nonempty
+  span uses the written base identity, offset, and span size.
 - The completed execution path diverges and the goal is a return
   postcondition.
 - It is a typed read-definedness goal whose memory state holds a compatible
@@ -1606,14 +1614,17 @@ available when one of these holds:
   all four bytes are recorded initialized. These checks use the goal's
   memory state and decline if its lifetime or initialization needs further
   evidence.
-- It separates a complete recorded statement footprint from the named
+- It separates a complete recorded effect footprint from the named
   resource. For each recorded member, the checker tests intrinsic
-  separation or looks up the exact member separation. A sequence with
-  multiple effects needs individually checked steps.
-- It is a separation of memory ranges on two distinct automatic objects,
-  or between an automatic object and storage incoming to the function.
-  The check uses the exact block identities in the goal. Forming the
-  ranges still carries the ordinary range obligations.
+  separation or looks up the exact member separation. Two ranges that meet
+  at a byte boundary are separate when the signed endpoints of the leading
+  range are ordered. A sequence with multiple effects needs individually
+  checked steps.
+- It is a separation of memory ranges on distinct static objects or
+  distinct automatic objects, or between an automatic object and storage
+  incoming to the function. Two ranges on the same symbolic base can also
+  be separate by their exact constant byte intervals. Forming the ranges
+  still carries the ordinary range obligations.
 - It follows by exact Boolean unit propagation. Admitting `A or B` and
   `not A` makes `B` available; admitting `A implies B` and `A` makes `B`
   available. Either admission order works, and consequences propagate through
@@ -1650,10 +1661,22 @@ A leaf also closes by goal-local computation: a constant truth, exact
 reflexivity (excluding IEEE floating-point comparisons), equality or inequality
 of literal integers, cancellation and regrouping of additive machine or
 `Integer` expressions, and distinct algebraic constructors. Exact `Integer`
-order comparisons close when their symbolic terms cancel. Calls, reads, folds,
-and symbolic matches are opaque operands; their identical occurrences may
-cancel, but this check never unfolds a call or resolves a read. It does not
-invoke the general atomic prover.
+order comparisons close when their symbolic terms cancel. Identical calls,
+reads, folds, and symbolic matches may cancel as opaque operands. An equality
+with an `int32` union member can also use the typed value stored at its exact
+address and memory state. A by-value copy can store the source read itself
+as that value. The check uses one typed cell lookup per operand. A native
+signed `int32` comparison against a literal can also use the literal
+stored at the read's exact typed cell.
+
+A machine-valued range fold whose step returns its accumulator equals its
+initial value. This check reads only the accumulator binding and the initial
+value.
+
+After an explicit `unfold`, `known()` can check values and bounds of machine
+expressions such as decimal lengths and their padded lengths. It follows a
+decided guard and otherwise bounds both arms. Its arithmetic uses only the
+operands in the goal, with a bounded walk and checked machine ranges.
 
 Two values of the same constructor are unequal if a corresponding field
 holds a different machine-integer literal of the same type. The check
@@ -1665,9 +1688,22 @@ alignment of a null, heap, global or static address reads only that address's
 block registration and constant byte offset. It does not search alignment facts
 or infer alignment for a symbolic offset.
 
+For a written alignment goal, `known()` may also look up the base's recorded
+alignment by coordinate. A constant byte displacement or a symbolic index at
+a stride divisible by the requested alignment preserves the corresponding
+residue. The check probes only the base and the supported alignment strengths.
+
 The same fixed local check accepts intrinsic machine type ranges and
 constant-divisor quotient, remainder, and right-shift bounds. This includes
 `x % d < d` and its exact Integer reading for a positive machine literal `d`.
+An unsigned `x % d` is at most `x` when the exact divisor is known nonzero.
+Signed quotient and remainder bounds against zero use the named operand
+signs and the divisor's nonzero guard. Machine operations also require
+evidence that excludes the signed minimum divided by `-1` when the signs
+alone leave that pair possible.
+A full-width unsigned index agrees with its signed low word when both use
+the same base and stride and the full-width index is at most `INT32_MAX`.
+`known()` checks this bound on the full-width index itself.
 A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
 observation equals its operand when the destination-range bounds are available.
@@ -1682,6 +1718,11 @@ conditional equals its selected arm when its written guard is available.
 Shared native comparison guards retain their operand DAGs; other shared
 compound guards require explicit logical steps rather than exporting a guard
 tree. Missing guards and unsupported forms are refused.
+
+Nested `int32` conditionals can compute their selected value when each
+selected guard is a constant, a reflexive equality, or an equality of
+literals. This also applies to the conditionals left by a checked
+constructor rewrite.
 
 A conjunction goal closes when every conjunct does, and a disjunction goal
 when one disjunct does, using available facts or these computations recursively.
@@ -1739,17 +1780,6 @@ Exact propagated consequences are already available facts. Expansion leaves
 this step unchanged, and profiling charges one simple leaf.
 
 **Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`known_computes_fast_leaves.md`](https://github.com/clicklang/click/blob/master/mdtests/known_computes_fast_leaves.md), [`known_closes_an_evaluated_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/known_closes_an_evaluated_goal.md), [`simple_statement_step_explicit_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_statement_step_explicit_transport.md)
-
-### Signed order chains
-
-`order_chain() using { P; ... }` closes a signed `int32` comparison by
-checking the listed comparisons in their written order. The list must be
-nonempty and every premise must be available. Adjacent endpoints must be
-the same term or connected by a comparison of signed literals. A strict
-goal requires a strict premise or literal comparison. Checking work scales
-with the written list and uses exact premise lookups.
-
-[Checked example](https://github.com/clicklang/click/blob/master/mdtests/order_chain_explicit.md)
 
 ### Context-free normalization
 
@@ -3330,22 +3360,26 @@ arm. Profiling reports the descendant tactics.
 
 ### Scoped resource opening
 
-**Form:** `open(resource) { ... }`
+**Form:** `with(resource) { ... }`
 
-**Specialized.** Write it to work inside one layer of a composite resource and
-have it folded back automatically at the end of the block. Temporarily replace a
-held composite resource with one body layer, check the nested proof, then fold
-it at scope exit. For an ordinary named instance, `open(c) { ... }` selects
-the same instance as `unfold(c)`. The closing fold restores that instance's
-identity and field values from the start of the block. Use the family call
-form for unnamed resources, including population members and viewed resources.
+**Specialized.** A `with` block gives temporary access to one layer of a
+composite resource's body and checks that the resource is restored on every
+path out, including a function return. For an ordinary named instance,
+`with(c) { ... }` selects the same instance as `unfold(c)`. The scope must
+restore its original identity and field values. If the proof already restored
+that exact instance with `fold(c)`, the scope closes without another fold.
+
+Use a family call for unnamed resources, including population members and
+viewed resources. Opening and restoring a population member preserves its
+membership and count. Operations inside the block can change the population
+under the usual authority rules. A viewed resource gives read-only access.
 A model `match` inside the block uses the ordinary checked
 constructor arms and joins: terminal arms each restore the resource at return;
 an `ensuring` interface can rejoin before the block closes.
 
 **Failure, checking, and tools:**
 
-Missing ownership, an undecided guard, or failure to restore the body fails. A
+A missing resource, an undecided guard, or failure to restore the body fails. A
 body fact the closing fold leaves open is proved by the implicit closer, which
 expansion writes as `have` steps at the end of the block. To supply a closing
 proof by hand, put the `have` there yourself, after any execution that
@@ -3356,7 +3390,7 @@ A trailing `by` after the block is refused.
 
 **Checked examples:** [`resource_population_open.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_population_open.md), [`open_scope_model_match_terminal.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_terminal.md), [`open_scope_model_match_rejoins.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejoins.md), [`open_scope_model_match_rejects_bad_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/open_scope_model_match_rejects_bad_arm.md)
 
-**Checked closing examples:** [`open_named_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource.md), [`open_named_resource_requires_restoration.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource_requires_restoration.md), [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md)
+**Checked closing examples:** [`open_named_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource.md), [`with_accepts_an_already_restored_instance.md`](https://github.com/clicklang/click/blob/master/mdtests/with_accepts_an_already_restored_instance.md), [`open_named_resource_requires_restoration.md`](https://github.com/clicklang/click/blob/master/mdtests/open_named_resource_requires_restoration.md), [`open_closing_fact_inside_block.md`](https://github.com/clicklang/click/blob/master/mdtests/open_closing_fact_inside_block.md), [`open_trailing_by_is_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/open_trailing_by_is_rejected.md)
 
 ### Existential witnesses
 

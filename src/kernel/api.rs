@@ -1,13 +1,13 @@
+use super::borrows::{
+    BorrowBinding, BorrowBindings, BorrowLedger, BorrowRefusal, BorrowRefusalDiagnostic,
+    BorrowRefusalOperation, BorrowRefusalSubject, BorrowedContractInputBacking,
+};
 pub(crate) use super::functions::admit_declared_entry_resources;
 use super::functions::{
     apply_verified_contract_resource_transition,
     construct_program_function_resource as construct_c_function_resource_checked,
     evaluate_function_resource_context_with_metadata, expand_composite_resource_fact_with_children,
     function_return_resources_definitionally_established,
-};
-use super::loans::{
-    BorrowedContractInputBacking, LoanLedger, LoanRefusal, LoanRefusalDiagnostic,
-    LoanRefusalOperation, LoanRefusalSubject, LoanViewBinding, LoanViewBindings,
 };
 pub(super) use super::memory_history::*;
 use super::prelude::*;
@@ -33,7 +33,7 @@ thread_local! {
     /// verification session, keyed by function name and holding the exact
     /// entry state they were installed on. Every proof unit of one function
     /// (each claim proof, loop proof, and certification) must share one
-    /// entry authority: a loan ledger's identity is opaque and fresh, so two
+    /// entry authority: a borrow ledger's identity is opaque and fresh, so two
     /// installs would be two different authorities and no completion from
     /// one could certify a claim at the other. The pre-install state is
     /// compared exactly, once per proof unit; a function whose entry state
@@ -595,9 +595,10 @@ impl crate::kernel::proof::PropositionSource for LoopExitFacts {
 pub(crate) struct LoopFinalExitCandidate {
     state: ExecutionState,
     jump_target: Option<ControlTargetId>,
+    guard_points_index: Option<usize>,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: LoopExitFacts,
-    loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+    borrow_evidence: crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
 }
 
 impl LoopFinalExitCandidate {
@@ -608,8 +609,9 @@ impl LoopFinalExitCandidate {
         Self {
             state,
             jump_target: None,
+            guard_points_index: None,
             pure_facts: LoopExitFacts::Retained(Arc::new(facts.clone())),
-            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         }
     }
 
@@ -619,8 +621,9 @@ impl LoopFinalExitCandidate {
         Self {
             state,
             jump_target: None,
+            guard_points_index: None,
             pure_facts: pure_facts.into(),
-            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         }
     }
 
@@ -633,11 +636,20 @@ impl LoopFinalExitCandidate {
         self.jump_target
     }
 
-    pub(crate) fn with_loan_evidence(
+    pub(crate) fn with_guard_points_index(mut self, index: Option<usize>) -> Self {
+        self.guard_points_index = index;
+        self
+    }
+
+    pub(crate) fn guard_points_index(&self) -> Option<usize> {
+        self.guard_points_index
+    }
+
+    pub(crate) fn with_borrow_evidence(
         mut self,
-        loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+        borrow_evidence: crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
     ) -> Self {
-        self.loan_evidence = loan_evidence;
+        self.borrow_evidence = borrow_evidence;
         self
     }
 
@@ -649,8 +661,10 @@ impl LoopFinalExitCandidate {
         &self.pure_facts
     }
 
-    pub(crate) fn loan_evidence(&self) -> &crate::kernel::loans::CheckedLoanCallEvidenceSequence {
-        &self.loan_evidence
+    pub(crate) fn borrow_evidence(
+        &self,
+    ) -> &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence {
+        &self.borrow_evidence
     }
 }
 
@@ -664,17 +678,19 @@ impl LoopFinalExitCandidate {
 pub(crate) struct LoopEarlyExit {
     state: ExecutionState,
     guard_false: bool,
+    guard_points_index: Option<usize>,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: LoopExitFacts,
-    loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+    borrow_evidence: crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
 }
 
 impl PartialEq for LoopEarlyExit {
     fn eq(&self, other: &Self) -> bool {
         self.state == other.state
             && self.guard_false == other.guard_false
+            && self.guard_points_index == other.guard_points_index
             && self.pure_facts == other.pure_facts
-            && self.loan_evidence == other.loan_evidence
+            && self.borrow_evidence == other.borrow_evidence
     }
 }
 impl Eq for LoopEarlyExit {}
@@ -685,8 +701,9 @@ impl LoopEarlyExit {
         Self {
             state,
             guard_false: false,
+            guard_points_index: None,
             pure_facts: pure_facts.into(),
-            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         }
     }
 
@@ -698,8 +715,9 @@ impl LoopEarlyExit {
         Self {
             state,
             guard_false: false,
+            guard_points_index: None,
             pure_facts: LoopExitFacts::Retained(Arc::new(facts.clone())),
-            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         }
     }
 
@@ -719,11 +737,20 @@ impl LoopEarlyExit {
         }
     }
 
-    pub(crate) fn with_loan_evidence(
+    pub(crate) fn with_guard_points_index(mut self, index: Option<usize>) -> Self {
+        self.guard_points_index = index;
+        self
+    }
+
+    pub(crate) fn guard_points_index(&self) -> Option<usize> {
+        self.guard_points_index
+    }
+
+    pub(crate) fn with_borrow_evidence(
         mut self,
-        loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+        borrow_evidence: crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
     ) -> Self {
-        self.loan_evidence = loan_evidence;
+        self.borrow_evidence = borrow_evidence;
         self
     }
 
@@ -735,8 +762,10 @@ impl LoopEarlyExit {
         &self.pure_facts
     }
 
-    pub(crate) fn loan_evidence(&self) -> &crate::kernel::loans::CheckedLoanCallEvidenceSequence {
-        &self.loan_evidence
+    pub(crate) fn borrow_evidence(
+        &self,
+    ) -> &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence {
+        &self.borrow_evidence
     }
 }
 
@@ -758,7 +787,7 @@ pub(crate) struct LoopReturnExit {
     state: ExecutionState,
     /// A checked exit is copied into the loop rule; its facts stay shared.
     pure_facts: LoopExitFacts,
-    loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+    borrow_evidence: crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
 }
 
 impl LoopReturnExit {
@@ -771,15 +800,15 @@ impl LoopReturnExit {
             value: value.into(),
             state,
             pure_facts: LoopExitFacts::Retained(Arc::new(facts.clone())),
-            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+            borrow_evidence: crate::kernel::borrows::empty_checked_borrow_evidence_sequence(),
         }
     }
 
-    pub(crate) fn with_loan_evidence(
+    pub(crate) fn with_borrow_evidence(
         mut self,
-        loan_evidence: crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+        borrow_evidence: crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
     ) -> Self {
-        self.loan_evidence = loan_evidence;
+        self.borrow_evidence = borrow_evidence;
         self
     }
 
@@ -795,8 +824,10 @@ impl LoopReturnExit {
         &self.pure_facts
     }
 
-    pub(crate) fn loan_evidence(&self) -> &crate::kernel::loans::CheckedLoanCallEvidenceSequence {
-        &self.loan_evidence
+    pub(crate) fn borrow_evidence(
+        &self,
+    ) -> &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence {
+        &self.borrow_evidence
     }
 }
 
@@ -1096,7 +1127,14 @@ pub(crate) fn loop_phase_preservation_contexts(
     // has already handed to something live.
     let mut budget = ExecutionBudget::continuing_from(next_kernel_variable);
     let mut existing_variables = BTreeSet::new();
-    collect_execution_state_bitvector_variables(loop_entry_state, &mut existing_variables);
+    crate::instrumentation::measure_operation("", "", "loop entry state reservation", || {
+        collect_execution_state_reservations(
+            loop_entry_state,
+            budget.next_kernel_variable,
+            None,
+            &mut existing_variables,
+        );
+    });
     if let Some(condition) = condition {
         collect_program_expression_bitvector_variables(condition, &mut existing_variables);
     }
@@ -1595,7 +1633,7 @@ pub struct StateJoinAbstraction {
 
 impl StateJoinAbstraction {
     /// The abstraction may be published only if every changed span separates
-    /// from the live loan footprint at the split, before any arm runs.
+    /// from the live borrow footprint at the split, before any arm runs.
     pub(crate) fn unproved_memory_separation(
         &self,
         entry_facts: &crate::kernel::proof::PureFactStore,
@@ -1715,8 +1753,8 @@ fn abstract_execution_state_for_join_across_with_policy(
 ) -> Result<StateJoinAbstraction, String> {
     let preserve_exact_common_memory = matches!(join_locals, JoinLocals::ArmsAgree);
     // A join may retain one exact persistent ledger root, but it cannot pick
-    // one arm's loan history when siblings have advanced independently. The
-    // ledger equality is an opaque state-identity comparison; no loan map or
+    // one arm's borrow history when siblings have advanced independently. The
+    // ledger equality is an opaque state-identity comparison; no borrow map or
     // history is traversed here.
     if sibling_states
         .iter()
@@ -1726,19 +1764,19 @@ fn abstract_execution_state_for_join_across_with_policy(
     }
     if sibling_states
         .iter()
-        .any(|sibling| sibling.loan_ledger != state.loan_ledger)
+        .any(|sibling| sibling.borrow_ledger != state.borrow_ledger)
     {
-        return Err("stable-view loan state differs across branch join".to_string());
+        return Err("stable-view borrow state differs across branch join".to_string());
     }
     if sibling_states
         .iter()
-        .any(|sibling| sibling.loan_participant != state.loan_participant)
+        .any(|sibling| sibling.borrow_participant != state.borrow_participant)
     {
-        return Err("stable-view loan participant differs across branch join".to_string());
+        return Err("stable-view borrow participant differs across branch join".to_string());
     }
     if sibling_states
         .iter()
-        .any(|sibling| sibling.loan_view_bindings != state.loan_view_bindings)
+        .any(|sibling| sibling.borrow_bindings != state.borrow_bindings)
     {
         return Err("stable-view occurrence bindings differ across branch join".to_string());
     }
@@ -2041,7 +2079,7 @@ fn abstract_execution_state_for_join_across_with_policy(
             .all(|sibling| state.memory.differs_only_within(&sibling.memory, preserved));
     let mut memory_requirements = BTreeSet::new();
     if !common_memory {
-        if let Some(ledger) = abstract_state.loan_ledger() {
+        if let Some(ledger) = abstract_state.borrow_ledger() {
             for sibling in sibling_states {
                 branch_memory_delta_requirements(
                     &abstract_state.memory,
@@ -2062,22 +2100,22 @@ fn abstract_execution_state_for_join_across_with_policy(
             let memory = state
                 .memory
                 .clone()
-                .with_interface_memory_havoc_preserving_loans(
+                .with_interface_memory_havoc_preserving_borrows(
                     join_variable(&mut variables, &mut budget)?,
                     preserved,
                     &sibling_memories,
-                    abstract_state.loan_ledger(),
+                    abstract_state.borrow_ledger(),
                 )?;
             abstract_state.set_memory(memory);
         } else {
             let memory = abstract_state
                 .memory
                 .clone()
-                .with_loop_memory_havoc_preserving_loans(
+                .with_loop_memory_havoc_preserving_borrows(
                     join_variable(&mut variables, &mut budget)?,
                     preserved,
                     None,
-                    abstract_state.loan_ledger(),
+                    abstract_state.borrow_ledger(),
                 );
             abstract_state.set_memory(memory);
         }
@@ -2110,9 +2148,9 @@ fn abstract_execution_state_for_join_across_with_policy(
         );
     }
     // Drop the resource context through the rebasing setter, not by writing
-    // the field. The occurrence-to-loan sidecar is keyed by the occurrences of
+    // the field. The occurrence-to-borrow sidecar is keyed by the occurrences of
     // the context being discarded, so a direct assignment would leave the
-    // abstraction advertising loan dependencies for occurrences it no longer
+    // abstraction advertising borrow dependencies for occurrences it no longer
     // has -- and would disagree with every other path that reaches an empty
     // context through `with_resource_context`. The ledger and participant are
     // untouched: the arms' authority survives the abstraction, only the
@@ -2157,17 +2195,17 @@ fn join_variable(
 fn branch_memory_delta_requirements(
     base: &SymbolicMemory,
     sibling: &SymbolicMemory,
-    ledger: &crate::kernel::loans::LoanLedger,
+    ledger: &crate::kernel::borrows::BorrowLedger,
     requirements: &mut BTreeSet<Proposition>,
 ) -> Result<(), String> {
-    if !ledger.has_active_memory_loans() {
+    if !ledger.has_active_memory_borrows() {
         return Ok(());
     }
     if base.blocks != sibling.blocks
         || base.heap != sibling.heap
         || base.forgotten.ended_local_blocks != sibling.forgotten.ended_local_blocks
     {
-        return Err("branch memory join has an unsupported allocation or block delta while a stable-view loan is active".to_string());
+        return Err("branch memory join has an unsupported allocation or block delta while a stable-view borrow is active".to_string());
     }
     for pointer in base.differing_cell_pointers(sibling) {
         crate::instrumentation::record_deterministic_work(1);
@@ -2176,7 +2214,7 @@ fn branch_memory_delta_requirements(
             .max(sibling.join_cell_width(&pointer));
         if byte_width == 0 {
             return Err(
-                "branch memory join has an unknown changed cell width while a stable-view loan is active".to_string(),
+                "branch memory join has an unknown changed cell width while a stable-view borrow is active".to_string(),
             );
         }
         let range = MemoryRange::new_with_element_width(
@@ -3853,7 +3891,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, LoanRefusalDiagnostic> {
+) -> Result<ExecutionState, BorrowRefusalDiagnostic> {
     let mut state = state;
     state.preserves_mutex_protocols |=
         crate::kernel::functions::preserves_mutex_protocols(function.contract_interface());
@@ -3864,12 +3902,12 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
     if !has_views && !state.preserves_mutex_protocols {
         return Ok(state);
     }
-    if state.loan_ledger().is_some()
-        || state.loan_participant().is_some()
-        || state.loan_view_bindings().iter().next().is_some()
-        || !state.loan_bindings_are_consistent()
+    if state.borrow_ledger().is_some()
+        || state.borrow_participant().is_some()
+        || state.borrow_bindings().iter().next().is_some()
+        || !state.borrow_bindings_are_consistent()
     {
-        return Err(LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry));
+        return Err(BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry));
     }
     if let Some(rooted) = BORROWED_INPUT_ROOTS.with(|roots| {
         roots
@@ -3878,7 +3916,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
             .filter(|(installed_on, _)| installed_on == &state)
             .map(|(_, rooted)| rooted.clone())
     }) {
-        // Loan identities are reused across separately checked claims, but
+        // Borrow identities are reused across separately checked claims, but
         // their pure contexts have independent graph lineages. This is the
         // selected contract-input producer boundary, not a permission query.
         rooted
@@ -3904,14 +3942,14 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
         .cloned().collect::<Vec<_>>();
     if !use_inputs.is_empty() {
         let mut ledger = rooted
-            .loan_ledger()
+            .borrow_ledger()
             .cloned()
-            .unwrap_or_else(LoanLedger::new);
-        let holder = match rooted.loan_participant() {
+            .unwrap_or_else(BorrowLedger::new);
+        let holder = match rooted.borrow_participant() {
             Some(holder) => holder,
             None => ledger
                 .fresh_participant()
-                .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?,
+                .map_err(|e| e.diagnostic(BorrowRefusalOperation::Entry))?,
         };
         for fact in use_inputs {
             let Resource::MutexUse(identity) = fact.resource() else {
@@ -3921,7 +3959,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
                 .resources()
                 .unique_owned_occurrence_for_fact(&fact)
                 .ok_or_else(|| {
-                    LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry)
+                    BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
                 })?;
             let (next, input) = ledger
                 .borrowed_mutex_use_input_with_protected(
@@ -3930,21 +3968,25 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
                     identity.mutex.clone(),
                     identity.protected.clone(),
                 )
-                .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
+                .map_err(|e| e.diagnostic(BorrowRefusalOperation::Entry))?;
             let bound = next
                 .mutex_use_resource(input.usage, holder)
-                .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
+                .map_err(|e| e.diagnostic(BorrowRefusalOperation::Entry))?;
             rooted.resources = rooted
                 .resources
                 .clone()
                 .without_fact_delaying_normalization(&fact, assumptions)
-                .ok_or_else(|| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?
+                .ok_or_else(|| {
+                    BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
+                })?
                 .try_compose_with_facts_delaying_normalization([bound], assumptions)
-                .map_err(|_| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+                .map_err(|_| {
+                    BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
+                })?;
             ledger = next;
         }
-        rooted.loan_ledger = Some(ledger);
-        rooted.loan_participant = Some(holder);
+        rooted.borrow_ledger = Some(ledger);
+        rooted.borrow_participant = Some(holder);
     }
     if state.preserves_mutex_protocols && state.mutex_ledger.is_none() {
         rooted.mutex_input_reservations =
@@ -3955,9 +3997,9 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
             );
     }
     rooted = crate::kernel::mutexes::bind_assumed_guard_inputs(rooted, assumptions)
-        .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
+        .map_err(|e| e.diagnostic(BorrowRefusalOperation::Entry))?;
     rooted = crate::kernel::mutexes::bind_assumed_lifetime_inputs(rooted, assumptions)
-        .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
+        .map_err(|e| e.diagnostic(BorrowRefusalOperation::Entry))?;
     // Bind names only after primitive inputs have generative initialization
     // and acquisition identities. A name cannot manufacture its authority.
     if function
@@ -3965,8 +4007,10 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
         .iter()
         .any(|spec| spec.mutex_authority_binding().is_some())
     {
-        let entry = program_function_entry_state(&rooted, function, arguments)
-            .ok_or_else(|| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+        let entry =
+            program_function_entry_state(&rooted, function, arguments).ok_or_else(|| {
+                BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
+            })?;
         let mut budget = ExecutionBudget::beside_live_state();
         for spec in function.resource_requires() {
             let Some((identity, _)) = spec.mutex_authority_binding() else {
@@ -3979,19 +4023,23 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
                 assumptions,
                 &mut budget,
             )
-            .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
-            .map_err(|_| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
+            .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))?;
             rooted = rooted
                 .bind_named_mutex_authority(identity, &fact)
-                .map_err(|_| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+                .map_err(|_| {
+                    BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
+                })?;
         }
     }
     if let Some(contract) =
         crate::kernel::mutexes::helper_contracts::classify(function.contract_interface())
-            .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
+            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
     {
-        let entry = program_function_entry_state(&rooted, function, arguments)
-            .ok_or_else(|| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+        let entry =
+            program_function_entry_state(&rooted, function, arguments).ok_or_else(|| {
+                BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry)
+            })?;
         let mut budget = ExecutionBudget::beside_live_state();
         let mut evaluate = |spec: &ResourceSpec| {
             super::functions::evaluate_function_resource_spec_with_entry(
@@ -4001,8 +4049,8 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
                 assumptions,
                 &mut budget,
             )
-            .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
-            .map_err(|_| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))
+            .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
+            .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))
         };
         let access = evaluate(&contract.access)?;
         let (guard, payload) =
@@ -4030,7 +4078,7 @@ pub(crate) fn execution_state_with_borrowed_contract_inputs(
             guard.as_ref(),
             payload,
         )
-        .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?;
+        .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?;
     }
     BORROWED_INPUT_ROOTS.with(|roots| {
         roots
@@ -4045,9 +4093,9 @@ fn install_borrowed_contract_inputs(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, LoanRefusalDiagnostic> {
+) -> Result<ExecutionState, BorrowRefusalDiagnostic> {
     let entry = program_function_entry_state(&state, function, arguments)
-        .ok_or_else(|| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+        .ok_or_else(|| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))?;
     let mut budget = ExecutionBudget::beside_live_state();
     let (_, checked_inputs) = evaluate_function_resource_context_with_metadata(
         &entry,
@@ -4056,8 +4104,8 @@ fn install_borrowed_contract_inputs(
         &assumptions.clone().assume_entry_clause_spans(),
         &mut budget,
     )
-    .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
-    .map_err(|_| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+    .map_err(|_| BorrowRefusal::InvalidEvidence.diagnostic(BorrowRefusalOperation::Entry))?
+    .map_err(|_| BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Entry))?;
 
     // The contract's partition is the precondition: an owned clause that
     // provably overlaps a viewed clause, or a viewed composite's direct
@@ -4091,9 +4139,9 @@ fn install_borrowed_contract_inputs(
                 )
             })
             .map(|owned| {
-                LoanRefusal::ActiveDependency.proven_overlap_diagnostic(
-                    LoanRefusalOperation::Entry,
-                    LoanRefusalSubject::for_conflicting_resources(
+                BorrowRefusal::ActiveDependency.proven_overlap_diagnostic(
+                    BorrowRefusalOperation::Entry,
+                    BorrowRefusalSubject::for_conflicting_resources(
                         ResourceFact::view_memory(viewed_range.clone()),
                         ResourceFact::own_memory(owned.clone()),
                     ),
@@ -4122,9 +4170,9 @@ fn install_borrowed_contract_inputs(
             .resources()
             .principal_input_view_occurrence(&input.fact, assumptions)
         else {
-            return Err(LoanRefusal::MissingLoanBinding.diagnostic_with_subject(
-                LoanRefusalOperation::Entry,
-                LoanRefusalSubject::for_resource(input.fact),
+            return Err(BorrowRefusal::MissingBorrowBinding.diagnostic_with_subject(
+                BorrowRefusalOperation::Entry,
+                BorrowRefusalSubject::for_resource(input.fact),
             ));
         };
         let viewed = state
@@ -4132,9 +4180,9 @@ fn install_borrowed_contract_inputs(
             .view_fact_at_occurrence(occurrence)
             .cloned()
             .ok_or_else(|| {
-                LoanRefusal::MissingLoanBinding.diagnostic_with_subject(
-                    LoanRefusalOperation::Entry,
-                    LoanRefusalSubject::with_support_id(occurrence),
+                BorrowRefusal::MissingBorrowBinding.diagnostic_with_subject(
+                    BorrowRefusalOperation::Entry,
+                    BorrowRefusalSubject::with_support_id(occurrence),
                 )
             })?;
         // Address-backed aggregate parameters and compiler-created local
@@ -4163,9 +4211,9 @@ fn install_borrowed_contract_inputs(
             .directly_supporting_owned_entry_ignoring_separation(&viewed, assumptions)
         {
             let owner = owner.clone();
-            return Err(LoanRefusal::ActiveDependency.diagnostic_with_subject(
-                LoanRefusalOperation::Entry,
-                LoanRefusalSubject::for_supported_view(viewed, owner, occurrence),
+            return Err(BorrowRefusal::ActiveDependency.diagnostic_with_subject(
+                BorrowRefusalOperation::Entry,
+                BorrowRefusalSubject::for_supported_view(viewed, owner, occurrence),
             ));
         }
         selected.entry(occurrence).or_insert(viewed);
@@ -4175,11 +4223,11 @@ fn install_borrowed_contract_inputs(
         return Ok(state);
     }
 
-    let mut ledger = LoanLedger::new();
+    let mut ledger = BorrowLedger::new();
     let participant = ledger
         .fresh_participant()
-        .map_err(|error| error.diagnostic(LoanRefusalOperation::Entry))?;
-    let mut bindings = LoanViewBindings::default();
+        .map_err(|error| error.diagnostic(BorrowRefusalOperation::Entry))?;
+    let mut bindings = BorrowBindings::default();
     for (occurrence, viewed) in selected {
         let (backing, backing_pieces) = if matches!(viewed.resource(), Resource::Composite { .. }) {
             let singleton = ResourceContext::new_with_equalities(assumptions)
@@ -4217,9 +4265,9 @@ fn install_borrowed_contract_inputs(
                 .map(|backing| (backing, pieces))
             })
             .ok_or_else(|| {
-                LoanRefusal::UnsupportedResource.diagnostic_with_subject(
-                    LoanRefusalOperation::Entry,
-                    LoanRefusalSubject::with_support_id(occurrence),
+                BorrowRefusal::UnsupportedResource.diagnostic_with_subject(
+                    BorrowRefusalOperation::Entry,
+                    BorrowRefusalSubject::with_support_id(occurrence),
                 )
             })?;
             (Some(pieces.0), pieces.1)
@@ -4230,20 +4278,20 @@ fn install_borrowed_contract_inputs(
             .borrowed_contract_input(participant, occurrence, viewed.clone(), backing)
             .map_err(|error| {
                 error.diagnostic_with_subject(
-                    LoanRefusalOperation::Entry,
-                    LoanRefusalSubject::with_support_id(occurrence),
+                    BorrowRefusalOperation::Entry,
+                    BorrowRefusalSubject::with_support_id(occurrence),
                 )
             })?;
         ledger = ledger.apply(&opening.transition).map_err(|error| {
             error.diagnostic_with_subject(
-                LoanRefusalOperation::Entry,
-                LoanRefusalSubject::with_support_id(occurrence),
+                BorrowRefusalOperation::Entry,
+                BorrowRefusalSubject::with_support_id(occurrence),
             )
         })?;
         bindings = bindings.with_inserted(
             occurrence,
-            LoanViewBinding {
-                loan: opening.loan,
+            BorrowBinding {
+                borrow: opening.borrow,
                 scope: opening.scope,
                 share: opening.root_share,
                 support: occurrence,
@@ -4265,8 +4313,8 @@ fn install_borrowed_contract_inputs(
                 [piece_occurrence] => {
                     bindings = bindings.with_inserted(
                         *piece_occurrence,
-                        LoanViewBinding {
-                            loan: opening.loan,
+                        BorrowBinding {
+                            borrow: opening.borrow,
                             scope: opening.scope,
                             share: opening.root_share,
                             support: occurrence,
@@ -4276,18 +4324,18 @@ fn install_borrowed_contract_inputs(
                     );
                 }
                 _ => {
-                    return Err(LoanRefusal::MissingLoanBinding.diagnostic_with_subject(
-                        LoanRefusalOperation::Entry,
-                        LoanRefusalSubject::for_resource(piece),
+                    return Err(BorrowRefusal::MissingBorrowBinding.diagnostic_with_subject(
+                        BorrowRefusalOperation::Entry,
+                        BorrowRefusalSubject::for_resource(piece),
                     ));
                 }
             }
         }
     }
     Ok(state
-        .with_loan_ledger(Some(ledger))
-        .with_loan_participant(Some(participant))
-        .with_loan_view_bindings(bindings))
+        .with_borrow_ledger(Some(ledger))
+        .with_borrow_participant(Some(participant))
+        .with_borrow_bindings(bindings))
 }
 
 /// Produces the exact callee entry state used by contract verification.
@@ -4990,15 +5038,7 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
     };
     let paths = paths
         .into_iter()
-        .map(|mut path| {
-            if let Some(memory) = statement_outcome_memory(&path.outcome) {
-                path.facts.extend(
-                    memory
-                        .string_literal_loadable_facts()
-                        .into_iter()
-                        .map(ExecutionPureFact::certified),
-                );
-            }
+        .map(|path| {
             let effect_facts = memory_effect_execution_facts(&path.facts);
             let facts = public_execution_pure_facts(&path.facts);
             // Calls apply their callees' verified rules, which describe a
@@ -5026,7 +5066,7 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
                 effect_facts,
                 obligations: path.obligations,
                 theorem,
-                loan_evidence: path.loan_evidence,
+                borrow_evidence: path.borrow_evidence,
             }
         })
         .collect();
@@ -5074,19 +5114,33 @@ pub fn prove_symbolic_execution_statement_verification_paths_with_environment_an
 fn statement_kernel_variables<'scope>(
     state: &'scope ExecutionState,
     statement: &'scope ProgramStatement,
-    assumptions: &'scope PureFactContext,
+    assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
+    next_candidate: u64,
 ) -> KernelVariableGenerator<'scope> {
+    let fact_bound = assumptions.execution_variable_ceiling();
     KernelVariableGenerator::fresh_for_execution_with_deferred_reservations(
         move || {
             let mut existing = BTreeSet::new();
-            collect_execution_state_bitvector_variables(state, &mut existing);
+            crate::instrumentation::measure_operation(
+                "",
+                "",
+                "statement state reservation",
+                || {
+                    collect_execution_state_reservations(
+                        state,
+                        next_candidate,
+                        fact_bound,
+                        &mut existing,
+                    );
+                },
+            );
             collect_execution_statement_bitvector_variables(statement, &mut existing);
             existing
         },
         execution_environment_variable_index(environment),
     )
-    .reserving_through(assumptions.execution_variable_ceiling())
+    .reserving_through(fact_bound)
 }
 
 pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget(
@@ -5103,7 +5157,13 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
     } = statement.into();
     let loop_evidence =
         loop_evidence.map(|evidence| evidence.executed_under(execution_semantics.loops));
-    let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
+    let mut variables = statement_kernel_variables(
+        &state,
+        &statement,
+        &assumptions,
+        &environment,
+        budget.next_kernel_variable,
+    );
     let execution = execute_execution_statement_verification_paths(
         &state,
         &statement,
@@ -5125,20 +5185,6 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
             );
         }
     };
-    let paths = paths
-        .into_iter()
-        .map(|mut path| {
-            if let Some(memory) = statement_outcome_memory(&path.outcome) {
-                path.facts.extend(
-                    memory
-                        .string_literal_loadable_facts()
-                        .into_iter()
-                        .map(ExecutionPureFact::certified),
-                );
-            }
-            path
-        })
-        .collect();
     symbolic_execution_statement_execution_with_loop_rule(
         state,
         statement,
@@ -5147,22 +5193,6 @@ pub(crate) fn prove_symbolic_execution_statement_verification_paths_with_environ
         &environment,
         loop_evidence,
     )
-}
-
-fn statement_outcome_memory(outcome: &StatementOutcome) -> Option<&SymbolicMemory> {
-    match outcome {
-        StatementOutcome::Normal(state)
-        | StatementOutcome::LoopTestFalse(state)
-        | StatementOutcome::Break(state)
-        | StatementOutcome::Continue(state)
-        | StatementOutcome::Jump { state, .. } => Some(state.memory()),
-        StatementOutcome::Return { state, .. } | StatementOutcome::Throw { state, .. } => {
-            Some(state.memory())
-        }
-        StatementOutcome::VerificationDiverges
-        | StatementOutcome::UndefinedBehavior(_)
-        | StatementOutcome::RuntimeError(_) => None,
-    }
 }
 
 #[cfg(test)]
@@ -5195,13 +5225,26 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases(
 }
 
 /// Checks an explicit proof at the false-guard frontier. The caller gets
-/// that frontier's checked facts and returns the facts its proof added.
-pub(crate) type LoopOtherwiseProof<'a> =
-    dyn FnMut(&ExecutionState, &ExecutionState, &ExecutionFacts) -> Option<ExecutionFacts> + 'a;
+/// that frontier's checked facts and the caller's record index for a unique
+/// checked false-guard path, if available. It returns the facts its proof added.
+pub(crate) type LoopOtherwiseProof<'a> = dyn FnMut(
+        &ExecutionState,
+        &ExecutionState,
+        &ExecutionFacts,
+        Option<usize>,
+    ) -> Option<ExecutionFacts>
+    + 'a;
 
-/// Marks the checked common facts that the enclosing proof can name, in
-/// producer order. The join can only retain facts the exits already proved.
-pub(crate) type LoopExitFactScope<'a> = dyn Fn(&ExecutionState, &ExecutionFacts) -> Vec<bool> + 'a;
+/// Checks the source interface for a loop join. The mask selects checked
+/// common facts in producer order. Written exports are checked in every
+/// concrete predecessor and returned in terms of the abstract successor.
+pub(crate) type LoopExitFactScope<'a> = dyn Fn(
+        &ExecutionState,
+        &IntegerTerm,
+        &[(ExecutionState, ExecutionFacts)],
+        &ExecutionFacts,
+    ) -> (Vec<bool>, Vec<Proposition>)
+    + 'a;
 
 pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
     state: ExecutionState,
@@ -5232,7 +5275,13 @@ pub(crate) fn prove_symbolic_loop_exit_with_proven_phases_using_budget(
             None,
         );
     };
-    let mut variables = statement_kernel_variables(&state, &statement, &assumptions, &environment);
+    let mut variables = statement_kernel_variables(
+        &state,
+        &statement,
+        &assumptions,
+        &environment,
+        budget.next_kernel_variable,
+    );
     let execution = execute_program_loop_exit_paths_with_proven_phases(
         &state,
         program_loop,
@@ -5352,7 +5401,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
                 effect_facts,
                 obligations: path.obligations,
                 theorem,
-                loan_evidence: path.loan_evidence,
+                borrow_evidence: path.borrow_evidence,
             }
         })
         .collect();
@@ -5593,7 +5642,7 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
                 effect_facts,
                 obligations: path.obligations,
                 theorem,
-                loan_evidence: path.loan_evidence,
+                borrow_evidence: path.borrow_evidence,
             }
         })
         .collect();
@@ -5757,9 +5806,9 @@ pub(crate) fn execution_evidence_states_match(
     }
     // Stable-view authority is semantic state, even though ordinary entry
     // rebasing is allowed to change the ghost resource representation.  Do
-    // not let a checked execution cross a loan root, holder, or occurrence
+    // not let a checked execution cross a borrow root, holder, or occurrence
     // binding boundary while comparing the remaining representation.
-    if !loan_authority_states_match(left, right) {
+    if !borrow_authority_states_match(left, right) {
         return false;
     }
     let mut left_without_ghost_difference = left.clone();
@@ -5788,7 +5837,7 @@ pub(crate) fn function_entry_representation_states_match(
     right: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> bool {
-    loan_authority_states_match(left, right)
+    borrow_authority_states_match(left, right)
         && left.locals == right.locals
         && left.memory.heap == right.memory.heap
         && left.local_cell_values().eq(right.local_cell_values())
@@ -5808,12 +5857,12 @@ pub(crate) fn function_entry_representation_states_match(
 /// resource representation.  Resource occurrences are opaque identities, so
 /// equal-looking resource facts are insufficient when a checked artifact is
 /// rebased onto another proof entry.
-fn loan_authority_states_match(left: &ExecutionState, right: &ExecutionState) -> bool {
-    left.loan_ledger() == right.loan_ledger()
-        && left.loan_participant() == right.loan_participant()
-        && left.loan_view_bindings() == right.loan_view_bindings()
-        && left.loan_bindings_are_consistent()
-        && right.loan_bindings_are_consistent()
+fn borrow_authority_states_match(left: &ExecutionState, right: &ExecutionState) -> bool {
+    left.borrow_ledger() == right.borrow_ledger()
+        && left.borrow_participant() == right.borrow_participant()
+        && left.borrow_bindings() == right.borrow_bindings()
+        && left.borrow_bindings_are_consistent()
+        && right.borrow_bindings_are_consistent()
 }
 
 pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
@@ -5969,7 +6018,7 @@ mod proof_case_evidence_tests {
             .unique_owned_occurrence_for_fact(&escrow)
             .expect("the test escrow has one backing occurrence")
             .0;
-        let ledger = crate::kernel::loans::LoanLedger::new();
+        let ledger = crate::kernel::borrows::BorrowLedger::new();
         let owner = ledger.fresh_participant().unwrap();
         let opening = ledger.lend(owner, owner, support, escrow).unwrap();
         let ledger = ledger.apply(&opening.transition).unwrap();
@@ -5996,22 +6045,22 @@ mod proof_case_evidence_tests {
     }
 
     #[test]
-    fn entry_representation_rebase_rejects_changed_loan_authority() {
+    fn entry_representation_rebase_rejects_changed_borrow_authority() {
         let function = program_function(
             ProgramType::Void,
-            "loan_entry_rebase",
+            "borrow_entry_rebase",
             Vec::new(),
             ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
         );
-        let ledger = crate::kernel::loans::LoanLedger::new();
+        let ledger = crate::kernel::borrows::BorrowLedger::new();
         let first_holder = ledger.fresh_participant().unwrap();
         let second_holder = ledger.fresh_participant().unwrap();
         let first = ExecutionState::new()
-            .with_loan_ledger(Some(ledger.clone()))
-            .with_loan_participant(Some(first_holder));
+            .with_borrow_ledger(Some(ledger.clone()))
+            .with_borrow_participant(Some(first_holder));
         let second = ExecutionState::new()
-            .with_loan_ledger(Some(ledger))
-            .with_loan_participant(Some(second_holder));
+            .with_borrow_ledger(Some(ledger))
+            .with_borrow_participant(Some(second_holder));
         let assumptions = PureFactContext::new();
 
         assert!(!function_entry_representation_states_match(

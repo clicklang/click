@@ -2095,7 +2095,7 @@ named members rather than quantities.
 Members are created and destroyed only under the authority.
 `fold(object_ref(obj))` creates one member and `unfold(object_ref(obj))`
 destroys one, each while the authority is owned, typically inside
-`open(object_control(obj)) { ... }`. Closing the `open` proves the control's
+`with(object_control(obj)) { ... }`. Closing the block proves the control's
 facts again, so a retain must update the stored count in the same scope:
 
 <!-- verified-example: mdtests/counted_resource_refcount_transitions.md -->
@@ -2108,7 +2108,7 @@ struct object* object_retain(struct object* obj) {
 
     ensures result == obj;
 } by {
-    open(object_control(obj)) {
+    with(object_control(obj)) {
         step();
         fold(object_ref(obj));
     }
@@ -2123,7 +2123,7 @@ the corresponding counter update.
 `fold(authority(object_ref(obj)))` establishes an empty population and
 `unfold(authority(object_ref(obj)))` retires one whose count is zero
 (`mdtests/authority_count_after_cleanup.md`; the lifecycle of a heap
-reference count is `examples/refcount/`). A call inside an `open` block does
+reference count is `examples/refcount/`). A call inside a `with` block does
 not assume the control's facts on return: closing the block proves them from
 what the caller knows
 (`mdtests/call_inside_open_population_does_not_assume_its_body.md`).
@@ -2805,6 +2805,9 @@ input must cover the output, and the output keeps the input borrow active
 until the caller gives it up. You can omit `from` when exactly one input
 view has the same lowered range. See
 [Producing a view](../../concepts/resources.md#producing-a-view).
+A newly produced composite that contains a view names its source with
+`produces cursor(...) from source;`. The source can be a `views ... as source;`
+requirement or an existing borrowing composite named by `consumes ... as source;`.
 `requires` and `ensures` accept pure propositions
 only. `consumes X;` beside `produces X;` for the same `X` is exactly
 `owns X;`, and the pair is refused with that one clause to write (with the
@@ -3942,6 +3945,11 @@ After function exit, a parameter reference denotes its logical input value.
 Use `old(program::result)` or `at(function.entry, program::result)` to refer explicitly to
 the parameter's entry value.
 
+In a Rust proof, `bytes.len()` reads the length of the slice named by `bytes`
+at the selected point. A Rust local can shadow a slice parameter.
+`program::bytes.len()` explicitly selects the Rust binding, and
+`old(program::bytes.len())` reads the original parameter length.
+
 C locals exist only while they are in scope. After function exit, refer to a
 local through a recorded point:
 
@@ -4195,6 +4203,14 @@ path (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
 locals resolve to their values at that point. Outside `at(...)`,
 function parameter names retain their ordinary contract meaning.
 
+A mark before the first execution step can name an incoming by-value
+aggregate used in a resource clause. For example, after `mark inputs;`,
+`at(inputs, dst.data)` and `at(inputs, dst.size)` name the pointer and
+length in the entry separation fact. The first step binds the private
+parameter object used by the body.
+
+<!-- verified-example: mdtests/by_value_parameter_entry_range_separation.md -->
+
 `at(loop_label.entry, expression)` is supported inside invariants for that
 same labeled loop code region. It evaluates `expression` at the loop's entry
 point, just before the loop region starts, and uses that value for invariant
@@ -4321,9 +4337,10 @@ function countdown(n: int32) -> int32
 ```
 
 Every direct or mutual integer-recursive edge must pass a nonnegative measure
-strictly smaller than the caller's. This form restricts the measure to one
-named `int32` parameter and recursive components to `int32` parameters and
-`int32` or `bool` results.
+strictly smaller than the caller's. The measure is one named `int32`
+parameter; the function's other parameters and its result may have any type,
+so a function can build a list while it counts down
+(`mdtests/an_integer_measure_recursion_builds_a_list.md`).
 
 A recursive algebraic datatype parameter can also be the named measure. After
 matching it, recursive calls may pass algebraic fields bound by that match;
@@ -4415,7 +4432,13 @@ point carried by that argument. This is why `count(p, ...)` can be called
 with either current `p` or `old(p)`.
 
 Click array refs carry their element type. Passing an `int32[]` ref to a pure
-Click function or predicate parameter declared as `uint8[]` is rejected.
+Click function or predicate parameter declared as `uint8[]` is rejected. A
+`char`, `signed char` or `unsigned char` array passed for a `uint8[]`
+parameter is read through its byte view `p as (uint8 *)`, so a string literal
+of signed `char` reads as unsigned bytes, and a call is the same term wherever
+it is written, including the recursive calls an `unfold` exposes
+(`mdtests/a_byte_function_reads_a_string_literal_as_unsigned_bytes.md`,
+`mdtests/a_recursive_byte_function_evaluates_a_string_literal.md`).
 The same typed array-ref model is used by loop-invariant spec lowering, so a
 pure helper over `uint8[]` can appear in an invariant or inside `old(...)`.
 
@@ -4497,7 +4520,9 @@ not have a recoverable C source place:
 Typed loads select memory from the surrounding clause independently of the
 point the pointer value was read at. `load<int32>(old(p))` reads current memory through
 the entry-state pointer, while `old(load<int32>(p))` reads entry-state memory.
-Both require the corresponding read permission and initialized storage.
+A read in a specification, through `load<T>` or a C place such as `*p`, needs
+no read permission and no initialized storage: it denotes the value that memory
+holds and grants nothing. Reading the same memory in C code needs both.
 
 `address(pointer)` is the `uint64` integer representation of an object pointer
 under the LP64 profile. It is the spec form of the C cast
@@ -4537,8 +4562,13 @@ renderer prefers `owner->field` whenever imported layout origin identifies
 the address. Expansion may emit a low-level read only when no source field
 place is available.
 
-Concrete folds are unrolled. Symbolic folds remain `RangeFold` value terms in
-the kernel and can be reasoned about by supported fold laws.
+Symbolic folds remain `RangeFold` value terms in the kernel and can be
+reasoned about by supported fold laws. Pure `int32` folds over one or two
+items can also retain their fold terms. With literal bounds, callbacks that
+return the accumulator, the item, or an `int32` literal can retain their
+fold terms at any range length. For a nonempty range, checking uses the
+seed, final item, or literal, respectively. Other concrete callbacks can
+be evaluated by unrolling.
 
 
 ### Methods

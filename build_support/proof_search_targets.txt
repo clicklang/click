@@ -43,8 +43,8 @@ extract_special_conjunct_premises
 fact_transport_candidate_search
 increment_headroom_premises
 indexed_arithmetic_premises
-loan_access
-loan_aliases
+borrow_access
+borrow_aliases
 memory_range_aliases
 named_returned_pointer_surface_fact
 owned_anchor_distinctness
@@ -227,6 +227,8 @@ try_linked_pointer_viewability
 try_ordinary_viewability_restriction_closure
 try_universal_steps_with_arithmetic
 try_history_indexed_equalities
+try_indexed_read_preservation
+try_returned_index_preservation
 try_integer_composition_using
 apply_integer_composition
 try_recorded_footprint_preservation
@@ -266,3 +268,7 @@ try_rewrite_conditional_arms_using
 try_native_integer_bound
 selected_call_supplier_unfold
 try_intrinsic_sum_bound
+
+try_interval_exclusion_using
+close_selected_signed_order
+retain_statement_order_bounds

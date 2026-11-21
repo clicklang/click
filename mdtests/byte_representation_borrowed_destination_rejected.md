@@ -2,8 +2,8 @@
 
 An independent stable borrow, not a read-only contract clause: the caller
 owns a heap `struct cell`, and a worker started with `pthread_create` holds
-a `views` borrow of its `value` until it is joined. While that loan is live,
-the caller's write authority is escrowed in the loan ledger (see
+a `views` borrow of its `value` until it is joined. While that borrow is live,
+the caller's write authority is escrowed in the borrow ledger (see
 `docs/internals/stable-views.md`), so the `memcpy` that targets the viewed
 bytes before the join is refused at its `owns destination[0..bytes]`
 precondition. The borrow is not broken, no representation is planted, and
@@ -11,7 +11,7 @@ the worker's view stays stable.
 
 Moving the same `memcpy` after `pthread_join` verifies:
 [`byte_representation_borrowed_destination_after_join.md`](byte_representation_borrowed_destination_after_join.md)
-is that control, so the refusal here comes from the live loan and not from
+is that control, so the refusal here comes from the live borrow and not from
 the copy or its types. The read-only-clause companion is
 [`byte_representation_readonly_copy_rejected.md`](byte_representation_readonly_copy_rejected.md).
 

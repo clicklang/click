@@ -529,73 +529,59 @@ fn end_of_options_accepts_a_dash_prefixed_target() {
 }
 
 #[test]
-fn performance_comparison_requires_ratio_and_absolute_slack() {
-    let slack = 500;
-    assert!(!verification_regressed(5_000, 9_000, slack));
-    assert!(!verification_regressed(100, 250, slack));
-    assert!(verification_regressed(1_000, 2_501, slack));
-    assert!(!verification_regressed(usize::MAX, usize::MAX, slack));
+fn successful_replay_reports_work_increase_and_unavailable_original_cost() {
+    let cost = |work| PhaseCost {
+        work,
+        elapsed: Duration::from_millis(20),
+    };
+    let report = |original, expanded| {
+        claim_audit_report(String::new(), Ok(cost(original)), cost(expanded), 500)
+    };
+    assert!(report(5_000, 9_000).work_increase.is_none());
+    assert!(report(100, 250).work_increase.is_none());
+    let increase = report(1_000, 2_501).work_increase.unwrap();
+    assert!(increase.contains("informational"), "{increase}");
+    assert!(report(usize::MAX, usize::MAX).work_increase.is_none());
+
+    let report = claim_audit_report(String::new(), Err("original limit".into()), cost(200), 500);
+    assert!(
+        report
+            .detail
+            .contains("cold original unavailable (original limit)")
+    );
+    assert!(report.detail.contains("cold rewritten 200 units"));
 }
 
-/// The expanded-over-original comparison counts deterministic work: an
-/// expanded proof that genuinely does more work fails, and fails with the
-/// same counts every time, whatever the clock says.
 #[test]
-#[ignore = "nightly: 0.7s in the parallel gate"]
-fn an_expansion_that_does_more_work_fails_the_comparison_deterministically() {
+fn cold_replay_applies_the_absolute_work_budget_and_reports_written_proof_size() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/scalar.md");
     let source = load_audit_source(&path).unwrap();
-    let original = source.container_source.clone();
-    let explicit = "by {\n        step();\n        have result == 1 by {\n            normalize();\n        }\n        known();\n    }";
-    let redundant = format!(
-        "by {{\n        step();\n{}        known();\n    }}",
-        "        have result == 1 by {\n            normalize();\n        }\n".repeat(300)
+    let claim = "scalar.arithmetic_result";
+    let expanded = expand_claim_with_source(&path, &source, claim).unwrap();
+    let limit = AuditLimits::default().verification;
+    let replay = cold_verify_expansion(&expanded, &source, claim, limit, true).unwrap();
+    let rewritten_click = rewritten_click_source(&source, &expanded).unwrap();
+    let speed = proof_speed(
+        &source,
+        &rewritten_click,
+        claim,
+        replay.claim_elapsed,
+        limit,
     );
-    let with_proof = |proof: &str| {
-        original.replacen(
-            "ensures arithmetic_result: result == 1;",
-            &format!("ensures arithmetic_result: result == 1 {proof}"),
-            1,
-        )
+    assert!(speed.contains("written proof lines"), "{speed}");
+    assert!(!speed.contains(", 0 written proof lines"), "{speed}");
+    let error = match cold_verify_expansion(
+        &expanded,
+        &source,
+        claim,
+        PhaseLimit { work: 1, ..limit },
+        true,
+    ) {
+        Ok(_) => panic!("one deterministic unit cannot check the proof"),
+        Err(error) => error,
     };
-    let lean = with_proof(explicit);
-    let heavy = with_proof(&redundant);
-    assert_ne!(lean, original);
-    assert_ne!(heavy, original);
-    let limits = AuditLimits::default();
-    let cost = |container: &str| {
-        cold_verify(
-            container,
-            &source,
-            "scalar.arithmetic_result",
-            limits.verification,
-            "test verification",
-        )
-        .unwrap()
-    };
-    // A process's first verification also loads the built-in standard
-    // library; `click audit` has always initialized its session first.
-    cost(&original);
-    let original_cost = cost(&original);
-    // The expansion `click expand` emits passes.
-    assert_eq!(
-        performance_regression(original_cost, cost(&lean), limits.performance_slack),
-        None
-    );
-    let heavy_cost = cost(&heavy);
-    let regression = performance_regression(original_cost, heavy_cost, limits.performance_slack)
-        .unwrap_or_else(|| {
-            panic!(
-                "an expansion doing far more work regresses: {original_cost:?} -> {heavy_cost:?}"
-            )
-        });
-    assert!(
-        regression.contains("deterministic work units"),
-        "{regression}"
-    );
-    let (again_original, again_heavy) = (cost(&original), cost(&heavy));
-    assert_eq!(again_original.work, original_cost.work);
-    assert_eq!(again_heavy.work, heavy_cost.work);
+    assert!(error.starts_with("cold replay:"), "{error}");
+    assert!(error.contains("1-unit budget"), "{error}");
 }
 
 /// Machine load changes only the reported wall clock: every audit phase
@@ -696,7 +682,7 @@ fn site_timing_output_distinguishes_measured_and_skipped_cold_work() {
         reexpansion: cost(50, 5),
     };
     let skipped = render_site_rewrite(&rewrite(None));
-    assert!(skipped.contains("cold comparison not run"), "{skipped}");
+    assert!(skipped.contains("cold replay not run"), "{skipped}");
     assert!(!skipped.contains("cold original 0"), "{skipped}");
 
     let measured = render_site_rewrite(&rewrite(Some((cost(30, 3), cost(40, 4)))));
@@ -1160,7 +1146,7 @@ void object_retain_many(struct object* obj, int32 amount) {
     produces amount of reference(obj);
     ensures defined(obj->refs);
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         have obj->refs == count(reference(obj)) by solve();
         step();
         fold(amount of reference(obj));
@@ -2195,7 +2181,7 @@ int32 compare(uint8 bytes[]) {
     let limits = AuditLimits::default();
     let deadline = Instant::now() + limits.session.time;
     let mut worker = AuditSessionWorker::start(&path, limits.session).unwrap();
-    audit_selected_claim_rewrite(&sites, &mut worker, &limits, deadline)
+    audit_selected_claim_rewrite(&sites, &mut worker, &limits, deadline, false)
         .expect("a partial rewrite must preserve the unselected steps' implicit solve");
     drop(worker);
 
@@ -2238,9 +2224,9 @@ int32 compare(uint8 bytes[]) {
                 elapsed: Duration::ZERO,
             },
         };
-        let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline)
+        let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline, false)
             .expect_err("a whole-claim rewrite must include the implicit solve's evidence");
-        assert_eq!(error, expected_error);
+        assert_eq!(error, format!("cold replay: {expected_error}"));
     }
 }
 

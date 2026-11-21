@@ -84,7 +84,7 @@ pub(super) struct Proof<'a> {
     state: KernelProofHandle,
     node: Arc<ProofNode>,
     /// Diagnostic addressing for the step being checked: which source tactic,
-    /// and inside which `have`/`open` blocks. This never affects checking.
+    /// and inside which `have`/`with` blocks. This never affects checking.
     site: ProofStepSite,
 }
 
@@ -1414,6 +1414,8 @@ struct ProofDiagnosticProofState(
     // The function's source layout, so names registered after the proof has
     // unwound still spell a call's result as `<region>.result`.
     Option<crate::surface::lowering::SourceExecutionLayout>,
+    // Final execution checks can use a different fact base than the frontier.
+    Option<PureFactStore>,
 );
 
 /// The names a captured diagnostic gives the proof's values: the naming
@@ -1953,6 +1955,9 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
     }
 
     fn premises(&self, limit: usize) -> Vec<&Proposition> {
+        if let Some(facts) = &self.16 {
+            return facts.recent_facts(limit);
+        }
         let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch()) else {
             return Vec::new();
         };
@@ -1960,6 +1965,9 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
     }
 
     fn premise_count(&self) -> usize {
+        if let Some(facts) = &self.16 {
+            return facts.fact_count();
+        }
         self.0
             .state()
             .open_branches()
@@ -2150,6 +2158,37 @@ impl Proof<'_> {
                 Some(Box::new(self.diagnostic_state())),
             );
         }
+    }
+
+    pub(in crate::surface::proof) fn execution_obligation_error(
+        &self,
+        claim: &str,
+        path_index: usize,
+        obligation: &crate::kernel::ProofObligation,
+        facts: PureFactStore,
+        message: String,
+    ) -> ClickError {
+        self.record_certification_failure_trace(claim, path_index);
+        let mut state = self.diagnostic_state();
+        state.5 = Some(("goal", Box::new(obligation.proposition().clone()), None));
+        state.16 = Some(facts);
+        let summary = format!("execution proof failed for `{claim}` path {path_index}: {message}");
+        ClickError::with_diagnostic(
+            summary.clone(),
+            crate::surface::proof_diagnostics::ProofFailureDiagnostic {
+                failing_path: Some(path_index),
+                checks: None,
+                origin: crate::surface::proof_diagnostics::ProofDiagnosticOrigin {
+                    stage: "execution path certification".into(),
+                    location: format!("{claim} path {path_index}"),
+                    source_tactic_path: None,
+                },
+                claim_label: claim.to_owned(),
+                reason: summary,
+                state: Some(Arc::new(state)),
+            },
+        )
+        .at_declaration(claim.split_once('.').map_or(claim, |(name, _)| name))
     }
 
     /// Certification keeps the actual theorem's names and checked lineage,
@@ -2474,6 +2513,7 @@ impl Proof<'_> {
                     .map(|view| view.fixed_state.recorded_states.clone()),
             },
             crate::surface::diagnostics::spelling_layout(),
+            None,
         )
     }
 }
@@ -3576,7 +3616,7 @@ impl<'a> Proof<'a> {
     }
 
     /// Names the failing step by where the user wrote it: the source tactic
-    /// occurrence, then each enclosing `have`/`open` block's own position.
+    /// occurrence, then each enclosing `have`/`with` block's own position.
     /// When no driver attributed a source position (a planner-generated or
     /// searched script), it names the failing step's place in the checked
     /// lineage of the current block instead. The proof-tree depth is never
@@ -3853,7 +3893,6 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CheckTerminationCallbacks => "check_termination_callbacks",
         ProofStep::Known => "known()",
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
-        ProofStep::OrderChain(_) => "order_chain() using",
         ProofStep::ArithmeticUsing(_) => "solve() using",
         ProofStep::Preserve(_) => "preserve",
 
@@ -3871,7 +3910,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::TransportUsing { .. } => "transport",
         ProofStep::Instantiate { .. } => "instantiate",
         ProofStep::Have { .. } => "have",
-        ProofStep::Open { .. } => "open",
+        ProofStep::Open { .. } => "with",
         ProofStep::If { .. } => "if",
         ProofStep::Cases { .. } => "cases",
         ProofStep::Branch { .. } => "branch",

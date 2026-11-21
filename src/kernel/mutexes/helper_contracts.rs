@@ -215,15 +215,15 @@ pub(in crate::kernel) fn install_entry(
             }
             inputs.guards = inputs.guards.without_key(&identity.mutex);
             inputs.guard_ledger = inputs.guard_ledger.without(&identity.mutex);
-            let loans = protocol.loans(&state)?;
-            let (next, hold, _) = loans
+            let borrows = protocol.borrows(&state)?;
+            let (next, hold, _) = borrows
                 .hold_mutex_use_with_transition(usage, &protocol.lifetime, protocol.holder)
                 .map_err(|error| {
                     MutexTransitionError::OwnedRefusal(format!(
                         "cannot root consumed guard lifetime: {error}"
                     ))
                 })?;
-            state.loan_ledger = Some(next);
+            state.borrow_ledger = Some(next);
             let holder = protocol.holder;
             let initialization = identity.initialization.expect("rooted use initialization");
             let receipt = AssumedMutexGuard {
@@ -281,10 +281,10 @@ pub(in crate::kernel) fn permits_return(state: &ExecutionState) -> bool {
     {
         return false;
     }
-    let Ok(loans) = protocol.loans(state) else {
+    let Ok(borrows) = protocol.borrows(state) else {
         return false;
     };
-    loans
+    borrows
         .release_mutex_use_hold_with_transition(
             protocol.usage,
             &protocol.lifetime,
@@ -355,15 +355,18 @@ pub(in crate::kernel) fn check_call_access(
         Resource::MutexLive(live) => (&live.mutex, live.epoch, None),
         Resource::MutexUse(usage) => {
             let holder = state
-                .loan_participant
+                .borrow_participant
                 .ok_or("missing mutex use participant")?;
-            let loans = state.loan_ledger.as_ref().ok_or("missing mutex use loan")?;
+            let borrows = state
+                .borrow_ledger
+                .as_ref()
+                .ok_or("missing mutex use borrow")?;
             let binding = usage.binding.ok_or("missing rooted mutex use authority")?;
-            if loans.mutex_use_resource(binding, holder).ok().as_ref() != Some(source) {
+            if borrows.mutex_use_resource(binding, holder).ok().as_ref() != Some(source) {
                 return Err(MutexTransitionError::MissingUse(required.mutex.clone()));
             }
             if effect == HelperEffect::Acquire {
-                loans
+                borrows
                     .check_mutex_use_available(binding, holder, &state.resources)
                     .map_err(|error| {
                         MutexTransitionError::OwnedRefusal(format!(
@@ -460,7 +463,7 @@ pub(in crate::kernel) fn apply_call_effect(
 ) -> Result<
     (
         ExecutionState,
-        crate::kernel::loans::CheckedLoanCallEvidenceSequence,
+        crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
         Vec<crate::kernel::MemoryRange>,
     ),
     MutexTransitionError,
@@ -818,8 +821,8 @@ mod tests {
             .get(&mutex())
             .unwrap();
         let mut hidden_hold = held.clone();
-        hidden_hold.loan_ledger = Some(
-            held.loan_ledger
+        hidden_hold.borrow_ledger = Some(
+            held.borrow_ledger
                 .as_ref()
                 .unwrap()
                 .hold_mutex_use_with_transition(

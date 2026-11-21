@@ -5,7 +5,7 @@ A string literal is a read-only array that holds its bytes and a terminator
 views `click::c::string::cstr_at(p, _)` for a pointer into a literal takes the view
 from the literal itself: the literal's bytes decide the resource's body facts
 and fix its `len`, and nothing can write them, so the view is read authority
-the caller always has, never a loan.
+the caller always has, never a borrow.
 
 `strlen("abc")`, a pointer into a literal, `%s` of a literal, and the
 literal a conditional or a table chooses each take it, as do calls in the

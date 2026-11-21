@@ -53,12 +53,12 @@ fn folded_view_preparation_uses_the_indexed_owner() {
         });
 
         assert!(!caller.resources().facts_are_materialized());
-        let plan = transfer.stable_view_plan.expect("one checked loan");
+        let plan = transfer.stable_view_plan.expect("one checked borrow");
         assert_eq!(plan.stable_views().len(), 1);
         let tail = MemoryRange::new(pointer, 1u32.into(), 2u32.into());
         assert_eq!(
             plan.ledger.permits_memory_access(&tail),
-            Err(LoanRefusal::ActiveDependency)
+            Err(BorrowRefusal::ActiveDependency)
         );
         work
     });
@@ -157,10 +157,10 @@ fn preparing_a_reserved_fold_leaves_unrelated_caller_heads_unmaterialized() {
 }
 
 #[test]
-fn verified_call_loan_requirement_building_does_not_visit_live_loans() {
+fn verified_call_borrow_requirement_building_does_not_visit_live_borrows() {
     let effects = [MemoryRange::new(pointer(), 0u32.into(), 1u32.into())];
     let samples = [4, 16, 64].map(|count| {
-        let mut ledger = LoanLedger::new();
+        let mut ledger = BorrowLedger::new();
         let lender = ledger.fresh_participant().unwrap();
         let reader = ledger.fresh_participant().unwrap();
         for i in 0..count {
@@ -177,12 +177,12 @@ fn verified_call_loan_requirement_building_does_not_visit_live_loans() {
         }
         let memory = SymbolicMemory::new();
         let (requirements, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verified_call_loan_requirements(
+            verified_call_borrow_requirements(
                 Some(&ledger),
                 &effects,
                 || CallRequirementSite::for_requirement("write", "write", 0, &[], &memory),
                 0,
-                CallLoanEffect::CallRetirement,
+                CallBorrowEffect::CallRetirement,
             )
         });
         assert_eq!(requirements.len(), 1);
@@ -242,7 +242,7 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
                     1024,
                 ))
                 .with_resource_context(resources);
-            state.prepare_modular_call_reservations();
+            state.prepare_execution_variable_reservations();
             let function = reader_for_input("classify_local_storage", 1024);
             let environment = environment(&function);
             let arguments = [crate::kernel::program_expression::pointer_value(
@@ -343,7 +343,7 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
                 1024,
             ))
             .with_resource_context(resources);
-        state.prepare_modular_call_reservations();
+        state.prepare_execution_variable_reservations();
         let function = reader_for_input("return_one_owner", 1024);
         let environment = environment(&function);
         let callee = state
@@ -556,7 +556,7 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
             .with_population_creation_tracking()
             .with_memory(SymbolicMemory::new().with_block(selected.base.clone(), 8))
             .with_resource_context(resources);
-        state.prepare_modular_call_reservations();
+        state.prepare_execution_variable_reservations();
         let output = ResourceSpec::owned_memory(MemorySegment::new(
             crate::kernel::program_expression::variable("p"),
             crate::kernel::program_expression::int32_literal(0),

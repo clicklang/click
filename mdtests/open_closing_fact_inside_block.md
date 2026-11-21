@@ -1,6 +1,6 @@
 # An in-block fact can restore an opened resource
 
-A `have` at the end of an `open` block gives the closing fold its body fact.
+A `have` at the end of a `with` block gives the closing fold its body fact.
 The first scope closes before the next C statement. The second reaches
 function exit and proves the closing fact in the outcome state.
 
@@ -17,7 +17,7 @@ void set(int32* p, int32* q, int32 x) {
     owns cell(p);
     owns q[0..1];
 } by {
-    open(cell(p)) {
+    with(cell(p)) {
         step();
         have p[0] > 0 or p[0] < -1 by { solve(); }
     }
@@ -26,7 +26,7 @@ void set_last(int32* p, int32 x) {
     requires x > 0;
     owns cell(p);
 } by {
-    open(cell(p)) {
+    with(cell(p)) {
         step_until(function.exit);
         have p[0] > 0 or p[0] < -1 by { solve(); }
     }

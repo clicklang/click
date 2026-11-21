@@ -1,6 +1,6 @@
-use super::loans::{
-    CheckedLoanCallEvidenceSequence, concat_checked_loan_evidence,
-    empty_checked_loan_evidence_sequence,
+use super::borrows::{
+    CheckedBorrowCallEvidenceSequence, concat_checked_borrow_evidence,
+    empty_checked_borrow_evidence_sequence,
 };
 use super::prelude::*;
 use crate::kernel::int32_constant;
@@ -402,7 +402,7 @@ pub(super) fn execute_program_call_paths(
         },
         facts: path.facts,
         obligations: path.obligations,
-        loan_evidence: path.loan_evidence,
+        borrow_evidence: path.borrow_evidence,
     })
     .collect::<Vec<_>>();
     budget.check_path_width(paths.len())?;
@@ -556,7 +556,7 @@ fn execute_modeled_pthread_mutex_paths(
         budget,
         Some(environment),
     )? {
-        let mut loan_evidence = empty_checked_loan_evidence_sequence();
+        let mut borrow_evidence = empty_checked_borrow_evidence_sequence();
         let outcome = if let Some(outcome) = path.outcome {
             match outcome {
                 FunctionOutcome::UndefinedBehavior(error) => {
@@ -840,11 +840,11 @@ fn execute_modeled_pthread_mutex_paths(
             });
             match transition {
                 Ok((mut next, evidence)) => {
-                    loan_evidence = evidence;
+                    borrow_evidence = evidence;
                     // Every runtime transition may change the opaque representation.
                     // Only this checked path bypasses its ordinary-write reservation.
                     if let Some(requirement) = state
-                        .loan_ledger()
+                        .borrow_ledger()
                         .and_then(|ledger| ledger.memory_access_requirement(&footprint))
                     {
                         path.obligations.push(
@@ -893,7 +893,7 @@ fn execute_modeled_pthread_mutex_paths(
             outcome,
             facts: path.facts,
             obligations: path.obligations,
-            loan_evidence,
+            borrow_evidence,
         });
     }
     budget.check_path_width(paths.len())?;
@@ -1153,8 +1153,8 @@ fn execute_modeled_pthread_create_paths(
                                 {
                                     let mut neutral = failure.clone();
                                     neutral.resources = success.resources.clone();
-                                    neutral.loan_ledger = success.loan_ledger.clone();
-                                    neutral.loan_view_bindings = success.loan_view_bindings.clone();
+                                    neutral.borrow_ledger = success.borrow_ledger.clone();
+                                    neutral.borrow_bindings = success.borrow_bindings.clone();
                                     neutral.mutex_ledger = success.mutex_ledger.clone();
                                     neutral.mutex_input_reservations =
                                         success.mutex_input_reservations.clone();
@@ -1314,7 +1314,7 @@ fn indirect_call_statement_paths(paths: Vec<FunctionPath>) -> Vec<StatementExecu
             },
             facts: path.facts,
             obligations: path.obligations,
-            loan_evidence: path.loan_evidence,
+            borrow_evidence: path.borrow_evidence,
         })
         .collect()
 }
@@ -1499,7 +1499,7 @@ fn execute_program_indirect_call_paths(
                     outcome: call_path.outcome,
                     facts: call_path.facts,
                     obligations: call_path.obligations,
-                    loan_evidence: call_path.loan_evidence,
+                    borrow_evidence: call_path.borrow_evidence,
                 });
             }
         }
@@ -1913,8 +1913,8 @@ fn loop_state_components_match_at_back_edge_inner(
     if !crate::kernel::api::population_observations_equal(top_state, next_state) {
         changed.push("counted resource populations");
     }
-    if top_state.loan_ledger != next_state.loan_ledger {
-        changed.push("stable-view loan authority");
+    if top_state.borrow_ledger != next_state.borrow_ledger {
+        changed.push("stable-view borrow authority");
     }
     // The head keeps a pointer local's subobject only if every back edge
     // returns the local to that same subobject.
@@ -1953,10 +1953,10 @@ fn loop_state_components_match_at_back_edge_inner(
     if object_class_mismatch.is_some() {
         changed.push("pointer object classes");
     }
-    if top_state.loan_participant != next_state.loan_participant {
-        changed.push("stable-view loan participant");
+    if top_state.borrow_participant != next_state.borrow_participant {
+        changed.push("stable-view borrow participant");
     }
-    if top_state.loan_view_bindings != next_state.loan_view_bindings {
+    if top_state.borrow_bindings != next_state.borrow_bindings {
         changed.push("stable-view occurrence bindings");
     }
     if top_state.preserves_mutex_protocols != next_state.preserves_mutex_protocols {
@@ -2211,17 +2211,17 @@ fn join_loop_exit_paths(
 ) -> Option<(
     ExecutionFacts,
     Vec<ProofObligation>,
-    CheckedLoanCallEvidenceSequence,
+    CheckedBorrowCallEvidenceSequence,
 )> {
     if exits.len() <= 1 {
         let exit = exits.pop()?;
-        return Some((exit.stated, exit.obligations, exit.loan_evidence));
+        return Some((exit.stated, exit.obligations, exit.borrow_evidence));
     }
     let (first_facts, first_obligations) = (exits[0].stated.clone(), exits[0].obligations.clone());
-    let loan_evidence = exits[1..]
+    let borrow_evidence = exits[1..]
         .iter()
-        .fold(exits[0].loan_evidence.clone(), |sequence, exit| {
-            concat_checked_loan_evidence(&sequence, &exit.loan_evidence)
+        .fold(exits[0].borrow_evidence.clone(), |sequence, exit| {
+            concat_checked_borrow_evidence(&sequence, &exit.borrow_evidence)
         });
     // Each exit's facts are indexed once and the first exit's are looked up
     // in every index, so the common prefix costs the exits' facts and a
@@ -2276,7 +2276,7 @@ fn join_loop_exit_paths(
             })
         })
         .collect();
-        return Some((facts, obligations, loan_evidence));
+        return Some((facts, obligations, borrow_evidence));
     }
 
     let in_every_exit = positions_in_every_set(
@@ -2345,7 +2345,7 @@ fn join_loop_exit_paths(
     {
         facts.push(summarize(disjunction));
     }
-    Some((facts.into(), obligations, loan_evidence))
+    Some((facts.into(), obligations, borrow_evidence))
 }
 
 /// The facts every exit states about the successor's merged binder names.
@@ -2437,7 +2437,7 @@ struct LoopExitFacts {
     /// Nonvacuous pinning equations, with no historical path conditions.
     successor_equations: Vec<Proposition>,
     obligations: Vec<ProofObligation>,
-    loan_evidence: CheckedLoanCallEvidenceSequence,
+    borrow_evidence: CheckedBorrowCallEvidenceSequence,
 }
 
 impl LoopExitFacts {
@@ -2446,7 +2446,7 @@ impl LoopExitFacts {
     fn unabstracted(
         facts: ExecutionFacts,
         obligations: Vec<ProofObligation>,
-        loan_evidence: CheckedLoanCallEvidenceSequence,
+        borrow_evidence: CheckedBorrowCallEvidenceSequence,
     ) -> Self {
         Self {
             disjunct: facts
@@ -2457,7 +2457,7 @@ impl LoopExitFacts {
             restated: Vec::new(),
             successor_equations: Vec::new(),
             obligations,
-            loan_evidence,
+            borrow_evidence,
         }
     }
 }
@@ -2493,7 +2493,7 @@ fn join_loop_exits(
         ExecutionState,
         ExecutionFacts,
         Vec<ProofObligation>,
-        CheckedLoanCallEvidenceSequence,
+        CheckedBorrowCallEvidenceSequence,
         Option<PureFactContext>,
     )>,
     assumptions: &PureFactContext,
@@ -2540,27 +2540,37 @@ fn join_loop_exits(
     if mismatch.is_none() {
         exit_state.join_loop_exit_program_points(&states);
     }
-    let (mut facts, mut obligations, loan_evidence) = join_loop_exit_paths(
+    let source_exits = exit_fact_scope.map(|_| {
+        exits
+            .iter()
+            .map(|(state, facts, _, _, _)| (state.clone(), facts.clone()))
+            .collect::<Vec<_>>()
+    });
+    let (mut facts, mut obligations, borrow_evidence) = join_loop_exit_paths(
         exits
             .into_iter()
             .zip(restatements)
-            .map(|((_, facts, obligations, loan_evidence, _), restatement)| {
-                restatement.restate(
-                    facts,
-                    obligations,
-                    loan_evidence,
-                    mode == LoopExitFactsMode::Common,
-                )
-            })
+            .map(
+                |((_, facts, obligations, borrow_evidence, _), restatement)| {
+                    restatement.restate(
+                        facts,
+                        obligations,
+                        borrow_evidence,
+                        mode == LoopExitFactsMode::Common,
+                    )
+                },
+            )
             .collect(),
         mode,
     )?;
-    if let Some(scope) = exit_fact_scope {
-        let admitted = scope(&exit_state, &facts);
+    if let Some((scope, source_exits)) = exit_fact_scope.zip(source_exits) {
+        let (admitted, written_exports) =
+            scope(&exit_state, &head.iterations, &source_exits, &facts);
         facts = facts
             .into_iter()
             .zip(admitted)
             .filter_map(|(fact, visible)| visible.then_some(fact))
+            .chain(written_exports.into_iter().map(ExecutionPureFact::new))
             .collect();
     }
     if let Some(mismatch) = mismatch {
@@ -2588,7 +2598,7 @@ fn join_loop_exits(
         outcome: StatementOutcome::Normal(Box::new(exit_state)),
         facts,
         obligations,
-        loan_evidence,
+        borrow_evidence,
     })
 }
 
@@ -3113,11 +3123,11 @@ impl LoopExitRestatement {
         self,
         facts: ExecutionFacts,
         obligations: Vec<ProofObligation>,
-        loan_evidence: CheckedLoanCallEvidenceSequence,
+        borrow_evidence: CheckedBorrowCallEvidenceSequence,
         common_only: bool,
     ) -> LoopExitFacts {
         if self.renamings.is_empty() && self.equations.is_empty() && self.replacements.is_empty() {
-            return LoopExitFacts::unabstracted(facts, obligations, loan_evidence);
+            return LoopExitFacts::unabstracted(facts, obligations, borrow_evidence);
         }
         let rename = |proposition: &Proposition| {
             self.renamings
@@ -3161,7 +3171,7 @@ impl LoopExitRestatement {
             restated,
             successor_equations,
             obligations,
-            loan_evidence,
+            borrow_evidence,
         }
     }
 }
@@ -3939,8 +3949,8 @@ fn abstract_loop_exit_memory(
         havoced.push((pointer, fresh));
     }
     if let Some(ledger) = successor
-        .loan_ledger()
-        .filter(|ledger| ledger.has_active_memory_loans())
+        .borrow_ledger()
+        .filter(|ledger| ledger.has_active_memory_borrows())
     {
         // Use the cells this join is about to abstract and the common exit
         // ledger retained in the successor. The resulting conditions are
@@ -3964,7 +3974,7 @@ fn abstract_loop_exit_memory(
                 MachineTerm::constant(byte_width),
                 1,
             );
-            join_requirements.extend(loop_loan_separation(
+            join_requirements.extend(loop_borrow_separation(
                 ledger,
                 &range,
                 "loop exit join separation",
@@ -4225,7 +4235,7 @@ fn loop_exit_residual_difference(
 /// Whether two exits hold the same resources: structurally, or after each
 /// context drops only its exact owner-supported observations and identity
 /// expansion caches, then is normalized once. An independent view, a live
-/// loan-bound view, a nontrivial expansion, or different quantities stay distinct.
+/// borrow-bound view, a nontrivial expansion, or different quantities stay distinct.
 fn loop_exit_resources_agree(
     left: &ResourceContext,
     right: &ResourceContext,
@@ -4256,11 +4266,11 @@ fn loop_exit_resources_agree(
 ///   kernel compares an unfolded body with its expected one. It merges only
 ///   what the resource algebra says is one authority (an unbound view held
 ///   twice, an owner and its own unbound view), including an exact
-///   owner-supported observation and identity cache, but never a loan-bound
+///   owner-supported observation and identity cache, but never a borrow-bound
 ///   view or a nontrivial supported description.
 ///
 /// Both are exact: a byte, a value, an owned or viewed fact, a quantity, a
-/// read-only block, a heap lifetime or a loan dependency that differs still
+/// read-only block, a heap lifetime or a borrow dependency that differs still
 /// differs afterwards. The equivalent component is then taken from the left
 /// state so the remaining components are compared by `==` as before.
 fn loop_exit_state_difference(
@@ -4297,9 +4307,9 @@ fn loop_exit_state_difference(
         instance_field_scope,
         body_field_view,
         resource_bindings,
-        loan_ledger,
-        loan_participant,
-        loan_view_bindings,
+        borrow_ledger,
+        borrow_participant,
+        borrow_bindings,
         thread_ledger,
         mutex_ledger,
         preserves_mutex_protocols,
@@ -4379,9 +4389,9 @@ fn loop_exit_state_difference(
                 .map_or(0, |bindings| bindings.len())
         ));
     }
-    component!(loan_ledger, "stable-view loan authority");
-    component!(loan_participant, "stable-view loan participant");
-    component!(loan_view_bindings, "stable-view occurrence bindings");
+    component!(borrow_ledger, "stable-view borrow authority");
+    component!(borrow_participant, "stable-view borrow participant");
+    component!(borrow_bindings, "stable-view occurrence bindings");
     component!(thread_ledger, "thread completion authority");
     component!(mutex_ledger, "mutex authority");
     component!(
@@ -4573,7 +4583,7 @@ fn execute_program_loop_exit_paths(
             },
             facts: exit.pure_facts().certified_facts(),
             obligations: loop_check_obligations.clone(),
-            loan_evidence: exit.loan_evidence().clone(),
+            borrow_evidence: exit.borrow_evidence().clone(),
         });
     }
     let public_exit_mode = if exit_fact_scope.is_some() {
@@ -4605,7 +4615,7 @@ fn execute_program_loop_exit_paths(
                     head.restored_exit_state(candidate.state(), assumptions),
                     candidate.pure_facts().certified_facts(),
                     obligations,
-                    candidate.loan_evidence().clone(),
+                    candidate.borrow_evidence().clone(),
                     None,
                 ));
                 continue;
@@ -4646,10 +4656,10 @@ fn execute_program_loop_exit_paths(
                 exits.push(LoopExitFacts::unabstracted(
                     facts,
                     obligations,
-                    candidate.loan_evidence().clone(),
+                    candidate.borrow_evidence().clone(),
                 ));
             }
-            if let Some((facts, obligations, loan_evidence)) =
+            if let Some((facts, obligations, borrow_evidence)) =
                 join_loop_exit_paths(exits, guard_exit_mode)
             {
                 // A candidate is one more way out, not a second successor:
@@ -4661,11 +4671,14 @@ fn execute_program_loop_exit_paths(
                 // exported no exit state at all and made every post-loop
                 // claim vacuous.
                 candidate_exit_entries.push((
-                    head.restored_exit_state(candidate.state(), assumptions),
-                    facts,
-                    obligations,
-                    loan_evidence,
-                    None,
+                    (
+                        head.restored_exit_state(candidate.state(), assumptions),
+                        facts,
+                        obligations,
+                        borrow_evidence,
+                        None,
+                    ),
+                    candidate.guard_points_index(),
                 ));
             }
         }
@@ -4710,11 +4723,11 @@ fn execute_program_loop_exit_paths(
             head.restored_exit_state(exit.state(), assumptions),
             exit.pure_facts().certified_facts(),
             loop_check_obligations.clone(),
-            exit.loan_evidence().clone(),
+            exit.borrow_evidence().clone(),
             exit.fact_context().cloned(),
         );
         if otherwise.is_some() && exit.guard_false() {
-            otherwise_exits.push(entry);
+            otherwise_exits.push((entry, exit.guard_points_index()));
         } else {
             early_exit_entries.push(entry);
         }
@@ -4722,7 +4735,7 @@ fn execute_program_loop_exit_paths(
     if otherwise.is_some() {
         otherwise_exits.extend(candidate_exit_entries);
     } else {
-        early_exit_entries.extend(candidate_exit_entries);
+        early_exit_entries.extend(candidate_exit_entries.into_iter().map(|(exit, _)| exit));
     }
     let mut guard_exits = Vec::new();
     if initial_may_exit {
@@ -4779,7 +4792,7 @@ fn execute_program_loop_exit_paths(
                 {
                     facts.push(ExecutionPureFact::new(fact));
                 }
-                exits.push((facts, obligations, empty_checked_loan_evidence_sequence()));
+                exits.push((facts, obligations, empty_checked_borrow_evidence_sequence()));
             }
             // A short-circuit guard leaves the loop by one path per conjunct,
             // all at the same exit state. Every one of them is certified, and
@@ -4788,11 +4801,11 @@ fn execute_program_loop_exit_paths(
             // here too, on the same terms.
             let exits = exits
                 .into_iter()
-                .map(|(facts, obligations, loan_evidence)| {
-                    (top_state.clone(), facts, obligations, loan_evidence, None)
+                .map(|(facts, obligations, borrow_evidence)| {
+                    (top_state.clone(), facts, obligations, borrow_evidence, None)
                 });
             if otherwise.is_some() {
-                otherwise_exits.extend(exits);
+                otherwise_exits.extend(exits.map(|exit| (exit, None)));
                 continue;
             }
             if exit_fact_scope.is_some() {
@@ -4847,7 +4860,7 @@ fn execute_program_loop_exit_paths(
                 body,
                 &Default::default(),
                 &binders,
-                otherwise_exits,
+                otherwise_exits.into_iter().map(|(exit, _)| exit).collect(),
                 assumptions,
                 None,
                 guard_exit_mode,
@@ -4859,16 +4872,19 @@ fn execute_program_loop_exit_paths(
                     unreachable!("the loop-exit join produces a normal outcome");
                 };
                 (
-                    *state,
-                    path.facts,
-                    path.obligations,
-                    path.loan_evidence,
+                    (
+                        *state,
+                        path.facts,
+                        path.obligations,
+                        path.borrow_evidence,
+                        None,
+                    ),
                     None,
                 )
             })
         };
-        if let Some((state, mut facts, mut obligations, evidence, _)) = false_exit {
-            let proven = prove(&head.entry, &state, &facts);
+        if let Some(((state, mut facts, mut obligations, evidence, _), points_index)) = false_exit {
+            let proven = prove(&head.entry, &state, &facts, points_index);
             if guard_exit_mode == LoopExitFactsMode::Otherwise {
                 facts = facts.filtered(ExecutionPureFact::is_public);
             }
@@ -4947,7 +4963,7 @@ fn execute_program_loop_exit_paths(
     budget.check_path_width(paths.len())?;
     for path in &mut paths {
         path.obligations
-            .extend(head.loan_requirements.iter().cloned());
+            .extend(head.borrow_requirements.iter().cloned());
         path.loop_invariant_correspondence.iterations = Some(head.iterations.clone());
     }
     Ok(paths)
@@ -5718,7 +5734,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 )),
                                 facts: final_path_facts,
                                 obligations: final_obligations,
-                                loan_evidence: body_path.loan_evidence.clone(),
+                                borrow_evidence: body_path.borrow_evidence.clone(),
                             });
                         }
                     }
@@ -5743,7 +5759,7 @@ pub(super) fn collect_loop_preservation_summary(
                             )?;
                             let exit_facts = body_path.facts;
                             let exit_obligations = body_path.obligations;
-                            let loan_evidence = body_path.loan_evidence;
+                            let borrow_evidence = body_path.borrow_evidence;
                             append_required_proof_obligations(
                                 &mut obligations,
                                 assumptions,
@@ -5764,7 +5780,7 @@ pub(super) fn collect_loop_preservation_summary(
                                         .map(|fact| fact.proposition().clone())
                                         .collect(),
                                 )
-                                .with_loan_evidence(loan_evidence),
+                                .with_borrow_evidence(borrow_evidence),
                             );
                         }
                         StatementOutcome::Return { value, state } if backedge_target.is_some() => {
@@ -5797,7 +5813,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 },
                                 facts: exit_facts,
                                 obligations: final_obligations,
-                                loan_evidence: body_path.loan_evidence,
+                                borrow_evidence: body_path.borrow_evidence,
                             });
                         }
                         StatementOutcome::Jump { target, state }
@@ -5832,7 +5848,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 },
                                 facts: exit_facts,
                                 obligations: final_obligations,
-                                loan_evidence: body_path.loan_evidence,
+                                borrow_evidence: body_path.borrow_evidence,
                             });
                         }
                         StatementOutcome::Return { .. }
@@ -6015,7 +6031,7 @@ pub(super) struct LoopHead {
     /// resource context. A non-empty list is a verification failure.
     pub(super) resource_failures: Vec<LoopResourceFailure>,
     /// Premises of applying the head abstraction to the original loop entry.
-    loan_requirements: Vec<ProofObligation>,
+    borrow_requirements: Vec<ProofObligation>,
     /// The loop's effect checks with every declared-resource frame installed
     /// from the checked evaluation of the loop's own resource specs at entry.
     /// Every later check of this loop reads these, never the originals.
@@ -6280,14 +6296,14 @@ pub(super) fn prepare_loop_top_state(
         }
         ranges
     });
-    // The stable-loan barrier is checked below, after the loop's declared
+    // The stable-borrow barrier is checked below, after the loop's declared
     // ownership. A loop that declares a resource the function does not hold
     // also derives its havoc footprint from that bad declaration, so running
     // the barrier first would report the overlap it caused instead of the
     // ownership violation that is the real error.
-    let loan_check = if let Some(ledger) = entry_state
-        .loan_ledger()
-        .filter(|ledger| include_mutable_summaries && ledger.has_active_memory_loans())
+    let borrow_check = if let Some(ledger) = entry_state
+        .borrow_ledger()
+        .filter(|ledger| include_mutable_summaries && ledger.has_active_memory_borrows())
     {
         // When the loop has no checked summary, use the enclosing checked
         // owned footprint as the existing upper bound on its writes.
@@ -6295,7 +6311,7 @@ pub(super) fn prepare_loop_top_state(
             .is_none()
             .then(|| checked_owned_entry_footprint(entry_state.resources()))
             .flatten();
-        loop_head_loan_requirements(ledger, loop_havoc_ranges.as_deref().or(fallback.as_deref()))
+        loop_head_borrow_requirements(ledger, loop_havoc_ranges.as_deref().or(fallback.as_deref()))
     } else {
         Ok(Vec::new())
     };
@@ -6643,7 +6659,7 @@ pub(super) fn prepare_loop_top_state(
     };
     resource_failures.extend(rebound_failures.drain(..).map(LoopResourceFailure::Message));
     resource_failures.extend(body_failures);
-    let loan_requirements = loan_check.unwrap_or_else(|message| {
+    let borrow_requirements = borrow_check.unwrap_or_else(|message| {
         resource_failures.push(LoopResourceFailure::Message(message.to_string()));
         Vec::new()
     });
@@ -6709,7 +6725,7 @@ pub(super) fn prepare_loop_top_state(
         iterations,
         summaries,
         resource_failures,
-        loan_requirements,
+        borrow_requirements,
         effect_checks,
     })
 }
@@ -7001,7 +7017,7 @@ fn with_owner_read_authority_rederived(
                 head.memory(),
             );
         resources = match binding_source {
-            Some(source) => source.loan_view_bindings().attach_to_inserted_views(
+            Some(source) => source.borrow_bindings().attach_to_inserted_views(
                 source.resources(),
                 next,
                 &inserted,
@@ -7058,14 +7074,12 @@ fn with_loop_frame_resources(
             .install_established_partition(std::iter::once(supplied), assumptions)
         {
             Ok((composed, inserted)) => {
-                body_resources = binding_source
-                    .loan_view_bindings()
-                    .attach_to_inserted_views(
-                        binding_source.resources(),
-                        composed,
-                        &inserted,
-                        assumptions,
-                    );
+                body_resources = binding_source.borrow_bindings().attach_to_inserted_views(
+                    binding_source.resources(),
+                    composed,
+                    &inserted,
+                    assumptions,
+                );
             }
             Err(_) => continue,
         }
@@ -7112,9 +7126,9 @@ fn loop_body_resource_context(
     );
     // Only bindings attached to newly produced views are listed here. The
     // inherited map is shared, not scanned or reconstructed from contexts.
-    let mut body_bindings = top_state.loan_view_bindings().clone();
+    let mut body_bindings = top_state.borrow_bindings().clone();
     let produced =
-        super::loans::LoanViewBindings::from_state(body_resources.loan_dependency_state());
+        super::borrows::BorrowBindings::from_state(body_resources.borrow_dependency_state());
     for (occurrence, binding) in produced.iter() {
         body_bindings = body_bindings.with_inserted(*occurrence, binding.clone());
     }
@@ -7122,7 +7136,7 @@ fn loop_body_resource_context(
         top_state
             .clone()
             .with_resource_context(body_resources)
-            .with_loan_view_bindings(body_bindings),
+            .with_borrow_bindings(body_bindings),
         Vec::new(),
     ))
 }
@@ -7830,8 +7844,12 @@ pub(super) fn collect_loop_effect_check_obligations(
                 .known_value(&pointer)
                 .or_else(|| before_state.memory().known_value(&pointer))
                 .map_or_else(
-                    crate::kernel::resource_tracker::widest_scalar_access_bytes,
-                    |value| value.byte_width(),
+                    || {
+                        crate::kernel::AccessExtent::Bytes(
+                            crate::kernel::resource_tracker::widest_scalar_access_bytes(),
+                        )
+                    },
+                    |value| crate::kernel::assumptions::access_extent_of_value(&value),
                 );
             (pointer, bytes)
         })
@@ -7928,13 +7946,16 @@ pub(super) fn collect_loop_effect_check_obligations(
         }
 
         for (pointer, bytes) in &writes {
-            if !segments.iter().any(|segment| {
-                loop_effect_segment_contains_pointer(
-                    segment,
-                    pointer,
-                    *bytes,
-                    &effective_assumptions,
-                )
+            // A whole object of abstract size fits no byte-counted segment.
+            if !bytes.bytes().is_some_and(|bytes| {
+                segments.iter().any(|segment| {
+                    loop_effect_segment_contains_pointer(
+                        segment,
+                        pointer,
+                        bytes,
+                        &effective_assumptions,
+                    )
+                })
             }) {
                 push_false_loop_effect_obligation(
                     &mut obligations,
@@ -9015,8 +9036,8 @@ pub(super) fn havoc_loop_modified_locals(
         // overwritten by the loop body through a pointer. Address-escaped
         // locals were havoced above, so their preserved cells now hold fresh
         // symbolic values rather than stale ones.
-        // Cells under an active stable-view loan are stable across the loop
-        // by the loan itself; erasing them would only lose loan-supported
+        // Cells under an active stable-view borrow are stable across the loop
+        // by the borrow itself; erasing them would only lose borrow-supported
         // framing, never authority.
         state
             .memory
@@ -9025,7 +9046,7 @@ pub(super) fn havoc_loop_modified_locals(
                 variables.next_in(budget)?,
                 &state.locals,
                 mutable_ranges,
-                state.loan_ledger(),
+                state.borrow_ledger(),
                 kept_by_function,
             )
     } else {
@@ -9053,25 +9074,25 @@ fn checked_owned_entry_footprint(resources: &ResourceContext) -> Option<Vec<Memo
 }
 
 /// Retain separation from the entry ledger for each checked write range.
-fn loop_head_loan_requirements(
-    ledger: &super::loans::LoanLedger,
+fn loop_head_borrow_requirements(
+    ledger: &super::borrows::BorrowLedger,
     ranges: Option<&[MemoryRange]>,
 ) -> Result<Vec<ProofObligation>, &'static str> {
     let Some(ranges) =
         ranges.filter(|ranges| ranges.iter().all(|range| !range.is_unnamed_footprint()))
     else {
         return Err(
-            "loop memory havoc has no checked write set while a stable-view loan is active",
+            "loop memory havoc has no checked write set while a stable-view borrow is active",
         );
     };
     Ok(ranges
         .iter()
-        .filter_map(|range| loop_loan_separation(ledger, range, "loop head write separation"))
+        .filter_map(|range| loop_borrow_separation(ledger, range, "loop head write separation"))
         .collect())
 }
 
-fn loop_loan_separation(
-    ledger: &super::loans::LoanLedger,
+fn loop_borrow_separation(
+    ledger: &super::borrows::BorrowLedger,
     range: &MemoryRange,
     context: &'static str,
 ) -> Option<ProofObligation> {

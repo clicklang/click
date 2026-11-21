@@ -3,7 +3,7 @@
 The helper's ownership/view partition separates `p->value` from the private
 static. Its store therefore cannot establish that the value read from the
 static is five. Passing the static itself as `p` is rejected by the call's
-ownership/loan checks; the companion caller regression covers that refusal.
+ownership/borrow checks; the companion caller regression covers that refusal.
 
 ```c filename=library.c
 struct counter { unsigned long value; };

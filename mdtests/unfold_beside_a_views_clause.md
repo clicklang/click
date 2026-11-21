@@ -1,8 +1,8 @@
 # Unfolding an instance beside a viewed contract clause
 
-A `views` clause records a loan dependency in the resource context and a
+A `views` clause records a borrow dependency in the resource context and a
 mirror of it in the state, and every rewrite checks that the two are the same
-record. Removing the unfolded instance removes no loan dependency, so the
+record. Removing the unfolded instance removes no borrow dependency, so the
 record must be left as it is; minting a fresh one detached the context from
 the state's mirror and refused every unfold in a function with a `views`
 clause.

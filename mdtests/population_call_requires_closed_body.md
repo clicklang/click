@@ -23,7 +23,7 @@ void inspect(struct object* obj) {
 void broken(struct object* obj) {
     owns control(obj);
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         step();
         step();
     }

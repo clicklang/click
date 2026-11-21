@@ -680,6 +680,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) = Self::try_linked_pointer_viewability(input)? {
             return Ok(Some(proof));
         }
+        if let Some(proof) =
+            Self::try_indexed_read_preservation(input, MAX_TRANSPORT_SOURCE_POINTS)?
+        {
+            return Ok(Some(proof));
+        }
         attempt::try_steps(input, budget, candidates)
     }
 
@@ -3516,23 +3521,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .into_iter()
                 .map(|(_, surface)| surface)
                 .collect::<Vec<_>>();
-            // Pure proofs can expand the selected chain through Integer
-            // composition. Statement prerequisites can repeat the chain
-            // check for many operations, so keep their compact checker.
-            let closed = if matches!(search_input.context.as_ref(), ProofContext::Pure(_)) {
-                attempt::candidate_outcome(Self::try_integer_composition_using(
-                    search_input,
-                    &premises,
-                ))?
-                .flatten()
-            } else {
-                attempt::candidate_outcome(
-                    search_input
-                        .driver()
-                        .apply_step(ProofStep::OrderChain(premises)),
-                )?
-            };
-            if let Some(closed) = closed {
+            if !matches!(search_input.context.as_ref(), ProofContext::Pure(_))
+                && let Some(closed) = Self::close_selected_signed_order(search_input, &premises)
+            {
+                return Ok(Some(closed));
+            }
+            if let Some(closed) = attempt::candidate_outcome(Self::try_integer_composition_using(
+                search_input,
+                &premises,
+            ))?
+            .flatten()
+            {
                 return Ok(Some(closed));
             }
         }
@@ -5173,18 +5172,38 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .collect();
         let mut fact_equations_gathered = false;
         let mut proof = search_input.clone();
-        for _ in 0..CONSTRUCTOR_EVALUATION_FUEL {
+        let mut fuel = CONSTRUCTOR_EVALUATION_FUEL;
+        let mut step = 0;
+        while step < fuel {
+            step += 1;
             check_verification_deadline()?;
             let Some(surface_goal) = proof.surface_goal() else {
                 return Ok(None);
             };
             let mut next = None;
-            for application in pure_theorems::click_function_applications(surface_goal, &[]) {
+            // The applications outside undecided guards come first. Only when
+            // none unfolds are those in an arm a constant guard selects, such
+            // as `if 2 <= 0`, tried as well.
+            let outside = pure_theorems::click_function_applications(surface_goal, &[]);
+            let in_selected_arms =
+                pure_theorems::click_function_applications_deciding_constant_guards(surface_goal)
+                    .into_iter()
+                    .filter(|application| !outside.contains(application));
+            for application in outside.iter().cloned().chain(in_selected_arms) {
                 if let Some(unfolded) = attempt::candidate_outcome(
                     proof
                         .driver()
-                        .apply_step(ProofStep::UnfoldFunction(application)),
+                        .apply_step(ProofStep::UnfoldFunction(application.clone())),
                 )? {
+                    // A recursion over a constant measure takes about that
+                    // many unfolds in all, beyond the base fuel; the measure
+                    // of the first call is the largest.
+                    fuel = fuel
+                        .max(
+                            CONSTRUCTOR_EVALUATION_FUEL
+                                + pure_theorems::largest_constant_argument(&application),
+                        )
+                        .min(MAX_CONSTRUCTOR_EVALUATION_FUEL);
                     next = Some(unfolded);
                     break;
                 }
@@ -6647,10 +6666,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 introduced_surfaces,
             );
         }
-        if matches!(goal, Proposition::Or(_, _))
-            && let Some((surface_left, surface_right)) =
-                surface_logical_children(surface_goal, false)
-        {
+        let disjuncts = if matches!(goal, Proposition::Or(..)) {
+            surface_logical_children(surface_goal, false)
+        } else {
+            // A retained membership goal exposes the same checked choices as
+            // its old disjunction. The singleton has just one candidate.
+            crate::kernel::sequence_membership_view(goal)
+                .and_then(|view| search_input.structural_proposition_candidate(&view))
+                .map(|surface| {
+                    surface_logical_children(&surface, false)
+                        .unwrap_or_else(|| (surface.clone(), surface))
+                })
+        };
+        if let Some((surface_left, surface_right)) = disjuncts {
             return crate::kernel::search::ProofSearch::try_structural_or_solve_closure(
                 search_input,
                 &surface_left,
@@ -10726,7 +10754,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         let goal = proof.goal()?;
-        if matches!(&goal, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Float32(_) | ConditionTerm::Float64(_), _))))
+        if (matches!(&goal, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Float32(_) | ConditionTerm::Float64(_), _))))
+            || crate::kernel::proof::fact_reasoning::is_quotient_remainder_order(goal))
             && Self::known_bridge_using(&proof, surfaces).ok() == Some(true)
         {
             return proof
@@ -10759,6 +10788,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .apply_step(ProofStep::Known)
                 .ok()
                 .filter(|closed| closed.is_complete() || closed.focused_discharged());
+        }
+        if let Ok(Some(closed)) = Self::try_interval_exclusion_using(&proof, &premise_pairs) {
+            return Some(closed);
         }
         // A listed equality under a definedness guard the list does not
         // state: prove the guard from the other listed premises, extract the
@@ -10828,6 +10860,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                 .is_some();
         let typed_first = signed_order || arithmetic_domain;
+        if let Some(tactics) = plan_explicit_predecessor_upper_bound(goal, &premise_pairs)
+            .or_else(|| plan_explicit_le_and_not_lt_implies_eq(goal, &premise_pairs))
+            && matches!(tactics.first(), Some(ProofTactic::ApplyTheoremUsing { .. }))
+            && let Ok(Some(closed)) = proof.driver().try_generated_linear_script(&tactics)
+            && closed.focused_discharged()
+        {
+            return Some(closed);
+        }
         // Give memory-independent word observations the ordinary interval
         // emitter before compatibility normalization. Keep retained reads and
         // history on their existing paths, and do not broaden the speculative
@@ -11274,7 +11314,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     premise_pairs,
                     false,
                 )?;
-                plan_explicit_predecessor_upper_bound(goal, &recorded, false)
+                plan_explicit_predecessor_upper_bound(goal, &recorded)
             })
             .or_else(|| {
                 let recorded =

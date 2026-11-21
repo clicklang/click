@@ -187,12 +187,12 @@ impl ResourceContext {
 mod tests;
 
 impl ResourceContext {
-    /// Apply a checked loan's restoration recipe. Old separation comes from
+    /// Apply a checked borrow's restoration recipe. Old separation comes from
     /// the entry partition and the ledger; return-delta checks happen once at
     /// the recovery boundary, never by re-admitting this old footprint.
     pub(in crate::kernel) fn restore_checked_escrow(
         mut self,
-        member: &crate::kernel::loans::RecoveredEscrow,
+        member: &crate::kernel::borrows::RecoveredEscrow,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
         #[cfg(test)]
@@ -217,7 +217,7 @@ impl ResourceContext {
             Some(member.occurrence()),
         );
         if let Some(binding) = member.binding() {
-            self = self.with_loan_dependency(member.occurrence(), binding.clone());
+            self = self.with_borrow_dependency(member.occurrence(), binding.clone());
         }
         self.advance_prepared_memory_equalities(assumptions);
         Ok(self)

@@ -102,10 +102,10 @@ fn opaque_exception_creation_ignores_unrelated_memory_and_types() {
     assert!(costs.iter().all(|work| *work == costs[0]), "{costs:?}");
 }
 
-use crate::kernel::loans::LoanLedger;
+use crate::kernel::borrows::BorrowLedger;
 
 #[test]
-fn aggregate_copy_builds_one_loan_obligation_without_visiting_aliases_or_loans() {
+fn aggregate_copy_builds_one_borrow_obligation_without_visiting_aliases_or_borrows() {
     let _session = VerificationSession::enter();
     let (state, source, layout) = fixture(2);
     let target = SymbolicMemory::local_pointer("destination");
@@ -122,7 +122,7 @@ fn aggregate_copy_builds_one_loan_obligation_without_visiting_aliases_or_loans()
     for grow_aliases in [true, false] {
         let mut work = Vec::new();
         for size in [4_u64, 16, 64] {
-            let mut ledger = LoanLedger::new();
+            let mut ledger = BorrowLedger::new();
             let lender = ledger.fresh_participant().unwrap();
             let borrower = ledger.fresh_participant().unwrap();
             let mut assumptions = PureFactContext::new();
@@ -153,8 +153,8 @@ fn aggregate_copy_builds_one_loan_obligation_without_visiting_aliases_or_loans()
                 ledger = ledger.apply(&opening.transition).unwrap();
                 last = Some(opening);
             }
-            let copy = |ledger: &LoanLedger| {
-                let state = state.clone().with_loan_ledger(Some(ledger.clone()));
+            let copy = |ledger: &BorrowLedger| {
+                let state = state.clone().with_borrow_ledger(Some(ledger.clone()));
                 let mut paths = execute_program_aggregate_copy_paths(
                     &state,
                     &target_expression,

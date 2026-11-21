@@ -12,24 +12,24 @@ fn memory_range(base: u32, end: u32) -> MemoryRange {
 }
 
 #[test]
-fn loop_havoc_requires_a_checked_set_disjoint_from_active_loans() {
+fn loop_havoc_requires_a_checked_set_disjoint_from_active_borrows() {
     let escrow = ResourceFact::own_memory(memory_range(0, 1));
     let support = ResourceContext::new()
         .unchecked_with_fact(escrow.clone())
         .unique_owned_occurrence_for_fact(&escrow)
         .expect("the test escrow has one backing occurrence")
         .0;
-    let ledger = super::super::loans::LoanLedger::new();
+    let ledger = super::super::borrows::BorrowLedger::new();
     let owner = ledger.fresh_participant().unwrap();
     let opening = ledger.lend(owner, owner, support, escrow).unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
 
-    assert!(loop_head_loan_requirements(&ledger, None).is_err());
+    assert!(loop_head_borrow_requirements(&ledger, None).is_err());
     assert!(
-        loop_head_loan_requirements(&ledger, Some(&[MemoryRange::unnamed_footprint()])).is_err()
+        loop_head_borrow_requirements(&ledger, Some(&[MemoryRange::unnamed_footprint()])).is_err()
     );
     let requirements =
-        loop_head_loan_requirements(&ledger, Some(&[memory_range(0, 1), memory_range(2, 3)]))
+        loop_head_borrow_requirements(&ledger, Some(&[memory_range(0, 1), memory_range(2, 3)]))
             .unwrap();
     assert_eq!(requirements.len(), 2);
     for (requirement, range) in requirements

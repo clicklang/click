@@ -2574,7 +2574,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
     let rewrite_resource_term =
         |resource: &Resource| map_resource(resource, &rewrite_resource_leaf);
     let rewritten = match goal {
-        Proposition::Equal(Term::Sequence(_), Term::Sequence(_)) => {
+        Proposition::Equal(Term::Sequence(_), Term::Sequence(_))
+        | Proposition::SequenceMembership { .. } => {
             let mut rewrite = super::term_rewrite::TermRewrite::for_bits(left, right);
             let result = rewrite.proposition(goal);
             if rewrite.refusal().is_some() {

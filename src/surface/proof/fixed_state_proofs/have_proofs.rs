@@ -763,6 +763,7 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression(
         expression,
         contract_environment,
         BTreeMap::new(),
+        &PersistentBinderMap::default(),
         fixed_state,
         spec_definitions,
     )
@@ -772,6 +773,7 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
     expression: &ContractExpression,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecAlgebraicExpression, String> {
@@ -790,6 +792,7 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
         states.entry_values,
         states.current_values,
         algebraic_values,
+        integer_values,
         native_result.as_deref(),
         fixed_state.recorded_states,
         spec_definitions,
@@ -823,6 +826,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_algebraic_value(
         states.entry_values,
         states.current_values,
         algebraic_values,
+        &PersistentBinderMap::default(),
         None,
         retained_states,
         spec_definitions,
@@ -925,6 +929,7 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 states.entry_values,
                 states.current_values,
                 BTreeMap::new(),
+                &PersistentBinderMap::default(),
                 None,
                 retained_states,
                 spec_definitions,
@@ -1293,12 +1298,16 @@ impl FixedStateLowering {
         for name in names {
             crate::instrumentation::record_deterministic_work(1);
             if name.named().is_none() {
-                if let Some(value) = contract_environment.parameter_value(&name) {
-                    if !entry_state.locals().contains_name(&name) {
-                        entry_state = entry_state.with_local(name.clone(), value.clone());
+                let parameter = name
+                    .unresolved_slice_length()
+                    .map(crate::kernel::BindingName::slice_length)
+                    .unwrap_or(name);
+                if let Some(value) = contract_environment.parameter_value(&parameter) {
+                    if !entry_state.locals().contains_name(&parameter) {
+                        entry_state = entry_state.with_local(parameter.clone(), value.clone());
                     }
-                    if !lowering_state.locals().contains_name(&name) {
-                        lowering_state = lowering_state.with_local(name, value.clone());
+                    if !lowering_state.locals().contains_name(&parameter) {
+                        lowering_state = lowering_state.with_local(parameter, value.clone());
                     }
                 }
                 continue;

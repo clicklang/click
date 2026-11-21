@@ -50,7 +50,7 @@ int32 lifecycle() { ensures result == 3; } by {
     have count(item(&pool, _)) == 2 by solve();
     have count(item(&pool, &first)) == 1 by solve();
     have count(item(&pool, &second)) == 1 by solve();
-    open(item(&pool, &first)) { open(item(&pool, &second)) { step(); step(); } }
+    with(item(&pool, &first)) { with(item(&pool, &second)) { step(); step(); } }
     unfold(capacity(&pool));
     unfold(item(&pool, &first));
     unfold(item(&pool, &second));

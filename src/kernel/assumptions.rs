@@ -84,6 +84,7 @@ pub(in crate::kernel) use memory_reasoning::parameter_partition_root;
 pub(in crate::kernel) use memory_reasoning::parameter_partition_variable;
 pub(in crate::kernel) use memory_reasoning::read_candidate_byte_width;
 pub(in crate::kernel) use memory_reasoning::signed_byte_sum_is_nonwrapping_views;
+pub(in crate::kernel) use memory_reasoning::{AccessExtent, access_extent_of_value};
 pub(in crate::kernel) use memory_reasoning::{
     frame_composite_definitions, owned_instances_naming_access_base,
 };
@@ -549,8 +550,16 @@ fn algebraic_terms_equal_with_load_atoms(
                 pointer: right_pointer,
             },
         ) => loads_match(
-            &AlgebraicTermNode::memory_load_carrier(left_memory, left_pointer),
-            &AlgebraicTermNode::memory_load_carrier(right_memory, right_pointer),
+            &AlgebraicTermNode::memory_load_carrier(
+                left_memory,
+                left_pointer,
+                &left.algebraic_type,
+            ),
+            &AlgebraicTermNode::memory_load_carrier(
+                right_memory,
+                right_pointer,
+                &right.algebraic_type,
+            ),
         ),
         (
             AlgebraicTermNode::Constructor {
@@ -3226,7 +3235,7 @@ fn collect_algebraic_memory_loads(
             point: memory,
             pointer,
         } => collect_bitvector_memory_loads_with_width(
-            &AlgebraicTermNode::memory_load_carrier(memory, pointer),
+            &AlgebraicTermNode::memory_load_carrier(memory, pointer, &term.algebraic_type),
             current_memory,
             loads,
             Some(crate::kernel::ABSTRACT_VALUE_WIDTH),
@@ -6518,9 +6527,22 @@ impl PureFactContext {
             return;
         };
         self.adjust_separated_anchor_offsets(proposition, &pair.0, &pair.1);
-        if let (Some(left), Some(right)) =
-            (memory_range_anchor(&pair.0), memory_range_anchor(&pair.1))
-        {
+        // A whole object of symbolic size is a fixed interval too: its span
+        // is its size term.
+        let anchor = |range: &MemoryRange| {
+            memory_range_anchor(range).or_else(|| {
+                range
+                    .wide_bounds()
+                    .filter(|(start, end)| {
+                        range.element_width() == 1
+                            && start.uint64_as_const() == Some(0)
+                            && (range.symbolic_object().is_some()
+                                || TypeParameterName::of_size_term(end).is_some())
+                    })
+                    .map(|_| range.start_pointer().offset)
+            })
+        };
+        if let (Some(left), Some(right)) = (anchor(&pair.0), anchor(&pair.1)) {
             self.separated_address_classes.adjust(
                 proposition,
                 Address {
@@ -6679,7 +6701,7 @@ impl PureFactContext {
             })
     }
 
-    /// Separation of an exposed owner and a checked loan-bound projection.
+    /// Separation of an exposed owner and a checked borrow-bound projection.
     /// Candidate lookup uses only the queried address keys, and the retained
     /// composition is the authority subsequently checked by memory evidence.
     pub(in crate::kernel) fn borrow_partition_separated_members<'a>(
@@ -7312,7 +7334,7 @@ impl PureFactContext {
             record_implicit_consulted_premises(self, proposition);
             return true;
         }
-        if let Some(holds) = crate::kernel::spec::checks_int32_sequence_equality(
+        if let Some(holds) = crate::kernel::spec::checks_retained_sequence_comparison(
             proposition,
             true,
             |condition, truth| {
@@ -7398,7 +7420,7 @@ impl PureFactContext {
         {
             return true;
         }
-        if let Some(holds) = crate::kernel::spec::checks_int32_sequence_equality(
+        if let Some(holds) = crate::kernel::spec::checks_retained_sequence_comparison(
             proposition,
             true,
             |condition, value| {
@@ -7478,6 +7500,18 @@ impl PureFactContext {
     /// Read the stated separation for these exact physical byte spans. This
     /// proves only separation, without transferring either range's authority.
     pub(crate) fn states_memory_separation(&self, proposition: &Proposition) -> bool {
+        self.states_memory_separation_with_upkeep(proposition, true)
+    }
+
+    pub(crate) fn states_prepared_memory_separation(&self, proposition: &Proposition) -> bool {
+        self.states_memory_separation_with_upkeep(proposition, false)
+    }
+
+    fn states_memory_separation_with_upkeep(
+        &self,
+        proposition: &Proposition,
+        synchronize: bool,
+    ) -> bool {
         let Proposition::ResourceSeparate { left, right } = proposition else {
             return false;
         };
@@ -7489,11 +7523,20 @@ impl PureFactContext {
         if self.resource_separation_conflicts_with_equalities(left, right) {
             return false;
         }
-        let Some(source) = self.separated_address_classes.exact_spans(
-            left_range,
-            right_range,
-            &self.equality_graph,
-        ) else {
+        let source = if synchronize {
+            self.separated_address_classes.exact_spans(
+                left_range,
+                right_range,
+                &self.equality_graph,
+            )
+        } else {
+            self.separated_address_classes.prepared_exact_spans(
+                left_range,
+                right_range,
+                &self.equality_graph,
+            )
+        };
+        let Some(source) = source else {
             return false;
         };
         record_implicit_consulted_premises(self, &source);
@@ -9112,6 +9155,14 @@ fn memory_range_contained_by_exact_arithmetic(
     parent: &MemoryRange,
     assumptions: Option<&PureFactContext>,
 ) -> bool {
+    // A range with holes holds only its other fields, by the field rules.
+    // A field lies inside its symbolic object, by the layout's rule.
+    if crate::kernel::primitives::symbolic_object_covers_field(parent, range) {
+        return true;
+    }
+    if parent.has_holes() {
+        return false;
+    }
     if range.wide_bounds().is_some() || parent.wide_bounds().is_some() {
         return assumptions.is_some_and(|assumptions| {
             crate::kernel::primitives::wide_memory_range_covers(parent, range, assumptions)
@@ -9215,6 +9266,14 @@ pub(super) fn memory_range_contained_for_memory_resolution(
     parent: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A range with holes holds only its other fields, by the field rules.
+    // A field lies inside its symbolic object, by the layout's rule.
+    if crate::kernel::primitives::symbolic_object_covers_field(parent, range) {
+        return true;
+    }
+    if parent.has_holes() {
+        return false;
+    }
     // Exact constant byte intervals cover typed accesses even when one side
     // uses raw bytes or int32 words. Symbolic cross-width containment remains
     // refused; the recursive element-index rules below require equal widths.
@@ -9480,10 +9539,37 @@ fn recorded_less_equal_candidates<'a>(
 /// only what arithmetic settles on its own — a pointer at the range's own start
 /// term, or wholly constant endpoints and delta — and refuses the rest rather
 /// than reading a residue as an offset.
+/// Whether `pointer` is the address of a field of the symbolic object
+/// `range` holds whole, the field not a hole of it.
+fn symbolic_field_address_in_object(pointer: &Address, range: &MemoryRange) -> bool {
+    let Some(layout) = range.symbolic_object() else {
+        return false;
+    };
+    let Some((rest, field_layout, field)) =
+        crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset)
+    else {
+        return false;
+    };
+    field_layout == layout
+        && pointer.base == range.base().base
+        && rest.map_or(range.base().offset.as_const() == Some(0), |rest| {
+            *rest == range.base().offset
+        })
+        && !range.holes().contains(&field)
+}
+
 pub(in crate::kernel) fn pointer_in_memory_range_shallow(
     pointer: &Address,
     range: &MemoryRange,
 ) -> bool {
+    // A range with holes holds only its other fields, by the field rules.
+    // A field's address lies in its symbolic object, by the layout's rule.
+    if symbolic_field_address_in_object(pointer, range) {
+        return true;
+    }
+    if range.has_holes() {
+        return false;
+    }
     // A wide range's bounds are 64-bit terms, which nothing decides without
     // a fact context.
     if range.wide_bounds().is_some() {
@@ -9506,6 +9592,14 @@ pub(in crate::kernel) fn pointer_in_memory_range_shallow_with_facts(
     range: &MemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A range with holes holds only its other fields, by the field rules.
+    // A field's address lies in its symbolic object, by the layout's rule.
+    if symbolic_field_address_in_object(pointer, range) {
+        return true;
+    }
+    if range.has_holes() {
+        return false;
+    }
     // A wide range has one membership rule: the pointer addresses a whole
     // element at an unsigned 64-bit index inside the bounds.
     if range.wide_bounds().is_some() {
@@ -10489,7 +10583,7 @@ impl ProofObligation {
         };
         self.live_view_write.then(|| {
             matches!((left.as_ref(), right.as_ref()), (Resource::Memory(write), Resource::Memory(protected))
-                if super::loans::protected_ranges_constant_overlap(write, protected) == Some(true))
+                if super::borrows::protected_ranges_constant_overlap(write, protected) == Some(true))
         })
     }
 
@@ -10728,7 +10822,10 @@ impl ExecutionPureFact {
             proposition: std::sync::Arc::new(Proposition::MemoryMutatesOnly {
                 before: before.clone(),
                 after: after.clone(),
-                writes: vec![(pointer.clone(), value.byte_width())],
+                writes: vec![(
+                    pointer.clone(),
+                    crate::kernel::assumptions::access_extent_of_value(&value),
+                )],
             }),
             public: false,
             certified: true,
@@ -10970,8 +11067,10 @@ impl SymbolicExecutionPath {
         &self.obligations
     }
 
-    pub(crate) fn loan_evidence(&self) -> &crate::kernel::loans::CheckedLoanCallEvidenceSequence {
-        &self.loan_evidence
+    pub(crate) fn borrow_evidence(
+        &self,
+    ) -> &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence {
+        &self.borrow_evidence
     }
 
     pub fn theorem(&self) -> &Theorem {
@@ -11070,8 +11169,10 @@ impl FunctionExecutionCandidate {
         &self.data.obligations
     }
 
-    pub(crate) fn loan_evidence(&self) -> &crate::kernel::loans::CheckedLoanCallEvidenceSequence {
-        &self.data.loan_evidence
+    pub(crate) fn borrow_evidence(
+        &self,
+    ) -> &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence {
+        &self.data.borrow_evidence
     }
 }
 

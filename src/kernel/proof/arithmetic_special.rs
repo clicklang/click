@@ -7,7 +7,7 @@ use super::super::{
 
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
-use crate::kernel::{IntegerTerm, MachineIntegerType};
+use crate::kernel::{IntegerTerm, MachineIntegerType, PureFactContext};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
@@ -563,6 +563,13 @@ fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &Machin
 /// recursive for constant expressions; keeping it behind this bounded walk
 /// makes attacker-controlled depth fail before that helper is reached.
 pub(crate) fn checked_pointer_alignment(condition: &ConditionTerm) -> Option<(&Address, u64)> {
+    use crate::kernel::MachineOperandView;
+    let is_mask = |operand: MachineOperandView<'_>| {
+        matches!(
+            operand.binary(),
+            Some((MachineIntegerType::UInt64, MachineBinaryOp::BitwiseAnd, _))
+        )
+    };
     match condition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
@@ -570,11 +577,20 @@ pub(crate) fn checked_pointer_alignment(condition: &ConditionTerm) -> Option<(&A
             left,
             right,
         } => {
-            if !charge_bitvector(left) || !charge_bitvector(right) {
+            if !(is_mask(MachineOperandView::Legacy(left))
+                || is_mask(MachineOperandView::Legacy(right)))
+                || !charge_bitvector(left)
+                || !charge_bitvector(right)
+            {
                 return None;
             }
         }
         ConditionTerm::IntegerEqual(left, right) => {
+            if ![left, right].into_iter().any(|operand| {
+                matches!(operand.as_ref(), IntegerTerm::Machine(word) if is_mask(word.operand_view()))
+            }) {
+                return None;
+            }
             for side in [left, right] {
                 match side.as_ref() {
                     IntegerTerm::Machine(word) if word_view::charge(Word(word.operand_view())) => {}
@@ -1479,6 +1495,23 @@ pub(crate) fn constant_pointer_byte_difference(left: &Address, right: &Address) 
 /// symbolic offsets and facts about other pointers are deliberately excluded.
 pub(crate) fn intrinsic_pointer_alignment(result: &Proposition) -> bool {
     pointer_alignment(None, result)
+}
+
+/// Select a formation premise by the written base, offset and alignment.
+/// Replay validates the selected premise with the ordinary alignment rule.
+pub(crate) fn known_pointer_alignment(result: &Proposition, facts: &PureFactContext) -> bool {
+    let Some((condition, expected)) = result.condition_native() else {
+        return false;
+    };
+    let Some((pointer, alignment)) = checked_pointer_alignment(condition) else {
+        return false;
+    };
+    charge_pointer(pointer)
+        && facts
+            .pointer_alignment_certificate_decision(pointer, alignment)
+            .is_some_and(|(truth, premise)| {
+                truth == *expected && pointer_alignment(premise.as_ref(), result)
+            })
 }
 
 fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> bool {

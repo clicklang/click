@@ -1,4 +1,4 @@
-# A decided call guard determines the loan-separation obligation
+# A decided call guard determines the borrow-separation obligation
 
 The active arm writes the left field and proves separation from a live view
 of the right field. The inactive arm can preserve a view of the left field

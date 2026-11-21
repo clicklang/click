@@ -2936,6 +2936,46 @@ theorem add_right_order(a: Integer, b: Integer, c: Integer) {
 }
 ```
 
+### `integer::int32_less_than_implies_less_equal`
+
+```click
+theorem int32_less_than_implies_less_equal(first: int32, last: int32) {
+    requires first < last;
+    ensures first <= last by {
+        apply(integer::lt_le(to_integer(first), to_integer(last))) using {
+            to_integer(first) < to_integer(last);
+        };
+        known();
+    }
+}
+```
+
+### `integer::int32_less_than_less_equal_transitive`
+
+```click
+theorem int32_less_than_less_equal_transitive(first: int32, middle: int32, last: int32) {
+    requires first < middle;
+    requires middle <= last;
+    ensures first < last by {
+        have to_integer(first) + 1 <= to_integer(middle) by {
+            apply(integer::lt_step_le(to_integer(first), to_integer(middle))) using {
+                to_integer(first) < to_integer(middle);
+            };
+        }
+        have to_integer(first) + 1 <= to_integer(last) by {
+            apply(integer::le_transitive(to_integer(first) + 1, to_integer(middle), to_integer(last))) using {
+                to_integer(first) + 1 <= to_integer(middle);
+                to_integer(middle) <= to_integer(last);
+            };
+        }
+        apply(integer::step_le_lt(to_integer(first), to_integer(last))) using {
+            to_integer(first) + 1 <= to_integer(last);
+        };
+        known();
+    }
+}
+```
+
 ### `integer::int32_less_equal_less_than_transitive`
 
 ```click
@@ -6253,7 +6293,7 @@ instance with the bytes it no longer covers. The bytes determine `len`, so
 `fold(cstr_at(p, m))` at any other length fails. An owner lends its instance
 to a callee that views it, and a caller that owns the bytes and holds the
 facts but no instance has the call assemble the view; the caller keeps its
-bytes. `open(cstr_at(p, len)) { ... }` exposes the body and the facts. A
+bytes. `with(cstr_at(p, len)) { ... }` exposes the body and the facts. A
 `char`, `signed char`, or `unsigned char` pointer may be passed for `p`, as
 for the C-string predicates; a signed character pointer is read through its
 byte view `p as (uint8 *)`.

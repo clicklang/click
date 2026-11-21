@@ -1097,18 +1097,35 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         }
         if compound_available.contains(&std::ptr::from_ref(proposition))
             || available(proposition)
+            || crate::kernel::spec::sequence_membership_view(proposition)
+                .as_ref()
+                .is_some_and(&available)
             || spelled_otherwise()
             || observed_otherwise()
         {
             return Ok(self.closed_focused());
         }
+        let bridge_available = |goal: &Proposition| {
+            super::fact_reasoning::known_bridge_leaf(goal, &|premise| {
+                // Adjacent footprint bounds use the exact endpoint order
+                // in this context.
+                if matches!(goal, Proposition::ResourceSeparate { .. })
+                    && matches!(premise, Proposition::ConditionIs(..))
+                {
+                    facts.pure_known_available(premise)
+                } else {
+                    available(premise)
+                }
+            })
+        };
         if super::fact_reasoning::computes_leaf(proposition)
-            || super::fact_reasoning::known_bridge_leaf(proposition, &available)
+            || super::arithmetic_special::known_pointer_alignment(proposition, facts.assumptions())
+            || bridge_available(proposition)
             || crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                 proposition,
             )
             .iter()
-            .any(|reading| super::fact_reasoning::known_bridge_leaf(reading, &available))
+            .any(bridge_available)
         {
             return Ok(self.closed_focused());
         }
@@ -1139,7 +1156,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     .iter()
                     .any(|form| facts.contains(form))
                 || super::fact_reasoning::computes_leaf(side)
-                || super::fact_reasoning::known_bridge_leaf(side, &available)
+                || super::arithmetic_special::known_pointer_alignment(side, facts.assumptions())
+                || bridge_available(side)
         };
         match first_unavailable_connective_side(proposition, &side_available) {
             None => Ok(self.closed_focused()),
@@ -1366,28 +1384,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .ok_or(PropositionCloseError::NotProposition)?;
         super::fact_reasoning::normalize_using_conditions(goal.proposition(), premises, facts)
             .map_err(PropositionCloseError::ConditionalNormalization)?;
-        Ok(self.closed_focused())
-    }
-
-    pub(crate) fn apply_order_chain(&self, premises: &[Proposition]) -> Result<Self, String> {
-        let (goal, facts) = self
-            .focused_proposition()
-            .ok_or("`order_chain` requires a proposition goal")?;
-        if premises.is_empty()
-            || !crate::kernel::PureFactContext::checks_listed_signed_order_chain(
-                goal.proposition(),
-                premises,
-            )
-        {
-            return Err("`order_chain` requires connected int32 comparisons in source order, with a strict link for a strict goal".into());
-        }
-        for (index, premise) in premises.iter().enumerate() {
-            if !super::fact_reasoning::listed_condition_available(premise, facts) {
-                return Err(format!(
-                    "`order_chain` premise {index} is not exactly available"
-                ));
-            }
-        }
         Ok(self.closed_focused())
     }
 
@@ -1904,7 +1900,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let ProofObligation::Proposition(goal) = &branch.obligation else {
             return Err("`both` requires a proposition goal");
         };
-        let sequence = crate::kernel::spec::int32_sequence_equality_view(goal.proposition());
+        let sequence = crate::kernel::spec::retained_sequence_equality_view(goal.proposition());
         let Proposition::And(left, right) = sequence.as_ref().unwrap_or_else(|| goal.proposition())
         else {
             return Err("`both` requires an `and` goal");
@@ -1960,6 +1956,8 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         if !branch.state.facts.contains(&disjunction) {
             return Err(PropositionSplitError::MissingDisjunction);
         }
+        let disjunction =
+            crate::kernel::spec::sequence_membership_view(&disjunction).unwrap_or(disjunction);
         let Proposition::Or(left, right) = disjunction else {
             return Err(PropositionSplitError::ExpectedDisjunction);
         };
@@ -3037,43 +3035,6 @@ mod tests {
                 },
             ),
         )
-    }
-
-    #[test]
-    fn checked_order_chain_work_tracks_written_links_only() {
-        let _session = crate::kernel::VerificationSession::enter();
-        let order = |from, to| {
-            Proposition::condition_is(
-                crate::kernel::ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(Variable(from)),
-                    MachineTerm::Variable(Variable(to)),
-                ),
-                true,
-            )
-        };
-        let sample = |links: usize, unrelated: usize| {
-            let premises = (0..links)
-                .map(|n| order(110_000 + n as u64, 110_001 + n as u64))
-                .collect::<Vec<_>>();
-            let mut ambient = premises.clone();
-            ambient.extend((0..unrelated).map(|n| order(210_000 + n as u64, 211_000 + n as u64)));
-            let proof = known_computation_proof(
-                order(110_000, 110_000 + links as u64),
-                PureFactStore::from_ordered(&ambient),
-            );
-            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                proof.apply_order_chain(&premises)
-            });
-            assert!(result.is_ok());
-            work
-        };
-        let related = [4, 16, 64].map(|links| sample(links, 0));
-        assert!(
-            related[2] <= related[1] * 5 && related[1] <= related[0] * 5,
-            "{related:?}"
-        );
-        let unrelated = [0, 128, 512].map(|extra| sample(8, extra));
-        assert!(unrelated[2] <= unrelated[0] + 16, "{unrelated:?}");
     }
 
     #[test]

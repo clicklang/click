@@ -2914,6 +2914,7 @@ pub enum CExpression {
         name: BindingName,
         increment: bool,
         prefix: bool,
+        volatile_access: bool,
         interface_type: InterfaceType,
         struct_name: Option<String>,
         pointee_constant: bool,
@@ -6529,7 +6530,7 @@ fn align_up(offset: u32, alignment: u32) -> Option<u32> {
 /// at an adjacent address. A union member is not narrowed; union members
 /// overlap by design.
 fn member_pointer(base: CExpression, field: &RecordField) -> CExpression {
-    let member = offset_field_pointer(base, field.offset_bytes);
+    let member = offset_field_pointer(base, field.offset_bytes());
     if field.union_name.is_some() || field.byte_width == 0 {
         return member;
     }
@@ -6801,9 +6802,10 @@ fn flatten_aggregate_layout(
             aggregate_fields.push(RecordScalarField {
                 pointee_constant: nested_field.pointee_constant,
                 name: format!("{prefix}.{}", nested_field.name),
-                offset_bytes: base_offset
-                    .checked_add(nested_field.offset_bytes)
-                    .expect("validated embedded struct field offset"),
+                offset: base_offset
+                    .checked_add(nested_field.offset_bytes())
+                    .expect("validated embedded struct field offset")
+                    .into(),
                 interface_type: nested_field.interface_type,
             });
         }
@@ -6840,13 +6842,13 @@ fn flatten_aggregate_layout(
             append_nested_fields(
                 &mut aggregate_fields,
                 field_name,
-                field.offset_bytes,
+                field.offset_bytes(),
                 nested_layout,
             );
             append_nested_unions(
                 &mut aggregate_unions,
                 field_name,
-                field.offset_bytes,
+                field.offset_bytes(),
                 nested_layout,
             );
         } else if let (Some(nested_name), Some(element_width), Some(shape)) = (
@@ -6863,7 +6865,7 @@ fn flatten_aggregate_layout(
                 .expect("validated embedded struct array field element count");
             for flat_index in 0..element_count {
                 let element_offset = field
-                    .offset_bytes
+                    .offset_bytes()
                     .checked_add(
                         flat_index
                             .checked_mul(element_width)
@@ -6890,7 +6892,7 @@ fn flatten_aggregate_layout(
                 .expect("embedded union field has a parsed layout");
             aggregate_unions.push(RecordUnionLayout {
                 name: field_name.clone(),
-                offset_bytes: field.offset_bytes,
+                offset_bytes: field.offset_bytes(),
                 size_bytes: union_layout.size_bytes,
                 fields: union_layout
                     .fields
@@ -6906,7 +6908,7 @@ fn flatten_aggregate_layout(
             aggregate_fields.push(RecordScalarField {
                 pointee_constant: field.pointee_constant,
                 name: field_name.clone(),
-                offset_bytes: field.offset_bytes,
+                offset: field.offset(),
                 interface_type: field.interface_type,
             });
         }
@@ -7386,6 +7388,8 @@ struct Parser {
     variable_function_pointers: BTreeMap<BindingName, CallbackInterface>,
     variable_constants: BTreeSet<BindingName>,
     variable_pointee_constants: BTreeSet<BindingName>,
+    /// Automatic objects with a volatile object or pointee type.
+    volatile_locals: BTreeSet<BindingName>,
     unions: DeclarationMap<CUnionLayout>,
     /// The names declared in each open lexical scope, innermost last. The
     /// source name is retained for lookup, while `kernel_name` is the
@@ -7416,6 +7420,8 @@ struct Parser {
     /// function. A call can only change an automatic scalar through such an
     /// escaped address; static-storage scalars are handled separately.
     address_taken_variables: BTreeSet<BindingName>,
+    /// Cursor parameters that must remain value-only for a postfix byte copy.
+    postfix_copy_value_parameters: BTreeSet<BindingName>,
     next_static_binding: u32,
     file_static_bindings: BTreeMap<String, StaticBindingId>,
     /// The number the next call inside an expression gets: its result is
@@ -8045,6 +8051,7 @@ impl Parser {
             variable_function_pointers: BTreeMap::new(),
             variable_constants: BTreeSet::new(),
             variable_pointee_constants: BTreeSet::new(),
+            volatile_locals: BTreeSet::new(),
             unions: DeclarationMap::new(),
             scopes: Vec::new(),
             compound_literal_declarations: Vec::new(),
@@ -8060,6 +8067,7 @@ impl Parser {
             next_local_binding: 0,
             out_of_scope_names: BTreeSet::new(),
             address_taken_variables: BTreeSet::new(),
+            postfix_copy_value_parameters: BTreeSet::new(),
             next_static_binding: 0,
             file_static_bindings: BTreeMap::new(),
             next_call_result: 0,
@@ -8148,6 +8156,7 @@ impl Parser {
             self.variable_function_pointers.remove(&binding.kernel_name);
             self.variable_constants.remove(&binding.kernel_name);
             self.variable_pointee_constants.remove(&binding.kernel_name);
+            self.volatile_locals.remove(&binding.kernel_name);
             self.incomplete_array_names.remove(&binding.kernel_name);
             if let Some(metadata) = binding.shadowed {
                 let name = binding.kernel_name;
@@ -9501,6 +9510,8 @@ impl Parser {
             header.return_pointee_constant,
         );
         let previous_address_taken_variables = std::mem::take(&mut self.address_taken_variables);
+        let previous_postfix_copy_value_parameters =
+            std::mem::take(&mut self.postfix_copy_value_parameters);
         let previous_callback_sources = std::mem::take(&mut self.callback_statement_sources);
         let previous_source_regions = std::mem::replace(
             &mut self.source_regions,
@@ -9526,6 +9537,7 @@ impl Parser {
         self.current_return_type = previous_return_type;
         self.current_return_pointee_constant = previous_return_pointee_constant;
         self.address_taken_variables = previous_address_taken_variables;
+        self.postfix_copy_value_parameters = previous_postfix_copy_value_parameters;
         let mut body = body_result?;
         self.pop_scope();
         self.out_of_scope_names.clear();
@@ -10355,6 +10367,9 @@ impl Parser {
             }
             let object_volatile = parsed_type.object_is_volatile();
             let pointee_volatile = parsed_type.pointee_is_volatile();
+            if object_volatile || pointee_volatile {
+                self.volatile_locals.insert(kernel_name.clone());
+            }
             let object_constant = parsed_type.is_constant && !array_parameter;
             let pointee_constant =
                 parsed_type.pointee_constant || (parsed_type.is_constant && array_parameter);
@@ -10422,7 +10437,7 @@ impl Parser {
                                 "unknown struct declaration `{struct_name_value}`"
                             ))
                         })?
-                        .size_bytes;
+                        .size_bytes();
                     self.variable_array_shapes
                         .insert(kernel_name.clone(), vec![1]);
                     // The declarator's bound is not part of the function's
@@ -11325,7 +11340,7 @@ impl Parser {
                 .ok_or_else(|| {
                     self.error_here(format!("unknown struct declaration `{struct_name}`"))
                 })?
-                .size_bytes;
+                .size_bytes();
             (element_width, format!("struct {struct_name}"), true)
         } else {
             if array_type_for_element(parsed_type.interface_type, 1).is_none() {
@@ -12697,7 +12712,7 @@ impl Parser {
                             .as_ref()
                             .expect("struct pointer has a struct name"),
                     )
-                    .is_some_and(|layout| !layout.size_bytes.is_multiple_of(4))
+                    .is_some_and(|layout| !layout.size_bytes().is_multiple_of(4))
             {
                 // Unaligned struct sizes cannot use the kernel's int32
                 // pointer allocation width. Use a byte-addressed local for
@@ -12717,6 +12732,9 @@ impl Parser {
             }
             let object_volatile = parsed_type.object_is_volatile();
             let pointee_volatile = parsed_type.pointee_is_volatile();
+            if object_volatile || pointee_volatile {
+                self.volatile_locals.insert(name.clone());
+            }
             let object_constant = parsed_type.is_constant;
             let pointee_constant = parsed_type.pointee_constant;
             if object_constant {
@@ -13448,7 +13466,7 @@ impl Parser {
             let element_width = element_type.abi_size_bytes();
             for index in 0..element_count {
                 let element_offset = field
-                    .offset_bytes
+                    .offset_bytes()
                     .checked_add(
                         index
                             .checked_mul(element_width)
@@ -13526,6 +13544,9 @@ impl Parser {
             }
             let object_volatile = parsed_type.object_is_volatile();
             let pointee_volatile = parsed_type.pointee_is_volatile();
+            if object_volatile || pointee_volatile {
+                self.volatile_locals.insert(name.clone());
+            }
             let object_constant = parsed_type.is_constant;
             let pointee_constant = parsed_type.pointee_constant;
             if object_constant {
@@ -14314,7 +14335,7 @@ impl Parser {
                 layout.class.clone().map(|class| {
                     (
                         crate::kernel::effective_type::CAccessClass::Struct(class),
-                        layout.size_bytes,
+                        layout.size_bytes(),
                         layout.alignment_bytes,
                     )
                 })
@@ -15536,7 +15557,7 @@ impl Parser {
                 pointee_constant,
                 site,
             } => {
-                let (prefix, pointer, value) = self.lower_expression_pair(pointer, value)?;
+                let (prefix, pointer, value) = self.lower_store_operands(pointer, value)?;
                 Ok(prepend_statements(
                     prefix,
                     CStatement::Store {
@@ -15788,6 +15809,140 @@ impl Parser {
             } => self.reads_only_locals_other_than(expression, assigned),
             _ => false,
         }
+    }
+
+    fn lower_store_operands(
+        &mut self,
+        destination: CExpression,
+        value: CExpression,
+    ) -> Result<(Vec<CStatement>, CExpression, CExpression), CSyntaxError> {
+        let Some(mut checks) = self.postfix_byte_copy_checks(&destination, &value) else {
+            return self.lower_expression_pair(destination, value);
+        };
+        let (destination_prefix, destination) = self.lower_expression_calls(destination)?;
+        let (source_prefix, value) = match value {
+            CExpression::Load(source, loaded_type) => {
+                // The assertions already establish separation for the updated address.
+                let (prefix, source) = self.lower_expression_calls(*source)?;
+                (prefix, CExpression::Load(Box::new(source), loaded_type))
+            }
+            value => self.lower_expression_calls(value)?,
+        };
+        checks.extend(destination_prefix);
+        checks.extend(source_prefix);
+        Ok((checks, destination, value))
+    }
+
+    fn postfix_byte_cursor(expression: &CExpression) -> Option<&BindingName> {
+        match expression {
+            CExpression::ScalarUpdate {
+                name: name @ BindingName::Local(_),
+                prefix: false,
+                volatile_access: false,
+                interface_type: InterfaceType::UInt8Pointer,
+                ..
+            } => Some(name),
+            _ => None,
+        }
+    }
+
+    /// C sequences the final store after both operand values. The cursor
+    /// updates can run first if the byte accesses are disjoint from those
+    /// cursor objects and the accesses still use the original addresses.
+    fn postfix_byte_copy_checks(
+        &mut self,
+        destination: &CExpression,
+        value: &CExpression,
+    ) -> Option<Vec<CStatement>> {
+        let destination = Self::postfix_byte_cursor(destination)?;
+        let (source, source_address, source_update) = match value {
+            CExpression::Load(pointer, _) => {
+                let source = Self::postfix_byte_cursor(pointer)?;
+                (source, CExpression::Variable(source.clone()), Some(source))
+            }
+            CExpression::Index(base, index, _)
+                if matches!(
+                    index.as_ref(),
+                    CExpression::Int32Literal(_)
+                        | CExpression::UInt32Literal(_)
+                        | CExpression::Int64Literal(_)
+                        | CExpression::UInt64Literal(_)
+                ) =>
+            {
+                let CExpression::Variable(source @ BindingName::Local(_)) = base.as_ref() else {
+                    return None;
+                };
+                if self.variable_types.get(source) != Some(&InterfaceType::UInt8Pointer)
+                    || self.volatile_locals.contains(source)
+                {
+                    return None;
+                }
+                (source, CExpression::Add(base.clone(), index.clone()), None)
+            }
+            _ => return None,
+        };
+        if destination == source {
+            return None;
+        }
+
+        let cursors = std::iter::once(destination).chain(source_update);
+        let is_parameter =
+            |name: &BindingName| name.local_id().is_some_and(LocalBindingId::is_parameter);
+        if cursors
+            .clone()
+            .any(|name| is_parameter(name) && self.address_taken_variables.contains(name))
+        {
+            return None;
+        }
+
+        let accesses = [
+            (destination, CExpression::Variable(destination.clone())),
+            (source, source_address),
+        ];
+        let width = self.abi.size_and_alignment(InterfaceType::UInt8Pointer).0;
+        let mut checks = Vec::new();
+        for cursor in cursors {
+            if is_parameter(cursor) {
+                // Pointer parameters have no addressable slot in the model.
+                // Require that the rest of the source never forms their address.
+                self.postfix_copy_value_parameters.insert(cursor.clone());
+                continue;
+            }
+            let address = CExpression::Cast {
+                expression: Box::new(CExpression::AddressOf(Box::new(CExpression::Variable(
+                    cursor.clone(),
+                )))),
+                interface_type: InterfaceType::UInt8Pointer,
+                struct_name: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            };
+            for (access, accessed_address) in &accesses {
+                // An unsigned char can access any byte of the cursor itself.
+                // Test the whole pointer representation, including nonzero offsets.
+                let condition = (0..width)
+                    .map(|bytes| {
+                        CExpression::NotEqual(
+                            Box::new(accessed_address.clone()),
+                            Box::new(CExpression::PointerOffsetBytes {
+                                pointer: Box::new(address.clone()),
+                                bytes,
+                            }),
+                        )
+                    })
+                    .reduce(|left, right| CExpression::And(Box::new(left), Box::new(right)))
+                    .expect("a data pointer occupies at least one byte");
+                checks.push(CStatement::Assert {
+                    condition,
+                    label: format!(
+                        "byte accessed through `{access}` must be separate from the unsequenced update of `{cursor}`"
+                    ),
+                    site: CSite::NONE,
+                });
+            }
+        }
+        Some(checks)
     }
 
     fn lower_expression_pair(
@@ -17754,7 +17909,7 @@ impl Parser {
             .structs
             .get(&struct_name)
             .ok_or_else(|| self.error_here("pointer arithmetic requires a complete struct layout"))?
-            .size_bytes;
+            .size_bytes();
         let byte_pointer = CExpression::Cast {
             expression: Box::new(pointer),
             interface_type: InterfaceType::UInt8Pointer,
@@ -18056,6 +18211,11 @@ impl Parser {
                 ));
             }
             if let CExpression::Variable(name) = &target {
+                if self.postfix_copy_value_parameters.contains(name) {
+                    return Err(self.error_here(format!(
+                        "cannot take the address of postfix copy cursor parameter `{name}`"
+                    )));
+                }
                 self.address_taken_variables.insert(name.clone());
             }
             return Ok(CExpression::AddressOf(Box::new(target)));
@@ -18368,6 +18528,7 @@ impl Parser {
         Ok(CExpression::ScalarUpdate {
             struct_name: self.variable_structs.get(&name).cloned(),
             pointee_constant: self.variable_pointee_is_constant(&name),
+            volatile_access: self.volatile_locals.contains(&name),
             name,
             increment,
             prefix,
@@ -18641,7 +18802,7 @@ impl Parser {
                                 .structs
                                 .get(struct_name)
                                 .expect("struct array has a declaration")
-                                .size_bytes;
+                                .size_bytes();
                             widened_stride(offset, element_width)
                         } else {
                             offset
@@ -18663,7 +18824,7 @@ impl Parser {
                                         "cannot index incomplete struct `{struct_name}`"
                                     ))
                                 })?
-                                .size_bytes;
+                                .size_bytes();
                             let byte_pointer = CExpression::Cast {
                                 expression: Box::new(expression),
                                 interface_type: InterfaceType::UInt8Pointer,
@@ -18771,7 +18932,7 @@ impl Parser {
         };
         Some((
             struct_name.clone(),
-            self.structs.get(struct_name)?.size_bytes,
+            self.structs.get(struct_name)?.size_bytes(),
             shape.clone(),
         ))
     }
@@ -20019,7 +20180,7 @@ impl Parser {
             .get(&member)
             .ok_or_else(|| self.error_here(format!("struct `{name}` has no member `{member}`")))?;
         // size_t is unsigned 64-bit on both supported x86-64 targets.
-        Ok(CExpression::UInt64Literal(u64::from(field.offset_bytes)))
+        Ok(CExpression::UInt64Literal(u64::from(field.offset_bytes())))
     }
 
     fn parse_types_compatible_operand(&mut self) -> Result<ParsedType, CSyntaxError> {
@@ -20086,7 +20247,7 @@ impl Parser {
                 let bytes = self
                     .structs
                     .get(&name)
-                    .map(|layout| layout.size_bytes)
+                    .map(|layout| layout.size_bytes())
                     .or_else(|| {
                         self.bit_field_records
                             .get(&name)
@@ -20154,7 +20315,7 @@ impl Parser {
                         .structs
                         .get(&name)
                         .expect("aggregate operand has a layout")
-                        .size_bytes;
+                        .size_bytes();
                     return Ok(CExpression::SizeOfStruct { name, bytes });
                 }
                 let interface_type = self
@@ -20186,7 +20347,7 @@ impl Parser {
                     .structs
                     .get(name)
                     .ok_or_else(|| self.error_here(format!("unknown struct declaration `{name}`")))?
-                    .size_bytes;
+                    .size_bytes();
                 return Ok(CExpression::SizeOfStruct {
                     name: (name.clone()),
                     bytes,
@@ -22030,7 +22191,7 @@ mod scope_metadata_tests {
             ("b".into(), InterfaceType::UInt16, 2, 2),
         ];
         let layout = RecordLayout::from_explicit_fields(fields.clone(), 4, 2).unwrap();
-        assert_eq!(layout.field("b").unwrap().offset_bytes, 2);
+        assert_eq!(layout.field("b").unwrap().offset_bytes(), 2);
         assert_eq!(layout.field("b").unwrap().byte_width, 2);
         for (offset, width) in [(1, 2), (0, 2), (2, 1), (4, 2)] {
             let mut invalid = fields.clone();

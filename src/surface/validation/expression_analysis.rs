@@ -304,8 +304,8 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
             let mut calls = Vec::new();
             contract_expression_reads_memory(expression, &mut calls)
         }
-        // Liveness of storage the body itself owns is stable under a loan:
-        // a live loan over any of those bytes forbids freeing the
+        // Liveness of storage the body itself owns is stable under a borrow:
+        // a live borrow over any of those bytes forbids freeing the
         // allocation. Liveness of anything else is not.
         ClickProposition::Loadable { segment } => {
             !owned_bases.iter().any(|base| **base == segment.base)
@@ -1159,19 +1159,6 @@ pub(super) fn validate_well_founded_click_recursion(
         if recursive_functions.contains(name) && measure.is_none() {
             return Err(ClickError::new(format!(
                 "recursive pure function `{name}` requires `decreases <parameter>`"
-            )));
-        }
-        if recursive_functions.contains(name)
-            && matches!(measure, Some(ClickRecursionMeasure::Int32 { .. }))
-            && (!matches!(
-                definition.return_type(),
-                ClickType::Program(InterfaceType::Int32 | InterfaceType::Bool)
-            ) || definition.parameters().iter().any(|parameter| {
-                parameter.click_type() != &ClickType::Program(InterfaceType::Int32)
-            }))
-        {
-            return Err(ClickError::new(format!(
-                "recursive pure function `{name}` currently supports only int32 parameters and an int32 or bool result"
             )));
         }
         if let Some(measure) = measure {

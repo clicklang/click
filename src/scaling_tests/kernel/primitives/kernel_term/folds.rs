@@ -107,3 +107,176 @@ fn nested_machine_fold_producers_retain_children_without_native_exports() {
         assert!(work < 250 * size, "size={size}, work={work}");
     }
 }
+
+#[test]
+fn empty_machine_fold_check_skips_growing_callback() {
+    use crate::kernel::{MachineOperandView, PureFactContext};
+
+    for unrelated in [0, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let ty = KernelType::Program(ProgramType::Int32);
+        let literal = |bits| {
+            KernelTerm::retained_machine_operand(
+                format,
+                MachineOperandView::Legacy(&MachineTerm::constant(bits)),
+            )
+        };
+        let start = literal(1);
+        let end = literal((-3i32) as u32);
+        let initial = literal(5);
+        let mut facts = PureFactContext::new();
+        for index in 0..unrelated {
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    MachineTerm::Variable(Variable(990_000 + index)),
+                    MachineTerm::constant(13),
+                ),
+                true,
+            );
+        }
+        for size in [16, 64, 256] {
+            let accumulator = Variable(981_100);
+            let item = Variable(981_101);
+            let mut body = KernelTerm::variable(ty.clone(), accumulator);
+            for _ in 0..size {
+                body = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [body, initial.clone()],
+                );
+            }
+            let fold = KernelFold::new(
+                KernelFoldIndex::Int32,
+                accumulator,
+                item,
+                [start.clone(), end.clone(), initial.clone(), body],
+            )
+            .unwrap()
+            .into_term();
+            let before = KernelTermExport::machine_export_count();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.simplify_machine_operand_under_assumptions(
+                    MachineOperandView::Shared(&fold),
+                    format,
+                )
+            });
+            assert_eq!(
+                result.operand_view().literal(),
+                Some(MachineTerm::constant(5))
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), before);
+            assert!(
+                work <= 16,
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+        }
+    }
+}
+
+#[test]
+fn literal_range_projection_check_ignores_trip_count() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let format = MachineIntegerType::Int32;
+    let literal = |value: i32| {
+        KernelTermImport::default().machine(format, &MachineTerm::constant(value as u32))
+    };
+    let [accumulator, item] = [Variable(981_200), Variable(981_201)];
+    let variable = |id| KernelTerm::variable(KernelType::Program(ProgramType::Int32), id);
+    let seed = variable(Variable(981_202));
+    for (start, unrelated) in [(i32::MAX - 8, 0), (0, 64), (i32::MIN, 256)] {
+        let mut facts = PureFactContext::new();
+        for index in 0..unrelated {
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    MachineTerm::Variable(Variable(981_300 + index)),
+                    MachineTerm::constant(7),
+                ),
+                true,
+            );
+        }
+        for (body, expected) in [
+            (variable(item), literal(i32::MAX - 1)),
+            (variable(accumulator), seed.clone()),
+            (literal(-7), literal(-7)),
+        ] {
+            let fold = KernelFold::new(
+                KernelFoldIndex::Int32,
+                accumulator,
+                item,
+                [literal(start), literal(i32::MAX), seed.clone(), body],
+            )
+            .unwrap()
+            .into_term();
+            let before = KernelTermExport::machine_export_count();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.simplify_machine_operand_under_assumptions(
+                    MachineOperandView::Shared(&fold),
+                    format,
+                )
+            });
+            assert_eq!(result.shared_operand(), Some(&expected));
+            assert!(work <= 24, "start={start}: {work}");
+            assert_eq!(KernelTermExport::machine_export_count(), before);
+        }
+    }
+}
+
+#[test]
+fn short_machine_fold_check_visits_shared_callback_once_per_step() {
+    use crate::kernel::MachineOperandView;
+
+    for unrelated in [0, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let ty = KernelType::Program(ProgramType::Int32);
+        let _unrelated = (0..unrelated)
+            .map(|index| KernelTerm::variable(ty.clone(), Variable(990_000 + index)))
+            .collect::<Vec<_>>();
+        let literal = |bits| {
+            KernelTerm::retained_machine_operand(
+                format,
+                MachineOperandView::Legacy(&MachineTerm::constant(bits)),
+            )
+        };
+        let start = literal(0);
+        let initial = literal(0);
+        for size in [16, 64, 256] {
+            let accumulator = Variable(981_100);
+            let item = Variable(981_101);
+            let mut body = KernelTerm::variable(ty.clone(), accumulator);
+            for _ in 0..size {
+                body = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [body.clone(), body],
+                );
+            }
+            let fold = |end| {
+                KernelFold::new(
+                    KernelFoldIndex::Int32,
+                    accumulator,
+                    item,
+                    [start.clone(), literal(end), initial.clone(), body.clone()],
+                )
+                .unwrap()
+            };
+            let short = fold(2);
+            let long = fold(i32::MAX as u32);
+            let (result, work) =
+                crate::instrumentation::measure_deterministic_work(|| short.bounded_int32_result());
+            assert_eq!(result, Some(initial.clone()));
+            assert!(
+                work <= 250 * size,
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+            let (result, work) =
+                crate::instrumentation::measure_deterministic_work(|| long.bounded_int32_result());
+            assert!(result.is_none());
+            assert!(
+                work <= 16,
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+        }
+    }
+}

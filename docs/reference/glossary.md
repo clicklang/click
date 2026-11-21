@@ -273,7 +273,7 @@ thread.
 
 ### Control tactic
 
-A tactic that owns nested proof structure, such as `have`, `open`, `if`,
+A tactic that owns nested proof structure, such as `have`, `with`, `if`,
 `cases`, `branch`, or `loop`. A control tactic may create scopes, split proof
 branches, or join C branch arms; it is not necessarily C control flow. See
 [Tactics](tactics/index.md).
@@ -705,13 +705,11 @@ verified contract without re-executing its body at the call site; an opaque
 predicate or resource keeps its body unavailable until an explicit rule
 exposes it.
 
-### Open
+### Resource scope
 
-To expose one composite-resource body inside a nested proof scope and require
-that body to be foldable again when the scope closes. `open` provides scoped
-access; unlike `unfold`, it does not leave the body exposed after the nested
-proof completes. Opening a member or a [control](#control) preserves the
-population's membership and count.
+A `with` block exposes one composite-resource body and requires restoration
+on each path out of the block. Opening a member or a [control](#control)
+preserves the population's membership and count.
 
 ### Outcome
 

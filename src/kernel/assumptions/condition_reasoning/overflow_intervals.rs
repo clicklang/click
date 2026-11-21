@@ -396,6 +396,24 @@ impl PureFactContext {
                 return Some(truth);
             }
         }
+        // A retained fold may be an operand of another partial
+        // operation. Check its exact value before applying the same domain rules.
+        let mut fold_reads = std::collections::HashMap::new();
+        let reduced = operands.map(|operand| {
+            if !matches!(operand, MachineOperandView::Shared(root) if root.has_machine_folds()) {
+                return None;
+            }
+            crate::kernel::KernelFold::reduce_bounded_int32_in(
+                &operand.retain(query.format),
+                &mut fold_reads,
+            )
+        });
+        let operands = std::array::from_fn(|index| {
+            reduced[index]
+                .as_ref()
+                .map(MachineOperandView::Shared)
+                .unwrap_or(operands[index])
+        });
         // The old simplifier folds a query whose operands normalize to
         // constants. Construct only those two literals, never their trees.
         let literal = |operand: MachineOperandView<'_>| {

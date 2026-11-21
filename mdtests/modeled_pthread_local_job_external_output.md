@@ -2,7 +2,7 @@
 
 The job fields are borrowed for the worker's lifetime. Its output pointer
 reaches storage supplied by the caller, so the worker can write the output
-while the job loan stays active. The parent recovers the output at join.
+while the job borrow stays active. The parent recovers the output at join.
 
 ```c filename=modeled_pthread_local_job_external_output.c
 #include <pthread.h>

@@ -1258,26 +1258,29 @@ pub(super) fn surface_has_repeated_branch_conditions(steps: &[ProofStep]) -> boo
 pub(super) fn synthesize_surface_alternatives(
     paths: Vec<ProofCertificateBuilder>,
 ) -> Result<Vec<ProofStep>, String> {
+    synthesize_surface_alternatives_with_returns(paths, &[])
+}
+
+pub(super) fn synthesize_surface_alternatives_with_returns(
+    paths: Vec<ProofCertificateBuilder>,
+    boolean_returns: &[Option<bool>],
+) -> Result<Vec<ProofStep>, String> {
     if paths.is_empty() {
         return Err("certified alternatives contained no paths".to_string());
     }
     if let Some(blocker) = paths.iter().find_map(|path| path.blocker.clone()) {
         return Err(blocker);
     }
-    synthesize_surface_paths(paths)
-}
-
-pub(super) fn synthesize_surface_paths(
-    paths: Vec<ProofCertificateBuilder>,
-) -> Result<Vec<ProofStep>, String> {
     let steps = synthesize_surface_cursors(
         paths
             .iter()
-            .map(|path| SurfacePathCursor {
+            .enumerate()
+            .map(|(index, path)| SurfacePathCursor {
                 steps: &path.steps,
                 choices: &path.path_choices,
                 step: 0,
                 choice: 0,
+                boolean_return: boolean_returns.get(index).copied().flatten(),
             })
             .collect(),
     )?;
@@ -1306,6 +1309,7 @@ struct SurfacePathCursor<'p> {
     choices: &'p [SurfacePathChoice],
     step: usize,
     choice: usize,
+    boolean_return: Option<bool>,
 }
 
 impl<'p> SurfacePathCursor<'p> {
@@ -1335,12 +1339,18 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
     {
         return Ok(paths[0].steps().to_vec());
     }
-    if paths.iter().all(|path| path.choices().is_empty())
-        && paths
+    if paths.iter().all(|path| path.choices().is_empty()) {
+        if paths
             .windows(2)
             .all(|pair| pair[0].steps() == pair[1].steps())
-    {
-        return Ok(paths[0].steps().to_vec());
+        {
+            return Ok(paths[0].steps().to_vec());
+        }
+        if let Some(split) =
+            boolean_return_split(paths.iter().map(|path| (path.boolean_return, path.steps())))
+        {
+            return Ok(vec![split?]);
+        }
     }
     let first_choice = paths
         .first()
@@ -1457,6 +1467,40 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         SurfacePathSelector::MatchArm(..) => unreachable!("a match synthesizes above"),
     });
     Ok(steps)
+}
+
+/// Distinguish certificates checked at the same surface leaf by the
+/// literal Boolean result of each completed execution. Each result must
+/// determine one suffix on its own.
+pub(super) fn boolean_return_split<'a>(
+    paths: impl Iterator<Item = (Option<bool>, &'a [ProofStep])>,
+) -> Option<Result<ProofStep, String>> {
+    let mut arms = [None, None];
+    for (result, steps) in paths {
+        let arm = &mut arms[usize::from(!result?)];
+        if arm.is_some_and(|previous| previous != steps) {
+            return None;
+        }
+        *arm = Some(steps);
+    }
+    let [Some(then_steps), Some(else_steps)] = arms else {
+        return None;
+    };
+    let admit = |steps: &[ProofStep]| {
+        ProofCertificate::from_steps_checking_arithmetic_later(steps.to_vec())
+            .map(Box::new)
+            .map_err(|error| error.raw_summary().to_string())
+    };
+    Some((|| {
+        Ok(ProofStep::If {
+            ensuring: None,
+            condition: crate::surface::bool_truth(ContractExpression::ProgramExpression(
+                ProgramExpression::Variable(crate::kernel::BindingName::ContractResult),
+            )),
+            then_proof: admit(then_steps)?,
+            else_proof: admit(else_steps)?,
+        })
+    })())
 }
 
 /// The representation a scoped resource operation must restore on exit.
@@ -1877,7 +1921,7 @@ pub(super) fn post_execution_tactic_timing(
         }
         PostExecutionTactic::Leaf(tactic) => (tactic_name(tactic), "simple"),
         PostExecutionTactic::FoldProved(_) => ("fold", "control"),
-        PostExecutionTactic::CloseOpen { .. } => ("open", "control"),
+        PostExecutionTactic::CloseOpen { .. } => ("with", "control"),
         PostExecutionTactic::If { .. } => ("if", "control"),
         PostExecutionTactic::CallOutcomes { .. } => ("outcomes", "control"),
         PostExecutionTactic::Match { .. } => ("match", "control"),

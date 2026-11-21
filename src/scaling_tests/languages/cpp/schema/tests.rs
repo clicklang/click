@@ -485,7 +485,13 @@ fn embedded_record_graph_validation_is_linear_and_rejects_cycles() {
         let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
             checked.resolve_path(&root, &path)
         });
-        assert_eq!(resolved.unwrap(), (&signed_integer(32, false), 0));
+        assert_eq!(
+            resolved.unwrap(),
+            (
+                &signed_integer(32, false),
+                crate::kernel::LayoutOffset::Bytes(0)
+            )
+        );
         assert_eq!(work, size);
         let mut const_root = root.clone();
         let CppType::Record { is_const, .. } = &mut const_root else {
@@ -561,7 +567,10 @@ fn field_projection_lookup_does_not_scan_sibling_fields() {
         });
         assert_eq!(
             resolved.unwrap(),
-            (&signed_integer(32, false), (size - 1) as u32 * 4)
+            (
+                &signed_integer(32, false),
+                crate::kernel::LayoutOffset::Bytes((size - 1) as u32 * 4)
+            )
         );
         assert_eq!(work, 1);
         let reference = CppPlaceReference {

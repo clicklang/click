@@ -160,7 +160,7 @@ pub use verification::{
     verify_project_with_summary, verify_sources_at, verify_standard_library, with_allow_sorry,
 };
 mod proof_trace;
-pub use proof::{without_implicit_solve, without_implicit_solve_for_claim};
+pub use proof::{check_audit_claim, without_implicit_solve, without_implicit_solve_for_claim};
 pub use proof_trace::with_proof_trace;
 
 /// Render one accepted checked path while `with_proof_trace` is active.
@@ -284,7 +284,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "obtain",
     "of",
     "old",
-    "open",
+    "with",
     "or",
     "owns",
     "predicate",
@@ -1943,8 +1943,13 @@ pub(in crate::surface) fn scalar_field_places(
             if field.union_name().is_some() || field.is_long_double() {
                 continue;
             }
+            // A symbolic layout's fields are at `offsetof` terms, which
+            // these byte places do not hold.
+            let Some(field_offset) = field.offset().bytes() else {
+                continue;
+            };
             let name = format!("{prefix}{name}");
-            let offset_bytes = base + field.offset_bytes();
+            let offset_bytes = base + field_offset;
             if field.array_element_width().is_some() {
                 let element = match field.interface_type() {
                     InterfaceType::Int32Array(length) => Some((ProgramType::Int32, 4, length)),
@@ -3389,7 +3394,8 @@ pub enum SurfaceTerm {
         /// Byte offset of `field` from the address denoted by `base`.
         /// Keeping this separately lets lowering rebuild the field load when
         /// `base` is evaluated in a different state from the field value.
-        offset_bytes: u32,
+        /// A number, or in a symbolic layout the field's `offsetof` term.
+        offset_bytes: crate::kernel::LayoutOffset,
     },
     /// `program::name`: a binding from the verified program function's
     /// lexical environment, in any source language.
@@ -4878,16 +4884,31 @@ impl RecordedStates {
         Some((selector, self.get_exact(selector)?))
     }
 
-    /// The recorded point a read of `pointer` in `memory` is made at, with its
-    /// state. A read names the canonical projection of the memory it reads
-    /// (`reasoning::memory_resolution`), which no point records; the kernel
-    /// records the memory each projection was built from when it builds it,
-    /// so the read is made at the point recording that source. Two lookups.
+    /// Select a recorded read by its own point and verify the retained view.
+    fn point_naming_read(
+        &self,
+        point: &crate::kernel::ProgramPoint,
+    ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
+        crate::instrumentation::record_deterministic_work(1);
+        let selector = self.point_name(point.id()?)?;
+        let state = self.get_exact(selector)?;
+        state
+            .program_point()
+            .names_read_view(point)
+            .then_some((selector, state))
+    }
+
+    /// Name the retained read point. Detached legacy reads may carry a
+    /// canonical projection, so they consult the index of its source memory.
     fn point_reading_load(
         &self,
-        memory: &crate::kernel::SharedMemory,
+        point: &crate::kernel::ProgramPoint,
         pointer: &crate::kernel::Address,
     ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
+        if point.id().is_some() {
+            return self.point_naming_read(point);
+        }
+        let memory = point.shared_memory();
         self.point_reading_memory(memory).or_else(|| {
             let source = crate::kernel::load_projection_source(memory, pointer)?;
             self.point_reading_memory(&source)
@@ -5104,7 +5125,7 @@ impl RecordedStates {
             operand: Box::new(name_base(&base)?),
             lowered: ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
-                bytes,
+                bytes: bytes.into(),
             },
         })
     }
@@ -5963,7 +5984,18 @@ impl ContractSegment {
         }
     }
 
+    /// Whether the segment is a whole object of a symbolic layout, its end
+    /// that layout's `sizeof`: a range of bytes, whatever its base's type.
+    pub(crate) fn spans_symbolic_object(&self) -> bool {
+        matches!(&self.end, ProgramExpression::Value(ProgramValue::UInt64(end))
+            if matches!(crate::kernel::SymbolicLayoutName::of_term(end), Some((_, None)))
+                || crate::kernel::TypeParameterName::of_size_term(end).is_some())
+    }
+
     pub(crate) fn field_element_width(&self) -> Option<u32> {
+        if self.spans_symbolic_object() {
+            return Some(1);
+        }
         match &self.surface {
             ContractSegmentSurface::Field { element_width, .. } => *element_width,
             ContractSegmentSurface::StructRange { layout, .. } => Some(layout.layout.size_bytes()),
@@ -6068,7 +6100,7 @@ pub struct CertifiedStatementTransition {
     /// Checked stable-view call evidence produced by this exact transition.
     /// The loop planner forwards it to the kernel exit candidate instead of
     /// reconstructing it from the post-state.
-    pub(crate) loan_evidence: crate::kernel::CheckedLoanCallEvidenceSequence,
+    pub(crate) borrow_evidence: crate::kernel::CheckedBorrowCallEvidenceSequence,
 }
 
 #[doc(hidden)]
@@ -6180,7 +6212,6 @@ pub enum ProofTactic {
     Known,
     Normalize,
     NormalizeUsing(Vec<ClickProposition>),
-    OrderChain(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
     Intro,
     /// `let name = intro()`: introduce a universal goal's variable under a
@@ -6288,7 +6319,6 @@ pub enum SimpleTactic {
     Termination,
     Known,
     Normalize,
-    OrderChain,
     Intro,
     Enumerate,
     Contradiction,
@@ -6541,8 +6571,8 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "control",
     },
     PublicTacticForm {
-        id: "open",
-        syntax: "open(resource)",
+        id: "with",
+        syntax: "with(resource)",
         class: "control",
     },
     PublicTacticForm {
@@ -6603,11 +6633,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
     PublicTacticForm {
         id: "normalize-using",
         syntax: "normalize() using",
-        class: "simple",
-    },
-    PublicTacticForm {
-        id: "order-chain",
-        syntax: "order_chain() using",
         class: "simple",
     },
     PublicTacticForm {
@@ -6690,12 +6715,12 @@ pub use proof_certificate::*;
 #[derive(Clone, Copy)]
 pub(crate) enum TacticChild<'a> {
     /// A block that continues the tactic's own proof: an `if`, `branch`,
-    /// `match`, `cases`, induction or `outcomes` arm, an `open` body, a side
+    /// `match`, `cases`, induction or `outcomes` arm, a `with` body, a side
     /// of `both`, a `close_invariants by` body, or a loop's `initialize` or
     /// `maintain` proof.
     Continuing(ChildProof<'a>),
     /// A proof of a separate proposition, as a `have` body is: a `have`, the
-    /// close proof of an `open`, or a step's obligation proofs.
+    /// close proof of a `with`, or a step's obligation proofs.
     Obligation(ChildProof<'a>),
 }
 
@@ -6821,7 +6846,6 @@ impl ProofTactic {
             Self::Normalize | Self::NormalizeUsing(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }
-            Self::OrderChain(_) => TacticClass::Simple(SimpleTactic::OrderChain),
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
 
             Self::Preserve(_) => TacticClass::Simple(SimpleTactic::FactTransport),
@@ -7971,6 +7995,26 @@ struct PredicateEnvironment {
     resource_state_dependent: BTreeSet<String>,
     contract_signatures: BTreeMap<String, InterfaceType>,
     contract_definitions: BTreeMap<String, ContractDefinition>,
+    contract_value_parameters: Option<std::sync::Arc<ContractValueParameters>>,
+}
+
+// Named argument maps print in the same declaration order used by lowering.
+type ContractValueParameters = BTreeMap<String, Vec<String>>;
+
+fn contract_value_parameter_names(
+    definitions: &[ContractDefinition],
+) -> Option<std::sync::Arc<ContractValueParameters>> {
+    let names = definitions
+        .iter()
+        .filter(|definition| !definition.value_parameters().is_empty())
+        .map(|definition| {
+            (
+                definition.name().to_string(),
+                definition.value_parameters().to_vec(),
+            )
+        })
+        .collect::<ContractValueParameters>();
+    (!names.is_empty()).then(|| std::sync::Arc::new(names))
 }
 
 impl PredicateEnvironment {
@@ -8011,6 +8055,7 @@ impl PredicateEnvironment {
             program_function_names: Default::default(),
             contract_signatures: BTreeMap::new(),
             contract_definitions: BTreeMap::new(),
+            contract_value_parameters: None,
         }
     }
 
@@ -8033,6 +8078,7 @@ impl PredicateEnvironment {
             .iter()
             .map(|definition| (definition.name().to_string(), definition.clone()))
             .collect();
+        self.contract_value_parameters = contract_value_parameter_names(definitions);
         self
     }
 
@@ -8664,6 +8710,7 @@ pub struct VerifiedPureTheorem {
     pub ensure_clause: EnsureClause,
     pub proof_kind: ProofKind,
     pub proof: Option<ProofCertificate>,
+    contract_value_parameters: Option<std::sync::Arc<ContractValueParameters>>,
     pub requires: Vec<Proposition>,
     pub conclusion: Proposition,
     pub(crate) kernel_authority: Option<KernelVerifiedPureTheorem>,
@@ -10460,6 +10507,7 @@ impl VerifiedProgramTheorem {
     }
 
     pub fn expanded_proof_source(&self) -> Result<String, ClickError> {
+        let _contract_value_parameters = self.contract_value_parameter_scope();
         let _spelling = self.step_result_spelling_scope();
         let _reference_result_source = diagnostics::ReferenceResultSourceScope::enter(
             self.function_block.signature().returns_reference(),
@@ -10468,6 +10516,14 @@ impl VerifiedProgramTheorem {
         Ok(format_proof_certificate(
             &self.expanded_proof_certificate()?,
         ))
+    }
+
+    fn contract_value_parameter_scope(&self) -> Option<printing::ContractValueParameterScope> {
+        self.entry_context
+            .as_ref()?
+            .contract_value_parameters
+            .as_ref()
+            .map(printing::ContractValueParameterScope::enter)
     }
 
     pub fn ensure_clause(&self) -> Option<&EnsureClause> {
@@ -10503,6 +10559,10 @@ impl VerifiedPureTheorem {
     }
 
     pub fn expanded_proof_source(&self) -> Result<String, ClickError> {
+        let _contract_value_parameters = self
+            .contract_value_parameters
+            .as_ref()
+            .map(printing::ContractValueParameterScope::enter);
         Ok(format_proof_certificate(&self.proof_certificate()?))
     }
 }

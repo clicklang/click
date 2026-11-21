@@ -182,7 +182,7 @@ impl ReturnRewriteProducer {
 
     pub(super) fn finish(&self) -> Result<CheckedReturnPath, ReturnPathRefusal> {
         let seed = &self.seed;
-        let (outcome, obligations, loans, deferred, error) =
+        let (outcome, obligations, borrows, deferred, error) =
             match crate::kernel::functions::checked_contract_exit_outcome_with_boundary_transfer(
                 &seed.caller,
                 &seed.exit_function,
@@ -215,9 +215,9 @@ impl ReturnRewriteProducer {
         path.post_assumptions = Some(self.context.clone());
         path.completion_origin = Some(self.visible.clone());
         path.obligations = obligations;
-        path.loan_evidence = crate::kernel::loans::append_checked_loan_evidence(
-            seed.candidate.loan_evidence(),
-            loans,
+        path.borrow_evidence = crate::kernel::borrows::append_checked_borrow_evidence(
+            seed.candidate.borrow_evidence(),
+            borrows,
         );
         let specification = self.publication.specification();
         path.theorem = Theorem::new(crate::kernel::reasoning::wrap_proof_facts(

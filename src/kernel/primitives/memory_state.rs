@@ -1077,7 +1077,7 @@ mod forget_cached_values_tests {
             .with_block(preserved.base.clone(), 12)
             .store_union_views(written.clone(), 8, vec![int32_view(&written, 3)])
             .store_union_views(preserved.clone(), 8, vec![int32_view(&preserved, 5)]);
-        let after = before.with_loop_memory_havoc_preserving_loans(
+        let after = before.with_loop_memory_havoc_preserving_borrows(
             Variable(944_101),
             &BTreeSet::from([preserved.base.clone()]),
             None,
@@ -1107,7 +1107,7 @@ mod forget_cached_values_tests {
             .with_block(addressable.base.clone(), 4)
             .store(addressable.clone(), int32(2));
         let variable = Variable(944_103);
-        let whole = memory.clone().with_loop_memory_havoc_preserving_loans(
+        let whole = memory.clone().with_loop_memory_havoc_preserving_borrows(
             variable,
             &BTreeSet::from([private.base.clone(), addressable.base.clone()]),
             None,
@@ -1142,7 +1142,7 @@ mod forget_cached_values_tests {
         // read as zero.
         assert!(!before.is_zeroed_heap_address(&base, 4, &PureFactContext::new()));
         assert!(before.is_zeroed_heap_address(&beside, 4, &PureFactContext::new()));
-        let after = before.with_loop_memory_havoc_preserving_loans(
+        let after = before.with_loop_memory_havoc_preserving_borrows(
             Variable(944_102),
             &BTreeSet::new(),
             None,
@@ -1368,6 +1368,17 @@ pub(crate) fn resource_context_has_symbolic_range_read(
 
 impl LocalEnvironment {
     pub(crate) fn resolve_binding(&self, name: &BindingName) -> BindingName {
+        if let Some(place) = name.unresolved_slice_length() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some((_, BindingName::Local(id))) = self
+                .visible_names
+                .get(place)
+                .and_then(|entries| entries.last())
+            {
+                return BindingName::lexical_local_slice_length(id, true);
+            }
+            return BindingName::slice_length(place);
+        }
         if matches!(name, BindingName::ReferenceCarrier(_)) {
             crate::instrumentation::record_deterministic_work(1);
         }
@@ -2731,18 +2742,29 @@ impl LocalEnvironment {
 }
 
 impl MemoryBlock {
-    pub fn new(size: u32) -> Self {
+    /// A block of `size` bytes: a 32-bit count, or a symbolic layout's
+    /// 64-bit `sizeof`.
+    pub fn new(size: impl Into<crate::kernel::LayoutSize>) -> Self {
         Self {
-            size: AllocationSize::int32(size),
+            size: Self::allocation_size_of(size.into()),
             read_only: false,
             declared_scalar_type: None,
             declared_class: None,
         }
     }
 
-    pub fn read_only(size: u32) -> Self {
+    fn allocation_size_of(size: crate::kernel::LayoutSize) -> AllocationSize {
+        match size {
+            crate::kernel::LayoutSize::Bytes(bytes) => AllocationSize::int32(bytes),
+            crate::kernel::LayoutSize::Of(_) => {
+                AllocationSize::new(size.term(), crate::kernel::AllocationSizeKind::UInt64)
+            }
+        }
+    }
+
+    pub fn read_only(size: impl Into<crate::kernel::LayoutSize>) -> Self {
         Self {
-            size: AllocationSize::int32(size),
+            size: Self::allocation_size_of(size.into()),
             read_only: true,
             declared_scalar_type: None,
             declared_class: None,
@@ -3455,27 +3477,27 @@ impl BlockMembership for LocalEnvironment {
     }
 }
 
-/// Whether a havoc that preserves loans keeps the cell at this address: the
+/// Whether a havoc that preserves borrows keeps the cell at this address: the
 /// one rule, asked by the loop head and by the interface join.
 ///
 /// Unlike a call havoc this is not a separation question at all. A loop body,
 /// or the arm of a branch the join is merging, may write through any pointer
 /// it can reach, so the only cells that survive are the ones something else
 /// guarantees: storage the function declared and did not expose
-/// (`preserved_blocks`), and bytes an active loan protects from being written
+/// (`preserved_blocks`), and bytes an active borrow protects from being written
 /// at all. Only indexed protection at the exact coordinate origin retains a value;
 /// unknown relative bounds forget it without searching the ledger. That is why it consults
 /// the ledger rather than the assumptions, and
 /// why the resource tracker's havoc arms cannot answer it.
 ///
 /// A cell whose width is unknown fails closed, because keeping its value on a
-/// loan the ledger would have permitted a write through is a promise nothing
+/// borrow the ledger would have permitted a write through is a promise nothing
 /// proved (`docs/internals/stable-views.md`).
-fn loan_preserving_havoc_keeps_cell(
+fn borrow_preserving_havoc_keeps_cell(
     pointer: &Address,
     byte_width: u32,
     preserved_blocks: &dyn BlockMembership,
-    ledger: Option<&crate::kernel::loans::LoanLedger>,
+    ledger: Option<&crate::kernel::borrows::BorrowLedger>,
 ) -> bool {
     preserved_blocks.contains_block(&pointer.base)
         || ledger.is_some_and(|ledger| {
@@ -3489,16 +3511,16 @@ fn loan_preserving_havoc_keeps_cell(
         })
 }
 
-/// [`loan_preserving_havoc_keeps_cell`] for every slot of a run at once. A run
+/// [`borrow_preserving_havoc_keeps_cell`] for every slot of a run at once. A run
 /// in a preserved block keeps every slot; outside one, a slot survives only
-/// where a loan protects its bytes, so no loan over any of the run's bytes
+/// where a borrow protects its bytes, so no borrow over any of the run's bytes
 /// keeps none. Anything else is asked slot by slot. The run's slots hold no
 /// typed union views (a run is never seeded beside them), so each slot's
 /// width is its value's.
-fn loan_preserving_havoc_keeps_run(
+fn borrow_preserving_havoc_keeps_run(
     run: &CellRun,
     preserved_blocks: &dyn BlockMembership,
-    ledger: Option<&crate::kernel::loans::LoanLedger>,
+    ledger: Option<&crate::kernel::borrows::BorrowLedger>,
 ) -> (SlotSet, crate::kernel::primitives::RuleAnswer) {
     let exact = crate::kernel::primitives::RuleAnswer::Exact;
     if preserved_blocks.contains_block(&run.base().base) {
@@ -3580,7 +3602,7 @@ where
     union
 }
 
-/// The widest typed overlay recorded at each address, so that the loan
+/// The widest typed overlay recorded at each address, so that the borrow
 /// question above covers every byte the cell can be read as.
 fn union_overlay_widths(memory: &SymbolicMemory) -> BTreeMap<Address, u32> {
     let mut widths = BTreeMap::<Address, u32>::new();
@@ -3610,6 +3632,8 @@ fn heap_allocation_may_contain_pointer(
     pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
+    #[cfg(test)]
+    HEAP_CONTAINMENT_CHECKS.with(|checks| checks.set(checks.get() + 1));
     if base != pointer && base.base.proven_distinct(&pointer.base) {
         return false;
     }
@@ -3622,6 +3646,11 @@ fn heap_allocation_may_contain_pointer(
     }
 
     external_argument_offset_derives_from(base, pointer)
+}
+
+#[cfg(test)]
+thread_local! {
+    static HEAP_CONTAINMENT_CHECKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Whether `pointer`, in the external argument block, is `base` or an address
@@ -3677,7 +3706,12 @@ impl SymbolicMemory {
             && self.heap == other.heap
     }
 
-    pub fn with_block(mut self, block: impl Into<AddressBase>, size: u32) -> Self {
+    pub fn with_block(
+        mut self,
+        block: impl Into<AddressBase>,
+        size: impl Into<crate::kernel::LayoutSize>,
+    ) -> Self {
+        let size: crate::kernel::LayoutSize = size.into();
         let block = block.into();
         // Havoc marker blocks mean "the state may have changed", never "a
         // fresh block appeared"; recording a benign block-declaration edge
@@ -3775,7 +3809,7 @@ impl SymbolicMemory {
         self,
         block: AddressBase,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
     ) -> Self {
         self.with_classed_block_or_read_only(block, declared_class, size, false)
     }
@@ -3784,7 +3818,7 @@ impl SymbolicMemory {
         self,
         block: AddressBase,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
         read_only: bool,
     ) -> Self {
         let Some(declared_class) = declared_class else {
@@ -3819,7 +3853,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn with_classed_scalar_block(
         mut self,
         block: AddressBase,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
         program_type: ProgramType,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
@@ -3908,6 +3942,33 @@ impl SymbolicMemory {
         )
     }
 
+    /// [`Self::with_uninitialized_block`] for a block of `size`, a number or
+    /// a symbolic layout's `sizeof`, whose every byte is unwritten.
+    pub fn with_uninitialized_block_of(
+        mut self,
+        block: impl Into<AddressBase>,
+        size: crate::kernel::LayoutSize,
+    ) -> Self {
+        let crate::kernel::LayoutSize::Of(_) = size else {
+            return self.with_uninitialized_block(block, size.concrete());
+        };
+        let block = block.into();
+        std::sync::Arc::make_mut(&mut self.blocks).insert(
+            block.clone(),
+            MemoryBlock::with_symbolic_size(AllocationSize::new(
+                size.term(),
+                crate::kernel::AllocationSizeKind::UInt64,
+            )),
+        );
+        self.with_uninitialized_object(
+            Address {
+                base: block,
+                offset: AddressOffset::Constant(0),
+            },
+            Self::UNBOUNDED_UNWRITTEN_SPAN,
+        )
+    }
+
     /// The span of an unwritten footprint whose length is not a constant,
     /// such as `owns uninitialized(p[0..n])`: every byte from its start to the
     /// end of the block is treated as possibly unwritten. That is
@@ -3979,7 +4040,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn with_block_or_read_only(
         self,
         block: impl Into<AddressBase>,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
         read_only: bool,
     ) -> Self {
         if read_only {
@@ -3992,7 +4053,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn with_read_only_block(
         mut self,
         block: impl Into<AddressBase>,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
     ) -> Self {
         let block = block.into();
         let base = intern_derivation_base(&mut self);
@@ -4009,10 +4070,11 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn with_block_without_derivation(
         mut self,
         block: impl Into<AddressBase>,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
     ) -> Self {
         let diagnostic_base = self.clone();
         let block = block.into();
+        let size: crate::kernel::LayoutSize = size.into();
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), MemoryBlock::new(size));
         self.record_diagnostic_transform(
             "declare synthetic block",
@@ -4022,7 +4084,10 @@ impl SymbolicMemory {
                     base: block.clone(),
                     offset: AddressOffset::Constant(0),
                 }),
-                ProgramValue::Int32(size.into()),
+                match size {
+                    crate::kernel::LayoutSize::Bytes(bytes) => ProgramValue::Int32(bytes.into()),
+                    crate::kernel::LayoutSize::Of(_) => ProgramValue::UInt64(size.term()),
+                },
             ],
         );
         self
@@ -4194,7 +4259,18 @@ impl SymbolicMemory {
                 } else if pointer.blocks_proven_distinct(cell) {
                     CachedValueFate::Kept
                 } else if kept_owners
-                    .owned_memory_member_covering_access(cell, value.byte_width(), assumptions)
+                    .owned_memory_member_covering_extent(
+                        cell,
+                        match value {
+                            CachedValue::Cell(value) => {
+                                crate::kernel::assumptions::access_extent_of_value(value)
+                            }
+                            CachedValue::UnionView(..) => {
+                                crate::kernel::AccessExtent::Bytes(value.byte_width())
+                            }
+                        },
+                        assumptions,
+                    )
                     .is_some()
                 {
                     let value_type = match value {
@@ -4436,6 +4512,17 @@ impl SymbolicMemory {
     /// Whether no allocation has been freed in this state.
     pub(in crate::kernel) fn heap_has_no_deallocations(&self) -> bool {
         self.heap.deallocated_allocations.is_empty()
+    }
+
+    pub(in crate::kernel) fn shares_heap_deallocations_with(&self, other: &Self) -> bool {
+        self.heap
+            .deallocated_allocations
+            .ptr_eq(&other.heap.deallocated_allocations)
+    }
+
+    #[cfg(test)]
+    pub(in crate::kernel) fn take_heap_containment_checks() -> usize {
+        HEAP_CONTAINMENT_CHECKS.with(|checks| checks.replace(0))
     }
 
     /// The deallocated allocation base that `pointer` provably points into,
@@ -4890,12 +4977,12 @@ impl SymbolicMemory {
         Some((memory, bytes, resolved_base, pending))
     }
 
-    pub(in crate::kernel) fn with_loop_memory_havoc_preserving_loans(
+    pub(in crate::kernel) fn with_loop_memory_havoc_preserving_borrows(
         self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::borrows::BorrowLedger>,
     ) -> Self {
         self.loop_memory_havoc(
             variable,
@@ -4912,7 +4999,7 @@ impl SymbolicMemory {
         variable: Variable,
         locals: &LocalEnvironment,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::borrows::BorrowLedger>,
         kept_by_function: Option<CallKeptRanges>,
     ) -> Self {
         // The loop head has already abstracted every directly assigned
@@ -4941,7 +5028,7 @@ impl SymbolicMemory {
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::borrows::BorrowLedger>,
         kept_by_function: Option<CallKeptRanges>,
     ) -> Self {
         self.loop_memory_havoc(
@@ -4959,7 +5046,7 @@ impl SymbolicMemory {
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[MemoryRange]>,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::borrows::BorrowLedger>,
         kept_by_function: Option<CallKeptRanges>,
         scope: ForgetScope<'_>,
     ) -> Self {
@@ -4973,7 +5060,7 @@ impl SymbolicMemory {
         // initialize more, so every automatic value that goes stays
         // initialized at the head and after the loop.
         let base = Some(intern_derivation_base(&mut self));
-        self.forget_loan_unprotected_values(scope, preserved_blocks, ledger, &[]);
+        self.forget_borrow_unprotected_values(scope, preserved_blocks, ledger, &[]);
         // The body may also have written bytes no value was cached for, and
         // a zero reading answers for exactly those.
         match mutable_ranges {
@@ -5009,7 +5096,7 @@ impl SymbolicMemory {
 
     /// Forgets every cached value nothing protects from a write through an
     /// arbitrary reachable pointer: the one rule of the loop head and of the
-    /// interface join ([`loan_preserving_havoc_keeps_cell`]), asked of cells
+    /// interface join ([`borrow_preserving_havoc_keeps_cell`]), asked of cells
     /// and typed union views alike. The loop head skips private scalar
     /// cells when its caller has already abstracted direct assignments.
     ///
@@ -5017,13 +5104,13 @@ impl SymbolicMemory {
     /// every arm caches with the same value is a reading each arm's memory
     /// already gives, so it is a reading of their join and stays; so does a
     /// run every arm holds unchanged. Only plain cells stay this way: a typed
-    /// union view, and a cell a union overlays, go by the loan rule alone.
+    /// union view, and a cell a union overlays, go by the borrow rule alone.
     /// The work is unchanged: one lookup per arm for each value visited.
-    fn forget_loan_unprotected_values(
+    fn forget_borrow_unprotected_values(
         &mut self,
         scope: ForgetScope<'_>,
         preserved_blocks: &dyn BlockMembership,
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::borrows::BorrowLedger>,
         agreeing: &[&SymbolicMemory],
     ) {
         let union_widths = union_overlay_widths(self);
@@ -5035,7 +5122,7 @@ impl SymbolicMemory {
             scope,
             |pointer, value| {
                 // A view is asked by its own width; a cell by the widest
-                // overlay at its address as well, so the loan question
+                // overlay at its address as well, so the borrow question
                 // covers every byte it can be read as.
                 let width = match value {
                     CachedValue::Cell(_) => union_widths.get(pointer).copied().unwrap_or(0),
@@ -5058,7 +5145,7 @@ impl SymbolicMemory {
                 {
                     return CachedValueFate::Kept;
                 }
-                if loan_preserving_havoc_keeps_cell(
+                if borrow_preserving_havoc_keeps_cell(
                     pointer,
                     value.byte_width().max(width),
                     preserved_blocks,
@@ -5078,7 +5165,7 @@ impl SymbolicMemory {
                 {
                     return (SlotSet::All, crate::kernel::primitives::RuleAnswer::Sound);
                 }
-                loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger)
+                borrow_preserving_havoc_keeps_run(run, preserved_blocks, ledger)
             },
         );
     }
@@ -5117,7 +5204,7 @@ impl SymbolicMemory {
         preserved_blocks: &dyn BlockMembership,
         sibling_memories: &[&SymbolicMemory],
     ) -> Result<Self, String> {
-        self.with_interface_memory_havoc_preserving_loans(
+        self.with_interface_memory_havoc_preserving_borrows(
             variable,
             preserved_blocks,
             sibling_memories,
@@ -5125,12 +5212,12 @@ impl SymbolicMemory {
         )
     }
 
-    pub(in crate::kernel) fn with_interface_memory_havoc_preserving_loans(
+    pub(in crate::kernel) fn with_interface_memory_havoc_preserving_borrows(
         mut self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         sibling_memories: &[&SymbolicMemory],
-        ledger: Option<&crate::kernel::loans::LoanLedger>,
+        ledger: Option<&crate::kernel::borrows::BorrowLedger>,
     ) -> Result<Self, String> {
         let mut incoming = std::iter::once(&self)
             .chain(sibling_memories.iter().copied())
@@ -5349,18 +5436,18 @@ impl SymbolicMemory {
                 std::sync::Arc::make_mut(&mut self.cells).retain_agreed_with(
                     &other_cells,
                     |pointer, value| {
-                        loan_preserving_havoc_keeps_cell(
+                        borrow_preserving_havoc_keeps_cell(
                             pointer,
                             value.byte_width(),
                             preserved_blocks,
                             ledger,
                         )
                     },
-                    |run| loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
+                    |run| borrow_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
                 ),
             )
         } else {
-            self.forget_loan_unprotected_values(
+            self.forget_borrow_unprotected_values(
                 ForgetScope::Everywhere,
                 preserved_blocks,
                 ledger,
@@ -5382,7 +5469,7 @@ impl SymbolicMemory {
             let union_widths = union_overlay_widths(memory);
             for (pointer, value) in memory.cells.logical().iter() {
                 visited += 1;
-                if !loan_preserving_havoc_keeps_cell(
+                if !borrow_preserving_havoc_keeps_cell(
                     pointer,
                     value
                         .byte_width()
@@ -5395,7 +5482,7 @@ impl SymbolicMemory {
             }
             for ((pointer, program_type), _) in memory.union_cells.iter() {
                 visited += 1;
-                if !loan_preserving_havoc_keeps_cell(
+                if !borrow_preserving_havoc_keeps_cell(
                     pointer,
                     program_type.byte_width(),
                     preserved_blocks,
@@ -5752,8 +5839,8 @@ impl SymbolicMemory {
         }
         for field in fields {
             let width = field.program_type().byte_width();
-            let from = source.offset_by_bytes(field.offset_bytes());
-            let to = destination.offset_by_bytes(field.offset_bytes());
+            let from = source.offset_by_layout(field.offset());
+            let to = destination.offset_by_layout(field.offset());
             initialized
                 .copy_exact_range_from(&snapshot.heap.initialized, &from, &to, width)
                 .expect("checked local member range");
@@ -5926,20 +6013,9 @@ impl SymbolicMemory {
                 .is_without(&before.union_cells, &dropped_union_cells)
     }
 
-    /// Seeds the cells of elements `first..count` at `base`,
-    /// `base + element_width`, …: each one the load of its own element in
-    /// `source`, typed as `element_type` ([`cell_run_value`]). This is exactly
-    /// `store` of each such value in element order, skipping every element
-    /// that already holds a cell, and
-    /// it costs the same whatever `count` is: the cells are one [`CellRun`]
-    /// and the stores one `CellsSeeded` edge.
-    ///
-    /// Two things a store does that a run does not represent are refused
-    /// rather than approximated: displacing typed union views (the state
-    /// holds some) and marking a live heap cell initialized (an allocation
-    /// may hold the range). Those fall back to the stores themselves.
+    #[cfg(test)]
     pub(crate) fn with_seeded_cells(
-        mut self,
+        self,
         base: Address,
         element_width: u32,
         element_type: ProgramType,
@@ -5947,16 +6023,50 @@ impl SymbolicMemory {
         count: u32,
         source: SharedMemory,
     ) -> Self {
+        self.with_seeded_cells_at(
+            base,
+            element_width,
+            element_type,
+            first,
+            count,
+            ProgramPoint::at(&source),
+        )
+    }
+
+    /// Seeds the cells of elements `first..count` at `base`,
+    /// `base + element_width`, …: each one the load of its own element in
+    /// `source`, typed as `element_type` ([`cell_run_value`]). This is exactly
+    /// `store` of each such value in element order, skipping every element
+    /// that already holds a cell. It costs the same whatever `count` is: the cells are one [`CellRun`]
+    /// and the stores one `CellsSeeded` edge.
+    ///
+    /// Two things a store does that a run does not represent are refused
+    /// rather than approximated: displacing typed union views (the state
+    /// holds some) and marking a live heap cell initialized (an allocation
+    /// may hold the range). Those fall back to the stores themselves.
+    ///
+    /// A recorded source point is retained for each slot whose version the
+    /// typed read selector can name.
+    pub(crate) fn with_seeded_cells_at(
+        mut self,
+        base: Address,
+        element_width: u32,
+        element_type: ProgramType,
+        first: u32,
+        count: u32,
+        source: ProgramPoint,
+    ) -> Self {
         if first >= count {
             return self;
         }
         if !self.run_can_stand_for_cells_at(&base) {
-            let run = CellRun::new(
+            let run = CellRun::new_at(
                 base,
                 element_width,
                 element_type,
                 count,
                 source,
+                RunValueMode::Load,
                 IndexIntervals::default(),
             );
             for index in first..count {
@@ -5973,7 +6083,7 @@ impl SymbolicMemory {
             element_type,
             first,
             count,
-            ProgramPoint::at(&source),
+            source,
             RunValueMode::Load,
         )
     }
@@ -5990,7 +6100,7 @@ impl SymbolicMemory {
     /// `Err` hands the memory back unchanged for the caller's own cells: an
     /// automatic object's block (a named load does not initialize one), a
     /// heap block (fresh storage stays uninitialized), and, as for
-    /// [`Self::with_seeded_cells`], a state with typed union views or a
+    /// [`Self::with_seeded_cells_at`], a state with typed union views or a
     /// base that may lie in a live allocation.
     pub(crate) fn with_named_cell_run(
         self,
@@ -6032,7 +6142,7 @@ impl SymbolicMemory {
     /// back unchanged for the caller's own stores: a block already holding a
     /// cell (a store overwrites it, where a run would keep it as a hole), an
     /// automatic or heap block (a store there marks initialization a run
-    /// does not), and, as for [`Self::with_seeded_cells`], a state with
+    /// does not), and, as for [`Self::with_seeded_cells_at`], a state with
     /// typed union views or a base that may lie in a live allocation.
     pub(crate) fn with_constant_run(
         self,
@@ -6617,7 +6727,7 @@ impl SymbolicMemory {
             && !candidates.any_entry(&self.heap.live_allocations, |_, _| true)
     }
 
-    /// The run of [`Self::with_seeded_cells`], its preconditions checked.
+    /// The run of [`Self::with_seeded_cells_at`], its preconditions checked.
     fn with_run_of_cells(
         mut self,
         base: Address,
@@ -6725,11 +6835,7 @@ impl SymbolicMemory {
         source: &ProgramPoint,
     ) -> Self {
         let value = if let ProgramType::Parameter(parameter) = program_type {
-            AlgebraicTermNode::parameter_load(
-                source.shared_memory().clone(),
-                pointer.clone(),
-                parameter,
-            )
+            AlgebraicTermNode::parameter_cell_load(source, pointer.clone(), parameter)
         } else {
             let load = crate::kernel::eval::canonical_cell_load(source, &pointer, program_type);
             crate::kernel::cell_run_value(program_type, load)
@@ -6887,8 +6993,13 @@ impl SymbolicMemory {
         if (invalidate_aliases
             || !self.union_cells.is_empty()
             || !self.heap.initialized.partial_map().is_empty())
-            && let Some((mut prepared, lost_knowledge)) =
-                self.prepare_store_cache(&pointer, value.byte_width(), context, authorized_range)
+            && let Some((mut prepared, lost_knowledge)) = self.prepare_store_cache_of(
+                &pointer,
+                value.byte_width(),
+                crate::kernel::assumptions::access_extent_of_value(value.native()),
+                context,
+                authorized_range,
+            )
         {
             if lost_knowledge {
                 prepared.mark_forgotten_from(&base);
@@ -7035,6 +7146,22 @@ impl SymbolicMemory {
         self.cells.get(pointer)
     }
 
+    /// Borrow an explicit cell without deriving a value for an array run slot.
+    pub(in crate::kernel) fn indexed_scalar_value(
+        &self,
+        pointer: &Address,
+    ) -> Option<&ProgramValue> {
+        self.cells.explicitly_stored_value(pointer)
+    }
+
+    /// Borrow an exact cell value, including the payload of a constant run.
+    pub(in crate::kernel) fn indexed_stored_value(
+        &self,
+        pointer: &Address,
+    ) -> Option<&ProgramValue> {
+        self.cells.exact_stored_value(pointer)
+    }
+
     /// Check the exact typed cell or a fully initialized declared word
     /// without evaluating a load, resolving aliases, or walking history.
     pub(in crate::kernel) fn indexed_read_is_defined(
@@ -7050,7 +7177,7 @@ impl SymbolicMemory {
         {
             return false;
         }
-        if let Some(value) = self.cells.explicitly_stored_value(pointer) {
+        if let Some(value) = self.indexed_scalar_value(pointer) {
             return value_type.accepts(value) || value_type.read_cell(value).is_some();
         }
         match self.cells.exact_run_slot_type(pointer) {
@@ -7282,6 +7409,17 @@ impl SymbolicMemory {
     ) -> Option<ProgramValue> {
         self.known_retained_union_value(pointer, value_type)
             .map(ExecutionValue::into_native)
+    }
+
+    /// Borrow the immutable view of one exact typed union cell.
+    pub(in crate::kernel) fn indexed_union_value(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> Option<&ProgramValue> {
+        self.union_cells
+            .get(&(pointer.clone(), value_type))
+            .map(StoredMemoryValue::native)
     }
 
     pub(in crate::kernel) fn known_retained_union_value(
@@ -7527,7 +7665,7 @@ impl SymbolicMemory {
     /// whatever `fate` would say of them: a dropped slot was written, and a
     /// caller that retires the storage forgets its record afterwards. A run
     /// carries no zero reading to lose: it is never seeded where a live
-    /// allocation may lie ([`Self::with_seeded_cells`] and its siblings
+    /// allocation may lie ([`Self::with_seeded_cells_at`] and its siblings
     /// refuse one).
     ///
     /// The work is the candidates `scope` admits, which every caller already
@@ -7853,6 +7991,20 @@ impl SymbolicMemory {
         assumptions: &PureFactContext,
         authorized_range: Option<&MemoryRange>,
     ) -> Option<(Self, bool)> {
+        self.prepare_store_cache_of(pointer, bytes, bytes.into(), assumptions, authorized_range)
+    }
+
+    /// [`Self::prepare_store_cache`] for a store reaching `extent`: a whole
+    /// object of abstract type is placed by the owner that holds it, as each
+    /// such cell is, never by its bytes.
+    fn prepare_store_cache_of(
+        &self,
+        pointer: &Address,
+        bytes: u32,
+        extent: crate::kernel::assumptions::AccessExtent,
+        assumptions: &PureFactContext,
+        authorized_range: Option<&MemoryRange>,
+    ) -> Option<(Self, bool)> {
         let normalized_pointer = Address {
             base: pointer.base.clone(),
             offset: normalize_exact_memory_loads_in_pointer_offset(&pointer.offset, assumptions),
@@ -7880,7 +8032,7 @@ impl SymbolicMemory {
         // pure-fact distinctness ladder, whose failing searches cost work in
         // every separation fact of the block. Cells ownership does not place
         // go down the ladder unchanged.
-        let owned_footprint = assumptions.owned_store_footprint(&normalized_pointer, bytes);
+        let owned_footprint = assumptions.owned_store_footprint(&normalized_pointer, extent);
         let mut run_forgot = false;
         let run_rule = |run: &CellRun| {
             let (kept, forgot) =
@@ -7948,15 +8100,42 @@ impl SymbolicMemory {
                 &owned_footprint,
                 &normalized_pointer,
                 &normalized_cell_pointer,
-                crate::kernel::reasoning::cell_access_byte_width(cell_value),
+                crate::kernel::assumptions::access_extent_of_value(cell_value),
             ) {
+                return CachedValueFate::Kept;
+            }
+            // Distinct fields of one symbolic object, by the layout's rule.
+            if crate::kernel::reasoning::memory_resolution::symbolic_fields_apart(
+                &normalized_cell_pointer,
+                crate::kernel::assumptions::access_extent_of_value(cell_value),
+                &normalized_pointer,
+                extent,
+            ) {
+                return CachedValueFate::Kept;
+            }
+            // A field of a symbolic object has no constant offset for the
+            // address ladders below; a stated separation of its object from
+            // the written bytes keeps it.
+            if crate::kernel::SymbolicLayoutName::field_displacement(
+                &normalized_cell_pointer.offset,
+            )
+            .is_some()
+                && assumptions
+                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                        &MemoryRange::of_access(
+                            &normalized_cell_pointer,
+                            crate::kernel::assumptions::access_extent_of_value(cell_value),
+                        ),
+                        &MemoryRange::of_access(&normalized_pointer, extent),
+                    )
+            {
                 return CachedValueFate::Kept;
             }
             let address_inequality_separates_bytes = crate::kernel::reasoning::access_byte_overlap(
                 &normalized_cell_pointer,
-                crate::kernel::reasoning::cell_access_byte_width(cell_value),
+                crate::kernel::assumptions::access_extent_of_value(cell_value),
                 &normalized_pointer,
-                bytes,
+                extent,
                 assumptions,
             )
                 == crate::kernel::reasoning::AccessByteOverlap::Separate;
@@ -8416,19 +8595,6 @@ impl SymbolicMemory {
         self.blocks.get(block).map(MemoryBlock::allocation_size)
     }
 
-    /// Whether some allocation this state has already freed may contain
-    /// `pointer`. Freed allocations are few, so this scans them directly.
-    pub(in crate::kernel) fn freed_heap_allocation_may_contain(
-        &self,
-        pointer: &Address,
-        assumptions: &PureFactContext,
-    ) -> bool {
-        self.heap
-            .deallocated_allocations
-            .keys()
-            .any(|allocation| heap_allocation_may_contain_pointer(allocation, pointer, assumptions))
-    }
-
     pub(in crate::kernel) fn is_loadable_concretely(
         &self,
         pointer: &Address,
@@ -8448,24 +8614,6 @@ impl SymbolicMemory {
         self.cells.value_width_at(pointer) == Some(byte_width)
     }
 
-    pub(in crate::kernel) fn string_literal_loadable_facts(&self) -> Vec<Proposition> {
-        self.blocks
-            .iter()
-            .filter(|&(block, contents)| {
-                contents.is_read_only() && matches!(block, AddressBase::StringLiteral { .. })
-            })
-            .map(|(block, contents)| Proposition::MemoryLoadable {
-                memory: self.clone(),
-                base: Address {
-                    base: block.clone(),
-                    offset: AddressOffset::Constant(0),
-                },
-                bytes: (contents.size().clone()).into(),
-                wide: false,
-            })
-            .collect()
-    }
-
     pub(in crate::kernel) fn can_store_concretely(
         &self,
         pointer: &Address,
@@ -8473,7 +8621,42 @@ impl SymbolicMemory {
     ) -> bool {
         !self.is_read_only_block(&pointer.base)
             && (self.cells.contains_key(pointer)
-                || self.access_in_bounds(pointer, value.byte_width()))
+                || self.access_extent_in_bounds(
+                    pointer,
+                    crate::kernel::assumptions::access_extent_of_value(value),
+                ))
+    }
+
+    /// [`Self::access_in_bounds`] for an access reaching `extent`. In a block
+    /// of a symbolic size, a field's access is inside its object by the
+    /// layout's rule, found by lookup: at `offsetof(L, f)` in a block of
+    /// `sizeof(L)`, reaching no further than `f`, or a whole value of `T`
+    /// at the start of a block of `sizeof(T)`.
+    pub(in crate::kernel) fn access_extent_in_bounds(
+        &self,
+        pointer: &Address,
+        extent: crate::kernel::AccessExtent,
+    ) -> bool {
+        if let crate::kernel::AccessExtent::Bytes(bytes) = extent
+            && self.access_in_bounds(pointer, bytes)
+        {
+            return true;
+        }
+        let Some(block) = self.blocks.get(&pointer.base) else {
+            return false;
+        };
+        let size = block.size();
+        match crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset) {
+            Some((None, layout, field)) => {
+                *size == layout.size_term() && layout.within_field(field, extent)
+            }
+            Some(_) => false,
+            None => {
+                pointer.offset.as_const() == Some(0)
+                    && matches!(extent, crate::kernel::AccessExtent::Object(parameter)
+                        if *size == parameter.size_term())
+            }
+        }
     }
 
     pub(in crate::kernel) fn access_in_bounds(&self, pointer: &Address, byte_width: u32) -> bool {
@@ -8714,14 +8897,17 @@ impl ExecutionState {
                 "the aggregate destination",
                 self.aggregate_destination != other.aggregate_destination,
             ),
-            ("the loan ledger", self.loan_ledger != other.loan_ledger),
             (
-                "the loan participant",
-                self.loan_participant != other.loan_participant,
+                "the borrow ledger",
+                self.borrow_ledger != other.borrow_ledger,
             ),
             (
-                "the loan view bindings",
-                self.loan_view_bindings != other.loan_view_bindings,
+                "the borrow participant",
+                self.borrow_participant != other.borrow_participant,
+            ),
+            (
+                "the borrow view bindings",
+                self.borrow_bindings != other.borrow_bindings,
             ),
             (
                 "the thread ledger",
@@ -8804,7 +8990,7 @@ impl ExecutionState {
         }
         let same_or_empty_resources = |left: &ResourceContext, right: &ResourceContext| {
             (std::sync::Arc::ptr_eq(&left.storage, &right.storage)
-                && std::sync::Arc::ptr_eq(&left.loan_dependencies, &right.loan_dependencies))
+                && std::sync::Arc::ptr_eq(&left.borrow_dependencies, &right.borrow_dependencies))
                 || (left.is_pristine_semantically_empty() && right.is_pristine_semantically_empty())
         };
         let same_bindings = match (&self.resource_bindings, &other.resource_bindings) {
@@ -8827,9 +9013,9 @@ impl ExecutionState {
             && same_or_empty_resources(&self.instance_field_scope, &other.instance_field_scope)
             && self.body_field_view == other.body_field_view
             && same_or_empty_resources(&self.resources, &other.resources)
-            && self.loan_ledger == other.loan_ledger
-            && self.loan_participant == other.loan_participant
-            && self.loan_view_bindings == other.loan_view_bindings
+            && self.borrow_ledger == other.borrow_ledger
+            && self.borrow_participant == other.borrow_participant
+            && self.borrow_bindings == other.borrow_bindings
             && self.thread_ledger == other.thread_ledger
             && self.mutex_ledger == other.mutex_ledger
             && self.preserves_mutex_protocols == other.preserves_mutex_protocols
@@ -10116,10 +10302,10 @@ impl ExecutionState {
                 return Err("member private memory exceeds live storage".into());
             }
             if self
-                .loan_ledger()
-                .is_some_and(|ledger| !ledger.rewrite_separates_from_loans(range, assumptions))
+                .borrow_ledger()
+                .is_some_and(|ledger| !ledger.rewrite_separates_from_borrows(range, assumptions))
             {
-                return Err("member private memory requires separation from active loans".into());
+                return Err("member private memory requires separation from active borrows".into());
             }
         }
         if produce && !definition.facts().is_empty() {
@@ -10376,13 +10562,13 @@ impl ExecutionState {
             && std::sync::Arc::ptr_eq(&self.memory.union_cells, &other.memory.union_cells)
             && std::sync::Arc::ptr_eq(&self.memory.heap, &other.memory.heap)
             && self.resources.shares_storage_with(&other.resources)
-            && match (&self.loan_ledger, &other.loan_ledger) {
+            && match (&self.borrow_ledger, &other.borrow_ledger) {
                 (None, None) => true,
                 (Some(left), Some(right)) => left.shares_storage_with(right),
                 _ => false,
             }
-            && self.loan_participant == other.loan_participant
-            && self.loan_view_bindings == other.loan_view_bindings
+            && self.borrow_participant == other.borrow_participant
+            && self.borrow_bindings == other.borrow_bindings
             && self
                 .observed_population_families
                 .shares_storage_with(&other.observed_population_families)
@@ -10599,8 +10785,8 @@ impl ExecutionState {
             .clone()
             .invalidate_memory_support(&self.memory, &memory)
             .invalidate_iterated_facts(&self.memory, &memory, stores_checked);
-        self.loan_view_bindings = crate::kernel::loans::LoanViewBindings::from_state(
-            self.resources.loan_dependency_state(),
+        self.borrow_bindings = crate::kernel::borrows::BorrowBindings::from_state(
+            self.resources.borrow_dependency_state(),
         );
         self.memory = memory;
     }
@@ -10729,16 +10915,16 @@ impl ExecutionState {
 
     /// Summarize the installed inputs while establishing an execution entry.
     /// Later calls need only the bindings and resources changed from it.
-    pub(crate) fn prepare_modular_call_reservations(&self) {
-        crate::kernel::reasoning::caller_state_variable_bound(self);
+    pub(crate) fn prepare_execution_variable_reservations(&self) {
+        crate::kernel::reasoning::execution_state_variable_bound(self);
     }
 
     pub fn with_resource_context(mut self, resources: ResourceContext) -> Self {
         // ResourceContext owns the canonical persistent dependency root. The
         // ExecutionState field is only a shared mirror, so replacing a context does
-        // not scan unrelated resources or active loans.
-        self.loan_view_bindings =
-            crate::kernel::loans::LoanViewBindings::from_state(resources.loan_dependency_state());
+        // not scan unrelated resources or active borrows.
+        self.borrow_bindings =
+            crate::kernel::borrows::BorrowBindings::from_state(resources.borrow_dependency_state());
         self.resources = resources;
         self
     }
@@ -10747,13 +10933,13 @@ impl ExecutionState {
     /// occurrences created by that rewrite.  The destination occurrences are
     /// supplied by the resource algebra; this method never derives them from
     /// equal facts or from the active ledger.
-    pub(crate) fn with_resource_context_and_loan_dependencies(
+    pub(crate) fn with_resource_context_and_borrow_dependencies(
         mut self,
         resources: ResourceContext,
         dependencies: impl IntoIterator<
             Item = (
                 crate::kernel::primitives::ResourceOccurrenceId,
-                crate::kernel::loans::LoanViewBinding,
+                crate::kernel::borrows::BorrowBinding,
             ),
         >,
     ) -> Self {
@@ -10761,70 +10947,70 @@ impl ExecutionState {
         for (occurrence, binding) in dependencies {
             self.resources = self
                 .resources
-                .with_loan_dependency(occurrence, binding.clone());
+                .with_borrow_dependency(occurrence, binding.clone());
         }
-        self.loan_view_bindings = crate::kernel::loans::LoanViewBindings::from_state(
-            self.resources.loan_dependency_state(),
+        self.borrow_bindings = crate::kernel::borrows::BorrowBindings::from_state(
+            self.resources.borrow_dependency_state(),
         );
         self
     }
-    pub(crate) fn loan_ledger(&self) -> Option<&crate::kernel::loans::LoanLedger> {
-        self.loan_ledger.as_ref()
+    pub(crate) fn borrow_ledger(&self) -> Option<&crate::kernel::borrows::BorrowLedger> {
+        self.borrow_ledger.as_ref()
     }
-    pub(crate) fn with_loan_ledger(
+    pub(crate) fn with_borrow_ledger(
         mut self,
-        ledger: Option<crate::kernel::loans::LoanLedger>,
+        ledger: Option<crate::kernel::borrows::BorrowLedger>,
     ) -> Self {
-        self.loan_ledger = ledger;
+        self.borrow_ledger = ledger;
         self
     }
 
-    pub(crate) fn loan_participant(&self) -> Option<crate::kernel::loans::LoanParticipantId> {
-        self.loan_participant
+    pub(crate) fn borrow_participant(&self) -> Option<crate::kernel::borrows::BorrowParticipantId> {
+        self.borrow_participant
     }
 
-    pub(crate) fn with_loan_participant(
+    pub(crate) fn with_borrow_participant(
         mut self,
-        participant: Option<crate::kernel::loans::LoanParticipantId>,
+        participant: Option<crate::kernel::borrows::BorrowParticipantId>,
     ) -> Self {
-        self.loan_participant = participant;
+        self.borrow_participant = participant;
         self
     }
 
-    pub(crate) fn loan_view_bindings(&self) -> &crate::kernel::loans::LoanViewBindings {
-        &self.loan_view_bindings
+    pub(crate) fn borrow_bindings(&self) -> &crate::kernel::borrows::BorrowBindings {
+        &self.borrow_bindings
     }
 
     /// The resource-context sidecar is canonical.  The legacy ledger map is
     /// kept as a mechanically synchronized mirror for call planning and must
     /// agree in both directions before a checked resource transition runs.
-    pub(crate) fn loan_bindings_are_consistent(&self) -> bool {
-        let resources_state = self.resources.loan_dependency_state();
-        let mirror_state = self.loan_view_bindings.state();
+    pub(crate) fn borrow_bindings_are_consistent(&self) -> bool {
+        let resources_state = self.resources.borrow_dependency_state();
+        let mirror_state = self.borrow_bindings.state();
         (resources_state.map.is_empty() && mirror_state.map.is_empty())
             || std::sync::Arc::ptr_eq(&resources_state, &mirror_state)
     }
 
-    pub(crate) fn with_loan_view_bindings(
+    pub(crate) fn with_borrow_bindings(
         mut self,
-        bindings: crate::kernel::loans::LoanViewBindings,
+        bindings: crate::kernel::borrows::BorrowBindings,
     ) -> Self {
-        self.loan_view_bindings = bindings;
+        self.borrow_bindings = bindings;
         self.resources = self
             .resources
             .clone()
-            .with_loan_dependency_state(self.loan_view_bindings.state());
+            .with_borrow_dependency_state(self.borrow_bindings.state());
         self
     }
 
-    pub(in crate::kernel) fn automatic_storage_loan_refusal(
+    pub(in crate::kernel) fn automatic_storage_borrow_refusal(
         &self,
         block: &AddressBase,
     ) -> Option<RuntimeError> {
-        self.loan_ledger
+        self.borrow_ledger
             .as_ref()?
             .automatic_storage_retirement_refusal(block, self.memory.block_size(block)?)
-            .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
+            .map(|refusal| RuntimeError::BorrowRefusal(Box::new(refusal)))
     }
 
     pub fn locals(&self) -> &LocalEnvironment {
@@ -11454,7 +11640,7 @@ mod interface_join_tombstone_tests {
         let arms = [&alive, &freed];
         let joined = alive
             .clone()
-            .with_interface_memory_havoc_preserving_loans(
+            .with_interface_memory_havoc_preserving_borrows(
                 Variable(923_100),
                 &BTreeSet::new(),
                 &arms,
@@ -11501,7 +11687,7 @@ mod join_allocation_spelling_tests {
         let arms = [&arm_a, &arm_b];
         let joined = arm_a
             .clone()
-            .with_interface_memory_havoc_preserving_loans(
+            .with_interface_memory_havoc_preserving_borrows(
                 Variable(924_100),
                 &BTreeSet::new(),
                 &arms,
@@ -11513,7 +11699,7 @@ mod join_allocation_spelling_tests {
         joined
     }
 
-    /// `with_interface_memory_havoc_preserving_loans` keys `live_allocations`
+    /// `with_interface_memory_havoc_preserving_borrows` keys `live_allocations`
     /// by pointer spelling, so one allocation the arms spell `p` and `q`
     /// joins as two live entries. Where `p == q` is known, a free through
     /// either spelling retires both, and the other spelling cannot be freed
@@ -11798,7 +11984,7 @@ mod initialization_record_tests {
     #[test]
     fn loop_havoc_keeps_forgotten_automatic_bytes_initialized() {
         let block = "local:record-loop";
-        let havoc = written_pair(block).with_loop_memory_havoc_preserving_loans(
+        let havoc = written_pair(block).with_loop_memory_havoc_preserving_borrows(
             Variable(924_002),
             &BTreeSet::new(),
             None,
@@ -11821,7 +12007,7 @@ mod initialization_record_tests {
         let arms = [&forgotten, &first_only];
         let joined = forgotten
             .clone()
-            .with_interface_memory_havoc_preserving_loans(
+            .with_interface_memory_havoc_preserving_borrows(
                 Variable(924_003),
                 &BTreeSet::new(),
                 &arms,
@@ -11852,7 +12038,7 @@ mod initialization_record_tests {
     }
 
     fn loop_havoc(memory: SymbolicMemory, variable: u64) -> SymbolicMemory {
-        memory.with_loop_memory_havoc_preserving_loans(
+        memory.with_loop_memory_havoc_preserving_borrows(
             Variable(variable),
             &BTreeSet::new(),
             None,

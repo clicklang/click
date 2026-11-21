@@ -190,11 +190,25 @@ pub(in crate::kernel) fn spec_algebraic_expression_is_state_independent(
 pub(in crate::kernel) fn spec_sequence_is_state_independent(
     sequence: &SpecSequenceExpression,
 ) -> bool {
-    spec_tree_all(SpecNode::Sequence(sequence), |node| match node {
+    spec_tree_all(
+        SpecNode::Sequence(sequence),
+        sequence_state_independent_node,
+    )
+}
+
+pub(in crate::kernel) fn spec_expression_is_state_independent(expression: &SpecExpression) -> bool {
+    spec_tree_all(
+        SpecNode::Expression(expression),
+        sequence_state_independent_node,
+    )
+}
+
+fn sequence_state_independent_node(node: SpecNode<'_>) -> Visit<()> {
+    match node {
         SpecNode::Sequence(_) => Visit::Descend,
         SpecNode::Expression(SpecExpression::LoopEntryState(_)) => Visit::Stop(()),
         node => state_independent_node(node),
-    })
+    }
 }
 
 /// Whether one spec node reads no program state of its own. Anything not
@@ -809,7 +823,8 @@ pub(super) fn program_expression_parameter_offset(
             Some(0)
         }
         ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
-            program_expression_parameter_offset(pointer, parameter_name)?.checked_add(*bytes)
+            program_expression_parameter_offset(pointer, parameter_name)?
+                .checked_add(bytes.bytes()?)
         }
         ProgramExpression::Subobject { pointer, .. } => {
             program_expression_parameter_offset(pointer, parameter_name)

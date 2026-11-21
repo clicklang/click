@@ -15,7 +15,7 @@ void touch(int32* p) {
     owns cell(p);
     ensures p[0] == 1;
 } by {
-    open(cell(p)) {
+    with(cell(p)) {
         apply(needs_zero(p[0]));
         step();
     }

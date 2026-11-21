@@ -1,6 +1,6 @@
 # A call reuses separation stated for the same byte spans
 
-The two views compose into a known-bounds loan. The written separation uses
+The two views compose into a known-bounds borrow. The written separation uses
 an opaque-bounds range over the same object and bytes.
 
 ```c filename=resize_links.c

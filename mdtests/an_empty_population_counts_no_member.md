@@ -28,7 +28,7 @@ void caller(struct pool* pool, struct object* object) {
     owns control(pool);
     requires count(item(pool, _)) == 0;
 } by {
-    open(control(pool)) {
+    with(control(pool)) {
         apply(population_member_count_zero(count(item(pool, object))));
         have old(count(item(pool, object))) == 0 by {
             known();

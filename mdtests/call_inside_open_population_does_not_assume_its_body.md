@@ -41,7 +41,7 @@ int32 broken(struct object* obj) {
     owns object_ref(obj);
     ensures result == 1;
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         step();
         step();
     }

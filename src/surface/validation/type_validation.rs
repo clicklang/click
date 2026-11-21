@@ -3278,7 +3278,6 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Known
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
-            | ProofTactic::OrderChain(_)
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
@@ -3390,7 +3389,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::ApplyInductionUsing { .. } => "apply",
         ProofTactic::ApplyTheorem(_) | ProofTactic::ApplyTheoremUsing { .. } => "apply",
         ProofTactic::Have(_) => "have",
-        ProofTactic::Open(_) => "open",
+        ProofTactic::Open(_) => "with",
         ProofTactic::If(_) => "if",
         ProofTactic::Cases(_) => "cases",
         ProofTactic::Both(_) | ProofTactic::All(_) => "all",
@@ -3409,7 +3408,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Known => "known",
         ProofTactic::Normalize => "normalize",
         ProofTactic::NormalizeUsing(_) => "normalize",
-        ProofTactic::OrderChain(_) => "order_chain",
         ProofTactic::ArithmeticUsing(_) => "arithmetic",
         ProofTactic::Intro | ProofTactic::IntroAs(_) | ProofTactic::IntroBinder(_) => "intro",
         ProofTactic::Enumerate => "enumerate",
@@ -3881,6 +3879,9 @@ fn resource_types_compatible(
                 | InterfaceType::Float64Pointer
                 | InterfaceType::Float32PointerPointer
                 | InterfaceType::Float64PointerPointer
+                // A value of an abstract type in its own allocation, a
+                // `Box<T>`'s.
+                | InterfaceType::ParameterPointer(_)
                 | InterfaceType::Int32Array(_)
                 | InterfaceType::CharArray(_, _)
                 | InterfaceType::UInt8Array(_)

@@ -1525,18 +1525,20 @@ fn coercion_contracts(
     // the object nothing changes the memory or hands it over again, so the
     // caller keeps every field. The unpack gives both up.
     let lend = crate::languages::rust::names::object_lend_name(type_name, trait_name);
-    let lent = |verb: &str| {
-        at(
-            position,
-            vec![
-                ident(verb),
-                ident(&lend),
-                Token::LParen,
-                ident("object"),
-                Token::RParen,
-                Token::Semicolon,
-            ],
-        )
+    let source = "object_memory";
+    let lent = |verb: &str, source: Option<&str>| {
+        let mut clause = vec![
+            ident(verb),
+            ident(&lend),
+            Token::LParen,
+            ident("object"),
+            Token::RParen,
+        ];
+        if let Some(source) = source {
+            clause.extend([ident("from"), ident(source)]);
+        }
+        clause.push(Token::Semicolon);
+        at(position, clause)
     };
     tokens.extend(at(
         position,
@@ -1568,9 +1570,19 @@ fn coercion_contracts(
         trait_name,
         crate::languages::rust::names::SHARED_PACK,
     )));
-    tokens.extend(memory("views"));
+    tokens.extend(at(
+        position,
+        vec![
+            ident("views"),
+            Token::Star,
+            ident("object"),
+            ident("as"),
+            ident(source),
+            Token::Semicolon,
+        ],
+    ));
     tokens.extend(resources("consumes"));
-    tokens.extend(lent("produces"));
+    tokens.extend(lent("produces", Some(source)));
     tokens.extend(instance("produces"));
     // A definition reading a consumed resource reads it at entry.
     let entry = if held.is_empty() {
@@ -1593,7 +1605,7 @@ fn coercion_contracts(
         trait_name,
         crate::languages::rust::names::SHARED_UNPACK,
     )));
-    tokens.extend(lent("consumes"));
+    tokens.extend(lent("consumes", None));
     tokens.extend(instance("consumes"));
     // The resources come back holding the object's state, which a shared
     // reference kept.

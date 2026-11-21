@@ -281,7 +281,7 @@ remain unavailable through this route. Focused regressions cover range and
 lifetime rejection, resource presence/quantity, and scaling.
 
 Two proof-driver fixes support this increment: named folds after return inside
-`open` are deferred to the returned state, and exact checked execution retains
+`with` are deferred to the returned state, and exact checked execution retains
 its loop semantics even when no loop was reached. Thus the unreachable
 successor loop does not demand a spurious ranking measure; reachable unranked
 loop summaries still fail termination checks. The replacement-child checks
@@ -1533,7 +1533,7 @@ and rebuilt-layer negatives. Concurrent-reader termination and broader well-foun
 remain outside this sequential MVR obligation.
 
 Audit validation: all four `loop_decreases` fixtures pass under ordinary and
-candidate stable-loan semantics. Ordinary `click audit` checks all five smart
+candidate stable-borrow semantics. Ordinary `click audit` checks all five smart
 sites in `loop_decreases_strict_descendant.md` and all four in the
 `continue` structural-measure fixture. The rebuilt-layer negative reaches
 the descent refusal; its control without the measure verifies. The full unpiped

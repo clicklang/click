@@ -2460,6 +2460,7 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
     entry_values: ProgramValueBindings,
     current_values: ProgramValueBindings,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     result: Option<&ProgramValue>,
     retained_states: &RecordedStates,
     spec_definitions: SpecDefinitions<'_>,
@@ -2479,6 +2480,7 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
         pointer_element_widths,
     );
     context.algebraic_values = algebraic_values.into_iter().collect();
+    context.integer_values = integer_values.clone();
     lowerer.capture_referenced_names = Some(contract_expression_referenced_names(expression));
     lowerer.lower_contract_algebraic_to_spec(expression, &context)
 }
@@ -3542,9 +3544,13 @@ pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
                 .or_else(|| {
                     parameter
                         .pointee_struct_layout()
-                        .map(|layout| layout.size_bytes())
+                        .and_then(|layout| layout.size().bytes())
                 })
-                .or_else(|| parameter.struct_layout().map(|layout| layout.size_bytes()))
+                .or_else(|| {
+                    parameter
+                        .struct_layout()
+                        .and_then(|layout| layout.size().bytes())
+                })
                 .map(|width| (parameter.name().to_string(), width))
         })
         .collect()
@@ -3575,7 +3581,9 @@ pub(in crate::surface) fn click_parameter_pointer_element_widths_with_layouts(
                     parameter
                         .struct_name()
                         .and_then(|name| struct_layouts.get(name))
-                        .map(|layout| (parameter.name().to_string(), layout.size_bytes()))
+                        .and_then(|layout| {
+                            Some((parameter.name().to_string(), layout.size().bytes()?))
+                        })
                 })
                 .or_else(|| {
                     parameter
@@ -6695,16 +6703,16 @@ impl AnnotationLowerer<'_> {
         &mut self,
         base: &ContractExpression,
         lowered: &ProgramExpression,
-        offset_bytes: u32,
+        offset_bytes: crate::kernel::LayoutOffset,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         let pointer = self.lower_contract_expression_to_spec(base, environment)?;
-        let pointer = if offset_bytes == 0 {
+        let pointer = if offset_bytes == crate::kernel::LayoutOffset::Bytes(0) {
             pointer
         } else {
             SpecExpression::PointerOffset {
                 pointer: Box::new(pointer),
-                elements: Box::new(SpecExpression::Value(int32(offset_bytes))),
+                elements: Box::new(layout_offset_elements(offset_bytes)),
                 byte_width: 1,
             }
         };
@@ -6931,7 +6939,7 @@ impl AnnotationLowerer<'_> {
                     ProgramExpression::PointerOffsetBytes { bytes, .. } => {
                         Ok(SpecExpression::PointerOffset {
                             pointer: Box::new(value),
-                            elements: Box::new(SpecExpression::Value(int32(*bytes))),
+                            elements: Box::new(layout_offset_elements(*bytes)),
                             byte_width: 1,
                         })
                     }
@@ -7761,8 +7769,7 @@ impl AnnotationLowerer<'_> {
         }
     }
 
-    /// The Rust enum type of the value `expression` names: a C name that
-    /// holds one, or `*r` for a reference `r` to one.
+    /// The enum or library value type named by a program binding or read.
     fn enum_program_value_type(
         &self,
         expression: &ContractExpression,
@@ -7775,18 +7782,21 @@ impl AnnotationLowerer<'_> {
                 crate::kernel::BindingName::Named(name),
             )) => self.enum_program_name_type(name, environment),
             ContractExpression::ProgramExpression(ProgramExpression::Load(pointer)) => {
-                let ProgramExpression::Variable(name) = pointer.as_ref() else {
-                    return None;
-                };
-                match self.program_name_type(name, environment)? {
-                    ProgramType::ParameterPointer(enum_type)
-                        if crate::surface::holds_spec_value(enum_type) =>
-                    {
-                        Some(enum_type)
+                let value_type = match pointer.as_ref() {
+                    ProgramExpression::Variable(name) => {
+                        self.program_name_type(name, environment)?.pointee_type()?
                     }
+                    _ => self.program_expression_array_element_type(pointer, environment)?,
+                };
+                match value_type {
+                    ProgramType::Parameter(ty) if crate::surface::holds_spec_value(ty) => Some(ty),
                     _ => None,
                 }
             }
+            ContractExpression::MemoryLoad {
+                value_type: ProgramType::Parameter(ty),
+                ..
+            } if crate::surface::holds_spec_value(*ty) => Some(*ty),
             ContractExpression::Old(inner) => self.enum_program_value_type(inner, environment),
             // The enum value a call returned.
             ContractExpression::RegionResult(region) => {
@@ -8395,7 +8405,26 @@ impl AnnotationLowerer<'_> {
                     ClickType::Program(_) | ClickType::CObjectPointer { .. }
                         if parameter_is_click_array_ref(parameter) =>
                     {
-                        let array_ref = self.lower_array_ref_to_spec(argument, environment)?;
+                        let mut array_ref = self.lower_array_ref_to_spec(argument, environment)?;
+                        // A character array of the other signedness is passed
+                        // as the parameter's own element pointer, as a
+                        // predicate's is: a string literal of signed `char`
+                        // passed for `s: uint8[]` is the same application
+                        // wherever it is written, including the recursive
+                        // calls an `unfold` exposes.
+                        if let Some(expected_element_type) =
+                            click_array_element_type(parameter.interface_type())
+                            && array_ref.element_type != expected_element_type
+                            && crate::surface::validation::array_ref_elements_compatible(
+                                array_ref.element_type,
+                                expected_element_type,
+                            )
+                            && let Some(pointer_type) = expected_element_type.pointer_to()
+                        {
+                            array_ref.pointer =
+                                SpecExpression::Cast(Box::new(array_ref.pointer), pointer_type);
+                            array_ref.element_type = expected_element_type;
+                        }
                         Ok(crate::kernel::SpecPureFunctionArgument::ArrayRef {
                             // A function that reads no memory is a function of
                             // its argument values, so its pointer arguments are
@@ -9444,6 +9473,19 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecExpression, String> {
         let name = name.into();
         crate::instrumentation::record_deterministic_work(1);
+        let name = if name.unresolved_slice_length().is_some() {
+            let state = environment
+                .reference_state
+                .as_ref()
+                .or(if environment.at_function_entry {
+                    Some(self.entry_state)
+                } else {
+                    self.local_type_state
+                });
+            state.map_or(name.clone(), |state| state.locals().resolve_binding(&name))
+        } else {
+            name
+        };
         if let Some(id) = name.static_id() {
             let metadata = id
                 .metadata()
@@ -9802,7 +9844,7 @@ impl AnnotationLowerer<'_> {
             ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
                 Ok(SpecExpression::PointerOffset {
                     pointer: Box::new(self.lower_program_expression_to_spec(pointer, environment)?),
-                    elements: Box::new(SpecExpression::Value(int32(*bytes))),
+                    elements: Box::new(layout_offset_elements(*bytes)),
                     byte_width: 1,
                 })
             }
@@ -11349,5 +11391,16 @@ fn literal_element_index(index: &ContractExpression) -> Option<u32> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+/// A member offset as byte elements of a pointer offset: its number, or a
+/// symbolic layout's 64-bit `offsetof` term.
+fn layout_offset_elements(bytes: crate::kernel::LayoutOffset) -> SpecExpression {
+    match bytes {
+        crate::kernel::LayoutOffset::Bytes(bytes) => SpecExpression::Value(int32(bytes)),
+        crate::kernel::LayoutOffset::Field(..) => {
+            SpecExpression::Value(ProgramValue::UInt64(bytes.term()))
+        }
     }
 }

@@ -52,12 +52,12 @@ uint32 contribute_early(struct counter* p) {
     ensures count(remaining(p)) == old(count(remaining(p))) - 1;
     ensures p->value == old(p->value) + 1;
 } by {
-    open(control(p)) {
+    with(control(p)) {
         have to_integer(count(remaining(p))) <= 3 by {
             known();
         }
     }
-    open(control(p)) {
+    with(control(p)) {
         have (to_integer(count(remaining(p))) - 1) >= 1 by {
             solve() using { to_integer(count(remaining(p))) > 1; };
         }
@@ -104,7 +104,7 @@ uint32 contribute_early(struct counter* p) {
             solve() using { to_integer(p->value) <= (3 - to_integer(count(remaining(p)))); (3 - to_integer(count(remaining(p)))) <= to_integer(p->value); };
         }
     }
-    open(control(p)) {
+    with(control(p)) {
         step();
     }
     known();
@@ -134,7 +134,7 @@ uint32 contribute_early(struct counter* p) {
 uint32 read_current(struct counter* p) {
     owns control(p);
 } by {
-    open(control(p)) {
+    with(control(p)) {
         step();
     }
     known();
@@ -146,7 +146,7 @@ uint32 contribute_nested(struct counter* p) {
     ensures count(remaining(p)) == old(count(remaining(p))) - 1;
     ensures p->value == old(p->value) + 1;
 } by {
-    open(control(p)) {
+    with(control(p)) {
         have (to_integer(count(remaining(p))) - 1) >= 1 by {
             solve() using { to_integer(count(remaining(p))) > 1; };
         }
@@ -194,7 +194,7 @@ uint32 contribute_nested(struct counter* p) {
         }
     }
     step();
-    open(control(p)) {
+    with(control(p)) {
         have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
             have to_integer(p->value) <= (to_integer(old(p->value)) + 1) by {
                 have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
@@ -257,7 +257,7 @@ uint32 contribute_branch(struct counter* p, int32 report) {
     ensures count(remaining(p)) == old(count(remaining(p))) - 1;
     ensures p->value == old(p->value) + 1;
 } by {
-    open(control(p)) {
+    with(control(p)) {
         have (to_integer(count(remaining(p))) - 1) >= 1 by {
             solve() using { to_integer(count(remaining(p))) > 1; };
         }
@@ -305,7 +305,7 @@ uint32 contribute_branch(struct counter* p, int32 report) {
         }
     }
     if report != 0 {
-        open(control(p)) {
+        with(control(p)) {
             step();
             step();
         }

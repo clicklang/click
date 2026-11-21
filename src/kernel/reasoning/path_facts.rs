@@ -25,8 +25,9 @@ pub(in crate::kernel) fn memory_range_still_available(
         || range_memory.has_block(&base.base) == current_memory.has_block(&base.base)
             && range_memory.is_ended_local_address(base)
                 == current_memory.is_ended_local_address(base)
-            && range_memory.freed_heap_allocation_may_contain(base, assumptions)
-                == current_memory.freed_heap_allocation_may_contain(base, assumptions)
+            && (range_memory.shares_heap_deallocations_with(current_memory)
+                || range_memory.is_deallocated_heap_address(base, assumptions)
+                    == current_memory.is_deallocated_heap_address(base, assumptions))
 }
 
 #[cfg(test)]
@@ -230,7 +231,21 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
         Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) => {
             sequence_terms_equal_by_elements(left, right)
         }
+        Proposition::SequenceMembership { .. } => {
+            crate::kernel::spec::checks_retained_sequence_comparison(
+                proposition,
+                true,
+                |condition, truth| {
+                    solve_builtin_prop(&Proposition::condition_is(condition.clone(), truth))
+                },
+            ) == Some(true)
+        }
         Proposition::Equal(left, right) => left == right,
+        Proposition::ConditionIs(condition, expected)
+            if let Some(actual) = condition.operand_view().closed_float_predicate_value() =>
+        {
+            actual == *expected
+        }
         condition_source_0 @ Proposition::ConditionIs(_, expected)
             if let Some((ConditionTerm::Constant(actual), _)) =
                 condition_source_0.condition_native() =>
@@ -297,6 +312,11 @@ pub(in crate::kernel) fn conjunction_order_facts_are_inconsistent(
 
 pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
+        Proposition::ConditionIs(condition, expected)
+            if let Some(actual) = condition.operand_view().closed_float_predicate_value() =>
+        {
+            actual != *expected
+        }
         condition_source_0 @ Proposition::ConditionIs(_, expected)
             if let Some((ConditionTerm::Constant(actual), _)) =
                 condition_source_0.condition_native() =>
@@ -316,6 +336,15 @@ pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> boo
         }
         Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) => {
             sequence_terms_definitely_distinct(left, right)
+        }
+        Proposition::SequenceMembership { .. } => {
+            crate::kernel::spec::checks_retained_sequence_comparison(
+                proposition,
+                false,
+                |condition, truth| {
+                    solve_builtin_prop(&Proposition::condition_is(condition.clone(), truth))
+                },
+            ) == Some(true)
         }
         Proposition::Equal(Term::ProgramValue(left), Term::ProgramValue(right)) => {
             program_values_definitely_distinct(left.native_compat(), right.native_compat())
@@ -363,8 +392,12 @@ fn algebraic_terms_equal(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
         }
 }
 
-/// The equality checker has already checked both operands' types and schemas.
-fn algebraic_match_rebuilds_scrutinee(matched: &AlgebraicTerm, other: &AlgebraicTerm) -> bool {
+/// Check the arm bodies and binders of a reconstruction. Callers validate
+/// the operand types and schemas before using this as equality evidence.
+pub(in crate::kernel) fn algebraic_match_rebuilds_scrutinee(
+    matched: &AlgebraicTerm,
+    other: &AlgebraicTerm,
+) -> bool {
     let AlgebraicTermNode::Match { scrutinee, arms } = &matched.node else {
         return false;
     };

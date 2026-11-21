@@ -1102,6 +1102,38 @@ theorem add_right_order(a: Integer, b: Integer, c: Integer) {
     }
 }
 
+theorem int32_less_than_implies_less_equal(first: int32, last: int32) {
+    requires first < last;
+    ensures first <= last by {
+        apply(integer::lt_le(to_integer(first), to_integer(last))) using {
+            to_integer(first) < to_integer(last);
+        };
+        known();
+    }
+}
+
+theorem int32_less_than_less_equal_transitive(first: int32, middle: int32, last: int32) {
+    requires first < middle;
+    requires middle <= last;
+    ensures first < last by {
+        have to_integer(first) + 1 <= to_integer(middle) by {
+            apply(integer::lt_step_le(to_integer(first), to_integer(middle))) using {
+                to_integer(first) < to_integer(middle);
+            };
+        }
+        have to_integer(first) + 1 <= to_integer(last) by {
+            apply(integer::le_transitive(to_integer(first) + 1, to_integer(middle), to_integer(last))) using {
+                to_integer(first) + 1 <= to_integer(middle);
+                to_integer(middle) <= to_integer(last);
+            };
+        }
+        apply(integer::step_le_lt(to_integer(first), to_integer(last))) using {
+            to_integer(first) + 1 <= to_integer(last);
+        };
+        known();
+    }
+}
+
 theorem int32_less_equal_less_than_transitive(first: int32, middle: int32, last: int32) {
     requires first <= middle;
     requires middle < last;

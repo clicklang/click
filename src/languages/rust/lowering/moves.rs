@@ -462,12 +462,20 @@ pub(super) fn lower(
                         layout.alignment_bytes(),
                     )
                 });
+                // A symbolic struct's allocation is its `sizeof` bytes, a
+                // 64-bit size.
+                let bytes = match layout.size() {
+                    crate::kernel::LayoutSize::Bytes(size) => {
+                        crate::kernel::program_expression::int32_literal(size)
+                    }
+                    size @ crate::kernel::LayoutSize::Of(_) => {
+                        ProgramExpression::Value(crate::kernel::ProgramValue::UInt64(size.term()))
+                    }
+                };
                 program_seq(
                     ProgramStatement::HeapAllocate {
                         target: (destination.clone()).into(),
-                        bytes: crate::kernel::program_expression::int32_literal(
-                            layout.size_bytes(),
-                        ),
+                        bytes,
                         zeroed: false,
                         object_type: class,
                         ends_program_on_failure: true,
@@ -918,15 +926,17 @@ pub(super) fn lower(
                         .fields
                         .clone();
                     for field in &record_fields {
+                        // The layout's offset: a symbolic layout's is a term.
+                        let offset = cx.field_offset(record, &field.name)?;
                         let source_address =
                             crate::kernel::program_expression::pointer_offset_bytes(
                                 crate::kernel::program_expression::variable(cx.binding(source)),
-                                field.offset,
+                                offset,
                             );
                         let target_address =
                             crate::kernel::program_expression::pointer_offset_bytes(
                                 crate::kernel::program_expression::variable(cx.binding(target)),
-                                field.offset,
+                                offset,
                             );
                         let write = if let Type::Array { element, length } = &field.value_type {
                             program_write_scalar_array_region(
@@ -982,7 +992,7 @@ pub(super) fn lower(
                     let (length, element, _) = cx.arrays[local];
                     // Mint checked fresh automatic storage at the compiler's
                     // lifetime start, including each symbolic loop iteration.
-                    // Re-entry retires the old object and checks live loans.
+                    // Re-entry retires the old object and checks live borrows.
                     program_begin_aggregate_construction(
                         cx.binding(&local.clone()),
                         AggregateLayout::new(
@@ -1055,8 +1065,10 @@ fn write_fields(
     }
     let mut initialize = program_skip();
     for (value, field) in fields.iter().zip(&record_fields) {
-        let address =
-            crate::kernel::program_expression::pointer_offset_bytes(base.clone(), field.offset);
+        let address = crate::kernel::program_expression::pointer_offset_bytes(
+            base.clone(),
+            cx.field_offset(record, &field.name)?,
+        );
         let write = if let Type::Array { element, length } = &field.value_type {
             cx.assign_array_region(
                 address,
@@ -1709,6 +1721,7 @@ mod tests {
                 value_type: Type::I32,
             }],
             destructor: None,
+            symbolic: false,
         };
         let owned = Function {
             sites: Vec::new(),

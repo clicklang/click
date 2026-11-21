@@ -2,8 +2,8 @@ use super::*;
 use crate::kernel::int32;
 
 #[test]
-fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
-    use crate::kernel::loans::{LoanLedger, plan_stable_view_transfer};
+fn automatic_lifetime_event_rejects_active_local_borrow_and_forged_retirement() {
+    use crate::kernel::borrows::{BorrowLedger, plan_stable_view_transfer};
     use crate::kernel::prelude::CheckedResourceFact;
     use crate::kernel::{ResourceStateSource, ResourceTransferRole};
     let state = ExecutionState::new()
@@ -11,7 +11,7 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
         .with_memory(SymbolicMemory::new().with_block("local:selected", 4));
     let pointer = state.locals().slot("selected").unwrap().clone();
     let viewed = ResourceFact::view_memory(MemoryRange::new(pointer.clone(), 0.into(), 1.into()));
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let caller = ledger.fresh_participant().unwrap();
     let callee = ledger.fresh_participant().unwrap();
     let assumptions = PureFactContext::new();
@@ -39,8 +39,8 @@ fn automatic_lifetime_event_rejects_active_local_loan_and_forged_retirement() {
     )
     .unwrap();
     let state = state
-        .with_loan_ledger(Some(plan.ledger.clone()))
-        .with_loan_participant(Some(caller));
+        .with_borrow_ledger(Some(plan.ledger.clone()))
+        .with_borrow_participant(Some(caller));
     let names = vec!["selected".into()];
     let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
     assert!(core.record_automatic_lifetime_end(&state, &names).is_err());

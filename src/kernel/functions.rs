@@ -1,9 +1,9 @@
 use super::ResourceReference;
-use super::loans::{
-    CheckedLoanCallEvidence, CompositeLoanBacking, CompositeProjectionEvidence, LoanId, LoanLedger,
-    LoanRefusal, LoanRefusalOperation, LoanRefusalSubject, LoanViewBinding, LoanViewBindings,
-    StableViewTransferPlan, append_checked_loan_evidence, empty_checked_loan_evidence_sequence,
-    plan_stable_view_transfer_with_protocol_effect,
+use super::borrows::{
+    BorrowBinding, BorrowBindings, BorrowId, BorrowLedger, BorrowRefusal, BorrowRefusalOperation,
+    BorrowRefusalSubject, CheckedBorrowCallEvidence, CompositeBorrowBacking,
+    CompositeProjectionEvidence, StableViewTransferPlan, append_checked_borrow_evidence,
+    empty_checked_borrow_evidence_sequence, plan_stable_view_transfer_with_protocol_effect,
 };
 use super::model_fields::{ModelFieldOrigin, ModelMint, algebraic_value_variable};
 use super::population_authority::storage_creation::CreationEvents;
@@ -29,11 +29,10 @@ mod literal_objects;
 mod mixed_return_resources;
 pub(in crate::kernel) use mixed_return_resources::ReturnedEntryPartition;
 mod produced_argument_supply;
-mod return_loan_backing;
 mod summary_transfer;
 use mixed_return_resources::{
     ConstructedReturnBodies, ConsumedCellReturns, EvaluatedReturnResources, FreshAllocationReturn,
-    ProducedBorrowingPiece, ProjectedReturnResource, ReturnOwnershipOrigin,
+    ProducedBorrowingPiece, ProjectedReturnResource, ReturnOwnershipOrigin, ReturnedBorrowSource,
     project_return_resource_cores,
 };
 pub(in crate::kernel) use mixed_return_resources::{
@@ -116,7 +115,7 @@ fn execute_function_body_paths(
             execution_context,
             &path.facts,
             &path.obligations,
-            &path.loan_evidence,
+            &path.borrow_evidence,
             budget,
             judgment,
         )?;
@@ -140,7 +139,7 @@ fn invalid_goto_path(path: StatementExecutionPath, message: &str) -> StatementEx
         )),
         facts: path.facts,
         obligations: path.obligations,
-        loan_evidence: path.loan_evidence,
+        borrow_evidence: path.borrow_evidence,
     }
 }
 
@@ -361,7 +360,7 @@ struct FunctionResourceTransfer {
     returned_entry_partition: Option<mixed_return_resources::ReturnedEntryPartition>,
     /// Each viewed piece in the one-level frontier of an ensured owned
     /// composite, with that composite's head: the borrows a produced
-    /// composite packages, which the caller side binds to exactly one loan of
+    /// composite packages, which the caller side binds to exactly one borrow of
     /// this call (step 7).
     produced_borrowing_pieces: Vec<ProducedBorrowingPiece>,
     /// Stable-view transition, when this call was prepared through the
@@ -485,9 +484,9 @@ fn callee_state_with_resource_transfer(
         return callee_state;
     };
     callee_state
-        .with_loan_ledger(Some(plan.ledger.clone()))
-        .with_loan_participant(Some(plan.callee_participant()))
-        .with_loan_view_bindings(plan.callee_view_bindings().clone())
+        .with_borrow_ledger(Some(plan.ledger.clone()))
+        .with_borrow_participant(Some(plan.callee_participant()))
+        .with_borrow_bindings(plan.callee_view_bindings().clone())
 }
 
 /// Resource expansion failures report a bounded clause frontier. Raw context
@@ -844,54 +843,46 @@ fn recover_candidate_stable_view_resources(
 ) -> Result<
     (
         ResourceContext,
-        Option<LoanLedger>,
-        Option<super::loans::LoanParticipantId>,
-        LoanViewBindings,
-        Option<Arc<CheckedLoanCallEvidence>>,
+        Option<BorrowLedger>,
+        Option<super::borrows::BorrowParticipantId>,
+        BorrowBindings,
+        Option<Arc<CheckedBorrowCallEvidence>>,
     ),
     RuntimeError,
 > {
     let Some(plan) = &transfer.stable_view_plan else {
         if let Some(produced) = transfer.produced_borrowing_pieces.first() {
-            if produced.input_view.is_some() {
-                return Err(returned_borrow_error(
-                    &produced.support.head,
-                    ReturnedBorrowReason::InactiveSource,
-                ));
-            }
-            let (head, piece) = (&produced.support.head, &produced.piece);
-            return Err(RuntimeError::FunctionContract(format!(
-                "produced borrowing composite `{}` packages a view `{}` that no viewed input of this call backs",
-                head.diagnostic_summary(),
-                piece.diagnostic_summary()
-            )));
+            return Err(returned_borrow_error(
+                &produced.head,
+                ReturnedBorrowReason::InactiveSource,
+            ));
         }
         return Ok((
             rejoin_borrowed_memory(return_resources, transfer, assumptions),
-            caller_state.loan_ledger().cloned(),
-            caller_state.loan_participant(),
-            caller_state.loan_view_bindings().clone(),
+            caller_state.borrow_ledger().cloned(),
+            caller_state.borrow_participant(),
+            caller_state.borrow_bindings().clone(),
             None,
         ));
     };
-    let Some(actual_ledger) = callee_state.loan_ledger() else {
-        return Err(RuntimeError::LoanRefusal(Box::new(
-            LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Recovery),
+    let Some(actual_ledger) = callee_state.borrow_ledger() else {
+        return Err(RuntimeError::BorrowRefusal(Box::new(
+            BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Recovery),
         )));
     };
     if actual_ledger != &plan.ledger {
-        return Err(RuntimeError::LoanRefusal(Box::new(
-            LoanRefusal::StalePredecessor.diagnostic(LoanRefusalOperation::Recovery),
+        return Err(RuntimeError::BorrowRefusal(Box::new(
+            BorrowRefusal::StalePredecessor.diagnostic(BorrowRefusalOperation::Recovery),
         )));
     }
-    if callee_state.loan_participant() != Some(plan.callee_participant()) {
-        return Err(RuntimeError::LoanRefusal(Box::new(
-            LoanRefusal::WrongHolder.diagnostic(LoanRefusalOperation::Recovery),
+    if callee_state.borrow_participant() != Some(plan.callee_participant()) {
+        return Err(RuntimeError::BorrowRefusal(Box::new(
+            BorrowRefusal::WrongHolder.diagnostic(BorrowRefusalOperation::Recovery),
         )));
     }
     // A call with nothing lent still has step 7 work when it consumed a
     // borrowing composite (its hold is released) or produced one (its
-    // borrow must be backed, which no loan of this call can do).
+    // borrow must be backed, which no borrow of this call can do).
     if !plan.has_stable_views()
         && plan.mutex_uses.is_empty()
         && plan.transferred_holds.is_empty()
@@ -899,9 +890,9 @@ fn recover_candidate_stable_view_resources(
     {
         return Ok((
             rejoin_borrowed_memory(return_resources, transfer, assumptions),
-            caller_state.loan_ledger().cloned(),
-            caller_state.loan_participant(),
-            caller_state.loan_view_bindings().clone(),
+            caller_state.borrow_ledger().cloned(),
+            caller_state.borrow_participant(),
+            caller_state.borrow_bindings().clone(),
             None,
         ));
     }
@@ -914,120 +905,102 @@ fn recover_candidate_stable_view_resources(
     if !obligations.is_empty() && !assumptions.retains_required_obligations() {
         return Err(RuntimeError::PendingCallObligations(obligations.into()));
     }
-    // Escaping borrows (step 7). Every viewed piece a produced or returned
-    // owned composite packages must be backed by exactly one loan of this
-    // call: a view lent here (the composite keeps that loan open and holds
-    // it), or the hold binding the composite itself brought in (the callee
-    // returned it, so it keeps its borrow). None, or more than one, is
-    // refused: a composite describing memory no loan stabilizes would let
-    // the caller write or free what the composite still reads, and an
-    // ambiguous backing cannot be elided.
-    let mut escaping =
-        std::collections::BTreeMap::<LoanId, Vec<super::loans::EscapingBorrow>>::new();
-    let mut rebound_heads =
-        BTreeMap::<ResourceOccurrenceId, (ResourceFact, LoanViewBinding)>::new();
+    // Select each returned borrow by its authored input or its checked
+    // ownership transfer. Only the selected borrow's permission is queried.
+    let mut escaping = BTreeMap::<BorrowId, Vec<super::borrows::EscapingBorrow>>::new();
+    let mut rebound_heads = BTreeMap::<ResourceOccurrenceId, (ResourceFact, BorrowBinding)>::new();
+    let mut preserved_holds = BTreeSet::new();
     let mut escaped_occurrences = BTreeSet::new();
-    let backing_sources = transfer
-        .produced_borrowing_pieces
-        .iter()
-        .any(|piece| piece.input_view.is_none())
-        .then(|| return_loan_backing::ReturnLoanBackings::from_plan(plan, output_assumptions));
     let mut selected_inputs = BTreeMap::new();
-    if transfer
-        .produced_borrowing_pieces
-        .iter()
-        .any(|piece| piece.input_view.is_some())
-    {
+    let mut held_inputs = BTreeMap::new();
+    let mut forwarded_inputs = BTreeMap::new();
+    if !transfer.produced_borrowing_pieces.is_empty() {
         for view in plan.stable_views() {
             crate::instrumentation::record_deterministic_work(1);
             if let Some(index) = view.requirement.section_index {
                 selected_inputs.insert(index, view);
             }
         }
+        for input in &plan.transferred_holds {
+            crate::instrumentation::record_deterministic_work(1);
+            forwarded_inputs.insert(input.occurrence, &input.binding);
+            if let Some(index) = input.section_index {
+                held_inputs.insert(index, &input.binding);
+            }
+        }
     }
     for produced in &transfer.produced_borrowing_pieces {
-        let head = &produced.support.head;
-        let piece = &produced.piece;
-        if let Some(input) = produced.input_view {
-            let _checking = crate::instrumentation::CheckingWorkScope::new(
-                "select explicit returned view source",
-                1,
-            );
-            let planned_source = selected_inputs
-                .get(&input)
-                .ok_or_else(|| returned_borrow_error(head, ReturnedBorrowReason::InactiveSource))?;
-            let source = &planned_source.requirement.fact;
-            if !explicit_view_coverage(source, piece, output_assumptions) {
-                return Err(returned_borrow_error(
-                    head,
-                    ReturnedBorrowReason::UncoveredView {
-                        source: source.clone(),
-                        viewed: piece.clone(),
-                    },
-                ));
+        let head = &produced.head;
+        let viewed = produced.viewed.as_ref().map(|(piece, _)| piece);
+        let (planned_view, transferred_hold) = match produced.source {
+            ReturnedBorrowSource::Input(index) => (
+                selected_inputs.get(&index).copied(),
+                held_inputs.get(&index).copied(),
+            ),
+            ReturnedBorrowSource::Forwarded(occurrence) => {
+                (None, forwarded_inputs.get(&occurrence).copied())
             }
-            if !plan.supports_explicit_view_escape(planned_source) {
-                return Err(returned_borrow_error(
-                    head,
-                    ReturnedBorrowReason::UnrecoverableSource(source.clone()),
-                ));
+        };
+        let _checking = crate::instrumentation::CheckingWorkScope::new(
+            "check selected returned borrow source",
+            1,
+        );
+        if let (Some(source), Some(piece)) = (planned_view, viewed)
+            && !selected_input_view_covers(
+                &plan.ledger,
+                source.borrow,
+                &source.requirement.fact,
+                piece,
+                output_assumptions,
+            )
+        {
+            return Err(produced_view_coverage_error(
+                head,
+                &source.requirement.fact,
+                piece,
+            ));
+        }
+        let escrowed = planned_view.and_then(|source| plan.escrowed_hold(source));
+        if let Some(binding) = transferred_hold.or(escrowed) {
+            if let Some(piece) = viewed
+                && !explicit_view_coverage(&binding.viewed, piece, output_assumptions)
+                && plan
+                    .ledger
+                    .selected_return_permission(
+                        binding.borrow,
+                        piece,
+                        &binding.viewed,
+                        output_assumptions,
+                    )
+                    .is_none()
+            {
+                return Err(produced_view_coverage_error(head, &binding.viewed, piece));
             }
-            if escaped_occurrences.insert((planned_source.loan, produced.support.occurrence)) {
-                escaping.entry(planned_source.loan).or_default().push(
-                    super::loans::EscapingBorrow {
-                        root_permission: Some(source.clone()),
-                        ..produced.support.clone()
-                    },
-                );
+            if let Some(hold) = escrowed.and_then(|binding| binding.hold) {
+                preserved_holds.insert(hold);
             }
+            rebound_heads
+                .entry(produced.destination)
+                .or_insert_with(|| (head.clone(), binding.clone()));
             continue;
         }
-        let selected = backing_sources
-            .as_ref()
-            .expect("composite outputs have a backing index")
-            .select(head, piece, &plan.ledger, output_assumptions);
-        let (backing_count, entering, selected_loan) = match selected {
-            Ok(source) => (1, source.entering, Some(source.loan)),
-            Err(ambiguous) => (if ambiguous { 2 } else { 0 }, None, None),
-        };
-        match (backing_count, entering) {
-            (0, _) => {
-                return Err(RuntimeError::FunctionContract(format!(
-                    "produced borrowing composite `{}` packages a view `{}` that no viewed input of this call backs",
-                    head.diagnostic_summary(),
-                    piece.diagnostic_summary()
-                )));
-            }
-            (1, Some(binding)) => {
-                if rebound_heads
-                    .get(&produced.support.occurrence)
-                    .is_some_and(|(_, existing)| existing != &binding)
-                {
-                    return Err(RuntimeError::FunctionContract(format!(
-                        "produced borrowing composite `{}` has no occurrence to carry its borrow",
-                        head.diagnostic_summary()
-                    )));
-                }
-                rebound_heads
-                    .entry(produced.support.occurrence)
-                    .or_insert_with(|| (head.clone(), binding));
-            }
-            (1, None) => {
-                let loan = selected_loan.expect("the producer selected one backing loan");
-                if escaped_occurrences.insert((loan, produced.support.occurrence)) {
-                    escaping
-                        .entry(loan)
-                        .or_default()
-                        .push(produced.support.clone());
-                }
-            }
-            _ => {
-                return Err(RuntimeError::FunctionContract(format!(
-                    "produced borrowing composite `{}` packages a view `{}` that more than one viewed input of this call could back; the borrow cannot be elided",
-                    head.diagnostic_summary(),
-                    piece.diagnostic_summary()
-                )));
-            }
+        let source = planned_view
+            .ok_or_else(|| returned_borrow_error(head, ReturnedBorrowReason::InactiveSource))?;
+        if !plan.supports_explicit_view_escape(source) {
+            return Err(returned_borrow_error(
+                head,
+                ReturnedBorrowReason::UnrecoverableSource(source.requirement.fact.clone()),
+            ));
+        }
+        if escaped_occurrences.insert((source.borrow, produced.destination)) {
+            escaping
+                .entry(source.borrow)
+                .or_default()
+                .push(super::borrows::EscapingBorrow {
+                    root_permission: source.requirement.fact.clone(),
+                    head: head.clone(),
+                    occurrence: produced.destination,
+                });
         }
     }
     let retained_holds = rebound_heads
@@ -1037,13 +1010,13 @@ fn recover_candidate_stable_view_resources(
     let consumed_holds = plan
         .transferred_holds
         .iter()
-        .filter(|(fact, binding)| {
-            !binding
+        .filter(|input| {
+            !input
+                .binding
                 .hold
                 .is_some_and(|hold| retained_holds.contains(&hold))
-                && !return_resources.contains_exact_representation(fact)
         })
-        .map(|(_, binding)| binding.clone())
+        .map(|input| input.binding.clone())
         .collect::<Vec<_>>();
     let mut residual = return_resources;
     for fact in plan.mutex_use_requirements.values() {
@@ -1077,11 +1050,11 @@ fn recover_candidate_stable_view_resources(
         }
         let returned_input = returned_inputs.contains(fact);
         let preserved_outer = caller_state
-            .loan_ledger()
-            .zip(caller_state.loan_participant())
+            .borrow_ledger()
+            .zip(caller_state.borrow_participant())
             .is_some_and(|(ledger, participant)| {
                 caller_state
-                    .loan_view_bindings()
+                    .borrow_bindings()
                     .select_returned_view_authority(fact, caller_state.resources(), assumptions)
                     .is_some_and(|authority| {
                         ledger
@@ -1128,8 +1101,8 @@ fn recover_candidate_stable_view_resources(
     let explicit_views = transfer
         .produced_borrowing_pieces
         .iter()
-        .filter(|piece| piece.input_view.is_some() && piece.support.head.is_view())
-        .map(|piece| &piece.piece)
+        .filter(|piece| piece.head.is_view())
+        .filter_map(|piece| piece.viewed.as_ref().map(|(viewed, _)| viewed))
         .collect::<BTreeSet<_>>();
     for stable_view in plan.stable_views() {
         if !explicit_views.contains(&stable_view.requirement.fact)
@@ -1144,7 +1117,7 @@ fn recover_candidate_stable_view_resources(
                 })?;
         }
     }
-    // Recover into the actual constructed return. The loan operation admits
+    // Recover into the actual constructed return. The borrow operation admits
     // each recovered source once and retains that successor, including the
     // output cores' exact support metadata.
     let mut recovery = plan.clone().recover_returned_views(
@@ -1154,8 +1127,13 @@ fn recover_candidate_stable_view_resources(
         &escaping,
         &consumed_holds,
     )?;
-    retain_rebound_composite_holds(&mut recovery, &mut rebound_heads, plan.caller_participant())?;
-    let loan_evidence = Arc::new(CheckedLoanCallEvidence::new(
+    retain_rebound_composite_holds(
+        &mut recovery,
+        &mut rebound_heads,
+        preserved_holds,
+        plan.caller_participant(),
+    )?;
+    let borrow_evidence = Arc::new(CheckedBorrowCallEvidence::new(
         plan.clone(),
         recovery.ledger.clone(),
         recovery.terminal_ledger.clone(),
@@ -1168,8 +1146,8 @@ fn recover_candidate_stable_view_resources(
     recovery
         .recheck_transitions(actual_ledger, plan.caller_participant())
         .map_err(|error| {
-            RuntimeError::LoanRefusal(Box::new(error.diagnostic_with_subject(
-                LoanRefusalOperation::Recovery,
+            RuntimeError::BorrowRefusal(Box::new(error.diagnostic_with_subject(
+                BorrowRefusalOperation::Recovery,
                 recovery.diagnostic_subject(),
             )))
         })?;
@@ -1177,7 +1155,8 @@ fn recover_candidate_stable_view_resources(
     let mut recovered_resources = recovery.resources;
     let mut recovered_bindings = recovery.view_bindings;
     for (occurrence, binding) in recovery.recovered_hold_occurrences {
-        recovered_resources = recovered_resources.with_loan_dependency(occurrence, binding.clone());
+        recovered_resources =
+            recovered_resources.with_borrow_dependency(occurrence, binding.clone());
         recovered_bindings = recovered_bindings.with_inserted(occurrence, binding);
     }
     // The producer retained the exact destination occurrence. Equal head
@@ -1188,11 +1167,13 @@ fn recover_candidate_stable_view_resources(
         .chain(
             rebound_heads
                 .into_iter()
-                .map(|(occurrence, (head, binding))| super::loans::EscapedHold {
-                    occurrence,
-                    head,
-                    binding,
-                }),
+                .map(
+                    |(occurrence, (head, binding))| super::borrows::EscapedHold {
+                        occurrence,
+                        head,
+                        binding,
+                    },
+                ),
         )
     {
         (recovered_resources, recovered_bindings) =
@@ -1203,7 +1184,7 @@ fn recover_candidate_stable_view_resources(
         Some(recovered_ledger),
         Some(plan.caller_participant()),
         recovered_bindings,
-        Some(loan_evidence),
+        Some(borrow_evidence),
     ))
 }
 
@@ -1237,6 +1218,13 @@ pub(crate) fn check_produced_view_source(
     let _checking =
         crate::instrumentation::CheckingWorkScope::new("check produced view coverage", 1);
     let source = &function.resource_requires()[input];
+    // The caller checks a consumed composite's checked hold and every
+    // returned child against that hold. Modular proof entry owns the input
+    // composite, so it has no caller borrow ledger for that occurrence.
+    if !source.is_view() {
+        return Ok(());
+    }
+
     let unevaluable = || match output.first() {
         Some(first) => returned_borrow_error(first, ReturnedBorrowReason::UnevaluableSource),
         None => {
@@ -1252,16 +1240,8 @@ pub(crate) fn check_produced_view_source(
     .map_err(|_| unevaluable())?
     .map_err(|_| unevaluable())?;
     for resource in output {
-        if resource.is_view() {
-            if !explicit_view_coverage(&input, resource, assumptions) {
-                return Err(returned_borrow_error(
-                    resource,
-                    ReturnedBorrowReason::UncoveredView {
-                        source: input.clone(),
-                        viewed: resource.clone(),
-                    },
-                ));
-            }
+        let viewed = if resource.is_view() {
+            resource
         } else {
             let (occurrence, _) = exit
                 .resources()
@@ -1271,7 +1251,7 @@ pub(crate) fn check_produced_view_source(
                 })?;
             let binding = exit
                 .resources()
-                .loan_dependency(occurrence)
+                .borrow_dependency(occurrence)
                 .filter(|binding| binding.hold.is_some())
                 .ok_or_else(|| {
                     returned_borrow_error(
@@ -1279,18 +1259,45 @@ pub(crate) fn check_produced_view_source(
                         ReturnedBorrowReason::MissingHold(input.clone()),
                     )
                 })?;
-            if !explicit_view_coverage(&input, &binding.viewed, assumptions) {
-                return Err(returned_borrow_error(
-                    resource,
-                    ReturnedBorrowReason::UncoveredView {
-                        source: input.clone(),
-                        viewed: binding.viewed.clone(),
-                    },
-                ));
-            }
+            &binding.viewed
+        };
+        let covered = explicit_view_coverage(&input, viewed, assumptions)
+            || (matches!(input.resource(), Resource::Composite { .. })
+                && entry
+                    .resources()
+                    .indexed_view_witness(&input, assumptions)
+                    .and_then(|occurrence| entry.resources().borrow_dependency(occurrence))
+                    .zip(entry.borrow_ledger())
+                    .is_some_and(|(binding, ledger)| {
+                        selected_input_view_covers(
+                            ledger,
+                            binding.borrow,
+                            &input,
+                            viewed,
+                            assumptions,
+                        )
+                    }));
+        if !covered {
+            return Err(produced_view_coverage_error(resource, &input, viewed));
         }
     }
     Ok(())
+}
+
+/// A memory input lends exactly its written range even when two inputs
+/// share one borrow. A composite can also supply a checked body projection.
+fn selected_input_view_covers(
+    ledger: &BorrowLedger,
+    borrow_id: BorrowId,
+    input: &ResourceFact,
+    viewed: &ResourceFact,
+    assumptions: &PureFactContext,
+) -> bool {
+    explicit_view_coverage(input, viewed, assumptions)
+        || (matches!(input.resource(), Resource::Composite { .. })
+            && ledger
+                .selected_return_permission(borrow_id, viewed, input, assumptions)
+                .is_some())
 }
 
 fn explicit_view_coverage(
@@ -1304,7 +1311,21 @@ fn explicit_view_coverage(
     assumptions.contains_assumed_exact(&Proposition::ResourceContains {
         parent: Box::new(input.resource().clone()),
         child: Box::new(output.resource().clone()),
-    }) || super::loans::returned_permission_covers(input, output, assumptions)
+    }) || super::borrows::returned_permission_covers(input, output, assumptions)
+}
+
+fn produced_view_coverage_error(
+    head: &ResourceFact,
+    input: &ResourceFact,
+    viewed: &ResourceFact,
+) -> RuntimeError {
+    returned_borrow_error(
+        head,
+        ReturnedBorrowReason::UncoveredView {
+            source: input.clone(),
+            viewed: viewed.clone(),
+        },
+    )
 }
 
 fn returned_borrow_error(output: &ResourceFact, reason: ReturnedBorrowReason) -> RuntimeError {
@@ -1317,11 +1338,11 @@ fn returned_borrow_error(output: &ResourceFact, reason: ReturnedBorrowReason) ->
 /// A retained input hold may support one returned owner directly. Further
 /// returned occurrences get distinct holds under the same read authority.
 fn retain_rebound_composite_holds(
-    recovery: &mut super::loans::StableViewRecovery,
-    heads: &mut BTreeMap<ResourceOccurrenceId, (ResourceFact, LoanViewBinding)>,
-    caller: super::loans::LoanParticipantId,
+    recovery: &mut super::borrows::StableViewRecovery,
+    heads: &mut BTreeMap<ResourceOccurrenceId, (ResourceFact, BorrowBinding)>,
+    mut assigned: BTreeSet<super::borrows::BorrowHoldId>,
+    caller: super::borrows::BorrowParticipantId,
 ) -> Result<(), RuntimeError> {
-    let mut assigned = BTreeSet::new();
     for (_, binding) in heads.values_mut() {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("retain returned composite hold", 1);
@@ -1333,8 +1354,8 @@ fn retain_rebound_composite_holds(
                 .ledger
                 .hold_with_transition(binding, caller)
                 .map_err(|error| {
-                    RuntimeError::LoanRefusal(Box::new(
-                        error.diagnostic(LoanRefusalOperation::Recovery),
+                    RuntimeError::BorrowRefusal(Box::new(
+                        error.diagnostic(BorrowRefusalOperation::Recovery),
                     ))
                 })?;
             recovery.ledger = ledger;
@@ -1349,12 +1370,12 @@ fn retain_rebound_composite_holds(
 /// This consumes the producer's destination identity, without a head census.
 fn install_returned_view_hold(
     resources: ResourceContext,
-    bindings: LoanViewBindings,
-    escaped: super::loans::EscapedHold,
-) -> Result<(ResourceContext, LoanViewBindings), RuntimeError> {
+    bindings: BorrowBindings,
+    escaped: super::borrows::EscapedHold,
+) -> Result<(ResourceContext, BorrowBindings), RuntimeError> {
     let _checking = crate::instrumentation::CheckingWorkScope::new("install returned view hold", 1);
     if resources
-        .loan_dependency(escaped.occurrence)
+        .borrow_dependency(escaped.occurrence)
         .is_some_and(|existing| existing != &escaped.binding)
     {
         return Err(RuntimeError::FunctionContract(format!(
@@ -1363,7 +1384,7 @@ fn install_returned_view_hold(
         )));
     }
     Ok((
-        resources.with_loan_dependency(escaped.occurrence, escaped.binding.clone()),
+        resources.with_borrow_dependency(escaped.occurrence, escaped.binding.clone()),
         bindings.with_inserted(escaped.occurrence, escaped.binding),
     ))
 }
@@ -1381,7 +1402,7 @@ pub(crate) struct CheckedResourceFact {
     /// Index of this leaf in the normalized resource section, when it was
     /// evaluated from a contract. Distinct leaves may share a source clause.
     pub(crate) section_index: Option<usize>,
-    /// Caller-selected exact named authority for a mutex-use loan. The
+    /// Caller-selected exact named authority for a mutex-use borrow. The
     /// planner must consume this source, never select by address instead.
     pub(crate) selected_mutex_source: Option<std::sync::Arc<(MutexAuthorityId, ResourceFact)>>,
     /// Byte extent formed from the evaluated mutex pointer at clause entry.
@@ -1577,7 +1598,7 @@ fn candidate_memory_ranges_relation_by_bounds(
         // `a[0..1]`'s end and the two shared cells were reported `Disjoint`.
         // `Disjoint` is final here — `candidate_memory_ranges_relation` only
         // consults the arithmetic oracle for a pair this leaves undecided —
-        // so it suppressed the `LoanRefusal` a caller's overlapping effect
+        // so it suppressed the `BorrowRefusal` a caller's overlapping effect
         // and view owe each other.
         let (Some(left_start), Some(left_end), Some(right_start), Some(right_end)) = (
             left.signed_constant_start(),
@@ -1807,7 +1828,7 @@ pub(super) fn execute_program_function_paths(
 /// `prepare_contract_resources` says whether the body runs from the contract's
 /// own entry resources. A whole-function judgment over a bare caller frame
 /// executes the body in that frame; the contract routes cross the resource
-/// boundary, so the views the contract declares become loans of this
+/// boundary, so the views the contract declares become borrows of this
 /// application and recovery returns them.
 /// The body runs under the concrete judgment, which unrolls loops.
 #[allow(clippy::too_many_arguments)]
@@ -2143,8 +2164,8 @@ fn execute_function_paths(
             }
             let return_assumptions =
                 assumptions_with_path_context(assumptions, &facts, &obligations);
-            let (outcome, obligations, loan_evidence) = if defer_conditional_resource_effect {
-                without_loan_evidence(function_outcome_from_body(
+            let (outcome, obligations, borrow_evidence) = if defer_conditional_resource_effect {
+                without_borrow_evidence(function_outcome_from_body(
                     state,
                     function,
                     complete_void_fallthrough(function, body_path.outcome),
@@ -2168,7 +2189,7 @@ fn execute_function_paths(
                         budget,
                     )?
                 } else if function_changes_declared_resource_quantities(function) {
-                    without_loan_evidence(function_outcome_from_body_changing_quantities(
+                    without_borrow_evidence(function_outcome_from_body_changing_quantities(
                         state,
                         function,
                         complete_void_fallthrough(function, body_path.outcome),
@@ -2176,7 +2197,7 @@ fn execute_function_paths(
                         &return_assumptions,
                     )?)
                 } else {
-                    without_loan_evidence(function_outcome_from_body(
+                    without_borrow_evidence(function_outcome_from_body(
                         state,
                         function,
                         complete_void_fallthrough(function, body_path.outcome),
@@ -2186,7 +2207,7 @@ fn execute_function_paths(
                     ))
                 }
             } else {
-                without_loan_evidence(function_outcome_from_body(
+                without_borrow_evidence(function_outcome_from_body(
                     state,
                     function,
                     complete_void_fallthrough(function, body_path.outcome),
@@ -2203,9 +2224,9 @@ fn execute_function_paths(
                 outcome,
                 facts,
                 obligations,
-                loan_evidence: append_checked_loan_evidence(
-                    &body_path.loan_evidence,
-                    loan_evidence,
+                borrow_evidence: append_checked_borrow_evidence(
+                    &body_path.borrow_evidence,
+                    borrow_evidence,
                 ),
             });
         }
@@ -2494,8 +2515,8 @@ pub(super) fn execute_program_function_call_paths(
         // An inline body is call-site code: it runs on the caller's own
         // resources and leaves the caller whatever it did not consume.
         // There is no contract boundary to transfer across. Under stable
-        // views that includes the caller's loan ledger: the body's stores
-        // are checked against the caller's active loans, its own view
+        // views that includes the caller's borrow ledger: the body's stores
+        // are checked against the caller's active borrows, its own view
         // clauses lend nothing, and any call it makes plans from and
         // recovers to the caller's ledger, whose evidence the path keeps.
         let callee_state = callee_state.with_resource_context(caller_state.resources().clone());
@@ -2535,7 +2556,7 @@ pub(super) fn execute_program_function_call_paths(
                 outcome,
                 facts,
                 obligations,
-                loan_evidence: body_path.loan_evidence,
+                borrow_evidence: body_path.borrow_evidence,
             });
         }
     }
@@ -3408,15 +3429,12 @@ fn execute_verified_function_applications_with_suspension(
         "verified call variable collection",
         || {
             let mut existing_variables = BTreeSet::new();
-            let caller_bound = caller_state_variable_bound(caller_state);
-            // Usual callers continue above everything they issued. For a
-            // supplied state with live identities above the mark, retain
-            // exact membership so a free identity below its bound stays usable.
-            if caller_bound.is_some_and(|bound| {
-                bound.0 >= budget.next_kernel_variable && Some(bound) > fact_bound
-            }) {
-                collect_call_caller_state_variables(caller_state, &mut existing_variables);
-            }
+            collect_execution_state_reservations(
+                caller_state,
+                budget.next_kernel_variable,
+                fact_bound,
+                &mut existing_variables,
+            );
             for application in applications {
                 collect_program_function_contract_interface_bitvector_variables(
                     application.interface,
@@ -3554,8 +3572,8 @@ fn execute_verified_function_applications_with_suspension(
         } = primary;
         let additional_calls = applicable.into_iter();
         // The planner has checked these effects against the views this call
-        // lends; the caller's other active loans (its own contract inputs,
-        // an enclosing call's loans) are checked here, so a summary can
+        // lends; the caller's other active borrows (its own contract inputs,
+        // an enclosing call's borrows) are checked here, so a summary can
         // never havoc memory that is lent elsewhere.
         let call_site = || {
             CallRequirementSite::for_requirement(
@@ -3569,8 +3587,8 @@ fn execute_verified_function_applications_with_suspension(
         // Each successfully lowered span bounds the bytes it can affect.
         // For an undecided guard, the whole span is still a safe bound.
         // An unnamed projection provides no span a caller can separate.
-        let caller_loans = caller_state.loan_ledger();
-        if let Some(ledger) = caller_loans.filter(|ledger| ledger.has_active_memory_loans())
+        let caller_borrows = caller_state.borrow_ledger();
+        if let Some(ledger) = caller_borrows.filter(|ledger| ledger.has_active_memory_borrows())
             && transfer
                 .memory_effects
                 .iter()
@@ -3587,15 +3605,15 @@ fn execute_verified_function_applications_with_suspension(
             ));
             continue;
         }
-        let mut write_requirements = verified_call_loan_requirements(
-            caller_loans,
+        let mut write_requirements = verified_call_borrow_requirements(
+            caller_borrows,
             &transfer.memory_effects,
             call_site,
             interface.contract_requires().len(),
             if suspended.is_some() {
-                CallLoanEffect::WorkerWrite
+                CallBorrowEffect::WorkerWrite
             } else {
-                CallLoanEffect::CallWrite
+                CallBorrowEffect::CallWrite
             },
         );
         // A checked mutex-use call may execute runtime lock/unlock operations.
@@ -3658,7 +3676,7 @@ fn execute_verified_function_applications_with_suspension(
             .stable_view_plan
             .as_ref()
             .map(|plan| &plan.ledger)
-            .or_else(|| entry_state.loan_ledger());
+            .or_else(|| entry_state.borrow_ledger());
         let first_mutex_ordinal =
             interface.contract_requires().len() + transfer.memory_effects.len();
         let mutex_requirement_count = if let Some(ranges) = checked_mutex_ranges {
@@ -3668,12 +3686,12 @@ fn execute_verified_function_applications_with_suspension(
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>();
-            write_requirements.extend(verified_call_loan_requirements(
+            write_requirements.extend(verified_call_borrow_requirements(
                 mutex_ledger,
                 &ranges,
                 call_site,
                 first_mutex_ordinal,
-                CallLoanEffect::MutexWrite,
+                CallBorrowEffect::MutexWrite,
             ));
             ranges.len()
         } else {
@@ -3717,7 +3735,7 @@ fn execute_verified_function_applications_with_suspension(
             // and the callee writes only memory it owns, so the havoc keeps
             // every cell an owned residual member holds.
             // Stable views escrow their owned backing outside the residual.
-            // The checked loan plan protects that backing from the callee's
+            // The checked borrow plan protects that backing from the callee's
             // writes just as it protects the remaining caller-owned frame.
             let caller_frame = transfer
                 .caller_resources_after_requirements
@@ -4961,7 +4979,7 @@ fn execute_verified_function_applications_with_suspension(
 
         if let Some(completions) = suspended.as_deref_mut() {
             // Only the exact child authorities produced by the checked worker
-            // loan plan may cross this boundary. A nested or invented use
+            // borrow plan may cross this boundary. A nested or invented use
             // remains subject to ordinary thread confinement.
             let worker_mutex_uses: BTreeSet<_> = transfer
                 .stable_view_plan
@@ -4992,7 +5010,7 @@ fn execute_verified_function_applications_with_suspension(
                 continue;
             }
             // Definition-level confinement is only an admission rule. The
-            // checked partition and loan plan still conserve the authority
+            // checked partition and borrow plan still conserve the authority
             // that a worker receives, and the storage checks below keep the
             // parent's implicit stack/global accesses out of that transfer.
             // In preparation, the parent statement retains these prerequisites
@@ -5059,15 +5077,15 @@ fn execute_verified_function_applications_with_suspension(
             };
             // The checked partition has already separated projected writes
             // from views issued to this worker. A whole allocation may
-            // exceed that projection, so retirement also protects the loans
+            // exceed that projection, so retirement also protects the borrows
             // opened by the worker's entry transfer.
             obligations.extend(write_requirements);
-            obligations.extend(verified_call_loan_requirements(
-                entry_state.loan_ledger(),
+            obligations.extend(verified_call_borrow_requirements(
+                entry_state.borrow_ledger(),
                 &retired_allocations,
                 call_site,
                 first_retirement_ordinal,
-                CallLoanEffect::WorkerRetirement,
+                CallBorrowEffect::WorkerRetirement,
             ));
             worker_effects.extend(retired_allocations);
             completions.push((
@@ -5094,7 +5112,7 @@ fn execute_verified_function_applications_with_suspension(
             return_ledger,
             return_participant,
             return_view_bindings,
-            loan_evidence,
+            borrow_evidence,
         ) = match recover_candidate_stable_view_resources(
             caller_state,
             &post_state,
@@ -5124,25 +5142,25 @@ fn execute_verified_function_applications_with_suspension(
             &transfer.memory_effects,
             &effective_assumptions,
         );
-        return_state.loan_ledger = return_ledger;
-        return_state.loan_participant = return_participant;
-        return_state = return_state.with_loan_view_bindings(return_view_bindings);
+        return_state.borrow_ledger = return_ledger;
+        return_state.borrow_participant = return_participant;
+        return_state = return_state.with_borrow_bindings(return_view_bindings);
         return_state.thread_ledger = post_state.thread_ledger.clone();
         return_state.mutex_ledger = post_state.mutex_ledger.clone();
         return_state.mutex_input_reservations = post_state.mutex_input_reservations.clone();
         return_state.opaque_mutex_acquisitions = post_state.opaque_mutex_acquisitions.clone();
-        let mut helper_evidence = empty_checked_loan_evidence_sequence();
+        let mut helper_evidence = empty_checked_borrow_evidence_sequence();
         if let Some((successor, evidence)) = helper_effect {
-            if return_state.loan_ledger != caller_state.loan_ledger
-                || return_state.loan_participant != caller_state.loan_participant
+            if return_state.borrow_ledger != caller_state.borrow_ledger
+                || return_state.borrow_participant != caller_state.borrow_participant
             {
                 paths.push(resource_call_failure(
-                    "mutex helper protocol effect requires completed ordinary loan recovery",
+                    "mutex helper protocol effect requires completed ordinary borrow recovery",
                 ));
                 continue;
             }
-            return_state.loan_ledger = successor.loan_ledger;
-            return_state.loan_participant = successor.loan_participant;
+            return_state.borrow_ledger = successor.borrow_ledger;
+            return_state.borrow_participant = successor.borrow_participant;
             helper_evidence = evidence;
         }
         // A callee's proof names are scoped to that call. Its checked return
@@ -5339,9 +5357,9 @@ fn execute_verified_function_applications_with_suspension(
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
         }
         let call_parameters = CallParameters::of(&entry_contract_state, interface);
-        // The checked return partition recovers this call's loans. The
+        // The checked return partition recovers this call's borrows. The
         // transition that uses it still owes separation from the caller's
-        // pre-existing loans, on both normal and exceptional paths.
+        // pre-existing borrows, on both normal and exceptional paths.
         if let Some(path) = &mut exceptional_path
             && matches!(path.outcome, FunctionOutcome::Throw { .. })
         {
@@ -5351,26 +5369,26 @@ fn execute_verified_function_applications_with_suspension(
         // The retirement ranges are the consumed allocation tokens at
         // entry. Return facts may decide continuity, but they cannot prove
         // that retiring one of those allocations was permitted.
-        obligations.extend(verified_call_loan_requirements(
-            entry_state.loan_ledger(),
+        obligations.extend(verified_call_borrow_requirements(
+            entry_state.borrow_ledger(),
             &retired_allocations,
             call_site,
             first_retirement_ordinal,
-            CallLoanEffect::CallRetirement,
+            CallBorrowEffect::CallRetirement,
         ));
         paths.push(FunctionPath {
             outcome,
             facts,
             obligations,
-            loan_evidence: super::loans::concat_checked_loan_evidence(
-                &loan_evidence
+            borrow_evidence: super::borrows::concat_checked_borrow_evidence(
+                &borrow_evidence
                     .map(|evidence| {
-                        append_checked_loan_evidence(
-                            &empty_checked_loan_evidence_sequence(),
+                        append_checked_borrow_evidence(
+                            &empty_checked_borrow_evidence_sequence(),
                             Some(evidence),
                         )
                     })
-                    .unwrap_or_else(empty_checked_loan_evidence_sequence),
+                    .unwrap_or_else(empty_checked_borrow_evidence_sequence),
                 &helper_evidence,
             ),
             call_parameters: call_parameters.clone(),
@@ -5385,7 +5403,7 @@ fn execute_verified_function_applications_with_suspension(
 }
 
 #[derive(Clone, Copy)]
-enum CallLoanEffect {
+enum CallBorrowEffect {
     CallWrite,
     WorkerWrite,
     MutexWrite,
@@ -5393,12 +5411,12 @@ enum CallLoanEffect {
     WorkerRetirement,
 }
 
-fn verified_call_loan_requirements(
-    ledger: Option<&LoanLedger>,
+fn verified_call_borrow_requirements(
+    ledger: Option<&BorrowLedger>,
     effects: &[MemoryRange],
     call_site: impl FnOnce() -> CallRequirementSite,
     first_ordinal: usize,
-    effect: CallLoanEffect,
+    effect: CallBorrowEffect,
 ) -> Vec<ProofObligation> {
     let Some(ledger) = ledger else {
         return Vec::new();
@@ -5417,20 +5435,20 @@ fn verified_call_loan_requirements(
     }
     let site = Arc::new(call_site());
     let context = match effect {
-        CallLoanEffect::CallWrite => "verified call write separation",
-        CallLoanEffect::WorkerWrite => "suspended worker write separation",
-        CallLoanEffect::MutexWrite => "verified call mutex storage write separation",
-        CallLoanEffect::CallRetirement => "verified call allocation retirement separation",
-        CallLoanEffect::WorkerRetirement => "suspended worker allocation retirement separation",
+        CallBorrowEffect::CallWrite => "verified call write separation",
+        CallBorrowEffect::WorkerWrite => "suspended worker write separation",
+        CallBorrowEffect::MutexWrite => "verified call mutex storage write separation",
+        CallBorrowEffect::CallRetirement => "verified call allocation retirement separation",
+        CallBorrowEffect::WorkerRetirement => "suspended worker allocation retirement separation",
     };
     requirements
         .map(|(index, requirement)| {
             let obligation = ProofObligation::verification_condition(requirement);
             let obligation = match effect {
-                CallLoanEffect::CallWrite
-                | CallLoanEffect::WorkerWrite
-                | CallLoanEffect::MutexWrite => obligation.with_live_view_write(),
-                CallLoanEffect::CallRetirement | CallLoanEffect::WorkerRetirement => obligation,
+                CallBorrowEffect::CallWrite
+                | CallBorrowEffect::WorkerWrite
+                | CallBorrowEffect::MutexWrite => obligation.with_live_view_write(),
+                CallBorrowEffect::CallRetirement | CallBorrowEffect::WorkerRetirement => obligation,
             };
             obligation
                 .with_call_requirement_site(Arc::new(CallRequirementSource::new(
@@ -5568,7 +5586,7 @@ fn exceptional_direct_function_path(
     transfer.candidate_output_views = ensured_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
     post_state.resources = return_resources.clone();
-    let (resources, ledger, participant, bindings, loan_evidence) =
+    let (resources, ledger, participant, bindings, borrow_evidence) =
         match recover_candidate_stable_view_resources(
             caller_state,
             &post_state,
@@ -5596,9 +5614,9 @@ fn exceptional_direct_function_path(
         &transfer.memory_effects,
         &post_assumptions,
     );
-    throw_state.loan_ledger = ledger;
-    throw_state.loan_participant = participant;
-    throw_state = throw_state.with_loan_view_bindings(bindings);
+    throw_state.borrow_ledger = ledger;
+    throw_state.borrow_participant = participant;
+    throw_state = throw_state.with_borrow_bindings(bindings);
     throw_state.next_local_frame = post_state.next_local_frame;
     throw_state.next_local_lifetime = post_state.next_local_lifetime;
     throw_state.restore_population_creation_after_call(
@@ -5613,11 +5631,14 @@ fn exceptional_direct_function_path(
         append_string_literal_loadable_facts(evidence, &outcome, &mut facts);
     }
     let mut path = FunctionPath::new(outcome, facts, obligations);
-    path.loan_evidence = loan_evidence
+    path.borrow_evidence = borrow_evidence
         .map(|evidence| {
-            append_checked_loan_evidence(&empty_checked_loan_evidence_sequence(), Some(evidence))
+            append_checked_borrow_evidence(
+                &empty_checked_borrow_evidence_sequence(),
+                Some(evidence),
+            )
         })
-        .unwrap_or_else(empty_checked_loan_evidence_sequence);
+        .unwrap_or_else(empty_checked_borrow_evidence_sequence);
     Ok(path)
 }
 
@@ -6356,7 +6377,7 @@ fn prepare_verified_function_call<'a>(
             }
         }
     }
-    // The checked loan plan identifies each selected use source and its
+    // The checked borrow plan identifies each selected use source and its
     // derived callee share. Move only those names, then rebind unchanged raw
     // authorities to their newly inserted occurrences.
     if let Some(plan) = transfer.stable_view_plan.as_ref() {
@@ -7011,12 +7032,9 @@ fn prepare_verified_function_call<'a>(
     }
 
     let call_entry_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
-    let effective_assumptions =
-        assumptions_with_propositions(&call_entry_assumptions, &established_requirements)
-            .transport_memory_load_condition_facts();
-
-    if let Some(message) = call_initialization::uninitialized_call_input(
-        &entry_contract_state.memory,
+    let before_initialization = obligations.len();
+    let initialization = match call_initialization::call_input_initialization(
+        &entry_contract_state,
         contract_interface,
         transfer
             .borrowed_inputs
@@ -7024,13 +7042,56 @@ fn prepare_verified_function_call<'a>(
             .chain(&transfer.consumed_inputs),
         application.representation_copy.is_some(),
         &call_entry_assumptions,
+        application.name == application.interface_name
+            && MemoryStateIdentity::of(entry_contract_state.memory())
+                == MemoryStateIdentity::of(caller_state.memory()),
     ) {
-        return Ok(Err(FunctionPath::new(
-            FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
-            facts,
-            obligations,
-        )));
+        Ok(requirements) => requirements,
+        Err(message) => {
+            return Ok(Err(FunctionPath::new(
+                FunctionOutcome::RuntimeError(RuntimeError::FunctionContract(message)),
+                facts,
+                obligations,
+            )));
+        }
+    };
+    if !initialization.is_empty() {
+        let established = assumptions_with_path_context(assumptions, &facts, &[]);
+        for (index, requirement, message) in initialization {
+            if !assumptions.retains_required_obligations()
+                && required_obligation_is_exactly_discharged(&established, &requirement)
+            {
+                super::assumptions::record_consulted_premises(&established, &requirement);
+                continue;
+            }
+            let site = call_requirement_site
+                .get_or_insert_with(|| {
+                    Arc::new(CallRequirementSite::for_requirement(
+                        application.name,
+                        application.interface_name,
+                        candidate_ordinal,
+                        source_arguments,
+                        caller_state.memory(),
+                    ))
+                })
+                .clone();
+            let source = CallRequirementSource::new(site, index, None, false, None)
+                .with_initialization_clause(index);
+            obligations.push(
+                ProofObligation::verification_condition(requirement)
+                    .with_call_requirement_site(Arc::new(source))
+                    .with_context(message),
+            );
+        }
     }
+    let call_entry_assumptions = assumptions_with_path_context(
+        &call_entry_assumptions,
+        &[],
+        &obligations[before_initialization..],
+    );
+    let effective_assumptions =
+        assumptions_with_propositions(&call_entry_assumptions, &established_requirements)
+            .transport_memory_load_condition_facts();
 
     let footprint_state = entry_contract_state.clone();
     let footprint_timing = crate::instrumentation::OperationTiming::new(
@@ -7152,21 +7213,23 @@ fn prepare_verified_function_call<'a>(
                 })
                 .find(|(_, relation)| *relation != CandidateMemoryRangeRelation::Disjoint)
             {
-                let subject = LoanRefusalSubject::for_write_and_view(
+                let subject = BorrowRefusalSubject::for_write_and_view(
                     mutable_range.clone(),
                     viewed_range.clone(),
                 );
                 let diagnostic = match relation {
-                    CandidateMemoryRangeRelation::Overlap => LoanRefusal::ActiveDependency
-                        .proven_overlap_diagnostic(LoanRefusalOperation::MemoryAccess, subject),
+                    CandidateMemoryRangeRelation::Overlap => BorrowRefusal::ActiveDependency
+                        .proven_overlap_diagnostic(BorrowRefusalOperation::MemoryAccess, subject),
                     CandidateMemoryRangeRelation::SeparationUnproved => {
-                        LoanRefusal::UnsupportedPartition
-                            .diagnostic_with_subject(LoanRefusalOperation::MemoryAccess, subject)
+                        BorrowRefusal::UnsupportedPartition
+                            .diagnostic_with_subject(BorrowRefusalOperation::MemoryAccess, subject)
                     }
                     CandidateMemoryRangeRelation::Disjoint => unreachable!(),
                 };
                 return Ok(Err(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
+                    FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(Box::new(
+                        diagnostic,
+                    ))),
                     facts,
                     obligations,
                 )));
@@ -7184,8 +7247,8 @@ fn prepare_verified_function_call<'a>(
     let mut transfer = transfer;
     let retain_unbounded_source = contract_interface.resource_derived_mutable_frame()
         && caller_state
-            .loan_ledger()
-            .is_some_and(LoanLedger::has_active_memory_loans);
+            .borrow_ledger()
+            .is_some_and(BorrowLedger::has_active_memory_borrows);
     transfer.consumed_cell_returns.retain_frontier(
         projection_range_sources.iter().map(|(range, source)| {
             if retain_unbounded_source
@@ -7971,7 +8034,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     prepared_projection: Option<&FunctionMemoryEffectProjection>,
 ) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
     let is_storage = |pointer: &Address| pointer.base.is_static_storage_block();
-    let storage_writes: Vec<(Address, u32)> =
+    let storage_writes: Vec<(Address, crate::kernel::AccessExtent)> =
         crate::kernel::reasoning::memory_effect_write_accesses(facts)
             .into_iter()
             .filter(|(pointer, _)| is_storage(pointer))
@@ -8006,11 +8069,27 @@ pub(crate) fn storage_writes_outside_owned_footprint(
         }
     };
     let mut outside = Vec::new();
-    for (pointer, write_bytes) in &storage_writes {
-        if !storage_write_within_owned_footprint(pointer, *write_bytes, &owned, assumptions) {
+    for (pointer, write_extent) in &storage_writes {
+        let within = match write_extent {
+            crate::kernel::AccessExtent::Bytes(write_bytes) => {
+                storage_write_within_owned_footprint(pointer, *write_bytes, &owned, assumptions)
+            }
+            // A whole object of abstract size lies in an owned range that
+            // covers it.
+            extent => owned.iter().any(|range| {
+                memory_range_covers(
+                    range,
+                    &MemoryRange::of_access(pointer, *extent),
+                    assumptions,
+                )
+            }),
+        };
+        if !within {
             outside.push(StorageWriteOutsideFootprint::Write {
                 pointer: pointer.clone(),
-                bytes: *write_bytes,
+                bytes: write_extent
+                    .bytes()
+                    .unwrap_or(crate::kernel::ABSTRACT_VALUE_WIDTH),
             });
         }
     }
@@ -10978,7 +11057,7 @@ struct CompositeViewAdapter {
     resources: ResourceContext,
     /// The owned composite the lend escrows.
     head: ResourceFact,
-    /// The viewed descriptions the loan permits beside its own head.
+    /// The viewed descriptions the borrow permits beside its own head.
     adapted: Vec<ResourceFact>,
     /// What recovery hands back instead of the head, when the head was
     /// materialized for this call.
@@ -10996,7 +11075,7 @@ struct CompositeViewAdapter {
 ///
 /// * an owned composite `D` in the caller whose own checked frontier covers
 ///   `C`'s: `D`'s head is escrowed and `views C(args)` becomes an additional
-///   permitted description of that loan, exactly like a projection. Recovery
+///   permitted description of that borrow, exactly like a projection. Recovery
 ///   restores `D`;
 /// * the caller's owned frontier itself: `owns C(args)` is materialized out
 ///   of exactly those facts for the call, and recovery restores them, so a
@@ -11009,7 +11088,7 @@ struct CompositeViewAdapter {
 ///
 /// The materialized head carries no sidecar binding, so a hold a consumed
 /// owned occurrence carried does not travel with it. That direction only
-/// costs a later refusal -- the hold stays in the ledger and the loan behind
+/// costs a later refusal -- the hold stays in the ledger and the borrow behind
 /// it cannot be ended -- and no owned frontier piece carries one today,
 /// since a hold lives on the viewed piece an unfold hands it to.
 fn candidate_composite_view_adapter(
@@ -11035,7 +11114,7 @@ fn candidate_composite_view_adapter(
     };
     if definition.owns_population_authority()
         || definition.is_recursive()
-        || !definition.facts_are_loan_stable()
+        || !definition.facts_are_borrow_stable()
     {
         return Ok(None);
     }
@@ -11047,7 +11126,7 @@ fn candidate_composite_view_adapter(
     // An empty frontier protects nothing and is handled before planning; an
     // exclusive instance cannot be viewed at all (D12). A borrowing
     // composite -- one whose body views storage it does not own -- is step
-    // 7's mechanism: folding one places a hold on the loan behind the viewed
+    // 7's mechanism: folding one places a hold on the borrow behind the viewed
     // piece, which this rule does not do, so it stays out of the adapter.
     if frontier.is_empty()
         || frontier
@@ -11098,7 +11177,7 @@ fn candidate_composite_view_adapter(
         // Restore the exact escrowed occurrence with no authority exchange.
         if owner_definition.owns_population_authority()
             || owner_definition.is_recursive()
-            || !owner_definition.facts_are_loan_stable()
+            || !owner_definition.facts_are_borrow_stable()
             || (direct_only
                 && (owner.owned_quantity() != Some(1)
                     || !owner_definition.has_argument_direct_body()))
@@ -11149,7 +11228,7 @@ fn candidate_composite_view_adapter(
 
 /// The kernel's own one-level expansion of one owned composite head, read in
 /// the caller's memory. This is the same boundary the composite lend and
-/// `project` use, so nothing enters a loan that the definition does not
+/// `project` use, so nothing enters a borrow that the definition does not
 /// contain.
 pub(super) fn checked_one_level_frontier(
     head: &ResourceFact,
@@ -11159,7 +11238,7 @@ pub(super) fn checked_one_level_frontier(
 ) -> Option<Vec<ResourceFact>> {
     // Expand only the selected head. Checked construction attaches the trusted
     // equality graph before dependent children are added, without importing the
-    // caller's ambient resources or changing the loan's backing judgment.
+    // caller's ambient resources or changing the borrow's backing judgment.
     let singleton = ResourceContext::new()
         .try_compose_with_fact(head.clone(), assumptions)
         .ok()?;
@@ -11407,7 +11486,7 @@ fn string_literal_composite_holds(
     if definition.is_recursive()
         || definition.owns_population_authority()
         || !definition.witnesses().is_empty()
-        || !definition.facts_are_loan_stable()
+        || !definition.facts_are_borrow_stable()
     {
         return Ok(false);
     }
@@ -11481,7 +11560,7 @@ fn local_storage_composite_pieces(
     if definition.is_recursive()
         || definition.owns_population_authority()
         || !definition.witnesses().is_empty()
-        || !definition.facts_are_loan_stable()
+        || !definition.facts_are_borrow_stable()
     {
         return Ok(None);
     }
@@ -11704,7 +11783,7 @@ fn string_literal_reads_resolved(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ResourceTransitionPurpose {
     /// A call site: the caller lends its authority, so the views the callee
-    /// declares become loans of this application and recovery returns them.
+    /// declares become borrows of this application and recovery returns them.
     CallSite,
     /// A worker call suspended across pthread create/join. Reborrowing a
     /// caller view reserves a separate reader share while the parent keeps
@@ -11712,7 +11791,7 @@ pub(super) enum ResourceTransitionPurpose {
     SuspendedWorker,
     /// A function's own boundary: a whole-function judgment executes,
     /// certifies, or reads the body's outcome from the resources the contract
-    /// declares, consumed definitionally. The loan roots of its input views
+    /// declares, consumed definitionally. The borrow roots of its input views
     /// come from the proof's entry construction
     /// (`execution_state_with_borrowed_contract_inputs`), never from this transition,
     /// so nothing is lent twice; no call-site transfer record exists for
@@ -11952,10 +12031,10 @@ fn prepare_contract_resource_transfer_unexplained(
         )));
     }
     if purpose.lends()
-        && caller_state.loan_ledger().is_some() != caller_state.loan_participant().is_some()
+        && caller_state.borrow_ledger().is_some() != caller_state.borrow_participant().is_some()
     {
-        return Ok(Err(RuntimeError::LoanRefusal(Box::new(
-            LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Plan),
+        return Ok(Err(RuntimeError::BorrowRefusal(Box::new(
+            BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Plan),
         ))));
     }
     // In particular, preparing several pure callback interfaces must not
@@ -12297,7 +12376,7 @@ fn prepare_contract_resource_transfer_unexplained(
         )));
     }
     // Implicit local storage authority has no owned fact to escrow. At a
-    // call site it backs a checked local loan, so writes and lifetime ends
+    // call site it backs a checked local borrow, so writes and lifetime ends
     // remain blocked even when a worker outlives the call. Read-only storage
     // retains intrinsic read authority. An explicitly supplied owner or view
     // takes the ordinary lend/reborrow route, including stale-binding checks.
@@ -12345,7 +12424,7 @@ fn prepare_contract_resource_transfer_unexplained(
         }
         // A view of a composite whose every piece is implicit local storage,
         // such as `cstr_at` of a local `char` array, is backed the way a view
-        // of those bytes is: each piece is lent as a checked local loan, and
+        // of those bytes is: each piece is lent as a checked local borrow, and
         // the composite itself needs no owner. Its body facts are the
         // caller's to establish at the call.
         if requirement.fact.is_view()
@@ -12408,7 +12487,7 @@ fn prepare_contract_resource_transfer_unexplained(
             if range.base().base.is_local_block() && !callee_state.memory().is_read_only_block(&range.base().base)));
     // A composite view whose checked body is empty on this path protects no
     // bytes and holds no token, so there is nothing to lend and nothing a
-    // loan could suspend (D6: an empty permission grants no dereference).
+    // borrow could suspend (D6: an empty permission grants no dereference).
     // Demanding backing for it would turn the empty witness of a partial
     // recursive resource into a missing-backing refusal and hide the
     // structural validation that is the real verdict on such a call. Such a
@@ -12530,12 +12609,12 @@ fn prepare_contract_resource_transfer_unexplained(
     };
     let stable_view_plan = if purpose.lends() {
         let (ledger, caller) = match (
-            caller_state.loan_ledger().cloned(),
-            caller_state.loan_participant(),
+            caller_state.borrow_ledger().cloned(),
+            caller_state.borrow_participant(),
         ) {
             (Some(ledger), Some(caller)) => (ledger, caller),
             _ => {
-                let ledger = LoanLedger::new();
+                let ledger = BorrowLedger::new();
                 let Ok(caller) = ledger.fresh_participant() else {
                     return Ok(Err(RuntimeError::FunctionContract(
                         "could not allocate stable-view caller participant".to_string(),
@@ -12627,7 +12706,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 };
                 // A viewed piece is a description the head packages (a
                 // borrowing composite, step 7): it has no owner here to
-                // escrow, so it enters the loan as a permitted description
+                // escrow, so it enters the borrow as a permitted description
                 // with no byte backing, protected by the hold its head keeps.
                 if expanded_children
                     .iter()
@@ -12661,18 +12740,18 @@ fn prepare_contract_resource_transfer_unexplained(
                         })
                 else {
                     return Ok(Err(RuntimeError::FunctionContract(
-                        "composite loan definition is missing".to_string(),
+                        "composite borrow definition is missing".to_string(),
                     )));
                 };
                 // Recovery restores the exact escrowed head, so its facts are
                 // re-asserted precisely as folded; that is sound only when
-                // everything a fact depends on is stable for the loan.
-                if !definition.facts_are_loan_stable() {
+                // everything a fact depends on is stable for the borrow.
+                if !definition.facts_are_borrow_stable() {
                     return Ok(Err(RuntimeError::FunctionContract(
-                        "composite body facts depend on a resource count or an allocation-liveness claim, which a stable loan does not stabilize".to_string(),
+                        "composite body facts depend on a resource count or an allocation-liveness claim, which a stable borrow does not stabilize".to_string(),
                     )));
                 }
-                let Some(backing) = CompositeLoanBacking::from_checked_adapter(
+                let Some(backing) = CompositeBorrowBacking::from_checked_adapter(
                     support,
                     owned.clone(),
                     expanded_children,
@@ -12680,7 +12759,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     restored,
                 ) else {
                     return Ok(Err(RuntimeError::FunctionContract(
-                        "composite loan frontier is not a checked expansion".to_string(),
+                        "composite borrow frontier is not a checked expansion".to_string(),
                     )));
                 };
                 checked_view_frontier.extend(frontier_pieces);
@@ -12697,7 +12776,7 @@ fn prepare_contract_resource_transfer_unexplained(
             &ledger,
             caller,
             callee,
-            caller_state.loan_view_bindings(),
+            caller_state.borrow_bindings(),
             &composite_backings,
             purpose == ResourceTransitionPurpose::SuspendedWorker,
             helper_call.is_some(),
@@ -12728,7 +12807,7 @@ fn prepare_contract_resource_transfer_unexplained(
                     for use_plan in &mut plan.mutex_uses {
                         if let Err(error) = use_plan.bind_interface(protocols) {
                             return Ok(Err(match error {
-                                super::loans::mutex_calls::MutexUseCallError::Unavailable(
+                                super::borrows::mutex_calls::MutexUseCallError::Unavailable(
                                     message,
                                 ) => RuntimeError::FunctionContract(message.into()),
                                 _ => RuntimeError::MissingResource {
@@ -12773,38 +12852,38 @@ fn prepare_contract_resource_transfer_unexplained(
                     local_worker_bindings.as_ref(),
                 ) {
                     return Ok(Err(match error {
-                        super::loans::StableViewPlanError::MissingResource(resource) => {
+                        super::borrows::StableViewPlanError::MissingResource(resource) => {
                             RuntimeError::MissingResource {
                                 resource: Box::new(resource),
                             }
                         }
-                        super::loans::StableViewPlanError::UnestablishedOwnedBoundary(required) => {
-                            resource_context_runtime_error(
-                                ResourceContextValidityError::UnestablishedOwnedBoundary(required),
-                            )
-                        }
-                        super::loans::StableViewPlanError::UnestablishedLocalSeparation(goal) => {
+                        super::borrows::StableViewPlanError::UnestablishedOwnedBoundary(
+                            required,
+                        ) => resource_context_runtime_error(
+                            ResourceContextValidityError::UnestablishedOwnedBoundary(required),
+                        ),
+                        super::borrows::StableViewPlanError::UnestablishedLocalSeparation(goal) => {
                             RuntimeError::PendingCallObligations(
                                 vec![
                                     ProofObligation::verification_condition(*goal)
-                                        .with_context("local loan admission separation"),
+                                        .with_context("local borrow admission separation"),
                                 ]
                                 .into(),
                             )
                         }
                         error => error
-                            .loan_diagnostic(LoanRefusalOperation::Plan)
-                            .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
+                            .borrow_diagnostic(BorrowRefusalOperation::Plan)
+                            .map(|refusal| RuntimeError::BorrowRefusal(Box::new(refusal)))
                             .unwrap_or_else(|| {
                                 RuntimeError::FunctionContract(
-                                    "local view loan could not be checked".to_string(),
+                                    "local view borrow could not be checked".to_string(),
                                 )
                             }),
                     }));
                 }
                 if let Err(error) = plan.recheck_entry(&ledger) {
-                    return Ok(Err(RuntimeError::LoanRefusal(Box::new(
-                        error.diagnostic(LoanRefusalOperation::Entry),
+                    return Ok(Err(RuntimeError::BorrowRefusal(Box::new(
+                        error.diagnostic(BorrowRefusalOperation::Entry),
                     ))));
                 }
                 Some(plan)
@@ -12812,9 +12891,9 @@ fn prepare_contract_resource_transfer_unexplained(
             Err(error) => {
                 // An owned requirement the caller cannot supply is a missing
                 // owner, whatever planned it: name the fact, as the ordinary
-                // resource transfer does, rather than a loan the call never
-                // asked for. A view the planner cannot back is a loan matter.
-                if let super::loans::StableViewPlanError::MissingResource(resource) = &error
+                // resource transfer does, rather than a borrow the call never
+                // asked for. A view the planner cannot back is a borrow matter.
+                if let super::borrows::StableViewPlanError::MissingResource(resource) = &error
                     && resource.is_own()
                 {
                     return Ok(Err(RuntimeError::MissingResource {
@@ -12823,8 +12902,8 @@ fn prepare_contract_resource_transfer_unexplained(
                 }
                 // A view the caller holds the pieces of, but could not
                 // assemble because a body fact is unproved: name that fact,
-                // as a refused `fold` does, rather than the missing loan.
-                if let super::loans::StableViewPlanError::MissingResource(resource) = &error
+                // as a refused `fold` does, rather than the missing borrow.
+                if let super::borrows::StableViewPlanError::MissingResource(resource) = &error
                     && let Some(fact) = assembly_gaps.remove(resource)
                 {
                     return Ok(Err(RuntimeError::UnestablishedAssemblyFact {
@@ -12833,15 +12912,15 @@ fn prepare_contract_resource_transfer_unexplained(
                         source: fact.source,
                     }));
                 }
-                if let super::loans::StableViewPlanError::UnestablishedOwnedBoundary(required) =
+                if let super::borrows::StableViewPlanError::UnestablishedOwnedBoundary(required) =
                     &error
                 {
                     return Ok(Err(resource_context_runtime_error(
                         ResourceContextValidityError::UnestablishedOwnedBoundary(required.clone()),
                     )));
                 }
-                if let Some(diagnostic) = error.loan_diagnostic(LoanRefusalOperation::Plan) {
-                    return Ok(Err(RuntimeError::LoanRefusal(Box::new(diagnostic))));
+                if let Some(diagnostic) = error.borrow_diagnostic(BorrowRefusalOperation::Plan) {
+                    return Ok(Err(RuntimeError::BorrowRefusal(Box::new(diagnostic))));
                 }
                 return Ok(Err(RuntimeError::FunctionContract(
                     "stable-view call transition refused".to_string(),
@@ -13365,7 +13444,7 @@ fn evaluate_contract_return_resource_context(
     // identity with a symbolic parameter spelling, even though the resource
     // being returned is exactly the occurrence that was lent. Consume the
     // already checked owned inputs in their source order instead. Views keep
-    // their ordinary evaluation path because their loan source is
+    // their ordinary evaluation path because their borrow source is
     // reconstructed separately, and post-state instances carry fresh
     // fields rather than an entry fact.
     let mut canonical_by_checked = BTreeMap::<ResourceFact, VecDeque<ResourceFact>>::new();
@@ -14070,11 +14149,23 @@ fn evaluate_contract_return_resources(
     let mut ensured_views = Vec::new();
     let mut output_borrow_sources = BTreeMap::new();
     for occurrence in &evaluated.occurrences {
-        if let Some(input) = occurrence
-            .clause
-            .and_then(|index| interface.resource_ensures()[index].view_source())
-        {
-            output_borrow_sources.insert(occurrence.source, input);
+        let borrow_source = occurrence.clause.and_then(|index| {
+            interface.resource_ensures()[index]
+                .view_source()
+                .map(ReturnedBorrowSource::Input)
+                .or_else(|| {
+                    (occurrence.origin == ReturnOwnershipOrigin::EntryBorrow)
+                        .then(|| {
+                            composition
+                                .consumed_children()?
+                                .returning_entry_occurrence(index)
+                        })
+                        .flatten()
+                        .map(ReturnedBorrowSource::Forwarded)
+                })
+        });
+        if let Some(source) = borrow_source {
+            output_borrow_sources.insert(occurrence.source, source);
         } else if let Some(fact) = ensured_resources.view_fact_at_occurrence(occurrence.source) {
             ensured_views.push(fact.clone());
         }
@@ -14122,17 +14213,13 @@ fn evaluate_contract_return_resources(
     let mut produced_borrowing_pieces = inserted_ensured_occurrences
         .iter()
         .filter_map(|transfer| {
-            let &input = output_borrow_sources.get(&transfer.source)?;
+            let &source = output_borrow_sources.get(&transfer.source)?;
             let fact = ensured_resources.view_fact_at_occurrence(transfer.source)?;
             Some(ProducedBorrowingPiece {
-                support: super::loans::EscapingBorrow {
-                    head: fact.clone(),
-                    occurrence: transfer.destination,
-                    root_permission: None,
-                },
-                piece: fact.clone(),
-                input_view: Some(input),
-                sources: Arc::new(vec![transfer.source]),
+                head: fact.clone(),
+                destination: transfer.destination,
+                source,
+                viewed: Some((fact.clone(), transfer.source)),
             })
         })
         .collect::<Vec<_>>();
@@ -14144,19 +14231,17 @@ fn evaluate_contract_return_resources(
     let mut escrow_boundary =
         EscrowRecoveryBoundary::default().with_entry_partition(returned_entry_partition);
     for resource in projected_cores_by_support {
-        let input_view = output_borrow_sources.get(&resource.source);
-        let constructed_borrowing_pieces = if let Some(&input) = input_view {
-            resource.explicitly_backed_pieces(input)
-        } else {
-            resource.constructed_borrowing_pieces()
-        };
+        let borrow_source = output_borrow_sources.get(&resource.source).copied();
+        let has_viewed_body = !resource.viewed_children.is_empty();
+        let constructed_borrowing_pieces = borrow_source
+            .map(|source| resource.backed_pieces(source))
+            .unwrap_or_default();
         let ProjectedReturnResource {
             source,
             support,
             destination: support_occurrence,
             expansion,
             projected,
-            frontier: _,
             viewed_children: _,
         } = resource;
         if support.is_own() {
@@ -14181,7 +14266,7 @@ fn evaluate_contract_return_resources(
         // packages; a nested composite's own body is that composite's
         // business (the 4b rule). The viewed pieces of an observed
         // population family, or of more than one unit, keep the observation
-        // reading rather than an escaping loan.
+        // reading rather than an escaping borrow.
         let is_population = match support.resource() {
             Resource::Composite { name, .. } => {
                 support.owned_quantity_term() != Some(&MachineTerm::constant(1))
@@ -14190,9 +14275,17 @@ fn evaluate_contract_return_resources(
             }
             _ => false,
         };
-        if input_view.is_some() && (is_population || constructed_borrowing_pieces.is_empty()) {
+        if matches!(borrow_source, Some(ReturnedBorrowSource::Input(_)))
+            && (is_population || !has_viewed_body)
+        {
             return Ok(Err(RuntimeError::FunctionContract(
                 "`from` requires a produced composite with a checked viewed body".into(),
+            )));
+        }
+        if !is_population && has_viewed_body && borrow_source.is_none() {
+            return Ok(Err(returned_borrow_error(
+                &support,
+                ReturnedBorrowReason::ExplicitSourceRequired,
             )));
         }
         if !is_population {
@@ -16059,7 +16152,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         }
     }
     if unfold {
-        // The opened owner and the caller's loan-bound views coexist in the
+        // The opened owner and the caller's borrow-bound views coexist in the
         // constructed successor. Retain that persistent composition so the
         // existing borrow-partition rule can relate them. The body's isolated
         // composition alone cannot express separation from the outer frame.
@@ -16321,7 +16414,7 @@ pub(super) fn expand_composite_resource_fact(
 }
 
 /// The kernel's own one-level expansion of a viewed composite, packaged as
-/// the evidence `LoanLedger::project` re-checks a child projection against.
+/// the evidence `BorrowLedger::project` re-checks a child projection against.
 /// The expansion runs over the head alone, so the admissible children come
 /// from the definition and the current memory, never from the caller's
 /// ambient resource context or its own list of exposed facts (D2 law 10).
@@ -16464,13 +16557,13 @@ fn construct_composite_resource_body_with_source(
     {
         return Some(CompositeBodyConstruction::opaque(context));
     }
-    // A viewed composite carries its loan dependency on the folded
+    // A viewed composite carries its borrow dependency on the folded
     // occurrence.  Expansion must transfer that exact bundle to only the
     // newly inserted child occurrences; equal children in the ambient frame
     // are not eligible destinations.
     let source = selected.or_else(|| context.first_exact_occurrence(composite))?;
     let borrowed_parent = if composite.is_view() {
-        context.loan_dependency(source).cloned()
+        context.borrow_dependency(source).cloned()
     } else {
         None
     };
@@ -16595,9 +16688,9 @@ fn construct_composite_resource_body_with_source(
     if let Some(binding) = borrowed_parent {
         for (child, occurrence) in &inserted {
             if child.is_view() {
-                expanded = expanded.with_loan_dependency(
+                expanded = expanded.with_borrow_dependency(
                     *occurrence,
-                    crate::kernel::loans::LoanViewBinding {
+                    crate::kernel::borrows::BorrowBinding {
                         viewed: child.clone(),
                         ..binding.clone()
                     },
@@ -17092,9 +17185,10 @@ pub(super) fn function_return_resources_definitionally_established(
             let Some(binding) = identity.binding else {
                 return false;
             };
-            let (Some(ledger), Some(holder)) =
-                (return_state.loan_ledger(), return_state.loan_participant())
-            else {
+            let (Some(ledger), Some(holder)) = (
+                return_state.borrow_ledger(),
+                return_state.borrow_participant(),
+            ) else {
                 return false;
             };
             if super::mutexes::helper_contracts::permits_return(return_state) {
@@ -17296,7 +17390,7 @@ fn check_mutex_helper_body_return(
             if returned
                 .opaque_mutex_acquisitions
                 .as_ref()
-                .is_some_and(|held| held.has_local_hold(returned.loan_participant))
+                .is_some_and(|held| held.has_local_hold(returned.borrow_participant))
             {
                 return Err(RuntimeError::FunctionContract(
                     "releasing helper must discharge its consumed guard acquisition".into(),
@@ -17677,7 +17771,7 @@ pub(crate) fn evaluate_function_resource_context_with_metadata(
     )
 }
 
-/// Loop declarations retain the new occurrences and attach inherited loan
+/// Loop declarations retain the new occurrences and attach inherited borrow
 /// bindings before normalization can combine unbound views.
 pub(crate) fn evaluate_loop_resource_context(
     state: &ExecutionState,
@@ -17755,7 +17849,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
         context
             .install_established_partition(facts, assumptions)
             .map(|(context, inserted)| {
-                let context = state.loan_view_bindings().attach_to_inserted_views(
+                let context = state.borrow_bindings().attach_to_inserted_views(
                     state.resources(),
                     context,
                     &inserted,
@@ -17809,7 +17903,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
 ///
 /// - an ordinary call, a self-call, a call through a function pointer or a
 ///   `contract` interface, and contract/implementation refinement all funnel
-///   through `loans::plan_stable_view_transfer_with_bindings_and_composites`,
+///   through `borrows::plan_stable_view_transfer_with_bindings_and_composites`,
 ///   which reserves *every* owned requirement out of the caller's `residual`
 ///   before planning a single view, and then requires each view's backing
 ///   owner to still be found in that residual. A caller that hands the same
@@ -19572,12 +19666,13 @@ fn resolve_retained_aggregate_fields(
             }
             ProgramExpression::Subobject { pointer, .. } => projection(pointer),
             ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
+                let bytes = bytes.bytes()?;
                 let (name, pointer) = projection(pointer)?;
                 Some((
                     name,
                     SpecExpression::PointerOffset {
                         pointer: Box::new(pointer),
-                        elements: Box::new(SpecExpression::Value(int32(*bytes))),
+                        elements: Box::new(SpecExpression::Value(int32(bytes))),
                         byte_width: 1,
                     },
                 ))
@@ -21038,7 +21133,7 @@ pub(super) fn clear_automatic_lifetime_retirement() {
     AUTOMATIC_LIFETIME_RETIREMENT.with(|memo| memo.borrow_mut().clear());
 }
 
-/// Only the physical transition is reused. Callers check current loan,
+/// Only the physical transition is reused. Callers check current borrow,
 /// mutex, population and return-value restrictions before calling this.
 fn retire_automatic_lifetime_blocks(
     before: &SymbolicMemory,
@@ -21107,7 +21202,7 @@ fn end_inline_frame_automatic_lifetimes(
         if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
             return Err(error);
         }
-        if let Some(error) = state.automatic_storage_loan_refusal(&slot.base) {
+        if let Some(error) = state.automatic_storage_borrow_refusal(&slot.base) {
             return Err(error);
         }
         blocks.push(slot.base.clone());
@@ -21153,7 +21248,7 @@ fn end_function_body_automatic_lifetimes(
             if let Some(error) = state.population_storage_retirement_refusal(&slot.base) {
                 return Err(error);
             }
-            if let Some(error) = state.automatic_storage_loan_refusal(&slot.base) {
+            if let Some(error) = state.automatic_storage_borrow_refusal(&slot.base) {
                 return Err(error);
             }
             blocks.push(slot.base.clone());
@@ -21175,7 +21270,7 @@ fn end_function_body_automatic_lifetimes(
             ) {
                 return Err(error);
             }
-            if let Some(error) = state.automatic_storage_loan_refusal(&pointer.base) {
+            if let Some(error) = state.automatic_storage_borrow_refusal(&pointer.base) {
                 return Err(error);
             }
             blocks.push(pointer.base.clone());
@@ -21210,7 +21305,7 @@ pub(in crate::kernel) fn function_exit_memory(
                     })) =>
         {
             let block = &pointer.address().base;
-            if let Some(error) = callee_state.automatic_storage_loan_refusal(block) {
+            if let Some(error) = callee_state.automatic_storage_borrow_refusal(block) {
                 return Err(error);
             }
             Ok(callee_state.memory.without_local_block(block))
@@ -21465,7 +21560,7 @@ fn function_outcome_from_body_with_resource_transfer(
 ) -> ExecutionResult<(
     FunctionOutcome,
     Vec<ProofObligation>,
-    Option<Arc<CheckedLoanCallEvidence>>,
+    Option<Arc<CheckedBorrowCallEvidence>>,
 )> {
     if let Some(error) = exceptional_outcome_declaration_error(function, &outcome) {
         return Ok((FunctionOutcome::RuntimeError(error), obligations, None));
@@ -21687,20 +21782,25 @@ fn function_outcome_from_body_with_resource_transfer(
     transfer.returned_entry_partition = returned_entry_partition;
     transfer.candidate_output_views = returned_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
-    let (return_resources, return_ledger, return_participant, return_view_bindings, loan_evidence) =
-        match recover_candidate_stable_view_resources(
-            caller_state,
-            &state,
-            &transfer,
-            return_resources,
-            escrow_boundary,
-            assumptions,
-            assumptions,
-            &obligations,
-        ) {
-            Ok(recovered) => recovered,
-            Err(error) => return Ok((FunctionOutcome::RuntimeError(error), obligations, None)),
-        };
+    let (
+        return_resources,
+        return_ledger,
+        return_participant,
+        return_view_bindings,
+        borrow_evidence,
+    ) = match recover_candidate_stable_view_resources(
+        caller_state,
+        &state,
+        &transfer,
+        return_resources,
+        escrow_boundary,
+        assumptions,
+        assumptions,
+        &obligations,
+    ) {
+        Ok(recovered) => recovered,
+        Err(error) => return Ok((FunctionOutcome::RuntimeError(error), obligations, None)),
+    };
 
     match crate::instrumentation::measure_operation(
         function.name(),
@@ -21725,9 +21825,9 @@ fn function_outcome_from_body_with_resource_transfer(
     let mut return_state = caller_state
         .clone()
         .with_call_return(&state, return_resources);
-    return_state.loan_ledger = return_ledger;
-    return_state.loan_participant = return_participant;
-    return_state = return_state.with_loan_view_bindings(return_view_bindings);
+    return_state.borrow_ledger = return_ledger;
+    return_state.borrow_participant = return_participant;
+    return_state = return_state.with_borrow_bindings(return_view_bindings);
     return_state.thread_ledger = state.thread_ledger.clone();
     return_state.mutex_ledger = state.mutex_ledger.clone();
     return_state.mutex_input_reservations = state.mutex_input_reservations.clone();
@@ -21750,7 +21850,7 @@ fn function_outcome_from_body_with_resource_transfer(
             return Ok((
                 FunctionOutcome::RuntimeError(error),
                 obligations,
-                loan_evidence,
+                borrow_evidence,
             ));
         }
     };
@@ -21767,15 +21867,15 @@ fn function_outcome_from_body_with_resource_transfer(
             state: Box::new(return_state),
         }
     };
-    Ok((outcome, obligations, loan_evidence))
+    Ok((outcome, obligations, borrow_evidence))
 }
 
-fn without_loan_evidence(
+fn without_borrow_evidence(
     (outcome, obligations): (FunctionOutcome, Vec<ProofObligation>),
 ) -> (
     FunctionOutcome,
     Vec<ProofObligation>,
-    Option<Arc<CheckedLoanCallEvidence>>,
+    Option<Arc<CheckedBorrowCallEvidence>>,
 ) {
     (outcome, obligations, None)
 }
@@ -21801,7 +21901,7 @@ pub(super) fn contract_exit_outcome(
         (
             FunctionOutcome,
             Vec<ProofObligation>,
-            Option<Arc<CheckedLoanCallEvidence>>,
+            Option<Arc<CheckedBorrowCallEvidence>>,
         ),
         RuntimeError,
     >,
@@ -21954,7 +22054,7 @@ fn contract_exit_outcome_with_boundary_transfer(
         (
             FunctionOutcome,
             Vec<ProofObligation>,
-            Option<Arc<CheckedLoanCallEvidence>>,
+            Option<Arc<CheckedBorrowCallEvidence>>,
         ),
         RuntimeError,
     >,
@@ -22001,7 +22101,7 @@ fn contract_exit_outcome_with_boundary_transfer(
     // completing a path neither re-admits it nor canonicalizes the ambient
     // frame. The binding mirror is a constant-time shared-root invariant.
     if let StatementOutcome::Return { state, .. } | StatementOutcome::Throw { state, .. } = &outcome
-        && !state.loan_bindings_are_consistent()
+        && !state.borrow_bindings_are_consistent()
     {
         return Ok(Err(RuntimeError::FunctionContract(
             "stable-view return resources are not a valid bound context".into(),
@@ -22287,9 +22387,9 @@ fn contract_exit_outcome_with_boundary_transfer(
             obligations,
             assumptions,
         )
-        .map(|outcome| Ok(without_loan_evidence(outcome)))
+        .map(|outcome| Ok(without_borrow_evidence(outcome)))
     } else {
-        Ok(Ok(without_loan_evidence(function_outcome_from_body(
+        Ok(Ok(without_borrow_evidence(function_outcome_from_body(
             caller_state,
             function,
             outcome,
@@ -22330,7 +22430,7 @@ pub(crate) fn checked_contract_exit_outcome_with_boundary_transfer(
         (
             FunctionOutcome,
             Vec<ProofObligation>,
-            Option<Arc<CheckedLoanCallEvidence>>,
+            Option<Arc<CheckedBorrowCallEvidence>>,
             bool,
             Option<RuntimeError>,
         ),
@@ -22349,7 +22449,7 @@ pub(crate) fn checked_contract_exit_outcome_with_boundary_transfer(
         purpose,
         checked_transfer,
     )? {
-        Ok((outcome, obligations, loan_evidence)) => {
+        Ok((outcome, obligations, borrow_evidence)) => {
             if let FunctionOutcome::RuntimeError(error) = &outcome
                 && is_deferred_conditional_resource_effect_error(error)
             {
@@ -22361,7 +22461,7 @@ pub(crate) fn checked_contract_exit_outcome_with_boundary_transfer(
                     Some(error.clone()),
                 )));
             }
-            Ok(Ok((outcome, obligations, loan_evidence, false, None)))
+            Ok(Ok((outcome, obligations, borrow_evidence, false, None)))
         }
         Err(error) if is_deferred_conditional_resource_effect_error(&error) => Ok(Ok((
             body_outcome,
@@ -22477,7 +22577,7 @@ pub(super) fn apply_verified_contract_resource_transition(
         }
         FunctionOutcome::RuntimeError(error) => return Ok(Err(error)),
     };
-    let (outcome, obligations, _loan_evidence) = crate::instrumentation::measure_operation(
+    let (outcome, obligations, _borrow_evidence) = crate::instrumentation::measure_operation(
         function.name(),
         "contract resource transition",
         "contract resource outcome reconstruction",
@@ -22609,8 +22709,8 @@ pub(super) fn function_outcome_from_body(
             // on the caller's ledger); the return state carries the body's
             // ledger. A modular call's recovery replaces it afterwards.
             caller_state = caller_state
-                .with_loan_ledger(state.loan_ledger().cloned())
-                .with_loan_participant(state.loan_participant());
+                .with_borrow_ledger(state.borrow_ledger().cloned())
+                .with_borrow_participant(state.borrow_participant());
             caller_state.thread_ledger = state.thread_ledger.clone();
             caller_state.mutex_ledger = state.mutex_ledger.clone();
             caller_state.mutex_input_reservations = state.mutex_input_reservations.clone();
@@ -22695,8 +22795,8 @@ pub(super) fn function_outcome_from_body(
                 caller_state.sync_changed_scalar_locals(incoming_memory);
             }
             caller_state = caller_state
-                .with_loan_ledger(state.loan_ledger().cloned())
-                .with_loan_participant(state.loan_participant());
+                .with_borrow_ledger(state.borrow_ledger().cloned())
+                .with_borrow_participant(state.borrow_participant());
             if return_resources.is_none() {
                 caller_state.instance_field_scope = state.instance_field_scope;
             }
@@ -22786,7 +22886,7 @@ impl From<bool> for ConditionTerm {
 }
 
 #[cfg(test)]
-mod automatic_frame_loan_tests;
+mod automatic_frame_borrow_tests;
 
 #[cfg(test)]
 mod mutex_automatic_frame_tests;

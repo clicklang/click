@@ -22,7 +22,7 @@ struct Index {
     graph: Option<EqualityGraph>,
     sources: PersistentMap<Proposition, (Address, Address)>,
     pairs: PersistentMap<Pair, PersistentSet<Proposition>>,
-    exact_spans: PersistentMap<Pair, PersistentMap<(u32, u32), Proposition>>,
+    exact_spans: PersistentMap<Pair, PersistentMap<(SpanWidth, SpanWidth), Proposition>>,
     incident: PersistentMap<u64, PersistentSet<Pair>>,
 }
 
@@ -49,17 +49,40 @@ fn pair(left: u64, right: u64) -> Pair {
 
 // A fixed nonempty byte interval is identified by its start address and
 // span, independently of the pointer spelling or element type.
-fn fixed_span_bytes(range: &MemoryRange) -> Option<u32> {
+/// The size of a fixed nonempty interval: a byte count, or all the bytes of
+/// one object whose size is a term, `sizeof(L)` or `sizeof(T)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+enum SpanWidth {
+    Bytes(u32),
+    Layout(SymbolicLayoutName),
+    Parameter(TypeParameterName),
+}
+
+fn fixed_span_bytes(range: &MemoryRange) -> Option<SpanWidth> {
+    if let Some(layout) = range.symbolic_object() {
+        return Some(SpanWidth::Layout(layout));
+    }
+    if let Some((start, end)) = range.wide_bounds() {
+        return (range.element_width() == 1 && start.uint64_as_const() == Some(0))
+            .then(|| TypeParameterName::of_size_term(end))
+            .flatten()
+            .map(SpanWidth::Parameter);
+    }
     let elements = range
         .signed_constant_end()?
         .checked_sub(range.signed_constant_start()?)?;
     let bytes = u32::try_from(elements)
         .ok()?
         .checked_mul(range.element_width())?;
-    (bytes != 0).then_some(bytes)
+    (bytes != 0).then_some(SpanWidth::Bytes(bytes))
 }
 
-fn span_key(left: u64, right: u64, left_bytes: u32, right_bytes: u32) -> (Pair, (u32, u32)) {
+fn span_key(
+    left: u64,
+    right: u64,
+    left_bytes: SpanWidth,
+    right_bytes: SpanWidth,
+) -> (Pair, (SpanWidth, SpanWidth)) {
     if (left, left_bytes) <= (right, right_bytes) {
         ((left, right), (left_bytes, right_bytes))
     } else {
@@ -90,7 +113,7 @@ impl Index {
         }
     }
 
-    fn attach_exact(&mut self, key: Pair, widths: (u32, u32), fact: Proposition) {
+    fn attach_exact(&mut self, key: Pair, widths: (SpanWidth, SpanWidth), fact: Proposition) {
         crate::instrumentation::record_deterministic_work(1);
         let spans = self.exact_spans.get(&key).cloned().unwrap_or_default();
         // Equal address classes and spans denote the same physical spans;
@@ -224,6 +247,25 @@ impl SeparatedAddressIndex {
         right: &MemoryRange,
         graph: &EqualityGraph,
     ) -> Option<Proposition> {
+        self.exact_spans_with_upkeep(left, right, graph, true)
+    }
+
+    pub(in crate::kernel) fn prepared_exact_spans(
+        &self,
+        left: &MemoryRange,
+        right: &MemoryRange,
+        graph: &EqualityGraph,
+    ) -> Option<Proposition> {
+        self.exact_spans_with_upkeep(left, right, graph, false)
+    }
+
+    fn exact_spans_with_upkeep(
+        &self,
+        left: &MemoryRange,
+        right: &MemoryRange,
+        graph: &EqualityGraph,
+        synchronize: bool,
+    ) -> Option<Proposition> {
         let (left_bytes, right_bytes) = (fixed_span_bytes(left)?, fixed_span_bytes(right)?);
         let mut cache = self.0.lock().expect("separation index");
         let index = cache.as_deref_mut()?;
@@ -231,13 +273,18 @@ impl SeparatedAddressIndex {
             graph.address_class(&left.start_pointer())?,
             graph.address_class(&right.start_pointer())?,
         );
-        index.synchronize(graph);
-        let (key, widths) = span_key(
-            graph.address_class_root(left),
-            graph.address_class_root(right),
-            left_bytes,
-            right_bytes,
-        );
+        if synchronize {
+            index.synchronize(graph);
+        }
+        let current_key = |left, right, left_bytes, right_bytes| {
+            span_key(
+                graph.address_class_root(left),
+                graph.address_class_root(right),
+                left_bytes,
+                right_bytes,
+            )
+        };
+        let (key, widths) = current_key(left, right, left_bytes, right_bytes);
         // Registering the selected addresses can itself expose an equality.
         // Nonempty intervals starting at one address always overlap.
         if key.0 == key.1 {
@@ -246,6 +293,26 @@ impl SeparatedAddressIndex {
         let fact = index.exact_spans.get(&key)?.get(&widths)?;
         source_visit();
         crate::instrumentation::record_deterministic_work(1);
+        if !synchronize {
+            // A prepared key can survive new equalities. Match the one
+            // nominated premise in the live graph, without replaying the
+            // merge journal or trying another source after a miss.
+            let Proposition::ResourceSeparate { left: a, right: b } = fact else {
+                return None;
+            };
+            let (Resource::Memory(a), Resource::Memory(b)) = (a.as_ref(), b.as_ref()) else {
+                return None;
+            };
+            let (a_class, b_class) = (
+                graph.address_class(&a.start_pointer())?,
+                graph.address_class(&b.start_pointer())?,
+            );
+            let source = current_key(a_class, b_class, fixed_span_bytes(a)?, fixed_span_bytes(b)?);
+            let target = current_key(left, right, left_bytes, right_bytes);
+            if target.0.0 == target.0.1 || source != target {
+                return None;
+            }
+        }
         Some(fact.clone())
     }
 

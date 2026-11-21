@@ -344,7 +344,7 @@ step 2 is deferred.
    `separate(memory(dst[0u64..32u64]), memory(src[0u64..s.len + 1u64]))`,
    opens the string to lend `memcpy` its prefix, and keeps
    `dst[result] == '\0'`. The obtain-and-transport proof became
-   `step`s, an `open` and `step_until(function.exit)`. With M3 the contract's `owns` and
+   `step`s, a `with` and `step_until(function.exit)`. With M3 the contract's `owns` and
    `views` already keep `dst` and the string apart, so the `separate` is
    implied; it stays, unchanged. The copied bytes are stated too (2026-10-16):
    `ensures bytes::equal(dst, 0u64, src, 0u64, result)`, proved by marking

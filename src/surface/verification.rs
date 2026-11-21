@@ -5255,6 +5255,22 @@ pub(in crate::surface) fn external_c_function_with_layouts(
                     }
                     None => program_parameter,
                 };
+                // A Rust reference or box to a symbolic struct designates
+                // its whole object, as the import states for the signature.
+                let program_parameter = match parameter
+                    .struct_name()
+                    .filter(|_| {
+                        !program_parameter.is_struct_value()
+                            && parameter.interface_type().is_pointer()
+                    })
+                    .and_then(|name| struct_layouts.get(name))
+                    .map(|layout| layout.size())
+                {
+                    Some(size @ crate::kernel::LayoutSize::Of(_)) => {
+                        program_parameter.with_fixed_reference_bounds(size)
+                    }
+                    _ => program_parameter,
+                };
                 program_parameter
                     .with_constant(parameter.is_constant())
                     .with_pointee_constant(parameter.pointee_is_constant())
@@ -5977,7 +5993,6 @@ pub(in crate::surface) fn function_resource_summary(
                 ResourceClause::ViewMemory(_) | ResourceClause::Declared { .. }
             )
             && requires.len() == first_spec + 1
-            && requires[first_spec].is_view()
         {
             let source = function_block
                 .requirement_source_clauses
@@ -6109,7 +6124,7 @@ pub(in crate::surface) fn function_resource_summary(
             if let Some(source) = ensure.view_source {
                 let input = view_inputs.get(&source).ok_or_else(|| {
                     ClickError::new(
-                        "the selected input view must lower to one memory range or composite",
+                        "the selected borrow source must lower to one memory range or composite",
                     )
                 })?;
                 if !spec.is_view()
@@ -7532,7 +7547,6 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
             | ProofTactic::Known
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
-            | ProofTactic::OrderChain(_)
             | ProofTactic::Rewrite(_)
             | ProofTactic::Solve => {}
             ProofTactic::If(proof_if) => {
@@ -8055,7 +8069,7 @@ int32 reader(int32 p[], int32 q[]) {
     /// The viewed pointer itself carries no write authority. A pure view
     /// holds no owner for the store, so the ordinary owned-authority check
     /// refuses it first and the missing-ownership diagnostic is what the
-    /// verifier reports. The loan barrier is reserved for an
+    /// verifier reports. The borrow barrier is reserved for an
     /// owner-authorized write.
     #[test]
     fn root_view_reports_missing_ownership_for_an_unowned_write() {
@@ -8235,7 +8249,7 @@ int32 read_retargeted(struct buffer* owner, int32* other) {
     }
 
     /// A view of read-only storage is intrinsic read authority, so it needs
-    /// no borrowed root at entry and no loan at a call. A call that lends an
+    /// no borrowed root at entry and no borrow at a call. A call that lends an
     /// ordinary view therefore has to carry the caller's file-static const
     /// view across its return without a binding for it, and the caller can
     /// still read the table afterwards.
@@ -8414,8 +8428,8 @@ resource box(p: struct s*) {
 extern int32 setup(struct s* p, int32 d[], int32 n) {
     requires 0 <= n;
     consumes *p;
-    views d[0..n];
-    produces box(p);
+    views d[0..n] as input;
+    produces box(p) from input;
     ensures p->b == n;
     ensures p->d == d;
 }
@@ -8456,7 +8470,7 @@ int32 f(struct s* p, int32 d[], int32 n) {{
         );
     }
 
-    /// Consuming the composite releases its hold: the loan ends, the owner
+    /// Consuming the composite releases its hold: the borrow ends, the owner
     /// is recovered, and the same write is accepted afterwards.
     #[test]
     #[cfg(not(feature = "fast-gate"))]
@@ -8505,8 +8519,8 @@ int32 f(struct s* p, int32 d[], int32 n) {{
         let source = format!(
             "{BORROWING_BOX_HEADER}int32 f(struct s* p, int32 d[], int32 n) {{ setup(p, d, n); d[0] = 1; drop_box(p); return 0; }}"
         );
-        let error =
-            verify_sources(&refused, &source).expect_err("the unfolded piece still holds the loan");
+        let error = verify_sources(&refused, &source)
+            .expect_err("the unfolded piece still holds the borrow");
         assert!(
             error.message().contains("missing resource fact `owns "),
             "{}",
@@ -8573,7 +8587,7 @@ int32 f(struct s* p, int32 n) {
         assert!(
             error
                 .message()
-                .contains("no viewed input of this call backs"),
+                .contains("needs an explicit borrow source declared with `from`"),
             "{}",
             error.message()
         );
@@ -8581,10 +8595,10 @@ int32 f(struct s* p, int32 n) {
 
     /// A callee whose contract leaves allocation continuity undecided may
     /// deallocate; retiring the allocation must consult the ledger that
-    /// carries this call's own loans, because lending has removed the owner
+    /// carries this call's own borrows, because lending has removed the owner
     /// from the preserved residual (docs/internals/stable-views.md).
     #[test]
-    fn call_retirement_requires_separation_from_its_own_loan() {
+    fn call_retirement_requires_separation_from_its_own_borrow() {
         let click = r#"
 verifying "reader.c";
 

@@ -349,7 +349,7 @@ impl MutexContext {
         state.mutex_ledger = Some(next);
         Ok(Some(Self {
             state,
-            runtime_loan_transition: None,
+            runtime_borrow_transition: None,
         }))
     }
 }

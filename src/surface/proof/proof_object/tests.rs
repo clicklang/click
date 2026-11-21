@@ -182,7 +182,7 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
                 pending.extend(then_proof.steps());
                 pending.extend(else_proof.steps());
             }
-            ProofStep::NormalizeUsing(premises) | ProofStep::OrderChain(premises) => {
+            ProofStep::NormalizeUsing(premises) => {
                 count += premises.len();
             }
             ProofStep::ApplyTheoremUsing {
@@ -435,7 +435,7 @@ fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
                             base: crate::kernel::AddressBase::ExternalArgument,
                             offset: crate::kernel::AddressOffset::Constant(index as i64 * 4),
                         },
-                        4,
+                        crate::kernel::AccessExtent::from(4),
                     )],
                 })
             })
@@ -10305,7 +10305,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
                 owns marker(x);
                 ensures returns_x: result == x;
             } by {
-                open(marker(x)) { step(); }
+                with(marker(x)) { step(); }
                 step();
             }
         "#,

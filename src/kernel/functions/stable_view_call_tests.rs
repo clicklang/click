@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::loans::LoanRefusal;
+use crate::kernel::borrows::BorrowRefusal;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 fn pointer() -> Address {
@@ -293,7 +293,7 @@ fn candidate_reader_escrows_owner_until_return() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("candidate transfer records a loan plan");
+        .expect("candidate transfer records a borrow plan");
     assert_eq!(plan.stable_views().len(), 1);
     assert!(
         !transfer.caller_resources_after_requirements.satisfies_fact(
@@ -319,7 +319,7 @@ fn candidate_reader_escrows_owner_until_return() {
 }
 
 #[test]
-fn candidate_function_entry_preserves_outer_loan_authority() {
+fn candidate_function_entry_preserves_outer_borrow_authority() {
     let pointer = pointer();
     let function = program_function(
         ProgramType::Void,
@@ -327,11 +327,11 @@ fn candidate_function_entry_preserves_outer_loan_authority() {
         vec![program_parameter("p", ProgramType::Int32Pointer)],
         program_return(program_void_value()),
     );
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("caller participant");
     let caller_state = caller(&pointer)
-        .with_loan_ledger(Some(ledger.clone()))
-        .with_loan_participant(Some(participant));
+        .with_borrow_ledger(Some(ledger.clone()))
+        .with_borrow_participant(Some(participant));
     let callee = bind_program_function_arguments(
         &caller_state,
         &function,
@@ -339,9 +339,9 @@ fn candidate_function_entry_preserves_outer_loan_authority() {
     )
     .expect("the function argument should bind");
 
-    assert_eq!(callee.loan_ledger(), Some(&ledger));
-    assert_eq!(callee.loan_participant(), Some(participant));
-    assert!(callee.loan_bindings_are_consistent());
+    assert_eq!(callee.borrow_ledger(), Some(&ledger));
+    assert_eq!(callee.borrow_participant(), Some(participant));
+    assert!(callee.borrow_bindings_are_consistent());
 }
 
 #[test]
@@ -377,9 +377,9 @@ fn candidate_composite_call_lends_primitive_body_and_recovers_head() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("composite transfer records a loan plan");
+        .expect("composite transfer records a borrow plan");
     assert_eq!(plan.stable_views().len(), 1);
-    assert!(plan.ledger.has_active_memory_loans());
+    assert!(plan.ledger.has_active_memory_borrows());
     let body_range = MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
@@ -387,7 +387,7 @@ fn candidate_composite_call_lends_primitive_body_and_recovers_head() {
     );
     assert_eq!(
         plan.ledger.permits_memory_access(&body_range),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     assert!(transfer.callee_resources.satisfies_fact(
         &ResourceFact::view_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())],),
@@ -489,11 +489,11 @@ fn candidate_composite_with_body_facts_is_lendable() {
         "candidate_fact_bearing_reader",
         fact_bearing_cell_definition(),
     );
-    plan_composite_lend(&function).expect("a fact over the body's own cells is loan-stable");
+    plan_composite_lend(&function).expect("a fact over the body's own cells is borrow-stable");
 }
 
 /// A fact that claims liveness of storage outside the body, or one that
-/// reads a population count, is not stabilized by the loan.
+/// reads a population count, is not stabilized by the borrow.
 #[test]
 fn candidate_composite_with_unstable_facts_is_refused() {
     let liveness = composite_reader_with_definition(
@@ -637,7 +637,7 @@ fn plan_adapter_lend(
 
 /// The caller owns `wide(p)` over `p[0..2]`; the callee views `cell(p)`
 /// over `p[0..1]`. The lend escrows the owner the caller actually holds,
-/// `views cell(p)` joins that loan's permitted descriptions, and recovery
+/// `views cell(p)` joins that borrow's permitted descriptions, and recovery
 /// restores `wide(p)` exactly.
 #[test]
 fn candidate_composite_view_is_backed_by_a_covering_owned_composite() {
@@ -652,7 +652,7 @@ fn candidate_composite_view_is_backed_by_a_covering_owned_composite() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("the adapter lend records a loan plan");
+        .expect("the adapter lend records a borrow plan");
     assert_eq!(plan.stable_views().len(), 1);
     assert!(transfer.callee_resources.satisfies_fact(
         &ResourceFact::view_composite("cell".into(), vec![ProgramValue::pointer(pointer.clone())]),
@@ -668,7 +668,7 @@ fn candidate_composite_view_is_backed_by_a_covering_owned_composite() {
         );
         assert_eq!(
             plan.ledger.permits_memory_access(&range),
-            Err(LoanRefusal::ActiveDependency)
+            Err(BorrowRefusal::ActiveDependency)
         );
     }
     let callee = bind_program_function_arguments(
@@ -705,12 +705,12 @@ fn candidate_composite_view_over_an_uncovered_owner_is_refused() {
     );
     let (_, transfer) = plan_adapter_lend(&function);
     let error = transfer.expect_err("an owner that covers half the frontier is not backing");
-    let RuntimeError::LoanRefusal(diagnostic) = &error else {
+    let RuntimeError::BorrowRefusal(diagnostic) = &error else {
         panic!("{error}");
     };
     assert_eq!(
         diagnostic.category(),
-        crate::kernel::loans::LoanRefusalCategory::Missing
+        crate::kernel::borrows::BorrowRefusalCategory::Missing
     );
     assert_eq!(
         diagnostic.subject().resource_fact(),
@@ -743,7 +743,7 @@ fn candidate_composite_view_with_an_unestablished_fact_is_refused() {
     let (_, transfer) = plan_adapter_lend(&function);
     let error = transfer.expect_err("an unestablished body fact is refused");
     // Assembling the view is a fold, so the refusal names the instance and
-    // the body fact it could not establish rather than a missing loan.
+    // the body fact it could not establish rather than a missing borrow.
     let RuntimeError::UnestablishedAssemblyFact { assembled, .. } = &error else {
         panic!("{error}");
     };
@@ -795,7 +795,7 @@ fn candidate_composite_view_is_materialized_from_the_caller_frontier() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("the materialized lend records a loan plan");
+        .expect("the materialized lend records a borrow plan");
     let lent = MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
@@ -808,7 +808,7 @@ fn candidate_composite_view_is_materialized_from_the_caller_frontier() {
     );
     assert_eq!(
         plan.ledger.permits_memory_access(&lent),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     assert_eq!(plan.ledger.permits_memory_access(&kept), Ok(()));
     assert!(transfer.callee_resources.satisfies_fact(
@@ -976,11 +976,11 @@ fn candidate_composite_reader_can_be_called_twice() {
 fn candidate_reader_recovers_owner_for_following_write() {
     let pointer = pointer();
     let function = reader("candidate_reader_return", false);
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("caller participant");
     let caller_state = caller(&pointer)
-        .with_loan_ledger(Some(ledger))
-        .with_loan_participant(Some(participant));
+        .with_borrow_ledger(Some(ledger))
+        .with_borrow_participant(Some(participant));
     let paths = execute_program_function_call_paths(
         &caller_state,
         &function,
@@ -995,22 +995,22 @@ fn candidate_reader_recovers_owner_for_following_write() {
     let FunctionOutcome::Return { state, .. } = &paths[0].outcome else {
         panic!("candidate reader should return: {:?}", paths[0].outcome);
     };
-    assert_eq!(paths[0].loan_evidence.len(), 1);
-    let evidence_items = paths[0].loan_evidence.to_vec();
+    assert_eq!(paths[0].borrow_evidence.len(), 1);
+    let evidence_items = paths[0].borrow_evidence.to_vec();
     let evidence = &evidence_items[0];
     let caller_ledger = caller_state
-        .loan_ledger()
+        .borrow_ledger()
         .cloned()
         .expect("candidate execution publishes its caller ledger");
     evidence
         .recheck(
             &caller_ledger,
-            caller_state.loan_participant(),
+            caller_state.borrow_participant(),
             &evidence.entry.ledger,
             Some(evidence.entry.callee_participant()),
         )
         .expect("retained candidate evidence rechecks");
-    assert_eq!(state.loan_ledger(), Some(&evidence.recovered_ledger));
+    assert_eq!(state.borrow_ledger(), Some(&evidence.recovered_ledger));
     assert!(state.resources().satisfies_fact(
         &ResourceFact::own_memory(MemoryRange::new(
             pointer,
@@ -1056,13 +1056,13 @@ fn candidate_direct_reader_recovers_owner_for_following_write() {
 fn candidate_evidence_rejects_definitionally_equal_resources_with_new_identity() {
     let pointer = pointer();
     let function = reader("candidate_identity_guard", false);
-    let caller_ledger = LoanLedger::new();
+    let caller_ledger = BorrowLedger::new();
     let caller_participant = caller_ledger
         .fresh_participant()
         .expect("caller participant");
     let caller_state = caller(&pointer)
-        .with_loan_ledger(Some(caller_ledger.clone()))
-        .with_loan_participant(Some(caller_participant));
+        .with_borrow_ledger(Some(caller_ledger.clone()))
+        .with_borrow_participant(Some(caller_participant));
     let paths = execute_program_function_call_paths(
         &caller_state,
         &function,
@@ -1072,7 +1072,7 @@ fn candidate_evidence_rejects_definitionally_equal_resources_with_new_identity()
         &mut ExecutionBudget::new(),
     )
     .expect("candidate call should execute");
-    let evidence_items = paths[0].loan_evidence.to_vec();
+    let evidence_items = paths[0].borrow_evidence.to_vec();
     let evidence = &evidence_items[0];
     let different_participant = caller_ledger
         .fresh_participant()
@@ -1086,25 +1086,25 @@ fn candidate_evidence_rejects_definitionally_equal_resources_with_new_identity()
                 Some(evidence.entry.callee_participant()),
             )
             .expect_err("a different caller participant must be refused"),
-        LoanRefusal::WrongHolder
+        BorrowRefusal::WrongHolder
     );
     assert_eq!(
         evidence
             .recheck(
-                &LoanLedger::new(),
+                &BorrowLedger::new(),
                 Some(caller_participant),
                 &evidence.entry.ledger,
                 Some(evidence.entry.callee_participant()),
             )
             .expect_err("an unrelated predecessor ledger must be refused"),
-        LoanRefusal::StalePredecessor
+        BorrowRefusal::StalePredecessor
     );
 }
 
-/// Implicit local authority backs a checked loan without an owned escrow.
+/// Implicit local authority backs a checked borrow without an owned escrow.
 /// A synchronous call closes it before returning to its caller.
 #[test]
-fn candidate_local_array_view_uses_a_checked_loan_and_recovers() {
+fn candidate_local_array_view_uses_a_checked_borrow_and_recovers() {
     let pointer = pointer();
     let function = reader("candidate_local_reader", false);
     let caller = ExecutionState::new()
@@ -1124,7 +1124,7 @@ fn candidate_local_array_view_uses_a_checked_loan_and_recovers() {
     )
     .expect("candidate local view call should execute");
     assert_eq!(
-        paths[0].loan_evidence.len(),
+        paths[0].borrow_evidence.len(),
         1,
         "the local view must have a checked entry and discharge"
     );
@@ -1133,7 +1133,7 @@ fn candidate_local_array_view_uses_a_checked_loan_and_recovers() {
         [FunctionPath {
             outcome: FunctionOutcome::Return { state, .. },
             ..
-        }] if state.loan_ledger().is_none_or(|ledger| !ledger.has_active_memory_loans())
+        }] if state.borrow_ledger().is_none_or(|ledger| !ledger.has_active_memory_borrows())
     ));
 }
 
@@ -1372,7 +1372,7 @@ fn candidate_rejects_malformed_ledger_participant_pairs() {
     let function = reader("candidate_pair_mismatch", false);
     let assumptions = PureFactContext::new();
     let mut budget = ExecutionBudget::new();
-    let caller_with_ledger = caller(&pointer).with_loan_ledger(Some(LoanLedger::new()));
+    let caller_with_ledger = caller(&pointer).with_borrow_ledger(Some(BorrowLedger::new()));
     let callee = bind_program_function_arguments(
         &caller_with_ledger,
         &function,
@@ -1392,14 +1392,14 @@ fn candidate_rejects_malformed_ledger_participant_pairs() {
     .expect_err("ledger-only caller must be refused");
     assert!(matches!(
         error,
-        RuntimeError::LoanRefusal(diagnostic)
-            if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
-                && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Plan
+        RuntimeError::BorrowRefusal(diagnostic)
+            if diagnostic.category() == crate::kernel::BorrowRefusalCategory::Missing
+                && diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Plan
     ));
 
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let participant = ledger.fresh_participant().expect("participant");
-    let caller_with_participant = caller(&pointer).with_loan_participant(Some(participant));
+    let caller_with_participant = caller(&pointer).with_borrow_participant(Some(participant));
     let callee = bind_program_function_arguments(
         &caller_with_participant,
         &function,
@@ -1419,9 +1419,9 @@ fn candidate_rejects_malformed_ledger_participant_pairs() {
     .expect_err("participant-only caller must be refused");
     assert!(matches!(
         error,
-        RuntimeError::LoanRefusal(diagnostic)
-            if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
-                && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Plan
+        RuntimeError::BorrowRefusal(diagnostic)
+            if diagnostic.category() == crate::kernel::BorrowRefusalCategory::Missing
+                && diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Plan
     ));
 }
 
@@ -1447,11 +1447,11 @@ fn candidate_rejects_wrong_callee_participant_on_recovery() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("candidate transfer records a loan plan");
+        .expect("candidate transfer records a borrow plan");
     let wrong_participant = plan.caller_participant();
     let callee = callee_state_with_resource_transfer(callee, &transfer)
-        .with_loan_participant(Some(wrong_participant));
-    let missing_ledger = callee.clone().with_loan_ledger(None);
+        .with_borrow_participant(Some(wrong_participant));
+    let missing_ledger = callee.clone().with_borrow_ledger(None);
     let error = recover_candidate_stable_view_resources(
         &caller,
         &missing_ledger,
@@ -1465,9 +1465,9 @@ fn candidate_rejects_wrong_callee_participant_on_recovery() {
     .expect_err("recovery without a ledger must be refused");
     assert!(matches!(
         error,
-        RuntimeError::LoanRefusal(diagnostic)
-            if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
-                && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Recovery
+        RuntimeError::BorrowRefusal(diagnostic)
+            if diagnostic.category() == crate::kernel::BorrowRefusalCategory::Missing
+                && diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Recovery
     ));
     let error = recover_candidate_stable_view_resources(
         &caller,
@@ -1482,9 +1482,9 @@ fn candidate_rejects_wrong_callee_participant_on_recovery() {
     .expect_err("recovery must refuse the wrong callee participant");
     assert!(matches!(
         error,
-        RuntimeError::LoanRefusal(diagnostic)
-            if diagnostic.category() == crate::kernel::LoanRefusalCategory::WrongHolder
-                && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Recovery
+        RuntimeError::BorrowRefusal(diagnostic)
+            if diagnostic.category() == crate::kernel::BorrowRefusalCategory::WrongHolder
+                && diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Recovery
     ));
 }
 
@@ -1513,11 +1513,11 @@ fn candidate_joint_planner_reuses_one_escrow_for_two_aliases() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("candidate transfer records a loan plan");
+        .expect("candidate transfer records a borrow plan");
     assert_eq!(plan.stable_views().len(), 2);
     assert_eq!(
-        plan.stable_views()[0].loan,
-        plan.stable_views()[1].loan,
+        plan.stable_views()[0].borrow,
+        plan.stable_views()[1].borrow,
         "aliases share one escrow"
     );
 }
@@ -1565,15 +1565,15 @@ fn candidate_nested_reader_reborrows_and_restores_outer_view_binding() {
     let inner_plan = inner_transfer
         .stable_view_plan
         .as_ref()
-        .expect("nested transfer should use the loan plan");
+        .expect("nested transfer should use the borrow plan");
     let outer_plan = outer_transfer
         .stable_view_plan
         .as_ref()
-        .expect("outer transfer should use the loan plan");
+        .expect("outer transfer should use the borrow plan");
     assert_ne!(
-        inner_plan.stable_views()[0].loan,
-        outer_plan.stable_views()[0].loan,
-        "nested reader gets a child loan"
+        inner_plan.stable_views()[0].borrow,
+        outer_plan.stable_views()[0].borrow,
+        "nested reader gets a child borrow"
     );
     let inner_callee = callee_state_with_resource_transfer(inner_template, &inner_transfer);
     let (resources, ledger, participant, bindings, _) = recover_candidate_stable_view_resources(
@@ -1587,9 +1587,9 @@ fn candidate_nested_reader_reborrows_and_restores_outer_view_binding() {
         &[],
     )
     .expect("nested reader recovery should run");
-    assert_eq!(ledger, outer_callee.loan_ledger().cloned());
-    assert_eq!(participant, outer_callee.loan_participant());
-    assert_eq!(bindings, outer_callee.loan_view_bindings().clone());
+    assert_eq!(ledger, outer_callee.borrow_ledger().cloned());
+    assert_eq!(participant, outer_callee.borrow_participant());
+    assert_eq!(bindings, outer_callee.borrow_bindings().clone());
     assert!(resources.satisfies_fact(
         &ResourceFact::view_memory(MemoryRange::new(
             pointer,
@@ -1647,7 +1647,7 @@ fn candidate_nested_call_preserves_outer_view_for_wider_output() {
         MachineTerm::constant(0),
         MachineTerm::constant(2),
     ));
-    let (resources, ledger, participant, bindings, _loan_evidence) =
+    let (resources, ledger, participant, bindings, _borrow_evidence) =
         recover_candidate_stable_view_resources(
             &outer_callee,
             &callee_state_with_resource_transfer(inner_template, &inner_transfer),
@@ -1660,9 +1660,9 @@ fn candidate_nested_call_preserves_outer_view_for_wider_output() {
         )
         .expect("outer view should authorize the wider returned view");
     assert!(resources.satisfies_fact(&output, &PureFactContext::new()));
-    assert_eq!(ledger, outer_callee.loan_ledger().cloned());
-    assert_eq!(participant, outer_callee.loan_participant());
-    assert_eq!(bindings, outer_callee.loan_view_bindings().clone());
+    assert_eq!(ledger, outer_callee.borrow_ledger().cloned());
+    assert_eq!(participant, outer_callee.borrow_participant());
+    assert_eq!(bindings, outer_callee.borrow_bindings().clone());
 }
 
 fn assert_unbacked_output_rejected(output_start: u32, output_end: u32, name: &str) {
@@ -2033,16 +2033,16 @@ fn candidate_rejects_mutable_effect_overlapping_view() {
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::ProvenOverlap
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
             && diagnostic.subject().memory_range().is_some()
     ));
 }
 
 #[test]
-fn verified_call_checks_its_writes_against_preexisting_loans() {
+fn verified_call_checks_its_writes_against_preexisting_borrows() {
     let target = pointer();
     let parameter = crate::kernel::program_expression::variable("p");
     let segment = MemorySegment::new(
@@ -2072,13 +2072,13 @@ fn verified_call_checks_its_writes_against_preexisting_loans() {
             SymbolicMemory::local_pointer("other")
         };
         let range = MemoryRange::new(protected, 0u32.into(), 1u32.into());
-        let opening_ledger = LoanLedger::new();
+        let opening_ledger = BorrowLedger::new();
         let lender = opening_ledger.fresh_participant().unwrap();
         let reader = opening_ledger.fresh_participant().unwrap();
         let ledger = lend_summary_test_range(&opening_ledger, lender, reader, range);
         let state = caller(&target)
-            .with_loan_ledger(Some(ledger.clone()))
-            .with_loan_participant(Some(lender));
+            .with_borrow_ledger(Some(ledger.clone()))
+            .with_borrow_participant(Some(lender));
         let paths = execute_program_function_call_paths(
             &state,
             &function,
@@ -2100,7 +2100,7 @@ fn verified_call_checks_its_writes_against_preexisting_loans() {
         else {
             panic!("expected a conditional summary return");
         };
-        assert_eq!(state.loan_ledger(), Some(&ledger));
+        assert_eq!(state.borrow_ledger(), Some(&ledger));
         let [obligation] = obligations.as_slice() else {
             panic!("expected one write separation requirement");
         };
@@ -2116,11 +2116,11 @@ fn verified_call_checks_its_writes_against_preexisting_loans() {
 }
 
 fn lend_summary_test_range(
-    ledger: &LoanLedger,
-    lender: super::super::loans::LoanParticipantId,
-    reader: super::super::loans::LoanParticipantId,
+    ledger: &BorrowLedger,
+    lender: super::super::borrows::BorrowParticipantId,
+    reader: super::super::borrows::BorrowParticipantId,
     range: MemoryRange,
-) -> LoanLedger {
+) -> BorrowLedger {
     let owner = ResourceFact::own_memory(range);
     let support = ResourceContext::new()
         .unchecked_with_fact(owner.clone())
@@ -2154,10 +2154,10 @@ fn candidate_rejects_symbolic_same_base_overlapping_effect() {
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::ProvenOverlap
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
     ));
 }
 
@@ -2217,10 +2217,10 @@ fn candidate_rejects_unproved_mutable_effect_separation() {
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::SeparationUnproved
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::SeparationUnproved
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::SeparationUnproved
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::SeparationUnproved
     ));
 }
 
@@ -2386,10 +2386,10 @@ fn candidate_rejects_a_mutable_effect_overlapping_a_view_from_its_own_occurrence
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::ProvenOverlap
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
     ));
 }
 
@@ -2489,7 +2489,7 @@ fn composite_mutable_effect_paths(
 
 /// F6. The head of a composite view has no memory range, so comparing the
 /// declared effects against requirement ranges alone saw nothing here.
-/// The checked one-level frontier is what the loan protects, and an
+/// The checked one-level frontier is what the borrow protects, and an
 /// effect over one of its pieces is a proven overlap.
 #[test]
 fn candidate_rejects_mutable_effect_overlapping_a_composite_view_piece() {
@@ -2497,10 +2497,10 @@ fn candidate_rejects_mutable_effect_overlapping_a_composite_view_piece() {
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::ProvenOverlap
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
             && diagnostic.subject().memory_range().is_some()
     ));
 }
@@ -2542,10 +2542,10 @@ fn candidate_rejects_mutable_effect_overlapping_a_local_view() {
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::ProvenOverlap
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
     ));
 }
 
@@ -2572,7 +2572,7 @@ fn candidate_nested_reader_rejects_stale_outer_binding() {
     .expect("outer transfer should run")
     .expect("outer transfer should be accepted");
     let outer_callee = callee_state_with_resource_transfer(outer_template, &outer_transfer)
-        .with_loan_view_bindings(LoanViewBindings::default());
+        .with_borrow_bindings(BorrowBindings::default());
     let inner_template = bind_program_function_arguments(
         &outer_callee,
         &function,
@@ -2591,9 +2591,9 @@ fn candidate_nested_reader_rejects_stale_outer_binding() {
     .expect("stale binding check should run");
     assert!(matches!(
         result,
-        Err(RuntimeError::LoanRefusal(diagnostic))
-            if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
-                && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Plan
+        Err(RuntimeError::BorrowRefusal(diagnostic))
+            if diagnostic.category() == crate::kernel::BorrowRefusalCategory::Missing
+                && diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Plan
     ));
 }
 
@@ -2630,7 +2630,7 @@ fn candidate_early_return_closes_call_scope() {
 
 #[test]
 fn candidate_wrong_scope_close_is_refused() {
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner participant");
     let reader = ledger.fresh_participant().expect("reader participant");
     let escrow = ResourceFact::own(Resource::Token {
@@ -2644,18 +2644,18 @@ fn candidate_wrong_scope_close_is_refused() {
         .0;
     let opening = ledger
         .lend(owner, reader, support, escrow)
-        .expect("loan opening");
-    let ledger = ledger.apply(&opening.transition).expect("loan apply");
+        .expect("borrow opening");
+    let ledger = ledger.apply(&opening.transition).expect("borrow apply");
     let refusal = ledger
         .end(opening.scope, reader)
         .expect_err("a non-owner cannot close the scope");
     assert_eq!(
         refusal
-            .diagnostic(crate::kernel::LoanRefusalOperation::Transition)
+            .diagnostic(crate::kernel::BorrowRefusalOperation::Transition)
             .category(),
-        crate::kernel::LoanRefusalCategory::WrongHolder
+        crate::kernel::BorrowRefusalCategory::WrongHolder
     );
-    let wrong_scope = super::super::loans::LoanScopeId::for_test(
+    let wrong_scope = super::super::borrows::BorrowScopeId::for_test(
         opening.scope.arena_for_test(),
         opening.scope.ordinal_for_test().saturating_add(1),
     );
@@ -2664,9 +2664,9 @@ fn candidate_wrong_scope_close_is_refused() {
         .expect_err("an unknown scope cannot be closed");
     assert_eq!(
         refusal
-            .diagnostic(crate::kernel::LoanRefusalOperation::Transition)
+            .diagnostic(crate::kernel::BorrowRefusalOperation::Transition)
             .category(),
-        crate::kernel::LoanRefusalCategory::WrongScope
+        crate::kernel::BorrowRefusalCategory::WrongScope
     );
 }
 
@@ -2747,7 +2747,7 @@ fn token_population_unit(population: &str, pointer: &Address) -> ResourceFact {
 
 /// The planner's exclusive reservation has no "N units out of a
 /// population whose count is at least N" step, and a token population
-/// protects no memory, so nothing about the loan ledger could supply one.
+/// protects no memory, so nothing about the borrow ledger could supply one.
 /// Such a requirement is planned beside a view the same call lends.
 #[test]
 fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
@@ -2779,7 +2779,7 @@ fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
     let plan = transfer
         .stable_view_plan
         .as_ref()
-        .expect("the view clause still records a loan plan");
+        .expect("the view clause still records a borrow plan");
     assert_eq!(plan.stable_views().len(), 1);
     let viewed = MemoryRange::new(
         pointer.clone(),
@@ -2788,7 +2788,7 @@ fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
     );
     assert_eq!(
         plan.ledger.permits_memory_access(&viewed),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     assert!(
         transfer
@@ -2798,12 +2798,12 @@ fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
 }
 
 /// Both execution judgments step a sequence with one driver. A sequence
-/// whose first statement leaves abnormally carries that statement's loan
+/// whose first statement leaves abnormally carries that statement's borrow
 /// evidence out with it under either judgment; the concrete driver once
 /// rebuilt the path without it. Here a lending call runs first, so the
 /// evidence is what leaves.
 #[test]
-fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
+fn an_abnormal_sequence_exit_keeps_its_borrow_evidence_under_both_judgments() {
     let pointer = pointer();
     let function = reader("sequence_exit_reader", false);
     let call = program_call(
@@ -2838,11 +2838,11 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
                 crate::kernel::program_expression::int32_literal(2),
             ),
         );
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let participant = ledger.fresh_participant().expect("caller participant");
         let state = caller(&pointer)
-            .with_loan_ledger(Some(ledger))
-            .with_loan_participant(Some(participant));
+            .with_borrow_ledger(Some(ledger))
+            .with_borrow_participant(Some(participant));
         let environment = environment(&function).with_function(function.clone());
         let executes = crate::kernel::eval::execute_execution_statement_paths(
             &state,
@@ -2868,7 +2868,7 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
             "{name}: the sequence leaves abnormally"
         );
         assert_eq!(
-            executes[0].loan_evidence.len(),
+            executes[0].borrow_evidence.len(),
             1,
             "{name}: the concrete path keeps the call's evidence"
         );
@@ -2876,7 +2876,7 @@ fn an_abnormal_sequence_exit_keeps_its_loan_evidence_under_both_judgments() {
             verifies
                 .iter()
                 .any(|path| path.outcome == executes[0].outcome
-                    && path.loan_evidence.len() == executes[0].loan_evidence.len()),
+                    && path.borrow_evidence.len() == executes[0].borrow_evidence.len()),
             "{name}: the concrete path is a verification path carrying its evidence"
         );
     }
@@ -3110,15 +3110,12 @@ fn returned_hold_installation_uses_the_selected_owner_and_preserves_other_occurr
     let binding = holds[1].binding.clone();
     let first = holds[0].occurrence;
     let second = holds[1].occurrence;
-    let (branch, bindings) = install_returned_view_hold(
-        parent.clone(),
-        LoanViewBindings::default(),
-        holds[1].clone(),
-    )
-    .unwrap();
-    assert!(parent.loan_dependency(second).is_none());
-    assert!(branch.loan_dependency(first).is_none());
-    assert_eq!(branch.loan_dependency(second), Some(&binding));
+    let (branch, bindings) =
+        install_returned_view_hold(parent.clone(), BorrowBindings::default(), holds[1].clone())
+            .unwrap();
+    assert!(parent.borrow_dependency(second).is_none());
+    assert!(branch.borrow_dependency(first).is_none());
+    assert_eq!(branch.borrow_dependency(second), Some(&binding));
     assert_eq!(bindings.get(&second), Some(&binding));
 }
 
@@ -3129,7 +3126,7 @@ fn returning_multiple_owners_from_one_input_hold_constructs_distinct_holds() {
     let original = holds[0].binding.clone();
     let facts = PureFactContext::new();
     let callee = ledger.fresh_participant().unwrap();
-    let plan = crate::kernel::loans::plan_stable_view_transfer(
+    let plan = crate::kernel::borrows::plan_stable_view_transfer(
         &ResourceContext::new(),
         &[],
         &facts,
@@ -3149,7 +3146,7 @@ fn returning_multiple_owners_from_one_input_hold_constructs_distinct_holds() {
         .into_iter()
         .map(|(head, occurrence)| (occurrence, (head, original.clone())))
         .collect::<BTreeMap<_, _>>();
-    retain_rebound_composite_holds(&mut recovery, &mut rebound, caller).unwrap();
+    retain_rebound_composite_holds(&mut recovery, &mut rebound, BTreeSet::new(), caller).unwrap();
     let bindings = rebound
         .values()
         .map(|(_, binding)| binding)
@@ -3162,7 +3159,7 @@ fn returning_multiple_owners_from_one_input_hold_constructs_distinct_holds() {
         .unwrap();
     assert_eq!(
         first.end(original.scope, caller),
-        Err(LoanRefusal::ActiveDependency)
+        Err(BorrowRefusal::ActiveDependency)
     );
     let both = first.release(bindings[1].hold.unwrap(), caller).unwrap();
     assert!(both.end(original.scope, caller).is_ok());

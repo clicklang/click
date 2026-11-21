@@ -955,9 +955,9 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
         instance_field_scope: walk_resource_context(&state.instance_field_scope, s),
         body_field_view: state.body_field_view.clone(),
         resources: walk_resource_context(&state.resources, s),
-        loan_ledger: state.loan_ledger.clone(),
-        loan_participant: state.loan_participant,
-        loan_view_bindings: state.loan_view_bindings.clone(),
+        borrow_ledger: state.borrow_ledger.clone(),
+        borrow_participant: state.borrow_participant,
+        borrow_bindings: state.borrow_bindings.clone(),
         thread_ledger: state.thread_ledger.clone(),
         mutex_ledger: state.mutex_ledger.clone(),
         mutex_input_reservations: state.mutex_input_reservations.clone(),
@@ -1363,6 +1363,10 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             }))
         }
         Proposition::Equal(left, right) => Proposition::Equal(s.term(left), s.term(right)),
+        Proposition::SequenceMembership { element, sequence } => Proposition::SequenceMembership {
+            element: s.stored_program_value(element.value()).into(),
+            sequence: walk_sequence(sequence, s),
+        },
         Proposition::ConditionIs(condition, value) => {
             Proposition::condition_is(s.stored_condition(condition), *value)
         }
@@ -1888,12 +1892,14 @@ mod resource_frame_substitution_tests {
             .try_compose_with_fact(live.clone(), &PureFactContext::new())
             .unwrap();
         let support = resources.unique_owned_occurrence_for_fact(&live).unwrap().0;
-        let ledger = crate::kernel::loans::LoanLedger::new();
+        let ledger = crate::kernel::borrows::BorrowLedger::new();
         let participant = ledger.fresh_participant().unwrap();
-        let (ledger, loan) = ledger
+        let (ledger, borrow) = ledger
             .lend_mutex_use(participant, participant, support, live)
             .unwrap();
-        let fact = ledger.mutex_use_resource(loan.usage, participant).unwrap();
+        let fact = ledger
+            .mutex_use_resource(borrow.usage, participant)
+            .unwrap();
         let resource = fact.resource();
         assert_eq!(
             substitute_pointer_variable_in_resource(
@@ -1941,13 +1947,13 @@ mod resource_frame_substitution_tests {
     }
 
     #[test]
-    fn state_substitutions_preserve_the_exact_loan_ledger_root() {
-        let ledger = crate::kernel::loans::LoanLedger::new();
+    fn state_substitutions_preserve_the_exact_borrow_ledger_root() {
+        let ledger = crate::kernel::borrows::BorrowLedger::new();
         let participant = ledger.fresh_participant().expect("participant identity");
         let state = ExecutionState::new()
             .with_local("x", int32(MachineTerm::Variable(Variable(71_100))))
-            .with_loan_ledger(Some(ledger))
-            .with_loan_participant(Some(participant));
+            .with_borrow_ledger(Some(ledger))
+            .with_borrow_participant(Some(participant));
         let bitvector_substituted = substitute_bitvector_variable_in_execution_state(
             &state,
             Variable(71_100),
@@ -1959,23 +1965,26 @@ mod resource_frame_substitution_tests {
             &Address::symbolic(Variable(71_101)),
         );
 
-        let original = state.loan_ledger().expect("state has ledger");
+        let original = state.borrow_ledger().expect("state has ledger");
         assert!(
             original.shares_storage_with(
                 bitvector_substituted
-                    .loan_ledger()
+                    .borrow_ledger()
                     .expect("bitvector substitution has ledger")
             )
         );
         assert!(
             original.shares_storage_with(
                 pointer_substituted
-                    .loan_ledger()
+                    .borrow_ledger()
                     .expect("pointer substitution has ledger")
             )
         );
-        assert_eq!(bitvector_substituted.loan_participant(), Some(participant));
-        assert_eq!(pointer_substituted.loan_participant(), Some(participant));
+        assert_eq!(
+            bitvector_substituted.borrow_participant(),
+            Some(participant)
+        );
+        assert_eq!(pointer_substituted.borrow_participant(), Some(participant));
     }
 
     fn inherited_check(range: MemoryRange) -> LoopEffectCheck {
@@ -2242,7 +2251,7 @@ pub(crate) fn substitute_algebraic_variable_in_proposition(
     }
 
     match proposition {
-        Proposition::VolatileAccess(_) => {
+        Proposition::VolatileAccess(_) | Proposition::SequenceMembership { .. } => {
             let source = AlgebraicTerm {
                 algebraic_type: to.algebraic_type.clone(),
                 node: AlgebraicTermNode::Variable(from),
@@ -2477,6 +2486,10 @@ fn collect_proposition_bound_variables_one(
         Proposition::Equal(left, right) => {
             collect_term_bound_variables(left, variables);
             collect_term_bound_variables(right, variables);
+        }
+        Proposition::SequenceMembership { element, sequence } => {
+            collect_expression_value_bound_variables(element.value(), variables);
+            collect_sequence_bound_variables(sequence, variables);
         }
         Proposition::ConditionIs(condition, _) => {
             collect_condition_bound_variables(condition.native_compat(), variables);
@@ -3624,7 +3637,11 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
             pointer,
         } => {
             collect_algebraic_value_bound_variables(
-                &AlgebraicTermNode::memory_load_carrier_value(memory.shared_memory(), pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(
+                    memory,
+                    pointer,
+                    &term.algebraic_type,
+                ),
                 variables,
             );
         }
@@ -3809,14 +3826,23 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
                 algebraic_type: term.native_compat().algebraic_type.clone(),
                 node: match &term.native_compat().node {
                     AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
+                    AlgebraicTermNode::MemoryLoad { point, pointer } if point.is_entry_read() => {
+                        AlgebraicTermNode::MemoryLoad {
+                            point: point.clone(),
+                            pointer: Box::new(substitute_bitvector_variable_in_pointer(
+                                pointer, from, to,
+                            )),
+                        }
+                    }
                     AlgebraicTermNode::MemoryLoad {
                         point: memory,
                         pointer,
                     } => {
                         match substitute_bitvector_variable_in_algebraic_value(
                             &AlgebraicTermNode::memory_load_carrier_value(
-                                memory.shared_memory(),
+                                memory,
                                 pointer,
+                                &term.native_compat().algebraic_type,
                             ),
                             from,
                             to,
@@ -4186,6 +4212,9 @@ fn validate_integer_pure_proposition(
         {
             validate_integer_atomic_proposition(proposition, collector)
         }
+        Proposition::SequenceMembership { .. } => {
+            validate_integer_atomic_proposition(proposition, collector)
+        }
         Proposition::ConditionIs(condition, _) => {
             validate_integer_pure_condition(condition.native_compat(), collector)
         }
@@ -4410,6 +4439,12 @@ fn substitute_pure_proposition_with_walker(
                         if integer_atomic_term_supported(left)
                             && integer_atomic_term_supported(right) =>
                     {
+                        rewritten.push(rewrite_integer_atomic_proposition_with_walker(
+                            proposition,
+                            walker,
+                        )?);
+                    }
+                    Proposition::SequenceMembership { .. } => {
                         rewritten.push(rewrite_integer_atomic_proposition_with_walker(
                             proposition,
                             walker,
@@ -4760,7 +4795,7 @@ fn substitute_integer_pure_term_with_walker(
 }
 
 fn integer_atomic_term_supported(term: &Term) -> bool {
-    matches!(term, Term::Sequence(sequence) if matches!(sequence.element_type, Some(ProgramType::Int32) | None))
+    matches!(term, Term::Sequence(sequence) if sequence.element_type.is_none_or(crate::kernel::spec::retained_sequence_element_type))
         || matches!(
             term,
             Term::Integer(_)
@@ -6952,12 +6987,22 @@ fn substitute_pointer_variable_in_algebraic_term_node(
 ) -> AlgebraicTermNode {
     match &term.node {
         AlgebraicTermNode::Variable(variable) => AlgebraicTermNode::Variable(*variable),
+        AlgebraicTermNode::MemoryLoad { point, pointer } if point.is_entry_read() => {
+            AlgebraicTermNode::MemoryLoad {
+                point: point.clone(),
+                pointer: Box::new(substitute_pointer_variable_in_pointer(pointer, from, to)),
+            }
+        }
         AlgebraicTermNode::MemoryLoad {
             point: memory,
             pointer,
         } => {
             match substitute_pointer_variable_in_algebraic_value(
-                &AlgebraicTermNode::memory_load_carrier_value(memory.shared_memory(), pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(
+                    memory,
+                    pointer,
+                    &term.algebraic_type,
+                ),
                 from,
                 to,
             ) {

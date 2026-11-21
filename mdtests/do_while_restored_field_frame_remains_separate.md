@@ -1,4 +1,8 @@
 # A reconstructed field at a nonzero offset stays separate from the caller frame
+The path resource keeps the saved pointer as an argument. Opening the
+restored frame establishes that its node is the one the C local `q`
+still names.
+
 ```c filename=walk.c
 struct Node { int padding; struct Node *next; };
 void walk(struct Node *p, int *marker) {
@@ -24,13 +28,14 @@ resource list(p: struct Node*) {
         },
     }
 }
-resource path(p: struct Node*) {
+resource path(p: struct Node*, saved: struct Node*) {
     field model: Path;
     match model {
         Path::Top => { },
         Path::Step(identity, before) => {
             owns identity->next;
-            owns up: path(identity);
+            owns up: path(identity, saved);
+            fact identity == saved;
             fact identity != 0;
             fact identity->next == p;
             fact up.model == before;
@@ -45,10 +50,10 @@ void walk(struct Node* p, int32* marker) {
     ensures marker[0] == 9;
 } by {
     step(); step();
-    let c = fold(path(p), { model: Path::Top });
+    let c = fold(path(p, q), { model: Path::Top });
     loop {
         owns t: list(p);
-        owns c: path(p);
+        owns c: path(p, q);
         decreases t;
         invariant p != 0;
         invariant p == q;
@@ -58,7 +63,7 @@ void walk(struct Node* p, int32* marker) {
                 Chain::Empty => { unfold(t); contradiction(p == 0); },
                 Chain::Node(identity, rest) => {
                     let { tail: next } = unfold(t);
-                    let frame = fold(path(p->next), { model: Path::Step(identity, c.model), up: c });
+                    let frame = fold(path(p->next, q), { model: Path::Step(identity, c.model), up: c });
                     step();
                     step();
                 },

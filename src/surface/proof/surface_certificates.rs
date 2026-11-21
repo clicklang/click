@@ -3,7 +3,6 @@ use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::planning::solve::plan_context_free_closer;
-use crate::surface::planning::solve::plan_explicit_equality_rewrites_from;
 
 pub(super) fn surface_logical_children(
     goal: &ClickProposition,
@@ -738,7 +737,7 @@ pub(super) fn plan_explicit_named_signed_rule(
         .or_else(|| plan_explicit_nonnegative_add_within_max_is_defined(goal, premise_pairs))
         .or_else(|| plan_explicit_nonnegative_subtract_within_value_is_defined(goal, premise_pairs))
         .or_else(|| plan_explicit_positive_predecessor_is_nonnegative(goal, premise_pairs))
-        .or_else(|| plan_explicit_predecessor_upper_bound(goal, premise_pairs, false))
+        .or_else(|| plan_explicit_predecessor_upper_bound(goal, premise_pairs))
         .or_else(|| plan_explicit_one_le_predecessor(goal, premise_pairs))
         .or_else(|| plan_explicit_positive_predecessor_strictly_decreases(goal, premise_pairs))
         .or_else(|| plan_explicit_le_and_neq_implies_lt(goal, premise_pairs))
@@ -4386,94 +4385,47 @@ pub(super) fn plan_explicit_positive_predecessor_is_nonnegative(
     None
 }
 
-/// From `0 <= value` and `value <= bound`, the predecessor keeps the bound:
-/// `value - 1 <= bound` by Integer arithmetic over the two.
-/// When the nonnegativity leg is not itself a selected premise and
-/// `synthesize_missing_leg` is set, a nested `have` derives it from the same
-/// premises with the explicit equality-rewrite search (closing by a listed
-/// premise or context-free normalization), so the emitted certificate still
-/// names every dependency. Only outcome contexts pass `synthesize_missing_leg`:
-/// a pure theorem proof has no `have`, so its planner must not emit one.
+/// Apply the predecessor bound to the exact value and endpoint named in the
+/// selected comparisons, including a loop-entry endpoint.
 pub(super) fn plan_explicit_predecessor_upper_bound(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
-    synthesize_missing_leg: bool,
 ) -> Option<Vec<ProofTactic>> {
-    let (predecessor, goal_upper) = goal_exact_less_equal_parts(goal)?;
+    let observed = goal
+        .condition_native()
+        .and_then(|(condition, truth)| {
+            crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(
+                condition, *truth,
+            )
+        })
+        .map(|(condition, truth)| Proposition::condition_is(condition, truth));
+    let (predecessor, goal_upper) = goal_exact_less_equal_parts(observed.as_ref().unwrap_or(goal))?;
     let binary_term!(Int32, Subtract, value, amount) = predecessor else {
         return None;
     };
     if amount.as_ref() != &MachineTerm::constant(1) {
         return None;
     }
-    for (bound_kernel, bound_surface) in premise_pairs {
-        let Some((premise_value, premise_bound)) = signed_nonstrict_parts(bound_kernel) else {
-            continue;
-        };
-        if premise_value != value.as_ref() || premise_bound != goal_upper {
-            continue;
-        }
-        let Some((surface_value, _)) = surface_nonstrict_parts(bound_surface) else {
-            continue;
-        };
-        let nonnegative_kernel = Proposition::condition_is(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::constant(0)),
-                right: value.clone(),
+    let (_, nonnegative) = premise_pairs.iter().find(|(kernel, _)| {
+        signed_nonstrict_parts(kernel).is_some_and(|(lower, bounded)| {
+            lower == &MachineTerm::constant(0) && bounded == value.as_ref()
+        })
+    })?;
+    let (_, surface) = premise_pairs.iter().find(|(kernel, _)| {
+        signed_nonstrict_parts(kernel)
+            .is_some_and(|(bounded, upper)| bounded == value.as_ref() && upper == goal_upper)
+    })?;
+    let (value, upper) = surface_nonstrict_parts(surface)?;
+    Some(vec![
+        ProofTactic::ApplyTheoremUsing {
+            application: TheoremApplication {
+                name: "click::integer::int32_nonnegative_predecessor_upper_bound".into(),
+                arguments: vec![value, upper],
             },
-            true,
-        );
-        let mut tactics = Vec::new();
-        let nonnegative_surface = if let Some((_, surface)) =
-            premise_pairs.iter().find(|(kernel, _)| {
-                signed_nonstrict_parts(kernel).is_some_and(|(lower, bounded)| {
-                    lower == &MachineTerm::constant(0) && bounded == value.as_ref()
-                })
-            }) {
-            surface.clone()
-        } else {
-            if !synthesize_missing_leg {
-                continue;
-            }
-            let kernel_premises = premise_pairs
-                .iter()
-                .map(|(kernel, _)| kernel.clone())
-                .collect::<Vec<_>>();
-            let Some(sub_tactics) = plan_explicit_equality_rewrites_from(
-                &nonnegative_kernel,
-                premise_pairs,
-                &kernel_premises,
-                &|current| {
-                    kernel_premises
-                        .iter()
-                        .any(|fact| fact == current || condition_polarity_equivalent(fact, current))
-                },
-                &|_| None,
-            ) else {
-                continue;
-            };
-            let surface_zero =
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));
-            let nonnegative = ClickProposition::Comparison {
-                left: surface_zero,
-                operator: ComparisonOperator::LessEqual,
-                right: surface_value.clone(),
-            };
-            tactics.push(ProofTactic::Have(ProofHave {
-                proposition: nonnegative.clone(),
-                proof: SourceProof::Script(sub_tactics),
-            }));
-            nonnegative
-        };
-        tactics.push(ProofTactic::ArithmeticUsing(vec![
-            nonnegative_surface,
-            bound_surface.clone(),
-        ]));
-        return Some(tactics);
-    }
-    None
+            premises: vec![nonnegative.clone(), surface.clone()],
+        },
+        ProofTactic::Known,
+    ])
 }
 
 pub(super) fn plan_explicit_one_le_predecessor(
@@ -4585,7 +4537,7 @@ pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
@@ -4595,48 +4547,29 @@ pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
     else {
         return None;
     };
-    for (le_kernel, le_surface) in premise_pairs {
-        let Some((le_left, le_right)) = signed_nonstrict_parts(le_kernel) else {
-            continue;
-        };
-        if le_left != left.as_ref() || le_right != right.as_ref() {
-            continue;
-        }
-        for (not_lt_kernel, not_lt_surface) in premise_pairs {
-            let matches_not_lt = match not_lt_kernel {
-                condition_source_0 @ Proposition::ConditionIs(_, false)
-                    if let Some((
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessThan,
-                            left: not_left,
-                            right: not_right,
-                        },
-                        _,
-                    )) = condition_source_0.condition_native() =>
-                {
-                    not_left.as_ref() == left.as_ref() && not_right.as_ref() == right.as_ref()
-                }
-                Proposition::Not(body) => {
-                    matches!(&body.as_ref(), condition_source_0 @ Proposition::ConditionIs(
-                        _,
-                        true,
-                    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: not_left, right: not_right }, _)) if (not_left.as_ref() == left.as_ref()
-                        && not_right.as_ref() == right.as_ref())))
-                }
-                _ => false,
-            };
-            if !matches_not_lt {
-                continue;
-            }
-            surface_nonstrict_parts(le_surface)?;
-            return Some(vec![ProofTactic::ArithmeticUsing(vec![
-                le_surface.clone(),
-                not_lt_surface.clone(),
-            ])]);
-        }
+    let (_, bound) = premise_pairs.iter().find(|(kernel, _)| {
+        signed_nonstrict_parts(kernel)
+            .is_some_and(|(a, b)| a == left.as_ref() && b == right.as_ref())
+    })?;
+    let (_, failed_guard) = premise_pairs.iter().find(|(kernel, _)| {
+        negated_signed_order_parts(kernel)
+            .is_some_and(|(a, b, strict)| strict && a == left.as_ref() && b == right.as_ref())
+    })?;
+    let (left, right) = surface_nonstrict_parts(bound)?;
+    let premises = vec![bound.clone(), failed_guard.clone()];
+    if *format == MachineIntegerType::UInt32 {
+        return Some(vec![ProofTactic::ArithmeticUsing(premises)]);
     }
-    None
+    Some(vec![
+        ProofTactic::ApplyTheoremUsing {
+            application: TheoremApplication {
+                name: "click::integer::int32_less_equal_and_not_less_than_implies_equal".into(),
+                arguments: vec![left, right],
+            },
+            premises,
+        },
+        ProofTactic::Known,
+    ])
 }
 
 /// Plans the small proof that commonly finishes a pointer/index loop:

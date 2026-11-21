@@ -854,31 +854,38 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
         base: "local:callee-write".into(),
         offset: AddressOffset::Constant(0),
     };
+    let other = Address {
+        base: "local:other-callee-write".into(),
+        offset: AddressOffset::Constant(0),
+    };
     let argument = ProgramValue::typed_pointer(array.clone(), ProgramType::Int32Pointer);
     let entry = ExecutionState::new().begin_function_entry_memory();
     let expected = array_ref_argument_point(&entry.program_point(), &argument);
     assert_eq!(expected.read_version_id(), entry.observation_point_id());
-    let declared = entry
-        .clone()
-        .with_memory(entry.memory().clone().with_block(local.base.clone(), 4));
-    let assumptions = PureFactContext::new();
-    let call = |state: &ExecutionState, changed: Address, index| {
-        state
+    let declared = entry.clone().with_memory(
+        entry
+            .memory()
             .clone()
-            .with_memory(state.memory().clone().with_call_memory_havoc(
-                Variable(index),
-                &[MemoryRange::new(changed, 0.into(), 1.into())],
-                &assumptions,
-                None,
-            ))
+            .with_block(local.base.clone(), 4)
+            .with_block(other.base.clone(), 4),
+    );
+    let assumptions = PureFactContext::new();
+    let call = |state: &ExecutionState, changed: &Address, index| {
+        state.memory().clone().with_call_memory_havoc(
+            Variable(index),
+            &[
+                MemoryRange::new(local.clone(), 0.into(), 1.into()),
+                MemoryRange::new(changed.clone(), 0.into(), 1.into()),
+            ],
+            &assumptions,
+            None,
+        )
     };
     let work = [1, 8, 64].map(|count| {
         let mut state = declared.clone();
         for index in 0..count {
-            state = call(&state, local.clone(), 1011300 + index);
-            state = state
-                .clone()
-                .with_memory(state.memory().clone().store(local.clone(), int32(2)));
+            let effects = call(&state, &other, 1011300 + index).store(local.clone(), int32(2));
+            state = state.with_memory(effects);
         }
         let current = state.program_point();
         assert!(
@@ -894,27 +901,186 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
     });
     assert!(work.iter().all(|units| *units == work[0]), "{work:?}");
 
-    let can_write = call(&declared, array.clone(), 1011400);
+    let can_write = declared
+        .clone()
+        .with_memory(call(&declared, &array, 1011400));
     let wrote = declared
         .clone()
         .with_memory(declared.memory().clone().store(array, int32(9)));
-    let symbolic = call(&declared, Address::symbolic(Variable(1011401)), 1011402);
-    for changed in [can_write, wrote, symbolic] {
+    let symbolic = declared.clone().with_memory(call(
+        &declared,
+        &Address::symbolic(Variable(1011401)),
+        1011402,
+    ));
+    for changed in [can_write, symbolic] {
         let point = changed.program_point();
         assert!(
             point
-                .entry_array_version(&AddressBase::ExternalArgument)
+                .indexed_array_version(&AddressBase::ExternalArgument)
                 .is_none()
         );
         assert_ne!(array_ref_argument_point(&point, &argument), expected);
-        let later = call(&changed, local.clone(), 1011403);
+        let later = changed.clone().with_memory(call(&changed, &other, 1011403));
         assert!(
             later
                 .program_point()
-                .entry_array_version(&AddressBase::ExternalArgument)
+                .indexed_array_version(&AddressBase::ExternalArgument)
                 .is_none()
         );
     }
+
+    let after_write = array_ref_argument_point(&wrote.program_point(), &argument);
+    assert_eq!(after_write.read_version_id(), wrote.observation_point_id());
+    assert_ne!(after_write, expected);
+    let work = [1, 8, 64, 256].map(|count| {
+        let mut state = wrote.clone();
+        for index in 0..count {
+            let effects = call(&state, &other, 1011500 + index).store(local.clone(), int32(3));
+            state = state.with_memory(effects);
+        }
+        let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            array_ref_argument_point(&state.program_point(), &argument)
+        });
+        assert_eq!(selected, after_write);
+        work
+    });
+    assert!(work.iter().all(|units| *units == work[0]), "{work:?}");
+}
+
+#[test]
+fn static_array_versions_select_their_own_write_across_disjoint_calls() {
+    let _session = VerificationSession::enter();
+    let g = SymbolicMemory::global_pointer("g");
+    let h = SymbolicMemory::global_pointer("h");
+    let pointer = |address| ProgramValue::typed_pointer(address, ProgramType::Int32Pointer);
+    let g_argument = pointer(g.clone());
+    let h_argument = pointer(h.clone());
+    let entry = ExecutionState::new()
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block(g.base.clone(), 4)
+                .with_block(h.base.clone(), 4),
+        )
+        .begin_function_entry_memory();
+    let version =
+        |state: &ExecutionState, pointer| array_ref_argument_point(&state.program_point(), pointer);
+    let entry_h = version(&entry, &h_argument);
+    assert_eq!(entry_h.read_version_id(), entry.observation_point_id());
+    let written = entry
+        .clone()
+        .with_memory(entry.memory().clone().store(h.clone(), int32(7)));
+    let written_h = version(&written, &h_argument);
+    assert_eq!(written_h.read_version_id(), written.observation_point_id());
+    assert_ne!(written_h, entry_h);
+    assert_eq!(version(&written, &g_argument), version(&entry, &g_argument));
+
+    let assumptions = PureFactContext::new();
+    let call = |state: &ExecutionState, address: &Address, id| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().with_call_memory_havoc(
+                Variable(id),
+                &[MemoryRange::new(address.clone(), 0.into(), 1.into())],
+                &assumptions,
+                None,
+            ))
+    };
+    let work = [1, 8, 64, 256].map(|count| {
+        let mut state = written.clone();
+        for index in 0..count {
+            state = call(&state, &g, 1013000 + index);
+        }
+        let (selected, work) =
+            crate::instrumentation::measure_deterministic_work(|| version(&state, &h_argument));
+        assert_eq!(selected, written_h);
+        assert_eq!(
+            version(&state, &g_argument).read_version_id(),
+            state.observation_point_id()
+        );
+        work
+    });
+    assert!(work.iter().all(|units| *units <= work[0] + 4), "{work:?}");
+
+    let unknown = call(&written, &Address::symbolic(Variable(1013500)), 1013501);
+    assert!(
+        unknown
+            .program_point()
+            .indexed_array_version(&h.base)
+            .is_none()
+    );
+}
+
+#[test]
+fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
+    let _session = VerificationSession::enter();
+    let array = SymbolicMemory::local_pointer("array");
+    let other = SymbolicMemory::local_pointer("other");
+    let argument = ProgramValue::typed_pointer(array.clone(), ProgramType::Int32Pointer);
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let declared = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_block(array.base.clone(), 4)
+            .with_block(other.base.clone(), 4),
+    );
+    let assumptions = PureFactContext::new();
+    let call = |state: &ExecutionState, address: &Address, id| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().with_call_memory_havoc(
+                Variable(id),
+                &[MemoryRange::new(address.clone(), 0.into(), 1.into())],
+                &assumptions,
+                None,
+            ))
+    };
+    let version =
+        |state: &ExecutionState| array_ref_argument_point(&state.program_point(), &argument);
+    let write = |state: &ExecutionState| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().store(array.clone(), int32(7)))
+    };
+    let unknown = call(&declared, &Address::symbolic(Variable(1013600)), 1013601);
+    assert!(
+        unknown
+            .program_point()
+            .indexed_array_version(&array.base)
+            .is_none()
+    );
+
+    let first = write(&unknown);
+    let expected = version(&first);
+    assert_eq!(expected.read_version_id(), first.observation_point_id());
+    let second = write(&first);
+    assert_eq!(first.memory(), second.memory());
+    assert_ne!(expected, version(&second));
+    let ended = second.clone().with_memory(
+        second
+            .memory()
+            .clone()
+            .store(array.clone(), int32(8))
+            .without_local_block(&array.base),
+    );
+    assert!(
+        ended
+            .program_point()
+            .indexed_array_version(&array.base)
+            .is_none()
+    );
+
+    let work = [1, 8, 64, 256].map(|count| {
+        let mut state = first.clone();
+        for index in 0..count {
+            state = call(&state, &other, 1013700 + index);
+        }
+        let (observed, work) =
+            crate::instrumentation::measure_deterministic_work(|| version(&state));
+        assert_eq!(observed, expected);
+        work
+    });
+    assert!(work.iter().all(|units| *units <= work[0] + 4), "{work:?}");
 }
 
 #[test]

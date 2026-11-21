@@ -363,9 +363,10 @@ range can justify coverage once you name the source with `from`. An output
 with zero or multiple direct matches requires that explicit source.
 
 In a caller's proof, `release_view(*p);` gives up the exact held memory view
-when `p` points to that cell. The last hold releases the borrow and restores
-any ownership the caller lent. A borrowed input of the caller still has its
-own lifetime. Releasing the view is a proof step with no C operation.
+when `p` points to that cell. Other views sharing its hold remain usable.
+The hold ends when its last view is gone. Once all holds end, the borrow can
+restore the ownership the caller lent. A borrowed input of the caller still
+has its own lifetime. Releasing the view is a proof step with no C operation.
 
 ## Abstract resources
 
@@ -606,7 +607,7 @@ int32 update(int32* pool, int32* p) {
 }
 ```
 
-`open(slot(pool, p)) { ... }` exposes that member's memory and requires the
+`with(slot(pool, p)) { ... }` exposes that member's memory and requires the
 same body to be restored on close. Neither step changes membership. The
 helper needs the member, while its caller can retain authority and other
 members. Two members can own disjoint cells of the same allocation, and
@@ -746,8 +747,8 @@ that cell. Ordinary helpers express these transfers with `consumes` and
 `produces`, including nested calls. Their count changes concern the outer
 member only.
 
-`open(slot(pool, p))` temporarily exposes the cell. Inside that block,
-`open(cell(pool, p))` exposes its memory for C access. Both scopes must restore
+`with(slot(pool, p))` temporarily exposes the cell. Inside that block,
+`with(cell(pool, p))` exposes its memory for C access. Both scopes must restore
 their owned contents, and neither requires population authority. Missing or
 mismatched children cannot establish the outer member; its child cannot also
 be returned as independent ownership while retained inside the folded member.
@@ -1016,7 +1017,7 @@ an observation, not a borrow. It is read authority derived from that owner and
 is usable only while the owner is held; it cannot satisfy another function's
 `views` clause, which only the checked lending transition supplies. When the
 observed resource is itself borrowed, the published fact carries that borrow's
-identity, so it stays tied to the loan it was read through.
+identity, so it stays tied to the borrow it was read through.
 
 A guarded directly recursive resource also has a finite inductive witness.
 `decreases list(node)`, or `decreases n;` naming the binder of an
@@ -1128,7 +1129,7 @@ return something weaker
 the folded head in escrow and protects the direct memory children the
 definition names; a contained composite becomes a read-only description under
 the same borrow. Reading further down is projection: `unfold`, `observe`, and
-`open` of a borrowed composite add the child to the borrow's permitted
+`with` of a borrowed composite add the child to the borrow's permitted
 descriptions after the kernel rechecks that the definition contains it. A
 projection exposes nothing owned, so the depth a proof reaches costs nothing in
 authority.
@@ -1153,11 +1154,13 @@ viewed piece in the cursor must be covered by `input`. The source must have
 backing that the caller can recover directly when the borrow ends.
 
 Each produced cursor keeps its own hold on the input. Unfolding moves the hold
-to its viewed pieces, and refolding those pieces together moves it back to
-the new head. Consuming one cursor leaves the other cursors' holds live.
-Once the last hold is gone, the caller can recover its original ownership. For contracts with unannotated
-borrowing composites, Click still infers backing when it can identify a
-unique source.
+to its viewed pieces. Refolding all the pieces moves that hold to the new
+head. Refolding a subset gives the new head a separate hold and leaves the
+remaining pieces available. Consuming one cursor leaves the other holds live.
+Once the last hold is gone, the caller can recover its original ownership.
+A call that repackages an existing borrow can name a consumed composite with
+`consumes cursor(...) as input` and write `produces other_cursor(...) from input`.
+An `owns` clause carries the original resource and its borrow through the call.
 
 On a failed return, the borrow diagnostic can name the output, the selected
 input view, and the viewed piece it does not cover. A blocked write can name

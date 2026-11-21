@@ -1128,19 +1128,19 @@ impl<'a> Proof<'a> {
         })
     }
 
-    pub(in crate::surface::proof) fn outcome_holds_open_instance(
+    pub(in crate::surface::proof) fn holds_open_instance(
         &self,
         instance: &crate::kernel::ResourceInstance,
     ) -> Result<bool, ClickError> {
-        let outcome = self
-            .focused_outcome_data()
-            .ok_or_else(|| self.step_error("named resource scope lost its returning outcome"))?;
-        Ok(outcome
-            .core
-            .state
-            .resources()
-            .owned_instance(instance.identity())
-            == Some(instance))
+        let state = if let Some(outcome) = self.focused_outcome_data() {
+            &outcome.core.state
+        } else {
+            let execution = self
+                .branch_execution()
+                .ok_or_else(|| self.step_error("with block lost its execution state"))?;
+            &execution.core.state
+        };
+        Ok(state.resources().owned_instance(instance.identity()) == Some(instance))
     }
 
     /// Retain the explicit fold written at a returning scope arm's close.
@@ -2751,7 +2751,7 @@ impl<'a> Proof<'a> {
         let selected = &checked.selected;
         execution
             .core
-            .record_resource_rewrite_with_loan_holds(
+            .record_resource_rewrite_with_borrow_holds(
                 context.function,
                 context.arguments,
                 &before_facts,
@@ -2759,7 +2759,7 @@ impl<'a> Proof<'a> {
                 &checked.state,
                 &checked.facts,
                 None,
-                &checked.loan_holds,
+                &checked.borrow_holds,
                 crate::surface::proof::execution_planning::collecting_step_requirements(),
             )
             .map_err(|error| {

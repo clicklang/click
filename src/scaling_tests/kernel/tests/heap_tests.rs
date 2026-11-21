@@ -268,7 +268,7 @@ fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
 }
 
 #[test]
-fn heap_free_loan_obligation_ignores_unrelated_aliases_and_loans() {
+fn heap_free_borrow_obligation_ignores_unrelated_aliases_and_borrows() {
     let _session = VerificationSession::enter();
     let state = successful_heap_allocation_state();
     let free = program_heap_free(crate::kernel::program_expression::variable("p"));
@@ -276,7 +276,7 @@ fn heap_free_loan_obligation_ignores_unrelated_aliases_and_loans() {
     for grow_aliases in [true, false] {
         let mut samples = Vec::new();
         for count in [4, 16, 64] {
-            let mut ledger = LoanLedger::new();
+            let mut ledger = BorrowLedger::new();
             let owner = ledger.fresh_participant().unwrap();
             let reader = ledger.fresh_participant().unwrap();
             let mut assumptions = PureFactContext::new();
@@ -305,7 +305,7 @@ fn heap_free_loan_obligation_ignores_unrelated_aliases_and_loans() {
                 let opening = ledger.lend(owner, reader, occurrence, backing).unwrap();
                 ledger = ledger.apply(&opening.transition).unwrap();
             }
-            let state = state.clone().with_loan_ledger(Some(ledger));
+            let state = state.clone().with_borrow_ledger(Some(ledger));
             let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
                 execute_execution_statement_paths(
                     &state,
@@ -327,7 +327,7 @@ fn heap_free_loan_obligation_ignores_unrelated_aliases_and_loans() {
                 panic!("expected one conditional free path: {paths:?}");
             };
             let [obligation] = obligations.as_slice() else {
-                panic!("expected one loan obligation");
+                panic!("expected one borrow obligation");
             };
             assert!(matches!(
                 obligation.proposition(),
@@ -343,11 +343,11 @@ fn heap_free_loan_obligation_ignores_unrelated_aliases_and_loans() {
 }
 
 #[test]
-fn realloc_loan_requirement_work_is_bounded_by_the_pending_result() {
+fn realloc_borrow_requirement_work_is_bounded_by_the_pending_result() {
     let _session = VerificationSession::enter();
     let state =
         successful_heap_allocation_state().with_local("q", ProgramValue::pointer(Address::null()));
-    let loan_base = Address::symbolic(Variable(954_000));
+    let borrow_base = Address::symbolic(Variable(954_000));
     for grow_aliases in [true, false] {
         let mut samples = Vec::new();
         for count in [4, 16, 64] {
@@ -356,14 +356,14 @@ fn realloc_loan_requirement_work_is_bounded_by_the_pending_result() {
                 for i in 0..count {
                     assumptions = assumptions.assume_condition(
                         ConditionTerm::address_equal(
-                            loan_base.clone(),
+                            borrow_base.clone(),
                             Address::symbolic(Variable(955_000 + i)),
                         ),
                         true,
                     );
                 }
             }
-            let mut ledger = LoanLedger::new();
+            let mut ledger = BorrowLedger::new();
             let lender = ledger.fresh_participant().unwrap();
             let borrower = ledger.fresh_participant().unwrap();
             for i in 0..if grow_aliases { 1 } else { count } {
@@ -380,7 +380,7 @@ fn realloc_loan_requirement_work_is_bounded_by_the_pending_result() {
                 let opening = ledger.lend(lender, borrower, occurrence, backing).unwrap();
                 ledger = ledger.apply(&opening.transition).unwrap();
             }
-            let state = state.clone().with_loan_ledger(Some(ledger));
+            let state = state.clone().with_borrow_ledger(Some(ledger));
             let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let pending = start_test_realloc(&state, &assumptions);
                 resolve_test_realloc(&pending)

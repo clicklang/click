@@ -4,32 +4,32 @@ use super::*;
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn join_arm_loan_evidence(
+fn join_arm_borrow_evidence(
     parent: &ExecutionProofState,
     arms: [&ExecutionProofState; 2],
     label: &str,
-) -> Result<crate::kernel::CheckedLoanCallEvidenceSequence, ClickError> {
-    let parent_evidence = parent.core.loan_evidence();
+) -> Result<crate::kernel::CheckedBorrowCallEvidenceSequence, ClickError> {
+    let parent_evidence = parent.core.borrow_evidence();
     let then_suffix = arms[0]
         .core
-        .loan_evidence()
+        .borrow_evidence()
         .suffix_since(parent_evidence)
         .ok_or_else(|| {
             ClickError::new(format!(
-                "{label} then arm loan evidence does not descend from the branch root"
+                "{label} then arm borrow evidence does not descend from the branch root"
             ))
         })?;
     let else_suffix = arms[1]
         .core
-        .loan_evidence()
+        .borrow_evidence()
         .suffix_since(parent_evidence)
         .ok_or_else(|| {
             ClickError::new(format!(
-                "{label} else arm loan evidence does not descend from the branch root"
+                "{label} else arm borrow evidence does not descend from the branch root"
             ))
         })?;
-    let joined = crate::kernel::concat_checked_loan_evidence(parent_evidence, &then_suffix);
-    Ok(crate::kernel::concat_checked_loan_evidence(
+    let joined = crate::kernel::concat_checked_borrow_evidence(parent_evidence, &then_suffix);
+    Ok(crate::kernel::concat_checked_borrow_evidence(
         &joined,
         &else_suffix,
     ))
@@ -952,7 +952,7 @@ impl<'a> Proof<'a> {
                 ProofAssertion::Resource(_) => None,
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let joined_loan_evidence = join_arm_loan_evidence(
+        let joined_borrow_evidence = join_arm_borrow_evidence(
             parent_execution,
             [arms[0].execution, arms[1].execution],
             "interface execution join",
@@ -1078,7 +1078,7 @@ impl<'a> Proof<'a> {
             true,
         )?;
         execution.core.state = abstract_state.clone().into();
-        execution.core.loan_evidence = joined_loan_evidence;
+        execution.core.borrow_evidence = joined_borrow_evidence;
         execution.presentation.recorded_states = common_states;
         execution.core.frontier.execution_start_state = Some(execution_start_state);
         match join_continuation {
@@ -1888,7 +1888,7 @@ impl<'a> Proof<'a> {
         // Each arm's completed paths, the returned loop paths it retained
         // among them, are in the joined set above.
         execution.core.clear_pending_loop_returns();
-        execution.core.loan_evidence = crate::kernel::empty_checked_loan_evidence_sequence();
+        execution.core.borrow_evidence = crate::kernel::empty_checked_borrow_evidence_sequence();
         execution.core.evidence_completed = true;
         execution.core.evidence_state = None;
         execution.core.evidence_source = None;
@@ -2203,7 +2203,7 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("execution `branch` arms reached different C states"));
         }
         let mut execution = parent_execution.clone();
-        let joined_loan_evidence = join_arm_loan_evidence(
+        let joined_borrow_evidence = join_arm_borrow_evidence(
             parent_execution,
             [arms[0].execution, arms[1].execution],
             "checked execution join",
@@ -2242,7 +2242,7 @@ impl<'a> Proof<'a> {
             true,
         )?;
         execution.core.state = (**then_state).clone().into();
-        execution.core.loan_evidence = joined_loan_evidence;
+        execution.core.borrow_evidence = joined_borrow_evidence;
         execution.presentation.recorded_states.insert(
             ProgramPointRef {
                 region: CodeRegionRef::Region(statement_index),
@@ -2659,7 +2659,7 @@ impl<'a> Proof<'a> {
             else {
                 return Ok(None);
             };
-            let Ok(loan_evidence) = join_arm_loan_evidence(
+            let Ok(borrow_evidence) = join_arm_borrow_evidence(
                 parent_execution,
                 [arms[0].execution, arms[1].execution],
                 "proof `if` join",
@@ -2667,7 +2667,7 @@ impl<'a> Proof<'a> {
                 return Ok(None);
             };
             execution.presentation.recorded_states = retained_states;
-            execution.core.loan_evidence = loan_evidence;
+            execution.core.borrow_evidence = borrow_evidence;
             execution.core.state = arms[0].execution.core.state.clone();
             execution.core.frontier = arms[0].execution.core.frontier.clone();
             execution.core.has_empty_execution_branch_leaf |= arms

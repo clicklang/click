@@ -22,7 +22,7 @@ void finish(int32* p) {
     produces tag: marker();
     ensures tag.value == 2;
 } by {
-    open(viewed(p)) {
+    with(viewed(p)) {
         let { tag: tag } = step(repair);
     }
 }

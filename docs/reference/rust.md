@@ -808,6 +808,20 @@ with its arguments, `let { after: c } = step(generic_resources::write<u32>(cell,
 x), { before: b });`. A generic resource's parameters are abstract types
 bound by `Copy` or `Clone` only, and it takes no callable parameters
 ([`design/charon-trial/generic-resources`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-resources/cells.click)).
+A use's type arguments are scalars or crate types named by path, so
+`owned_box<boxed::Cell>(b)` is written out at `boxed::Cell`'s layout. A
+resource may own a value of an abstract type in its own allocation through
+a raw pointer to it: `resource owned_box<T>(p: *mut T) { ...; owns
+allocation(p, sizeof(T)); owns *p; }`. There `sizeof(T)` is the number of
+bytes a value of `T` takes, a term that is the type argument's own size at
+each instance, and `*p` is `p[0u64..sizeof(T)]`
+(`charon_generic_resource_owns_a_value_of_any_type_in_its_allocation`). A
+generic struct holding a `T`, `Wrap<T>`, has a symbolic layout: rustc may
+reorder its fields, so each field lies at `offsetof(Wrap<T>, value)` and the
+struct takes `sizeof(Wrap<T>)` bytes, terms that are each instance's own
+numbers. Two fields of one object are apart by the layout whatever their
+offsets, and each lies inside the object's bytes; a claim that such a size
+or offset is one number does not hold for every `T`.
 
 A generic trait's object may carry state, as any trait's does (below). Its
 object is a generic resource of the trait's type parameters,
@@ -1178,7 +1192,7 @@ Compiler storage starts for local scalar arrays create checked fresh backing at
 that point, including inside symbolic iterator loops. Plain record storage
 starts also restore backing for array-field state copies. The loop contract
 need not list compiler-created local arrays as input resources. Re-entry checks
-live loans and replaces the previous object's identity; initialization and
+live borrows and replaces the previous object's identity; initialization and
 complete source/destination copy authority remain required.
 
 Builtin `.len()`, local reference aliases and reborrows, and direct fixed-array
@@ -1635,7 +1649,7 @@ of conflicting parent access and use after move. The example passes verification
 profiling, audit, expansion, and re-verification without new Click syntax.
 
 rustc establishes source borrow legality. These checks do not yet extract a
-complete Rust loan protocol or infer ownership contracts from Rust types.
+complete Rust borrow protocol or infer ownership contracts from Rust types.
 
 The adapter supports moving a reference field out of a plain local struct.
 It still excludes general partial moves with cleanup, nested owned fields,

@@ -30,7 +30,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         let bare = partition.clone();
         let view = ResourceFact::view_memory(descriptor.clone());
         let support = partition.occurrences_for_fact(&view)[0];
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let holder = ledger.fresh_participant().unwrap();
         let opening = ledger
             .borrowed_contract_input(holder, support, view.clone(), None)
@@ -42,10 +42,10 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
             opening.root_share,
             &PureFactContext::new()
         ));
-        let partition = partition.with_loan_dependency(
+        let partition = partition.with_borrow_dependency(
             support,
-            LoanViewBinding {
-                loan: opening.loan,
+            BorrowBinding {
+                borrow: opening.borrow,
                 scope: opening.scope,
                 share: opening.root_share,
                 support,
@@ -96,7 +96,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         // Exercise the complete explicit equality certificate, including
         // the actual LoopHavoc edge and all eight descriptor-read bytes.
         let before = SymbolicMemory::new();
-        let after = before.clone().with_loop_memory_havoc_preserving_loans(
+        let after = before.clone().with_loop_memory_havoc_preserving_borrows(
             Variable(9_897_004),
             &std::collections::BTreeSet::new(),
             Some(std::slice::from_ref(&backing)),

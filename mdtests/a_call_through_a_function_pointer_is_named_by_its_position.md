@@ -42,7 +42,7 @@ int32 compute(struct callback_table* table, int32 left, int32 right) {
     requires defined(left - right);
     ensures to_integer(result) == to_integer(left - right);
 } by {
-    open(callback_suite(table)) {
+    with(callback_suite(table)) {
         step(); step();
         have to_integer(statement(0).call(0).result) == to_integer(left - right);
     }

@@ -35,10 +35,10 @@ int32 resource_scope_preserves_unrelated(struct object* obj, int32 value) {
     owns spare(value);
     ensures result == value;
 } by {
-    open(marker(obj)) {
+    with(marker(obj)) {
         step();
     }
-    open(marker(obj)) { }
+    with(marker(obj)) { }
     step();
 }
 ```

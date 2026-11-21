@@ -15,7 +15,7 @@ pub(in crate::surface::proof) enum SourceContext {
     PureGoal,
     /// An execution frontier that has not reached the function exit: the
     /// linear continuation, a focused execution arm, a loop's `maintain`
-    /// body and a linear `open` scope.
+    /// body and a linear `with` scope.
     ExecutionFrontier,
     /// A path that has reached the function exit, where a tactic runs once
     /// per concrete outcome.
@@ -55,7 +55,6 @@ impl SourceContext {
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
                     | ProofTactic::NormalizeUsing(_)
-                    | ProofTactic::OrderChain(_)
                     | ProofTactic::Intro
                     | ProofTactic::IntroAs(_)
                     | ProofTactic::IntroBinder(_)
@@ -102,7 +101,6 @@ impl SourceContext {
                     | ProofTactic::Known
                     | ProofTactic::Normalize
                     | ProofTactic::NormalizeUsing(_)
-                    | ProofTactic::OrderChain(_)
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
                     | ProofTactic::Rewrite(_)

@@ -1,20 +1,8 @@
 # A loop exit disjunction ignores a closed true conjunct
 
-`paint` leaves its `while (true)` by a `break` on both paths, and the proof
-after the loop reasons by cases on the exported disjunction
-`(flag == 0 and c.color == Red and p->shade == 0) or (p->shade == 1 and
-c.color == Black)`, as `loop_break_exit_join_compares_cells_not_their_cache.md`
-does.
-
-One exit also stated the closed fact `true == true`.
-The join orders the disjuncts by how many facts each path states and then
-drops a conjunct an earlier disjunct contradicts. The extra fact reordered
-the exits, so the exported disjunction was not the one the proof names. A
-closed true conjunct says nothing about its path and is no longer counted.
-
-The proof opens the joined resource in each model case to obtain its current
-cell-value fact, then exports the full disjunction explicitly. It does not
-recover that fact by registering a read against the joined memory cache.
+Both exits prove the colour disjunction for the resource they hold. The
+black exit also proves the closed fact `true == true`. The successor can
+split on the shared disjunction even when one exit has that extra premise.
 
 ```c filename=paint_or_leave.c
 struct node { int32 shade; };
@@ -60,50 +48,22 @@ void paint(struct node* p, int32 flag) {
                 step();
                 step();
                 let c = fold(painted(p), { color: Color::Red });
+                have c.color == Color::Red or c.color == Color::Black by known();
                 step();
             } else {
                 unfold(c);
                 step();
                 let c = fold(painted(p), { color: Color::Black });
+                have true == true by normalize();
+                have c.color == Color::Red or c.color == Color::Black by known();
                 step();
             }
         }
     }
-    have flag == 0 or c.color == Color::Black by {
-        cases {
-            (flag == 0 and c.color == Color::Red) => { solve(); }
-            (c.color == Color::Black) => { solve(); }
-        }
-    }
-    match c.color ensuring {
-        owns c: painted(p);
-        fact (flag == 0 and c.color == Color::Red and p->shade == 0) or (p->shade == 1 and c.color == Color::Black);
-    } {
-        Color::Red => {
-            have flag == 0 by {
-                cases {
-                    (flag == 0) => { known(); }
-                    (c.color == Color::Black) => { solve(); }
-                }
-            }
-            unfold(c);
-            let c = fold(painted(p), { color: Color::Red });
-            have (flag == 0 and c.color == Color::Red and p->shade == 0) or (p->shade == 1 and c.color == Color::Black);
-        },
-        Color::Black => {
-            unfold(c);
-            let c = fold(painted(p), { color: Color::Black });
-            have (flag == 0 and c.color == Color::Red and p->shade == 0) or (p->shade == 1 and c.color == Color::Black);
-        },
-    }
     have c.color == Color::Red or c.color == Color::Black by {
         cases {
-            (flag == 0 and c.color == Color::Red and p->shade == 0) => {
-                solve();
-            }
-            (p->shade == 1 and c.color == Color::Black) => {
-                solve();
-            }
+            c.color == Color::Red => { known(); }
+            c.color == Color::Black => { known(); }
         }
     }
     step();

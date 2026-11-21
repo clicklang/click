@@ -33,7 +33,7 @@ pub(in crate::surface) use execution_planning::test_with_scoped_loop_exit_facts;
 pub(in crate::surface) mod fact_reasoning;
 pub(in crate::surface) mod fixed_state_proofs;
 mod implicit_solve_scope;
-pub use implicit_solve_scope::without_implicit_solve_for_claim;
+pub use implicit_solve_scope::{check_audit_claim, without_implicit_solve_for_claim};
 pub(in crate::surface) mod driver;
 mod language_context;
 mod proof_object;
@@ -1358,7 +1358,7 @@ impl Drop for InternalProofNode {
 /// Each control tactic holds the rest of its script as its continuation, so
 /// a script of N sequential control tactics is a chain N nodes deep. The
 /// chain is built front to back in a loop and linked from the back; only a
-/// written nesting (an arm, a case, an `open` body) recurses.
+/// written nesting (an arm, a case, a `with` body) recurses.
 fn build_internal_proof_at(
     tactics: &[ProofTactic],
     index_offset: usize,
@@ -1838,6 +1838,7 @@ pub(in crate::surface) struct ProofEntryContext {
     pub(in crate::surface) state: ExecutionState,
     pub(in crate::surface) arguments: Vec<ProgramExpression>,
     pub(in crate::surface) pure_facts: PureFactList,
+    pub(in crate::surface) contract_value_parameters: Option<Arc<ContractValueParameters>>,
 }
 
 impl PartialEq for ProofEntryContext {
@@ -3119,7 +3120,7 @@ fn install_borrowed_contract_inputs(
     .map_err(|diagnostic| {
         ClickError::new(format!(
             "`{proof_label}` could not establish stable authority for a contract input view: {}",
-            crate::surface::diagnostics::describe_loan_refusal(&diagnostic, parameter_binding,)
+            crate::surface::diagnostics::describe_borrow_refusal(&diagnostic, parameter_binding,)
         ))
     })
 }

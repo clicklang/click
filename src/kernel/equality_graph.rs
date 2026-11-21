@@ -1203,6 +1203,16 @@ impl EqualityGraph {
             .canonical(pointer)
     }
 
+    /// Read the storage block already selected by this address's class.
+    pub(in crate::kernel) fn indexed_storage_block(
+        &self,
+        pointer: &Address,
+    ) -> Option<AddressBase> {
+        let state = self.state.lock().expect("equality graph");
+        let coordinate = state.canonical(pointer)?;
+        state.storage_anchor(&coordinate.representative)
+    }
+
     /// Preserve the supplied address unless its class has one concrete storage
     /// anchor. Re-expression uses the checked affine class relation, never an
     /// arbitrary representative or an alias walk. This does not establish

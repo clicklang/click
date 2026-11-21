@@ -64,7 +64,7 @@ or a default clause's `;`, its last token, and for a loop's `initialize` or
 `maintain` the keyword it proves), and each declaration body's closing
 brace and `exceptional ensures` clauses. Expansion and the index read all
 of these through `ParsedBlocks` (`src/surface/expansion/parsed_blocks.rs`):
-a structured tactic's arms and a `have` or `open` body are the recorded
+a structured tactic's arms and a `have` or `with` body are the recorded
 blocks directly inside its range, a claim's proof is the first recorded
 clause after the claim, and a loop phase is the clause its keyword owns.
 Expansion pairs no braces and scans for no `by`.

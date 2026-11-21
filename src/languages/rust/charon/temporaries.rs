@@ -77,7 +77,7 @@ pub(super) fn substitute_pure_values(
         let mut pending = BTreeMap::<String, E>::new();
         let mut kept = Vec::with_capacity(block.statements.len());
         // A borrow is the value its one read takes whole: an argument of the
-        // block's call, `f(&mut x)`, whose loan lasts the call, or a local's
+        // block's call, `f(&mut x)`, whose borrow lasts the call, or a local's
         // whole value, `let r = &mut x`.
         let mut borrow_readers = match &block.terminator {
             T::Call { arguments, .. } => arguments
@@ -2384,7 +2384,7 @@ fn pure(value: &E) -> bool {
         // A read of an element: the lowering checks its index where it
         // prepares the read (`checked`).
         E::Index { slice, index } => pure(slice) && pure(index),
-        // A call has effects; a borrow begins a loan; a slice and the
+        // A call has effects; a borrow begins a borrow; a slice and the
         // iterator protocol need their own preparation.
         E::Call { .. }
         | E::Borrow { .. }

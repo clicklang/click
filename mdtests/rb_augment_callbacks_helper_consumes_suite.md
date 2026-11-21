@@ -67,7 +67,7 @@ void erase_discarded(struct node* node, struct node* parent,
     owns parent->left;
     owns parent->right;
 } by {
-    open(callback_suite(augment)) {
+    with(callback_suite(augment)) {
         step();
     }
     step();

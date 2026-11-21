@@ -2,7 +2,7 @@
 
 The inner loop calls a checked reader through the abstract outer cursor.
 A checked pointer equality and input subrange carry its byte view and stable
-loan binding into the nested loop. The input bytes are unchanged.
+borrow binding into the nested loop. The input bytes are unchanged.
 
 ```c filename=alias-nested-call.c
 int32 read(const uint8* p) { return p[0]; }

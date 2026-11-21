@@ -22,7 +22,7 @@ void update(struct node* p, const struct callbacks* cb) {
     ensures p->value == 1;
 } by {
     unfold(node_cell(p));
-    open(callback_table(cb)) {
+    with(callback_table(cb)) {
         have separate(memory(p->value), memory(cb->invoke));
         step_until(function.exit);
     }

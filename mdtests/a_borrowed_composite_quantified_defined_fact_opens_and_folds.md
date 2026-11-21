@@ -2,7 +2,7 @@
 
 `valid(p, n)` views `p[0..n]` and states that every cell of that range is
 defined. Its quantified `defined(p[k])` read lies inside the viewed range
-under the guard `0 <= k and k < n`, so it depends on the same loan as the
+under the guard `0 <= k and k < n`, so it depends on the same borrow as the
 view. `first` borrows the composite and opens it; `mark` holds only a borrowed
 view and folds the composite to produce it.
 
@@ -25,15 +25,15 @@ int32 first(int32 p[], int32 n) {
     views valid(p, n);
     ensures true;
 } by {
-    open(valid(p, n)) {
+    with(valid(p, n)) {
     }
 }
 
 void mark(int32 p[], int32 n) {
     requires 0 < n;
     requires forall (k: int32) { 0 <= k and k < n implies defined(p[k]) };
-    views p[0..n];
-    produces valid(p, n);
+    views p[0..n] as input;
+    produces valid(p, n) from input;
 }
 ```
 

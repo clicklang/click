@@ -69,9 +69,9 @@ mod iterated;
 pub(crate) use iterated::{IteratedStep, apply_iterated_step, plan_iterated_guard_store};
 // V0-V6 of the stable-view migration build the checked semantic spine before
 // V7 routes ordinary calls through it.
-mod loans;
+mod borrows;
 #[cfg(test)]
-pub(crate) use loans::LoanLedger;
+pub(crate) use borrows::BorrowLedger;
 
 /// The memory a canonical load projection was built from, for a read of
 /// `pointer`: the source `reasoning::memory_resolution` recorded when it
@@ -83,15 +83,15 @@ pub(crate) fn load_projection_source(
     reasoning::memory_resolution::canonical_load_projection_source(projected, pointer)
 }
 #[cfg(test)]
-pub(crate) use loans::LoanRefusal;
-pub(crate) use loans::owned_reservation_miss_for;
-pub(crate) use loans::{
-    CheckedLoanCallEvidenceSequence, CheckedLoanTransition, LoanViewBinding,
-    concat_checked_loan_evidence, empty_checked_loan_evidence_sequence,
+pub(crate) use borrows::BorrowRefusal;
+pub(crate) use borrows::owned_reservation_miss_for;
+pub(crate) use borrows::{
+    BorrowBinding, CheckedBorrowCallEvidenceSequence, CheckedBorrowTransition,
+    concat_checked_borrow_evidence, empty_checked_borrow_evidence_sequence,
 };
-pub use loans::{
-    LoanOriginKind, LoanOverlapStatus, LoanRefusalCategory, LoanRefusalDiagnostic,
-    LoanRefusalOperation, LoanRefusalSubject,
+pub use borrows::{
+    BorrowOriginKind, BorrowOverlapStatus, BorrowRefusalCategory, BorrowRefusalDiagnostic,
+    BorrowRefusalOperation, BorrowRefusalSubject,
 };
 mod byte_representation_laws;
 mod integer_truncation_laws;
@@ -138,7 +138,6 @@ pub(crate) mod reasoning;
 pub(crate) use reasoning::variable_collection::count_cells_collected;
 pub(crate) mod resource_tracker;
 mod spec;
-pub(crate) use spec::int32_sequence_equality_view;
 pub use spec::required_constructions::is_required_construction;
 pub(crate) use spec::scalar_match_has_pure_int32_arms;
 pub(crate) use spec::{LOOP_ITERATIONS_VARIABLE, LoweredTermPath};
@@ -147,6 +146,7 @@ pub(crate) use spec::{
     capture_spec_integer_value, capture_spec_integer_value_with_guards,
     refine_object_pointer_argument_using_facts,
 };
+pub(crate) use spec::{retained_sequence_equality_view, sequence_membership_view};
 mod termination;
 pub(crate) use termination::StatementProofInput;
 pub(crate) use termination::descent_completion::DescentStep;

@@ -205,7 +205,7 @@ fn embedded_field_identity_uses_only_its_explicit_path() {
                 base: Box::new(expression),
                 field: "inner".into(),
                 lowered: ProgramExpression::Value(ProgramValue::Void),
-                offset_bytes: 0,
+                offset_bytes: crate::kernel::LayoutOffset::Bytes(0),
             };
         }
         (parser, expression)

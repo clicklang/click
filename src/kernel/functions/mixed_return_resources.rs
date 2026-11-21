@@ -17,11 +17,19 @@ pub(super) struct ConsumedCellReturns {
     direct: BTreeMap<usize, ConsumedCellReturn>,
     children: BTreeMap<Vec<usize>, ConsumedCellReturn>,
     borrowed: BTreeMap<usize, ResourceOccurrenceId>,
+    returned_holds: BTreeSet<ResourceOccurrenceId>,
     // Actual checked input footprints, bound once by the entry reservation.
     pub(super) constructed: BTreeMap<usize, ResourceFact>,
 }
 
 impl ConsumedCellReturns {
+    pub(super) fn returning_entry_occurrence(&self, clause: usize) -> Option<ResourceOccurrenceId> {
+        let occurrence = self.borrowed.get(&clause)?;
+        self.returned_holds
+            .contains(occurrence)
+            .then_some(*occurrence)
+    }
+
     // These are the finite ranges the checked entry transition already
     // projected, not ranges rediscovered from the returned descriptions.
     pub(super) fn retain_frontier(
@@ -177,6 +185,12 @@ impl ConsumedCellReturns {
                     .and_then(VecDeque::pop_front)
             {
                 outputs.borrowed.insert(index, input);
+                if caller
+                    .borrow_dependency(input)
+                    .is_some_and(|binding| binding.hold.is_some())
+                {
+                    outputs.returned_holds.insert(input);
+                }
                 continue;
             }
             if outputs.direct.contains_key(&index) {
@@ -1634,14 +1648,20 @@ impl PreparedReturnComposition {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ReturnedBorrowSource {
+    Input(usize),
+    Forwarded(ResourceOccurrenceId),
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) struct ProducedBorrowingPiece {
-    pub(super) support: super::super::loans::EscapingBorrow,
-    pub(super) piece: ResourceFact,
-    pub(super) input_view: Option<usize>,
-    // Actual child identities issued by the producer, retained as one group.
-    #[allow(dead_code)]
-    pub(super) sources: Arc<Vec<ResourceOccurrenceId>>,
+    pub(super) head: ResourceFact,
+    pub(super) destination: ResourceOccurrenceId,
+    pub(super) source: ReturnedBorrowSource,
+    // The exact child occurrence issued by the producer, when the checked
+    // return exposes one. A forwarded opaque owner retains its hold as is.
+    pub(super) viewed: Option<(ResourceFact, ResourceOccurrenceId)>,
 }
 
 pub(super) struct ProjectedReturnResource {
@@ -1650,52 +1670,29 @@ pub(super) struct ProjectedReturnResource {
     pub(super) destination: ResourceOccurrenceId,
     pub(super) expansion: Vec<ResourceFact>,
     pub(super) projected: Vec<ResourceFact>,
-    pub(super) frontier: Vec<ResourceFact>,
     pub(super) viewed_children: Vec<(ResourceFact, ResourceOccurrenceId)>,
 }
 
 impl ProjectedReturnResource {
-    pub(super) fn explicitly_backed_pieces(&self, input: usize) -> Vec<ProducedBorrowingPiece> {
+    pub(super) fn backed_pieces(
+        &self,
+        borrow_source: ReturnedBorrowSource,
+    ) -> Vec<ProducedBorrowingPiece> {
+        let returned = |viewed| ProducedBorrowingPiece {
+            head: self.support.clone(),
+            destination: self.destination,
+            source: borrow_source,
+            viewed,
+        };
+        if self.viewed_children.is_empty()
+            && matches!(borrow_source, ReturnedBorrowSource::Forwarded(_))
+        {
+            return vec![returned(None)];
+        }
         self.viewed_children
             .iter()
-            .map(|(piece, source)| ProducedBorrowingPiece {
-                support: super::super::loans::EscapingBorrow {
-                    head: self.support.clone(),
-                    occurrence: self.destination,
-                    root_permission: None,
-                },
-                piece: piece.clone(),
-                input_view: Some(input),
-                sources: Arc::new(vec![*source]),
-            })
-            .collect()
-    }
-
-    pub(super) fn constructed_borrowing_pieces(&self) -> Vec<ProducedBorrowingPiece> {
-        let children = &self.viewed_children;
-        // Normalization may merge adjacent or equal views. Keep the producer's
-        // raw identities as one shared group, alongside its normalized views;
-        // do not recover an individual source by matching descriptions.
-        let sources = Arc::new(
-            children
-                .iter()
-                .map(|(_, source)| *source)
-                .collect::<Vec<_>>(),
-        );
-        let support = super::super::loans::EscapingBorrow {
-            head: self.support.clone(),
-            occurrence: self.destination,
-            root_permission: None,
-        };
-        self.frontier
-            .iter()
-            .filter(|piece| piece.is_view())
-            .map(|piece| ProducedBorrowingPiece {
-                support: support.clone(),
-                piece: piece.clone(),
-                input_view: None,
-                sources: sources.clone(),
-            })
+            .cloned()
+            .map(|child| returned(Some(child)))
             .collect()
     }
 }
@@ -1721,7 +1718,6 @@ pub(super) fn project_return_resource_cores(
             let body = bodies.for_return(source_occurrence, support);
             // Family dispatch already produced the finite frontier and all
             // child identities. Projection cannot inspect definitions or memory.
-            let frontier = body.map(|body| body.frontier.clone()).unwrap_or_default();
             let expansion = body
                 .map(|body| body.expansion.clone())
                 .unwrap_or_else(|| vec![support.clone()]);
@@ -1743,7 +1739,6 @@ pub(super) fn project_return_resource_cores(
                 viewed_children: body
                     .map(|body| body.viewed_children.clone())
                     .unwrap_or_default(),
-                frontier,
             }
         })
         .collect()

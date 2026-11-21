@@ -174,7 +174,7 @@ authorities.
   values.
 - `mdtests/pointer_params_may_alias_without_separate.md`: aliasing is allowed by
   default.
-- `mdtests/pointer_params_separate_by_transfer_and_loan.md`: transferring one
+- `mdtests/pointer_params_separate_by_transfer_and_borrow.md`: transferring one
   parameter and lending the other separates them.
 - `mdtests/a_views_clause_is_separate_from_an_owns_clause.md`: a contract's
   `views` and `owns` clauses denote disjoint memory.
@@ -336,7 +336,7 @@ sequence:
 - `mdtests/stable_view_partial_borrow.md`: a read-only prefix and owned
   writable suffix form a disjoint partial borrow.
 - `mdtests/stable_view_returned_pointer.md`: returning a raw C pointer does
-  not export a stable loan beyond the caller's independent ownership.
+  not export a stable borrow beyond the caller's independent ownership.
 - `mdtests/permission_call_consumes_write_without_return.md`: a helper consumes
   write permission when it does not return it.
 - `mdtests/permission_call_returns_write.md`: a helper returns write permission
@@ -479,7 +479,7 @@ sequence:
 - `mdtests/composite_resource_accepts_read_backed_fact.md`: contained
   current view permission provides read authority for a memory fact.
 - `mdtests/stable_view_fact_workflow.md`: a current view supports a
-  resource fact through an ordinary `open` proof workflow.
+  resource fact through an ordinary `with` proof workflow.
 - `mdtests/composite_resource_rejects_predicate_hidden_fact_read.md`:
   predicate-hidden memory reads are checked against contained current read
   authority.

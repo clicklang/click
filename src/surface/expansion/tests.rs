@@ -754,7 +754,7 @@ fn trace_target_selects_only_the_arm_containing_its_source_position() {
 
 #[test]
 fn nested_tactic_position_follows_have_and_open_bodies() {
-    let source = "resource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\nhave true by {\n    open(cell(p)) {\n        have true by {\n            known();\n        }\n    }\n}\n}\n";
+    let source = "resource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\nhave true by {\n    with(cell(p)) {\n        have true by {\n            known();\n        }\n    }\n}\n}\n";
     let have = position_at_offset(source, source.find("have").unwrap());
     let position = ProofSourceIndex::new(source)
         .unwrap()
@@ -1343,7 +1343,7 @@ int32 identity(int32 x) {
     owns known(x);
     ensures result == x;
 } by {
-    open(known(x)) {
+    with(known(x)) {
         step_until(function.exit);
     }
     solve();
@@ -1352,7 +1352,7 @@ int32 identity(int32 x) {
     let sources = [("identity.c", c_source)];
 
     let nested = c_tactic_source_position(click_source, &sources, "identity.contract", 1)
-        .expect("the tactic inside `open` should have a source position");
+        .expect("the tactic inside `with` should have a source position");
     assert_eq!(
         nested,
         SourcePosition {
@@ -1363,7 +1363,7 @@ int32 identity(int32 x) {
     );
 
     let continuation = c_tactic_source_position(click_source, &sources, "identity.contract", 2)
-        .expect("the tactic after `open` should retain its source position");
+        .expect("the tactic after `with` should retain its source position");
     assert_eq!(
         continuation,
         SourcePosition {
@@ -3606,7 +3606,7 @@ fn a_parsed_source_index_holds_only_proof_blocks() {
 
 #[test]
 fn trace_source_index_preserves_nested_locations_and_containment() {
-    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { open(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  all { true => { normalize(); } true => { solve(); } }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } { true => { step(); } false => { solve(); } }\n  normalize();\n}\n";
+    let source = "// αβ UTF-8\nresource cell(p: int32*) { owns *p; }\nvoid f(int32* p) {\n    owns r: cell(p);\n} by {\n  have true by { with(cell(p)) { known(); } }\n  if true { normalize(); } else { solve(); }\n  cases { true => { step(); } false => { normalize(); } }\n  all { true => { normalize(); } true => { solve(); } }\n  outcomes { threw => { step(); } returned => { solve(); } }\n  branch ensuring { fact true; } { true => { step(); } false => { solve(); } }\n  normalize();\n}\n";
     let index = ProofSourceIndex::new(source).unwrap();
     // A `branch` shares its line only with its own arms' tactics, which are
     // inside it, so the line names it alone.
@@ -4265,7 +4265,7 @@ fn solve_expands_loop_exit_projection_without_extract() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     verify_c_sources(source, &sources).unwrap();
-    let expanded = expand_c_claim_source_by_label(source, &sources, "paint.ensures_0").unwrap();
+    let expanded = expand_c_claim_source_by_label(source, &sources, "paint.contract").unwrap();
     assert!(!expanded.contains("extract("), "{expanded}");
     without_implicit_solve_for_claim("paint.contract", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
@@ -4497,14 +4497,14 @@ fn exact_proposition_propagation_replays_without_search() {
 }
 
 #[test]
-fn heap_free_loan_separation_expands_and_rechecks() {
+fn heap_free_borrow_separation_expands_and_rechecks() {
     let c = r#"
 void release(unsigned char *p, unsigned long n, int32 *q) {
     free(p);
 }
 "#;
     let proof = r#"
-verifying "free_loan.c";
+verifying "free_borrow.c";
 
 void release(uint8* p, uint64 n, int32* q) {
     requires p != 0;
@@ -4514,7 +4514,7 @@ void release(uint8* p, uint64 n, int32* q) {
     views *q;
 } by { step() by { known(); } }
 "#;
-    let sources = [("free_loan.c", c)];
+    let sources = [("free_borrow.c", c)];
     verify_c_sources(proof, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
     let expanded = expand_c_claim_source_by_label(proof, &sources, "release.contract").unwrap();
     without_implicit_solve_for_claim("release.contract", || {
@@ -4524,7 +4524,7 @@ void release(uint8* p, uint64 n, int32* q) {
 }
 
 #[test]
-fn aggregate_copy_loan_separation_expands_and_rechecks() {
+fn aggregate_copy_borrow_separation_expands_and_rechecks() {
     let c = r#"
 union Payload { int32 value; };
 struct Packet { int32 tag; union Payload payload; };
@@ -4533,7 +4533,7 @@ void copy(struct Packet *dst, struct Packet *src, int32 *q) {
 }
 "#;
     let proof = r#"
-verifying "copy_loan.c";
+verifying "copy_borrow.c";
 void copy(struct Packet* dst, struct Packet* src, int32* q) {
     owns dst->tag;
     owns dst->payload.value;
@@ -4543,7 +4543,7 @@ void copy(struct Packet* dst, struct Packet* src, int32* q) {
     requires separate(memory((dst as (uint8*))[0..8]), memory(*q));
 } by { step() by { known(); } }
 "#;
-    let sources = [("copy_loan.c", c)];
+    let sources = [("copy_borrow.c", c)];
     verify_c_sources(proof, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
     let expanded = expand_c_claim_source_by_label(proof, &sources, "copy.contract").unwrap();
     without_implicit_solve_for_claim("copy.contract", || {
@@ -4551,7 +4551,7 @@ void copy(struct Packet* dst, struct Packet* src, int32* q) {
     })
     .unwrap();
 
-    // The loan can alias the second member when the separation is absent.
+    // The borrow can alias the second member when the separation is absent.
     let missing = proof.replace(
         "requires separate(memory((dst as (uint8*))[0..8]), memory(*q));",
         "",

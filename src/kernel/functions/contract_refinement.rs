@@ -37,7 +37,7 @@ pub(super) fn compatible_resource_and_effect_interfaces(
 /// Check an access-mode variance at a refinement boundary with the same
 /// checked transfer used by calls.  The algebraic framed-refinement check is
 /// intentionally not sufficient here: it can establish that a view's value
-/// is contained in an owned value without recording the loan scope that makes
+/// is contained in an owned value without recording the borrow scope that makes
 /// the implementation's observation valid.
 ///
 /// `Some(true)` means an owned target requirement was adapted to a viewed
@@ -88,7 +88,7 @@ pub(super) fn checked_access_mode_refinement_adapter(
     for implementation in function_resources.facts() {
         if implementation.is_view() {
             // A same-mode view is already a shared capability.  Invoke the
-            // loan adapter only when this exact requirement is supplied by
+            // borrow adapter only when this exact requirement is supplied by
             // ownership, including proper subranges; comparing resource
             // terms for equality would miss that common refinement.
             own_to_view |= !satisfied_by_mode(implementation, true)

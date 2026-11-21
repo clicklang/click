@@ -7,6 +7,81 @@ use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+#[test]
+fn checked_loadability_ignores_unrelated_free_history() {
+    let external = |id| Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(id)), 4),
+    };
+    let heap = |id| Address {
+        base: AddressBase::Heap(id),
+        offset: AddressOffset::Constant(0),
+    };
+    let target = external(93_504);
+    let extra = heap(94_000);
+    for shared in [true, false] {
+        let samples = [4, 16, 64].map(|count| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let assumptions = PureFactContext::new();
+            let mut before = SymbolicMemory::new()
+                .with_heap_allocation_claim(target.clone(), AllocationSize::int32(8))
+                .unwrap()
+                .with_heap_allocation_claim(extra.clone(), AllocationSize::int32(8))
+                .unwrap();
+            for i in 0..count {
+                let unrelated = if shared {
+                    external(95_000 + i)
+                } else {
+                    heap(i)
+                };
+                before = before
+                    .with_heap_allocation_claim(unrelated.clone(), AllocationSize::int32(8))
+                    .unwrap()
+                    .free_heap_block(&unrelated, &assumptions)
+                    .unwrap();
+            }
+            let after = if shared {
+                before.clone().with_block(extra.base.clone(), 8)
+            } else {
+                before
+                    .clone()
+                    .free_heap_block(&extra, &assumptions)
+                    .unwrap()
+            };
+            assert_ne!(before, after);
+            assert_eq!(before.shares_heap_deallocations_with(&after), shared);
+            let facts = assumptions
+                .clone()
+                .assume_proposition(Proposition::MemoryLoadable {
+                    memory: before.clone(),
+                    base: target.clone(),
+                    bytes: 8u32.into(),
+                    wide: false,
+                });
+            let proves = |memory: &SymbolicMemory| {
+                facts.proves_memory_loadable_for_memory_resolution(memory, &target, &4u32.into())
+            };
+            SymbolicMemory::take_heap_containment_checks();
+            let (valid, work) =
+                crate::instrumentation::measure_deterministic_work(|| proves(&after));
+            let checked = SymbolicMemory::take_heap_containment_checks();
+            assert!(valid);
+            let freed = after.free_heap_block(&target, &assumptions).unwrap();
+            assert!(!proves(&freed));
+            (work, checked)
+        });
+        eprintln!("loadability work and heap checks, shared={shared}: {samples:?}");
+        assert!(
+            samples.iter().all(|&(_, checked)| checked == 0),
+            "{samples:?}"
+        );
+        assert!(
+            samples.iter().all(|&(work, _)| work <= samples[0].0 + 4),
+            "{samples:?}"
+        );
+    }
+}
+
 /// Unaddressable scalar declarations keep their permissions without growing
 /// the observable pointer frame. Addressable locals must remain observable.
 #[test]

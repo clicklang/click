@@ -30,9 +30,9 @@ src/kernel/functions.rs	legacy-caller	::unreturned_allocation_from_projection	ex
 src/kernel/functions/composite_expansion.rs	legacy-caller	::expand_composite_resource_tree	expand_composite_resource_fact_with_children	1
 src/kernel/functions/contract_refinement.rs	legacy-caller	::framed_resource_transition_refines	try_compose_with_facts_delaying_normalization	1
 src/kernel/functions/named_contract_refinement.rs	legacy-caller	::state_with_refinement_instances	try_compose_into_valid_context_delaying_normalization	1
-src/kernel/loans.rs	legacy-caller	::lend_owned_view_to_suspended_worker	try_compose_with_fact_with_occurrence	1
-src/kernel/loans.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effect	try_compose_with_fact_with_occurrence	3
-src/kernel/loans.rs	legacy-caller	StableViewTransferPlan::lend_local_views_with_worker_shares	try_compose_with_fact_with_occurrence	1
+src/kernel/borrows.rs	legacy-caller	::lend_owned_view_to_suspended_worker	try_compose_with_fact_with_occurrence	1
+src/kernel/borrows.rs	legacy-caller	::plan_stable_view_transfer_with_protocol_effect	try_compose_with_fact_with_occurrence	3
+src/kernel/borrows.rs	legacy-caller	StableViewTransferPlan::lend_local_views_with_worker_shares	try_compose_with_fact_with_occurrence	1
 src/kernel/loops.rs	legacy-caller	::with_owner_read_authority_rederived	expand_composite_resource_fact_with_children	1
 src/kernel/mutexes.rs	legacy-caller	::bind_assumed_guard_inputs	try_compose_with_facts_delaying_normalization	1
 src/kernel/mutexes.rs	legacy-caller	::bind_assumed_lifetime_inputs	try_compose_with_facts_delaying_normalization	1

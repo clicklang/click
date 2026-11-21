@@ -292,6 +292,7 @@ pub struct CellRun {
 }
 
 impl CellRun {
+    #[cfg(test)]
     pub(crate) fn new(
         base: Address,
         element_width: u32,
@@ -562,15 +563,14 @@ impl CellRun {
         let pointer = self.slot_pointer(index);
         // A slot of an abstract type parameter holds the load of its type.
         if let ProgramType::Parameter(parameter) = self.element_type {
-            let (source, pointer) = match &self.mode {
-                RunValueMode::Copy { source_base } => (
-                    self.source().clone(),
-                    source_base.offset_by_bytes(index * self.element_width),
-                ),
+            let pointer = match &self.mode {
+                RunValueMode::Copy { source_base } => {
+                    source_base.offset_by_bytes(index * self.element_width)
+                }
                 RunValueMode::Constant(value) => return value.clone(),
-                RunValueMode::Load => (self.source().clone(), pointer),
+                RunValueMode::Load => pointer,
             };
-            return super::AlgebraicTermNode::parameter_load(source, pointer, parameter);
+            return super::AlgebraicTermNode::parameter_cell_load(&self.source, pointer, parameter);
         }
         match &self.mode {
             RunValueMode::Load => {
@@ -2080,6 +2080,12 @@ impl CellStore {
     /// Inspect one indexed slot's type without constructing a load value.
     /// An ambiguous cover is a refusal. An absent live slot is `Ok(None)`.
     pub(super) fn exact_run_slot_type(&self, pointer: &Address) -> Result<Option<ProgramType>, ()> {
+        self.exact_run_at(pointer)
+            .map(|run| run.map(CellRun::element_type))
+    }
+
+    /// The sole run covering an exact live slot, if its cover is unambiguous.
+    fn exact_run_at(&self, pointer: &Address) -> Result<Option<&CellRun>, ()> {
         let (stem, offset) = offset_stem_and_constant(&pointer.offset);
         let line = CoverLine {
             block: pointer.base.clone(),
@@ -2092,7 +2098,19 @@ impl CellStore {
             return Err(());
         };
         let run = self.runs.get(key).expect("a covering run is held");
-        Ok(run.live_slot_index(pointer).map(|_| run.element_type()))
+        Ok(run.live_slot_index(pointer).map(|_| run))
+    }
+
+    /// Borrow the value of an exact cell or a constant run slot. Other run
+    /// modes need a derivation to produce a value.
+    pub(super) fn exact_stored_value(&self, pointer: &Address) -> Option<&ProgramValue> {
+        if let Some(value) = self.explicitly_stored_value(pointer) {
+            return Some(value);
+        }
+        let RunValueMode::Constant(value) = self.exact_run_at(pointer).ok()??.value_mode() else {
+            return None;
+        };
+        Some(value)
     }
 
     /// Splits the cover segment of `line` holding `offset`, if one does

@@ -310,6 +310,7 @@ fn synthesize_post_execution_paths(
     tactics: &[Vec<ProofTactic>],
     closers: &[Vec<ProofTactic>],
     choices: &[Vec<SurfacePathChoice>],
+    boolean_returns: &[Option<bool>],
 ) -> Result<Vec<ProofStep>, String> {
     let paths = tactics
         .iter()
@@ -331,7 +332,23 @@ fn synthesize_post_execution_paths(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    synthesize_surface_alternatives(paths)
+    synthesize_surface_alternatives_with_returns(paths, boolean_returns)
+}
+
+fn checked_boolean_return(outcome: &FunctionOutcome) -> Option<bool> {
+    let FunctionOutcome::Return { value, .. } = outcome else {
+        return None;
+    };
+    match &**value {
+        crate::kernel::ExecutionValue::Native(ProgramValue::Bool(word)) => {
+            word.bool_constant_value()
+        }
+        crate::kernel::ExecutionValue::Shared(term) => match term.node() {
+            crate::kernel::KernelTermNode::BoolLiteral(result) => Some(*result),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// Serialize deferred proof cases separately inside each leaf of the retained
@@ -346,6 +363,7 @@ fn append_post_execution_paths_by_surface_leaf(
     closers: &[Vec<ProofTactic>],
     choices: &[Vec<SurfacePathChoice>],
     mut branch_path: impl FnMut(usize) -> Option<Vec<bool>>,
+    boolean_return: impl Fn(usize) -> Option<bool>,
 ) -> Result<(), String> {
     let mut groups = std::collections::BTreeMap::<Vec<bool>, Vec<usize>>::new();
     for index in 0..tactics.len() {
@@ -357,10 +375,15 @@ fn append_post_execution_paths_by_surface_leaf(
         members.iter().map(|index| source[*index].clone()).collect()
     }
     for (branch_path, members) in groups {
+        let returns = members
+            .iter()
+            .map(|&index| boolean_return(index))
+            .collect::<Vec<_>>();
         let suffix = synthesize_post_execution_paths(
             &select(tactics, &members),
             &select(closers, &members),
             &select(choices, &members),
+            &returns,
         )?;
         append_surface_steps_at_step_branch_path(steps, &branch_path, suffix)?;
     }
@@ -695,6 +718,10 @@ fn prove_claims_by_checked_tactics(
         state: state.clone(),
         arguments: arguments.clone(),
         pure_facts: pure_facts.clone(),
+        contract_value_parameters: spec_definitions
+            .predicates
+            .contract_value_parameters
+            .clone(),
     });
     // The proof of a function that declares an expression `decreases` measure
     // steps under that function's recursion anchor, which is what makes a
@@ -2878,11 +2905,8 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 let mut tactics = direct_proof
                     .certificate_since(&direct_base)?
                     .to_proof_tactics();
-                tactics.push(match closer {
-                    ProofStep::Known => ProofTactic::Known,
-                    ProofStep::Normalize => ProofTactic::Normalize,
-                    _ => unreachable!("selected a residual closer above"),
-                });
+                // Each written closer discharges only the next claim.
+                tactics.extend(std::iter::repeat_n(closer.to_proof_tactic(), direct_claims.len()));
                 let certificate = ProofCertificate::from_proof_tactics(&tactics)
                     .map_err(|error| ClickError::new(format!(
                         "checked residual closure is not simple: {error}"
@@ -3746,26 +3770,34 @@ pub(super) fn finish_ordered_proof<'a>(
                             },
                         );
                     if let Some(refuted) = refuted_obligations.first() {
-                        return Err(ClickError::new(format!(
-                            "execution proof failed for `{proof_label}` path {path_index}: {}",
-                            describe_refuted_proof_obligation(
-                                refuted,
-                                &path_base_facts.to_vec(),
-                                parameter_binding,
-                            )
-                        )));
+                        let message = describe_refuted_proof_obligation(
+                            refuted,
+                            &path_base_facts.to_vec(),
+                            parameter_binding,
+                        );
+                        return Err(proof.execution_obligation_error(
+                            &proof_label,
+                            path_index,
+                            refuted,
+                            path_base_facts,
+                            message,
+                        ));
                     }
-                    if !missing_obligations.is_empty() {
-                        return Err(ClickError::new(format!(
-                            "execution proof failed for `{proof_label}` path {path_index}: {}",
-                            describe_missing_proof_obligations(
-                                &missing_obligations,
-                                &path_base_facts.to_vec(),
-                                pre_state.resources().facts(),
-                                parameter_binding,
-                                path.facts()
-                            )
-                        )));
+                    if let Some(missing) = missing_obligations.first() {
+                        let message = describe_missing_proof_obligations(
+                            &missing_obligations,
+                            &path_base_facts.to_vec(),
+                            pre_state.resources().facts(),
+                            parameter_binding,
+                            path.facts(),
+                        );
+                        return Err(proof.execution_obligation_error(
+                            &proof_label,
+                            path_index,
+                            missing,
+                            path_base_facts,
+                            message,
+                        ));
                     }
                     let mut outcome = path.outcome().clone();
                     let mut outcome_proof =
@@ -4038,7 +4070,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ProofTactic::Known
                                     | ProofTactic::Normalize
                                     | ProofTactic::NormalizeUsing(_)
-                                    | ProofTactic::OrderChain(_)
                                     | ProofTactic::ArithmeticUsing(_)
                                     | ProofTactic::Preserve(_)
                             ) | PostExecutionTactic::Both(_)
@@ -4126,7 +4157,6 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::Leaf(
                                 tactic @ (ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
-                                | ProofTactic::OrderChain(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_)),
                             ) => Some(tactic_name(tactic)),
@@ -4298,7 +4328,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     matches!(restoration, OpenResourceRestoration::Named(_));
                                 let already_restored =
                                     if let OpenResourceRestoration::Named(instance) = restoration {
-                                        evolving.outcome_holds_open_instance(instance)?
+                                        evolving.holds_open_instance(instance)?
                                     } else {
                                         false
                                     };
@@ -4650,7 +4680,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                 ProofTactic::Known
                                 | ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
-                                | ProofTactic::OrderChain(_)
                                 | ProofTactic::ArithmeticUsing(_)
                                 | ProofTactic::Preserve(_),
                             )
@@ -4787,11 +4816,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                         // Postconditions are conditional on return.
                                         // The checked execution outcome supplies
                                         // vacuity without a return value or state.
-                                        if matches!(closer_step, ProofStep::OrderChain(_)) {
-                                            return Err(ClickError::new(
-                                                "`order_chain` requires a return-state proposition",
-                                            ));
-                                        }
                                         if matches!(closer_step, ProofStep::NormalizeUsing(_)) {
                                             return Err(ClickError::new(
                                                 "`normalize using` requires a return-state proposition; use `known()` for a divergent path",
@@ -5616,7 +5640,10 @@ pub(super) fn finish_ordered_proof<'a>(
                         deferred_capture_prefixes_by_path.push(path_deferred_capture_prefix);
                         implicit_closure_by_path.push(implicitly_closable);
                         deferred_capture_tactics_by_path.push(path_deferred_capture_tactics);
-                        deferred_capture_branches_by_path.push(deferred_capture_branch_path);
+                        deferred_capture_branches_by_path.push((
+                            deferred_capture_branch_path,
+                            checked_boolean_return(path.outcome()),
+                        ));
                     }
                     outcome_proof
                         .as_ref()
@@ -5736,6 +5763,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     &surface_post_tactics_by_path,
                     &surface_grouped_closers_by_path,
                     &surface_post_choices_by_path,
+                    &[],
                 ) {
                     Ok(suffix) => {
                         for step in suffix {
@@ -5756,6 +5784,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                 direct_view.surface_step_branch_path(
                                     surface_post_path_indices[index],
                                     &retained_surface.steps,
+                                )
+                            },
+                            |index| {
+                                checked_boolean_return(
+                                    execution.paths()[surface_post_path_indices[index]].outcome(),
                                 )
                             },
                         ) {
@@ -5820,6 +5853,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         &surface_post_tactics_by_path,
                         &surface_closers_by_claim[claim_index],
                         &surface_post_choices_by_path,
+                        &[],
                     )
                     .map(|suffix| {
                         for step in suffix {
@@ -5912,7 +5946,10 @@ pub(super) fn finish_ordered_proof<'a>(
                 let branches = paths
                     .iter()
                     .map(|(path, _, _)| {
-                        direct_view.surface_branch_path(*path, &deferred.branch_skeleton)
+                        (
+                            direct_view.surface_branch_path(*path, &deferred.branch_skeleton),
+                            checked_boolean_return(execution.paths()[*path].outcome()),
+                        )
                     })
                     .collect::<Vec<_>>();
                 let prefixes = paths
@@ -5968,7 +6005,7 @@ fn finish_deferred_expansion(
     deferred: &DeferredTacticCapture,
     retained_surface: &ProofCertificateBuilder,
     deferred_capture_tactics_by_path: &[Vec<ProofTactic>],
-    deferred_capture_branches_by_path: &[Option<Vec<bool>>],
+    deferred_capture_branches_by_path: &[(Option<Vec<bool>>, Option<bool>)],
     implicit_closure_by_path: &[bool],
     deferred_capture_prefixes_by_path: &[(usize, usize)],
     surface_post_path_indices: &[usize],
@@ -6004,7 +6041,7 @@ fn finish_deferred_expansion(
         || (!path_independent_capture
             && deferred_capture_branches_by_path
                 .iter()
-                .all(Option::is_none)
+                .all(|(branch, _)| branch.is_none())
             && implicit_closure_by_path.iter().all(|closable| *closable));
     if !contributes_no_tactics && path_independent_capture {
         // Every path produced the same checked expansion. It stands
@@ -6056,16 +6093,28 @@ fn finish_deferred_expansion(
         }
     } else if !contributes_no_tactics {
         let mut capture_tactics = deferred.branch_skeleton.as_ref().clone();
-        for (branch_path, path_tactics) in deferred_capture_branches_by_path
+        let mut split_leaves = captured_boolean_return_splits(
+            deferred_capture_tactics_by_path,
+            deferred_capture_branches_by_path,
+        );
+        for ((branch_path, _), path_tactics) in deferred_capture_branches_by_path
             .iter()
             .zip(deferred_capture_tactics_by_path)
         {
             let appended = match branch_path {
-                Some(branch_path) => append_surface_tactics_at_branch_path(
-                    &mut capture_tactics,
-                    branch_path,
-                    path_tactics,
-                ),
+                Some(branch_path) => {
+                    let split;
+                    let suffix = if let Some(leaf) = split_leaves.get_mut(branch_path) {
+                        split = leaf.take();
+                        let Some(tactics) = &split else {
+                            continue;
+                        };
+                        tactics
+                    } else {
+                        path_tactics
+                    };
+                    append_surface_tactics_at_branch_path(&mut capture_tactics, branch_path, suffix)
+                }
                 None => append_surface_tactics_at_every_leaf(&mut capture_tactics, path_tactics),
             };
             if let Err(message) = appended {
@@ -6083,6 +6132,45 @@ fn finish_deferred_expansion(
         }
     }
     finish_tactic_expansion_capture(expansion_capture, &capture, contributes_no_tactics);
+}
+
+fn captured_boolean_return_splits<'a>(
+    tactics: &[Vec<ProofTactic>],
+    branches: &'a [(Option<Vec<bool>>, Option<bool>)],
+) -> BTreeMap<&'a Vec<bool>, Option<Vec<ProofTactic>>> {
+    // An unknown route may share any leaf. Keep the ordinary stitch in
+    // that case so no outcome is omitted from a generated result split.
+    let mut leaves = BTreeMap::<_, Vec<_>>::new();
+    for ((branch, boolean_return), tactics) in branches.iter().zip(tactics) {
+        let Some(branch) = branch else {
+            return BTreeMap::new();
+        };
+        leaves
+            .entry(branch)
+            .or_default()
+            .push((*boolean_return, tactics));
+    }
+    leaves
+        .into_iter()
+        .filter_map(|(branch, paths)| {
+            if paths.windows(2).all(|pair| pair[0].1 == pair[1].1) {
+                return None;
+            }
+            let proofs = paths
+                .into_iter()
+                .map(|(value, tactics)| {
+                    Some((value, ProofCertificate::from_proof_tactics(tactics).ok()?))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let split =
+                boolean_return_split(proofs.iter().map(|(value, proof)| (*value, proof.steps())))?
+                    .ok()?;
+            Some((
+                branch,
+                Some(ProofCertificate::from_validated_steps(vec![split]).to_proof_tactics()),
+            ))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -6114,7 +6202,7 @@ mod tests {
             ]
         });
         let closers = vec![vec![ProofTactic::Normalize]; 4];
-        let steps = synthesize_post_execution_paths(&tactics, &closers, &choices).unwrap();
+        let steps = synthesize_post_execution_paths(&tactics, &closers, &choices, &[]).unwrap();
         let [
             ProofStep::Step,
             ProofStep::If {
@@ -6138,7 +6226,7 @@ mod tests {
         );
         let mut mismatched = tactics;
         mismatched[1][0] = ProofTactic::Normalize;
-        assert!(synthesize_post_execution_paths(&mismatched, &closers, &choices).is_err());
+        assert!(synthesize_post_execution_paths(&mismatched, &closers, &choices, &[]).is_err());
     }
 
     #[test]

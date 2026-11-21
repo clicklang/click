@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::loans::LoanLedger;
+use crate::kernel::borrows::BorrowLedger;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{constant_u32, int32_constant};
 use std::sync::Arc;
@@ -141,22 +141,22 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
     );
 }
 
-fn active_memory_loan(range: MemoryRange) -> LoanLedger {
+fn active_memory_borrow(range: MemoryRange) -> BorrowLedger {
     let fact = ResourceFact::own_memory(range);
     let support = ResourceContext::new()
         .unchecked_with_fact(fact.clone())
         .unique_owned_occurrence_for_fact(&fact)
         .expect("memory backing")
         .0;
-    let ledger = LoanLedger::new();
+    let ledger = BorrowLedger::new();
     let owner = ledger.fresh_participant().expect("owner identity");
     let reader = ledger.fresh_participant().expect("reader identity");
     let opening = ledger
         .lend(owner, reader, support, fact)
-        .expect("memory loan");
+        .expect("memory borrow");
     ledger
         .apply(&opening.transition)
-        .expect("memory loan apply")
+        .expect("memory borrow apply")
 }
 
 fn normal_state(paths: &[StatementExecutionPath]) -> ExecutionState {
@@ -172,22 +172,22 @@ fn normal_state(paths: &[StatementExecutionPath]) -> ExecutionState {
     *state.clone()
 }
 
-fn assert_loan_write_rejected(outcome: &StatementOutcome) {
-    let StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)) = outcome else {
-        panic!("expected a loan refusal, got {outcome:?}");
+fn assert_borrow_write_rejected(outcome: &StatementOutcome) {
+    let StatementOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)) = outcome else {
+        panic!("expected a borrow refusal, got {outcome:?}");
     };
     assert_eq!(
         diagnostic.category(),
-        crate::kernel::LoanRefusalCategory::ActiveDependency
+        crate::kernel::BorrowRefusalCategory::ActiveDependency
     );
     assert_eq!(
         diagnostic.operation(),
-        crate::kernel::LoanRefusalOperation::MemoryAccess
+        crate::kernel::BorrowRefusalOperation::MemoryAccess
     );
     assert!(diagnostic.subject().conflicting_resource_fact().is_some());
 }
 
-fn loan_write_separation(path: &StatementExecutionPath) -> (&Resource, &Resource) {
+fn borrow_write_separation(path: &StatementExecutionPath) -> (&Resource, &Resource) {
     assert!(matches!(path.outcome, StatementOutcome::Normal(_)));
     let [obligation] = path.obligations.as_slice() else {
         panic!(
@@ -197,7 +197,7 @@ fn loan_write_separation(path: &StatementExecutionPath) -> (&Resource, &Resource
     };
     let Proposition::ResourceSeparate { left, right } = obligation.proposition() else {
         panic!(
-            "expected loan separation, got {:?}",
+            "expected borrow separation, got {:?}",
             obligation.proposition()
         );
     };
@@ -205,7 +205,7 @@ fn loan_write_separation(path: &StatementExecutionPath) -> (&Resource, &Resource
 }
 
 #[test]
-fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store() {
+fn active_stable_borrow_requires_separation_for_local_assignment_and_alias_store() {
     let _session = crate::kernel::VerificationSession::enter();
     let declaration = program_declare("x", ProgramType::Int32);
     let execute = |state: &ExecutionState, statement: &ProgramStatement| {
@@ -228,16 +228,16 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
     );
     assert!(execute(&state, &write)[0].obligations.is_empty());
 
-    let overlapping = active_memory_loan(MemoryRange::new(
+    let overlapping = active_memory_borrow(MemoryRange::new(
         pointer.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));
-    let loaned = state.clone().with_loan_ledger(Some(overlapping));
-    let direct = execute(&loaned, &write);
-    let indirect = execute(&loaned, &store);
-    let (written, protected) = loan_write_separation(&direct[0]);
-    assert_eq!((written, protected), loan_write_separation(&indirect[0]));
+    let with_active_borrow = state.clone().with_borrow_ledger(Some(overlapping));
+    let direct = execute(&with_active_borrow, &write);
+    let indirect = execute(&with_active_borrow, &store);
+    let (written, protected) = borrow_write_separation(&direct[0]);
+    assert_eq!((written, protected), borrow_write_separation(&indirect[0]));
     assert_eq!(
         written,
         &Resource::Memory(MemoryRange::from_pointer_value(
@@ -248,21 +248,23 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
         )),
     );
     assert!(!PureFactContext::new().proves_resource_separate(written, protected));
-    assert_loan_write_rejected(&execute(&loaned, &declaration)[0].outcome);
+    assert_borrow_write_rejected(&execute(&with_active_borrow, &declaration)[0].outcome);
 
-    let disjoint = active_memory_loan(MemoryRange::new(
+    let disjoint = active_memory_borrow(MemoryRange::new(
         state.locals().slot("y").unwrap().clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));
-    let loaned = state.with_loan_ledger(Some(disjoint));
-    let unowned = loaned.clone().with_resource_context(ResourceContext::new());
+    let with_active_borrow = state.with_borrow_ledger(Some(disjoint));
+    let unowned = with_active_borrow
+        .clone()
+        .with_resource_context(ResourceContext::new());
     assert!(matches!(
         execute(&unowned, &write)[0].outcome,
         StatementOutcome::RuntimeError(RuntimeError::MissingResource { .. })
     ));
-    let direct = execute(&loaned, &write);
-    let (written, protected) = loan_write_separation(&direct[0]);
+    let direct = execute(&with_active_borrow, &write);
+    let (written, protected) = borrow_write_separation(&direct[0]);
     assert!(PureFactContext::new().proves_resource_separate(written, protected));
     assert_eq!(
         normal_state(&direct).locals().get_native("x").as_deref(),
@@ -271,7 +273,7 @@ fn active_stable_loan_requires_separation_for_local_assignment_and_alias_store()
 }
 
 #[test]
-fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
+fn private_pointer_copy_retains_qualifier_ownership_and_borrow_refusals() {
     let _session = crate::kernel::VerificationSession::enter();
     crate::kernel::set_never_address_taken_locals(BTreeSet::from(["p".into()]));
     let execute = |state: &ExecutionState, statement: &ProgramStatement| {
@@ -319,12 +321,12 @@ fn private_pointer_copy_retains_qualifier_ownership_and_loan_refusals() {
         1u32.into(),
         value.byte_width(),
     );
-    let loaned = state.with_loan_ledger(Some(active_memory_loan(protected)));
-    assert_loan_write_rejected(&execute(&loaned, &copy)[0].outcome);
+    let with_active_borrow = state.with_borrow_ledger(Some(active_memory_borrow(protected)));
+    assert_borrow_write_rejected(&execute(&with_active_borrow, &copy)[0].outcome);
 }
 
 #[test]
-fn active_stable_loan_allows_a_disjoint_local_store() {
+fn active_stable_borrow_allows_a_disjoint_local_store() {
     let declared = execute_execution_statement_paths(
         &ExecutionState::new(),
         &ProgramStatement::Declare {
@@ -345,12 +347,12 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
     .expect("array declaration should execute");
     let state = normal_state(&declared);
     let base = state.locals().slot("a").cloned().expect("array pointer");
-    let loan = active_memory_loan(MemoryRange::new(
+    let borrow = active_memory_borrow(MemoryRange::new(
         base.clone(),
         MachineTerm::constant(0),
         MachineTerm::constant(1),
     ));
-    let state = state.with_loan_ledger(Some(loan)).with_local(
+    let state = state.with_borrow_ledger(Some(borrow)).with_local(
         "p",
         ProgramValue::typed_pointer(base.offset_by_bytes(4), ProgramType::Int32Pointer),
     );
@@ -1672,6 +1674,47 @@ fn perpetual_loop_verifies_safety_without_minting_a_concrete_exit() {
 }
 
 #[test]
+fn loop_head_preserves_sparse_body_field_view_reservations() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = ExecutionBudget::KERNEL_VARIABLE_BASE;
+    let mut state = ExecutionState::new().with_local("i", int32(0));
+    let view = ResourceInstance::field_view(
+        "parent".to_string(),
+        std::iter::empty().collect(),
+        ResourceFieldSchema::new(vec![(
+            "rank".to_string(),
+            ResourceFieldType::Program(ProgramType::Int32),
+        )])
+        .unwrap(),
+        [crate::kernel::AlgebraicValue::Program(int32(
+            MachineTerm::Variable(Variable(base + 1)),
+        ))]
+        .into_iter()
+        .collect(),
+    )
+    .unwrap();
+    state.body_field_view = Some(Arc::new(view));
+    let body = program_assign("i", crate::kernel::program_expression::int32_literal(1));
+    let head = crate::kernel::api::loop_phase_preservation_contexts(
+        &state,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        &body,
+        &PureFactContext::new(),
+        0,
+    )
+    .expect("preservation context");
+
+    // The iteration uses the free candidate before the field's identity. The
+    // havoc of i must skip over the field and take the next free identity.
+    assert_eq!(head[0].iterations(), &IntegerTerm::var(Variable(base)));
+    assert_eq!(head[0].next_kernel_variable(), 3);
+}
+
+#[test]
 fn loop_exit_rule_with_proven_preservation_does_not_reverify_the_body() {
     let state = ExecutionState::new().with_local("i", int32(0));
     let statement = program_while_with_invariant_checks(
@@ -2276,7 +2319,7 @@ fn prerequisite_loop_rule_fixture() -> (ProgramStatement, VerifiedLoopRule) {
 }
 
 /// R23's back-edge case. A loop head that holds a stable-view root can only
-/// close its back edge at the *same* loan authority. Two body paths that a
+/// close its back edge at the *same* borrow authority. Two body paths that a
 /// term-level comparison would call equal are refused here: one that handed
 /// the live share away, and one that built a fresh root over the same support
 /// occurrence instead of carrying the head's. The resource context, the
@@ -2293,7 +2336,7 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
     let resources = ResourceContext::new().unchecked_with_fact(viewed.clone());
     let support = resources.occurrences_for_fact(&viewed)[0];
 
-    let rooted = |ledger: LoanLedger| {
+    let rooted = |ledger: BorrowLedger| {
         let participant = ledger.fresh_participant().expect("a participant");
         let opening = ledger
             .borrowed_contract_input(participant, support, viewed.clone(), None)
@@ -2302,11 +2345,11 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
         (ledger, participant, opening)
     };
 
-    let (head_ledger, participant, opening) = rooted(LoanLedger::new());
-    let bindings = crate::kernel::loans::LoanViewBindings::default().with_inserted(
+    let (head_ledger, participant, opening) = rooted(BorrowLedger::new());
+    let bindings = crate::kernel::borrows::BorrowBindings::default().with_inserted(
         support,
-        crate::kernel::loans::LoanViewBinding {
-            loan: opening.loan,
+        crate::kernel::borrows::BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support,
@@ -2314,12 +2357,12 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
             hold: None,
         },
     );
-    let at = |ledger: LoanLedger, participant| {
+    let at = |ledger: BorrowLedger, participant| {
         ExecutionState::new()
             .with_resource_context(resources.clone())
-            .with_loan_ledger(Some(ledger))
-            .with_loan_participant(Some(participant))
-            .with_loan_view_bindings(bindings.clone())
+            .with_borrow_ledger(Some(ledger))
+            .with_borrow_participant(Some(participant))
+            .with_borrow_bindings(bindings.clone())
     };
     let head = at(head_ledger.clone(), participant);
     let assumptions = PureFactContext::new();
@@ -2352,7 +2395,7 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
         regenerated.description.support(),
         opening.description.support()
     );
-    assert_ne!(regenerated.loan, opening.loan);
+    assert_ne!(regenerated.borrow, opening.borrow);
     let regenerated_state = at(
         head_ledger
             .apply(&regenerated.transition)
@@ -2366,7 +2409,10 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
         definitions,
     )
     .expect_err("a back edge cannot regenerate the head's root");
-    assert!(refusal.contains("stable-view loan authority"), "{refusal}");
+    assert!(
+        refusal.contains("stable-view borrow authority"),
+        "{refusal}"
+    );
 
     // A body path that handed the live share to someone else.
     let reader = head_ledger
@@ -2386,7 +2432,10 @@ fn loop_back_edge_refuses_a_dropped_share_or_a_regenerated_root() {
         definitions,
     )
     .expect_err("a back edge cannot discard the share the head holds");
-    assert!(refusal.contains("stable-view loan authority"), "{refusal}");
+    assert!(
+        refusal.contains("stable-view borrow authority"),
+        "{refusal}"
+    );
 }
 
 #[test]

@@ -24,7 +24,7 @@ void restored(struct object* obj, struct object* alias) {
     owns control(obj);
     requires alias == obj;
 } by {
-    open(control(obj)) {
+    with(control(obj)) {
         step();
         step();
     }

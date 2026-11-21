@@ -125,6 +125,19 @@ pub(super) fn describe_statement_prerequisite_failure(
     environment: &ExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
 ) -> String {
+    if matches!(proposition, Proposition::ResourceSeparate { .. }) {
+        let refusal = describe_derivation_failure(
+            proposition,
+            available,
+            state,
+            environment,
+            predicate_environment,
+        );
+        return format!(
+            "{refusal}{}",
+            crate::surface::diagnostics::describe_execution_statement_site()
+        );
+    }
     // The context records a path fact in derived forms too (an unsigned
     // comparison as its signed bounds); those restate the refused path's
     // own assumption, not a consulted fact.

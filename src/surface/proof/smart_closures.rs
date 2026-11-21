@@ -5,6 +5,7 @@ mod integer_composition;
 mod pointer_offsets;
 mod quotient_shifts;
 mod signed_intervals;
+mod signed_order;
 mod specialized;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_term;
@@ -3450,7 +3451,7 @@ impl<'a> Proof<'a> {
         // is a spelling defect, not a reason to search other spellings.
         // Calls have their own authoritative source at this frontier. A
         // context fact's source may instead be relative to function entry.
-        // Generated loan separation already names its caller-side ranges.
+        // Generated borrow separation already names its caller-side ranges.
         // Its call site restricts proof to entry, but supplies no source clause.
         let generated_separation = requirement.call_site.as_ref().is_some_and(|site| {
             site.source_requirement_ordinal.is_none()
@@ -3472,7 +3473,10 @@ impl<'a> Proof<'a> {
         if let Some(surface) = recorded {
             let lowered = self.lower_surface_goal(surface, "recorded tactic requirement")?;
             if !lowered_covers_recorded_requirement(&lowered, requirement) {
-                return Err(self.step_error("a recorded tactic requirement does not round-trip"));
+                return Err(self.step_error(format!(
+                    "a recorded tactic requirement does not round-trip (report this as a bug)\nSurface form `{}`",
+                    crate::surface::printing::source_click_proposition(surface),
+                )));
             }
             return Ok(Some(RequirementSpelling {
                 surface: surface.clone(),
@@ -3529,14 +3533,20 @@ impl<'a> Proof<'a> {
             }),
         };
         if let Some(surface) = non_execution_surface {
-            let surface = surface.ok_or_else(|| self.step_error(
-                "a generated prerequisite has no Surface form; this is a raise-lower principle defect",
-            ).with_unresolved_requirement(&ProofObligation::verification_condition(requirement.proposition.clone())))?;
+            let surface = surface.ok_or_else(|| {
+                self.step_error(
+                    "a generated prerequisite has no Surface form (report this as a bug)",
+                )
+                .with_unresolved_requirement(
+                    &ProofObligation::verification_condition(requirement.proposition.clone()),
+                )
+            })?;
             let lowered = self.lower_surface_goal(&surface, "proof definedness requirement")?;
             if !lowered_states_requirement(&lowered, requirement) {
-                return Err(self.step_error(
-                    "a proof definedness requirement does not round-trip; this is a raise-lower principle defect",
-                ));
+                return Err(self.step_error(format!(
+                    "a proof definedness requirement does not round-trip (report this as a bug)\nSurface form `{}`",
+                    crate::surface::printing::source_click_proposition(&surface),
+                )));
             }
             return Ok(Some(RequirementSpelling { surface }));
         }
@@ -3692,8 +3702,13 @@ impl Drop for SolveFallbackScope {
     }
 }
 
-/// The checked unfold and rewrite steps one constructor evaluation may take.
+/// The checked unfold and rewrite steps one constructor evaluation takes
+/// beyond those a constant measure adds.
 const CONSTRUCTOR_EVALUATION_FUEL: usize = 8;
+
+/// The most checked steps one constructor evaluation takes, however large
+/// the constant measures it unfolds.
+const MAX_CONSTRUCTOR_EVALUATION_FUEL: usize = 1024;
 
 /// The connected facts one constructor evaluation reads for constructor
 /// equations once it is stuck.
@@ -4049,6 +4064,13 @@ pub(super) fn lowered_states_requirement(
                 lowered,
                 &requirement.proposition,
             ))
+        || (requirement
+            .call_site
+            .as_ref()
+            .is_some_and(|site| {
+                site.source_requirement_ordinal.is_some() || site.initialization_clause.is_some()
+            })
+            && quantified_read_definedness_covers(lowered, &requirement.proposition))
     {
         return true;
     }
@@ -4070,6 +4092,54 @@ pub(super) fn lowered_states_requirement(
         }
     }
     false
+}
+
+/// A callee's pointer parameter is already a value. Substituting a caller
+/// argument that loads a pointer into `defined(p[k])` also checks those
+/// argument loads. Proving all the checks proves the callee's read check
+/// under the very same quantifier and guard.
+fn quantified_read_definedness_covers(written: &Proposition, required: &Proposition) -> bool {
+    let Proposition::ForAll { body, .. } = required else {
+        return false;
+    };
+    if !matches!(body.as_ref(), Proposition::Implies(_, read)
+        if matches!(read.as_ref(), Proposition::MemoryReadDefined { .. }))
+    {
+        return false;
+    }
+    let Proposition::ForAll {
+        name,
+        var,
+        sort,
+        body,
+    } = written
+    else {
+        return false;
+    };
+    let Proposition::Implies(guard, checks) = body.as_ref() else {
+        return false;
+    };
+    let mut read = checks.as_ref();
+    while let Proposition::And(argument_load, rest) = read {
+        crate::instrumentation::record_deterministic_work(1);
+        if !matches!(
+            argument_load.as_ref(),
+            Proposition::MemoryReadDefined { .. }
+        ) {
+            return false;
+        }
+        read = rest;
+    }
+    matches!(read, Proposition::MemoryReadDefined { .. })
+        && propositions_are_alpha_equal(
+            &Proposition::ForAll {
+                name: name.clone(),
+                var: *var,
+                sort: sort.clone(),
+                body: Box::new(Proposition::Implies(guard.clone(), Box::new(read.clone()))),
+            },
+            required,
+        )
 }
 
 // The selected source and requirement can use native or retained comparisons.
@@ -4280,7 +4350,10 @@ fn source_backed_call_requirement_surface(
     context: &ExecutionProofContext<'_>,
 ) -> Option<SourceBackedCallSurface> {
     let source = requirement.call_site.as_ref()?;
-    let source_ordinal = source.source_requirement_ordinal?;
+    let source_ordinal = source.source_requirement_ordinal;
+    if source_ordinal.is_none() && source.initialization_clause.is_none() {
+        return None;
+    }
     let site = source.site.as_ref();
 
     if crate::kernel::MemoryStateIdentity::of(execution.core.state.memory())
@@ -4392,7 +4465,7 @@ fn source_backed_call_requirement_surface(
     let use_named_interface = matches!(step, ProofStep::StepContract(_))
         || matches!(step, ProofStep::StepCall(transport) if transport.is_named_contract())
         || site.interface.as_ref() != site.callee.as_str()
-        || ordinary_source.is_none();
+        || (ordinary_source.is_none() && source.initialization_clause.is_none());
 
     // Ordinary C calls use the file-scoped registry keyed by the carrier's
     // callee. Named callback and StepContract interfaces instead resolve by
@@ -4410,7 +4483,10 @@ fn source_backed_call_requirement_surface(
                 .predicates
                 .contract_definition(source.interface.as_ref());
             let definition = definition?;
-            let requirement = definition.function_block().requires().get(source_ordinal)?;
+            let requirement = definition
+                .function_block()
+                .requires()
+                .get(source_ordinal?)?;
             let parameters = definition.function_block().signature().parameters();
             (
                 parameters
@@ -4431,16 +4507,33 @@ fn source_backed_call_requirement_surface(
                 requirement.proposition()?.clone(),
             )
         } else {
-            let source = ordinary_source?.get(source_ordinal)?;
-            let proposition = match source {
-                FunctionRequirementSource::Proposition(proposition) => proposition.clone(),
-                FunctionRequirementSource::LoadableSegment(segment) => ClickProposition::Loadable {
-                    segment: segment.clone(),
-                },
-            };
             let function = context
                 .function_environment
                 .get_function(site.callee.as_ref())?;
+            let proposition = if let Some(index) = source.initialization_clause {
+                let segment = function
+                    .resource_requires()
+                    .get(index)?
+                    .term()
+                    .memory_segment()?;
+                let byte_result = initialized_byte_call_result(
+                    segment,
+                    function,
+                    &site.source_arguments,
+                    execution,
+                    context,
+                );
+                initialized_byte_range_surface(segment, byte_result)
+            } else {
+                match ordinary_source?.get(source_ordinal?)? {
+                    FunctionRequirementSource::Proposition(proposition) => proposition.clone(),
+                    FunctionRequirementSource::LoadableSegment(segment) => {
+                        ClickProposition::Loadable {
+                            segment: segment.clone(),
+                        }
+                    }
+                }
+            };
             aggregate_parameters.extend(
                 function
                     .parameters()
@@ -4481,17 +4574,24 @@ fn source_backed_call_requirement_surface(
             // An identity cast of a caller parameter is that parameter: the
             // surface names it as the caller's own requirement does, with the
             // C-string bridge elaborated as its explicit byte view.
-            let argument = match caller_parameter_through_identity_cast(
-                argument,
-                context.parsed_function.parameters(),
-                &execution.core.state,
-            ) {
-                Some(slot) => caller_parameter_as_argument(
-                    &context.parsed_function.parameters()[slot],
-                    *parameter_type,
-                ),
-                None => caller_embedded_record_argument(argument, context.parsed_function)
-                    .unwrap_or_else(|| source_call_argument_surface(argument)),
+            let argument = if source.initialization_clause.is_some()
+                && let ProgramExpression::StepResult { step, .. } = argument
+                && let Some(region) = context.constants.source_layout.step_region(*step)
+            {
+                ContractExpression::RegionResult(CodeRegionRef::Region(region))
+            } else {
+                match caller_parameter_through_identity_cast(
+                    argument,
+                    context.parsed_function.parameters(),
+                    &execution.core.state,
+                ) {
+                    Some(slot) => caller_parameter_as_argument(
+                        &context.parsed_function.parameters()[slot],
+                        *parameter_type,
+                    ),
+                    None => caller_embedded_record_argument(argument, context.parsed_function)
+                        .unwrap_or_else(|| source_call_argument_surface(argument)),
+                }
             };
             (parameter.clone(), argument)
         })
@@ -4640,6 +4740,109 @@ fn source_backed_call_requirement_surface(
     })
 }
 
+/// State the byte-read check using the selected contract range, before
+/// substituting the caller's written arguments.
+fn initialized_byte_range_surface(
+    segment: &crate::kernel::MemorySegment,
+    byte_result: Option<ContractExpression>,
+) -> ClickProposition {
+    let (base, start, end) = segment.source_expressions();
+    let name = SurfaceBinder::fresh();
+    let index = ProgramExpression::Variable(name.kernel_name());
+    let comparison = |left, operator, right| ClickProposition::Comparison {
+        left: ContractExpression::ProgramExpression(left),
+        operator,
+        right: ContractExpression::ProgramExpression(right),
+    };
+    let guard = ClickProposition::And(
+        Box::new(comparison(
+            start.clone(),
+            ComparisonOperator::LessEqual,
+            index.clone(),
+        )),
+        Box::new(comparison(
+            index.clone(),
+            ComparisonOperator::LessThan,
+            end.clone(),
+        )),
+    );
+    let expression = match byte_result {
+        Some(result) => ContractExpression::MemoryLoad {
+            pointer: Box::new(ContractExpression::Add(
+                Box::new(result),
+                Box::new(ContractExpression::ProgramExpression(index)),
+            )),
+            value_type: crate::kernel::ProgramType::UInt8,
+            volatile: false,
+            pointee_constant: false,
+        },
+        None => ContractExpression::ProgramExpression(ProgramExpression::Index(
+            Box::new(base.clone()),
+            Box::new(index),
+        )),
+    };
+    let read = ClickProposition::Defined { expression };
+    ClickProposition::ForAll {
+        click_type: ClickType::Program(InterfaceType::UInt64(crate::surface::LongRank::Long)),
+        name,
+        written_name: None,
+        body: Box::new(ClickProposition::Implies(Box::new(guard), Box::new(read))),
+    }
+}
+
+/// A byte pointer returned by an earlier call already names the same read
+/// as erasing it to void and restoring its byte view. Name the retained
+/// result directly so the proof need not cast a historical expression.
+fn initialized_byte_call_result(
+    segment: &crate::kernel::MemorySegment,
+    function: &crate::kernel::ProgramFunction,
+    arguments: &[ProgramExpression],
+    execution: &ExecutionProofState,
+    context: &ExecutionProofContext<'_>,
+) -> Option<ContractExpression> {
+    use crate::kernel::{IntegerCastMode, ProgramType};
+    let (base, _, _) = segment.source_expressions();
+    let ProgramExpression::Cast {
+        expression,
+        target_type: ProgramType::UInt8Pointer,
+        integer_mode: IntegerCastMode::PointerCoercion,
+        pointee_volatile: false,
+        ..
+    } = base
+    else {
+        return None;
+    };
+    let ProgramExpression::Variable(binding) = expression.as_ref() else {
+        return None;
+    };
+    let slot = function
+        .parameters()
+        .iter()
+        .position(|p| p.binding_name() == binding)?;
+    let ProgramExpression::Cast {
+        expression,
+        target_type: ProgramType::VoidPointer,
+        integer_mode: IntegerCastMode::PointerCoercion,
+        pointee_volatile: false,
+        ..
+    } = arguments.get(slot)?
+    else {
+        return None;
+    };
+    let ProgramExpression::StepResult { step, .. } = expression.as_ref() else {
+        return None;
+    };
+    let value = execution.core.state.step_result(*step)?;
+    let pointer = value.pointer()?;
+    if pointer.program_type() != ProgramType::UInt8Pointer || pointer.pointee_volatile() {
+        return None;
+    }
+    let region = context.constants.source_layout.step_region(*step)?;
+    Some(ContractExpression::RegionResult(CodeRegionRef::Region(
+        region,
+    )))
+}
+
 pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
     requirement: &UnresolvedRequirement,
     step: &ProofStep,
@@ -4749,7 +4952,9 @@ fn caller_embedded_record_argument(
     {
         crate::instrumentation::record_deterministic_work(1);
         let (parent, offset) = match expression.as_ref() {
-            ProgramExpression::PointerOffsetBytes { pointer, bytes } => (pointer.as_ref(), *bytes),
+            ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
+                (pointer.as_ref(), bytes.bytes()?)
+            }
             parent => (parent, 0),
         };
         projections.push((offset, target.as_str()));
@@ -4803,7 +5008,7 @@ fn caller_embedded_record_argument(
                 source_root.clone(),
                 accumulated_offset,
             ),
-            offset_bytes: field.offset_bytes(),
+            offset_bytes: field.offset_bytes().into(),
         };
         layout = function
             .record_layout(nominal)

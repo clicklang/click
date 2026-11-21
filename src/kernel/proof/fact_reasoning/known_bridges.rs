@@ -13,6 +13,51 @@ fn holds(p: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
     available(p) || super::computes_leaf(p)
 }
 
+fn comparison_holds(
+    condition: ConditionTerm,
+    truth: bool,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let premise = condition.truth_claim(truth);
+    holds(&premise, available)
+        || crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(
+            &condition, truth,
+        )
+        .is_some_and(|(condition, truth)| holds(&condition.truth_claim(truth), available))
+        || super::order_claim_forms(&premise)
+            .iter()
+            .any(|form| form != &premise && available(form))
+}
+
+/// Compare the result of a retained fold against the same written operand.
+/// The reduced comparison names a single premise for the exact-fact lookup.
+fn trivial_fold_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let integer_comparison_condition!(left, right) = condition else {
+        return None;
+    };
+    let reduce = |operand: &SharedIntegerTerm| {
+        let IntegerTerm::Machine(machine) = operand.as_ref() else {
+            return None;
+        };
+        super::computation::observe_trivial_int32_fold(machine)
+    };
+    let (left_result, right_result) = (reduce(left), reduce(right));
+    if left_result.is_none() && right_result.is_none() {
+        return None;
+    }
+    let left = left_result.unwrap_or_else(|| left.clone());
+    let right = right_result.unwrap_or_else(|| right.clone());
+    Some(match condition {
+        ConditionTerm::IntegerLessThan(..) => ConditionTerm::IntegerLessThan(left, right),
+        ConditionTerm::IntegerLessEqual(..) => ConditionTerm::IntegerLessEqual(left, right),
+        ConditionTerm::IntegerGreaterThan(..) => ConditionTerm::IntegerGreaterThan(left, right),
+        ConditionTerm::IntegerGreaterEqual(..) => ConditionTerm::IntegerGreaterEqual(left, right),
+        ConditionTerm::IntegerEqual(..) => ConditionTerm::IntegerEqual(left, right),
+        ConditionTerm::IntegerNotEqual(..) => ConditionTerm::IntegerNotEqual(left, right),
+        _ => unreachable!(),
+    })
+}
+
 fn in_range(
     value: &IntegerTerm,
     format: crate::kernel::primitives::MachineIntegerFormat,
@@ -225,6 +270,145 @@ fn mask_bound(a: &IntegerTerm, b: &IntegerTerm, available: &impl Fn(&Proposition
     false
 }
 
+fn unsigned_remainder_bound(
+    lower: &IntegerTerm,
+    upper: &IntegerTerm,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let IntegerTerm::Machine(remainder) = lower else {
+        return false;
+    };
+    let Some((ty, MachineBinaryOp::Remainder, [dividend, divisor])) =
+        remainder.operand_view().binary()
+    else {
+        return false;
+    };
+    if ty != remainder.ty()
+        || ty.format().is_signed()
+        || dividend.observe(ty).as_ref() != Some(upper)
+    {
+        return false;
+    }
+    let Some(divisor) = divisor.observe(ty) else {
+        return false;
+    };
+    let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
+    let one = IntegerTerm::constant_i64(1).into();
+    let divisor: SharedIntegerTerm = divisor.into();
+    [
+        (
+            ConditionTerm::IntegerEqual(divisor.clone(), zero.clone()),
+            false,
+        ),
+        (ConditionTerm::IntegerLessThan(zero, divisor.clone()), true),
+        (ConditionTerm::IntegerLessEqual(one, divisor), true),
+    ]
+    .into_iter()
+    .any(|(guard, truth)| comparison_holds(guard, truth, available))
+}
+
+fn signed_division_sign(
+    left: &IntegerTerm,
+    right: &IntegerTerm,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    let (result, nonnegative) = if left.as_const().is_some_and(Zero::is_zero) {
+        (right, true)
+    } else if right.as_const().is_some_and(Zero::is_zero) {
+        (left, false)
+    } else {
+        return false;
+    };
+    let (dividend, divisor, quotient, overflow_exclusion) = match result {
+        IntegerTerm::TruncatingQuotient(n, d) | IntegerTerm::TruncatingRemainder(n, d) => {
+            let quotient = matches!(result, IntegerTerm::TruncatingQuotient(..));
+            (n.clone(), d.clone(), quotient, None)
+        }
+        IntegerTerm::Machine(result) => {
+            let Some((
+                ty @ (MachineIntegerType::Int32 | MachineIntegerType::Int64),
+                op @ (MachineBinaryOp::Divide | MachineBinaryOp::Remainder),
+                [n, d],
+            )) = result.operand_view().binary()
+            else {
+                return false;
+            };
+            if ty != result.ty() {
+                return false;
+            }
+            let (Some(dividend), Some(divisor)) = (n.observe(ty), d.observe(ty)) else {
+                return false;
+            };
+            (
+                dividend.into(),
+                divisor.into(),
+                op == MachineBinaryOp::Divide,
+                Some((ty, n, d)),
+            )
+        }
+        _ => return false,
+    };
+    let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
+    let ordered = |a: &SharedIntegerTerm, b: &SharedIntegerTerm| {
+        comparison_holds(
+            ConditionTerm::IntegerLessEqual(a.clone(), b.clone()),
+            true,
+            available,
+        )
+    };
+    let strict = |a: &SharedIntegerTerm, b: &SharedIntegerTerm| {
+        comparison_holds(
+            ConditionTerm::IntegerLessThan(a.clone(), b.clone()),
+            true,
+            available,
+        )
+    };
+    let nonzero = || {
+        comparison_holds(
+            ConditionTerm::IntegerEqual(divisor.clone(), zero.clone()),
+            false,
+            available,
+        )
+    };
+    let positive = strict(&zero, &divisor)
+        || ordered(&IntegerTerm::constant_i64(1).into(), &divisor)
+        || (ordered(&zero, &divisor) && nonzero());
+    let negative = || {
+        strict(&divisor, &zero)
+            || ordered(&divisor, &IntegerTerm::constant_i64(-1).into())
+            || (ordered(&divisor, &zero) && nonzero())
+    };
+    let dividend_nonnegative = || ordered(&zero, &dividend) || strict(&zero, &dividend);
+    let dividend_nonpositive = || ordered(&dividend, &zero) || strict(&dividend, &zero);
+    let has_sign = |nonnegative| {
+        if nonnegative {
+            dividend_nonnegative()
+        } else {
+            dividend_nonpositive()
+        }
+    };
+    let checked_domain = || {
+        let Some((ty, n, d)) = overflow_exclusion else {
+            return true;
+        };
+        let exclusion = Proposition::signed_division_exclusion_views(ty, n, d);
+        holds(&exclusion, available)
+            || matches!(&exclusion, Proposition::Or(a, b)
+                if holds(a, available) || holds(b, available))
+    };
+    if quotient {
+        // Equal signs give a nonnegative quotient. The signed minimum divided
+        // by -1 must be excluded separately if neither sign rules it out.
+        (positive && has_sign(nonnegative))
+            || (has_sign(!nonnegative) && negative() && (!nonnegative || checked_domain()))
+    } else {
+        // The sign of the remainder depends only on its dividend.
+        has_sign(nonnegative)
+            && (positive || negative() || nonzero())
+            && (nonnegative || positive || checked_domain())
+    }
+}
+
 fn bool_arm(
     value: &ConditionTerm,
     matches_arm: impl Fn(&ConditionTerm) -> bool,
@@ -267,19 +451,101 @@ fn algebraic_arm(
             })
 }
 
+pub(crate) fn is_quotient_remainder_order(goal: &Proposition) -> bool {
+    let Some((condition, true)) = goal.condition_native() else {
+        return false;
+    };
+    let machine_division = |operand: MachineOperandView<'_>| {
+        matches!(
+            operand.binary(),
+            Some((_, MachineBinaryOp::Divide | MachineBinaryOp::Remainder, _))
+        )
+    };
+    match condition {
+        ConditionTerm::IntegerLessEqual(a, b) | ConditionTerm::IntegerGreaterEqual(a, b) => {
+            [a.as_ref(), b.as_ref()]
+                .into_iter()
+                .any(|operand| match operand {
+                    IntegerTerm::TruncatingQuotient(..) | IntegerTerm::TruncatingRemainder(..) => {
+                        true
+                    }
+                    IntegerTerm::Machine(term) => machine_division(term.operand_view()),
+                    _ => false,
+                })
+        }
+        ConditionTerm::Compare {
+            relation: CompareRelation::LessEqual | CompareRelation::GreaterEqual,
+            left,
+            right,
+            ..
+        } => [left.as_ref(), right.as_ref()]
+            .into_iter()
+            .any(|operand| machine_division(MachineOperandView::Legacy(operand))),
+        _ => false,
+    }
+}
+
+/// The first range ends where the second starts. Ordering its endpoints
+/// makes the element count nonnegative, so even a modular byte count can
+/// only shorten the first range. The second range occupies bytes forward
+/// from that shared address.
+fn adjacent_range_separation(
+    first: &MemoryRange,
+    second: &MemoryRange,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    first.wide_bounds().is_none()
+        && first.end_pointer() == second.start_pointer()
+        && comparison_holds(
+            ConditionTerm::signed_less_equal(first.start().clone(), first.end().clone()),
+            true,
+            available,
+        )
+}
+
 pub(crate) fn known_bridge_leaf(
     goal: &Proposition,
     available: &impl Fn(&Proposition) -> bool,
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match goal {
+        Proposition::ConditionIs(condition, truth)
+            if let Some(reduced) = trivial_fold_comparison(condition.native_compat())
+                && comparison_holds(reduced, *truth, available) =>
+        {
+            true
+        }
+        Proposition::ConditionIs(condition, true)
+            if let Some(wide) = pointer_projection_source(condition.native_compat()) =>
+        {
+            comparison_holds(
+                ConditionTerm::IntegerLessEqual(
+                    wide.into(),
+                    IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
+                ),
+                true,
+                available,
+            )
+        }
         Proposition::ResourceSeparate { left, right }
             if matches!(
                 (left.as_ref(), right.as_ref()),
                 (Resource::Footprint(_), _) | (_, Resource::Footprint(_))
             ) =>
         {
-            crate::kernel::region_footprint::separate_members(left, right, available)
+            crate::kernel::region_footprint::separate_members(left, right, |fact| {
+                available(fact)
+                    || match fact {
+                        Proposition::ResourceSeparate { left, right }
+                            if let (Resource::Memory(left), Resource::Memory(right)) =
+                                (left.as_ref(), right.as_ref()) =>
+                        {
+                            adjacent_range_separation(left, right, available)
+                                || adjacent_range_separation(right, left, available)
+                        }
+                        _ => false,
+                    }
+            })
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
@@ -288,10 +554,25 @@ pub(crate) fn known_bridge_leaf(
             identity(a, b, available) || identity(b, a, available)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((
+                ConditionTerm::IntegerLessEqual(a, b) | ConditionTerm::IntegerGreaterEqual(b, a),
+                _,
+            )) = condition_source_0.condition_native() =>
         {
             mask_bound(a, b, available)
+                || unsigned_remainder_bound(a, b, available)
+                || signed_division_sign(a, b, available)
+                || condition_source_0
+                    .condition_native()
+                    .is_some_and(|(condition, _)| {
+                        condition
+                            .nonnegative_division_bound_guards()
+                            .is_some_and(|guards| {
+                                guards
+                                    .into_iter()
+                                    .all(|guard| holds(&guard.truth_claim(true), available))
+                            })
+                    })
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((ConditionTerm::BoolEqual(a, b), _)) =
@@ -325,11 +606,59 @@ pub(crate) fn known_bridge_leaf(
     }
 }
 
+/// Read the full-width source of a signed low-word projection at the same
+/// base and stride. A bound on that source gives equality of the offsets.
+/// Raw complete pointer comparisons retain their own domain requirements.
+pub(crate) fn pointer_projection_source(condition: &ConditionTerm) -> Option<IntegerTerm> {
+    if !matches!(
+        condition,
+        ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..)
+    ) {
+        return None;
+    }
+    let (a, b) = condition.pointer_offset_sides()?;
+    // A pointer parameter is itself an exact offset in the abstract
+    // argument block. Cancel that common prefix before comparing its indices.
+    let (a, b) = match (a, b) {
+        (AddressOffset::Add(base, a), AddressOffset::Add(other, b)) if base == other => {
+            (a.as_ref(), b.as_ref())
+        }
+        _ => (a, b),
+    };
+    for (narrow, wide) in [(a, b), (b, a)] {
+        if let (
+            AddressOffset::Int32Scaled {
+                value: narrow,
+                byte_width,
+            },
+            AddressOffset::Int64Scaled {
+                value: wide,
+                byte_width: wide_width,
+                unsigned: true,
+            },
+        ) = (narrow, wide)
+            && byte_width == wide_width
+            && *byte_width > 0
+            && let Some((
+                _,
+                MachineIntegerType::UInt64,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                source,
+            )) = narrow.operand_view().cast()
+            && crate::kernel::machine_operand_syntax_cmp(source, wide.operand_view()).is_eq()
+        {
+            return wide.operand_view().observe(MachineIntegerType::UInt64);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::kernel::machine_integer::{Operation, representation};
     use crate::kernel::proof::PureFactStore;
+
     fn known(goal: &Proposition, premises: &[Proposition]) -> bool {
         let facts = PureFactStore::from_ordered(premises);
         known_bridge_leaf(goal, &|p| facts.pure_known_available(p))
@@ -407,6 +736,79 @@ mod tests {
             assert!(success.0 && !refusal.0);
             assert!(success.1 <= observations[0][0].1 + 16, "{observations:?}");
             assert!(refusal.1 <= observations[0][1].1 + 16, "{observations:?}");
+        }
+    }
+
+    #[test]
+    fn adjacent_footprint_needs_order_and_the_exact_boundary() {
+        let _session = VerificationSession::enter();
+        let base = Address::symbolic(Variable(997400));
+        let endpoint = MachineTerm::Variable(Variable(997401));
+        let memory = |base, end| {
+            Resource::Memory(MemoryRange::new_with_element_width(
+                base,
+                0u32.into(),
+                end,
+                4,
+            ))
+        };
+        let write = memory(base.clone(), endpoint.clone());
+        let before = ExecutionState::new();
+        let footprint = Resource::Footprint(RegionFootprint::sequence(
+            "write".into(),
+            &before,
+            &before,
+            [write].into_iter().collect(),
+            true,
+        ));
+        let boundary = base.offset_by_elements(endpoint.clone(), 4);
+        let held = Proposition::condition_is(
+            ConditionTerm::signed_less_equal(0u32.into(), endpoint),
+            true,
+        );
+        let check = |offset, facts: &PureFactStore| {
+            let goal = Proposition::ResourceSeparate {
+                left: Box::new(footprint.clone()),
+                right: Box::new(memory(
+                    Address {
+                        base: boundary.base.clone(),
+                        offset: AddressOffset::add(
+                            boundary.offset.clone(),
+                            AddressOffset::Constant(offset),
+                        ),
+                    },
+                    1u32.into(),
+                )),
+            };
+            crate::instrumentation::measure_deterministic_work(|| {
+                known_bridge_leaf(&goal, &|fact| facts.pure_known_available(fact))
+            })
+        };
+        let observations = [0, 32, 128].map(|count| {
+            let unrelated = (0..count)
+                .map(|i| {
+                    Proposition::condition_is(
+                        ConditionTerm::signed_less_equal(
+                            0u32.into(),
+                            MachineTerm::Variable(Variable(997500 + i)),
+                        ),
+                        true,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let without_order = PureFactStore::from_ordered(&unrelated);
+            let with_order = without_order.with_kernel_checked_fact(held.clone());
+            [
+                check(0, &with_order),
+                check(0, &without_order),
+                check(-1, &with_order),
+            ]
+        });
+        for checks in observations {
+            assert_eq!(checks.map(|(holds, _)| holds), [true, false, false]);
+            for ((_, work), (_, baseline)) in checks.into_iter().zip(observations[0]) {
+                assert!(work <= baseline + 16, "{observations:?}");
+            }
         }
     }
 

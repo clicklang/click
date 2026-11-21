@@ -142,7 +142,7 @@ impl ProofSourceIndex {
             ..Default::default()
         };
         match self.tokens[range.start].text.as_str() {
-            "have" | "open" => result.body = parsed.child_blocks(range).first().copied(),
+            "have" | "with" => result.body = parsed.child_blocks(range).first().copied(),
             "if" => {
                 result.arms = parsed
                     .two_arms(range, "if")
@@ -232,6 +232,26 @@ impl ProofSourceIndex {
             .into_iter()
             .map(|offset| self.position_at(offset))
             .collect())
+    }
+
+    /// Counts lines with written tokens in the selected claim's tactics,
+    /// including operands and nested bodies, and excluding comments and blanks.
+    pub fn written_proof_lines(&self, claim: &str) -> Result<usize, ClickError> {
+        let (file, tokens) = self.proof_tokens()?;
+        let mut lines = BTreeSet::new();
+        for offset in tactic_source_offsets(file, claim, &tokens)? {
+            let Some(&start) = self.by_offset.get(&offset) else {
+                continue;
+            };
+            if let Some(tactic) = self.tactics.get(&start) {
+                for index in start..=tactic.end {
+                    if !self.tokens[index].span.is_empty() {
+                        lines.insert(self.positions[index].line);
+                    }
+                }
+            }
+        }
+        Ok(lines.len())
     }
 
     /// The expansion sites in the same source used for position lookups.

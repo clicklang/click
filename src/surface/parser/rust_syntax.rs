@@ -283,6 +283,7 @@ impl Parser {
         } else {
             false
         };
+        self.record_abstract_pointer_params(&parameters);
         Ok(ParsedFunctionSignature {
             signature: FunctionSignature {
                 c_source: None,
@@ -1229,7 +1230,11 @@ impl Parser {
             .map_err(|message| self.error(message))
     }
 
-    pub(super) fn take_rust_slice_len(&mut self, name: &str) -> Option<crate::kernel::BindingName> {
+    pub(super) fn take_rust_slice_len(
+        &mut self,
+        name: &str,
+        qualified: bool,
+    ) -> Option<crate::kernel::BindingName> {
         if self.peek() != Some(&Token::Dot)
             || self.peek_next() != Some(&Token::Ident("len".into()))
             || self.tokens.get(self.position + 2) != Some(&Token::LParen)
@@ -1237,10 +1242,15 @@ impl Parser {
         {
             return None;
         }
-        let length = if self.rust_slice_params.contains(name) {
+        let local = self.rust_slice_locals.get(name);
+        let parameter = self.rust_slice_params.contains(name);
+        let in_proof = self.proof_nesting > 0;
+        let length = if qualified && (parameter || local?.unresolved_slice_length().is_some()) {
+            crate::kernel::BindingName::scoped_slice_length(name, true)
+        } else if parameter && (!in_proof || local.is_none()) {
             crate::kernel::BindingName::slice_length(name)
         } else {
-            self.rust_slice_locals.get(name)?.clone()
+            local?.clone()
         };
         self.position += 4;
         Some(length)
@@ -1611,6 +1621,23 @@ impl Parser {
                 _ => return Err(self.error("a Rust pointer type is `*const T` or `*mut T`")),
             };
             self.position += 2;
+            // A raw pointer to a value of an abstract type parameter,
+            // `*mut T`, as a `fn` signature reads `&mut T`.
+            if let Some(name) = self.peek_ident()
+                && self.rust_abstract_type_parameters.contains(name)
+                && self.peek_next() != Some(&Token::ColonColon)
+            {
+                let parameter = crate::kernel::TypeParameterName::intern(name);
+                self.position += 1;
+                return Ok(Some(ParsedType {
+                    interface_type: InterfaceType::ParameterPointer(parameter),
+                    struct_name: None,
+                    struct_pointer: false,
+                    constant: false,
+                    pointee_constant: !mutable,
+                    reference: false,
+                }));
+            }
             // A raw pointer to a crate struct, `*const crate::S`, as a
             // `fn` signature reads its references to one.
             if self

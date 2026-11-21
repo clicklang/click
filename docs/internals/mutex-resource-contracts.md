@@ -92,7 +92,7 @@ clauses.
 | Initialize | Consume `storage` and folded `state: P`; require alignment and valid initialization arguments. | `lifetime`; the protected state is placed under the mutex. |
 | Lock | Preserve `access` for this initialization. | A new `guard` and freshly observed `state: P`. |
 | Unlock | Preserve `access`; consume the matching `guard` and restored folded `state: P`. | No new resource. |
-| Destroy | Consume `lifetime`; require every use loan recovered and no outstanding acquisition. | `storage` and folded `state: P`. |
+| Destroy | Consume `lifetime`; require every use borrow recovered and no outstanding acquisition. | `storage` and folded `state: P`. |
 
 ### Initialization
 
@@ -180,7 +180,7 @@ produces storage: Storage(mu);
 produces state: P;
 ```
 
-Lifecycle authority is exclusive. All loans and guard holds must be discharged
+Lifecycle authority is exclusive. All borrows and guard holds must be discharged
 before it can be consumed. Destruction returns the protected resource and raw
 mutex storage; freeing the allocation is a separate operation.
 
@@ -233,11 +233,11 @@ let { storage: bytes_after, state: final } =
 ```
 
 These examples do not establish new syntax for introducing `u` or `bytes`.
-Those introductions need general loan and memory binding rules. The existing
-checked conversion from lifecycle authority to a synchronous use loan should
+Those introductions need general borrow and memory binding rules. The existing
+checked conversion from lifecycle authority to a synchronous use borrow should
 remain available, but its interaction with explicit named input maps must be
 specified. It must select supplied authority rather than search for a
-convenient matching instance, and an escaping guard must retain the loan.
+convenient matching instance, and an escaping guard must retain the borrow.
 
 The former initialization syntax
 `step(pthread_mutex_init, { invariant: initial })` was a hard-coded
@@ -255,7 +255,7 @@ as it would replace any other resource occurrence.
 User-defined wrappers may package a guard and protected state together. They
 may also package lifecycle or use authority subject to the ordinary lifetime
 rules. Folding a wrapper changes the presentation of owned resources; it does
-not initialize a mutex, acquire it, grant access, or discharge a loan.
+not initialize a mutex, acquire it, grant access, or discharge a borrow.
 
 The selected runtime supplies the default contracts. User-defined helpers can
 use the same clauses and binding machinery. Trusted code remains responsible
@@ -287,12 +287,12 @@ and a separate description argument must not be offered as a repair.
 
 Where a supplied occurrence is incompatible, identify it and its source: the
 required entry guard versus the newly acquired guard, or the lifetime whose
-loan remains outstanding. Do not invent a `not_held` fact just to phrase a
+borrow remains outstanding. Do not invent a `not_held` fact just to phrase a
 protocol failure as a missing proposition. Report the outstanding resource or
-loan and its source location. Distinguish an unsupported contract form from
+borrow and its source location. Distinguish an unsupported contract form from
 missing ownership.
 
-The checker may track generations, receipts, and loan identities internally.
+The checker may track generations, receipts, and borrow identities internally.
 Ordinary diagnostics should name the relevant Click resources and binders,
 not expose those implementation structures.
 
@@ -403,12 +403,12 @@ use also accepts named children and memory-dependent footprints. These
 transfers are synchronous and stay on the same thread. They do not permit moving pthread guard ownership to a worker.
 
 A worker created with `pthread_create` under `runtime "modeled-pthread"`
-receives its preserved `mutex_use` the same way, as a loan split from the
+receives its preserved `mutex_use` the same way, as a borrow split from the
 parent's `mutex_live` or retained use share, so the parent keeps a retained
 share and may lock while the worker is pending. `pthread_join` returns only
-that loan: it ends the worker's scope, rejoins the shares, and restores the
+that borrow: it ends the worker's scope, rejoins the shares, and restores the
 parent's source, `mutex_live` once the last worker has joined. The worker's
-preserved use fact is a loan of that source and is not composed into the
+preserved use fact is a borrow of that source and is not composed into the
 parent's frame, so after join the parent holds exactly what it held before
 the create, and a plain lock, a further create, or destroy proceeds with no
 use fact left behind. `mdtests/modeled_pthread_lock_after_join.md` is the
@@ -431,7 +431,7 @@ records that limitation without rewriting its C.
 
 The acceptance boundary includes independently checked bodies and call
 certificates, missing lock/unlock rejection, stale acquisition and observation
-rejection, and refusal to destroy while acquisitions or use loans survive.
+rejection, and refusal to destroy while acquisitions or use borrows survive.
 Preserve existing C as the regression boundary. Do not rewrite C into a more
 convenient proof shape.
 

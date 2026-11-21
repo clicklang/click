@@ -2,7 +2,7 @@
 
 Each claim here has its own proof. Every proof of a function starts from the
 same entry context, built once, so the claims' completions carry the same
-creation ledger and stable-view loan identities and certify against one
+creation ledger and stable-view borrow identities and certify against one
 entry state.
 
 ```c filename=select.c

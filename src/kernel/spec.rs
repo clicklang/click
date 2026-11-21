@@ -1514,10 +1514,11 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             operator,
             right,
         } => {
-            let retain_match = matches!(
-                operator,
-                IntegerComparisonOperator::Equal | IntegerComparisonOperator::NotEqual
-            );
+            let retain_match = !budget.conditional_guard
+                || matches!(
+                    operator,
+                    IntegerComparisonOperator::Equal | IntegerComparisonOperator::NotEqual
+                );
             let left_paths = evaluate_spec_integer_comparison_operand_in(
                 scope,
                 left,
@@ -2968,6 +2969,10 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
         Proposition::Equal(left, right) => {
             term_contains(left, variable) || term_contains(right, variable)
         }
+        Proposition::SequenceMembership { element, sequence } => {
+            integer_carrier_in_program_value(element.native_compat(), variable)
+                || sequence_contains_integer_variable(sequence, variable)
+        }
         Proposition::ConditionIs(condition, _) => {
             condition_contains(condition.native_compat(), variable)
         }
@@ -3316,7 +3321,7 @@ fn evaluate_spec_integer_algebraic_match_paths_in(
         )
         .map_err(|_| ExecutionLimit::Paths)?;
         let constructor =
-            if integer_fields || (retain_match && matched.retains_known_integer_equality()) {
+            if integer_fields || (retain_match && matched.retains_known_integer_comparison()) {
                 None
             } else {
                 scrutinee_path.value.native_constructor()
@@ -4499,6 +4504,15 @@ pub(crate) fn scalar_match_has_pure_int32_arms(arms: &[SpecAlgebraicMatchArm]) -
     })
 }
 
+fn spec_scalar_match_is_pure_int32(
+    scrutinee: &SpecAlgebraicExpression,
+    arms: &[SpecAlgebraicMatchArm],
+) -> bool {
+    scalar_match_has_pure_int32_arms(arms)
+        && super::functions::spec_algebraic_expression_is_state_independent(scrutinee)
+        && super::functions::spec_algebraic_expression_is_obligation_free(scrutinee)
+}
+
 fn spec_scalar_match_arms_are_well_formed(
     algebraic_type: &AlgebraicType,
     arms: &[SpecAlgebraicMatchArm],
@@ -4588,6 +4602,8 @@ fn lower_spec_sequence_membership_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    let retain = super::functions::spec_expression_is_state_independent(element)
+        && super::functions::spec_sequence_is_state_independent(sequence);
     let mut paths = Vec::new();
     for element_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
@@ -4605,7 +4621,7 @@ fn lower_spec_sequence_membership_at_state_in(
             sequence,
             &sequence_assumptions,
             budget,
-            false,
+            retain && retained_sequence_element_type(element_path.value.program_type()),
         )? {
             if sequence_path
                 .value
@@ -4624,22 +4640,16 @@ fn lower_spec_sequence_membership_at_state_in(
             ) else {
                 continue;
             };
-            let comparisons = sequence_elements(&sequence_path.value)
-                .filter_map(|member| {
-                    program_value_comparison_proposition(
-                        &element_path.value.native(),
-                        ComparisonOperator::Equal,
-                        member,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let proposition = comparisons
-                .into_iter()
-                .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
-                .unwrap_or(Proposition::condition_is(
-                    ConditionTerm::Constant(false),
-                    true,
-                ));
+            let proposition = if retain
+                && retained_sequence_element_type(element_path.value.program_type())
+            {
+                Proposition::SequenceMembership {
+                    element: element_path.value.clone().into(),
+                    sequence: sequence_path.value,
+                }
+            } else {
+                sequence_membership_disjunction(&element_path.value.native(), &sequence_path.value)
+            };
             paths.push(SpecPropositionPath {
                 introductions: Vec::new(),
                 proposition,
@@ -4649,6 +4659,47 @@ fn lower_spec_sequence_membership_at_state_in(
         }
     }
     Ok(paths)
+}
+
+fn sequence_member_comparisons<'a>(
+    element: &'a ProgramValue,
+    sequence: &'a SequenceTerm,
+) -> impl Iterator<Item = Proposition> + 'a {
+    sequence_elements(sequence).filter_map(|member| {
+        program_value_comparison_proposition(element, ComparisonOperator::Equal, member)
+    })
+}
+
+fn sequence_membership_disjunction(element: &ProgramValue, sequence: &SequenceTerm) -> Proposition {
+    sequence_member_comparisons(element, sequence)
+        .reduce(|left, right| Proposition::Or(Box::new(left), Box::new(right)))
+        .unwrap_or_else(|| Proposition::condition_is(ConditionTerm::Constant(false), true))
+}
+
+pub(crate) fn sequence_membership_view(proposition: &Proposition) -> Option<Proposition> {
+    let Proposition::SequenceMembership { element, sequence } = proposition else {
+        return None;
+    };
+    Some(sequence_membership_disjunction(
+        element.native_compat(),
+        sequence,
+    ))
+}
+
+pub(crate) fn sequence_nonmembership_components(
+    proposition: &Proposition,
+) -> Option<impl Iterator<Item = Proposition> + '_> {
+    let Proposition::SequenceMembership { element, sequence } = proposition else {
+        return None;
+    };
+    Some(
+        sequence_member_comparisons(element.native_compat(), sequence).map(|claim| {
+            let Proposition::ConditionIs(condition, truth) = claim else {
+                unreachable!("machine integer membership")
+            };
+            Proposition::condition_is(condition, !truth)
+        }),
+    )
 }
 
 pub(super) fn sequence_elements(sequence: &SequenceTerm) -> SequenceElements<'_> {
@@ -4721,7 +4772,8 @@ fn lower_spec_sequence_comparison_at_state_in(
             ) else {
                 continue;
             };
-            let equality = if retain && int32_sequence_types(&left_path.value, &right_path.value) {
+            let equality = if retain && retained_sequence_types(&left_path.value, &right_path.value)
+            {
                 Proposition::Equal(
                     Term::Sequence(left_path.value.clone()),
                     Term::Sequence(right_path.value),
@@ -4748,31 +4800,35 @@ fn lower_spec_sequence_comparison_at_state_in(
     Ok(paths)
 }
 
-fn int32_sequence_types(left: &SequenceTerm, right: &SequenceTerm) -> bool {
+pub(crate) fn retained_sequence_element_type(ty: ProgramType) -> bool {
+    matches!(ty, ProgramType::Int32 | ProgramType::UInt64)
+}
+
+fn retained_sequence_types(left: &SequenceTerm, right: &SequenceTerm) -> bool {
     [left, right]
         .iter()
-        .all(|term| matches!(term.element_type, None | Some(ProgramType::Int32)))
+        .all(|term| term.element_type.is_none_or(retained_sequence_element_type))
 }
 
 /// Scalar consequences of one explicitly selected finite sequence equation.
 /// An unequal length entails falsehood. An empty equation needs no premises.
-pub(crate) fn int32_sequence_equalities(proposition: &Proposition) -> Option<Vec<Proposition>> {
+pub(crate) fn retained_sequence_equalities(proposition: &Proposition) -> Option<Vec<Proposition>> {
     let Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) = proposition else {
         return None;
     };
-    if !int32_sequence_types(left, right) {
+    if !retained_sequence_types(left, right) {
         return None;
     }
     finite_sequence_equalities(left, right)
 }
 
-pub(crate) fn int32_sequence_equality_view(proposition: &Proposition) -> Option<Proposition> {
-    int32_sequence_equalities(proposition).map(balance_sequence_equalities)
+pub(crate) fn retained_sequence_equality_view(proposition: &Proposition) -> Option<Proposition> {
+    retained_sequence_equalities(proposition).map(balance_sequence_equalities)
 }
 
 /// For a positive sequence comparison every component must hold. For its
 /// negation one component must be refuted. Undecided components prove neither.
-pub(crate) fn checks_int32_sequence_equality(
+pub(crate) fn checks_retained_sequence_comparison(
     proposition: &Proposition,
     expected: bool,
     mut proves: impl FnMut(&ConditionTerm, bool) -> bool,
@@ -4781,13 +4837,21 @@ pub(crate) fn checks_int32_sequence_equality(
         Proposition::Not(equation) => (equation.as_ref(), !expected),
         equation => (equation, expected),
     };
-    let mut components = int32_sequence_equalities(equation)?.into_iter();
     let check = |component: Proposition| {
         let Proposition::ConditionIs(condition, truth) = component else {
-            unreachable!("int32 component equality")
+            unreachable!("machine integer component equality")
         };
         proves(condition.native_compat(), truth == expected)
     };
+    if let Proposition::SequenceMembership { element, sequence } = equation {
+        let mut components = sequence_member_comparisons(element.native_compat(), sequence);
+        return Some(if expected {
+            components.any(check)
+        } else {
+            components.all(check)
+        });
+    }
+    let mut components = retained_sequence_equalities(equation)?.into_iter();
     Some(if expected {
         components.all(check)
     } else {
@@ -4964,7 +5028,7 @@ fn evaluate_spec_sequence_at_state_in(
                     };
                     paths.push(SpecSequencePath {
                         value: if retain_concat
-                            && int32_sequence_types(&left_path.value, &right_path.value)
+                            && retained_sequence_types(&left_path.value, &right_path.value)
                         {
                             sequence_concat_node(left_path.value.clone(), right_path.value)
                         } else {
@@ -5019,6 +5083,84 @@ mod algebraic_term_tests;
 #[cfg(test)]
 mod exact_read_tests;
 
+/// Prepare one explicitly written float operation over literal operands.
+fn literal_float_predicate_operand(
+    expression: &SpecExpression,
+) -> Option<(KernelFloatType, KernelTerm, usize)> {
+    use SpecExpression as E;
+    fn literal(expression: &E) -> Option<(KernelFloatType, KernelTerm)> {
+        let (E::Value(value) | E::ProgramExpression(ProgramExpression::Value(value))) = expression
+        else {
+            return None;
+        };
+        let operand = FloatOperandView::from_value(value)?;
+        operand.literal_bits()?;
+        Some((
+            operand.format(),
+            KernelTermImport::default().argument(&PureFunctionArgument::Value(value.clone())),
+        ))
+    }
+
+    let (expression, cast) = match expression {
+        E::Cast(inner, ty) => (inner.as_ref(), Some(*ty)),
+        expression => (expression, None),
+    };
+    let prepared = match expression {
+        E::Negate(operand) => {
+            let (format, operand) = literal(operand)?;
+            (format, KernelTerm::float_negate(format, operand).ok()?, 2)
+        }
+        E::Add(left, right)
+        | E::Subtract(left, right)
+        | E::Multiply(left, right)
+        | E::Divide(left, right) => {
+            let (format, left) = literal(left)?;
+            let (right_format, right) = literal(right)?;
+            if format != right_format {
+                return None;
+            }
+            let operator = match expression {
+                E::Add(..) => FloatBinaryOperator::Add,
+                E::Subtract(..) => FloatBinaryOperator::Subtract,
+                E::Multiply(..) => FloatBinaryOperator::Multiply,
+                E::Divide(..) => FloatBinaryOperator::Divide,
+                _ => unreachable!("float binary operator"),
+            };
+            (
+                format,
+                KernelTerm::float_binary(format, operator, [left, right]).ok()?,
+                3,
+            )
+        }
+        expression => {
+            let (format, root) = literal(expression)?;
+            (format, root, 1)
+        }
+    };
+    let (format, root, steps) = prepared;
+    cast.is_none_or(|ty| ty == format.program_type())
+        .then_some((format, root, steps + usize::from(cast.is_some())))
+}
+
+fn literal_float_predicate_path(
+    root: KernelTerm,
+    steps: usize,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    for _ in 0..steps {
+        budget.consume_expression_step()?;
+    }
+    Ok(vec![SpecPropositionPath {
+        introductions: Vec::new(),
+        proposition: Proposition::condition_is(
+            StoredConditionTerm::from_root(root).expect("float predicate"),
+            true,
+        ),
+        facts: ExecutionFacts::new(),
+        obligations: Vec::new(),
+    }])
+}
+
 fn lower_spec_float_classification_proposition_at_state_in(
     scope: SpecScope<'_>,
     expression: &SpecExpression,
@@ -5026,6 +5168,14 @@ fn lower_spec_float_classification_proposition_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    if !budget.checked_reads
+        && !budget.machine_result_production_disabled
+        && let Some((format, operand, steps)) = literal_float_predicate_operand(expression)
+    {
+        let root = KernelTerm::float_classify(format, classification, operand)
+            .expect("float classification operand");
+        return literal_float_predicate_path(root, steps, budget);
+    }
     Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
         expression,
@@ -5047,7 +5197,7 @@ fn lower_spec_float_classification_proposition_at_state_in(
                 _ => unreachable!("float value"),
             };
             StoredConditionTerm::from(native)
-        } else if let Some(bits) = result::float_condition_constant_bits(operand) {
+        } else if let Some(bits) = operand.closed_arithmetic_bits() {
             let native = match format {
                 KernelFloatType::Float32 => ConditionTerm::float32_classification(
                     MachineTerm::uint32_constant(bits as u32),
@@ -5886,23 +6036,38 @@ fn lower_spec_comparison_proposition_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
-    if matches!(left, SpecExpression::AlgebraicMatch { .. })
+    if !budget.checked_reads
+        && !budget.machine_result_production_disabled
+        && let Some((format, left, left_steps)) = literal_float_predicate_operand(left)
+        && let Some((right_format, right, right_steps)) = literal_float_predicate_operand(right)
+        && format == right_format
+    {
+        let root =
+            KernelTerm::float_compare(format, operator, [left, right]).expect("same float format");
+        return literal_float_predicate_path(root, left_steps + right_steps, budget);
+    }
+    let share_operand = if let SpecExpression::AlgebraicMatch { scrutinee, arms } = left
         && left == right
         && matches!(
             operator,
             ComparisonOperator::Equal | ComparisonOperator::NotEqual
-        )
-    {
-        return Ok(vec![SpecPropositionPath {
-            introductions: Vec::new(),
-            proposition: Proposition::condition_is(
-                ConditionTerm::Constant(operator == ComparisonOperator::Equal),
-                true,
-            ),
-            facts: Vec::new().into(),
-            obligations: Vec::new(),
-        }]);
-    }
+        ) {
+        if budget.checked_reads || !spec_scalar_match_is_pure_int32(scrutinee, arms) {
+            // Other scalar match forms still use the compatibility reflexivity rule.
+            return Ok(vec![SpecPropositionPath {
+                introductions: Vec::new(),
+                proposition: Proposition::condition_is(
+                    ConditionTerm::Constant(operator == ComparisonOperator::Equal),
+                    true,
+                ),
+                facts: ExecutionFacts::new(),
+                obligations: Vec::new(),
+            }]);
+        }
+        true
+    } else {
+        false
+    };
     let mut paths = Vec::new();
     let left_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
@@ -5917,12 +6082,21 @@ fn lower_spec_comparison_proposition_at_state_in(
     for left_path in left_paths {
         let right_assumptions =
             assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
-        let right_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            scope,
-            right,
-            &right_assumptions,
-            budget,
-        )?;
+        let right_paths = if share_operand {
+            // The same pure match in the same scope can share its lowered arm binders.
+            vec![SpecExpressionPath {
+                value: left_path.value.clone(),
+                facts: ExecutionFacts::new(),
+                obligations: Vec::new(),
+            }]
+        } else {
+            evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                scope,
+                right,
+                &right_assumptions,
+                budget,
+            )?
+        };
         right_path_count = right_path_count.saturating_add(right_paths.len());
         for right_path in right_paths {
             let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
@@ -6130,15 +6304,15 @@ fn lower_spec_predicate_proposition_at_state_in(
                         SpecPoint::At(point) => point.clone(),
                     };
                     let point = match argument_path.value.native().as_ref() {
-                        ProgramValue::Pointer(pointer)
-                            if pointer.program_type() == ProgramType::Int32Pointer =>
-                        {
-                            indexed_array_entry_version(&source, &pointer.address().base)
+                        ProgramValue::Pointer(pointer) => {
+                            indexed_array_version(&source, &pointer.address().base)
                         }
                         _ => None,
                     };
+                    // Without an indexed version the argument names its source
+                    // memory. Keep the path for reads in the predicate body.
                     arguments.push(Term::ArrayReadPoint(
-                        point.unwrap_or_else(|| ProgramPoint::at(source.shared_memory())),
+                        point.unwrap_or_else(|| source.for_legacy_read()),
                     ));
                 }
                 arguments.push(Term::ProgramValue(argument_path.value.clone().into()));
@@ -7105,15 +7279,8 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     && budget.retain_known_matches
                     && !budget.checked_reads
                     && !budget.machine_result_production_disabled
-                    && *pure_int32.get_or_insert_with(|| {
-                        scalar_match_has_pure_int32_arms(arms)
-                            && super::functions::spec_algebraic_expression_is_state_independent(
-                                scrutinee,
-                            )
-                            && super::functions::spec_algebraic_expression_is_obligation_free(
-                                scrutinee,
-                            )
-                    });
+                    && *pure_int32
+                        .get_or_insert_with(|| spec_scalar_match_is_pure_int32(scrutinee, arms));
                 if retain_known || !known_constructor {
                     let mut lowered_arms = Vec::with_capacity(arms.len());
                     let mut parameter_arms = Vec::new();
@@ -8711,16 +8878,15 @@ fn evaluate_spec_pure_function_argument_paths_in(
     }
 }
 
-/// Name an external array by its verified entry point when the recorded
-/// suffix preserves external storage, including a call confined to one
-/// automatic object. Other arrays use the block version selector.
+/// Use an indexed external array version when the recorded suffix preserves
+/// it, including across calls confined to automatic objects.
 fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> ProgramPoint {
     let ProgramValue::Pointer(pointer) = pointer else {
         return source.clone();
     };
     let block = &pointer.address().base;
-    if let Some(entry) = indexed_array_entry_version(source, block) {
-        return entry;
+    if let Some(version) = indexed_array_version(source, block) {
+        return version;
     }
     let start = source.parameter_read_start(block);
     let version = crate::kernel::resource_tracker::last_same_version_point(
@@ -8737,15 +8903,15 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
     }
 }
 
-fn indexed_array_entry_version(source: &ProgramPoint, block: &AddressBase) -> Option<ProgramPoint> {
+fn indexed_array_version(source: &ProgramPoint, block: &AddressBase) -> Option<ProgramPoint> {
     crate::instrumentation::measure_operation(
         "kernel",
         "canonical form",
-        "array-ref entry version",
+        "array-ref indexed version",
         || {
-            let entry = source.entry_array_version(block)?;
+            let version = source.indexed_array_version(block)?;
             crate::instrumentation::record_deterministic_work(1);
-            Some(entry)
+            Some(version)
         },
     )
 }
@@ -9376,6 +9542,7 @@ fn evaluate_spec_if_paths_in(
         // A retained comparison guard is part of the conditional's syntax even
         // when its operands determine its truth intrinsically. Checking may
         // select an arm; logical lowering retains both guarded values.
+        let mut closed_word_equality = false;
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
                 Proposition::ConditionIs(condition, _)
@@ -9426,17 +9593,14 @@ fn evaluate_spec_if_paths_in(
                     _,
                     _,
                 ) if let Some((ConditionTerm::Compare {
-                        format,
+                        format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     }, _)) = condition_source_0.condition_native() => {
                     // Wide equality reads words, including unsigned literal
                     // payloads filed under the native Int64 equality format.
-                    matches!(
-                        format,
-                        MachineIntegerType::Int64 | MachineIntegerType::UInt64
-                    ) && left.bitvector64_as_const().is_some()
+                    left.bitvector64_as_const().is_some()
                         && right.bitvector64_as_const().is_some()
                 }
                 condition_source_0 @ Proposition::ConditionIs(
@@ -9444,18 +9608,21 @@ fn evaluate_spec_if_paths_in(
                     _,
                 ) if let Some((ConditionTerm::Compare {
                         format,
+                        relation,
                         left,
                         right,
-                        ..
                     }, _)) = condition_source_0.condition_native() => {
-                    matches!(
+                    let closed = matches!(
                         format,
                         MachineIntegerType::Int32
                             | MachineIntegerType::UInt32
                             | MachineIntegerType::Int64
                             | MachineIntegerType::UInt64
                     ) && format.constant_from_term(left).is_some()
-                        && format.constant_from_term(right).is_some()
+                        && format.constant_from_term(right).is_some();
+                    closed_word_equality =
+                        closed && format.format().bits() == 32 && *relation == CompareRelation::Equal;
+                    closed && (!closed_word_equality || !budget.checked_reads)
                 }
                 _ => false,
             };
@@ -9495,7 +9662,7 @@ fn evaluate_spec_if_paths_in(
                                 | MachineIntegerType::Int64
                                 | MachineIntegerType::UInt64
                         )
-                    }) || path.value.boolean().is_some()
+                    }) || (!closed_word_equality && path.value.boolean().is_some())
                 };
                 let mut evaluate = |expression| {
                     evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -9524,10 +9691,18 @@ fn evaluate_spec_if_paths_in(
                 } else {
                     (evaluate(then_branch)?, evaluate(else_branch)?)
                 };
-                let scalar_arms = then_paths
-                    .first()
-                    .zip(else_paths.first())
-                    .is_some_and(|(left, right)| scalar(left) && scalar(right));
+                let scalar_arms =
+                    then_paths
+                        .first()
+                        .zip(else_paths.first())
+                        .is_some_and(|(left, right)| {
+                            scalar(left)
+                            && scalar(right)
+                            // A closed 32-bit equality previously used its selected
+                            // arm's type. Joining mixed machine types would promote it.
+                            && (!closed_word_equality
+                                || left.value.program_type() == right.value.program_type())
+                        });
                 if retained_comparison
                     && !scalar_arms
                     && let Some(truth) = constant_spec_condition_value(condition)
@@ -9880,8 +10055,8 @@ fn evaluate_spec_integer_if_paths_in(
 
 fn evaluate_spec_range_fold_paths_in(
     scope: SpecScope<'_>,
-    start: &SpecExpression,
-    end: &SpecExpression,
+    start_expression: &SpecExpression,
+    end_expression: &SpecExpression,
     initial: &SpecExpression,
     accumulator: &BindingName,
     item: &BindingName,
@@ -9890,9 +10065,10 @@ fn evaluate_spec_range_fold_paths_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut paths = Vec::new();
+    let mut state_independent = None;
     for start_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
-        start,
+        start_expression,
         assumptions,
         budget,
     )? {
@@ -9904,7 +10080,7 @@ fn evaluate_spec_range_fold_paths_in(
             assumptions_with_path_context(assumptions, &start_path.facts, &start_path.obligations);
         for end_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
             scope,
-            end,
+            end_expression,
             &start_assumptions,
             budget,
         )? {
@@ -9950,6 +10126,13 @@ fn evaluate_spec_range_fold_paths_in(
                     accumulator,
                     item,
                     body,
+                    || {
+                        *state_independent.get_or_insert_with(|| {
+                            [start_expression, end_expression, initial, body]
+                                .into_iter()
+                                .all(super::functions::spec_expression_is_state_independent)
+                        })
+                    },
                     facts,
                     obligations,
                     assumptions,
@@ -9965,6 +10148,23 @@ fn evaluate_spec_range_fold_paths_in(
     Ok(paths)
 }
 
+// Typed lambda application introduces lexical lets and identity casts.
+// Look through those aliases before testing the scoped callback's root.
+fn spec_fold_projection_candidate(body: &SpecExpression) -> bool {
+    match body {
+        SpecExpression::ProgramExpression(ProgramExpression::Variable(_)) => true,
+        SpecExpression::Value(ProgramValue::Int32(value))
+        | SpecExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(value))) => {
+            value.as_const().is_some()
+        }
+        SpecExpression::Cast(value, ProgramType::Int32) => spec_fold_projection_candidate(value),
+        SpecExpression::Let { value, body, .. } => {
+            spec_fold_projection_candidate(value) && spec_fold_projection_candidate(body)
+        }
+        _ => false,
+    }
+}
+
 fn evaluate_spec_range_fold_body_path_in(
     scope: SpecScope<'_>,
     start: SpecValue,
@@ -9973,13 +10173,79 @@ fn evaluate_spec_range_fold_body_path_in(
     accumulator: &BindingName,
     item: &BindingName,
     body: &SpecExpression,
+    state_independent: impl FnOnce() -> bool,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Option<SpecExpressionPath>> {
     let constant = |value: &SpecValue| value.machine()?.1.literal()?.as_const();
-    match (constant(&start), constant(&end)) {
+    let endpoints = (constant(&start), constant(&end));
+    let same_bound = || {
+        int32_fold_operand(&start)
+            .zip(int32_fold_operand(&end))
+            .is_some_and(|(start, end)| crate::kernel::shared_machine_syntax_equal(&start, &end))
+    };
+    let empty = match endpoints {
+        (Some(start), Some(end)) => (end as i32) <= (start as i32),
+        _ => same_bound(),
+    };
+    let short = endpoints.0.zip(endpoints.1).is_some_and(|(start, end)| {
+        KernelFold::is_short_nonempty_int32_range(start as i32, end as i32)
+    });
+    let projection_candidate = !empty
+        && endpoints.0.is_some()
+        && endpoints.1.is_some()
+        && spec_fold_projection_candidate(body);
+    let mut retained = None;
+    if (empty || short || projection_candidate) && state_independent() {
+        // The scoped callback supplies the written term. Empty and total
+        // callbacks owe no iteration obligations. Other short folds still
+        // evaluate the concrete iterations below to check definedness.
+        let body_scope = symbolic_int32_fold_scope(scope, accumulator, item);
+        let body_paths = match evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            body_scope.as_scope(),
+            body,
+            &PureFactContext::new(),
+            budget,
+        ) {
+            Ok(paths) => paths,
+            Err(ExecutionLimit::Paths | ExecutionLimit::DisjunctionRightUndefined) if short => {
+                Vec::new()
+            }
+            Err(limit) => return Err(limit),
+        };
+        if let [body_path] = body_paths.as_slice()
+            && let Some(value) = symbolic_spec_range_fold_value(
+                start.clone(),
+                end.clone(),
+                initial.clone(),
+                accumulator,
+                item,
+                body_path.value.clone(),
+            )
+        {
+            if empty
+                || (projection_candidate
+                    && body_path.facts.is_empty()
+                    && body_path.obligations.is_empty()
+                    && value.shared().is_some_and(|root| {
+                        matches!(root.node(), KernelTermNode::Fold(fold)
+                            if fold.has_projection_or_literal_body())
+                    }))
+            {
+                return Ok(Some(SpecExpressionPath {
+                    value,
+                    facts,
+                    obligations,
+                }));
+            }
+            if short {
+                retained = Some(value);
+            }
+        }
+    }
+    match endpoints {
         (Some(start), Some(end)) => {
             let mut value = initial;
             let mut facts = facts;
@@ -10019,25 +10285,13 @@ fn evaluate_spec_range_fold_body_path_in(
                 obligations = next_obligations;
             }
             Ok(Some(SpecExpressionPath {
-                value,
+                value: retained.unwrap_or(value),
                 facts,
                 obligations,
             }))
         }
         _ => {
-            let mut body_scope = bindings::Scope::new(scope, [accumulator, item]);
-            body_scope.bind_program_local(
-                accumulator,
-                int32(MachineTerm::Variable(spec_fold_bound_variable(
-                    accumulator,
-                    0,
-                )))
-                .into(),
-            );
-            body_scope.bind_program_local(
-                item,
-                int32(MachineTerm::Variable(spec_fold_bound_variable(item, 1))).into(),
-            );
+            let body_scope = symbolic_int32_fold_scope(scope, accumulator, item);
             let body_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 body_scope.as_scope(),
@@ -10060,6 +10314,7 @@ fn evaluate_spec_range_fold_body_path_in(
             ) else {
                 return Ok(None);
             };
+            let legacy_empty = empty.then(|| int32_fold_operand(&initial)).flatten();
             let Some(value) = symbolic_spec_range_fold_value(
                 start,
                 end,
@@ -10070,6 +10325,7 @@ fn evaluate_spec_range_fold_body_path_in(
             ) else {
                 return Ok(None);
             };
+            let value = legacy_empty.map(SpecValue::Shared).unwrap_or(value);
             Ok(Some(SpecExpressionPath {
                 value,
                 facts,
@@ -10077,6 +10333,27 @@ fn evaluate_spec_range_fold_body_path_in(
             }))
         }
     }
+}
+
+fn symbolic_int32_fold_scope<'a>(
+    scope: SpecScope<'a>,
+    accumulator: &BindingName,
+    item: &BindingName,
+) -> bindings::Scope<'a> {
+    let mut body_scope = bindings::Scope::new(scope, [accumulator, item]);
+    body_scope.bind_program_local(
+        accumulator,
+        int32(MachineTerm::Variable(spec_fold_bound_variable(
+            accumulator,
+            0,
+        )))
+        .into(),
+    );
+    body_scope.bind_program_local(
+        item,
+        int32(MachineTerm::Variable(spec_fold_bound_variable(item, 1))).into(),
+    );
+    body_scope
 }
 
 pub(super) fn concrete_spec_fold_range(start: i32, end: i32) -> std::ops::Range<i32> {
@@ -10114,6 +10391,12 @@ pub(super) fn spec_fold_bound_variable(name: &BindingName, salt: u64) -> Variabl
     variable
 }
 
+fn int32_fold_operand(value: &SpecValue) -> Option<KernelTerm> {
+    let (format, operand) = value.machine()?;
+    (format == MachineIntegerType::Int32)
+        .then(|| KernelTerm::retained_machine_operand(format, operand))
+}
+
 pub(super) fn symbolic_spec_range_fold_value(
     start: SpecValue,
     end: SpecValue,
@@ -10122,18 +10405,10 @@ pub(super) fn symbolic_spec_range_fold_value(
     item: &BindingName,
     body_value: SpecValue,
 ) -> Option<SpecValue> {
-    let read = |value: &SpecValue| {
-        let (format, operand) = value.machine()?;
-        (format == MachineIntegerType::Int32)
-            .then(|| KernelTerm::retained_machine_operand(format, operand))
-    };
-    let start = read(&start)?;
-    let end = read(&end)?;
-    let initial = read(&initial)?;
-    let body = read(&body_value)?;
-    if crate::kernel::shared_machine_syntax_equal(&start, &end) {
-        return Some(SpecValue::Shared(initial));
-    }
+    let start = int32_fold_operand(&start)?;
+    let end = int32_fold_operand(&end)?;
+    let initial = int32_fold_operand(&initial)?;
+    let body = int32_fold_operand(&body_value)?;
     Some(SpecValue::Shared(
         KernelFold::new(
             KernelFoldIndex::Int32,
@@ -10157,6 +10432,9 @@ fn compound_spec_value_condition(proposition: &Proposition) -> Option<(Condition
         Proposition::Not(body) => {
             let (condition, expected) = compound_spec_value_condition(body)?;
             return Some((condition, !expected));
+        }
+        Proposition::SequenceMembership { .. } => {
+            return compound_spec_value_condition(&sequence_membership_view(proposition)?);
         }
         _ => return proposition_as_single_condition(proposition),
     };
@@ -10263,6 +10541,14 @@ pub(super) fn proposition_as_single_condition(
     match proposition {
         Proposition::ConditionIs(condition, value) => {
             Some(((condition.clone()).native_compat().clone(), *value))
+        }
+        Proposition::SequenceMembership { element, sequence } => {
+            let mut comparisons = sequence_member_comparisons(element.native_compat(), sequence);
+            match (comparisons.next(), comparisons.next()) {
+                (None, _) => Some((ConditionTerm::Constant(false), true)),
+                (Some(comparison), None) => proposition_as_single_condition(&comparison),
+                (_, Some(_)) => None,
+            }
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => Some((
             ConditionTerm::AlgebraicEqual(

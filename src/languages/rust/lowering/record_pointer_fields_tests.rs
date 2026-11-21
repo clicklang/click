@@ -35,7 +35,14 @@ fn nested_box_fields_keep_their_pointer_type_in_old_reads() {
         .struct_name()
         .expect("head retains its pointee record");
     let next = layouts[node_name].field("next").unwrap();
-    assert_eq!(next.offset_bytes(), 8);
+    // `Node<T>` holds a `T`, so `next` is at its `offsetof` term.
+    let node = layouts[node_name]
+        .symbolic_layout()
+        .expect("a symbolic layout");
+    assert_eq!(
+        next.offset(),
+        crate::kernel::LayoutOffset::Field(node, node.field_index("next").unwrap())
+    );
     assert_eq!(next.struct_name(), Some(node_name));
     let prepared = super::super::import::prepared_for_test(export).unwrap();
     let source = r#"

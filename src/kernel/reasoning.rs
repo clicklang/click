@@ -48,7 +48,7 @@ pub(crate) use variable_collection::*;
 
 pub(crate) fn memory_effect_write_accesses(
     facts: &(impl ExecutionFactSource + ?Sized),
-) -> BTreeSet<(Address, u32)> {
+) -> BTreeSet<(Address, crate::kernel::AccessExtent)> {
     collect_memory_effect_write_accesses(facts)
 }
 

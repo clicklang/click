@@ -311,8 +311,8 @@ fn scalar_array_state_region_does_not_scan_unrelated_sibling_cells() {
 }
 
 #[test]
-fn scalar_array_write_loan_requirement_ignores_alias_and_loan_counts() {
-    use crate::kernel::loans::LoanLedger;
+fn scalar_array_write_borrow_requirement_ignores_alias_and_borrow_counts() {
+    use crate::kernel::borrows::BorrowLedger;
 
     let _session = crate::kernel::VerificationSession::enter();
     let state = scalar_array_region_state();
@@ -332,7 +332,7 @@ fn scalar_array_write_loan_requirement_ignores_alias_and_loan_counts() {
                     );
                 }
             }
-            let mut ledger = LoanLedger::new();
+            let mut ledger = BorrowLedger::new();
             let lender = ledger.fresh_participant().unwrap();
             let reader = ledger.fresh_participant().unwrap();
             for i in 0..if grow_aliases { 1 } else { count } {
@@ -349,14 +349,14 @@ fn scalar_array_write_loan_requirement_ignores_alias_and_loan_counts() {
                 let opening = ledger.lend(lender, reader, occurrence, backing).unwrap();
                 ledger = ledger.apply(&opening.transition).unwrap();
             }
-            let state = state.clone().with_loan_ledger(Some(ledger));
+            let state = state.clone().with_borrow_ledger(Some(ledger));
             for (copy, samples) in [true, false].into_iter().zip(&mut samples) {
                 let (write, work) = crate::instrumentation::measure_deterministic_work(|| {
                     execute_test_scalar_array_write(&state, 4, copy, &assumptions)
                 });
                 assert!(matches!(write.outcome, StatementOutcome::Normal(_)));
                 let [obligation] = write.obligations.as_slice() else {
-                    panic!("expected one loan separation obligation");
+                    panic!("expected one borrow separation obligation");
                 };
                 assert!(matches!(
                     obligation.proposition(),

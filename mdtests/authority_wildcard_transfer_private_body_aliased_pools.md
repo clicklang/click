@@ -50,9 +50,9 @@ int32 lifecycle() { ensures result == 0 or result == 6; } by {
     step();
     have count(slot(&source, _)) == 1 by solve();
     have count(slot(&destination, _)) == 2 by solve();
-    open(slot(&destination, p)) {
-        open(slot(&source, p + 1)) {
-            open(slot(&destination, p + 2)) { step(); step(); }
+    with(slot(&destination, p)) {
+        with(slot(&source, p + 1)) {
+            with(slot(&destination, p + 2)) { step(); step(); }
         }
     }
     unfold(slot(&destination, p));

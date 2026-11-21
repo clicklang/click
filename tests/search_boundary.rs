@@ -2,6 +2,14 @@
 #[allow(dead_code)]
 mod boundary;
 
+// The isolated compiler probes exercise the capability's privacy, without
+// loading Click's replay instrumentation.
+const REPLAY_INSTRUMENTATION_PROBE: &str = r"
+    mod instrumentation {
+        pub(crate) fn replay_forbids_discovery(_: &'static str) -> bool { false }
+    }
+";
+
 #[test]
 fn checking_rejects_planner_dependencies_and_enumeration_escape_hatches() {
     for source in [
@@ -74,6 +82,7 @@ fn only_planning_can_construct_search_permission() {
         let source = format!(
             r#"
             #![allow(dead_code)]
+            {REPLAY_INSTRUMENTATION_PROBE}
             mod planning {{
                 #[path = {permission:?}] mod permission;
                 pub(crate) use permission::SearchPermission;
@@ -134,6 +143,7 @@ fn selected_reasoning_requires_explicit_premises_or_planner_permission() {
         let source = format!(
             r#"
             #![allow(dead_code, unused_imports)]
+            {REPLAY_INSTRUMENTATION_PROBE}
             mod planning {{
                 #[path = {permission:?}] mod permission;
                 pub(crate) use permission::SearchPermission;
@@ -645,7 +655,7 @@ fn single_memory_owner_selection_rejects_fragment_enumeration() {
 }
 
 #[test]
-fn loan_origin_reconciliation_rejects_search_and_history() {
+fn borrow_origin_reconciliation_rejects_search_and_history() {
     for name in [
         "has_other_directly_supporting_owned_entry",
         "with_coalesced_owned_memory",
@@ -654,7 +664,7 @@ fn loan_origin_reconciliation_rejects_search_and_history() {
         "descends_from",
     ] {
         let source = format!("fn plan(c: C) {{ c.{name}(); }}");
-        assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+        assert!(boundary::check_source("src/kernel/borrows.rs", &source).is_err());
     }
     for name in ["iter", "find", "filter_map", "collect"] {
         let source = format!("fn origin_of(c: C) {{ c.{name}(); }}");
@@ -672,17 +682,17 @@ fn loan_origin_reconciliation_rejects_search_and_history() {
 }
 
 #[test]
-fn loan_binding_selection_rejects_candidate_search() {
+fn borrow_binding_selection_rejects_candidate_search() {
     for function in ["bound_view_candidate", "select_bound_view"] {
         for name in ["find", "find_map", "filter", "filter_map", "collect"] {
             let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
-            assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+            assert!(boundary::check_source("src/kernel/borrows.rs", &source).is_err());
         }
     }
 }
 
 #[test]
-fn selected_loan_consumption_rejects_supplier_discovery() {
+fn selected_borrow_consumption_rejects_supplier_discovery() {
     for name in [
         "iter",
         "find",
@@ -702,7 +712,7 @@ fn selected_loan_consumption_rejects_supplier_discovery() {
 fn loop_binding_handoff_rejects_view_rediscovery() {
     for (path, function) in [
         ("src/kernel/loops.rs", "loop_body_resource_context"),
-        ("src/kernel/loans.rs", "attach_to_inserted_views"),
+        ("src/kernel/borrows.rs", "attach_to_inserted_views"),
     ] {
         for name in ["view_occurrences_for_fact", "find", "find_map"] {
             let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
@@ -766,7 +776,7 @@ fn local_storage_classification_rejects_candidate_search() {
 #[test]
 fn call_completion_rejects_frame_revalidation_and_normalization() {
     for (path, function) in [
-        ("src/kernel/loans.rs", "recover_stable_views_impl"),
+        ("src/kernel/borrows.rs", "recover_stable_views_impl"),
         (
             "src/kernel/functions.rs",
             "recover_candidate_stable_view_resources",
@@ -921,7 +931,7 @@ fn constant_overlap_rejects_alias_and_premise_enumeration() {
 }
 
 #[test]
-fn cache_protection_rejects_loan_enumeration() {
+fn cache_protection_rejects_borrow_enumeration() {
     for name in [
         "iter",
         "collect",
@@ -932,15 +942,15 @@ fn cache_protection_rejects_loan_enumeration() {
         "protected_range_proven_overlapping",
     ] {
         let source = format!("fn has_indexed_memory_overlap(c: C) {{ c.{name}(); }}");
-        assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+        assert!(boundary::check_source("src/kernel/borrows.rs", &source).is_err());
     }
 }
 
 #[test]
 fn havoc_cache_retention_cannot_restore_the_write_barrier_scan() {
     for function in [
-        "loan_preserving_havoc_keeps_cell",
-        "loan_preserving_havoc_keeps_run",
+        "borrow_preserving_havoc_keeps_cell",
+        "borrow_preserving_havoc_keeps_run",
     ] {
         for name in [
             "permits_memory_access",
@@ -956,10 +966,10 @@ fn havoc_cache_retention_cannot_restore_the_write_barrier_scan() {
 }
 
 #[test]
-fn write_barriers_and_diagnostics_cannot_collect_conflicting_loans() {
+fn write_barriers_and_diagnostics_cannot_collect_conflicting_borrows() {
     for function in [
         "permits_memory_access_with_assumptions",
-        "conflicting_memory_loan",
+        "conflicting_memory_borrow",
         "first_active_memory_overlap",
         "first_active_memory_overlap_with_assumptions",
     ] {
@@ -968,7 +978,7 @@ fn write_barriers_and_diagnostics_cannot_collect_conflicting_loans() {
             "active_memory_overlaps_with_assumptions",
         ] {
             let source = format!("fn {function}(c: C) {{ c.{method}(); }}");
-            assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+            assert!(boundary::check_source("src/kernel/borrows.rs", &source).is_err());
         }
     }
     for function in [
@@ -986,7 +996,7 @@ fn write_barriers_and_diagnostics_cannot_collect_conflicting_loans() {
             "fold",
         ] {
             let source = format!("fn {function}(c: C) {{ c.{method}(); }}");
-            assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+            assert!(boundary::check_source("src/kernel/borrows.rs", &source).is_err());
         }
     }
 }
@@ -1003,7 +1013,7 @@ fn call_postconditions_cannot_restore_implicit_constant_recovery() {
 }
 
 #[test]
-fn active_memory_loan_presence_cannot_scan_ledger_history_or_indices() {
+fn active_memory_borrow_presence_cannot_scan_ledger_history_or_indices() {
     for method in [
         "iter",
         "values",
@@ -1013,15 +1023,15 @@ fn active_memory_loan_presence_cannot_scan_ledger_history_or_indices() {
         "all",
         "fold",
         "count",
-        "loans",
+        "borrows",
         "scopes",
         "unindexed_memory",
         "active_memory_index",
         "cache_memory_index",
-        "loan_protects_memory",
+        "borrow_protects_memory",
     ] {
-        let source = format!("fn has_active_memory_loans(c: C) {{ c.{method}(); }}");
-        assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+        let source = format!("fn has_active_memory_borrows(c: C) {{ c.{method}(); }}");
+        assert!(boundary::check_source("src/kernel/borrows.rs", &source).is_err());
     }
 }
 
@@ -1083,12 +1093,12 @@ fn frozen_proof_search_inventory_names_existing_files() {
 fn extracted_legacy_search_retains_the_existing_operation_guards() {
     for (path, source) in [
         (
-            "src/kernel/loans/legacy_search.rs",
-            "impl ProofSearch<P> { fn loan_access(c: C) { c.active_memory_overlaps(); } }",
+            "src/kernel/borrows/legacy_search.rs",
+            "impl ProofSearch<P> { fn borrow_access(c: C) { c.active_memory_overlaps(); } }",
         ),
         (
-            "src/kernel/loans/legacy_search.rs",
-            "fn loan_aliases(c: C) { c.changed_facts_since(); }",
+            "src/kernel/borrows/legacy_search.rs",
+            "fn borrow_aliases(c: C) { c.changed_facts_since(); }",
         ),
         (
             "src/kernel/primitives/resource_algebra/legacy_search.rs",
@@ -1106,7 +1116,7 @@ fn extracted_legacy_search_retains_the_existing_operation_guards() {
     }
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     for path in [
-        "src/kernel/loans/legacy_search.rs",
+        "src/kernel/borrows/legacy_search.rs",
         "src/kernel/primitives/resource_algebra/legacy_search.rs",
     ] {
         let source = std::fs::read_to_string(root.join(path)).unwrap();
@@ -1598,15 +1608,15 @@ fn constructed_returns_and_selected_backings_cannot_restore_discovery() {
         ),
         (
             "src/kernel/functions.rs",
-            "fn recover_candidate_stable_view_resources(c:C) { c.permitted_descriptions(loan); }",
+            "fn recover_candidate_stable_view_resources(c:C) { c.permitted_descriptions(borrow); }",
         ),
         (
-            "src/kernel/functions/return_loan_backing.rs",
-            "fn select(c:C) { c.stable_views(); }",
+            "src/kernel/functions.rs",
+            "fn recover_candidate_stable_view_resources(c:C) { c.canonical_pointer(p); }",
         ),
         (
-            "src/kernel/functions/return_loan_backing.rs",
-            "fn select(c:C) { c.exact_pointer_aliases(p); }",
+            "src/kernel/functions.rs",
+            "fn recover_candidate_stable_view_resources(c:C) { c.exact_pointer_aliases(p); }",
         ),
         (
             "src/kernel/functions.rs",
@@ -1715,7 +1725,7 @@ fn migrated_return_partitions_and_boundaries_cannot_restore_legacy_search() {
             "src/kernel/functions.rs",
             "recover_candidate_stable_view_resources",
         ),
-        ("src/kernel/loans.rs", "recover_stable_views_impl"),
+        ("src/kernel/borrows.rs", "recover_stable_views_impl"),
     ] {
         for target in [
             "try_compose_with_legacy_discovery_and_occurrences",

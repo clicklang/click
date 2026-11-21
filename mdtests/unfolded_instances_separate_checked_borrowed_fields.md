@@ -1,10 +1,10 @@
-# Separation after instance unfolds with a checked incoming loan
+# Separation after instance unfolds with a checked incoming borrow
 
-A checked incoming loan and usable ownership occupy separate custody partitions.
+A checked incoming borrow and usable ownership occupy separate custody partitions.
 Opening a named owner exposes that existing separation. Two views still do not
 prove separation, and a caller cannot lend the owner it transfers; see
 `named_unfold_does_not_separate_two_views.md` and
-`named_unfold_rejects_aliasing_owner_and_loan.md`.
+`named_unfold_rejects_aliasing_owner_and_borrow.md`.
 
 ```c filename=unfolded_instances_do_not_separate_borrowed_fields.c
 struct node { uint64 tag; };

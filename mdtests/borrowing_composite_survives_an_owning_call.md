@@ -2,7 +2,7 @@
 
 `box(p)` owns the struct's fields and views the array its `d` field points
 at: a struct holding a borrow. `setup` builds one from a viewed input, so
-the produced composite keeps that input's loan open (step 7 of fix-views);
+the produced composite keeps that input's borrow open (step 7 of fix-views);
 `bump` then takes the whole composite by ownership and returns it, and the
 caller still knows `p->b` afterwards through the callee's `old()` ensures.
 The same shape verifies under both view semantics.
@@ -26,12 +26,12 @@ verifying "probe.c";
 int32 setup(struct s* p, int32 d[], int32 n) {
     requires 0 <= n;
     consumes *p;
-    views src(d, n);
-    produces box(p);
+    views src(d, n) as input;
+    produces box(p) from input;
     ensures p->b == n;
     ensures p->d == d;
 } by {
-    unfold(src(d, n));
+    observe(src(d, n));
     have separate(memory(*p), memory(d[0..n])) by { solve(); }
     have contains(memory(d[0..n]), memory(d[0..n])) by { apply(click::separation::contains_refl(memory(d[0..n]))) using {}; }
     have contains(memory(*p), memory(p->a)) by { normalize(); }
@@ -59,7 +59,6 @@ int32 setup(struct s* p, int32 d[], int32 n) {
         };
     }
     step_until(function.exit);
-    fold(src(d, n));
     fold(box(p));
     solve();
 }
@@ -79,8 +78,8 @@ int32 bump(struct s* p) {
 int32 probe(struct s* p, int32 d[], int32 n) {
     requires 0 < n;
     consumes *p;
-    views src(d, n);
-    produces box(p);
+    views src(d, n) as input;
+    produces box(p) from input;
     ensures result == n;
 } by {
     step();

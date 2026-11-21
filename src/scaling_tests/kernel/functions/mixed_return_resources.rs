@@ -1395,7 +1395,7 @@ fn selected_view_child_expansion_ignores_equal_head_occurrences_and_bindings() {
             for _ in 0..count {
                 let (next, inserted) = context.unchecked_with_facts_and_occurrences([head.clone()]);
                 context = if bound_alternatives {
-                    next.with_loan_dependency(inserted[0].1, binding.clone())
+                    next.with_borrow_dependency(inserted[0].1, binding.clone())
                 } else {
                     next
                 };
@@ -1419,8 +1419,8 @@ fn selected_view_child_expansion_ignores_equal_head_occurrences_and_bindings() {
                     .unwrap();
                     let child = body.occurrences[0].1;
                     assert_eq!(
-                        body.expanded.loan_dependency(child).unwrap().loan,
-                        binding.loan
+                        body.expanded.borrow_dependency(child).unwrap().borrow,
+                        binding.borrow
                     );
                     result = Some(body);
                 }
@@ -1429,8 +1429,8 @@ fn selected_view_child_expansion_ignores_equal_head_occurrences_and_bindings() {
             let (piece, source) = &body.occurrences[0];
             assert!(piece.is_view());
             assert_eq!(
-                body.expanded.loan_dependency(*source).unwrap().loan,
-                binding.loan
+                body.expanded.borrow_dependency(*source).unwrap().borrow,
+                binding.borrow
             );
             samples.push(work);
         }
@@ -1492,15 +1492,15 @@ fn returned_hold_installation_ignores_equal_owned_occurrences() {
                 let _fast = crate::kernel::search::FastOperationScope::enter(
                     "selected returned hold installation",
                 );
-                install_returned_view_hold(context, LoanViewBindings::default(), selected.clone())
+                install_returned_view_hold(context, BorrowBindings::default(), selected.clone())
                     .unwrap()
             });
         assert_eq!(
-            resources.loan_dependency(selected.occurrence),
+            resources.borrow_dependency(selected.occurrence),
             Some(&selected.binding)
         );
         assert_eq!(bindings.get(&selected.occurrence), Some(&selected.binding));
-        assert!(resources.loan_dependency(holds[0].occurrence).is_none());
+        assert!(resources.borrow_dependency(holds[0].occurrence).is_none());
         samples.push(work);
     }
     assert!(
@@ -1517,7 +1517,7 @@ fn rebound_hold_creation_scales_with_the_returned_occurrences() {
         let (_, holds, ledger, caller) = super::tests::returned_hold_fixture_with_ledger(1);
         let facts = PureFactContext::new();
         let callee = ledger.fresh_participant().unwrap();
-        let plan = crate::kernel::loans::plan_stable_view_transfer(
+        let plan = crate::kernel::borrows::plan_stable_view_transfer(
             &ResourceContext::new(),
             &[],
             &facts,
@@ -1536,8 +1536,15 @@ fn rebound_hold_creation_scales_with_the_returned_occurrences() {
             .into_iter()
             .map(|(head, occurrence)| (occurrence, (head, holds[0].binding.clone())))
             .collect::<BTreeMap<_, _>>();
+        let preserved = holds[0].binding.hold.unwrap();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            retain_rebound_composite_holds(&mut recovery, &mut rebound, caller).unwrap()
+            retain_rebound_composite_holds(
+                &mut recovery,
+                &mut rebound,
+                BTreeSet::from([preserved]),
+                caller,
+            )
+            .unwrap()
         });
         assert_eq!(
             rebound
@@ -1547,7 +1554,12 @@ fn rebound_hold_creation_scales_with_the_returned_occurrences() {
                 .len(),
             count
         );
-        assert_eq!(recovery.hold_transitions.len(), count - 1);
+        assert_eq!(recovery.hold_transitions.len(), count);
+        assert!(
+            rebound
+                .values()
+                .all(|(_, binding)| binding.hold != Some(preserved))
+        );
         samples.push(work);
     }
     assert!(

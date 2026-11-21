@@ -122,8 +122,8 @@ Distinguish these producer boundaries:
 | Return composition | `FramedReturnPartition` retains the output group and caller frame constructed by body custody or a function frame rule; `finish` installs it directly. Description-only paths restore selected entry borrows, consumed-cell transfers and fresh allocations, then admit remaining descriptions explicitly. `ValidateDescriptions` does not turn a role marker into transfer evidence. |
 | Produced composite boundary | Function frame rules cover the joint output partition, including post-memory footprints. Description-only summaries bind immutable leaves and fixed byte fragments to consumed inputs; supported entry borrows retain provenance. Unmatched children and post-memory footprints still pass through `produced_composite_frontier_conflict`. |
 | Indexed and whole-clause `unfold` | The checked hole/guard transition or hole-free whole-range consumption constructs the exposed memory directly in the same frame. Neither operation readmits it or normalizes the surrounding block. Source selection, guard reasoning, and the explicit hole list have separate costs. |
-| Call and suspended-loan recovery | `recover_returned_views` constructs recovery directly in the actual return residual, retaining output occurrences and supported cores. Each escrow is admitted once against that destination; publication receives its constructed context and explicit recovered hold occurrence IDs. There is no discarded entry-frame reconstruction or second insertion. Suspended recovery likewise uses today's parent frame. A constructed framed partition retains its escrow boundary token. An unmatched description's relationship to withheld escrow remains a boundary obligation, with explicit separation required for unsupported geometry. |
-| Worker completion and loop-frame exchange | `compose_checked_outputs` checks only the checked worker group's boundary with today's parent frame, and retains output occurrences, projection support, loan dependencies and cached expansions in the resulting construction. It does not recheck output/output memory pairs. `restore_frame_after_exchange` admits the changed loop partition directly with the exit's selected occurrence IDs and retains that successor; it no longer checks a temporary context and reinserts the same facts. Newly described output must still establish its boundary with the current or withheld frame. Unsupported geometry requires explicit separation. |
+| Call and suspended-borrow recovery | `recover_returned_views` constructs recovery directly in the actual return residual, retaining output occurrences and supported cores. Each escrow is admitted once against that destination; publication receives its constructed context and explicit recovered hold occurrence IDs. There is no discarded entry-frame reconstruction or second insertion. Suspended recovery likewise uses today's parent frame. A constructed framed partition retains its escrow boundary token. An unmatched description's relationship to withheld escrow remains a boundary obligation, with explicit separation required for unsupported geometry. |
+| Worker completion and loop-frame exchange | `compose_checked_outputs` checks only the checked worker group's boundary with today's parent frame, and retains output occurrences, projection support, borrow dependencies and cached expansions in the resulting construction. It does not recheck output/output memory pairs. `restore_frame_after_exchange` admits the changed loop partition directly with the exit's selected occurrence IDs and retains that successor; it no longer checks a temporary context and reinserts the same facts. Newly described output must still establish its boundary with the current or withheld frame. Unsupported geometry requires explicit separation. |
 | Instance and authority bookkeeping | Some callers add only an instance identity or an exclusive authority. Those facts do not have a raw memory footprint for alias discovery; do not classify every use of the generic API as a memory scan. |
 
 Whole-range iterated guard checking selects a retained universal equality by
@@ -306,7 +306,7 @@ grows with alias classes. Existing guard, range, and hole controls still apply. 
 iterated-source buckets and the explicit hole list remain separate axes.
 
 The other callers need separate transfer derivations. Call recovery in
-`functions.rs` and `loans.rs` must establish that all outputs coexist with the
+`functions.rs` and `borrows.rs` must establish that all outputs coexist with the
 withheld escrow before restoring it. A body-local valid output is insufficient.
 Worker `join` in `threads.rs` composes into today's parent frame, which may
 contain another child's outputs; the entry snapshot alone is not its successor.
@@ -564,31 +564,20 @@ charged to visible semantic output rather than hidden ambient state:
   path theorems list (completion indexes each path's facts once to list
   them).
 
-Loan-preserving cache havoc uses a maintained interval index keyed by exact
+Borrow-preserving cache havoc uses a maintained interval index keyed by exact
 coordinate origins, including symbolic pointer expressions. Unknown relative
-bounds forget the cached value; they never authorize a write. The write barrier retains its independent loan checks. Interval queries
-ask whether a bucket is nonempty, without enumerating the loans it contains.
-`loop_head_havoc_work_over_cells_and_symbolic_loans` enforces near-linear work
-as cached cells and unrelated symbolic loans grow together. The write barrier's
-symbolic-loan comparison is a separate remaining checking caller; cache
-retention evidence must not be used to grant write permission.
+bounds forget the cached value. Writes require independent separation evidence. Interval queries
+ask whether a bucket is nonempty, without enumerating the borrows it contains.
+`loop_head_havoc_work_over_cells_and_symbolic_borrows` enforces near-linear work
+as cached cells and unrelated symbolic borrows grow together.
 
-Loan write barriers consult the maintained active-memory-loan count before
-pointer alias discovery. Empty ledgers, non-memory loans, and ended memory
-loans impose no loan restriction on a write; checking them must not visit the
-pointer's equality class. The
-`writes_without_active_memory_loans_do_not_walk_pointer_aliases` regression
-grows that class for constant and symbolic bounds, including repeated checks
-and the no-refusal diagnostic path. This shortcut does not replace ownership,
-bounds, or definedness checks.
-
-Concrete loan write barriers select one indexed conflict witness instead of
-collecting all overlapping loan IDs. Each dyadic bucket contributes only its
-least member; taking the minimum across those buckets preserves the diagnostic's
-loan choice. Both checking and refusal diagnostics use this selection. The
-`write_barrier_does_not_enumerate_overlapping_loans` regression grows overlapping
-loans around one fixed write, including covering and adjacent queries and repeats.
-Symbolic-loan and alias candidate discovery remain separate checking costs.
+Stores emit separation against the retained active-borrow footprint. Explicit
+statement checking looks up the written separation, its symmetric form, or
+one witness keyed by the exact fixed-width byte spans. The
+`stated_symbolic_write_separation_ignores_nearby_facts_and_aliases` regression
+grows both same-base separation facts and aliases at 4, 16, 64, and 256
+entries. Establishing a missing symbolic separation uses ordinary tactics.
+The legacy interval and alias write guard remains test-only.
 
 The following are known violations of the fast-part rule, listed under
 "Fast-part scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
@@ -678,7 +667,7 @@ no pair, the conservative candidate index above selects the members. The
 answers are exactly those the former pairwise projection gave. A consumer that
 needs a separation proposition asks the prover, which serves it from the
 carrier on demand and never adds it to ambient fact sets. Borrow/owner
-separation over opened composites reads loan bindings indexed by the two
+separation over opened composites reads borrow bindings indexed by the two
 addresses; no tree footprint or list of separated pairs is built.
 
 A verified call's requirement check walks a connective requirement side by

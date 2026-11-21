@@ -215,7 +215,13 @@ impl Index {
                 }
                 Proposition::And(_, _) => self.register_clause(&fact.proposition, &mut derived),
                 body => {
-                    if let Some(view) = crate::kernel::spec::int32_sequence_equality_view(body) {
+                    if let Some(components) =
+                        crate::kernel::spec::sequence_nonmembership_components(body)
+                    {
+                        derived.extend(components);
+                    } else if let Some(view) =
+                        crate::kernel::spec::retained_sequence_equality_view(body)
+                    {
                         derived.push(literal(&view, false).proposition);
                     }
                 }
@@ -224,8 +230,10 @@ impl Index {
                 self.register_clause(&fact.proposition, &mut derived);
             }
             proposition => {
-                if let Some(equalities) =
-                    crate::kernel::spec::int32_sequence_equalities(proposition)
+                if let Some(view) = crate::kernel::spec::sequence_membership_view(proposition) {
+                    derived.push(view);
+                } else if let Some(equalities) =
+                    crate::kernel::spec::retained_sequence_equalities(proposition)
                 {
                     derived.extend(equalities);
                 }

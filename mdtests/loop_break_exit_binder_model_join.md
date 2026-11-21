@@ -6,17 +6,9 @@ instance before leaving. The two exits therefore stand at different states —
 different models for `c`, different bytes in `p->shade` — which is what A23's
 rule refused.
 
-The loop rule now describes the one successor the way decision D5 describes an
-arbitrary visit. The declared binder `c` is rebound at each exit by family and
-argument equality, whatever the body called it, and given a fresh model exactly
-as the loop head does; the cell the exits wrote differently is given a fresh
-value; and each exit contributes, as its own disjunct, the equations pinning
-those fresh names to what that exit actually reached. Nothing is assumed of an
-exit that did not state it: each disjunct is that path's own description of the
-successor, so the join is the standard weakening.
-
-The exported disjunction is what the post-loop claim is proved from. `cases`
-splits on it and each side reads its own model off its disjunct.
+The loop rebinds `c` by resource family and argument equality. Both exits
+establish the same colour disjunction with their own model, so the proof
+after the loop can use it with the joined binder.
 
 Every path out of the body is a `break`, so the back edge is unreachable and
 the constant `decreases 0;` is all the loop's ranking needs: the nonnegativity
@@ -74,26 +66,19 @@ void paint(struct node* p, int32 flag) {
                 step();
                 step();
                 let c = fold(painted(p), { color: Color::Red });
+                have c.color == Color::Red or c.color == Color::Black by known();
                 step();
             } else {
                 step();
                 step();
                 let c = fold(painted(p), { color: Color::Black });
+                have c.color == Color::Red or c.color == Color::Black by known();
                 step();
             }
         }
     }
     step();
-    have c.color == Color::Red or c.color == Color::Black by {
-        cases {
-            (flag == 0 and c.color == Color::Red and p->shade == 0) => {
-                solve();
-            }
-            (c.color == Color::Black and p->shade == 1) => {
-                solve();
-            }
-        }
-    }
+    have c.color == Color::Red or c.color == Color::Black;
     solve();
 }
 ```

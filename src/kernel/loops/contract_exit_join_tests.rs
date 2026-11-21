@@ -42,7 +42,7 @@ fn exit_disjunct_restates_model_getters_without_replacing_history() {
     let joined = restatement.restate(
         vec![ExecutionPureFact::new(historical.clone())].into(),
         vec![],
-        empty_checked_loan_evidence_sequence(),
+        empty_checked_borrow_evidence_sequence(),
         false,
     );
     assert!(joined.disjunct.contains(&expected));

@@ -95,6 +95,7 @@ pub(in crate::kernel) fn evaluate_memory_load_paths(
         volatile,
         source,
         byte_order,
+        None,
     )
     .into_iter()
     .map(ExecutionValuePath::into_native)
@@ -113,6 +114,7 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
     volatile: bool,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
+    entry_origin: Option<&ProgramPoint>,
 ) -> Vec<ExecutionValuePath> {
     let _assumptions_id_scope = assumptions.enter_id_scope();
     if has_pending_reallocation_for_pointer(memory, &pointer) {
@@ -148,6 +150,7 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
         &mut alias_cache,
         source,
         byte_order,
+        entry_origin,
     );
     if let Some(address) = word_storage {
         for path in &mut paths {
@@ -280,7 +283,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     paths
 }
 
-/// A logical integer read whose version was selected from the execution path.
+/// A typed read whose version was selected from the execution path.
 pub(in crate::kernel) fn evaluate_indexed_read(
     version: ProgramPoint,
     origin: &ProgramPoint,
@@ -289,6 +292,28 @@ pub(in crate::kernel) fn evaluate_indexed_read(
     mut facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
 ) -> ExpressionPath {
+    if let ProgramType::Parameter(parameter) = value_type {
+        let value = AlgebraicTermNode::parameter_load_at(version.clone(), pointer, parameter);
+        if let Some(stored) = version.indexed_stored_value() {
+            let (ProgramValue::Parameter(read), ProgramValue::Parameter(stored)) =
+                (&value, stored.native())
+            else {
+                unreachable!("indexed opaque store");
+            };
+            facts.push(ExecutionPureFact {
+                logical_read_equation: true,
+                ..ExecutionPureFact::certified(Proposition::condition_is(
+                    ConditionTerm::AlgebraicEqual(read.clone(), stored.clone()),
+                    true,
+                ))
+            });
+        }
+        return ExpressionPath {
+            outcome: ExpressionOutcome::Value(value),
+            facts,
+            obligations,
+        };
+    }
     if value_type.is_pointer() {
         let ProgramValue::Pointer(stored) = version
             .indexed_stored_value()
@@ -792,6 +817,7 @@ fn evaluate_memory_load_paths_with_alias_cache(
         alias_cache,
         source,
         byte_order,
+        None,
     )
     .into_iter()
     .map(ExecutionValuePath::into_native)
@@ -811,6 +837,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
     alias_cache: &mut MemoryLoadAliasCache,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
+    entry_origin: Option<&ProgramPoint>,
 ) -> Vec<ExecutionValuePath> {
     let mut distinct_case = None;
     let mut paths = evaluate_retained_memory_load_case(
@@ -826,6 +853,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
         alias_cache,
         source,
         byte_order,
+        entry_origin,
         true,
         &mut distinct_case,
     );
@@ -870,6 +898,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
             alias_cache,
             source,
             byte_order,
+            entry_origin,
             splits,
             &mut distinct_case,
         ));
@@ -909,6 +938,7 @@ fn evaluate_retained_memory_load_case(
     alias_cache: &mut MemoryLoadAliasCache,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
+    entry_origin: Option<&ProgramPoint>,
     splits: bool,
     distinct_case: &mut Option<DistinctLoadCase>,
 ) -> Vec<ExecutionValuePath> {
@@ -1138,7 +1168,7 @@ fn evaluate_retained_memory_load_case(
         {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::Value(
-                    (AlgebraicTermNode::parameter_load(source, pointer, parameter)).into(),
+                    (AlgebraicTermNode::parameter_cell_load(&source, pointer, parameter)).into(),
                 ),
                 facts,
                 obligations,
@@ -1265,6 +1295,14 @@ fn evaluate_retained_memory_load_case(
 
     let prefers_symbolic = assumptions.should_prefer_symbolic_external_loads();
     if allow_symbolic_external_load && (prefers_symbolic || reads_written_state) {
+        if let Some(origin) = entry_origin
+            && let Some(version) = origin.entry_cell_version(&pointer, value_type)
+        {
+            return vec![
+                evaluate_indexed_read(version, origin, pointer, value_type, facts, obligations)
+                    .map_value(Into::into),
+            ];
+        }
         if !prefers_symbolic {
             // Preserve the width at the actual access spelling, as the
             // reduction path did before naming the value at the written state.
@@ -1337,9 +1375,9 @@ fn evaluate_retained_memory_load_case(
                     !(alias_cache.resolution_distinct(&pointer, stored_pointer, assumptions)
                         && access_byte_overlap(
                             stored_pointer,
-                            cell_access_byte_width(stored_value),
+                            crate::kernel::assumptions::access_extent_of_value(stored_value),
                             &pointer,
-                            load_bytes,
+                            crate::kernel::AccessExtent::of_type(value_type),
                             assumptions,
                         ) == AccessByteOverlap::Separate)
                 },
@@ -1386,6 +1424,14 @@ fn evaluate_retained_memory_load_case(
     }
 
     if pointer.has_symbolic_block() && allow_symbolic_external_load {
+        if let Some(origin) = entry_origin
+            && let Some(version) = origin.entry_cell_version(&pointer, value_type)
+        {
+            return vec![
+                evaluate_indexed_read(version, origin, pointer, value_type, facts, obligations)
+                    .map_value(Into::into),
+            ];
+        }
         let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
             &memory,
             &pointer,
@@ -1495,7 +1541,6 @@ fn evaluate_retained_memory_load_case(
         .flatten();
     if let Some((stored_pointer, stored_value)) = unresolved {
         let mut paths = Vec::new();
-        let stored_bytes = cell_access_byte_width(&stored_value.native());
         // General equality can resolve an indexed address that the narrower
         // memory resolver leaves open. A proven alias supplies this cell's
         // value; merely skipping its alias branch would lose an initialized
@@ -1562,9 +1607,9 @@ fn evaluate_retained_memory_load_case(
             // would let a zeroed allocation answer that load as zero.
             let bytes_clear = access_byte_overlap(
                 &stored_pointer,
-                stored_bytes,
+                crate::kernel::assumptions::access_extent_of_value(&stored_value.native()),
                 &pointer,
-                value_type.byte_width(),
+                crate::kernel::AccessExtent::of_type(value_type),
                 assumptions,
             ) == AccessByteOverlap::Separate;
             if bytes_clear {
@@ -1829,8 +1874,8 @@ fn evaluate_retained_memory_load_case(
 pub(in crate::kernel) fn abstract_value_source(
     memory: &SymbolicMemory,
     pointer: &Address,
-) -> Option<SharedMemory> {
-    let mut source: Option<SharedMemory> = None;
+) -> Option<ProgramPoint> {
+    let mut source: Option<ProgramPoint> = None;
     for word in 0..ABSTRACT_VALUE_WIDTH / 4 {
         let address = pointer.offset_by_bytes(word * 4);
         let ProgramValue::Int32(term) = memory.known_value(&address)? else {
@@ -1841,14 +1886,10 @@ pub(in crate::kernel) fn abstract_value_source(
         else {
             return None;
         };
-        if *loaded_address != address
-            || source
-                .as_ref()
-                .is_some_and(|source| *source != *loaded.shared_memory())
-        {
+        if *loaded_address != address || source.as_ref().is_some_and(|source| *source != loaded) {
             return None;
         }
-        source = Some(loaded.into_shared_memory());
+        source = Some(loaded);
     }
     source
 }
@@ -3001,10 +3042,7 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
             else {
                 return None;
             };
-            Some((
-                (memory.shared_memory().arena_id(), pointer.as_ref().clone()),
-                *stored,
-            ))
+            Some(((memory.clone(), pointer.as_ref().clone()), *stored))
         })
         .collect::<std::collections::HashMap<_, _>>();
     let replacements = variables
@@ -3157,20 +3195,39 @@ pub(crate) fn pointer_read_over_write_value(pointer: &Address) -> Option<Address
     pointer_read_over_write_program_value(pointer).map(|stored| stored.address().clone())
 }
 
+fn indexed_pointer_read_value(
+    point: &ProgramPoint,
+    address: &Address,
+    value_type: Option<ProgramType>,
+) -> Option<Pointer> {
+    let version;
+    let point = if point.is_exact_read() {
+        let value_type = value_type.filter(|ty| ty.is_pointer())?;
+        crate::instrumentation::record_deterministic_work(1);
+        version = point.indexed_typed_version(address, value_type)?;
+        &version
+    } else {
+        point
+    };
+    let ProgramValue::Pointer(stored) = point.indexed_stored_value()?.native() else {
+        return None;
+    };
+    Some(stored.clone())
+}
+
 /// The complete pointer stored at this read's address, when the state's
-/// fact-free version walk establishes it. Retained caches alone are not evidence.
+/// typed point index or fact-free version walk establishes it. Retained
+/// caches alone are not evidence.
 pub(crate) fn pointer_read_over_write_program_value(pointer: &Address) -> Option<Pointer> {
     let read = pointer.as_loaded_value()?;
     if read.displacement != AddressOffset::Constant(0) {
         return None;
     }
 
-    if let Some(ProgramValue::Pointer(stored)) = read
-        .point
-        .indexed_stored_value()
-        .map(StoredMemoryValue::native)
+    if let Some(stored) =
+        indexed_pointer_read_value(&read.point, &read.defining_address, read.value_type)
     {
-        return Some(stored.clone());
+        return Some(stored);
     }
     // Only a cached pointer can be the stored pointer; anything else needs no
     // walk of the cell's history, nor a run's element built to look at.
@@ -3258,7 +3315,7 @@ fn memory_shown_cell_value_uncached(
         .unwrap_or_else(|| memory.clone());
     let last = crate::kernel::resource_tracker::last_same_named_cell(
         address,
-        bytes,
+        bytes.into(),
         &crate::kernel::resource_tracker::ProgramPoint::at(&source),
     )?;
     // The step the walk stopped at must have left the cached cell standing
@@ -3555,10 +3612,8 @@ thread_local! {
 }
 
 fn immediate_stored_address_base(identity: PointerLoadId) -> Option<AddressBase> {
-    let (point, address, _) = registered_pointer_load_point(identity)?;
-    if let Some(ProgramValue::Pointer(stored)) =
-        point.indexed_stored_value().map(StoredMemoryValue::native)
-    {
+    let (point, address, value_type) = registered_pointer_load_point(identity)?;
+    if let Some(stored) = indexed_pointer_read_value(&point, &address, value_type) {
         return Some(stored.address().base.clone());
     }
     let memory = point.into_shared_memory();
@@ -3572,6 +3627,22 @@ fn immediate_stored_address_base(identity: PointerLoadId) -> Option<AddressBase>
     };
     (stored.address().base != AddressBase::LoadedPointer(identity))
         .then(|| stored.address().base.clone())
+}
+
+/// The pointer a loaded pointer's own defining cell shows: the value the
+/// load read, when that cell holds a stored pointer.
+pub(crate) fn loaded_pointer_stored_address(identity: PointerLoadId) -> Option<Address> {
+    let (memory, address) = registered_pointer_load(identity)?;
+    if !holds_pointer_cell(memory.memory(), &address) {
+        return None;
+    }
+    let ProgramValue::Pointer(stored) =
+        memory_shown_cell_value(&memory, &address, crate::kernel::C_POINTER_BYTE_WIDTH)?
+    else {
+        return None;
+    };
+    (stored.address().base != AddressBase::LoadedPointer(identity))
+        .then(|| stored.address().clone())
 }
 
 /// Decode a pointer-load name without consulting scalar-load metadata.
@@ -3745,6 +3816,18 @@ pub(crate) fn load_term_access_width(
 /// type at the address is the whole answer anyway: every framing comparison
 /// runs at a state later than the load it is carrying, so the exact key
 /// would miss and fall through to this table regardless.
+/// The bytes a `kind` read at `pointer` reaches for a framing check: a
+/// value of abstract type's whole object, else the widest access recorded
+/// at the address, never narrower than the read.
+pub(crate) fn load_access_extent(pointer: &Address, kind: LoadKind) -> crate::kernel::AccessExtent {
+    match kind {
+        LoadKind::Abstract(_) => kind.extent(),
+        _ => crate::kernel::AccessExtent::Bytes(
+            load_access_width_at_address_or_widest(pointer).max(kind.byte_width()),
+        ),
+    }
+}
+
 pub(crate) fn load_access_width_at_address_or_widest(pointer: &Address) -> u32 {
     recorded_load_access_width_at_address(pointer)
         .unwrap_or_else(crate::kernel::resource_tracker::widest_scalar_access_bytes)
@@ -4077,11 +4160,11 @@ pub(in crate::kernel) fn expected_point_named_cell_read(
     ty: ProgramType,
 ) -> Option<MachineTerm> {
     indexed_resource_scalar_read(source, pointer, ty).or_else(|| {
-        if ty != ProgramType::Int32 {
+        let kind = LoadKind::of_type(ty)?;
+        if !kind.is_word32() {
             return None;
         }
-        let kind = LoadKind::Int32;
-        let point = source.entry_integer_version(pointer, kind)?;
+        let point = source.entry_cell_version(pointer, ty)?;
         Some(MachineTerm::MemoryLoad(
             point,
             Box::new(pointer.clone()),
@@ -4968,7 +5051,10 @@ pub(crate) fn load_variable_for_cell_with_origin(
     // cell then share the variable, so bookkeeping drift and unrelated
     // stores do not mint new identities for one load.
     let version = crate::kernel::resource_tracker::last_same_version_point(
-        crate::kernel::resource_tracker::TrackedResource::Cell { pointer, bytes },
+        crate::kernel::resource_tracker::TrackedResource::Cell {
+            pointer,
+            bytes: bytes.into(),
+        },
         &crate::kernel::resource_tracker::ProgramPoint::at(memory),
     )
     .map(|point| point.shared_memory().clone());
@@ -5456,7 +5542,9 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
                 LoadKind::UInt8 => MachineIntegerType::UInt8,
                 LoadKind::Int16 => MachineIntegerType::Int16,
                 LoadKind::UInt16 => MachineIntegerType::UInt16,
-                LoadKind::Bits64 | LoadKind::Float64 => MachineIntegerType::Int64,
+                LoadKind::Bits64 | LoadKind::Abstract(_) | LoadKind::Float64 => {
+                    MachineIntegerType::Int64
+                }
                 LoadKind::Int128 => MachineIntegerType::Int128,
                 LoadKind::UInt128 => MachineIntegerType::UInt128,
                 LoadKind::Int32 | LoadKind::UInt32 | LoadKind::Float32 => MachineIntegerType::Int32,
@@ -6785,7 +6873,7 @@ mod tests {
                 // A loop head can forget the field's value without adding a
                 // call-havoc node. The storage address still says nothing
                 // about the pointee's allocation identity.
-                before.with_loop_memory_havoc_preserving_loans(
+                before.with_loop_memory_havoc_preserving_borrows(
                     Variable(944_014),
                     &BTreeSet::new(),
                     Some(&[range]),
@@ -8743,7 +8831,7 @@ mod tests {
                         &[Proposition::MemoryMutatesOnly {
                             before: entry.clone(),
                             after: exit.clone(),
-                            writes: vec![(write, 8)],
+                            writes: vec![(write, crate::kernel::AccessExtent::from(8))],
                         }],
                         &explicit,
                     )
@@ -9838,6 +9926,7 @@ mod float_memory_handoff_tests {
                     &PureFactContext::new(),
                     false,
                     false,
+                    None,
                     None,
                     None,
                 );

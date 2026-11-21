@@ -297,6 +297,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
         step: ProofStep,
     ) -> Result<Proof<'a>, ClickError> {
+        self.plan_bare_statement_step(step, true)
+    }
+
+    fn plan_bare_statement_step(
+        &self,
+        step: ProofStep,
+        retain_order_bounds: bool,
+    ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
         // An obligation the implicit `solve` cannot spell or prove refuses the
         // step with the fast path's own diagnostic, naming that obligation.
@@ -352,6 +360,43 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         }
         let recorded = recorded.recorded;
         let open = distinct_requirements(recorded.clone());
+        if retain_order_bounds && matches!(step, ProofStep::Step) {
+            let timing = crate::surface::proof::timing::TacticTiming::implicit_solve();
+            let origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit solve"));
+            let mut frontier = self.proof.clone();
+            let mut retained = false;
+            for requirement in &open {
+                if requirement.call_site.is_some() {
+                    continue;
+                }
+                let Some(spelling) = driver_proof.requirement_surface(requirement, &step)? else {
+                    continue;
+                };
+                let mut leaves = Vec::new();
+                super::proof_object::collect_surface_conjunct_leaves(
+                    &spelling.surface,
+                    &mut leaves,
+                );
+                for leaf in &leaves {
+                    if let Some(next) =
+                        crate::kernel::search::ProofSearch::retain_statement_order_bounds(
+                            &frontier, leaf,
+                        )
+                    {
+                        frontier = next;
+                        retained = true;
+                    }
+                }
+            }
+            drop(origin);
+            drop(timing);
+            if retained {
+                // Reprepare against the facts that appear before the step in
+                // the expanded proof. An established bound changes which
+                // requirements the statement still needs written proofs for.
+                return frontier.driver().plan_bare_statement_step(step, false);
+            }
+        }
         let open = open.iter().collect::<Vec<_>>();
         let (proved, mut entries) = match driver_proof
             .driver()

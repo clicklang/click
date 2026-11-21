@@ -16,10 +16,10 @@ int32 update(int32 *pool, int32 *p, int32 *q) {
     requires p == q;
     ensures result == 7;
 } by {
-    open(slot(pool, p)) { step(); }
+    with(slot(pool, p)) { step(); }
 }
 ```
 
 ```expect
-fail: member private body requires separation from active loans
+fail: member private body requires separation from active borrows
 ```

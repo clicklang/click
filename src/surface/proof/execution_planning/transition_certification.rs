@@ -37,6 +37,29 @@ fn missing_prerequisite_error(
     }
 }
 
+/// A live-view write can use the named goal, its symmetric form, or an exact
+/// indexed byte-span witness. Nearby separations are premises for the proof
+/// of the requirement, never candidates for execution to try.
+fn states_write_separation(proposition: &Proposition, facts: &PureFactContext) -> bool {
+    let _checking = crate::instrumentation::CheckingWorkScope::new("stated write separation", 1);
+    let Proposition::ResourceSeparate { left, right } = proposition else {
+        return false;
+    };
+    facts.contains_assumed_exact(proposition)
+        || facts.contains_assumed_exact(&Proposition::ResourceSeparate {
+            left: right.clone(),
+            right: left.clone(),
+        })
+        || facts.states_prepared_memory_separation(proposition)
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!(
+        "../../../scaling_tests/surface/proof/execution_planning/transition_certification/tests.rs"
+    );
+}
+
 /// What a probing `Fast` step met while [`probe_open_obligations`] ran.
 #[derive(Default)]
 pub(in crate::surface) struct OpenObligationProbe {
@@ -756,6 +779,7 @@ fn certified_transitions_from_execution(
                     &prerequisite_assumptions
                 };
                 let proposition = obligation.proposition();
+                let live_view_write = obligation.live_view_write_overlap();
                 // The call can ask for a different descriptor for the same
                 // physical byte spans. Check that entry fact before collecting
                 // an internal prerequisite whose descriptor may not raise.
@@ -763,9 +787,9 @@ fn certified_transitions_from_execution(
                 // explicit step proofs keep their existing obligation list.
                 if !rejected_contract_call
                     && obligation.call_requirement_site().is_some()
-                    && obligation.live_view_write_overlap() == Some(false)
+                    && live_view_write == Some(false)
                     && !executed_under.contains_assumed_exact(proposition)
-                    && executed_under.states_memory_separation(proposition)
+                    && executed_under.states_prepared_memory_separation(proposition)
                 {
                     continue;
                 }
@@ -785,7 +809,7 @@ fn certified_transitions_from_execution(
                 {
                     let description = crate::surface::diagnostics::describe_proof_obligation_context(obligation);
                     let message = match description {
-                        Some(description) if obligation.live_view_write_overlap() == Some(true) => {
+                        Some(description) if live_view_write == Some(true) => {
                             format!("{context_label} cannot proceed: {description}")
                         }
                         Some(description) => format!("{context_label} requires an explicit prerequisite proof ({description})"),
@@ -806,7 +830,11 @@ fn certified_transitions_from_execution(
                         // polarity-aware check below accepts.
                         if pure_facts.has_exact_conjunct(proposition)
                             || exact_fact_is_available(proposition, pure_facts)
-                            || directly_matching_separation_fact(proposition, pure_facts).is_some()
+                            || if live_view_write.is_some() {
+                                states_write_separation(proposition, executed_under)
+                            } else {
+                                directly_matching_separation_fact(proposition, pure_facts).is_some()
+                            }
                             || directly_covering_loadability_fact(proposition, pure_facts).is_some()
                             || matches!(normalize_proposition(proposition), NormalizedProposition::True)
                         {
@@ -840,6 +868,7 @@ fn certified_transitions_from_execution(
                         // is what was searched beside it; list both, so a
                         // loop guard held in the delta is not left out.
                         let consulted_facts = || match context {
+                            _ if live_view_write.is_some() => Vec::new(),
                             Some(_) => {
                                 let mut facts = prerequisite_assumptions.pure_facts();
                                 facts.extend(pure_facts.iter().cloned());
@@ -908,7 +937,11 @@ fn certified_transitions_from_execution(
                                 pure_facts,
                                 prerequisite_assumptions,
                             )
-                            || directly_matching_separation_fact(proposition, pure_facts).is_some()
+                            || if live_view_write.is_some() {
+                                states_write_separation(proposition, prerequisite_assumptions)
+                            } else {
+                                directly_matching_separation_fact(proposition, pure_facts).is_some()
+                            }
                             || directly_covering_loadability_fact(proposition, pure_facts).is_some()
                             // A rejected contract candidate must not erase its
                             // pending clause merely because that clause is
@@ -1043,7 +1076,7 @@ fn certified_transitions_from_execution(
                     fact_transports: transported_facts,
                     generated_load_bindings,
                     generated_load_source_events,
-                    loan_evidence: path.loan_evidence().clone(),
+                    borrow_evidence: path.borrow_evidence().clone(),
                 });
             }
             let generated_load_bindings = generated_load_bindings_from_facts(&execution_facts);
@@ -1073,7 +1106,7 @@ fn certified_transitions_from_execution(
                 fact_transports: Vec::new(),
                 generated_load_bindings,
                 generated_load_source_events,
-                loan_evidence: path.loan_evidence().clone(),
+                borrow_evidence: path.borrow_evidence().clone(),
             })
         })
         .collect::<Result<Vec<_>, _>>()?;

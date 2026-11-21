@@ -84,15 +84,15 @@ fn thread_recovery_work_depends_on_one_child_not_the_outstanding_registry() {
         });
         assert!(work > 0);
         samples.push((size, work));
-        // The last child's loan must survive even the oldest child's join.
+        // The last child's borrow must survive even the oldest child's join.
         assert!(
             next.parent()
-                .loan_ledger()
+                .borrow_ledger()
                 .unwrap()
                 .memory_access_refusal(
                     &range(size - 1, 1, 2),
                     &assumptions,
-                    crate::kernel::LoanRefusalOperation::MemoryAccess,
+                    crate::kernel::BorrowRefusalOperation::MemoryAccess,
                 )
                 .is_some()
         );
@@ -140,7 +140,7 @@ fn joining_one_of_many_shared_readers_touches_only_its_share_branch() {
     )
     .unwrap();
     let occurrence = state.resources().occurrences_for_fact(&view)[0];
-    let root_binding = state.loan_view_bindings().get(&occurrence).unwrap().clone();
+    let root_binding = state.borrow_bindings().get(&occurrence).unwrap().clone();
     let mut samples = Vec::new();
     for size in [8, 16, 32, 64] {
         let mut context = ThreadContext::new(state.clone()).unwrap();
@@ -173,7 +173,7 @@ fn joining_one_of_many_shared_readers_touches_only_its_share_branch() {
                 .0;
         }
         assert_eq!(
-            context.parent().loan_view_bindings().get(&occurrence),
+            context.parent().borrow_bindings().get(&occurrence),
             Some(&root_binding)
         );
     }

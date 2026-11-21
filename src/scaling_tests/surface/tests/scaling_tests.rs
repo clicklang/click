@@ -82,6 +82,81 @@ fn first_entry_cell_lookup_has_bounded_work_after_disjoint_stores() {
 }
 
 #[test]
+fn static_cell_read_steps_skip_same_array_store_history() {
+    use crate::instrumentation::{VerificationEvent, collect};
+
+    // Each read is the first access to its offset. The fixed store target is
+    // in the same array, so the whole-block selector cannot skip the prefix.
+    for (local_store, setup, setup_steps, max_read_version_work) in [
+        (None, "", 1, 4),
+        (Some("x"), "", 1, 4),
+        (Some("*p"), "    int32* p;\n    p = &x;\n", 3, 6),
+    ] {
+        for (stores, reads) in [(4, 1), (16, 1), (64, 1), (128, 1), (32, 32)] {
+            let mut c = format!("int32 g[256];\nint32 probe() {{\n    int32 x;\n{setup}");
+            let mut prefix_steps = setup_steps;
+            for value in 1..=stores {
+                c.push_str(&format!("    g[255] = {value};\n"));
+                prefix_steps += 1;
+                if let Some(lhs) = local_store
+                    && value < stores
+                {
+                    c.push_str(&format!("    {lhs} = {value};\n"));
+                    prefix_steps += 1;
+                }
+            }
+            for index in 0..reads - 1 {
+                c.push_str(&format!("    x = g[{index}];\n"));
+            }
+            c.push_str(&format!("    return g[{}];\n}}\n", reads - 1));
+            let steps = "    step();\n".repeat(prefix_steps + reads);
+            let source = format!(
+                r#"verifying "probe.c";
+int32 probe() {{
+    owns g[0..256];
+}} by {{
+{steps}}}
+"#
+            );
+            let (verified, events) = collect(|| verify_c_sources(&source, &[("probe.c", &c)]));
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "local={local_store:?}, stores={stores}, reads={reads}: {}",
+                    error.message()
+                )
+            });
+            let mut checking_read = false;
+            let mut completed = 0;
+            let mut version_work = 0;
+            for event in events {
+                match event {
+                    VerificationEvent::TacticStarted(tactic) if tactic.tactic_name == "step" => {
+                        checking_read = tactic.tactic_index >= prefix_steps;
+                    }
+                    VerificationEvent::TacticFinished { tactic, .. }
+                        if tactic.tactic_name == "step" =>
+                    {
+                        completed += usize::from(checking_read);
+                        checking_read = false;
+                    }
+                    VerificationEvent::OperationFinished { name, work, .. }
+                        if checking_read && name == "cell version walk" =>
+                    {
+                        version_work += work;
+                    }
+                    _ => {}
+                }
+            }
+            assert_eq!(completed, reads);
+            assert!(
+                (reads..=max_read_version_work * reads).contains(&version_work),
+                "local={local_store:?}, {stores} stores and {reads} reads used {version_work} version work"
+            );
+        }
+    }
+}
+
+#[test]
 fn writing_the_entry_cell_changes_its_ordinary_read_version() {
     let (c, source) = entry_cell_after_local_stores(4, true, "a[0] == 7");
     verify_c_sources(&source, &[("probe.c", &c)]).expect("the read names the written value");
@@ -3555,34 +3630,28 @@ fn array_version_work_curve(
         .collect()
 }
 
-/// The two steps a whole-array fact learned to cross scale like the store it
-/// always crossed: linear in the number of steps, not quadratic.
-///
-/// A declaration and a call are the interesting shapes because the walk crosses
-/// them with different evidence -- one object proven distinct for a
-/// declaration, a whole checked write set for a call -- and because a call's
-/// arrival at a fresh state per step is exactly the shape that goes
-/// quadratic when the version walk cannot reuse the answer it computed one
-/// state ago.
+/// Repeated array references use indexed versions across two kinds of
+/// disjoint effects: declarations for a parameter array and checked call
+/// footprints for a static array.
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn an_array_fact_carried_across_declarations_and_calls_scales_linearly() {
     assert_near_linear_scaling(
-        "array-ref entry version across declarations",
+        "array-ref indexed version across declarations",
         &array_version_work_curve(
             "array-fact-across-declarations",
             "bump.c",
-            "operation `array-ref entry version`",
+            "operation `array-ref indexed version`",
             array_fact_across_declarations,
         ),
     );
     assert_near_linear_scaling(
-        "array-ref block version walk across calls",
+        "array-ref indexed static version across calls",
         &array_version_work_curve(
             "array-fact-across-calls",
             "keep_h.c",
-            "operation `array-ref block version walk`",
+            "operation `array-ref indexed version`",
             array_fact_across_calls,
         ),
     );
@@ -3611,19 +3680,18 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
 
     assert_near_linear_scaling("array fact across unrelated local stores", &samples);
 
-    const ENTRY: &str = "operation `array-ref entry version`";
+    const INDEXED_VERSION: &str = "operation `array-ref indexed version`";
     let naming = samples
         .iter()
         .map(|sample| ScalingSample {
             size: sample.size,
-            work: *sample
-                .named_work
-                .get(ENTRY)
-                .unwrap_or_else(|| panic!("fixture did not use the entry index: {sample:?}")),
+            work: *sample.named_work.get(INDEXED_VERSION).unwrap_or_else(|| {
+                panic!("fixture did not use the array version index: {sample:?}")
+            }),
             named_work: BTreeMap::new(),
         })
         .collect::<Vec<_>>();
-    assert_near_linear_scaling("array-ref entry version", &naming);
+    assert_near_linear_scaling("array-ref indexed version", &naming);
 }
 
 /// The first array read after a long run of disjoint statements must not
@@ -6348,6 +6416,35 @@ fn chain_ordered_index_stores_in(stores: usize, descending: bool) -> (String, St
          ensures a[c0] == 0;\n}} by {{\n{steps}    step_until(function.exit);\n    solve();\n}}\n"
     );
     (c_source, click_source)
+}
+
+/// Inspect the generated bounds separately from the store framing work.
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: cold expansion and replay at multiple store counts"]
+fn signed_store_order_expansion_reuses_bounds() {
+    for stores in [8, 24, 48] {
+        for descending in [false, true] {
+            let (c_source, click_source) = chain_ordered_index_stores_in(stores, descending);
+            let click_source = click_source.replace("ensures a[c0] == 0;", "ensures 1 == 1;");
+            let program = [("mark.c", c_source.as_str())];
+            let label = "mark.contract";
+            let expanded =
+                crate::surface::expand_c_claim_source_by_label(&click_source, &program, label)
+                    .unwrap_or_else(|error| panic!("{stores} stores: {}", error.report()));
+            let applications = expanded
+                .matches("apply(click::integer::int32_less_")
+                .count();
+            assert!(
+                (stores..=5 * stores).contains(&applications),
+                "{stores} stores, descending = {descending}, generated {applications} applications:\n{expanded}"
+            );
+            crate::surface::without_implicit_solve_for_claim(label, || {
+                verify_c_sources(&expanded, &program).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+        }
+    }
 }
 
 fn store_line_samples(

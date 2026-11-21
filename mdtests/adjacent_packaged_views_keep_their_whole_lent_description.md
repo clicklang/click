@@ -1,7 +1,7 @@
 # Adjacent packaged views keep their whole lent description
 
 The body declares two adjacent views. Its normalized frontier is the whole
-range lent at entry, so that loan backs the returned composite. Consuming the
+range lent at entry, so that borrow backs the returned composite. Consuming the
 composite releases its hold and lets the caller write the recovered range.
 
 ```c filename=adjacent_packaged_views.c
@@ -21,8 +21,8 @@ resource reader_pair(p: int32*) {
 }
 
 extern void pack(int32* p) {
-    views p[0..2];
-    produces reader_pair(p);
+    views p[0..2] as input;
+    produces reader_pair(p) from input;
 }
 
 extern void drop(int32* p) {

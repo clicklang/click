@@ -598,7 +598,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         owner->data == old(owner->data);
 } by {
     if owner->len == owner->cap {
-        open(allocated_vector(owner)) {
+        with(allocated_vector(owner)) {
             step();
             have separate(statement(0).footprint, memory(owner->data)) by { normalize() using {}; }
             have owner->data == at(statement(0).entry, owner->data) by {

@@ -801,6 +801,270 @@ fn strict_literal_remainder_bound_known_work_ignores_context_growth() {
 }
 
 #[test]
+fn unsigned_remainder_dividend_bound_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    let mut samples = [Vec::new(), Vec::new()];
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let dividend = MachineTerm::Variable(Variable(975_500));
+        let divisor = MachineTerm::Variable(Variable(975_501));
+        let relation = |relation, left, right| {
+            Proposition::condition_is(
+                ConditionTerm::machine_compare(ty, relation, left, right),
+                true,
+            )
+        };
+        let positive = |value| {
+            relation(
+                CompareRelation::LessThan,
+                MachineTerm::uint64_constant(0),
+                value,
+            )
+        };
+        let goal = relation(
+            CompareRelation::LessEqual,
+            MachineTerm::Binary {
+                format: ty,
+                op: MachineBinaryOp::Remainder,
+                left: Box::new(dividend.clone()),
+                right: Box::new(divisor.clone()),
+            },
+            dividend,
+        );
+        let facts = (0..size)
+            .flat_map(|index| {
+                [
+                    relation(
+                        CompareRelation::LessThan,
+                        divisor.clone(),
+                        MachineTerm::Variable(Variable(976_000 + index)),
+                    ),
+                    Proposition::Predicate {
+                        name: format!("unrelated_{index}"),
+                        arguments: vec![],
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactStore::from_ordered(&facts);
+        for (expected, costs) in [true, false].into_iter().zip(&mut samples) {
+            let facts = if expected {
+                facts.with_fact(positive(divisor.clone()))
+            } else {
+                facts.clone()
+            };
+            let proof = known_computation_proof(goal.clone(), facts);
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), expected);
+            costs.push(work);
+        }
+    }
+    for costs in samples {
+        assert!(
+            costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 16),
+            "{costs:?}"
+        );
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: signed quotient hit and miss scaling took 0.6s"]
+fn signed_quotient_sign_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    let mut samples = [Vec::new(), Vec::new()];
+    for size in [8, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let n = MachineTerm::Variable(Variable(977_500));
+        let d = MachineTerm::Variable(Variable(977_501));
+        let zero = MachineTerm::constant(0);
+        let relation = |relation, left, right, truth| {
+            Proposition::condition_is(
+                ConditionTerm::machine_compare(ty, relation, left, right),
+                truth,
+            )
+        };
+        let goal = relation(
+            CompareRelation::LessEqual,
+            zero.clone(),
+            MachineTerm::Binary {
+                format: ty,
+                op: MachineBinaryOp::Divide,
+                left: Box::new(n.clone()),
+                right: Box::new(d.clone()),
+            },
+            true,
+        );
+        let mut facts = vec![
+            relation(CompareRelation::LessEqual, n.clone(), zero.clone(), true),
+            relation(CompareRelation::LessThan, d.clone(), zero, true),
+        ];
+        for index in 0..size {
+            facts.push(relation(
+                CompareRelation::LessThan,
+                d.clone(),
+                MachineTerm::Variable(Variable(978_000 + index)),
+                true,
+            ));
+            facts.push(Proposition::Predicate {
+                name: format!("unrelated_{index}"),
+                arguments: vec![],
+            });
+        }
+        let facts = PureFactStore::from_ordered(&facts);
+        for (expected, costs) in [true, false].into_iter().zip(&mut samples) {
+            let facts = if expected {
+                facts.with_fact(relation(
+                    CompareRelation::Equal,
+                    n.clone(),
+                    MachineTerm::constant(i32::MIN as u32),
+                    false,
+                ))
+            } else {
+                facts.clone()
+            };
+            let proof = known_computation_proof(goal.clone(), facts);
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), expected);
+            costs.push(work);
+        }
+    }
+    for costs in samples {
+        assert!(
+            costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 16),
+            "{costs:?}"
+        );
+    }
+}
+
+#[test]
+fn unchanged_machine_fold_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineIntegerType};
+    let _session = crate::kernel::VerificationSession::enter();
+    let seed = MachineTerm::Variable(Variable(984_001));
+    let end = MachineTerm::Variable(Variable(984_002));
+    let accumulator = Variable(984_003);
+    let item = Variable(984_004);
+    let comparison = |relation, left, right| {
+        Proposition::condition_is(
+            ConditionTerm::machine_compare(MachineIntegerType::Int32, relation, left, right),
+            true,
+        )
+    };
+    let measurements = [8, 32, 64].map(|size| {
+        let facts = (0..size)
+            .flat_map(|index| {
+                [
+                    comparison(
+                        CompareRelation::LessEqual,
+                        end.clone(),
+                        MachineTerm::Variable(Variable(985_000 + index)),
+                    ),
+                    Proposition::Predicate {
+                        name: format!("unrelated_{index}"),
+                        arguments: vec![],
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactStore::from_ordered(&facts);
+        [accumulator, item].map(|body| {
+            let fold = MachineTerm::RangeFold {
+                start: Box::new(MachineTerm::constant(0)),
+                end: Box::new(end.clone()),
+                initial: Box::new(seed.clone()),
+                accumulator,
+                item,
+                body: Box::new(MachineTerm::Variable(body)),
+            };
+            let goal = comparison(CompareRelation::Equal, fold, seed.clone());
+            let proof = known_computation_proof(goal, facts.clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), body == accumulator);
+            work
+        })
+    });
+    for work in measurements {
+        for (sample, baseline) in work.into_iter().zip(measurements[0]) {
+            assert!(sample <= baseline + 16, "{measurements:?}");
+        }
+    }
+}
+
+#[test]
+fn unfolded_machine_range_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineBinaryOp, MachineIntegerType};
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = MachineIntegerType::UInt64;
+    let input = MachineTerm::Variable(Variable(996_001));
+    let word = MachineTerm::uint64_constant;
+    let guard =
+        ConditionTerm::machine_compare(ty, CompareRelation::LessThan, input.clone(), word(10));
+    let decimal_length = MachineTerm::logical_machine_binary(
+        ty,
+        MachineBinaryOp::Add,
+        word(1),
+        MachineTerm::If {
+            condition: guard.into(),
+            then_term: word(0).into(),
+            else_term: word(1).into(),
+        },
+    );
+    let samples = [8, 32, 64].map(|count| {
+        let facts = (0..count)
+            .flat_map(|i| {
+                [
+                    Proposition::condition_is(
+                        ConditionTerm::machine_compare(
+                            ty,
+                            CompareRelation::LessEqual,
+                            input.clone(),
+                            word(100 + i),
+                        ),
+                        true,
+                    ),
+                    Proposition::Predicate {
+                        name: format!("unrelated_{i}"),
+                        arguments: vec![],
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactStore::from_ordered(&facts);
+        [2, 1].map(|bound| {
+            let goal = Proposition::condition_is(
+                ConditionTerm::machine_compare(
+                    ty,
+                    CompareRelation::LessEqual,
+                    decimal_length.clone(),
+                    word(bound),
+                ),
+                true,
+            );
+            let proof = known_computation_proof(goal, facts.clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), bound == 2);
+            work
+        })
+    });
+    for sample in samples {
+        for (work, baseline) in sample.into_iter().zip(samples[0]) {
+            assert!(work <= baseline + 16, "{samples:?}");
+        }
+    }
+}
+
+#[test]
 fn known_computation_work_is_linear_in_shared_integer_terms() {
     use crate::kernel::{ConditionTerm, IntegerTerm};
     let mut costs = Vec::new();
@@ -1201,5 +1465,130 @@ fn automatic_object_separation_ignores_ambient_address_facts() {
     assert!(
         samples[0] > 0 && samples.iter().all(|work| *work <= samples[0] + 32),
         "{samples:?}"
+    );
+}
+
+#[test]
+fn selected_match_conditionals_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineIntegerType};
+    let _session = crate::kernel::VerificationSession::enter();
+    let payload = MachineTerm::Variable(Variable(986_000));
+    let expected = MachineTerm::Variable(Variable(986_001));
+    let compare = |relation, left, right| {
+        ConditionTerm::machine_compare(MachineIntegerType::Int32, relation, left, right)
+    };
+    let conditional = |left, right, then_term| MachineTerm::If {
+        condition: Box::new(ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        }),
+        then_term: Box::new(then_term),
+        else_term: Box::new(MachineTerm::constant(0)),
+    };
+    let measurements = [8, 32, 64].map(|size| {
+        let facts = (0..size)
+            .flat_map(|index| {
+                [
+                    Proposition::condition_is(
+                        compare(
+                            CompareRelation::LessEqual,
+                            payload.clone(),
+                            MachineTerm::Variable(Variable(987_000 + index)),
+                        ),
+                        true,
+                    ),
+                    Proposition::Predicate {
+                        name: format!("unrelated_{index}"),
+                        arguments: vec![],
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactStore::from_ordered(&facts);
+        [&payload, &expected].map(|guard_value| {
+            let nested = conditional(
+                payload.clone(),
+                payload.clone(),
+                conditional(
+                    payload.clone(),
+                    guard_value.clone(),
+                    MachineTerm::constant(1),
+                ),
+            );
+            let goal = Proposition::condition_is(
+                compare(CompareRelation::Equal, nested, MachineTerm::constant(1)),
+                true,
+            );
+            let proof = known_computation_proof(goal, facts.clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), guard_value == &payload);
+            work
+        })
+    });
+    for work in measurements {
+        for (sample, baseline) in work.into_iter().zip(measurements[0]) {
+            assert!(sample <= baseline + 16, "{measurements:?}");
+        }
+    }
+}
+
+#[test]
+fn pointer_index_projection_looks_up_only_its_full_width_bound() {
+    use crate::kernel::proof::fact_reasoning::{known_bridge_leaf, pointer_projection_source};
+    use crate::kernel::{AddressOffset, ConditionTerm, VerificationSession};
+    let _session = VerificationSession::enter();
+    let index = MachineTerm::Variable(Variable(970_020));
+    let narrow = AddressOffset::scaled_int32_node(MachineTerm::uint32_from_64(index.clone()), 4);
+    let wide = AddressOffset::scaled_int64_node(index.clone(), 4, true);
+    let at_parameter =
+        |offset| AddressOffset::add(AddressOffset::Variable(Variable(970_021)), offset);
+    let compare = ConditionTerm::address_offset_equal(at_parameter(narrow), at_parameter(wide));
+    let wide = pointer_projection_source(&compare).unwrap();
+    let goal = Proposition::condition_is(compare, true);
+    let exact = Proposition::condition_is(
+        ConditionTerm::IntegerLessEqual(
+            wide.into(),
+            crate::kernel::IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
+        ),
+        true,
+    );
+    let work = [8, 32, 64].map(|size| {
+        let mut premises = Vec::new();
+        for i in 0..size {
+            premises.push(Proposition::condition_is(
+                ConditionTerm::uint64_less_equal(
+                    index.clone(),
+                    MachineTerm::uint64_constant(4_000_000_000 + i),
+                ),
+                true,
+            ));
+            premises.push(Proposition::Predicate {
+                name: format!("projection_other_{i}"),
+                arguments: Vec::new(),
+            });
+        }
+        [false, true].map(|present| {
+            let mut premises = premises.clone();
+            if present {
+                premises.push(exact.clone());
+            }
+            let facts = PureFactStore::from_ordered(&premises);
+            let (closed, units) = crate::instrumentation::measure_deterministic_work(|| {
+                known_bridge_leaf(&goal, &|p| facts.pure_known_available(p))
+            });
+            assert_eq!(closed, present);
+            units
+        })
+    });
+    assert!(
+        work.iter().all(|pair| pair
+            .iter()
+            .zip(work[0])
+            .all(|(actual, baseline)| *actual <= baseline + 32)),
+        "{work:?}"
     );
 }

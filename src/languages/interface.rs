@@ -139,7 +139,7 @@ pub struct ImportedParameter {
     /// parameter's type is the pointer that carries it.
     pub(super) reference: bool,
     pub(super) slice_length_parameter: Option<usize>,
-    pub(super) fixed_reference_bounds: Option<u32>,
+    pub(super) fixed_reference_bounds: Option<crate::kernel::LayoutSize>,
     pub(super) struct_name: Option<String>,
     pub(super) union_name: Option<String>,
     pub(super) struct_layout: Option<RecordLayout>,
@@ -285,7 +285,9 @@ pub struct RecordLayout {
     /// fields. Flattening union members into `aggregate_fields` would make a
     /// by-value copy overwrite one member with another.
     pub(super) aggregate_unions: Vec<RecordUnionLayout>,
-    pub(super) size_bytes: u32,
+    /// A number, or for a symbolic layout, an instance of a generic struct
+    /// at an abstract type, its `sizeof` term.
+    pub(super) size: crate::kernel::LayoutSize,
     pub(super) alignment_bytes: u32,
     /// The struct's strict-aliasing class (`design/effective-types.md`),
     /// for a struct the C parser declared.
@@ -309,7 +311,10 @@ pub struct RecordField {
     /// declared order. The shape is retained so indexing can be flattened
     /// with the correct row-major stride.
     pub(super) array_shape: Option<Vec<u32>>,
-    pub(super) offset_bytes: u32,
+    /// A number, or in a symbolic layout the field's `offsetof` term.
+    pub(super) offset: crate::kernel::LayoutOffset,
+    /// The field's width; 0 for a value of an abstract type, whose extent is
+    /// `sizeof(T)` ([`RecordField::extent`]).
     pub(super) byte_width: u32,
 }
 
@@ -317,8 +322,15 @@ pub struct RecordField {
 pub(super) struct RecordScalarField {
     pub(super) pointee_constant: bool,
     pub(super) name: String,
-    pub(super) offset_bytes: u32,
+    pub(super) offset: crate::kernel::LayoutOffset,
     pub(super) interface_type: InterfaceType,
+}
+
+impl RecordScalarField {
+    /// The leaf's byte offset in a concrete layout.
+    pub(super) fn offset_bytes(&self) -> u32 {
+        self.offset.concrete()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -983,7 +995,7 @@ impl RecordLayout {
                     && field.array_element_width.is_none()
                     && field.union_name.is_none()
             }) {
-                embedded.insert((field.offset_bytes, nominal.clone()), name.clone());
+                embedded.insert((field.offset_bytes(), nominal.clone()), name.clone());
             }
         }
         embedded
@@ -1040,6 +1052,197 @@ impl RecordLayout {
     /// Imported embedded declarations use the same nominal field metadata and
     /// physical leaf layout as C structs. Bound materialized leaves before copying
     /// any nested layout, including a shared declaration used more than once.
+    /// The layout of an instance of a generic struct at an abstract type,
+    /// `name`, with `fields` in declaration order: its size and each field's
+    /// offset are terms of the [`crate::kernel::SymbolicLayoutName`] it
+    /// registers. A field is a scalar, a pointer, or a value of an abstract
+    /// type, which takes `sizeof(T)` bytes. Alignment stays the importer's
+    /// bound, `alignment_bytes`.
+    pub(crate) fn symbolic(
+        name: &str,
+        fields: Vec<(String, InterfaceType, Option<String>)>,
+        alignment_bytes: u32,
+    ) -> Result<Self, String> {
+        if alignment_bytes == 0 || !alignment_bytes.is_power_of_two() {
+            return Err("symbolic struct layout has invalid alignment".into());
+        }
+        let layout = crate::kernel::SymbolicLayoutName::intern(
+            name,
+            fields
+                .iter()
+                .map(|(field, interface_type, _)| (field.clone(), interface_type.to_kernel_type()))
+                .collect(),
+        );
+        let extents = fields
+            .iter()
+            .map(|(field, interface_type, _)| {
+                (
+                    field.clone(),
+                    crate::kernel::AccessExtent::of_type(interface_type.to_kernel_type()),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut named_fields = BTreeMap::new();
+        let mut aggregate_fields = Vec::with_capacity(fields.len());
+        for (index, ((field, interface_type, struct_name), (_, extent))) in
+            fields.into_iter().zip(extents).enumerate()
+        {
+            if !matches!(
+                interface_type,
+                InterfaceType::Parameter(_)
+                    | InterfaceType::Bool
+                    | InterfaceType::UInt8
+                    | InterfaceType::Int8
+                    | InterfaceType::UInt16
+                    | InterfaceType::Int16
+                    | InterfaceType::Int32
+                    | InterfaceType::UInt32
+                    | InterfaceType::Int64(_)
+                    | InterfaceType::UInt64(_)
+                    | InterfaceType::Int32Pointer
+                    | InterfaceType::UInt8Pointer
+                    | InterfaceType::UInt16Pointer
+                    | InterfaceType::UInt32Pointer
+            ) {
+                return Err(format!(
+                    "symbolic struct field `{field}` has unsupported type"
+                ));
+            }
+            let offset = crate::kernel::LayoutOffset::Field(layout, index as u32);
+            let record_field = RecordField {
+                interface_type,
+                long_double: false,
+                pointee_constant: false,
+                struct_name,
+                enum_name: None,
+                union_name: None,
+                function_pointer_signature: None,
+                array_element_width: None,
+                array_shape: None,
+                offset,
+                byte_width: extent.bytes().unwrap_or(0),
+            };
+            if named_fields.insert(field.clone(), record_field).is_some() {
+                return Err(format!("duplicate symbolic struct field `{field}`"));
+            }
+            aggregate_fields.push(RecordScalarField {
+                pointee_constant: false,
+                name: field,
+                offset,
+                interface_type,
+            });
+        }
+        Ok(Self {
+            embedded_structs: BTreeMap::new(),
+            fields: named_fields,
+            aggregate_fields,
+            aggregate_unions: Vec::new(),
+            bit_field_bytes: None,
+            size: crate::kernel::LayoutSize::Of(layout),
+            alignment_bytes,
+            class: None,
+        })
+    }
+
+    /// A class template instance's layout in a language that places fields
+    /// in declaration order: the `prefix` fields, before any field an
+    /// abstract type sizes or aligns, keep their byte offsets, and every
+    /// `suffix` field is at an `offsetof` term of the
+    /// [`crate::kernel::SymbolicLayoutName`] it registers, as are the size.
+    /// `reserved_prefix` bytes belong to no field (a vtable pointer).
+    /// `placeholder_size` bounds the prefix as the exporter laid it out.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn symbolic_with_prefix(
+        name: &str,
+        prefix: Vec<(String, InterfaceType, Option<String>, u32, u32)>,
+        suffix: Vec<(String, InterfaceType, Option<String>)>,
+        reserved_prefix: u32,
+        placeholder_size: u32,
+        alignment_bytes: u32,
+        structs: &BTreeMap<String, Self>,
+    ) -> Result<Self, String> {
+        let mut layout = Self::from_explicit_fields_with_structs(
+            prefix.clone(),
+            placeholder_size,
+            alignment_bytes,
+            structs,
+        )?;
+        let embedded = |struct_name: &Option<String>, interface_type: InterfaceType| {
+            struct_name.is_some() && interface_type != InterfaceType::Int32Pointer
+        };
+        let mut fields = prefix
+            .iter()
+            .map(|(field, interface_type, struct_name, offset, width)| {
+                crate::kernel::SymbolicField {
+                    name: field.clone(),
+                    field_type: (!embedded(struct_name, *interface_type))
+                        .then(|| interface_type.to_kernel_type()),
+                    extent: crate::kernel::AccessExtent::Bytes(*width),
+                    fixed_offset: Some(*offset),
+                }
+            })
+            .collect::<Vec<_>>();
+        for (field, interface_type, _) in &suffix {
+            if !matches!(
+                interface_type,
+                InterfaceType::Parameter(_)
+                    | InterfaceType::Bool
+                    | InterfaceType::UInt8
+                    | InterfaceType::Int8
+                    | InterfaceType::UInt16
+                    | InterfaceType::Int16
+                    | InterfaceType::Int32
+                    | InterfaceType::UInt32
+                    | InterfaceType::Int64(_)
+                    | InterfaceType::UInt64(_)
+                    | InterfaceType::Int32Pointer
+                    | InterfaceType::UInt8Pointer
+                    | InterfaceType::UInt16Pointer
+                    | InterfaceType::UInt32Pointer
+            ) {
+                return Err(format!(
+                    "symbolic struct field `{field}` has unsupported type"
+                ));
+            }
+            fields.push(crate::kernel::SymbolicField::placed(
+                field.clone(),
+                interface_type.to_kernel_type(),
+            ));
+        }
+        let symbolic =
+            crate::kernel::SymbolicLayoutName::intern_fields(name, fields, reserved_prefix);
+        let first = prefix.len();
+        for (index, (field, interface_type, struct_name)) in suffix.into_iter().enumerate() {
+            let offset = crate::kernel::LayoutOffset::Field(symbolic, (first + index) as u32);
+            let record_field = RecordField {
+                interface_type,
+                long_double: false,
+                pointee_constant: false,
+                struct_name,
+                enum_name: None,
+                union_name: None,
+                function_pointer_signature: None,
+                array_element_width: None,
+                array_shape: None,
+                offset,
+                byte_width: crate::kernel::AccessExtent::of_type(interface_type.to_kernel_type())
+                    .bytes()
+                    .unwrap_or(0),
+            };
+            if layout.fields.insert(field.clone(), record_field).is_some() {
+                return Err(format!("duplicate symbolic struct field `{field}`"));
+            }
+            layout.aggregate_fields.push(RecordScalarField {
+                pointee_constant: false,
+                name: field,
+                offset,
+                interface_type,
+            });
+        }
+        layout.size = crate::kernel::LayoutSize::Of(symbolic);
+        Ok(layout)
+    }
+
     pub(crate) fn from_explicit_fields_with_structs(
         fields: Vec<(String, InterfaceType, Option<String>, u32, u32)>,
         size_bytes: u32,
@@ -1078,7 +1281,7 @@ impl RecordLayout {
                         "explicit embedded struct field `{name}` has unsupported storage"
                     ));
                 }
-                (layout.size_bytes, layout.alignment_bytes)
+                (layout.size_bytes(), layout.alignment_bytes)
             } else {
                 match interface_type {
                     InterfaceType::Int32Array(length) | InterfaceType::UInt32Array(length) => (
@@ -1148,7 +1351,7 @@ impl RecordLayout {
                             | InterfaceType::UInt8Array(n) => Some(vec![n]),
                             _ => None,
                         },
-                        offset_bytes,
+                        offset: offset_bytes.into(),
                         byte_width,
                     },
                 )
@@ -1168,9 +1371,10 @@ impl RecordLayout {
                     aggregate_fields.push(RecordScalarField {
                         pointee_constant: field.pointee_constant,
                         name: format!("{name}.{}", field.name),
-                        offset_bytes: offset_bytes
-                            .checked_add(field.offset_bytes)
-                            .ok_or("explicit embedded field offset overflows")?,
+                        offset: offset_bytes
+                            .checked_add(field.offset_bytes())
+                            .ok_or("explicit embedded field offset overflows")?
+                            .into(),
                         interface_type: field.interface_type,
                     });
                 }
@@ -1178,7 +1382,7 @@ impl RecordLayout {
                 aggregate_fields.push(RecordScalarField {
                     pointee_constant: false,
                     name,
-                    offset_bytes,
+                    offset: offset_bytes.into(),
                     interface_type,
                 });
             }
@@ -1190,7 +1394,7 @@ impl RecordLayout {
             aggregate_fields,
             aggregate_unions: Vec::new(),
             bit_field_bytes: None,
-            size_bytes,
+            size: size_bytes.into(),
             alignment_bytes,
             class: None,
         })
@@ -1204,8 +1408,23 @@ impl RecordLayout {
         self.fields.get(name)
     }
 
+    /// The size of a concrete layout. A symbolic layout has [`Self::size`]
+    /// only.
     pub fn size_bytes(&self) -> u32 {
-        self.size_bytes
+        self.size.concrete()
+    }
+
+    pub fn size(&self) -> crate::kernel::LayoutSize {
+        self.size
+    }
+
+    /// The symbolic layout this is, for an instance of a generic struct at
+    /// an abstract type.
+    pub fn symbolic_layout(&self) -> Option<crate::kernel::SymbolicLayoutName> {
+        match self.size {
+            crate::kernel::LayoutSize::Of(layout) => Some(layout),
+            crate::kernel::LayoutSize::Bytes(_) => None,
+        }
     }
 
     pub fn alignment_bytes(&self) -> u32 {
@@ -1214,14 +1433,14 @@ impl RecordLayout {
 
     pub(crate) fn to_kernel_aggregate_layout(&self) -> crate::kernel::AggregateLayout {
         crate::kernel::AggregateLayout::with_unions(
-            self.size_bytes,
+            self.size,
             self.alignment_bytes,
             self.aggregate_fields
                 .iter()
                 .map(|field| {
                     crate::kernel::AggregateField::new(
                         &field.name,
-                        field.offset_bytes,
+                        field.offset,
                         field.interface_type.to_kernel_type(),
                     )
                     .with_array_shape(
@@ -1268,7 +1487,7 @@ impl RecordLayout {
             .iter()
             .map(|field| {
                 (
-                    field.offset_bytes,
+                    field.offset_bytes(),
                     field.interface_type.to_kernel_type().byte_width(),
                 )
             })
@@ -1285,7 +1504,7 @@ impl RecordLayout {
         self.aggregate_fields.iter().map(|field| {
             (
                 field.name.as_str(),
-                field.offset_bytes,
+                field.offset_bytes(),
                 field.interface_type,
             )
         })
@@ -1296,7 +1515,7 @@ impl RecordLayout {
     pub(crate) fn leaf_field_offsets(&self) -> impl Iterator<Item = (&str, u32)> {
         self.aggregate_fields
             .iter()
-            .map(|field| (field.name.as_str(), field.offset_bytes))
+            .map(|field| (field.name.as_str(), field.offset_bytes()))
     }
 }
 
@@ -1313,8 +1532,24 @@ impl RecordField {
         self.interface_type
     }
 
+    /// The field's byte offset in a concrete layout. A symbolic layout's
+    /// field has [`Self::offset`] only.
     pub fn offset_bytes(&self) -> u32 {
-        self.offset_bytes
+        self.offset.concrete()
+    }
+
+    pub fn offset(&self) -> crate::kernel::LayoutOffset {
+        self.offset
+    }
+
+    /// The bytes a value of the field takes.
+    pub fn extent(&self) -> crate::kernel::AccessExtent {
+        match self.interface_type {
+            InterfaceType::Parameter(parameter) if parameter.has_abstract_size() => {
+                crate::kernel::AccessExtent::Object(parameter)
+            }
+            _ => crate::kernel::AccessExtent::Bytes(self.byte_width),
+        }
     }
 
     pub fn struct_name(&self) -> Option<&str> {
@@ -1360,8 +1595,11 @@ impl ImportedParameter {
         self
     }
 
-    pub(crate) fn with_fixed_reference_bounds(mut self, bytes: u32) -> Self {
-        self.fixed_reference_bounds = Some(bytes);
+    pub(crate) fn with_fixed_reference_bounds(
+        mut self,
+        bytes: impl Into<crate::kernel::LayoutSize>,
+    ) -> Self {
+        self.fixed_reference_bounds = Some(bytes.into());
         self
     }
 
@@ -1798,8 +2036,12 @@ pub(super) fn pointer_array_element_type(
     }
 }
 
-pub(super) fn record_value_type(layout: &RecordLayout) -> InterfaceType {
-    InterfaceType::UInt8Array(layout.size_bytes)
+pub(crate) fn record_value_type(layout: &RecordLayout) -> InterfaceType {
+    match layout.size {
+        crate::kernel::LayoutSize::Bytes(bytes) => InterfaceType::UInt8Array(bytes),
+        // A symbolic struct's value is an object of its `sizeof`.
+        crate::kernel::LayoutSize::Of(symbolic) => InterfaceType::Parameter(symbolic.value_type()),
+    }
 }
 
 pub(super) fn declared_pointer_locals(

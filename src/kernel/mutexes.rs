@@ -31,8 +31,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(test)]
-use super::loans::MutexUseLoan;
-use super::loans::{LoanHoldId, LoanLedger, LoanParticipantId, MutexUseBinding};
+use super::borrows::MutexUseBorrow;
+use super::borrows::{BorrowHoldId, BorrowLedger, BorrowParticipantId, MutexUseBinding};
 use crate::persistent::PersistentMap;
 
 use super::{Address, ConditionTerm, ExecutionState, PureFactContext, Resource, ResourceFact};
@@ -102,7 +102,7 @@ enum MutexEntry {
         invariant: Option<ResourceFact>,
         interface: Option<Arc<InitializedMutexInterface>>,
         epoch: u64,
-        lifetime_hold: Option<(LoanHoldId, LoanParticipantId, MutexUseBinding)>,
+        lifetime_hold: Option<(BorrowHoldId, BorrowParticipantId, MutexUseBinding)>,
     },
 }
 
@@ -177,10 +177,10 @@ pub(super) enum MutexProtocolMismatch {
 #[derive(Clone)]
 pub(super) struct MutexContext {
     state: ExecutionState,
-    runtime_loan_transition: Option<(
-        LoanLedger,
-        LoanParticipantId,
-        super::loans::CheckedLoanTransition,
+    runtime_borrow_transition: Option<(
+        BorrowLedger,
+        BorrowParticipantId,
+        super::borrows::CheckedBorrowTransition,
     )>,
 }
 
@@ -623,44 +623,44 @@ fn fresh_acquisition_epoch() -> Result<u64, MutexTransitionError> {
 pub(super) fn bind_assumed_guard_inputs(
     mut state: ExecutionState,
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, super::loans::LoanRefusal> {
-    use super::loans::LoanRefusal;
+) -> Result<ExecutionState, super::borrows::BorrowRefusal> {
+    use super::borrows::BorrowRefusal;
     let inputs = state.resources.facts().iter().filter(|fact|
         matches!(fact.resource(), Resource::MutexGuard(identity) if identity.epoch.is_none()))
         .cloned().collect::<Vec<_>>();
     if !inputs.is_empty() && (!state.preserves_mutex_protocols || state.mutex_ledger.is_some()) {
-        return Err(LoanRefusal::InvalidEvidence);
+        return Err(BorrowRefusal::InvalidEvidence);
     }
     for fact in inputs {
         state
             .resources
             .unique_owned_occurrence_for_fact(&fact)
-            .ok_or(LoanRefusal::MissingBacking)?;
+            .ok_or(BorrowRefusal::MissingBacking)?;
         let Resource::MutexGuard(identity) = fact.resource() else {
             unreachable!()
         };
         // Reject ambiguous or non-unit ownership before allocating an identity.
         if state.resources.mutex_guard_at(&identity.mutex) != Some(&fact) {
-            return Err(LoanRefusal::MissingBacking);
+            return Err(BorrowRefusal::MissingBacking);
         }
         let bound = ResourceFact::own(Resource::MutexGuard(super::MutexIdentity {
-            epoch: Some(fresh_acquisition_epoch().map_err(|_| LoanRefusal::InvalidEvidence)?),
+            epoch: Some(fresh_acquisition_epoch().map_err(|_| BorrowRefusal::InvalidEvidence)?),
             mutex: identity.mutex.clone(),
         }));
         let inputs = state
             .mutex_input_reservations
             .get_or_insert_with(MutexInputReservations::empty);
         if inputs.guards.contains_key(&identity.mutex) {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         inputs.identity = MutexLedger::fresh_identity();
         inputs.guards.insert(identity.mutex.clone(), bound.clone());
         state.resources = state
             .resources
             .without_fact_delaying_normalization(&fact, assumptions)
-            .ok_or(LoanRefusal::MissingBacking)?
+            .ok_or(BorrowRefusal::MissingBacking)?
             .try_compose_with_facts_delaying_normalization([bound], assumptions)
-            .map_err(|_| LoanRefusal::MissingBacking)?;
+            .map_err(|_| BorrowRefusal::MissingBacking)?;
     }
     Ok(state)
 }
@@ -669,34 +669,34 @@ pub(super) fn bind_assumed_guard_inputs(
 pub(super) fn bind_assumed_lifetime_inputs(
     mut state: ExecutionState,
     assumptions: &PureFactContext,
-) -> Result<ExecutionState, super::loans::LoanRefusal> {
-    use super::loans::LoanRefusal;
+) -> Result<ExecutionState, super::borrows::BorrowRefusal> {
+    use super::borrows::BorrowRefusal;
     let inputs = state.resources.facts().iter().filter(|fact|
         matches!(fact.resource(), Resource::MutexLive(identity) if identity.epoch.is_none()))
         .cloned().collect::<Vec<_>>();
     if !inputs.is_empty() && (!state.preserves_mutex_protocols || state.mutex_ledger.is_some()) {
-        return Err(LoanRefusal::InvalidEvidence);
+        return Err(BorrowRefusal::InvalidEvidence);
     }
     for fact in inputs {
         state
             .resources
             .unique_owned_occurrence_for_fact(&fact)
-            .ok_or(LoanRefusal::MissingBacking)?;
+            .ok_or(BorrowRefusal::MissingBacking)?;
         let Resource::MutexLive(identity) = fact.resource() else {
             unreachable!()
         };
         // Reject ambiguous or non-unit ownership before allocating an identity.
         if state.resources.mutex_live_at(&identity.mutex) != Some(&fact) {
-            return Err(LoanRefusal::MissingBacking);
+            return Err(BorrowRefusal::MissingBacking);
         }
         let bound = MutexInitializationId::fresh()
-            .map_err(|_| LoanRefusal::IdentitySpaceExhausted)?
+            .map_err(|_| BorrowRefusal::IdentitySpaceExhausted)?
             .description(&identity.mutex);
         let inputs = state
             .mutex_input_reservations
             .get_or_insert_with(MutexInputReservations::empty);
         if inputs.lifetimes.contains_key(&identity.mutex) {
-            return Err(LoanRefusal::InvalidEvidence);
+            return Err(BorrowRefusal::InvalidEvidence);
         }
         inputs.identity = MutexLedger::fresh_identity();
         inputs
@@ -705,9 +705,9 @@ pub(super) fn bind_assumed_lifetime_inputs(
         state.resources = state
             .resources
             .without_fact_delaying_normalization(&fact, assumptions)
-            .ok_or(LoanRefusal::MissingBacking)?
+            .ok_or(BorrowRefusal::MissingBacking)?
             .try_compose_with_facts_delaying_normalization([bound], assumptions)
-            .map_err(|_| LoanRefusal::MissingBacking)?;
+            .map_err(|_| BorrowRefusal::MissingBacking)?;
     }
     Ok(state)
 }
@@ -897,7 +897,7 @@ pub(super) fn storage_is_automatic(
 
 /// A storage release must not leave a live initialization behind. Abstract
 /// guard contracts lack checked lifecycle inputs for deciding this dependency;
-/// refuse retirement there until the lifetime-loan model can discharge it.
+/// refuse retirement there until the lifetime-borrow model can discharge it.
 pub(super) fn storage_retirement_refusal(
     state: &ExecutionState,
     allocation: &super::MemoryRange,
@@ -988,7 +988,7 @@ impl MutexContext {
         state.mutex_ledger.get_or_insert_with(MutexLedger::new);
         Self {
             state,
-            runtime_loan_transition: None,
+            runtime_borrow_transition: None,
         }
     }
 
@@ -1006,25 +1006,25 @@ impl MutexContext {
         self,
     ) -> (
         ExecutionState,
-        super::loans::CheckedLoanCallEvidenceSequence,
+        super::borrows::CheckedBorrowCallEvidenceSequence,
     ) {
-        use super::loans::{
-            CheckedLoanCallEvidence, append_checked_loan_evidence,
-            empty_checked_loan_evidence_sequence,
+        use super::borrows::{
+            CheckedBorrowCallEvidence, append_checked_borrow_evidence,
+            empty_checked_borrow_evidence_sequence,
         };
-        let mut evidence = empty_checked_loan_evidence_sequence();
-        if let Some((before, holder, transition)) = self.runtime_loan_transition {
-            let checked = CheckedLoanCallEvidence::runtime_mutex_transition(
+        let mut evidence = empty_checked_borrow_evidence_sequence();
+        if let Some((before, holder, transition)) = self.runtime_borrow_transition {
+            let checked = CheckedBorrowCallEvidence::runtime_mutex_transition(
                 &before,
                 holder,
                 transition,
                 self.state
-                    .loan_ledger
+                    .borrow_ledger
                     .as_ref()
-                    .expect("mutex loan successor"),
+                    .expect("mutex borrow successor"),
             )
-            .expect("checked mutex loan transition");
-            evidence = append_checked_loan_evidence(&evidence, Some(Arc::new(checked)));
+            .expect("checked mutex borrow transition");
+            evidence = append_checked_borrow_evidence(&evidence, Some(Arc::new(checked)));
         }
         (self.state, evidence)
     }
@@ -1090,7 +1090,7 @@ impl MutexContext {
         ));
         Ok(Self {
             state,
-            runtime_loan_transition: None,
+            runtime_borrow_transition: None,
         })
     }
 
@@ -1162,16 +1162,16 @@ impl MutexContext {
         ) {
             return Err("mutex invariant must be one folded, exclusive instance");
         }
-        // The first transition has no loan evidence. Escrowing a resource
+        // The first transition has no borrow evidence. Escrowing a resource
         // beside a possible live borrower would be unsound.
         if self
             .state
-            .loan_ledger
+            .borrow_ledger
             .as_ref()
-            .is_some_and(|ledger| ledger.has_active_memory_loans())
-            || self.state.loan_view_bindings.iter().next().is_some()
+            .is_some_and(|ledger| ledger.has_active_memory_borrows())
+            || self.state.borrow_bindings.iter().next().is_some()
         {
-            return Err("mutex publication with a loan ledger is not supported");
+            return Err("mutex publication with a borrow ledger is not supported");
         }
         if !self
             .state
@@ -1206,7 +1206,7 @@ impl MutexContext {
         ));
         Ok(Self {
             state,
-            runtime_loan_transition: None,
+            runtime_borrow_transition: None,
         })
     }
 
@@ -1217,7 +1217,7 @@ impl MutexContext {
         &self,
         mutex: &Address,
         assumptions: &PureFactContext,
-    ) -> Result<(Self, MutexUseLoan), MutexTransitionError> {
+    ) -> Result<(Self, MutexUseBorrow), MutexTransitionError> {
         if self
             .state
             .mutex_ledger
@@ -1251,18 +1251,18 @@ impl MutexContext {
             .ok_or_else(|| MutexTransitionError::MissingLive(mutex.clone()))?;
         let ledger = self
             .state
-            .loan_ledger
+            .borrow_ledger
             .clone()
-            .unwrap_or_else(LoanLedger::new);
-        let participant = match self.state.loan_participant {
+            .unwrap_or_else(BorrowLedger::new);
+        let participant = match self.state.borrow_participant {
             Some(participant) => participant,
             None => ledger.fresh_participant().map_err(|error| {
                 MutexTransitionError::OwnedRefusal(format!(
-                    "cannot establish mutex loan participant: {error}"
+                    "cannot establish mutex borrow participant: {error}"
                 ))
             })?,
         };
-        let (ledger, loan) = ledger
+        let (ledger, borrow) = ledger
             .lend_mutex_use(participant, participant, support, live)
             .map_err(|error| {
                 MutexTransitionError::OwnedRefusal(format!(
@@ -1271,7 +1271,7 @@ impl MutexContext {
             })?;
         let mut state = self.state.clone();
         let usage = ledger
-            .mutex_use_resource(loan.usage, participant)
+            .mutex_use_resource(borrow.usage, participant)
             .map_err(|_| MutexTransitionError::MissingUse(mutex.clone()))?;
         state.resources = resources
             .try_compose_with_facts_delaying_normalization([usage], assumptions)
@@ -1280,14 +1280,14 @@ impl MutexContext {
                     "mutex use occurrence conflicts with current authority: {error}"
                 ))
             })?;
-        state.loan_ledger = Some(ledger);
-        state.loan_participant = Some(participant);
+        state.borrow_ledger = Some(ledger);
+        state.borrow_participant = Some(participant);
         Ok((
             Self {
                 state,
-                runtime_loan_transition: None,
+                runtime_borrow_transition: None,
             },
-            loan,
+            borrow,
         ))
     }
 
@@ -1297,13 +1297,13 @@ impl MutexContext {
     ) -> Result<ResourceFact, MutexTransitionError> {
         let ledger = self
             .state
-            .loan_ledger
+            .borrow_ledger
             .as_ref()
-            .ok_or("missing mutex loan ledger")?;
+            .ok_or("missing mutex borrow ledger")?;
         let participant = self
             .state
-            .loan_participant
-            .ok_or("missing mutex loan participant")?;
+            .borrow_participant
+            .ok_or("missing mutex borrow participant")?;
         let fact = ledger
             .mutex_use_resource(usage, participant)
             .map_err(|error| {
@@ -1332,21 +1332,21 @@ impl MutexContext {
         &self,
         usage: MutexUseBinding,
         assumptions: &PureFactContext,
-    ) -> Result<(Self, MutexUseLoan), MutexTransitionError> {
+    ) -> Result<(Self, MutexUseBorrow), MutexTransitionError> {
         if self.state.preserves_mutex_protocols {
             return Err("preserving mutex contracts cannot reborrow mutex authority".into());
         }
         let ledger = self
             .state
-            .loan_ledger
+            .borrow_ledger
             .as_ref()
-            .ok_or("missing mutex loan ledger")?;
+            .ok_or("missing mutex borrow ledger")?;
         let participant = self
             .state
-            .loan_participant
-            .ok_or("missing mutex loan participant")?;
+            .borrow_participant
+            .ok_or("missing mutex borrow participant")?;
         let parent_fact = self.owned_use_resource(usage)?;
-        let (ledger, loan) = ledger
+        let (ledger, borrow) = ledger
             .reborrow_mutex_use(usage, participant, participant)
             .map_err(|error| {
                 MutexTransitionError::OwnedRefusal(format!(
@@ -1354,7 +1354,7 @@ impl MutexContext {
                 ))
             })?;
         let child_fact = ledger
-            .mutex_use_resource(loan.usage, participant)
+            .mutex_use_resource(borrow.usage, participant)
             .map_err(|error| {
                 MutexTransitionError::OwnedRefusal(format!("missing reborrowed mutex use: {error}"))
             })?;
@@ -1369,19 +1369,19 @@ impl MutexContext {
                     "mutex use child conflicts with current authority: {error}"
                 ))
             })?;
-        state.loan_ledger = Some(ledger);
+        state.borrow_ledger = Some(ledger);
         Ok((
             Self {
                 state,
-                runtime_loan_transition: None,
+                runtime_borrow_transition: None,
             },
-            loan,
+            borrow,
         ))
     }
     #[cfg(test)]
     pub(super) fn end_use_reborrow(
         &self,
-        loan: &MutexUseLoan,
+        borrow: &MutexUseBorrow,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
         if self.state.preserves_mutex_protocols {
@@ -1389,16 +1389,16 @@ impl MutexContext {
         }
         let ledger = self
             .state
-            .loan_ledger
+            .borrow_ledger
             .as_ref()
-            .ok_or("missing mutex loan ledger")?;
+            .ok_or("missing mutex borrow ledger")?;
         let participant = self
             .state
-            .loan_participant
-            .ok_or("missing mutex loan participant")?;
-        let child_fact = self.owned_use_resource(loan.usage)?;
+            .borrow_participant
+            .ok_or("missing mutex borrow participant")?;
+        let child_fact = self.owned_use_resource(borrow.usage)?;
         let (ledger, parent_fact) = ledger
-            .end_mutex_reborrow_with_parent(loan, participant)
+            .end_mutex_reborrow_with_parent(borrow, participant)
             .map_err(|error| {
                 MutexTransitionError::OwnedRefusal(format!(
                     "mutex use reborrow still has outstanding shares or guards: {error}"
@@ -1415,10 +1415,10 @@ impl MutexContext {
                     "returned mutex use conflicts with current authority: {error}"
                 ))
             })?;
-        state.loan_ledger = Some(ledger);
+        state.borrow_ledger = Some(ledger);
         Ok(Self {
             state,
-            runtime_loan_transition: None,
+            runtime_borrow_transition: None,
         })
     }
 
@@ -1427,7 +1427,7 @@ impl MutexContext {
     #[cfg(test)]
     pub(super) fn recover_use(
         &self,
-        loan: &MutexUseLoan,
+        borrow: &MutexUseBorrow,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
         if self.state.preserves_mutex_protocols {
@@ -1435,19 +1435,19 @@ impl MutexContext {
         }
         let ledger = self
             .state
-            .loan_ledger
+            .borrow_ledger
             .as_ref()
-            .ok_or("missing mutex loan ledger")?;
+            .ok_or("missing mutex borrow ledger")?;
         let participant = self
             .state
-            .loan_participant
-            .ok_or("missing mutex loan participant")?;
-        let use_fact = self.owned_use_resource(loan.usage)?;
+            .borrow_participant
+            .ok_or("missing mutex borrow participant")?;
+        let use_fact = self.owned_use_resource(borrow.usage)?;
         let (ledger, owner) = ledger
-            .recover_mutex_use(loan, participant)
+            .recover_mutex_use(borrow, participant)
             .map_err(|error| {
                 MutexTransitionError::OwnedRefusal(format!(
-                    "mutex use loan still has outstanding shares or guards: {error}"
+                    "mutex use borrow still has outstanding shares or guards: {error}"
                 ))
             })?;
         let mut state = self.state.clone();
@@ -1461,10 +1461,10 @@ impl MutexContext {
                     "recovered mutex owner conflicts with current authority: {error}"
                 ))
             })?;
-        state.loan_ledger = Some(ledger);
+        state.borrow_ledger = Some(ledger);
         Ok(Self {
             state,
-            runtime_loan_transition: None,
+            runtime_borrow_transition: None,
         })
     }
 
@@ -1516,29 +1516,29 @@ impl MutexContext {
             }
             None => return Err(MutexTransitionError::NotInitialized),
         };
-        let mut runtime_loan_transition = None;
-        let (loan_ledger, lifetime_hold) = if let Some(usage) = usage {
+        let mut runtime_borrow_transition = None;
+        let (borrow_ledger, lifetime_hold) = if let Some(usage) = usage {
             self.owned_use_resource(usage)
                 .map_err(|_| MutexTransitionError::MissingUse(mutex.clone()))?;
             let participant = self
                 .state
-                .loan_participant
+                .borrow_participant
                 .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
-            let loans = self
+            let borrows = self
                 .state
-                .loan_ledger
+                .borrow_ledger
                 .as_ref()
                 .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
-            let (next, hold, transition) = loans
+            let (next, hold, transition) = borrows
                 .hold_mutex_use_with_transition(
                     usage,
                     &initialization.resource_fact(mutex),
                     participant,
                 )
                 .map_err(|_| MutexTransitionError::MissingUse(mutex.clone()))?;
-            runtime_loan_transition = Some((loans.clone(), participant, transition));
-            let loans = next;
-            (Some(loans), Some((hold, participant, usage)))
+            runtime_borrow_transition = Some((borrows.clone(), participant, transition));
+            let borrows = next;
+            (Some(borrows), Some((hold, participant, usage)))
         } else {
             if !self
                 .state
@@ -1547,7 +1547,7 @@ impl MutexContext {
             {
                 return Err(MutexTransitionError::MissingLive(mutex.clone()));
             }
-            (self.state.loan_ledger.clone(), None)
+            (self.state.borrow_ledger.clone(), None)
         };
         let resources = self.state.resources.clone();
         let resources = if let Some(invariant) = &invariant {
@@ -1563,7 +1563,7 @@ impl MutexContext {
         };
         let epoch = fresh_acquisition_epoch()?;
         let mut state = self.state.clone();
-        state.loan_ledger = loan_ledger;
+        state.borrow_ledger = borrow_ledger;
         let guard = MutexGuard {
             mutex: mutex.clone(),
             initialization,
@@ -1589,7 +1589,7 @@ impl MutexContext {
         Ok((
             Self {
                 state,
-                runtime_loan_transition,
+                runtime_borrow_transition,
             },
             MutexGuard {
                 mutex: mutex.clone(),
@@ -1604,10 +1604,10 @@ impl MutexContext {
         mutex: &Address,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
-        // The resource occurrence selects the loan; an address or a loan
+        // The resource occurrence selects the borrow; an address or a borrow
         // record alone is not authority. The checked acquisition validates
         // possession and initialization identity before installing its hold.
-        // A use description without a binding selects no loan either: the
+        // A use description without a binding selects no borrow either: the
         // lifecycle authority, when the frame holds it, is the acquisition
         // route, and only its absence reports the missing use.
         let unbound_use = match self.state.resources.mutex_use_candidate_at(mutex) {
@@ -1758,7 +1758,7 @@ impl MutexContext {
         state.mutex_ledger = next.has_any_mutex().then_some(next);
         Ok(Self {
             state,
-            runtime_loan_transition: None,
+            runtime_borrow_transition: None,
         })
     }
 
@@ -1827,12 +1827,12 @@ impl MutexContext {
         if restored.is_some()
             && (self
                 .state
-                .loan_ledger
+                .borrow_ledger
                 .as_ref()
-                .is_some_and(|ledger| ledger.has_active_memory_loans())
-                || self.state.loan_view_bindings.iter().next().is_some())
+                .is_some_and(|ledger| ledger.has_active_memory_borrows())
+                || self.state.borrow_bindings.iter().next().is_some())
         {
-            return Err("mutex release with a loan ledger is not supported".into());
+            return Err("mutex release with a borrow ledger is not supported".into());
         }
         let resources = if let Some(restored) = &restored {
             if !self.state.resources.contains_exact_representation(restored) {
@@ -1847,16 +1847,16 @@ impl MutexContext {
             self.state.resources.clone()
         };
         let mut state = self.state.clone();
-        let mut runtime_loan_transition = None;
+        let mut runtime_borrow_transition = None;
         if let Some((hold, participant, usage)) = lifetime_hold {
-            if state.loan_participant != Some(participant) {
+            if state.borrow_participant != Some(participant) {
                 return Err("mutex guard lifetime hold belongs to another participant".into());
             }
-            let loans = state
-                .loan_ledger
+            let borrows = state
+                .borrow_ledger
                 .as_ref()
-                .ok_or("missing mutex guard lifetime loan")?;
-            let (next, transition) = loans
+                .ok_or("missing mutex guard lifetime borrow")?;
+            let (next, transition) = borrows
                 .release_mutex_use_hold_with_transition(
                     usage,
                     &guard.initialization.resource_fact(&guard.mutex),
@@ -1868,8 +1868,8 @@ impl MutexContext {
                         "missing mutex guard lifetime hold: {error}"
                     ))
                 })?;
-            runtime_loan_transition = Some((loans.clone(), participant, transition));
-            state.loan_ledger = Some(next);
+            runtime_borrow_transition = Some((borrows.clone(), participant, transition));
+            state.borrow_ledger = Some(next);
         }
         state.resources = resources
             .without_fact_delaying_normalization(&guard_fact, assumptions)
@@ -1884,7 +1884,7 @@ impl MutexContext {
         ));
         Ok(Self {
             state,
-            runtime_loan_transition,
+            runtime_borrow_transition,
         })
     }
 }
@@ -1946,7 +1946,7 @@ impl MutexLedger {
     }
 
     /// Read only the selected initialization's description. The call transfer
-    /// must separately establish ownership and the participant's live loan.
+    /// must separately establish ownership and the participant's live borrow.
     pub(super) fn interface_for_use(
         &self,
         fact: &ResourceFact,
@@ -2972,12 +2972,12 @@ mod tests {
     #[test]
     fn use_resource_algebra_is_exclusive_unit_ownership_without_views_or_memory() {
         let assumptions = PureFactContext::new();
-        let (lent, loan) = MutexContext::new(ExecutionState::new())
+        let (lent, borrow) = MutexContext::new(ExecutionState::new())
             .initialize_empty(mutex(0), 40)
             .unwrap()
             .lend_use(&mutex(0), &assumptions)
             .unwrap();
-        let fact = lent.owned_use_resource(loan.usage).unwrap();
+        let fact = lent.owned_use_resource(borrow.usage).unwrap();
         let resources = &lent.state.resources;
         assert!(fact.core().is_none());
         assert!(fact.core_with_assumptions(&assumptions).is_none());
@@ -3785,14 +3785,14 @@ mod tests {
     }
 
     #[test]
-    fn runtime_mutex_writes_require_entry_evidence_for_an_active_local_loan() {
+    fn runtime_mutex_writes_require_entry_evidence_for_an_active_local_borrow() {
         use super::super::*;
-        use crate::kernel::loans::{LoanLedger, plan_stable_view_transfer};
+        use crate::kernel::borrows::{BorrowLedger, plan_stable_view_transfer};
         use crate::kernel::prelude::CheckedResourceFact;
         let (state, pointer) = automatic_holder();
         register_block_alignment(&pointer.base, 8);
         let viewed = ResourceFact::view_memory(allocation_range(pointer.clone(), 40));
-        let ledger = LoanLedger::new();
+        let ledger = BorrowLedger::new();
         let caller = ledger.fresh_participant().unwrap();
         let callee = ledger.fresh_participant().unwrap();
         let assumptions = PureFactContext::new();
@@ -3820,8 +3820,8 @@ mod tests {
         )
         .unwrap();
         let state = state
-            .with_loan_ledger(Some(plan.ledger.clone()))
-            .with_loan_participant(Some(caller));
+            .with_borrow_ledger(Some(plan.ledger.clone()))
+            .with_borrow_participant(Some(caller));
         for name in [
             "pthread_mutex_init",
             "pthread_mutex_lock",
@@ -4477,18 +4477,18 @@ mod tests {
         assert_eq!(paths.len(), 1);
         let path = paths.into_iter().next().unwrap();
         if let StatementOutcome::Normal(after) = &path.outcome {
-            if state.loan_ledger != after.loan_ledger {
-                let before = state.loan_ledger.as_ref().unwrap();
-                let holder = state.loan_participant.unwrap();
-                assert_eq!(path.loan_evidence.len(), 1);
-                assert!(path.loan_evidence.is_valid());
+            if state.borrow_ledger != after.borrow_ledger {
+                let before = state.borrow_ledger.as_ref().unwrap();
+                let holder = state.borrow_participant.unwrap();
+                assert_eq!(path.borrow_evidence.len(), 1);
+                assert!(path.borrow_evidence.is_valid());
                 assert_eq!(
-                    path.loan_evidence
+                    path.borrow_evidence
                         .recovered_ledger_for(before, holder, false),
-                    after.loan_ledger
+                    after.borrow_ledger
                 );
             } else {
-                assert!(path.loan_evidence.is_empty());
+                assert!(path.borrow_evidence.is_empty());
             }
         }
         match path.outcome {
@@ -4499,7 +4499,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_acquisition_uses_owned_loan_and_pins_it_until_unlock() {
+    fn runtime_acquisition_uses_owned_borrow_and_pins_it_until_unlock() {
         let assumptions = PureFactContext::new();
         let (state, address) = automatic_holder();
         let payload = invariant(1, 0);
@@ -4510,8 +4510,8 @@ mod tests {
             .unwrap();
         let owner = live_resource(initialized.state(), &address, false).unwrap();
         let (lent, root) = initialized.lend_use(&address, &assumptions).unwrap();
-        let (child, loan) = lent.reborrow_use(root.usage, &assumptions).unwrap();
-        let use_fact = child.owned_use_resource(loan.usage).unwrap();
+        let (child, borrow) = lent.reborrow_use(root.usage, &assumptions).unwrap();
+        let use_fact = child.owned_use_resource(borrow.usage).unwrap();
         let locked = MutexContext::new(
             runtime_mutex_call(child.state(), &address, "pthread_mutex_lock").unwrap(),
         );
@@ -4528,7 +4528,7 @@ mod tests {
                 .satisfies_fact(&use_fact, &assumptions)
         );
         assert!(!locked.state.resources.satisfies_fact(&owner, &assumptions));
-        assert!(locked.end_use_reborrow(&loan, &assumptions).is_err());
+        assert!(locked.end_use_reborrow(&borrow, &assumptions).is_err());
         assert!(locked.recover_use(&root, &assumptions).is_err());
         assert!(runtime_mutex_call(locked.state(), &address, "pthread_mutex_destroy").is_err());
         let unlocked = MutexContext::new(
@@ -4540,7 +4540,7 @@ mod tests {
                 .resources
                 .satisfies_fact(&payload, &assumptions)
         );
-        let parent = unlocked.end_use_reborrow(&loan, &assumptions).unwrap();
+        let parent = unlocked.end_use_reborrow(&borrow, &assumptions).unwrap();
         let recovered = parent.recover_use(&root, &assumptions).unwrap();
         assert!(
             recovered
@@ -4560,8 +4560,8 @@ mod tests {
         let initialized = MutexContext::new(state.clone())
             .initialize_empty(address.clone(), 40)
             .unwrap();
-        let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
-        let fact = lent.owned_use_resource(loan.usage).unwrap();
+        let (lent, borrow) = initialized.lend_use(&address, &assumptions).unwrap();
+        let fact = lent.owned_use_resource(borrow.usage).unwrap();
         let mut missing = lent.state().clone();
         missing.resources = missing.resources.without_fact(&fact, &assumptions).unwrap();
         assert!(runtime_mutex_call(&missing, &address, "pthread_mutex_lock").is_err());
@@ -4617,7 +4617,7 @@ mod tests {
             .unwrap()
             .live_resource(&address)
             .unwrap();
-        // A use description without a loan binding is not authority. Beside
+        // A use description without a borrow binding is not authority. Beside
         // the owned lifecycle it must not shadow the ordinary acquisition.
         let unbound = ResourceFact::own(Resource::MutexUse(super::super::MutexUseIdentity {
             protected: None,
@@ -4667,14 +4667,14 @@ mod tests {
     }
 
     #[test]
-    fn use_resource_requires_owned_occurrence_in_addition_to_live_loan() {
+    fn use_resource_requires_owned_occurrence_in_addition_to_live_borrow() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
         let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
-        let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
-        let use_fact = lent.owned_use_resource(loan.usage).unwrap();
+        let (lent, borrow) = initialized.lend_use(&address, &assumptions).unwrap();
+        let use_fact = lent.owned_use_resource(borrow.usage).unwrap();
         let mut missing = lent.clone();
         missing.state.resources = missing
             .state
@@ -4684,27 +4684,27 @@ mod tests {
         assert!(
             missing
                 .state
-                .loan_ledger
+                .borrow_ledger
                 .as_ref()
                 .unwrap()
-                .mutex_use_resource(loan.usage, missing.state.loan_participant.unwrap())
+                .mutex_use_resource(borrow.usage, missing.state.borrow_participant.unwrap())
                 .is_ok()
         );
         assert_eq!(
             missing
-                .acquire_using(&address, loan.usage, &assumptions)
+                .acquire_using(&address, borrow.usage, &assumptions)
                 .err(),
             Some(MutexTransitionError::MissingUse(address.clone()))
         );
         assert_eq!(
-            missing.reborrow_use(loan.usage, &assumptions).err(),
+            missing.reborrow_use(borrow.usage, &assumptions).err(),
             Some(MutexTransitionError::MissingUse(address.clone()))
         );
         assert_eq!(
-            missing.recover_use(&loan, &assumptions).err(),
+            missing.recover_use(&borrow, &assumptions).err(),
             Some(MutexTransitionError::MissingUse(address.clone()))
         );
-        // An ordinary resource move restores the ability to act. The loan
+        // An ordinary resource move restores the ability to act. The borrow
         // description alone, even with the correct pointer, did not do so.
         missing.state.resources = missing
             .state
@@ -4713,10 +4713,10 @@ mod tests {
             .unwrap();
         assert!(
             missing
-                .acquire_using(&address, loan.usage, &assumptions)
+                .acquire_using(&address, borrow.usage, &assumptions)
                 .is_ok()
         );
-        let recovered = missing.recover_use(&loan, &assumptions).unwrap();
+        let recovered = missing.recover_use(&borrow, &assumptions).unwrap();
         assert!(
             recovered
                 .state
@@ -4763,7 +4763,7 @@ mod tests {
                 .is_err()
         );
         // Putting a pinned parent atom into the resource context cannot
-        // bypass the loan's independent possession check.
+        // bypass the borrow's independent possession check.
         missing_child.state.resources = missing_child
             .state
             .resources
@@ -4900,7 +4900,7 @@ mod tests {
     }
 
     #[test]
-    fn use_loan_escrows_owner_and_guard_blocks_recovery_until_release() {
+    fn use_borrow_escrows_owner_and_guard_blocks_recovery_until_release() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
         let payload = invariant(1, 0);
@@ -4909,20 +4909,20 @@ mod tests {
             .publish(address.clone(), payload.clone(), &assumptions, 40)
             .unwrap();
         let owner = live_resource(initialized.state(), &address, false).unwrap();
-        let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
+        let (lent, borrow) = initialized.lend_use(&address, &assumptions).unwrap();
         assert!(!lent.state.resources.satisfies_fact(&owner, &assumptions));
         assert!(!lent.state.resources.satisfies_fact(&payload, &assumptions));
         assert!(lent.lend_use(&address, &assumptions).is_err());
         assert!(lent.acquire(&address, &assumptions).is_err());
         assert!(lent.destroy(&address, &assumptions).is_err());
         let (mut held, guard) = lent
-            .acquire_using(&address, loan.usage, &assumptions)
+            .acquire_using(&address, borrow.usage, &assumptions)
             .unwrap();
         assert!(held.state.resources.satisfies_fact(&payload, &assumptions));
-        assert!(held.recover_use(&loan, &assumptions).is_err());
+        assert!(held.recover_use(&borrow, &assumptions).is_err());
         assert!(held.destroy(&address, &assumptions).is_err());
         assert!(
-            held.acquire_using(&address, loan.usage, &assumptions)
+            held.acquire_using(&address, borrow.usage, &assumptions)
                 .is_err()
         );
         // Keep the program's actual protected-state update: lending does not
@@ -4947,7 +4947,7 @@ mod tests {
             )
             .is_err()
         );
-        assert!(held.recover_use(&loan, &assumptions).is_err());
+        assert!(held.recover_use(&borrow, &assumptions).is_err());
         let released = held.release(guard, updated.clone(), &assumptions).unwrap();
         assert!(
             !released
@@ -4962,7 +4962,7 @@ mod tests {
                 .satisfies_fact(&owner, &assumptions)
         );
         let (held_again, _) = released
-            .acquire_using(&address, loan.usage, &assumptions)
+            .acquire_using(&address, borrow.usage, &assumptions)
             .unwrap();
         assert!(
             held_again
@@ -4971,17 +4971,17 @@ mod tests {
                 .satisfies_fact(&updated, &assumptions)
         );
         let released = held_again.release_current(&address, &assumptions).unwrap();
-        let recovered = released.recover_use(&loan, &assumptions).unwrap();
+        let recovered = released.recover_use(&borrow, &assumptions).unwrap();
         assert!(
             recovered
                 .state
                 .resources
                 .satisfies_fact(&owner, &assumptions)
         );
-        assert!(recovered.recover_use(&loan, &assumptions).is_err());
+        assert!(recovered.recover_use(&borrow, &assumptions).is_err());
         assert!(
             recovered
-                .acquire_using(&address, loan.usage, &assumptions)
+                .acquire_using(&address, borrow.usage, &assumptions)
                 .is_err()
         );
         let destroyed = recovered.destroy(&address, &assumptions).unwrap();
@@ -4994,7 +4994,7 @@ mod tests {
     }
 
     #[test]
-    fn use_loan_rejects_other_mutex_initialization_participant_and_stale_guard() {
+    fn use_borrow_rejects_other_mutex_initialization_participant_and_stale_guard() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
         let other = mutex(1);
@@ -5003,16 +5003,16 @@ mod tests {
             .unwrap()
             .initialize_empty(other.clone(), 40)
             .unwrap();
-        let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
+        let (lent, borrow) = initialized.lend_use(&address, &assumptions).unwrap();
         assert_eq!(
-            lent.acquire_using(&other, loan.usage, &assumptions).err(),
+            lent.acquire_using(&other, borrow.usage, &assumptions).err(),
             Some(MutexTransitionError::MissingUse(other))
         );
         let mut foreign = lent.clone();
-        foreign.state.loan_participant = Some(
+        foreign.state.borrow_participant = Some(
             foreign
                 .state
-                .loan_ledger
+                .borrow_ledger
                 .as_ref()
                 .unwrap()
                 .fresh_participant()
@@ -5020,27 +5020,27 @@ mod tests {
         );
         assert_eq!(
             foreign
-                .acquire_using(&address, loan.usage, &assumptions)
+                .acquire_using(&address, borrow.usage, &assumptions)
                 .err(),
             Some(MutexTransitionError::MissingUse(address.clone()))
         );
-        assert!(foreign.recover_use(&loan, &assumptions).is_err());
+        assert!(foreign.recover_use(&borrow, &assumptions).is_err());
         let (held, old_guard) = lent
-            .acquire_using(&address, loan.usage, &assumptions)
+            .acquire_using(&address, borrow.usage, &assumptions)
             .unwrap();
         let released = held.release_current(&address, &assumptions).unwrap();
         let (held, _) = released
-            .acquire_using(&address, loan.usage, &assumptions)
+            .acquire_using(&address, borrow.usage, &assumptions)
             .unwrap();
         assert!(
             held.release_with_invariant(old_guard, None, &assumptions)
                 .is_err()
         );
-        assert!(held.recover_use(&loan, &assumptions).is_err());
+        assert!(held.recover_use(&borrow, &assumptions).is_err());
         let recovered = held
             .release_current(&address, &assumptions)
             .unwrap()
-            .recover_use(&loan, &assumptions)
+            .recover_use(&borrow, &assumptions)
             .unwrap();
         let reinitialized = MutexContext::new(
             recovered
@@ -5052,43 +5052,43 @@ mod tests {
         .unwrap();
         assert_eq!(
             reinitialized
-                .acquire_using(&address, loan.usage, &assumptions)
+                .acquire_using(&address, borrow.usage, &assumptions)
                 .err(),
             Some(MutexTransitionError::MissingUse(address.clone()))
         );
-        // An active old loan is also insufficient for a new initialization,
+        // An active old borrow is also insufficient for a new initialization,
         // even if a hostile state substitutes its mutex registry.
         let mut substituted = lent;
         substituted.state.mutex_ledger = reinitialized.state.mutex_ledger;
         assert_eq!(
             substituted
-                .acquire_using(&address, loan.usage, &assumptions)
+                .acquire_using(&address, borrow.usage, &assumptions)
                 .err(),
             Some(MutexTransitionError::MissingUse(address))
         );
     }
 
     #[test]
-    fn use_guard_cannot_release_without_its_loan_state_or_holder() {
+    fn use_guard_cannot_release_without_its_borrow_state_or_holder() {
         let assumptions = PureFactContext::new();
         let address = mutex(0);
         let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
-        let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
+        let (lent, borrow) = initialized.lend_use(&address, &assumptions).unwrap();
         let (held, _) = lent
-            .acquire_using(&address, loan.usage, &assumptions)
+            .acquire_using(&address, borrow.usage, &assumptions)
             .unwrap();
         let mut no_hold = held.clone();
-        no_hold.state.loan_ledger = lent.state.loan_ledger.clone();
+        no_hold.state.borrow_ledger = lent.state.borrow_ledger.clone();
         assert!(no_hold.release_current(&address, &assumptions).is_err());
         let mut no_ledger = held.clone();
-        no_ledger.state.loan_ledger = None;
+        no_ledger.state.borrow_ledger = None;
         assert!(no_ledger.release_current(&address, &assumptions).is_err());
         let mut wrong_holder = held.clone();
-        wrong_holder.state.loan_participant = Some(
+        wrong_holder.state.borrow_participant = Some(
             held.state
-                .loan_ledger
+                .borrow_ledger
                 .as_ref()
                 .unwrap()
                 .fresh_participant()
@@ -5103,15 +5103,15 @@ mod tests {
         frozen.state.preserves_mutex_protocols = true;
         assert!(
             frozen
-                .acquire_using(&address, loan.usage, &assumptions)
+                .acquire_using(&address, borrow.usage, &assumptions)
                 .is_err()
         );
-        assert!(frozen.recover_use(&loan, &assumptions).is_err());
+        assert!(frozen.recover_use(&borrow, &assumptions).is_err());
         assert!(frozen.lend_use(&address, &assumptions).is_err());
         assert!(
             held.release_current(&address, &assumptions)
                 .unwrap()
-                .recover_use(&loan, &assumptions)
+                .recover_use(&borrow, &assumptions)
                 .is_ok()
         );
     }
@@ -5123,9 +5123,9 @@ mod tests {
         let initialized = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
-        let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
+        let (lent, borrow) = initialized.lend_use(&address, &assumptions).unwrap();
         let (held, _) = lent
-            .acquire_using(&address, loan.usage, &assumptions)
+            .acquire_using(&address, borrow.usage, &assumptions)
             .unwrap();
         let ledger = held.state.mutex_ledger.as_ref().unwrap();
         let mut entry = ledger.get(&address).unwrap().clone();

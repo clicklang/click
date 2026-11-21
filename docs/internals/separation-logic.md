@@ -132,7 +132,7 @@ for the borrow and recovers it at the return, and an owner is never held
 alongside an independent view of the same memory.
 
 In the current code `ResourceFact::core()` returns `Option<ResourceFact>`,
-and the loan ledger is its one consumer: escrowing an owner records the viewed
+and the borrow ledger is its one consumer: escrowing an owner records the viewed
 description the borrower reads through. Nothing composes an owner with its own
 core.
 
@@ -397,15 +397,15 @@ The memory family implements these rules:
 - A valid state cannot contain overlapping owned memory ranges. Overlap is
   decided bytewise, across differing element widths.
 - An owned range overlapping a viewed one is refused at contract entry and at
-  call planning, by the loan ledger rather than by the family's
+  call planning, by the borrow ledger rather than by the family's
   `pair_validity_error`.
 - Adjacent or covering memory resources may be normalized when facts prove the
-  ranges line up. Normalization rewrites descriptions; the authority a loan
+  ranges line up. Normalization rewrites descriptions; the authority a borrow
   suspends lives in the ledger, so no rewrite of the fact list retires one.
 - A store through owned memory updates the symbolic memory state. Later reads
   see the updated value unless another owner writes a new value.
 - A write, a `free`, a `realloc`, a call's memory effect, and loop or branch
-  havoc all consult the loan ledger. A nonempty loan over part of an allocation
+  havoc all consult the borrow ledger. A nonempty borrow over part of an allocation
   protects that whole allocation's lifetime.
 
 Read stability is an access restriction, not an equality check afterward. While
@@ -428,7 +428,7 @@ Resources with bodies add a definitional layer: each folded head owns its body.
 - `fold(resource)` consumes the body's resources and pure facts and produces
   the head.
 - `unfold(resource)` consumes the head and exposes its body.
-- `open(resource) { ... }` exposes the body without consuming the head and
+- `with(resource) { ... }` exposes the body without consuming the head and
   requires the complete body to be restored when the block closes.
 - `observe(resource)` projects one view step without consuming the resource
   fact. It exposes immediate pure facts and viewed immediate contained resource
@@ -448,7 +448,7 @@ In the algebraic model, a composite resource is not a separate multiplicity
 kind. It is a declared resource whose facts have laws connecting its head to
 one body made from other resource facts and pure facts. Lending one exposes
 its checked one-level frontier; a deeper child becomes readable only through a
-checked projection under the same loan.
+checked projection under the same borrow.
 
 ## Implementation boundary
 
@@ -462,7 +462,7 @@ The code maps onto this model as follows:
   pair normalization, and the owner observation core.
 - `MemoryResourceAlgebra` implements range coverage, splitting, joining,
   exclusive writes, and the viewed descriptions a lend records.
-- `src/kernel/loans.rs` is the loan ledger. It holds the scopes, escrows,
+- `src/kernel/borrows.rs` is the borrow ledger. It holds the scopes, escrows,
   access shares, recovery rights, and dependencies that make a view a borrow,
   and every write, free, havoc, and branch join consults it.
 - `TokenResourceAlgebra` implements strict exact-match tokens.

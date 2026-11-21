@@ -1053,6 +1053,7 @@ mod tests {
                 false,
                 None,
                 None,
+                None,
             );
             assert_eq!(paths.len(), 1);
             let ExpressionOutcome::Value(loaded) = &paths[0].outcome else {

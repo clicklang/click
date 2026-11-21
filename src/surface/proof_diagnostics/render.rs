@@ -1494,6 +1494,10 @@ impl Renderer<'_> {
                 self.push(")");
             }
             Proposition::Equal(left, right) => self.binary_term(left, " = ", right),
+            Proposition::SequenceMembership { element, .. } => {
+                self.cvalue(element.native_compat());
+                self.push(" in sequence(<bounded opaque value>)");
+            }
             Proposition::ConditionIs(condition, value) => {
                 self.condition(condition.native_compat());
                 self.push(if *value { " is true" } else { " is false" });
@@ -1869,7 +1873,11 @@ impl Renderer<'_> {
             AlgebraicTermNode::MemoryLoad {
                 point: memory,
                 pointer,
-            } => self.bitvector(&AlgebraicTermNode::memory_load_carrier(memory, pointer)),
+            } => self.bitvector(&AlgebraicTermNode::memory_load_carrier(
+                memory,
+                pointer,
+                &term.algebraic_type,
+            )),
             AlgebraicTermNode::Constructor { variant, fields } => {
                 self.fmt(format_args!("{}::{variant}", term.algebraic_type.name));
                 if !fields.is_empty() {
@@ -2364,6 +2372,12 @@ impl Renderer<'_> {
                 self.bound_names.pop();
                 self.bound_names.pop();
                 self.push(")");
+            }
+            MachineTerm::PureFunctionApplication { name, arguments }
+                if let Some(spelled) =
+                    crate::kernel::layout_term_spelling(name, arguments.len()) =>
+            {
+                self.push(&crate::languages::display_source_names(&spelled));
             }
             MachineTerm::PureFunctionApplication { name, arguments } => {
                 self.push(name);

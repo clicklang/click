@@ -1496,12 +1496,12 @@ fn constructed_composite_observation_preserves_the_owner_beside_growing_frames()
 }
 
 #[test]
-fn borrowed_observation_work_tracks_the_selected_body_instead_of_the_frame_or_loan() {
+fn borrowed_observation_work_tracks_the_selected_body_instead_of_the_frame_or_borrow() {
     let mut samples = Vec::new();
     for count in [4, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let definition = CompositeResourceDefinition::new(
-            "loan_box",
+            "borrow_box",
             Vec::new(),
             None,
             false,
@@ -1515,22 +1515,22 @@ fn borrowed_observation_work_tracks_the_selected_body_instead_of_the_frame_or_lo
         );
         let function = program_function(
             ProgramType::Void,
-            "observe_loan",
+            "observe_borrow",
             Vec::new(),
             ProgramStatement::Return(ProgramExpression::Value(ProgramValue::Void)),
         )
         .with_composite_resource_definitions(vec![definition]);
         let head = ResourceFact::View(
-            ResourceFact::own_composite("loan_box".into(), Vec::new())
+            ResourceFact::own_composite("borrow_box".into(), Vec::new())
                 .resource()
                 .clone(),
         );
         let child = ResourceFact::view_token("child".into(), Vec::new());
         let resources = ResourceContext::new().unchecked_with_fact(head.clone());
         let support = resources.first_exact_occurrence(&head).unwrap();
-        let ledger = crate::kernel::LoanLedger::new();
+        let ledger = crate::kernel::BorrowLedger::new();
         let holder = ledger.fresh_participant().unwrap();
-        let backing = crate::kernel::loans::BorrowedContractInputBacking::from_checked_expansion(
+        let backing = crate::kernel::borrows::BorrowedContractInputBacking::from_checked_expansion(
             support,
             head.clone(),
             Vec::new(),
@@ -1540,15 +1540,15 @@ fn borrowed_observation_work_tracks_the_selected_body_instead_of_the_frame_or_lo
             .borrowed_contract_input(holder, support, head.clone(), Some(backing))
             .unwrap();
         let ledger = ledger.apply(&opening.transition).unwrap();
-        let binding = crate::kernel::LoanViewBinding {
-            loan: opening.loan,
+        let binding = crate::kernel::BorrowBinding {
+            borrow: opening.borrow,
             scope: opening.scope,
             share: opening.root_share,
             support,
             viewed: head.clone(),
             hold: None,
         };
-        // Simulate previous projections from this loan and unrelated owners
+        // Simulate previous projections from this borrow and unrelated owners
         // in the same execution state.
         let old_views = (0..count)
             .map(|index| ResourceFact::view_token(format!("old_{index}"), Vec::new()))
@@ -1557,7 +1557,7 @@ fn borrowed_observation_work_tracks_the_selected_body_instead_of_the_frame_or_lo
             .project_observed_body(
                 holder,
                 &binding,
-                crate::kernel::loans::CompositeProjectionEvidence::from_checked_expansion(
+                crate::kernel::borrows::CompositeProjectionEvidence::from_checked_expansion(
                     head.clone(),
                     old_views,
                 )
@@ -1568,9 +1568,9 @@ fn borrowed_observation_work_tracks_the_selected_body_instead_of_the_frame_or_lo
             (0..count).map(|index| ResourceFact::own_token(format!("owner_{index}"), Vec::new())),
         );
         let state = ExecutionState::new()
-            .with_loan_ledger(Some(ledger))
-            .with_loan_participant(Some(holder))
-            .with_resource_context_and_loan_dependencies(resources, [(support, binding.clone())]);
+            .with_borrow_ledger(Some(ledger))
+            .with_borrow_participant(Some(holder))
+            .with_resource_context_and_borrow_dependencies(resources, [(support, binding.clone())]);
         let facts = PureFactStore::default();
         let observe = |state: &ExecutionState| {
             CheckedResourceObservation::certify(
@@ -1588,17 +1588,20 @@ fn borrowed_observation_work_tracks_the_selected_body_instead_of_the_frame_or_lo
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| observe(&state));
         let after = after.unwrap();
         let child_occurrence = after.resources().first_exact_occurrence(&child).unwrap();
-        let child_binding = after.resources().loan_dependency(child_occurrence).unwrap();
+        let child_binding = after
+            .resources()
+            .borrow_dependency(child_occurrence)
+            .unwrap();
         assert_eq!(
             child_binding,
-            &crate::kernel::LoanViewBinding {
+            &crate::kernel::BorrowBinding {
                 viewed: child.clone(),
                 ..binding
             }
         );
         assert!(
             after
-                .loan_ledger()
+                .borrow_ledger()
                 .unwrap()
                 .validate_view_binding(child_binding.clone(), holder)
                 .is_ok()
@@ -1615,8 +1618,8 @@ fn borrowed_observation_work_tracks_the_selected_body_instead_of_the_frame_or_lo
             .clone()
             .with_resource_context(state.resources().clone().unchecked_with_fact(child.clone()));
         assert!(observe(&unbound).is_err());
-        let wrong_holder = state.clone().with_loan_participant(Some(
-            state.loan_ledger().unwrap().fresh_participant().unwrap(),
+        let wrong_holder = state.clone().with_borrow_participant(Some(
+            state.borrow_ledger().unwrap().fresh_participant().unwrap(),
         ));
         assert!(observe(&wrong_holder).is_err());
         samples.push(work);

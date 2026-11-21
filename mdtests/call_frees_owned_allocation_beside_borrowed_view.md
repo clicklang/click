@@ -1,7 +1,7 @@
 # A call frees an owned allocation beside a separately borrowed view
 
 `boxed(box)` owns every byte of the allocation that `box_destroy` frees.
-The caller's `views q[0..1]` is backed by a separate checked loan, so it cannot
+The caller's `views q[0..1]` is backed by a separate checked borrow, so it cannot
 alias those owned bytes in a valid entry partition. The proof opens the
 composite to establish byte-range separation and supplies it to the call.
 `call_rejects_lending_the_allocation_it_transfers.md` rejects a caller that
