@@ -283,7 +283,7 @@ fn direct_forward_goto_lowers_to_an_indexed_kernel_target() {
         statement: &crate::kernel::ProgramStatement,
     ) -> Option<crate::kernel::ControlTargetId> {
         match statement {
-            crate::kernel::ProgramStatement::Goto { target } => Some(*target),
+            crate::kernel::ProgramStatement::Goto { target, .. } => Some(*target),
             crate::kernel::ProgramStatement::Seq(statements) => statements
                 .iter()
                 .find_map(|statement| goto_target(statement)),
@@ -311,7 +311,7 @@ fn conditional_forward_goto_uses_the_preorder_source_target_index() {
         statement: &crate::kernel::ProgramStatement,
     ) -> Option<crate::kernel::ControlTargetId> {
         match statement {
-            crate::kernel::ProgramStatement::Goto { target } => Some(*target),
+            crate::kernel::ProgramStatement::Goto { target, .. } => Some(*target),
             crate::kernel::ProgramStatement::Seq(statements) => statements
                 .iter()
                 .find_map(|statement| goto_target(statement)),
@@ -435,8 +435,8 @@ fn goto_slice_rejects_unknown_backward_duplicate_and_unsupported_targets() {
             "labels must be direct function-body",
         ),
         (
-            "int32 f(int32 x) { while (x) { goto done; } done: return 0; }",
-            "jumps inside loops or switches",
+            "int32 f(int32 x) { goto inside; while (x) { inside: return x; } return 0; }",
+            "labels must be direct function-body",
         ),
         (
             "int32 f(int32 x) { if (x) goto done; x = 1; done: x = 2; while (x) x--; return x; }",

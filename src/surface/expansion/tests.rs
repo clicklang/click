@@ -3951,6 +3951,7 @@ fn branch_transfers_cannot_claim_an_unreachable_return() {
         ProgramStatement::Continue,
         ProgramStatement::Goto {
             target: crate::kernel::ControlTargetId(7),
+            exited_locals: Default::default(),
         },
         ProgramStatement::Throw(crate::kernel::program_expression::int32_literal(0)),
     ] {

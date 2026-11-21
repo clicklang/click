@@ -5750,6 +5750,8 @@ pub enum ProgramStatement {
     /// function's checked control-flow table.
     Goto {
         target: ControlTargetId,
+        /// Automatic objects in the lexical scopes the edge leaves.
+        exited_locals: std::sync::Arc<[BindingName]>,
     },
 
     Declare {

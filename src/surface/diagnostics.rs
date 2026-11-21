@@ -6973,7 +6973,7 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         ProgramStatement::Skip => ";".to_string(),
         ProgramStatement::Break => "break;".to_string(),
         ProgramStatement::Continue => "continue;".to_string(),
-        ProgramStatement::Goto { target } => format!("goto target({});", target.0),
+        ProgramStatement::Goto { target, .. } => format!("goto target({});", target.0),
         ProgramStatement::EndAutomaticLifetimes { .. } => "automatic lifetime end".to_string(),
 
         ProgramStatement::Declare { name, .. } => format!("declaration of `{name}`"),

@@ -2541,6 +2541,7 @@ pub enum CStatement {
     Continue,
     Goto {
         target: String,
+        exited_locals: std::sync::Arc<[BindingName]>,
         position: Option<SourcePosition>,
         direct_function_body: bool,
     },
@@ -4186,12 +4187,17 @@ impl CStatement {
             Self::Skip => crate::kernel::program_skip(),
             Self::Break => crate::kernel::program_break(),
             Self::Continue => crate::kernel::program_continue(),
-            Self::Goto { target, .. } => crate::kernel::program_goto(
-                targets
+            Self::Goto {
+                target,
+                exited_locals,
+                ..
+            } => crate::kernel::ProgramStatement::Goto {
+                target: targets
                     .get(target)
                     .expect("validated C goto target has a kernel identity")
                     .0,
-            ),
+                exited_locals: exited_locals.clone(),
+            },
             Self::Label { .. } | Self::Seq(..) | Self::If { .. } => {
                 unreachable!("structured statement handled by the iterative visitor")
             }
@@ -5240,11 +5246,13 @@ fn control_statement_error(
 }
 
 /// Resolves the deliberately narrow goto slice after the complete function
-/// body is available. Targets remain direct function-body labels; jumps may
-/// also originate in `if` arms. Ordinary accepted edges point forward, with
-/// one reducible natural-cycle exception checked below.
+/// body is available. Targets remain direct function-body labels. Jumps
+/// may originate inside structured statements if they leave them forward.
+/// The reducible natural-cycle exception is checked separately below.
 fn validate_direct_forward_gotos(
     body: &CStatement,
+    function_body_scope: usize,
+    address_taken: &BTreeSet<BindingName>,
 ) -> Result<BTreeMap<String, (crate::kernel::ControlTargetId, usize)>, CSyntaxError> {
     fn first_control_position(statement: &CStatement) -> Option<Option<SourcePosition>> {
         let mut pending = vec![statement];
@@ -5297,9 +5305,8 @@ fn validate_direct_forward_gotos(
 
     let mut statements = Vec::new();
     flatten_direct_c_statements(body, &mut statements);
-    // A loop or switch may precede every label, as when `goto out;` skips
-    // the loops that do a function's work. It is then either run in full
-    // or jumped over, so a jump never enters, leaves, or re-enters it.
+    // Keep structured statements before every label. Jumps may leave
+    // them for a later label, but cannot enter or re-enter them.
     let first_label = statements
         .iter()
         .position(|statement| matches!(statement, CStatement::Label { .. }))
@@ -5320,12 +5327,6 @@ fn validate_direct_forward_gotos(
                 "the goto slice supports loops and switches only before every label",
             ));
         }
-        if let Some(position) = first_control_position(statement) {
-            return Err(control_statement_error(
-                &position,
-                "the goto slice does not support labels or jumps inside loops or switches",
-            ));
-        }
     }
 
     #[derive(Clone)]
@@ -5333,11 +5334,13 @@ fn validate_direct_forward_gotos(
         target: String,
         position: Option<SourcePosition>,
         direct_statement_index: usize,
+        leaves_structured_statement: bool,
     }
 
-    fn collect_if_arm_gotos(
+    fn collect_nested_gotos(
         statement: &CStatement,
         direct_statement_index: usize,
+        leaves_structured_statement: bool,
         gotos: &mut Vec<PendingGoto>,
     ) -> Result<(), CSyntaxError> {
         match statement {
@@ -5347,6 +5350,7 @@ fn validate_direct_forward_gotos(
                 target: target.clone(),
                 position: position.clone(),
                 direct_statement_index,
+                leaves_structured_statement,
             }),
             CStatement::Label { position, .. } => {
                 return Err(control_statement_error(
@@ -5355,25 +5359,73 @@ fn validate_direct_forward_gotos(
                 ));
             }
             CStatement::Seq(first, second) => {
-                collect_if_arm_gotos(first, direct_statement_index, gotos)?;
-                collect_if_arm_gotos(second, direct_statement_index, gotos)?;
+                collect_nested_gotos(
+                    first,
+                    direct_statement_index,
+                    leaves_structured_statement,
+                    gotos,
+                )?;
+                collect_nested_gotos(
+                    second,
+                    direct_statement_index,
+                    leaves_structured_statement,
+                    gotos,
+                )?;
             }
             CStatement::If {
                 then_branch,
                 else_branch,
                 ..
             } => {
-                collect_if_arm_gotos(then_branch, direct_statement_index, gotos)?;
-                collect_if_arm_gotos(else_branch, direct_statement_index, gotos)?;
+                collect_nested_gotos(
+                    then_branch,
+                    direct_statement_index,
+                    leaves_structured_statement,
+                    gotos,
+                )?;
+                collect_nested_gotos(
+                    else_branch,
+                    direct_statement_index,
+                    leaves_structured_statement,
+                    gotos,
+                )?;
             }
-            CStatement::While { .. }
-            | CStatement::DoWhile { .. }
-            | CStatement::For { .. }
-            | CStatement::Switch { .. } => {
-                return Err(control_statement_error(
-                    &first_control_position(statement).flatten(),
-                    "the conditional goto slice does not support jumps inside loops or switches",
-                ));
+            CStatement::While { body, test, .. } | CStatement::DoWhile { body, test, .. } => {
+                if let Some(position) = test.as_deref().and_then(first_control_position) {
+                    return Err(control_statement_error(
+                        &position,
+                        "goto and labels inside loop headers are not supported",
+                    ));
+                }
+                collect_nested_gotos(body, direct_statement_index, true, gotos)?;
+            }
+            CStatement::For {
+                body,
+                initializer,
+                test,
+                step,
+                ..
+            } => {
+                if let Some(position) = [
+                    Some(initializer.as_ref()),
+                    test.as_deref(),
+                    Some(step.as_ref()),
+                ]
+                .into_iter()
+                .flatten()
+                .find_map(first_control_position)
+                {
+                    return Err(control_statement_error(
+                        &position,
+                        "goto and labels inside loop headers are not supported",
+                    ));
+                }
+                collect_nested_gotos(body, direct_statement_index, true, gotos)?;
+            }
+            CStatement::Switch { cases, .. } => {
+                for case in cases {
+                    collect_nested_gotos(case.body(), direct_statement_index, true, gotos)?;
+                }
             }
             _ => {}
         }
@@ -5409,6 +5461,7 @@ fn validate_direct_forward_gotos(
                 if natural_cycle_statement_contains_goto(statement)
         )));
     let mut labels = BTreeMap::new();
+    let mut last_required_declaration = None;
     let mut gotos = Vec::new();
     let mut source_statement_index = 0;
     for (index, statement) in statements.iter().enumerate() {
@@ -5417,6 +5470,7 @@ fn validate_direct_forward_gotos(
                 target,
                 position,
                 direct_function_body,
+                ..
             } => {
                 if !direct_function_body {
                     return Err(control_statement_error(
@@ -5428,6 +5482,7 @@ fn validate_direct_forward_gotos(
                     target: target.clone(),
                     position: position.clone(),
                     direct_statement_index: index,
+                    leaves_structured_statement: false,
                 });
             }
             CStatement::Label {
@@ -5473,12 +5528,12 @@ fn validate_direct_forward_gotos(
                     ));
                 }
                 if natural_cycle_shape && index == 0 {
-                    collect_if_arm_gotos(statement, index, &mut gotos)?;
+                    collect_nested_gotos(statement, index, false, &mut gotos)?;
                 }
                 if labels
                     .insert(
                         name.clone(),
-                        (index, source_statement_index, position.clone()),
+                        (index, source_statement_index, last_required_declaration),
                     )
                     .is_some()
                 {
@@ -5488,15 +5543,25 @@ fn validate_direct_forward_gotos(
                     ));
                 }
             }
-            CStatement::If {
-                then_branch,
-                else_branch,
+            CStatement::Declare {
+                name,
+                interface_type,
                 ..
             } => {
-                collect_if_arm_gotos(then_branch, index, &mut gotos)?;
-                collect_if_arm_gotos(else_branch, index, &mut gotos)?;
+                let binding = name.binding();
+                // A flattened nested block can be bypassed if none of
+                // this declaration's storage is visible at the root label.
+                if binding
+                    .local_id()
+                    .is_none_or(|local| local.scope_depth() as usize <= function_body_scope)
+                    || !interface_type.is_supported_static_scalar()
+                    || address_taken.contains(binding)
+                {
+                    last_required_declaration = Some(index);
+                }
             }
-            _ => {}
+            CStatement::DeclareStructValue { .. } => last_required_declaration = Some(index),
+            statement => collect_nested_gotos(statement, index, false, &mut gotos)?,
         }
         // A labeled statement has its body's source regions; the natural
         // cycle layout instead gives its entry label one region.
@@ -5519,26 +5584,24 @@ fn validate_direct_forward_gotos(
     let mut backward_gotos = Vec::new();
     let mut forward_gotos = Vec::new();
     for pending in gotos {
-        let Some((target_index, _, _)) = labels.get(&pending.target) else {
+        let Some((target_index, _, last_required_declaration)) = labels.get(&pending.target) else {
             return Err(control_statement_error(
                 &pending.position,
                 format!("unknown goto label `{}`", pending.target),
             ));
         };
         if *target_index <= pending.direct_statement_index {
+            if pending.leaves_structured_statement {
+                return Err(control_statement_error(
+                    &pending.position,
+                    "a goto out of a loop or switch must target a later label",
+                ));
+            }
             backward_gotos.push((pending, *target_index));
             continue;
         }
         forward_gotos.push((pending.clone(), *target_index));
-        if statements[pending.direct_statement_index + 1..*target_index]
-            .iter()
-            .any(|statement| {
-                matches!(
-                    statement,
-                    CStatement::Declare { .. } | CStatement::DeclareStructValue { .. }
-                )
-            })
-        {
+        if last_required_declaration.is_some_and(|index| index > pending.direct_statement_index) {
             return Err(control_statement_error(
                 &pending.position,
                 format!(
@@ -7404,6 +7467,8 @@ struct Parser {
     repeatable_compound_literal_scope: Option<usize>,
     function_has_compound_literals: bool,
     function_has_goto: bool,
+    /// Scopes at and above this index are left by a jump to a function-body label.
+    goto_scope_start: usize,
     visible_bindings: CSourceBindings,
     loop_source_bindings: BTreeMap<usize, std::sync::Arc<CSourceBindings>>,
     binding_function: Option<LocalFunctionId>,
@@ -8058,6 +8123,7 @@ impl Parser {
             repeatable_compound_literal_scope: None,
             function_has_compound_literals: false,
             function_has_goto: false,
+            goto_scope_start: 0,
             visible_bindings: CSourceBindings::new(),
             loop_source_bindings: BTreeMap::new(),
             binding_function: None,
@@ -9519,10 +9585,14 @@ impl Parser {
         let previous_literal_flag =
             std::mem::replace(&mut self.function_has_compound_literals, false);
         let previous_goto_flag = std::mem::replace(&mut self.function_has_goto, false);
+        let function_body_scope = self.scopes.len() + 1;
+        let previous_goto_scope_start =
+            std::mem::replace(&mut self.goto_scope_start, function_body_scope);
         let previous_bit_field_flag = std::mem::replace(&mut self.function_has_bit_fields, false);
         let body_result = self.parse_block_statement();
         self.function_has_compound_literals = previous_literal_flag;
         self.function_has_goto = previous_goto_flag;
+        self.goto_scope_start = previous_goto_scope_start;
         self.function_has_bit_fields = previous_bit_field_flag;
         self.source_regions = previous_source_regions;
         let callback_statement_sources = std::mem::replace(
@@ -9535,7 +9605,10 @@ impl Parser {
         self.current_return_pointer_struct_name = previous_return_pointer_struct_name;
         self.current_return_type = previous_return_type;
         self.current_return_pointee_constant = previous_return_pointee_constant;
-        self.address_taken_variables = previous_address_taken_variables;
+        let body_address_taken = std::mem::replace(
+            &mut self.address_taken_variables,
+            previous_address_taken_variables,
+        );
         self.postfix_copy_value_parameters = previous_postfix_copy_value_parameters;
         let mut body = body_result?;
         self.pop_scope();
@@ -9562,7 +9635,8 @@ impl Parser {
                 Box::new(CStatement::Return(value, CSite::NONE)),
             );
         }
-        let control_targets = validate_direct_forward_gotos(&body)?;
+        let control_targets =
+            validate_direct_forward_gotos(&body, function_body_scope, &body_address_taken)?;
 
         for object in self.static_locals.values() {
             object.prepare_static_binding();
@@ -12275,6 +12349,13 @@ impl Parser {
                     self.expect(Token::Semicolon)?;
                     Ok(CStatement::Goto {
                         target,
+                        exited_locals: self.scopes[self.goto_scope_start..]
+                            .iter()
+                            .rev()
+                            .flat_map(|scope| scope.iter().rev())
+                            .filter(|binding| binding.kernel_name.local_id().is_some())
+                            .map(|binding| binding.kernel_name.clone())
+                            .collect(),
                         position,
                         direct_function_body: self.function_block_depth == 1
                             && self.controlled_statement_depth == 0,
