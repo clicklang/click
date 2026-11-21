@@ -113,7 +113,11 @@ attempt must change that chain; a new written form, position, or tactic for the
 same link is not progress. The procedure ends at a named outcome.
 `missing-rule` identifies a justified inference with no supported primitive
 for design discussion; it is not inferred merely from a failed search.
-For `inexpressible-fact` and `tactic-bug`, keep a reduced reproduction.
+Use `false-claim` when a counterexample refutes the original claim. If it
+refutes a requirement Click generated, check the rule that generated it.
+Use `obligation-bug` when the rule or semantics do not support the
+requirement. For `obligation-bug`, `inexpressible-fact`, and `tactic-bug`,
+keep a reduced reproduction.
 For `unclear-trace`, quote what you could not interpret. A diagnostic bug
 report requires evidence of a specific defect in the output. When Click
 prints `internal error`, use `internal-error` and preserve the original

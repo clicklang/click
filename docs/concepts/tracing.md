@@ -200,8 +200,12 @@ premises; it does not by itself certify that checking is fast.
    where it is required, and the premises available there. If the report has
    no `goal:` line, or you cannot read it, stop at `unclear-trace`.
 2. **Decide whether `G` is true.** Check it against the contract, the branch
-   facts, and the C semantics. If it is false on some execution the contract
-   admits, stop at `false-goal`.
+   facts, and the C semantics. If an admitted execution refutes `G`, check
+   the original claim on that execution and the rule that introduced `G`.
+   Use `false-claim` if the execution refutes the original claim. Use
+   `obligation-bug` if Click generated `G` without support from the
+   applicable semantics or documented rule. Revise a stronger intermediate
+   goal that the proof author chose and the argument does not need.
 3. **Write the argument.** State why `G` follows from the premises as a chain
    of intermediate facts: the premises imply `A`, `A` implies `B`, and `B`
    implies `G`. Write each link as a `have` at that point, so the proof
@@ -259,7 +263,8 @@ The procedure ends at exactly one of these:
 | Outcome | Meaning |
 | --- | --- |
 | `success` | The proof verifies. Keep the explicit links that the default automation needed; they document the argument. |
-| `false-goal` | `G` does not hold on some execution the contract admits. Give the counterexample: the claim, the contract, or the C is wrong, not the proof. |
+| `false-claim` | An execution admitted by the contract violates the original claim. Give the counterexample so the proof author can revisit the claim, contract, or program. |
+| `obligation-bug` | Click generated a requirement unsupported by the applicable semantics or documented rule. Give the discrepancy so Click maintainers can investigate obligation generation. |
 | `unclear-goal` | You can read `G` and its premises, but have neither a justification nor a counterexample. Say why you expected the proof to work and identify the local gap in the argument. |
 | `missing-rule` | The premises and conclusion are expressible and the inference is justified, but no supported primitive connects them. Record the rule schema, the references checked, and the reduced example for design discussion. This is not established by a search miss alone. |
 | `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory syntax, or resource form. Report a bug. |
@@ -280,14 +285,20 @@ a specific defect in the output.
 Report a Click defect with the user's approval as an issue at
 <https://github.com/clicklang/click/issues> that contains enough to reproduce
 it. Label the issue with its outcome (`tracing: inexpressible-fact`,
-`tracing: tactic-bug`, `tracing: unclear-trace`, `tracing: internal-error`,
-`crash`, or `hang`), and
+`tracing: obligation-bug`, `tracing: tactic-bug`, `tracing: unclear-trace`,
+`tracing: internal-error`, `crash`, or `hang`), and
 start its title with it in brackets (`[tactic-bug] ...`, `[hang] ...`) so
 it shows even without permission to set labels.
 
 For `internal-error`, include the exact command, the `click --version` output,
 the full diagnostic, and the inputs needed to reproduce it. For a crash or
 hang, follow [Crashes and hangs](#crashes-and-hangs).
+
+For `obligation-bug`, include a reduced reproduction, the original claim,
+the generated goal at its program point, and the exact command and output.
+Cite the rule or semantics that governs the check and show what it actually
+requires. Include any execution that satisfies the claim while refuting the
+generated goal.
 
 For `tactic-bug`, `inexpressible-fact`, or a confirmed diagnostic defect
 found during `unclear-trace` triage, include:

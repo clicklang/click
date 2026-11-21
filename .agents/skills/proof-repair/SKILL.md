@@ -56,8 +56,16 @@ No `goal:` line, or a goal you cannot read: the outcome is `unclear-trace`.
 
 ## 3. Decide whether `G` is true
 
-Check `G` against the contract, the branch facts, and the C semantics. If some
-execution the contract admits makes it false, the outcome is `false-goal`.
+Check `G` against the contract, the branch facts, and the C semantics. On an
+execution that refutes `G`, also check the original claim and the rule that
+introduced `G`.
+
+- If the execution refutes the original claim, stop at `false-claim`.
+- If Click introduced `G` and the applicable semantics or documented rule
+  do not require it, stop at `obligation-bug`. Show what the rule requires
+  at this point and why the original claim can hold on this execution.
+- If the proof author chose a stronger intermediate goal than the argument
+  needs, revise that step and continue.
 
 ## 4. Write the argument as a chain
 
@@ -166,8 +174,13 @@ Stop at exactly one outcome:
 
 - `success`: the proof verifies. Keep the explicit links the default
   automation needed.
-- `false-goal`: `G` does not hold on some execution the contract admits. Give
-  the counterexample.
+- `false-claim`: an execution admitted by the contract violates the original
+  claim. Give the counterexample. The proof author follows up on the claim,
+  contract, or program.
+- `obligation-bug`: Click generated a requirement unsupported by the
+  applicable semantics or documented rule. Show the required goal, its
+  program point, and the obligation the rule actually calls for. Click
+  maintainers follow up on obligation generation.
 - `unclear-goal`: you can read `G` and its premises, but the investigation
   produced neither a mathematical argument for `G` nor a counterexample.
   Say why you expected the proof to work and identify the exact step where
@@ -197,10 +210,11 @@ premises, report that diagnosis is in progress. Use `unclear-goal` if you
 cannot justify the goal after investigation.
 
 In the outcome report, say explicitly what the result establishes about
-Click. `tactic-bug`, `inexpressible-fact`, `internal-error`, `crash`, and
-`hang` identify Click defects. `unclear-trace` leaves the reason for the
-refusal undetermined. File a diagnostic bug only when you can demonstrate
-a specific defect in the output. `false-goal` gives a counterexample.
+Click. `obligation-bug`, `tactic-bug`, `inexpressible-fact`,
+`internal-error`, `crash`, and `hang` identify Click defects. `unclear-trace`
+leaves the reason for the refusal undetermined. File a diagnostic bug only
+when you can demonstrate a specific defect in the output. `false-claim`
+gives a counterexample to the original claim.
 `unclear-goal` leaves the truth of the goal open. `missing-rule` identifies a
 gap in supported inference.
 
@@ -227,8 +241,8 @@ Report a Click defect as follows:
 2. Open an issue at https://github.com/clicklang/click/issues.
 3. Give the report below, enough for someone else to reproduce it.
 4. Label the issue with its outcome: `tracing: inexpressible-fact`,
-   `tracing: tactic-bug`, `tracing: unclear-trace`, `tracing: internal-error`,
-   `crash`, or `hang`.
+   `tracing: obligation-bug`, `tracing: tactic-bug`, `tracing: unclear-trace`,
+   `tracing: internal-error`, `crash`, or `hang`.
    Start the title with it in brackets too (`[tactic-bug] ...`,
    `[hang] ...`), so it shows even where you cannot set labels.
 
@@ -238,6 +252,12 @@ For `internal-error`, give the exact command, `click --version`, the complete
 error output, and the inputs needed to reproduce it. Quote the message that
 identifies the verifier failure. For crashes and hangs, follow the requirements
 above.
+
+For `obligation-bug`, give a reduced reproduction, the original claim, the
+generated goal at its program point, and the exact command and output.
+Cite the rule or semantics that governs the check. Show the discrepancy,
+including any execution that satisfies the original claim while refuting the
+generated goal.
 
 For `tactic-bug`, `inexpressible-fact`, or a confirmed diagnostic defect
 found during `unclear-trace` triage, give:
