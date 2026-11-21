@@ -5037,38 +5037,38 @@ pub(super) fn synthesize_surface_resource_subject(
             bound_variables,
         )?
     };
-    let surface_base = if let Some(saved_result) =
-        synthesize_saved_result_range_base(&surface_base, range)
-    {
-        saved_result
-    } else {
-        // A range counts its retained element width, which need not be the
-        // pointee width of the name (for example, a struct field's backing).
-        // Spell scalar coordinates explicitly; pointer casts retain provenance.
-        // A character-to-character cast preserves a narrow byte view. For a
-        // range that already names root byte coordinates, the void cast makes
-        // that root explicit regardless of the source pointer's type.
-        // The whole object of an abstract type, `[p, p + sizeof(T))`, is
-        // spelled over its own pointer, which lowers back to that object.
-        let abstract_object = range.wide_bounds().is_some_and(|(start, end)| {
-            start.uint64_as_const() == Some(0)
-                && crate::kernel::TypeParameterName::of_size_term(end).is_some()
-        });
-        let surface_base =
-            if range.element_width() == 1 && range.carrier_has_known_bounds() && !abstract_object {
+    let surface_base =
+        if let Some(saved_result) = synthesize_saved_result_range_base(&surface_base, range) {
+            saved_result
+        } else {
+            // A range counts its retained element width, which need not be the
+            // pointee width of the name (for example, a struct field's backing).
+            // Spell scalar coordinates explicitly; pointer casts retain provenance.
+            // An element cast can inherit opaque bounds from its source. Restore
+            // root bounds when the range retained them.
+            // The whole object of an abstract type, `[p, p + sizeof(T))`, is
+            // spelled over its own pointer, which lowers back to that object.
+            let abstract_object = range.wide_bounds().is_some_and(|(start, end)| {
+                start.uint64_as_const() == Some(0)
+                    && crate::kernel::TypeParameterName::of_size_term(end).is_some()
+            });
+            let surface_base = if matches!(range.element_width(), 1 | 2 | 4 | 8)
+                && range.carrier_has_known_bounds()
+                && !abstract_object
+            {
                 synthesize_observation_operand(surface_base, ProgramType::VoidPointer)?
             } else {
                 surface_base
             };
-        match range.element_width() {
-            _ if abstract_object => surface_base,
-            1 => synthesize_observation_operand(surface_base, ProgramType::UInt8Pointer)?,
-            2 => synthesize_observation_operand(surface_base, ProgramType::UInt16Pointer)?,
-            4 => synthesize_observation_operand(surface_base, ProgramType::Int32Pointer)?,
-            8 => synthesize_observation_operand(surface_base, ProgramType::UInt64Pointer)?,
-            _ => surface_base,
-        }
-    };
+            match range.element_width() {
+                _ if abstract_object => surface_base,
+                1 => synthesize_observation_operand(surface_base, ProgramType::UInt8Pointer)?,
+                2 => synthesize_observation_operand(surface_base, ProgramType::UInt16Pointer)?,
+                4 => synthesize_observation_operand(surface_base, ProgramType::Int32Pointer)?,
+                8 => synthesize_observation_operand(surface_base, ProgramType::UInt64Pointer)?,
+                _ => surface_base,
+            }
+        };
     // The bounds are spelled as the terms they are, in either index kind.
     let (range_start, range_end) = range.bound_terms();
     let surface_start =
