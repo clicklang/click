@@ -19194,6 +19194,19 @@ fn named_loop_comparisons_expand_and_cold_replay() {
 }
 
 #[test]
+fn stored_break_test_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/a_stored_break_test_closes_the_back_edge.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "first_stop.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
