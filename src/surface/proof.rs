@@ -3155,8 +3155,7 @@ fn install_borrowed_contract_inputs(
     )
     .map_err(|diagnostic| {
         let subject = diagnostic.subject();
-        let refusal = if diagnostic.category()
-            == crate::kernel::BorrowRefusalCategory::ProvenOverlap
+        let refusal = if diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
             && subject.resource_fact().is_some()
             && subject.conflicting_resource_fact().is_some()
         {
