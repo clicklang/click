@@ -284,7 +284,10 @@ pub(super) fn ambient_local_struct_pointee(
         if pointees.any(|other| other != struct_name) {
             return None;
         }
-        Some((struct_name.clone(), objects.structs.get(struct_name)?.clone()))
+        Some((
+            struct_name.clone(),
+            objects.structs.get(struct_name)?.clone(),
+        ))
     })
 }
 
