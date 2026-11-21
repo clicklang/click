@@ -94,6 +94,10 @@ impl CheckedEqualityRewrite {
         if proposed == &self.proposition {
             return true;
         }
+        if same_comparison_with_named_store_reads(&self.proposition, proposed) {
+            self.proposition = proposed.clone();
+            return true;
+        }
         // Surface lowering folds constant Integer expressions while an
         // exact substitution can leave their arithmetic structure intact.
         // Accept only the same normalized claim used by the checked Integer
@@ -140,6 +144,37 @@ impl CheckedEqualityRewrite {
         };
         (obligation, self.facts)
     }
+}
+
+/// Name a detached read by the indexed store for the same cell in the same
+/// snapshot. This comparison reads only the two operands and the selected
+/// store receipt. It never changes the observed value or walks history.
+fn same_comparison_with_named_store_reads(left: &Proposition, right: &Proposition) -> bool {
+    fn same_operand(left: &MachineTerm, right: &MachineTerm) -> bool {
+        left == right
+            || matches!((left, right),
+                (MachineTerm::MemoryLoad(detached, address, kind),
+                 MachineTerm::MemoryLoad(named, named_address, named_kind))
+                    if kind == named_kind && address == named_address
+                        && named.names_detached_store_read(detached, address, *kind))
+    }
+
+    let Some((
+        ConditionTerm::Compare {
+            format,
+            relation,
+            left: lhs,
+            right: rhs,
+        },
+        truth,
+    )) = left.condition_native()
+    else {
+        return false;
+    };
+    matches!(right.condition_native(),
+        Some((ConditionTerm::Compare { format: other_format, relation: other_relation, left, right }, other_truth))
+            if format == other_format && relation == other_relation && truth == other_truth
+                && same_operand(lhs, left) && same_operand(rhs, right))
 }
 
 impl PureFactStore {

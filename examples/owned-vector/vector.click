@@ -428,7 +428,15 @@ int32 vector_grow(struct vector* owner) {
             have owner->data == new_data by { known(); }
             have new_data[k] == at(region(14).entry, new_data[k]) by { known(); }
             have new_data[k] == old(owner->data[k]) by { known(); }
-            rewrite(owner->data, new_data);
+            have &owner->data[k] == &new_data[k] by {
+                normalize() using { owner->data == new_data; };
+            }
+            have owner->data[k] == new_data[k] by {
+                transport(new_data[k] == new_data[k], owner->data[k] == new_data[k]) using {
+                    &owner->data[k] == &new_data[k];
+                };
+            }
+            rewrite(owner->data[k], new_data[k]);
             known();
         }
         step();

@@ -1812,8 +1812,9 @@ Equality substitution has a kernel-owned checked rule in
 exact premise index, computes the substitution, and returns a private checked
 result. That result constructs the proposition obligation. A Surface
 spelling must lower to the checked result with the same read identities,
-subject to the kernel's exact observation and Integer normal forms. The
-candidate helper used by smart planning has no proof authority.
+subject to the kernel's exact observation and Integer normal forms. A detached
+scalar read can use the indexed store name for its exact snapshot, address,
+and type. The candidate helper used by smart planning has no proof authority.
 
 The outer quantifier walk refuses binder collisions with the bounded,
 carrier-aware variable collector, which treats states as opaque. Direct
