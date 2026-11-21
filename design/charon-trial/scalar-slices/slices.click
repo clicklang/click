@@ -55,11 +55,7 @@ fn swap_ends(xs: &mut [i8]) {
         have xs.len() - 1u64 < xs.len() by { solve(); }
         step_until(function.exit);
         have xs[0] == old(xs[xs.len() - 1]) by {
-            normalize() using {
-                xs.len() >= 2;
-                0u64 < xs.len() - 1u64;
-                xs.len() - 1u64 < xs.len();
-            };
+            known();
         }
         solve();
     } else {

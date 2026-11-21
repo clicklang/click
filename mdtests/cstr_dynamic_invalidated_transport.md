@@ -44,7 +44,7 @@ uint64 read_terminator(uint8 bytes[], uint64 known_len) {
         have defined(old(bytes[k])) by { known(); }
         have separate(memory(length), memory(bytes[k])) by { known(); }
         have separate(statement(0).footprint, memory(bytes[k])) by {
-            normalize() using { separate(memory(length), memory(bytes[k])); };
+            known();
         }
         preserve(memory(bytes[k]), statement(0));
     }

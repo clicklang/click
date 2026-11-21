@@ -213,6 +213,6 @@ theorem adler_count_previous_byte_observation(bytes: uint8[], total: uint64, rem
   }
   have to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1) == to_integer((total - remaining - 1u64) as uint32 as int32) by solve() using { to_integer((total - remaining - 1u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1); };
   rewrite(to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1), to_integer((total - remaining - 1u64) as uint32 as int32));
-  normalize() using { to_integer(bytes[total - remaining - 1u64] as int32) == to_integer(bytes[(total - remaining - 1u64) as uint32 as int32] as int32); };
+  known();
  }
 }

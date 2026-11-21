@@ -14,7 +14,7 @@ void write_cell(int *p, int *q) {
 } by {
     step();
     have contains(statement(0).footprint, statement(0).footprint) by {
-        normalize();
+        apply(click::separation::contains_refl(statement(0).footprint)) using { };
     }
     have contains(memory(*q), memory(*q)) by { apply(click::separation::contains_refl(memory(*q))) using {}; }
     have separate(statement(0).footprint, memory(*q)) by {

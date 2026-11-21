@@ -15,7 +15,7 @@ theorem rb_subtree_size_nonnegative(tree: RbTree) {
     ensures rb_subtree_size(tree) >= 0 by {
         let ih = induct(tree);
         match tree {
-            RbTree::Empty => { unfold(rb_subtree_size(RbTree::Empty)); normalize(); },
+            RbTree::Empty => { unfold(rb_subtree_size(RbTree::Empty)); known(); },
             RbTree::Node(node, parent, color, left, right) => {
                 apply(ih(left)); apply(ih(right));
                 unfold(rb_subtree_size(RbTree::Node(node, parent, color, left, right)));
@@ -29,12 +29,12 @@ theorem rb_subtree_size_reparent(tree: RbTree, parent: struct rb_node*) {
     ensures rb_subtree_size(rb_reparent(tree, parent)) == rb_subtree_size(tree) by {
         let ih = induct(tree);
         match tree {
-            RbTree::Empty => { unfold(rb_reparent(RbTree::Empty, parent)); normalize(); },
+            RbTree::Empty => { unfold(rb_reparent(RbTree::Empty, parent)); known(); },
             RbTree::Node(node, before, color, left, right) => {
                 unfold(rb_reparent(RbTree::Node(node, before, color, left, right), parent));
                 unfold(rb_subtree_size(RbTree::Node(node, parent, color, left, right)));
                 unfold(rb_subtree_size(RbTree::Node(node, before, color, left, right)));
-                normalize();
+                known();
             },
         }
     }

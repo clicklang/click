@@ -216,7 +216,7 @@ impl adler2::Adler32 {
      have bytes[1] == old(bytes[1]) by solve() using {};
      have to_integer(self.a) == to_integer((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32) by {
       rewrite(to_integer(self.a), to_integer((at(output_a, a) % 65521u32)));
-      rewrite((at(output_a, a) % 65521u32), (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32); normalize();
+      rewrite((at(output_a, a) % 65521u32), (((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32); known();
      }
      have to_integer((((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32)))) % 65521u32) == old(adler_spec_a(bytes, 2, 1)) by known();
      have to_integer(self.a) == old(adler_spec_a(bytes, 2, 1)) by {
@@ -224,7 +224,7 @@ impl adler2::Adler32 {
      }
      have to_integer(self.b) == to_integer((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32) by {
       rewrite(to_integer(self.b), to_integer((at(output_b, b) % 65521u32)));
-      rewrite((at(output_b, b) % 65521u32), (((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32); normalize();
+      rewrite((at(output_b, b) % 65521u32), (((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32); known();
      }
      have to_integer((((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))))) % 65521u32) == old(adler_spec_b(bytes, 2, 1, 0)) by known();
      have to_integer(self.b) == old(adler_spec_b(bytes, 2, 1, 0)) by {

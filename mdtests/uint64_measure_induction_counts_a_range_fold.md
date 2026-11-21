@@ -14,7 +14,7 @@ theorem full_width_count_is_its_length(n: uint64) {
             unfold(full_width_count(n));
             have n == 0u64 by solve() using { n <= 0u64; };
             rewrite(n, 0u64);
-            normalize();
+            known();
         } else {
             have 0u64 < n by solve();
             have 1u64 <= n by solve() using { 0u64 < n; };

@@ -27,7 +27,7 @@ int32* probe(int32* p) {
     have separate(memory(p[0..1]), memory(p[1..2])) by { known(); }
     step();
     have separate(statement(0).call(0).footprint, memory(p[1..2])) by {
-        normalize() using { separate(memory(p[0..1]), memory(p[1..2])); };
+        known();
     }
     have viewable(p[1..2]) by {
         preserve(memory(p[1..2]), statement(0).call(0));

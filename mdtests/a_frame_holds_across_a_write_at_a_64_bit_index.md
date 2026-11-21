@@ -55,7 +55,7 @@ int32 set_at(struct S* s, uint64 i, int32 v) {
         contains(memory(s->p) * memory(s->e.v), memory(s->p));
     };
     have separate(statement(1).footprint, memory(s->p)) by {
-        normalize() using { separate(memory(*e), memory(s->p)); };
+        known();
     }
     have s->p == at(statement(1).entry, s->p) by {
         preserve(memory(s->p), statement(1));
@@ -73,7 +73,7 @@ int32 set_at(struct S* s, uint64 i, int32 v) {
         contains(memory(s->p) * memory(s->e.v), memory(s->e.v));
     };
     have separate(statement(1).footprint, memory(s->e.v)) by {
-        normalize() using { separate(memory(*e), memory(s->e.v)); };
+        known();
     }
     have s->e.v == at(statement(1).entry, s->e.v) by {
         preserve(memory(s->e.v), statement(1));
@@ -91,7 +91,7 @@ int32 set_at(struct S* s, uint64 i, int32 v) {
             known();
         }
         have separate(statement(1).footprint, memory(at(statement(1).entry, s->p + k)[0])) by {
-            normalize() using { separate(memory(*e), memory(at(statement(1).entry, s->p + k)[0])); };
+            known();
         }
         have (let saved: int32* = at(statement(1).entry, s->p + k); saved[0]) ==
             at(statement(1).entry, s->p[k]) by {

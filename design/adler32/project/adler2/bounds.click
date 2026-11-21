@@ -164,7 +164,7 @@ theorem adler_lane_a_invariant_step(n: Integer, a: Integer, byte: Integer) {
     requires byte <= 255;
     ensures a + byte <= adler_lane_a_ceiling(n + 1) by {
         have adler_lane_a_ceiling(n) == 65520 + 255 * n by {
-            unfold(adler_lane_a_ceiling(n)); normalize();
+            unfold(adler_lane_a_ceiling(n)); known();
         }
         have a <= 65520 + 255 * n by solve() using {
                 a <= adler_lane_a_ceiling(n);

@@ -372,9 +372,9 @@ theorem erase_unlink_red_if_not_black(c: Color) {
     ensures c == Color::Red by {
         let ih = induct(c);
         match c {
-            Color::Red => { normalize(); }
+            Color::Red => { known(); }
             Color::Black => {
-                have Color::Black == Color::Black by normalize();
+                have Color::Black == Color::Black by known();
                 contradiction(Color::Black == Color::Black);
             }
         }
