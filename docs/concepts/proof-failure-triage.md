@@ -110,11 +110,14 @@ that failed, write the argument for it as a chain of `have` goals, and refine
 the first link that does not close by identifying its primitive rule and
 writing that rule's premises. Each
 attempt must change that chain; a new written form, position, or tactic for the
-same link is not progress. The procedure ends at one of seven named outcomes.
+same link is not progress. The procedure ends at a named outcome.
 `missing-rule` identifies a justified inference with no supported primitive
 for design discussion; it is not inferred merely from a failed search.
-The three bug outcomes (`inexpressible-fact`, `failing-tactic`,
-and `unclear-trace`) leave a reduced reproduction.
+For `inexpressible-fact` and `tactic-bug`, keep a reduced reproduction.
+For `unclear-trace`, quote what you could not interpret. A diagnostic bug
+report requires evidence of a specific defect in the output. When Click
+prints `internal error`, use `internal-error` and preserve the original
+diagnostic, command, version, and inputs.
 Tooling improvements in response require discussion and user approval before
 implementation, including new diagnostic content, trace presentation, or a
 proof workflow. Reproduced bugs in existing behavior may be fixed

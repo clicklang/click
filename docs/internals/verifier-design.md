@@ -311,7 +311,7 @@ Answer these before proposing a verifier change that adds work.
    let facts refuse a term, discharge its obligations, or add side facts, but
    never change the term it produces; equalities belong to the equality
    graph ([fact-stable lowering](raise-lower-principle.md#lowering-is-fact-stable)).
-   Run `scripts/fact-stability.sh` before and after, add no new
+   Run `scripts/audit.sh fact-stability` before and after, add no new
    `differs` lines, and report any change in its `refused` and `paths:N`
    counts.
 6. **What does it fail with?** A slow-part miss names what wasn't found and

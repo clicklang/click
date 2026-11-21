@@ -15,9 +15,10 @@ use super::{AuditSource, audit_targets, load_audit_source};
 /// The outcome of one lowering audit run.
 pub(super) struct LoweringReport {
     pub(super) headline: String,
-    /// Containers whose verification outcome under the audit disagreed with
-    /// their expectation: an audit must not change a proof.
-    pub(super) changed_outcomes: Vec<String>,
+    /// Containers that did not verify as their expectation says. The gate
+    /// and the slow-tests job own those verdicts; the audit lists them so a
+    /// count it reports can be read beside them.
+    pub(super) unexpected_outcomes: Vec<String>,
 }
 
 pub(super) fn name(audit: LoweringAudit) -> &'static str {
@@ -52,23 +53,94 @@ pub(super) fn run(
         targets.len()
     );
     let workers = std::thread::available_parallelism().map_or(1, usize::from);
-    let changed = cli::run_parallel(&targets, workers, |target| verify_target(target));
+    let unexpected = cli::run_parallel(&targets, workers, |target| verify_target(target));
     let checked = audit.checked();
     audit
         .record_to(None)
         .map_err(|error| format!("failed to close `{}`: {error}", records.display()))?;
     let lines = fs::read_to_string(records).unwrap_or_default();
-    let headline = match audit {
-        LoweringAudit::RaiseLower => raise_lower_headline(&lines, records),
-        LoweringAudit::FactStability => fact_stability_headline(&lines, checked, records),
+    let counts = match audit {
+        LoweringAudit::RaiseLower => raise_lower_counts(&lines),
+        LoweringAudit::FactStability => fact_stability_counts(&lines, checked),
     };
+    let unexpected_outcomes = unexpected
+        .into_iter()
+        .map(|(index, message)| format!("{}: {message}", targets[index].display()))
+        .collect::<Vec<_>>();
+    write_counts(audit, &counts, unexpected_outcomes.len(), records)?;
+    let changed_path = records.with_extension("unexpected.tsv");
+    fs::write(
+        &changed_path,
+        unexpected_outcomes
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect::<String>(),
+    )
+    .map_err(|error| format!("failed to write `{}`: {error}", changed_path.display()))?;
     Ok(LoweringReport {
-        headline,
-        changed_outcomes: changed
-            .into_iter()
-            .map(|(index, message)| format!("{}: {message}", targets[index].display()))
-            .collect(),
+        headline: headline(audit, &counts, records),
+        unexpected_outcomes,
     })
+}
+
+/// What one lowering audit counted.
+struct Counts {
+    failing: usize,
+    checked: usize,
+    /// Raise-lower facts at no fixed state; fact-stability `refused`
+    /// lowerings. Both are tracked, not failing.
+    tracked: usize,
+    /// Each outcome's count of distinct items.
+    outcomes: BTreeMap<String, usize>,
+}
+
+/// `<records>.counts.tsv`, `outcome<TAB>count`: the headline's numbers,
+/// `failing`, `checked`, `tracked` and `unexpected` (containers that did not
+/// verify as their expectation says), then each outcome's count, for the
+/// nightly report.
+fn write_counts(
+    audit: LoweringAudit,
+    counts: &Counts,
+    unexpected: usize,
+    records: &Path,
+) -> Result<(), String> {
+    let path = records.with_extension("counts.tsv");
+    let mut text = format!(
+        "failing\t{}\nchecked\t{}\ntracked\t{}\nunexpected\t{unexpected}\n",
+        counts.failing, counts.checked, counts.tracked
+    );
+    for (outcome, count) in &counts.outcomes {
+        text.push_str(&format!("{outcome}\t{count}\n"));
+    }
+    fs::write(&path, text).map_err(|error| {
+        format!(
+            "failed to write the {} counts `{}`: {error}",
+            name(audit),
+            path.display()
+        )
+    })
+}
+
+fn headline(audit: LoweringAudit, counts: &Counts, records: &Path) -> String {
+    match audit {
+        LoweringAudit::RaiseLower => format!(
+            "raise-lower audit: {} failing of {} facts checked ({}); {} not checkable (no fixed state); {}; records: {}",
+            counts.failing,
+            counts.checked,
+            percent(counts.failing, counts.checked),
+            counts.tracked,
+            breakdown(&counts.outcomes),
+            records.display()
+        ),
+        LoweringAudit::FactStability => format!(
+            "fact-stability audit: {} failing of {} lowerings checked ({}); {} refused without facts (tracked); records: {}",
+            counts.failing,
+            counts.checked,
+            percent(counts.failing, counts.checked),
+            counts.tracked,
+            records.display()
+        ),
+    }
 }
 
 /// Verifies one container on a named verifier thread, so each record names
@@ -131,13 +203,13 @@ fn verify_source(source: &AuditSource) -> Result<(), String> {
 /// raised form that does not lower, or one that lowers to another term.
 const FAILING_ROUND_TRIPS: [&str; 4] = ["unraised", "unlowered", "differs", "polarity"];
 
-/// One headline over the distinct facts and goals the audit checked: a fact
-/// is counted once per container and claim, however many steps restate it.
-fn raise_lower_headline(lines: &str, records: &Path) -> String {
+/// The distinct facts and goals the audit checked: a fact is counted once
+/// per container, claim and rendering, however many steps restate it.
+fn raise_lower_counts(lines: &str) -> Counts {
     let mut checked = BTreeSet::new();
     let mut failing = BTreeSet::new();
     let mut unchecked = BTreeSet::new();
-    let mut outcomes = BTreeMap::<&str, usize>::new();
+    let mut by_outcome = BTreeMap::<&str, BTreeSet<(&str, &str, &str)>>::new();
     for line in lines.lines() {
         let fields = line.split('\t').collect::<Vec<_>>();
         let [outcome, _, _, claim, _, _, original, ..] = fields[..] else {
@@ -145,30 +217,30 @@ fn raise_lower_headline(lines: &str, records: &Path) -> String {
         };
         let container = fields.get(9).copied().unwrap_or("");
         let key = (container, claim, original);
+        by_outcome.entry(outcome).or_default().insert(key);
         if outcome == "no-state" {
             unchecked.insert(key);
             continue;
         }
         checked.insert(key);
-        if FAILING_ROUND_TRIPS.contains(&outcome) && failing.insert(key) {
-            *outcomes.entry(outcome).or_default() += 1;
+        if FAILING_ROUND_TRIPS.contains(&outcome) {
+            failing.insert(key);
         }
     }
-    format!(
-        "raise-lower audit: {} failing of {} facts checked ({}); {} not checkable (no fixed state); {}; records: {}",
-        failing.len(),
-        checked.len(),
-        percent(failing.len(), checked.len()),
-        unchecked.difference(&checked).count(),
-        breakdown(&outcomes),
-        records.display()
-    )
+    Counts {
+        failing: failing.len(),
+        checked: checked.len(),
+        tracked: unchecked.difference(&checked).count(),
+        outcomes: by_outcome
+            .into_iter()
+            .map(|(outcome, keys)| (outcome.to_string(), keys.len()))
+            .collect(),
+    }
 }
 
-/// One headline over the lowerings the audit checked: a lowering fails when
-/// facts changed its term or chose among its paths.
-fn fact_stability_headline(lines: &str, checked: usize, records: &Path) -> String {
-    let mut outcomes = BTreeMap::<&str, usize>::new();
+/// A lowering fails when facts changed its term or chose among its paths.
+fn fact_stability_counts(lines: &str, checked: usize) -> Counts {
+    let mut outcomes = BTreeMap::<String, usize>::new();
     for line in lines.lines() {
         let outcome = line.split('\t').next().unwrap_or("");
         let outcome = if outcome.starts_with("paths:") {
@@ -176,16 +248,15 @@ fn fact_stability_headline(lines: &str, checked: usize, records: &Path) -> Strin
         } else {
             outcome
         };
-        *outcomes.entry(outcome).or_default() += 1;
+        *outcomes.entry(outcome.to_string()).or_default() += 1;
     }
-    let failing =
-        outcomes.get("differs").copied().unwrap_or(0) + outcomes.get("paths").copied().unwrap_or(0);
-    format!(
-        "fact-stability audit: {failing} failing of {checked} lowerings checked ({}); {} refused without facts (tracked); records: {}",
-        percent(failing, checked),
-        outcomes.get("refused").copied().unwrap_or(0),
-        records.display()
-    )
+    let count = |outcome: &str| outcomes.get(outcome).copied().unwrap_or(0);
+    Counts {
+        failing: count("differs") + count("paths"),
+        checked,
+        tracked: count("refused"),
+        outcomes,
+    }
 }
 
 fn percent(part: usize, whole: usize) -> String {
@@ -195,10 +266,10 @@ fn percent(part: usize, whole: usize) -> String {
     format!("{:.1}%", 100.0 * part as f64 / whole as f64)
 }
 
-fn breakdown(outcomes: &BTreeMap<&str, usize>) -> String {
+fn breakdown(outcomes: &BTreeMap<String, usize>) -> String {
     FAILING_ROUND_TRIPS
         .iter()
-        .map(|outcome| format!("{} {outcome}", outcomes.get(outcome).copied().unwrap_or(0)))
+        .map(|outcome| format!("{} {outcome}", outcomes.get(*outcome).copied().unwrap_or(0)))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -224,7 +295,11 @@ mod tests {
             record("no-state", "g.contract", "z == 3", "a.md"),
         ]
         .concat();
-        let headline = raise_lower_headline(&lines, Path::new("r.tsv"));
+        let headline = headline(
+            LoweringAudit::RaiseLower,
+            &raise_lower_counts(&lines),
+            Path::new("r.tsv"),
+        );
         assert!(
             headline.starts_with(
                 "raise-lower audit: 2 failing of 3 facts checked (66.7%); 1 not checkable"
@@ -241,7 +316,11 @@ mod tests {
     #[test]
     fn the_fact_stability_headline_counts_failing_lowerings() {
         let lines = "differs\ts\ta\tb\tt\npaths:2\ts\ta\t\tt\nrefused\ts\ta\t\tt\n";
-        let headline = fact_stability_headline(lines, 40, Path::new("f.tsv"));
+        let headline = headline(
+            LoweringAudit::FactStability,
+            &fact_stability_counts(lines, 40),
+            Path::new("f.tsv"),
+        );
         assert!(
             headline.starts_with(
                 "fact-stability audit: 2 failing of 40 lowerings checked (5.0%); 1 refused"

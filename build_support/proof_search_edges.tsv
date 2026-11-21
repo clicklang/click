@@ -627,6 +627,7 @@ src/surface/validation/definition_validation.rs	operation	::symbolic_segment_cov
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_descriptor_rewrite_closure	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_resource_descriptor_rewrite_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_descriptor_rewrite_closure	requirement_kernel_atoms_for_search	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_descriptor_rewrite_closure	marked_entry_separation_sources	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_linked_pointer_viewability	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_leaf	try_linked_pointer_viewability	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_leaf	try_indexed_read_preservation	1

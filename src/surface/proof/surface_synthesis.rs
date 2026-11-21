@@ -2351,10 +2351,12 @@ fn synthesize_boolean_cell_read(
     if !point.memory().has_boolean_cell_type(address) {
         return None;
     }
-    // A Boolean cell's byte test names the memory selected by Boolean
-    // evaluation. The integer read selector may choose a different version.
+    // A snapshot read can use a typed Boolean spelling only where lowering
+    // still uses a detached view. A certified point gives the spelling its
+    // own point-keyed read.
     let selects_read = |state: &ExecutionState| {
         &crate::kernel::intern_memory_ref(state.memory()) == point.shared_memory()
+            && !state.program_point().has_certified_read_view()
     };
     let expression = |state: &ExecutionState| {
         Some(synthesize_typed_load(
@@ -3690,13 +3692,39 @@ fn synthesize_surface_integer(
     raise_kernel_term(&term, parameter_binding, state, bound_variables)
 }
 
+// The comparison renderer spells a proposition used as a Bool via
+// `if guard { true } else { false }`. An Integer or algebraic `if` expects a
+// proposition directly, so recover the comparison instead of wrapping it.
+fn raise_value_if_guard(
+    guard: &crate::kernel::KernelTerm,
+    expression: SurfaceTerm,
+) -> ClickProposition {
+    use crate::kernel::KernelTermNode as Node;
+    match (guard.node(), expression) {
+        (Node::BoolLiteral(_), literal) => ClickProposition::Value(literal),
+        (
+            Node::BoolCompare { .. } | Node::IntegerCompare { .. },
+            SurfaceTerm::If {
+                condition,
+                then_branch,
+                else_branch,
+            },
+        ) if bool_literal_value(&then_branch) == Some(true)
+            && bool_literal_value(&else_branch) == Some(false) =>
+        {
+            *condition
+        }
+        (_, expression) => bool_truth(expression),
+    }
+}
+
 // Keep this construction outside the recursive general dispatch frame.
 fn raise_algebraic_if<'a>(
     arguments: &'a [crate::kernel::KernelTerm; 3],
     mut raise: impl FnMut(&'a crate::kernel::KernelTerm) -> Option<SurfaceTerm>,
 ) -> Option<SurfaceTerm> {
     Some(SurfaceTerm::If {
-        condition: Box::new(bool_truth(raise(&arguments[0])?)),
+        condition: Box::new(raise_value_if_guard(&arguments[0], raise(&arguments[0])?)),
         then_branch: Box::new(raise(&arguments[1])?),
         else_branch: Box::new(raise(&arguments[2])?),
     })
@@ -4341,7 +4369,7 @@ fn raise_kernel_term_dispatch(
         }
         Node::AlgebraicIf { arguments } => raise_algebraic_if(arguments, recurse)?,
         Node::IntegerIf { arguments } => SurfaceTerm::If {
-            condition: Box::new(bool_truth(recurse(&arguments[0])?)),
+            condition: Box::new(raise_value_if_guard(&arguments[0], recurse(&arguments[0])?)),
             then_branch: Box::new(integer_typed_expression(recurse(&arguments[1])?)),
             else_branch: Box::new(integer_typed_expression(recurse(&arguments[2])?)),
         },
@@ -8390,6 +8418,10 @@ fn synthesize_surface_algebraic(
         return Some(name.reference());
     }
     match &term.node {
+        crate::kernel::AlgebraicTermNode::If { .. } => {
+            let root = crate::kernel::KernelTermImport::default().algebraic(term);
+            raise_kernel_term(&root, parameter_binding, state, bound_variables)
+        }
         crate::kernel::AlgebraicTermNode::Match { .. } => {
             let matched = crate::kernel::KernelMatch::import_algebraic(
                 &mut crate::kernel::KernelTermImport::default(),
@@ -8624,7 +8656,6 @@ fn synthesize_surface_algebraic(
                 arguments,
             })
         }
-        _ => None,
     }
 }
 

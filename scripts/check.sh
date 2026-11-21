@@ -145,26 +145,24 @@ if [[ "${1:-}" == "--charon-live" ]]; then
     exit 0
 fi
 
-# The whole-repository expansion audit: every smart tactic in the examples
-# and mdtests must expand to a proof that verifies. It takes about twenty
-# minutes on a release build, so it is a job of the nightly workflow and not
-# part of the budgeted gate.
+# The whole-repository audits (`scripts/audit.sh`, `click audit`): expansion
+# (every smart tactic expands to a proof that verifies), raise-lower (every
+# fact and goal round-trips through Surface) and fact-stability (lowering
+# does not depend on facts), over the examples and mdtests. Each is a job of
+# the nightly workflow, not part of the budgeted gate. `--audit` alone runs
+# all three; `--audit <audit>` runs one.
 if [[ "${1:-}" == "--audit" ]]; then
-    export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
-    # The C++ mdtests are audited through the pinned exporter.
-    export CLICK_CPP_EXPORTER
-    CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
-    cargo build --release --bin click
-    # C, C++ and Rust examples use checked-in offline locks.
-    exec target/release/click audit --keep-going --time-limit 180m \
-        .
-fi
-
-# The nightly lowering audits: fact stability, enforced, and the raise/lower
-# round trip, tracked (`scripts/lowering-audits.sh`). Each runs the mdtest
-# corpus once, so this is a job of the nightly workflow.
-if [[ "${1:-}" == "--lowering" ]]; then
-    exec scripts/lowering-audits.sh
+    audit="${2:-}"
+    # The expansion audit continues past a failure and paces its run.
+    expansion_options=(--keep-going --time-limit 180m)
+    case "$audit" in
+        "" | expansion) exec scripts/audit.sh $audit . "${expansion_options[@]}" ;;
+        raise-lower | fact-stability) exec scripts/audit.sh "$audit" . ;;
+        *)
+            echo "error: unknown audit \`$audit\`; expected expansion, raise-lower or fact-stability" >&2
+            exit 2
+            ;;
+    esac
 fi
 
 gate_started=$SECONDS

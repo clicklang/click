@@ -36,8 +36,10 @@ reported as not checkable. The fact-stability headline counts lowerings
 whose term facts changed (`differs`) or among whose paths facts chose
 (`paths`); `refused` lowerings are tracked.
 
-A container whose verification under a lowering audit disagrees with its
-expectation is listed after the headline: an audit must not change a proof.
+A container that does not verify as its expectation says is counted after
+the headline and listed in `raise-lower.unexpected.tsv` or
+`fact-stability.unexpected.tsv`. The audit does not judge it: the gate and the
+nightly tests own verification verdicts.
 
 ## Expansion audit
 

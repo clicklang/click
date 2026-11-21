@@ -6827,7 +6827,12 @@ impl PureFactContext {
             self.adjust_memory_effect_fact(proposition);
             self.adjust_pointer_class_fact(proposition);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
+            let closed_if =
+                crate::kernel::proof::fact_reasoning::closed_algebraic_if_comparison(proposition);
             self.admit_shared_exact_propagation(shared);
+            if let Some(reading) = closed_if {
+                self.insert_proposition_fact(reading);
+            }
         }
     }
 
@@ -7666,7 +7671,12 @@ impl PureFactContext {
         } else {
             None
         };
+        let closed_if =
+            crate::kernel::proof::fact_reasoning::closed_integer_if_comparison(&condition);
         let mut next = self.assume_condition_once_shared(condition, value, source);
+        if let Some(reading) = closed_if {
+            next = next.assume_condition_once(reading, value);
+        }
         if let Some(reading) = match_order {
             next = next.assume_condition_once(reading, value);
         }

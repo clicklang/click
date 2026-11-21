@@ -1,6 +1,149 @@
 use super::*;
 
 #[test]
+fn unindexed_boolean_loads_use_their_certified_observation_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let pointer = ProgramValue::typed_pointer(address.clone(), ProgramType::UInt8Pointer);
+    let first = ExecutionState::new()
+        .begin_function_entry_memory()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::view_memory(MemoryRange::access(address.clone(), ProgramType::Bool)),
+        ));
+    let second = first.clone().begin_function_entry_memory();
+    assert_eq!(first.memory(), second.memory());
+
+    let logical = SpecExpression::MemoryLoad {
+        point: SpecPoint::Current,
+        pointer: Box::new(SpecExpression::Value(pointer.clone())),
+        value_type: ProgramType::Bool,
+        exact: false,
+    };
+    let program = ProgramExpression::TypedLoad {
+        pointer: Box::new(ProgramExpression::Value(pointer)),
+        value_type: ProgramType::Bool,
+        volatile: false,
+        pointee_constant: false,
+        access_class: None,
+        source: Default::default(),
+    };
+    let assumptions = PureFactContext::new();
+    for state in [&first, &second] {
+        let expected = ProgramValue::of_bool(ConditionTerm::boolean_cell_read(
+            state.program_point().for_exact_read(),
+            address.clone(),
+        ));
+        let mut execution = ExecutionBudget::new();
+        let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            SpecScope::unbound(state, None),
+            &logical,
+            &assumptions,
+            &mut SpecEvaluation::logical(&mut execution),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one logical Boolean read");
+        };
+        assert_eq!(path.value.clone().into_native(), expected);
+
+        let paths = crate::kernel::eval::evaluate_expression_value_paths(
+            state,
+            &program,
+            &assumptions,
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one checked Boolean read");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!(
+                "the caller supplies a readable Boolean cell: {:?}",
+                path.outcome
+            );
+        };
+        assert_eq!(value.native().as_ref(), &expected);
+    }
+}
+
+#[test]
+fn caller_int16_reads_keep_the_entry_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let local = crate::kernel::SymbolicMemory::local_pointer("unrelated");
+    for (ty, pointer_type) in [
+        (ProgramType::Int16, ProgramType::Int16Pointer),
+        (ProgramType::UInt16, ProgramType::UInt16Pointer),
+    ] {
+        let entry = ExecutionState::new()
+            .begin_function_entry_memory()
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                ResourceFact::view_memory(MemoryRange::access(address.clone(), ty)),
+            ));
+        let state = entry
+            .clone()
+            .with_memory(entry.memory().clone().with_block(local.base.clone(), 2));
+        assert_ne!(state.observation_point_id(), entry.program_point_id());
+        let pointer = ProgramValue::typed_pointer(address.clone(), pointer_type);
+        let kind = LoadKind::of_type(ty).unwrap();
+        let check = |read: &ProgramValue| {
+            let Some(MachineTerm::MemoryLoad(point, cell, load_kind)) =
+                program_value_bitvector_term(read)
+            else {
+                panic!("expected a symbolic {ty:?} read");
+            };
+            assert_eq!(point.read_version_id(), entry.program_point_id());
+            assert_eq!(*cell, address);
+            assert_eq!(load_kind, kind);
+        };
+        let assumptions = PureFactContext::new();
+        let logical = SpecExpression::MemoryLoad {
+            point: SpecPoint::Current,
+            pointer: Box::new(SpecExpression::Value(pointer.clone())),
+            value_type: ty,
+            exact: false,
+        };
+        let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            SpecScope::unbound(&state, None),
+            &logical,
+            &assumptions,
+            &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one logical caller read");
+        };
+        check(&path.value.clone().into_native());
+
+        let program = ProgramExpression::Load(Box::new(ProgramExpression::Value(pointer)));
+        let paths = crate::kernel::eval::evaluate_expression_value_paths(
+            &state,
+            &program,
+            &assumptions,
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one checked caller read");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!("the caller supplies a readable cell: {:?}", path.outcome);
+        };
+        check(value.native().as_ref());
+
+        let resource =
+            crate::kernel::eval::canonical_cell_load(&state.program_point(), &address, ty);
+        check(&crate::kernel::cell_run_value(ty, resource));
+    }
+}
+
+#[test]
 fn logical_pointer_field_uses_current_pointee_memory() {
     use crate::kernel::{AggregateField, AggregateLayout};
     let slot = Address {

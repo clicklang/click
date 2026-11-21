@@ -5370,16 +5370,16 @@ impl AnnotationLowerer<'_> {
                         arguments: vec![],
                     });
                 }
-                if name == "same_object" {
+                if name == "same_allocation" {
                     let [left, right] = arguments.as_slice() else {
                         return Err(format!(
-                            "same_object expects two pointer arguments, got {}",
+                            "same_allocation expects two pointer arguments, got {}",
                             arguments.len()
                         ));
                     };
                     return Ok(SpecProposition::Predicate {
                         resource_state_dependent: false,
-                        name: crate::kernel::SAME_OBJECT_PREDICATE_NAME.to_string(),
+                        name: crate::kernel::SAME_ALLOCATION_PREDICATE_NAME.to_string(),
                         arguments: vec![
                             SpecPredicateArgument::Value(
                                 self.lower_contract_expression_to_spec(left, environment)?,

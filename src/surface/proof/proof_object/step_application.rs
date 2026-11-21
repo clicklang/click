@@ -1324,6 +1324,14 @@ impl<'a> Proof<'a> {
                                 name.clone(),
                                 SurfaceBinder::from(name).reference(),
                             );
+                        } else if matches!(
+                            self.goal(),
+                            Some(Proposition::ForAll {
+                                sort: crate::kernel::Sort::Integer,
+                                ..
+                            })
+                        ) {
+                            integer_binding = Some((name.kernel_name(), variable));
                         } else {
                             surface_bindings = surface_bindings.with_inserted(
                                 name.clone(),
