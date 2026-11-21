@@ -32,13 +32,13 @@ tactic restore_sized_flip_state(root: struct rb_root*) {
         SizedTree::Empty => { unfold(state); contradiction(false); },
         SizedTree::Node(node, parent, color, value, left, right) => {
             let { focus: focus, path: path } = unfold(state);
-            have focus.model == old(state.model) by normalize();
-            have path.model == old(state.context) by normalize();
+            have focus.model == old(state.model) by known();
+            have path.model == old(state.context) by known();
             have sized_value(focus.model) == value by {
                 rewrite(focus.model, old(state.model));
                 rewrite(old(state.model), SizedTree::Node(node, parent, color, value, left, right));
                 unfold(sized_value(SizedTree::Node(node, parent, color, value, left, right)));
-                normalize();
+                known();
             }
             have sized_context_parent(path.model, 0) == parent by {
                 rewrite(path.model, old(state.context));
@@ -48,7 +48,7 @@ tactic restore_sized_flip_state(root: struct rb_root*) {
                 rewrite(focus.model, old(state.model));
                 rewrite(old(state.model), SizedTree::Node(node, parent, color, value, left, right));
                 unfold(sized_parent_is(SizedTree::Node(node, parent, color, value, left, right), sized_context_parent(path.model, 0)));
-                normalize() using { sized_context_parent(path.model, 0) == parent; };
+                known();
             }
             let { whole: whole } = restore_sized_context(node, root->rb_node, 0, value, { path: path, sub: focus });
             have whole.model == sized_plug(old(state.context), old(state.model));

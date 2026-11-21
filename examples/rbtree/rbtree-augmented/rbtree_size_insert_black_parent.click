@@ -50,11 +50,11 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
             unfold(color_bit(Color::Red));
             have (node->__rb_parent_color & 1) == 0 by {
                 rewrite((node->__rb_parent_color & 1), color_bit(Color::Red));
-                rewrite(color_bit(Color::Red), 0); normalize();
+                rewrite(color_bit(Color::Red), 0); known();
             }
             have node->__rb_parent_color == address(ancestor) by {
                 rewrite(node->__rb_parent_color, address(ancestor) + (node->__rb_parent_color & 1));
-                rewrite((node->__rb_parent_color & 1), 0); normalize();
+                rewrite((node->__rb_parent_color & 1), 0); known();
             }
             have ancestor->__rb_parent_color == parent_tag by known();
             let observation = fold(black_parent_observation(ancestor), { tag: parent_tag });
