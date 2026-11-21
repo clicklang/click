@@ -391,6 +391,37 @@ mod tests {
     }
 
     #[test]
+    fn reflexive_int32_matches_keep_both_comparison_operands() {
+        for (scrutinee, parameters) in [("Packet::Full(7)", ""), ("p", "p: Packet")] {
+            for (relation, prefix, suffix) in [("==", "", ""), ("!=", "not (", ")")] {
+                let source = format!(
+                    r#"
+                    spec enum Packet {{ Empty, Full(int32) }}
+                    theorem reflexive({parameters}) {{
+                        ensures forall (unused: Integer) {{
+                            {prefix}(match {scrutinee} {{ Packet::Empty => 0, Packet::Full(n) => n }})
+                                {relation} (match {scrutinee} {{ Packet::Empty => 0, Packet::Full(n) => n }}){suffix}
+                        }} by {{ intro(); normalize(); }}
+                    }}
+                    "#
+                );
+                let lines = capture(|| {
+                    crate::surface::proof::without_implicit_solve(|| {
+                        crate::surface::verify_click_theorems(&source).unwrap();
+                    });
+                });
+                assert!(
+                    lines.iter().any(|line| {
+                        line.starts_with("raised\tgoal\tcondition:Compare(int32 ==)\treflexive.ensures_0\tintro()\t")
+                            && line.matches(&format!("match {scrutinee}")).count() == 2
+                    }),
+                    "{lines:#?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn known_integer_matches_keep_the_comparison_after_rewrite() {
         let fixture = include_str!("../../../mdtests/integer_match_on_known_constructor.md");
         let source = fixture
