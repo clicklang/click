@@ -629,6 +629,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_resource_descriptor_rewrite_closure	requirement_kernel_atoms_for_search	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_linked_pointer_viewability	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_leaf	try_linked_pointer_viewability	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_leaf	try_indexed_read_preservation	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_viewability_restriction_closure	driver	6
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_viewability_restriction_closure	requirement_kernel_atoms_for_search	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_ordinary_viewability_restriction_closure	1
@@ -640,6 +641,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_ste
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	try_ordinary_viewability_restriction_closure	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_history_indexed_equalities	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_history_indexed_equalities	driver	3
+src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_indexed_read_preservation	driver	3
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_history_indexed_equalities	try_returned_index_preservation	1
 src/surface/proof/smart_execution/history_equalities.rs	search	ProofSearch::try_returned_index_preservation	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_arithmetic_using	try_integer_composition_using	1

@@ -456,6 +456,24 @@ pub(crate) fn is_quotient_remainder_order(goal: &Proposition) -> bool {
     }
 }
 
+/// The first range ends where the second starts. Ordering its endpoints
+/// makes the element count nonnegative, so even a modular byte count can
+/// only shorten the first range. The second range occupies bytes forward
+/// from that shared address.
+fn adjacent_range_separation(
+    first: &MemoryRange,
+    second: &MemoryRange,
+    available: &impl Fn(&Proposition) -> bool,
+) -> bool {
+    first.wide_bounds().is_none()
+        && first.end_pointer() == second.start_pointer()
+        && comparison_holds(
+            ConditionTerm::signed_less_equal(first.start().clone(), first.end().clone()),
+            true,
+            available,
+        )
+}
+
 pub(crate) fn known_bridge_leaf(
     goal: &Proposition,
     available: &impl Fn(&Proposition) -> bool,
@@ -480,7 +498,19 @@ pub(crate) fn known_bridge_leaf(
                 (Resource::Footprint(_), _) | (_, Resource::Footprint(_))
             ) =>
         {
-            crate::kernel::region_footprint::separate_members(left, right, available)
+            crate::kernel::region_footprint::separate_members(left, right, |fact| {
+                available(fact)
+                    || match fact {
+                        Proposition::ResourceSeparate { left, right }
+                            if let (Resource::Memory(left), Resource::Memory(right)) =
+                                (left.as_ref(), right.as_ref()) =>
+                        {
+                            adjacent_range_separation(left, right, available)
+                                || adjacent_range_separation(right, left, available)
+                        }
+                        _ => false,
+                    }
+            })
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
@@ -671,6 +701,79 @@ mod tests {
             assert!(success.0 && !refusal.0);
             assert!(success.1 <= observations[0][0].1 + 16, "{observations:?}");
             assert!(refusal.1 <= observations[0][1].1 + 16, "{observations:?}");
+        }
+    }
+
+    #[test]
+    fn adjacent_footprint_needs_order_and_the_exact_boundary() {
+        let _session = VerificationSession::enter();
+        let base = Address::symbolic(Variable(997400));
+        let endpoint = MachineTerm::Variable(Variable(997401));
+        let memory = |base, end| {
+            Resource::Memory(MemoryRange::new_with_element_width(
+                base,
+                0u32.into(),
+                end,
+                4,
+            ))
+        };
+        let write = memory(base.clone(), endpoint.clone());
+        let before = ExecutionState::new();
+        let footprint = Resource::Footprint(RegionFootprint::sequence(
+            "write".into(),
+            &before,
+            &before,
+            [write].into_iter().collect(),
+            true,
+        ));
+        let boundary = base.offset_by_elements(endpoint.clone(), 4);
+        let held = Proposition::condition_is(
+            ConditionTerm::signed_less_equal(0u32.into(), endpoint),
+            true,
+        );
+        let check = |offset, facts: &PureFactStore| {
+            let goal = Proposition::ResourceSeparate {
+                left: Box::new(footprint.clone()),
+                right: Box::new(memory(
+                    Address {
+                        base: boundary.base.clone(),
+                        offset: AddressOffset::add(
+                            boundary.offset.clone(),
+                            AddressOffset::Constant(offset),
+                        ),
+                    },
+                    1u32.into(),
+                )),
+            };
+            crate::instrumentation::measure_deterministic_work(|| {
+                known_bridge_leaf(&goal, &|fact| facts.pure_known_available(fact))
+            })
+        };
+        let observations = [0, 32, 128].map(|count| {
+            let unrelated = (0..count)
+                .map(|i| {
+                    Proposition::condition_is(
+                        ConditionTerm::signed_less_equal(
+                            0u32.into(),
+                            MachineTerm::Variable(Variable(997500 + i)),
+                        ),
+                        true,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let without_order = PureFactStore::from_ordered(&unrelated);
+            let with_order = without_order.with_kernel_checked_fact(held.clone());
+            [
+                check(0, &with_order),
+                check(0, &without_order),
+                check(-1, &with_order),
+            ]
+        });
+        for checks in observations {
+            assert_eq!(checks.map(|(holds, _)| holds), [true, false, false]);
+            for ((_, work), (_, baseline)) in checks.into_iter().zip(observations[0]) {
+                assert!(work <= baseline + 16, "{observations:?}");
+            }
         }
     }
 

@@ -2,6 +2,115 @@
 use super::*;
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Name the individual effects that a selected indexed read survived.
+    /// Every proposed footprint separation and preservation is checked in
+    /// an ordinary have. The final equality checks the goal's actual points.
+    pub(in crate::surface::proof) fn try_indexed_read_preservation(
+        search_input: &Proof<'a>,
+        point_limit: usize,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_indexed_read_preservation");
+        let Some(ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::Equal,
+            right,
+        }) = search_input.surface_goal()
+        else {
+            return Ok(None);
+        };
+        let current = match (left, right) {
+            (
+                current,
+                ContractExpression::Old(saved)
+                | ContractExpression::At {
+                    expression: saved, ..
+                },
+            )
+            | (
+                ContractExpression::Old(saved)
+                | ContractExpression::At {
+                    expression: saved, ..
+                },
+                current,
+            ) if current == saved.as_ref() => current,
+            _ => return Ok(None),
+        };
+        let Some(ProgramExpression::Index(base, index)) =
+            contract_expression_as_program_expression(current)
+        else {
+            return Ok(None);
+        };
+        let Some(view) = search_input.premise_fixed_state_view() else {
+            return Ok(None);
+        };
+        let records = view.fixed_state.recorded_states;
+        let kept = ResourceSubject::SavedMemory {
+            base: ContractExpression::ProgramExpression(*base),
+            start: ContractExpression::ProgramExpression(*index),
+            end: None,
+        };
+        let have = |proposition, step| ProofStep::Have {
+            proposition,
+            proof: Box::new(
+                ProofCertificate::from_steps(vec![step]).expect("an ordinary preservation step"),
+            ),
+        };
+        let mut proof = search_input.clone();
+        for (selector, _) in records.recent(point_limit) {
+            check_verification_deadline()?;
+            let ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                region: region @ (CodeRegionRef::Region(_) | CodeRegionRef::Path(_)),
+                kind: ProgramPointKind::Exit,
+            }) = selector
+            else {
+                continue;
+            };
+            let Ok(Resource::Footprint(footprint)) = records.footprint(region) else {
+                continue;
+            };
+            if !footprint.complete || footprint.members.is_empty() {
+                continue;
+            }
+            let separation = ClickProposition::Separate {
+                left: ResourceSubject::Footprint(region.clone()),
+                right: kept.clone(),
+            };
+            let at = |kind| ContractExpression::At {
+                selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                    region: region.clone(),
+                    kind,
+                }),
+                expression: Box::new(current.clone()),
+            };
+            let equality = ClickProposition::Comparison {
+                left: at(ProgramPointKind::Exit),
+                operator: ComparisonOperator::Equal,
+                right: at(ProgramPointKind::Entry),
+            };
+            let candidate = (|| {
+                let separated = proof
+                    .driver()
+                    .apply_step(have(separation.clone(), ProofStep::Known))?;
+                separated
+                    .driver()
+                    .apply_step(have(equality, ProofStep::Preserve(separation)))
+            })();
+            if let Some(preserved) = attempt::candidate_outcome(candidate)? {
+                if preserved.focused_discharged() {
+                    return Ok(Some(preserved));
+                }
+                if let Some(closed) =
+                    attempt::candidate_outcome(preserved.driver().apply_step(ProofStep::Known))?
+                {
+                    return Ok(Some(closed));
+                }
+                proof = preserved;
+            }
+        }
+        Ok(None)
+    }
+
     /// Discover already recorded footprint separations only in smart search.
     /// The resulting proof applies explicit preservation at each endpoint;
     /// replay neither enumerates facts nor follows memory history.
