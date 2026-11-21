@@ -86,18 +86,18 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
             let after = fold(write_result(cells), {
                 model: WriteOutcome::Skipped
             });
-            have result == 0 by normalize();
+            have result == 0 by known();
             have result == 0 or result == 1 by known();
             have after.model == WriteOutcome::Skipped by known();
             have not (enabled == 1) by {
                 rewrite(enabled, 0);
-                normalize();
+                known();
             }
             have selected_index(old(before.shape)) == index by {
                 rewrite(old(before.shape), WriteShape::Skip);
                 unfold(selected_index(WriteShape::Skip));
                 rewrite(index, 0);
-                normalize();
+                known();
             }
             have enabled == 0 implies after.model == WriteOutcome::Skipped by {
                 intro();
@@ -126,13 +126,13 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
                 rewrite(old(before.shape), WriteShape::At(position));
                 unfold(selected_index(WriteShape::At(position)));
                 rewrite(index, position);
-                normalize();
+                known();
             }
             have enabled == 1 implies
                 result == cells[selected_index(old(before.shape))] by {
                 intro();
                 rewrite(selected_index(old(before.shape)), index);
-                normalize();
+                known();
             }
             solve();
         },

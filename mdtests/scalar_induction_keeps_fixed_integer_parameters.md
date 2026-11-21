@@ -17,7 +17,7 @@ theorem carry_seed_returns_the_same_integer(n: int32, seed: Integer) {
         let ih = induct(n);
         if n <= 0 {
             unfold(carry_seed(n, seed));
-            normalize();
+            solve();
         } else {
             have 0 < n by solve();
             have 0 <= to_integer(n - 1) by solve() using { 0 < n; };

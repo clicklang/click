@@ -53,7 +53,7 @@ void mark(uint64 *values, int32 *visited, int32 n, int32 cur, uint64 stamp) {
             };
         }
         have separate(statement(0).footprint, memory(values[k])) by {
-            normalize() using { separate(memory(visited[cur]), memory(values[k])); };
+            solve() using { separate(memory(visited[cur]), memory(values[k])); };
         }
         have values[k] == at(before, values[k]) by {
             preserve(memory(values[k]), statement(0));

@@ -72,7 +72,7 @@ void detach(struct node* n) {
             let u = fold(tree_at(n), { model: Tree::Node(identity, 0, value) });
             have is_root(Tree::Node(identity, 0, value)) == 1 by {
                 unfold(is_root(Tree::Node(identity, 0, value)));
-                normalize();
+                solve();
             }
             have is_root(u.model) == 1 by {
                 rewrite(u.model, Tree::Node(identity, 0, value));

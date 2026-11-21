@@ -271,11 +271,11 @@ template<class T> Stack<T>::~Stack() {
                     };
                     mark before_node;
                     step();
-                    have separate(region(1).footprint, memory(this->head)) by { normalize() using {}; }
+                    have separate(region(1).footprint, memory(this->head)) by { solve() using {}; }
                     have this->head == at(before_node, this->head) by {
                         preserve(memory(this->head), region(1));
                     }
-                    have separate(region(1).footprint, memory(this->head->next)) by { normalize() using {}; }
+                    have separate(region(1).footprint, memory(this->head->next)) by { solve() using {}; }
                     have this->head->next == at(before_node, this->head->next) by {
                         preserve(memory(this->head->next), region(1));
                     }
@@ -287,7 +287,7 @@ template<class T> Stack<T>::~Stack() {
                     mark before_delete;
                     step();
                     have separate(region(3).footprint, memory(this->head)) by {
-                        normalize() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
+                        solve() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
                     }
                     have this->head == at(before_delete, this->head) by {
                         preserve(memory(this->head), region(3));

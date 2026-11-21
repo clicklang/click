@@ -29,7 +29,7 @@ void inspect(struct item* p, uint64 i, uint64 j) {
         apply(separation::separate_elements(p, i, j)) using { i != j; };
     }
     step_until(function.exit);
-    normalize();
+    solve();
     known(); known(); known();
 }
 ```

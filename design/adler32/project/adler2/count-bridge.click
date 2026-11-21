@@ -199,19 +199,19 @@ theorem adler_count_previous_byte_observation(bytes: uint8[], total: uint64, rem
  requires remaining as uint32 as int32 <= total as uint32 as int32;
  requires total as uint32 as int32 <= 22207;
  ensures to_integer((bytes + (total - remaining - 1u64))[0] as int32) == to_integer(bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 1] as int32) by {
-  have total <= 22208u64 by normalize() using { total <= 22207u64; };
+  have total <= 22208u64 by solve() using { total <= 22207u64; };
   have to_integer(total - remaining) <= to_integer(22208u64) by solve() using { remaining <= total; total <= 22207u64; };
   have to_integer(total - remaining - 1u64) <= to_integer(22207u64) by solve() using { remaining <= total; to_integer(1u64) <= to_integer(total - remaining); total <= 22207u64; };
   apply(adler_count_step(total, remaining)) using { remaining <= total; total <= 22208u64; };
   apply(adler_count_tail_step(total - remaining)) using { to_integer(1u64) <= to_integer(total - remaining); to_integer(total - remaining) <= to_integer(22208u64); };
-  have to_integer(total - remaining - 1u64) <= to_integer(22208u64) by normalize() using { to_integer(total - remaining - 1u64) <= to_integer(22207u64); };
+  have to_integer(total - remaining - 1u64) <= to_integer(22208u64) by solve() using { to_integer(total - remaining - 1u64) <= to_integer(22207u64); };
   apply(adler_count_byte_observation(bytes, total - remaining - 1u64)) using { to_integer(total - remaining - 1u64) <= to_integer(22208u64); };
   have to_integer((total - remaining - 1u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1) by {
    rewrite(to_integer((total - remaining - 1u64) as uint32 as int32), to_integer((total - remaining) as uint32 as int32 - 1));
    rewrite(to_integer((total - remaining) as uint32 as int32), to_integer(total as uint32 as int32 - remaining as uint32 as int32));
    known();
   }
-  have to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1) == to_integer((total - remaining - 1u64) as uint32 as int32) by normalize() using { to_integer((total - remaining - 1u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1); };
+  have to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1) == to_integer((total - remaining - 1u64) as uint32 as int32) by solve() using { to_integer((total - remaining - 1u64) as uint32 as int32) == to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1); };
   rewrite(to_integer((total as uint32 as int32 - remaining as uint32 as int32) - 1), to_integer((total - remaining - 1u64) as uint32 as int32));
   normalize() using { to_integer(bytes[total - remaining - 1u64] as int32) == to_integer(bytes[(total - remaining - 1u64) as uint32 as int32] as int32); };
  }

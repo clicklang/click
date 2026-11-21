@@ -37,7 +37,7 @@ void write_other(int32 p[], int32 n, int32 i, int32 j, int32 k) {
             apply(click::separation::separate_elements(p, k, i)) using { i != k; };
         }
         have separate(statement(0).footprint, memory(p[i])) by {
-            normalize() using { separate(memory(p[k]), memory(p[i])); };
+            solve() using { separate(memory(p[k]), memory(p[i])); };
         }
         preserve(memory(p[i]), statement(0));
     }

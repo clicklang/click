@@ -27,7 +27,7 @@ theorem integer_binder() {
 theorem pointer_binder(q: int32*) {
     ensures forall (p: int32*) { p == p } by {
         let cell = intro();
-        have cell == cell by normalize();
+        have cell == cell by solve();
         known();
     }
 }

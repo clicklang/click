@@ -328,7 +328,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                          sibling_model, up_model) by {
                         unfold(ctx_reroot(Context::Left(identity, grandparent, color,
                                                         sibling_model, up_model), parent));
-                        normalize();
+                        known();
                     }
                     have identity == parent by known();
                     have plug(up_model,
@@ -354,7 +354,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                         unfold(rb_parent_is(RbTree::Node(identity, grandparent, color,
                                                          t.model, sibling_model),
                                             grandparent));
-                        normalize();
+                        known();
                     }
                     let lifted = fold(rb_at(node), {
                         model: RbTree::Node(identity, grandparent, color,
@@ -369,7 +369,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                                           sibling_model, up_model) by {
                         unfold(ctx_reroot(Context::Right(identity, grandparent, color,
                                                          sibling_model, up_model), parent));
-                        normalize();
+                        known();
                     }
                     have identity == parent by known();
                     have plug(up_model,
@@ -395,7 +395,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                         unfold(rb_parent_is(RbTree::Node(identity, grandparent, color,
                                                          sibling_model, t.model),
                                             grandparent));
-                        normalize();
+                        known();
                     }
                     let lifted = fold(rb_at(node), {
                         model: RbTree::Node(identity, grandparent, color,
@@ -442,7 +442,7 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
     have plug(c.model, t.model) == t.model by {
         rewrite(c.model, Context::Top);
         unfold(plug(Context::Top, t.model));
-        normalize();
+        known();
     }
     have t.model == plug(old(c.model), old(t.model)) by {
         rewrite(t.model, plug(c.model, t.model));

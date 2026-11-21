@@ -36,10 +36,10 @@ int32 probe_fill(int32 p[], int32 lo, int32 hi, int32 v) {
         invariant forall (k: int32) { lo <= k and k < i implies p[k] == v };
 
         initialize by {
-            have lo <= i by normalize();
+            have lo <= i by known();
             have i <= hi by known();
-            have 0 == 0 by normalize();
-            have 1 == 1 by normalize();
+            have 0 == 0 by known();
+            have 1 == 1 by known();
             have forall (k: int32) { lo <= k and k < i implies p[k] == v } by {
                 intro();
                 intro();

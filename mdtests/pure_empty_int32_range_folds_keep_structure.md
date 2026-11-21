@@ -10,29 +10,29 @@ theorem literal_empty() {
 theorem symbolic_empty(n: int32) {
     ensures forall (unused: Integer) {
         (n..n).fold(5, |acc: int32, k: int32| -> int32 { k }) == 5
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem descending_empty() {
     ensures forall (unused: Integer) {
         (3..1).fold(5, |acc: int32, k: int32| -> int32 { k }) == 5
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem symbolic_seed(n: int32, seed: int32) {
     ensures forall (unused: Integer) {
         (n..n).fold(seed, |acc: int32, k: int32| -> int32 { acc + k }) == seed
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem signed_order() {
     ensures (1..(-3)).fold(-5, |acc: int32, k: int32| -> int32 { k }) < -4
-        by { normalize(); }
+        by { known(); }
 }
 
 theorem observed_empty(n: int32, seed: int32) {
     ensures to_integer((n..n).fold(seed, |acc: int32, k: int32| -> int32 { acc + k })) + 1
-        == to_integer(seed) + 1 by { normalize(); }
+        == to_integer(seed) + 1 by { known(); }
 }
 
 theorem longer_literal_nonempty() {
@@ -50,7 +50,7 @@ theorem literal_body() {
 theorem accumulator_projection(seed: int32) {
     ensures forall (unused: Integer) {
         (1..3).fold(seed, |acc: int32, k: int32| -> int32 { acc }) == seed
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem accumulator_bound(seed: int32) {
@@ -61,7 +61,7 @@ theorem accumulator_bound(seed: int32) {
 
 theorem negative_item() {
     ensures ((-3)..(-1)).fold(5, |acc: int32, k: int32| -> int32 { k }) < -1
-        by { normalize(); }
+        by { known(); }
 }
 
 theorem symbolic_control(lo: int32, hi: int32) {

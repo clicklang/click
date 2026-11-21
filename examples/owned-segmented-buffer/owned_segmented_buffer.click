@@ -21,7 +21,7 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
                 contains(memory(p[0..len]), memory(p[i..i + 1]));
             };
         }
-        have contains(kept, kept) by { normalize(); }
+        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)) using {}; }
         have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
         apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
             defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
@@ -341,7 +341,7 @@ int32 owned_segmented_buffer_pipeline(
         rewrite(second_data, at(statement(4).call(0).entry, owner->second_data));
         known();
     }
-    have contains(memory(first_data[0]), memory(first_data[0])) by { normalize(); }
+    have contains(memory(first_data[0]), memory(first_data[0])) by { apply(click::separation::contains_refl(memory(first_data[0]))) using {}; }
     have separate(statement(4).call(0).footprint, memory(first_data[0])) by {
         apply(separation::separate_restrict(memory(second_data[0..1]), memory(first_data[0]), statement(4).call(0).footprint, memory(first_data[0]))) using {
             separate(memory(second_data[0..1]), memory(first_data[0]));

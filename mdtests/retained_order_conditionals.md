@@ -11,14 +11,14 @@ theorem closed_order_conditionals() {
 }
 
 theorem dead_read_needs_no_view(p: int32*) {
-    ensures (if 9u64 < 8u64 { p[0] } else { 0 }) == 0 by { normalize(); }
+    ensures (if 9u64 < 8u64 { p[0] } else { 0 }) == 0 by { known(); }
 }
 theorem closed_pointer_guard(p: int32*, q: int32*) {
-    ensures (if 9u64 < 8u64 { p } else { q }) == q by { normalize(); }
+    ensures (if 9u64 < 8u64 { p } else { q }) == q by { known(); }
 }
 
 theorem closed_float_guard() {
-    ensures (if 9u64 < 8u64 { float32_from_bits(0x3f800000u32) } else { float32_from_bits(0x40000000u32) }) == float32_from_bits(0x40000000u32) by { normalize(); }
+    ensures (if 9u64 < 8u64 { float32_from_bits(0x3f800000u32) } else { float32_from_bits(0x40000000u32) }) == float32_from_bits(0x40000000u32) by { known(); }
 }
 
 ```

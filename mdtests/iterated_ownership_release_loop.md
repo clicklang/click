@@ -115,7 +115,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     have k < capacity;
                     have i < capacity;
                     have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
-                        normalize() using { };
+                        solve() using { };
                     }
                     have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
                         preserve(memory(occupied[k]), loop(0).statement(0));
@@ -125,7 +125,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                         apply(click::separation::separate_elements(occupied, i, k)) using { i != k; };
                     }
                     have separate(loop(0).statement(1).footprint, memory(occupied[k])) by {
-                        normalize() using { separate(memory(occupied[i]), memory(occupied[k])); };
+                        solve() using { separate(memory(occupied[i]), memory(occupied[k])); };
                     }
                     have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
                         preserve(memory(occupied[k]), loop(0).statement(1));
@@ -135,7 +135,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     have i == k;
                     have k == i;
                     rewrite(k, i);
-                    normalize();
+                    known();
                 }
             }
             have at(opened, i) <= end by known();
@@ -165,7 +165,7 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
     have w.next == start by {
         rewrite(w.next, i);
         rewrite(i, start);
-        normalize();
+        known();
     }
 }
 ```

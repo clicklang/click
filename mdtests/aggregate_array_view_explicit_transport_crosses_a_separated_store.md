@@ -13,7 +13,7 @@ void write_first(struct Descriptor *owner) {
     requires separate(memory(owner[1].data[0..1]), memory(owner[0..2]));
     ensures owner[1].length == old(owner[1].length);
 } by {
-    have contains(memory(owner[1].data[0..1]), memory(owner[1].data[0..1])) by { normalize(); }
+    have contains(memory(owner[1].data[0..1]), memory(owner[1].data[0..1])) by { apply(click::separation::contains_refl(memory(owner[1].data[0..1]))) using {}; }
     have contains(memory(owner[0..2]), memory((&owner[1].length)[0..1])) by { normalize(); }
     have separate(memory(owner[1].data[0..1]), memory((&owner[1].length)[0..1])) by {
         apply(click::separation::separate_restrict(memory(owner[1].data[0..1]), memory(owner[0..2]), memory(owner[1].data[0..1]), memory((&owner[1].length)[0..1]))) using {

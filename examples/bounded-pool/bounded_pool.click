@@ -167,22 +167,22 @@ void pool_pipeline(struct pool* pool, struct object* first, struct object* secon
     unfold(pool_control(pool));
     have count(pool_object(pool, _)) == 0 by {
         rewrite(old(count(pool_object(pool, _))), 0);
-        normalize();
+        solve();
     }
     have count(pool_slot(pool)) == 2 by {
         rewrite(old(count(pool_slot(pool))), 0);
-        normalize();
+        solve();
     }
     have pool->checked_out == 0 by {
         rewrite(pool->checked_out, count(pool_object(pool, _)));
         rewrite(count(pool_object(pool, _)), 0);
-        normalize();
+        solve();
     }
     have pool->capacity == 2 by {
         rewrite(pool->capacity, pool->checked_out + count(pool_slot(pool)));
         rewrite(pool->checked_out, 0);
         rewrite(count(pool_slot(pool)), 2);
-        normalize();
+        solve();
     }
     fold(pool_control(pool));
     step();
@@ -292,13 +292,13 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             mark before_source_write;
             step();
             have separate(statement(0).footprint, memory(destination->checked_out)) by {
-                normalize() using { separate(memory(source->checked_out), memory(destination->checked_out)); };
+                solve() using { separate(memory(source->checked_out), memory(destination->checked_out)); };
             }
             have destination->checked_out == at(before_source_write, destination->checked_out) by {
                 preserve(memory(destination->checked_out), statement(0));
             }
             have separate(statement(0).footprint, memory(destination->capacity)) by {
-                normalize() using { separate(memory(source->checked_out), memory(destination->capacity)); };
+                solve() using { separate(memory(source->checked_out), memory(destination->capacity)); };
             }
             have destination->capacity == at(before_source_write, destination->capacity) by {
                 preserve(memory(destination->capacity), statement(0));
@@ -306,7 +306,7 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             have separate(memory(destination->checked_out), memory(destination->capacity));
             step();
             have separate(statement(1).footprint, memory(destination->capacity)) by {
-                normalize() using { separate(memory(destination->checked_out), memory(destination->capacity)); };
+                solve() using { separate(memory(destination->checked_out), memory(destination->capacity)); };
             }
             have destination->capacity == at(statement(1).entry, destination->capacity) by {
                 preserve(memory(destination->capacity), statement(1));

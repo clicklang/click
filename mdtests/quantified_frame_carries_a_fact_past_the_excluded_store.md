@@ -28,7 +28,7 @@ void mark(int32 *v, int32 n, int32 i) {
             apply(click::separation::separate_elements(v, i, k)) using { k != i; };
         }
         have separate(statement(0).footprint, memory(v[k])) by {
-            normalize() using { separate(memory(v[i]), memory(v[k])); };
+            solve() using { separate(memory(v[i]), memory(v[k])); };
         }
         preserve(memory(v[k]), statement(0));
     }

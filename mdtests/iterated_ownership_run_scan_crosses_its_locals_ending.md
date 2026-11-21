@@ -115,7 +115,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     solve();
                 }
                 have to_integer(i) == to_integer(at(iteration, i) + 1) by {
-                    normalize();
+                    solve();
                 }
                 have lo <= at(iteration, i) by {
                     solve() using {
@@ -134,7 +134,7 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     solve();
                 }
                 have to_integer(run_length) == to_integer(at(iteration, run_length) + 1) by {
-                    normalize();
+                    solve();
                 }
                 have to_integer(lo + at(iteration, run_length)) == to_integer(at(iteration, i)) by {
                     solve();

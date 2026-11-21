@@ -140,7 +140,7 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
                 rewrite(lifted.model, SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model));
                 rewrite(up.model, up_model);
                 unfold(sized_parent_is(SizedTree::Node(node, parent, color, value, old(sub.model), sibling_model), sized_context_parent(up_model, stop)));
-                normalize() using { parent == sized_context_parent(up_model, stop); };
+                solve() using { parent == sized_context_parent(up_model, stop); };
             }
             apply(sized_context_depth_nonnegative(up_model));
             have 0 <= sized_context_depth(up.model) by { rewrite(up.model, up_model); known(); }
@@ -187,7 +187,7 @@ tactic restore_sized_context(child: struct rb_node*, root: struct rb_node*,
                 rewrite(lifted.model, SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)));
                 rewrite(up.model, up_model);
                 unfold(sized_parent_is(SizedTree::Node(node, parent, color, value, sibling_model, old(sub.model)), sized_context_parent(up_model, stop)));
-                normalize() using { parent == sized_context_parent(up_model, stop); };
+                solve() using { parent == sized_context_parent(up_model, stop); };
             }
             apply(sized_context_depth_nonnegative(up_model));
             have 0 <= sized_context_depth(up.model) by { rewrite(up.model, up_model); known(); }
@@ -348,7 +348,7 @@ tactic certify_sized_context(child: struct rb_node*, root: struct rb_node*,
             have sized_context_valid(up_model, to_integer(value)) == 1 by { rewrite(up_model, up.model); known(); }
             have sized_context_valid(SizedContext::Left(node, parent, color, value, sibling_model, up_model), to_integer(previous)) == 1 by {
                 unfold(sized_context_valid(SizedContext::Left(node, parent, color, value, sibling_model, up_model), to_integer(previous)));
-                normalize() using {
+                solve() using {
                     to_integer(value) == 1 + to_integer(previous) + to_integer(sized_value(sibling_model));
                     sized_counts_valid(sibling_model) == 1;
                     sized_context_valid(up_model, to_integer(value)) == 1;
@@ -375,7 +375,7 @@ tactic certify_sized_context(child: struct rb_node*, root: struct rb_node*,
             have sized_context_valid(up_model, to_integer(value)) == 1 by { rewrite(up_model, up.model); known(); }
             have sized_context_valid(SizedContext::Right(node, parent, color, value, sibling_model, up_model), to_integer(previous)) == 1 by {
                 unfold(sized_context_valid(SizedContext::Right(node, parent, color, value, sibling_model, up_model), to_integer(previous)));
-                normalize() using {
+                solve() using {
                     to_integer(value) == 1 + to_integer(sized_value(sibling_model)) + to_integer(previous);
                     sized_counts_valid(sibling_model) == 1;
                     sized_context_valid(up_model, to_integer(value)) == 1;

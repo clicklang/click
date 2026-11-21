@@ -14,7 +14,7 @@ theorem positive(n: Integer) {
 
 theorem nonpositive(n: Integer) {
     requires n <= 0;
-    ensures true by { normalize(); }
+    ensures true by { solve(); }
 }
 theorem integer_literal_argument() {
     ensures true by {

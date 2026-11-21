@@ -139,13 +139,13 @@ void clear_data(struct region* region) {
             }
             step();
             have separate(loop(0).statement(0).footprint, at(opened, memory(arena->data))) by {
-                normalize() using { at(opened, separate(memory(arena->data[i]), memory(arena->data))); };
+                solve() using { at(opened, separate(memory(arena->data[i]), memory(arena->data))); };
             }
             have separate(loop(0).statement(0).footprint, at(opened, memory(region->arena))) by {
-                normalize() using { at(opened, separate(memory(arena->data[i]), memory(region->arena))); };
+                solve() using { at(opened, separate(memory(arena->data[i]), memory(region->arena))); };
             }
             have separate(loop(0).statement(0).footprint, at(opened, memory(region->arena->occupied))) by {
-                normalize() using { at(opened, separate(memory(arena->data[i]), memory(region->arena->occupied))); };
+                solve() using { at(opened, separate(memory(arena->data[i]), memory(region->arena->occupied))); };
             }
             have arena->data == at(opened, arena->data) by {
                 preserve(at(opened, memory(arena->data)), loop(0).statement(0));
@@ -163,7 +163,7 @@ void clear_data(struct region* region) {
             }
             // Select the complete int32 cell, excluding the struct's tail padding.
             have separate(loop(0).statement(0).footprint, at(opened, memory((&arena->capacity)[0..1]))) by {
-                normalize() using { at(opened, separate(memory(arena->data[i]), memory((&arena->capacity)[0..1]))); };
+                solve() using { at(opened, separate(memory(arena->data[i]), memory((&arena->capacity)[0..1]))); };
             }
             have arena->capacity == at(opened, arena->capacity) by {
                 preserve(at(opened, memory((&arena->capacity)[0..1])), loop(0).statement(0));
@@ -183,7 +183,7 @@ void clear_data(struct region* region) {
                 }
                 // Select the preserved cell as one complete int32 observation.
                 have contains(at(opened, memory(region->arena->occupied[k])), at(opened, memory((&region->arena->occupied[k])[0..1]))) by { normalize(); }
-                have contains(at(opened, memory(arena->data[i])), at(opened, memory(arena->data[i]))) by { normalize(); }
+                have contains(at(opened, memory(arena->data[i])), at(opened, memory(arena->data[i]))) by { apply(click::separation::contains_refl(at(opened, memory(arena->data[i])))) using {}; }
                 have separate(at(opened, memory(arena->data[i])), at(opened, memory((&region->arena->occupied[k])[0..1]))) by {
                     apply(click::separation::separate_restrict(at(opened, memory(arena->data[i])), at(opened, memory(region->arena->occupied[k])), at(opened, memory(arena->data[i])), at(opened, memory((&region->arena->occupied[k])[0..1])))) using {
                         contains(at(opened, memory(arena->data[i])), at(opened, memory(arena->data[i])));
@@ -250,7 +250,7 @@ void clear_data(struct region* region) {
                 solve() using { at(opened, i) <= 2147483646; };
             }
             have to_integer(i) == to_integer(at(opened, i)) + 1 by {
-                normalize() using {
+                solve() using {
                     -2147483648 <= to_integer(at(opened, i)) + 1;
                     to_integer(at(opened, i)) + 1 <= 2147483647;
                 };

@@ -33,8 +33,13 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
                 contains(memory(p[0..len]), memory(p[i..i + 1]));
             };
         }
-        have contains(kept, kept) by { normalize(); }
-        have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
+        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)) using {}; }
+        have contains(memory(p[i..i + 1]), memory(p[i])) by {
+            have i < ((i + 1) as int32) by solve() using { i <= 2147483646; };
+            apply(separation::contains_element(p, i, i + 1, i)) using {
+                defined(i + 1); i <= i; i < ((i + 1) as int32);
+            };
+        }
         apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
             defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
             contains(memory(p[i..i + 1]), memory(p[i]));
@@ -104,7 +109,7 @@ void fill(struct arena *arena, int32 start, int32 end) {
             }
             step();
             have separate(loop(0).statement(0).footprint, memory(arena->occupied)) by {
-                normalize() using {
+                solve() using {
                     at(opened, separate(memory(arena->occupied), memory(arena->occupied[i])));
                 };
             }
@@ -112,7 +117,7 @@ void fill(struct arena *arena, int32 start, int32 end) {
                 preserve(memory(arena->occupied), loop(0).statement(0));
             }
             have arena->occupied == old(arena->occupied) by {
-                normalize() using {
+                solve() using {
                     arena->occupied == at(opened, arena->occupied);
                     at(opened, arena->occupied) == old(arena->occupied);
                 };

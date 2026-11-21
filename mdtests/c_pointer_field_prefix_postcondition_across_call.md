@@ -96,7 +96,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             };
         }
         have separate(statement(5).footprint, memory(old(owner->data)[k])) by {
-            normalize() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
+            solve() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
         }
         have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
             preserve(memory(old(owner->data)[k]), statement(5));

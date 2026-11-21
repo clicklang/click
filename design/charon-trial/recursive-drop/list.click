@@ -182,7 +182,7 @@ impl recursive_drop::Stack {
                 have at(region(40).exit, old(self.head).next) == at(region(40).entry, old(self.head).next) by {
                     preserve(at(before_pop, memory(self.head.next)), region(40));
                 }
-                have separate(region(53).footprint, memory(self.head)) by { normalize() using {
+                have separate(region(53).footprint, memory(self.head)) by { solve() using {
                     at(before_pop, separate(memory(*self.head), memory(self.head)));
                 }; }
                 have at(region(53).exit, self.head) == at(region(53).entry, self.head) by {
