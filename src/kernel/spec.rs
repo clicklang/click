@@ -6146,8 +6146,11 @@ fn lower_spec_predicate_proposition_at_state_in(
                         }
                         _ => None,
                     };
+                    // Without an entry version the argument names the source
+                    // memory, so keep its recorded path: the body then reads the
+                    // same cell versions as a proposition lowered at the source.
                     arguments.push(Term::ArrayReadPoint(
-                        point.unwrap_or_else(|| ProgramPoint::at(source.shared_memory())),
+                        point.unwrap_or_else(|| source.for_legacy_read()),
                     ));
                 }
                 arguments.push(Term::ProgramValue(argument_path.value.clone().into()));

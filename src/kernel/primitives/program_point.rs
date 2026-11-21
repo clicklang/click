@@ -1228,6 +1228,13 @@ impl ProgramPoint {
         self
     }
 
+    /// The same view identified by its memory, as an unselected point is.
+    /// Reads through it still use the recorded path's cell versions.
+    pub(in crate::kernel) fn for_legacy_read(mut self) -> Self {
+        self.read = ReadSelection::Legacy;
+        self
+    }
+
     pub(crate) fn is_exact_read(&self) -> bool {
         matches!(self.read, ReadSelection::Exact) && self.id().is_some()
     }
