@@ -1638,15 +1638,30 @@ fn known_constructor_order_looks_up_only_the_selected_payload_bound() {
                 9,
             ));
         }
+        let sibling = PureFactStore::from_ordered(&premises[1..]);
+        let written = bound(matched.clone(), 9);
+        let context = sibling.assumptions();
+        let (interval, admission_work) = crate::instrumentation::measure_deterministic_work(|| {
+            context
+                .clone()
+                .assume_proposition(written)
+                .indexed_constant_interval(&payload)
+        });
+        assert_eq!(interval, Some((i64::from(i32::MIN), 8)));
+        assert_eq!(
+            context.indexed_constant_interval(&payload),
+            Some((i64::from(i32::MIN), 99))
+        );
         let facts = PureFactStore::from_ordered(&premises);
-        [9, 8].map(|upper| {
+        let known_work = [9, 8].map(|upper| {
             let proof = known_computation_proof(bound(matched.clone(), upper), facts.clone());
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 proof.apply_known(PropositionKnownContext::Exact)
             });
             assert_eq!(result.is_ok(), upper == 9);
             work
-        })
+        });
+        [admission_work, known_work[0], known_work[1]]
     });
     for work in measurements {
         for (sample, baseline) in work.into_iter().zip(measurements[0]) {

@@ -544,7 +544,7 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
     }
 }
 
-pub(super) fn reduce_known_int32_match_operands(
+fn reduce_known_int32_match_operands(
     condition: &ConditionTerm,
 ) -> Option<(CompareRelation, [Cow<'_, MachineTerm>; 2])> {
     use crate::kernel::proof::term_rewrite::TermRewrite;
@@ -565,6 +565,18 @@ pub(super) fn reduce_known_int32_match_operands(
         .iter()
         .any(|operand| matches!(operand, Cow::Owned(_)))
         .then_some((*relation, operands))
+}
+
+pub(in crate::kernel) fn reduce_known_int32_match_comparison(
+    condition: &ConditionTerm,
+) -> Option<ConditionTerm> {
+    let (relation, [left, right]) = reduce_known_int32_match_operands(condition)?;
+    Some(ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation,
+        left: Box::new(left.into_owned()),
+        right: Box::new(right.into_owned()),
+    })
 }
 
 pub(super) fn known_int32_match_comparison_value(condition: &ConditionTerm) -> Option<bool> {
