@@ -84,6 +84,11 @@ fn caller_int64_reads_keep_the_entry_point() {
     assert_caller_integer_reads_keep_the_entry_point(&[ProgramType::Int64, ProgramType::UInt64]);
 }
 
+#[test]
+fn caller_int128_reads_keep_the_entry_point() {
+    assert_caller_integer_reads_keep_the_entry_point(&[ProgramType::Int128, ProgramType::UInt128]);
+}
+
 fn assert_caller_integer_reads_keep_the_entry_point(value_types: &[ProgramType]) {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Address {
