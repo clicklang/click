@@ -1196,17 +1196,20 @@ pub(in crate::surface::proof) fn walk_loop_body<'a>(
             pending.extend(preservation_step_paths(&proof)?);
             continue;
         }
+        // A path may already know the condition, for example from assigning
+        // a comparison to a Boolean local. Retain its checked branch step.
+        let error = match preservation_smart_step(&proof) {
+            Ok(stepped) => {
+                pending.push(stepped);
+                continue;
+            }
+            Err(error) => error,
+        };
+        check_verification_deadline()?;
         // A Rust `match` arm's variant test splits into the variants the
         // facts leave live, each its own path to the back edge, as the
         // function's implicit tail splits it and as a written `match` would.
         if proof.is_at_enum_match_test()? {
-            let error = match preservation_smart_step(&proof) {
-                Ok(stepped) => {
-                    pending.push(stepped);
-                    continue;
-                }
-                Err(error) => error,
-            };
             let Some(split) = error.path_case_match().cloned() else {
                 return Err(error);
             };

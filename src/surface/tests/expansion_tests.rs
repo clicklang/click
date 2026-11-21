@@ -15056,6 +15056,23 @@ fn quantified_outcome_solve_keeps_its_binder_on_the_checked_goal() {
 }
 
 #[test]
+fn expanded_finite_postconditions_replay_enumeration() {
+    let (source, sources) = mdtest_sources(
+        "mdtests/an_unfolded_quantifier_with_a_same_named_argument_proves_a_true_claim.md",
+    );
+    let sources = crate::cli::source_refs(&sources);
+    for claim in ["f.ensures_0", "f.ensures_1"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+            .unwrap_or_else(|error| panic!("{claim}\n{}", error.report()));
+        assert!(expanded.contains("enumerate();"), "{claim}\n{expanded}");
+        check_audit_claim(claim, true, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{claim}\n{error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_60")]
 fn outcome_solve_with_no_open_claims_is_an_empty_proof_transition() {
     let c_source = r#"
@@ -19240,6 +19257,19 @@ fn named_loop_comparisons_expand_and_cold_replay() {
         assert_ne!(source, omitted);
         assert!(verify_c_sources(&omitted, &program).is_err());
     }
+}
+
+#[test]
+fn stored_break_test_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/a_stored_break_test_closes_the_back_edge.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "first_stop.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]
