@@ -1883,6 +1883,7 @@ pub(super) struct InitialClaimContext {
     pub(super) pure_facts: PureFactList,
     pub(super) entry_fact_origins: Vec<EntryFactOrigin>,
     pub(super) surface_propositions: SurfacePropositionMap,
+    pub(super) entry_separation_sources: Arc<EntrySeparationSources>,
 }
 
 #[cfg(test)]
@@ -2470,9 +2471,9 @@ pub(super) fn initial_claim_context_with_caller_owner(
     // this is the authority for both direct and named contracts.  A surface
     // segment diagnostic is used only to enrich a kernel refusal, never to
     // authorize a clause independently.
-    let entry_partition_facts;
+    let mut entry_separation_sources = EntrySeparationSources::default();
     let entry_quantity_facts;
-    (state, entry_partition_facts, entry_quantity_facts) = evaluate_entry_resource_context(
+    (state, entry_quantity_facts) = evaluate_entry_resource_context(
         function_block,
         parsed_function,
         resource_environment,
@@ -2484,15 +2485,16 @@ pub(super) fn initial_claim_context_with_caller_owner(
         claim_label,
         &entry_authority_state.resources().clone(),
         &entry_authority_state,
+        &mut entry_separation_sources,
     )?;
     // The entry partition facts are entry assumptions of this contract, on the
     // same footing as the `viewable(..)` fact a clause yields: they are
     // derived from the written clause list. They are the proof side's
     // spelling of what the kernel's contract entry states; a proof keeps one
     // only when the entry states it (`contract_entry_view`).
-    for fact in entry_partition_facts {
-        if !requirement_pure_facts.contains(&fact) {
-            requirement_pure_facts.push(fact);
+    for fact in &entry_separation_sources.facts {
+        if !requirement_pure_facts.contains(fact) {
+            requirement_pure_facts.push(fact.clone());
             entry_fact_origins.push(EntryFactOrigin::Derived);
         }
     }
@@ -2576,6 +2578,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         pure_facts: requirement_pure_facts,
         entry_fact_origins,
         surface_propositions,
+        entry_separation_sources: Arc::new(entry_separation_sources),
     })
 }
 
@@ -2803,16 +2806,20 @@ fn evaluate_entry_resource_context(
     claim_label: &str,
     entry_resources: &ResourceContext,
     entry_memory_state: &ExecutionState,
-) -> Result<(ExecutionState, Vec<Proposition>, Vec<Proposition>), ClickError> {
+    separation_sources: &mut EntrySeparationSources,
+) -> Result<(ExecutionState, Vec<Proposition>), ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
-    let (resource_specs, _) = crate::surface::verification::function_resource_summary(
-        function_block,
-        parsed_function,
-        spec_definitions,
-        resource_environment,
-    )?;
+    let mut range_sources = BTreeMap::new();
+    let (resource_specs, _) =
+        crate::surface::verification::function_resource_summary_with_entry_ranges(
+            function_block,
+            parsed_function,
+            spec_definitions,
+            resource_environment,
+            Some(&mut range_sources),
+        )?;
     if resource_specs.is_empty() {
-        return Ok((state, Vec::new(), Vec::new()));
+        return Ok((state, Vec::new()));
     }
 
     // The kernel evaluator resolves source parameter names through its local
@@ -2993,7 +3000,18 @@ fn evaluate_entry_resource_context(
     // owner observation `views r` that `owns r` publishes, and that view is
     // not separate from its own owner. Contract certification derives the
     // same facts from the same clause list, so the two entry contexts agree.
-    let entry_partition_facts = crate::kernel::contract_entry_partition_facts(&entry_clauses);
+    separation_sources.facts = crate::kernel::contract_entry_partition_facts(&entry_clauses);
+    if !separation_sources.facts.is_empty() {
+        for clause in &entry_clauses {
+            if let Resource::Memory(range) = clause.fact.resource()
+                && let Some(source) = clause
+                    .section_index
+                    .and_then(|index| range_sources.remove(&index))
+            {
+                separation_sources.ranges.insert(range.clone(), source);
+            }
+        }
+    }
     // Quantity guards are implicit requirements, just as they are in the
     // kernel's certified entry. Retain them in the proof context as well;
     // otherwise the checked boundary loses the very premise used above to
@@ -3008,7 +3026,7 @@ fn evaluate_entry_resource_context(
         include_owned_composite_cores,
         spec_definitions,
     )?;
-    Ok((state, entry_partition_facts, entry_quantity_facts))
+    Ok((state, entry_quantity_facts))
 }
 
 fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
