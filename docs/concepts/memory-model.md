@@ -66,7 +66,8 @@ and their named runs can use the certified point where they were observed.
 An explicit `exact(place)` of a float cell names its bits at the selected
 program point. A symbolic index into a copied run uses the same displacement
 within the captured source range and retains its recorded read version when
-available.
+available. A checked scalar-array copy captures unknown source slots at the
+point before the copy.
 
 `exact(place)` keys the read by the selected program point when one is
 available. Raising uses `exact` at that point, even if another point has

@@ -6251,6 +6251,7 @@ impl SymbolicMemory {
 
     /// Checked compact initialization of one fresh automatic scalar array.
     /// The caller has separately checked read/write authority and coercion.
+    #[cfg(test)]
     pub(in crate::kernel) fn initialize_scalar_array(
         self,
         base: &Address,
@@ -6271,6 +6272,29 @@ impl SymbolicMemory {
     }
 
     pub(in crate::kernel) fn write_scalar_array_region(
+        self,
+        base: &Address,
+        element_type: ProgramType,
+        count: u32,
+        value: ProgramValue,
+        copy: bool,
+        fresh: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, RuntimeError> {
+        self.write_scalar_array_region_at(
+            base,
+            element_type,
+            count,
+            value,
+            copy,
+            fresh,
+            assumptions,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::kernel) fn write_scalar_array_region_at(
         mut self,
         base: &Address,
         element_type: ProgramType,
@@ -6279,6 +6303,7 @@ impl SymbolicMemory {
         copy: bool,
         fresh: bool,
         assumptions: &PureFactContext,
+        copy_source: Option<&ProgramPoint>,
     ) -> Result<Self, RuntimeError> {
         let bytes = count
             .checked_mul(element_type.byte_width())
@@ -6290,7 +6315,7 @@ impl SymbolicMemory {
             || self.cells.runs_in_block(&source.address().base)
                 .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
         if !base.base.is_local_block() || state_copy {
-            return self.write_scalar_array_state(
+            return self.write_scalar_array_state_at(
                 base,
                 element_type,
                 count,
@@ -6298,6 +6323,7 @@ impl SymbolicMemory {
                 copy,
                 fresh,
                 assumptions,
+                copy_source,
             );
         }
         let valid_region = |pointer: &Address| {
@@ -6453,7 +6479,7 @@ impl SymbolicMemory {
                 // automatic storage. Copy the current state's unknown
                 // lanes just as for external initialized storage, retaining
                 // the represented lanes and the checks above.
-                return self.write_scalar_array_state(
+                return self.write_scalar_array_state_at(
                     base,
                     element_type,
                     count,
@@ -6461,6 +6487,7 @@ impl SymbolicMemory {
                     copy,
                     fresh,
                     assumptions,
+                    copy_source,
                 );
             }
         } else {
@@ -6513,6 +6540,29 @@ impl SymbolicMemory {
     // storage follows ordinary typed-load semantics: unknown initialized
     // bytes remain symbolic. Known automatic storage must be initialized.
     pub(in crate::kernel) fn write_scalar_array_state(
+        self,
+        base: &Address,
+        element: ProgramType,
+        count: u32,
+        value: ProgramValue,
+        copy: bool,
+        fresh: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, RuntimeError> {
+        self.write_scalar_array_state_at(
+            base,
+            element,
+            count,
+            value,
+            copy,
+            fresh,
+            assumptions,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn write_scalar_array_state_at(
         mut self,
         base: &Address,
         element: ProgramType,
@@ -6521,6 +6571,7 @@ impl SymbolicMemory {
         copy: bool,
         fresh: bool,
         assumptions: &PureFactContext,
+        copy_source: Option<&ProgramPoint>,
     ) -> Result<Self, RuntimeError> {
         let bytes = count
             .checked_mul(element.byte_width())
@@ -6572,7 +6623,6 @@ impl SymbolicMemory {
         {
             return Err(RuntimeError::FunctionContract("scalar-array retained_state requires valid aligned storage; fresh storage must be complete and empty".into()));
         }
-        let retained_state = crate::kernel::intern_memory(self.clone());
         let mut captured_runs = Vec::new();
         let mut captured_cells = Vec::new();
         if copy {
@@ -6671,12 +6721,16 @@ impl SymbolicMemory {
                 ));
             }
             if represented != IndexIntervals::full(count) {
-                captured_runs.push(CellRun::new_with_mode(
+                let source = copy_source
+                    .filter(|point| point.has_certified_read_view())
+                    .cloned()
+                    .unwrap_or_else(|| ProgramPoint::of_memory(&self));
+                captured_runs.push(CellRun::new_at(
                     base.clone(),
                     element.byte_width(),
                     element,
                     count,
-                    retained_state,
+                    source,
                     RunValueMode::Copy {
                         source_base: pointer.clone(),
                     },
