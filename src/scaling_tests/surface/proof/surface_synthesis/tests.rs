@@ -9,8 +9,13 @@ fn read_origin_raising_ignores_other_points_with_equal_memory() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = ExecutionState::new().begin_function_entry_memory();
     let point = source.program_point();
-    let exact = point.clone().for_exact_read();
-    let slot = Address::symbolic(Variable(1_009_312));
+    let slot = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let indexed = point
+        .ordinary_typed_version(&slot, ProgramType::Int32)
+        .expect("the read selects its function-entry point");
     let mark = ProgramPointSelector::Mark("original_read".into());
     let current = ExecutionState::new().begin_function_entry_memory();
     let operand = SurfaceTerm::IntegerLiteral("7".into());
@@ -29,7 +34,7 @@ fn read_origin_raising_ignores_other_points_with_equal_memory() {
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(points.point_reading_load(&point, &slot).unwrap().0, &mark);
             let _points = SynthesisRecordedPointsScope::enter(&points);
-            for retained in [&point, &exact] {
+            for retained in [&point, &indexed] {
                 assert_eq!(
                     synthesize_at_read_origin(retained, &current, |_| Some(operand.clone())),
                     Some(named.clone()),
@@ -51,7 +56,7 @@ fn read_origin_raising_ignores_other_points_with_equal_memory() {
     points.insert(mark, replacement);
     let _points = SynthesisRecordedPointsScope::enter(&points);
     assert_eq!(
-        synthesize_at_read_origin(&exact, &current, |_| Some(operand.clone())),
+        synthesize_at_read_origin(&indexed, &current, |_| Some(operand.clone())),
         None
     );
 }
