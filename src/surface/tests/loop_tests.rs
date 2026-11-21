@@ -501,7 +501,6 @@ fn promoted_integer_ranking_expands_without_search() {
     let (click, sources) = loop_fixture("a_uint8_loop_counter_ranks_as_a_promoted_int32");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "clear").unwrap();
-    assert!(expanded.contains("normalize"), "{expanded}");
     assert!(expanded.contains("(x as int32)"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
 }

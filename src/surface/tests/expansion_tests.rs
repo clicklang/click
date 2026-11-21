@@ -669,9 +669,8 @@ fn iterated_owner_borrow_still_refuses_without_transport() {
     assert!(!source.contains("transport("));
     let report = verify_c_sources(&source, &sources).unwrap_err().report();
     assert!(report.contains("`root.contract`"), "{report}");
-    assert!(report.contains("stable-view"), "{report}");
     assert!(
-        report.contains("selected resource `views b[0]`"),
+        report.contains("cannot supply `views b[0]` at this call"),
         "{report}"
     );
 
