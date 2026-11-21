@@ -221,3 +221,46 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
     );
     assert!(samples.iter().all(|work| *work < 2048), "{samples:?}");
 }
+
+#[test]
+fn symbolic_alignment_known_work_ignores_other_recorded_alignments() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base: AddressBase = "symbolic-alignment-target".into();
+    let at = |base, offset, alignment| {
+        Proposition::condition_is(
+            ConditionTerm::pointer_aligned(Address { base, offset }, alignment),
+            true,
+        )
+    };
+    let premise = at(base.clone(), AddressOffset::Constant(0), 8);
+    let i = MachineTerm::Variable(crate::kernel::Variable(899_012));
+    let goals = [8, 4].map(|width| {
+        at(
+            base.clone(),
+            AddressOffset::scaled_int32_node(i.clone(), width),
+            8,
+        )
+    });
+    let samples = [8, 32, 64].map(|size| {
+        let mut facts = crate::kernel::PureFactContext::new().assume_proposition(premise.clone());
+        for j in 1..=size {
+            for block in [
+                base.clone(),
+                format!("symbolic-alignment-other-{j}").as_str().into(),
+            ] {
+                facts = facts.assume_proposition(at(block, AddressOffset::Constant(j * 8), 8));
+            }
+        }
+        let (results, work) = crate::instrumentation::measure_deterministic_work(|| {
+            goals
+                .each_ref()
+                .map(|goal| known_pointer_alignment(goal, &facts))
+        });
+        assert_eq!(results, [true, false]);
+        work
+    });
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}

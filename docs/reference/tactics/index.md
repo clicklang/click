@@ -1682,6 +1682,11 @@ alignment of a null, heap, global or static address reads only that address's
 block registration and constant byte offset. It does not search alignment facts
 or infer alignment for a symbolic offset.
 
+For a written alignment goal, `known()` may also look up the base's recorded
+alignment by coordinate. A constant byte displacement or a symbolic index at
+a stride divisible by the requested alignment preserves the corresponding
+residue. The check probes only the base and the supported alignment strengths.
+
 The same fixed local check accepts intrinsic machine type ranges and
 constant-divisor quotient, remainder, and right-shift bounds. This includes
 `x % d < d` and its exact Integer reading for a positive machine literal `d`.

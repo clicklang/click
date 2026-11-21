@@ -1106,6 +1106,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             return Ok(self.closed_focused());
         }
         if super::fact_reasoning::computes_leaf(proposition)
+            || super::arithmetic_special::known_pointer_alignment(proposition, facts.assumptions())
             || super::fact_reasoning::known_bridge_leaf(proposition, &available)
             || crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                 proposition,
@@ -1130,6 +1131,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     .iter()
                     .any(|form| facts.contains(form))
                 || super::fact_reasoning::computes_leaf(side)
+                || super::arithmetic_special::known_pointer_alignment(side, facts.assumptions())
                 || super::fact_reasoning::known_bridge_leaf(side, &available)
         };
         match first_unavailable_connective_side(proposition, &side_available) {

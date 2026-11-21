@@ -748,7 +748,7 @@ src/surface/proof/smart_closures/quotient_shifts.rs	search	ProofSearch::try_quot
 src/surface/proof/smart_closures/quotient_shifts.rs	search	ProofSearch::try_quotient_shift_using	try_integer_algebra	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_integer_algebra	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_quotient_shift_using	1
-src/surface/proof/smart_closures/address_words.rs	search	ProofSearch::try_address_words_using	driver	5
+src/surface/proof/smart_closures/address_words.rs	search	ProofSearch::try_address_words_using	driver	6
 src/surface/proof/smart_closures/specialized.rs	search	ProofSearch::apply_specialized_composition	try_address_words_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	try_address_words_using	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	try_address_words_using	1
