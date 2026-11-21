@@ -36,6 +36,28 @@ reported as not checkable. The fact-stability headline counts lowerings
 whose term facts changed (`differs`) or among whose paths facts chose
 (`paths`); `refused` lowerings are tracked.
 
+### Reading and reproducing failures
+
+After its headline, a lowering audit prints its first ten failures in full:
+the outcome, the claim (raise-lower) or lowering site (fact stability), the
+container, the fact as rendered, its raised form or fact-free lowering, what
+that lowered to for `differs`, and a command that reproduces just that
+failure:
+
+```text
+raise-lower audit: 4 failing of 22 facts checked (18.2%); 6 not checkable (no fixed state); ...
+  4. unraised in `arena_release.contract` (mdtests/arena_prefix_free_reads_region_arena.md)
+       fact: viewable((byte_offset(old(region->arena), s * 4) as (uint8 *))[0..(e - s) * 4])
+       reproduce: click audit raise-lower --claim arena_release.contract mdtests/arena_prefix_free_reads_region_arena.md
+```
+
+Every failure, with its reproduce command, is in `raise-lower.failures.tsv` or
+`fact-stability.failures.tsv` beside the records: outcome, container, claim or
+site, fact, raised form or fact-free lowering, lowered form, command. A
+reproduce command audits only that container, and `--claim CLAIM` (repeatable)
+counts and lists only that claim's raise-lower facts. The expansion audit
+prints a reproduce command for each failing site in the same way.
+
 A container that does not verify as its expectation says is counted after
 the headline and listed in `raise-lower.unexpected.tsv` or
 `fact-stability.unexpected.tsv`. The audit does not judge it: the gate and the

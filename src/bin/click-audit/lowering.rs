@@ -15,6 +15,8 @@ use super::{AuditSource, audit_targets, load_audit_source};
 /// The outcome of one lowering audit run.
 pub(super) struct LoweringReport {
     pub(super) headline: String,
+    /// The failures in full, or the first of them, with reproduce commands.
+    pub(super) failures: String,
     /// Containers that did not verify as their expectation says. The gate
     /// and the slow-tests job own those verdicts; the audit lists them so a
     /// count it reports can be read beside them.
@@ -34,6 +36,7 @@ pub(super) fn run(
     audit: LoweringAudit,
     path: &Path,
     records: &Path,
+    claims: &[String],
 ) -> Result<LoweringReport, String> {
     let targets = audit_targets(path)?;
     if let Some(parent) = records.parent() {
@@ -58,11 +61,27 @@ pub(super) fn run(
     audit
         .record_to(None)
         .map_err(|error| format!("failed to close `{}`: {error}", records.display()))?;
-    let lines = fs::read_to_string(records).unwrap_or_default();
+    let mut lines = fs::read_to_string(records).unwrap_or_default();
+    if !claims.is_empty() && audit == LoweringAudit::RaiseLower {
+        lines = lines
+            .lines()
+            .filter(|line| {
+                line.split('\t')
+                    .nth(3)
+                    .is_some_and(|claim| claims.iter().any(|selected| selected == claim))
+            })
+            .map(|line| format!("{line}\n"))
+            .collect();
+    }
     let counts = match audit {
         LoweringAudit::RaiseLower => raise_lower_counts(&lines),
         LoweringAudit::FactStability => fact_stability_counts(&lines, checked),
     };
+    let failures = match audit {
+        LoweringAudit::RaiseLower => raise_lower_failures(&lines),
+        LoweringAudit::FactStability => fact_stability_failures(&lines),
+    };
+    write_failures(audit, &failures, records)?;
     let unexpected_outcomes = unexpected
         .into_iter()
         .map(|(index, message)| format!("{}: {message}", targets[index].display()))
@@ -79,8 +98,170 @@ pub(super) fn run(
     .map_err(|error| format!("failed to write `{}`: {error}", changed_path.display()))?;
     Ok(LoweringReport {
         headline: headline(audit, &counts, records),
+        failures: render_failures(audit, &failures, records),
         unexpected_outcomes,
     })
+}
+
+/// `path` relative to the current directory when it lies under it, without
+/// a leading `./`.
+fn relative_path(path: &Path) -> PathBuf {
+    let relative = std::env::current_dir()
+        .ok()
+        .and_then(|directory| path.strip_prefix(directory).ok().map(Path::to_path_buf))
+        .unwrap_or_else(|| path.to_path_buf());
+    relative
+        .strip_prefix(".")
+        .map(Path::to_path_buf)
+        .unwrap_or(relative)
+}
+
+/// How many failures a run prints in full; the rest are in the failures file.
+const PRINTED_FAILURES: usize = 10;
+
+/// One distinct failing fact (raise-lower) or lowering (fact stability), as
+/// a reader picks it to fix.
+struct Failure {
+    outcome: String,
+    /// The fact's kind (raise-lower), or the lowering site (fact stability):
+    /// what failures of one shape share.
+    kind: String,
+    container: String,
+    /// The raise-lower claim, or the fact-stability lowering site.
+    place: String,
+    original: String,
+    /// The raised Surface form, or the fact-free lowering.
+    other: String,
+    /// What the raised form lowered to, for `differs`.
+    lowered: String,
+}
+
+impl Failure {
+    /// The command that checks just this failure's container (and claim).
+    fn reproduce(&self, audit: LoweringAudit) -> String {
+        let container = cli::shell_quote(&self.container);
+        match audit {
+            LoweringAudit::RaiseLower => format!(
+                "click audit raise-lower --claim {} {container}",
+                cli::shell_quote(&self.place)
+            ),
+            LoweringAudit::FactStability => format!("click audit fact-stability {container}"),
+        }
+    }
+}
+
+/// Each distinct failing raise-lower fact, in record order.
+fn raise_lower_failures(lines: &str) -> Vec<Failure> {
+    let mut seen = BTreeSet::new();
+    let mut failures = Vec::new();
+    for line in lines.lines() {
+        let fields = line.split('\t').collect::<Vec<_>>();
+        let [outcome, _, kind, claim, _, _, original, raised, lowered, ..] = fields[..] else {
+            continue;
+        };
+        let container = fields.get(9).copied().unwrap_or("");
+        if FAILING_ROUND_TRIPS.contains(&outcome) && seen.insert((container, claim, original)) {
+            failures.push(Failure {
+                outcome: outcome.to_string(),
+                kind: kind.to_string(),
+                container: container.to_string(),
+                place: claim.to_string(),
+                original: original.to_string(),
+                other: raised.to_string(),
+                lowered: lowered.to_string(),
+            });
+        }
+    }
+    failures
+}
+
+/// Each distinct fact-dependent lowering, in record order.
+fn fact_stability_failures(lines: &str) -> Vec<Failure> {
+    let mut seen = BTreeSet::new();
+    let mut failures = Vec::new();
+    for line in lines.lines() {
+        let fields = line.split('\t').collect::<Vec<_>>();
+        let [outcome, site, with_facts, fact_free, container, ..] = fields[..] else {
+            continue;
+        };
+        if (outcome == "differs" || outcome.starts_with("paths:"))
+            && seen.insert((container, site, with_facts))
+        {
+            failures.push(Failure {
+                outcome: outcome.to_string(),
+                kind: site.to_string(),
+                container: container.to_string(),
+                place: site.to_string(),
+                original: with_facts.to_string(),
+                other: fact_free.to_string(),
+                lowered: String::new(),
+            });
+        }
+    }
+    failures
+}
+
+/// `<records>.failures.tsv`: outcome, kind, container, claim or site,
+/// original, raised form or fact-free lowering, lowered form, and the
+/// command that reproduces it, one failure per line.
+fn write_failures(
+    audit: LoweringAudit,
+    failures: &[Failure],
+    records: &Path,
+) -> Result<(), String> {
+    let path = records.with_extension("failures.tsv");
+    let text = failures
+        .iter()
+        .map(|failure| {
+            format!(
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                failure.outcome,
+                failure.kind,
+                failure.container,
+                failure.place,
+                failure.original,
+                failure.other,
+                failure.lowered,
+                failure.reproduce(audit)
+            )
+        })
+        .collect::<String>();
+    fs::write(&path, text).map_err(|error| format!("failed to write `{}`: {error}", path.display()))
+}
+
+/// The failures a run prints: each in full when there are few, otherwise
+/// the first few and where the rest are.
+fn render_failures(audit: LoweringAudit, failures: &[Failure], records: &Path) -> String {
+    let (original, other) = match audit {
+        LoweringAudit::RaiseLower => ("fact", "raised"),
+        LoweringAudit::FactStability => ("with facts", "without facts"),
+    };
+    let mut text = String::new();
+    for (index, failure) in failures.iter().take(PRINTED_FAILURES).enumerate() {
+        text.push_str(&format!(
+            "  {}. {} in `{}` ({})\n       {original}: {}\n",
+            index + 1,
+            failure.outcome,
+            failure.place,
+            failure.container,
+            failure.original,
+        ));
+        if !failure.other.is_empty() {
+            text.push_str(&format!("       {other}: {}\n", failure.other));
+        }
+        if !failure.lowered.is_empty() {
+            text.push_str(&format!("       lowered: {}\n", failure.lowered));
+        }
+        text.push_str(&format!("       reproduce: {}\n", failure.reproduce(audit)));
+    }
+    if failures.len() > PRINTED_FAILURES {
+        text.push_str(&format!(
+            "  ... and {} more; each with its reproduce command in {}\n",
+            failures.len() - PRINTED_FAILURES,
+            records.with_extension("failures.tsv").display()
+        ));
+    }
+    text
 }
 
 /// What one lowering audit counted.
@@ -147,10 +328,9 @@ fn headline(audit: LoweringAudit, counts: &Counts, records: &Path) -> String {
 /// the container it came from. An outcome its expectation does not predict
 /// is returned as an error.
 fn verify_target(target: &PathBuf) -> Result<(), String> {
-    let thread = target.file_name().map_or_else(
-        || target.display().to_string(),
-        |name| name.to_string_lossy().into_owned(),
-    );
+    // The thread's name names the container in each record, as the path a
+    // reproduce command takes from where the audit ran.
+    let thread = relative_path(target).display().to_string();
     let path = target.clone();
     let outcome = std::thread::Builder::new()
         .name(thread)

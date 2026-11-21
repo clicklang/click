@@ -191,4 +191,41 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
     assert "**Lowering audits rose:** raise-lower `differs` 1201 → 1210" in markdown, markdown
     assert "| raise-lower | `differs` | 1210 | 1201 | **+9** (rose) |" in markdown, markdown
     assert "| raise-lower | `unlowered` | 360 | 367 | -7 |" in markdown, markdown
+
+    # Every audit failure is in failures.tsv with a stable id and the night it
+    # first failed; one new since the previous night is listed in full, and
+    # failures are grouped by shape.
+    import hashlib
+    old_fact = ("unraised", "MemoryLoadable", "mdtests/a.md", "f.contract", "x == 1")
+    new_fact = ("differs", "MemoryLoadable", "mdtests/b.md", "g.contract", "y == 2")
+    (lowering / "raise-lower.failures.tsv").write_text("".join(
+        "\t".join(fact + ("raised", "", f"click audit raise-lower --claim {fact[3]} {fact[2]}")) + "\n"
+        for fact in (old_fact, new_fact)))
+    def run_report(*extra):
+        subprocess.run(
+            ["python3", "-I", str(Path(__file__).with_name("nightly-report.py")),
+             "--input", str(jobs), "--input", str(lowering), "--out", str(out),
+             "--commit", "e" * 40, "--date", "2026-11-21", *extra],
+            check=True, capture_output=True, text=True,
+        )
+        return json.loads((out / "report.json").read_text())
+    first = run_report()
+    assert first["new_audit_failures"] == [], first["new_audit_failures"]
+    old_id = hashlib.sha1("\x1f".join(("raise-lower",) + old_fact[2:]).encode()).hexdigest()[:12]
+    assert set(first["failure_first_seen"]) >= {old_id}, first["failure_first_seen"]
+    previous.write_text(json.dumps({"commit": "0" * 40, "failures": [], "counts": [],
+                                    "failure_first_seen": {old_id: "2026-11-01 000000000000"}}))
+    report = run_report("--previous", str(previous))
+    assert [row["container"] for row in report["new_audit_failures"]] == ["mdtests/b.md"], report
+    rows = [line.split("\t") for line in (out / "failures.tsv").read_text().splitlines()]
+    header, body = rows[0], rows[1:]
+    assert header[0] == "id" and header[-1] == "reproduce", header
+    seen = {row[header.index("container")]: row[header.index("first_seen")] for row in body}
+    assert seen == {"mdtests/a.md": "2026-11-01 000000000000",
+                    "mdtests/b.md": "2026-11-21 eeeeeeeeeeee"}, seen
+    shape = report["shapes"][0]
+    assert (shape["outcome"], shape["count"]) in {("unraised", 1), ("differs", 1)}, report["shapes"]
+    markdown = (out / "report.md").read_text()
+    assert "### New tonight" in markdown and "### By shape" in markdown, markdown
+    assert "`click audit raise-lower --claim g.contract mdtests/b.md`" in markdown, markdown
 print("nightly report: synthetic run summarized")
