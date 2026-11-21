@@ -30,5 +30,5 @@ void probe(int32 *p, int32 x) {
 ```
 
 ```expect
-fail: missing pure fact: at(function.entry, defined(p[0]))
+fail: could not lower resource `label` argument 0: missing pure fact
 ```

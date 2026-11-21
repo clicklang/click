@@ -539,16 +539,6 @@ impl<'a> Proof<'a> {
             facts,
             execution: None,
         });
-        let goal = match &goal.obligation {
-            Obligation::Proposition(proposition) => goal.with_state(BranchState {
-                facts: goal
-                    .state
-                    .facts
-                    .with_selected_load_equality_bridge(proposition.kernel()),
-                execution: goal.state.execution.clone(),
-            }),
-            Obligation::Frontier(_) | Obligation::FunctionOutcome(_) => goal.clone(),
-        };
         Self {
             site: ProofStepSite::default(),
             context: Arc::new(ProofContext::FixedState(FixedStateProofContext {

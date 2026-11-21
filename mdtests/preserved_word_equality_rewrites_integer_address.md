@@ -22,7 +22,7 @@ struct node *caller(struct node *p, struct node *q, struct node *parent) {
     mark before;
     step();
     have separate(statement(0).footprint, memory(p->word)) by {
-        normalize() using { separate(memory(p->word), memory(q->tag)); };
+        solve() using { separate(memory(p->word), memory(q->tag)); };
     }
     have p->word == at(before, p->word) by {
         preserve(memory(p->word), statement(0));

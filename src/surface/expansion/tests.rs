@@ -3497,6 +3497,25 @@ int32 client(int32 x) {
 }
 
 #[test]
+fn load_equality_chain_across_a_call_expands_and_replays() {
+    let path = std::path::Path::new("solve_composes_a_pointer_field_chain_across_a_call.md");
+    let fixture = crate::cli::parse_mdtest(
+        path,
+        &mdtest_markdown("solve_composes_a_pointer_field_chain_across_a_call.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    let expanded = expand_c_claim_source_by_label(source, &sources, "caller.contract")
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(!expanded.contains("solve();"), "{expanded}");
+    crate::surface::check_audit_claim("caller.contract", true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn specification_pointer_load_equality_expands_to_known() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/egraph_resource_pointer_load_alias.md");

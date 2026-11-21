@@ -54,7 +54,8 @@ the indexed versions common to every checked exit.
 Signed and unsigned 64-bit reads share a version of the same 64 bits.
 Signed and unsigned 128-bit reads retain their distinct load kinds.
 The same index serves ordinary Boolean and complete typed pointer reads of
-automatic objects. A Boolean read denotes the logical value of its cell.
+automatic objects. A Boolean read denotes the logical value of its cell. A symbolic Boolean
+read can use its certified observation point when there is no indexed write.
 An object-pointer read names its address, provenance and bounds owner by
 the same read, and the recorded store can supply its complete typed value.
 A function-pointer read has its declared callback signature and the store

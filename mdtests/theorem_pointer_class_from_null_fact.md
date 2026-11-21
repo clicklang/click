@@ -13,7 +13,7 @@ void keep(struct node *p) {}
 verifying "null_class.c";
 
 theorem node_identity(p: struct node*) {
-    ensures p == p by { normalize(); }
+    ensures p == p by { known(); }
 }
 
 void keep(struct node *p) {

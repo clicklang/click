@@ -575,6 +575,7 @@ fn prove_claims_by_checked_tactics(
         pure_facts,
         entry_fact_origins,
         mut surface_propositions,
+        entry_separation_sources,
     } = function_source_registry
         .claim_entries()
         .get_or_build(source_path, function_block, || {
@@ -780,6 +781,11 @@ fn prove_claims_by_checked_tactics(
     let frontier = ExecutionFrontier::default();
     let mut recorded_states =
         RecordedStates::new().with_source_layout(constants.source_layout.clone());
+    if !entry_separation_sources.facts.is_empty()
+        && let Some(point) = state.observation_point_id()
+    {
+        recorded_states.entry_separation_sources = Some((point, entry_separation_sources));
+    }
     record_current_statement_entry(
         &frontier,
         &mut recorded_states,

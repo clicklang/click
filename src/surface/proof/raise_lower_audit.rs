@@ -160,6 +160,40 @@ mod tests {
     }
 
     #[test]
+    fn closed_integer_and_algebraic_conditionals_round_trip() {
+        let c = r#"int32 int_if(int32 x) { return x; }
+int32 alg_if(int32 x) { return x; }
+"#;
+        let source = r#"verifying "anchor.c";
+spec enum Choice { Left, Right }
+
+int32 int_if(int32 x) {
+    ensures forall (n: Integer) {
+        ((if 1 < 2 { n } else { 7 }) : Integer) <= n
+    };
+} by { step_until(function.exit); intro(); normalize(); }
+
+int32 alg_if(int32 x) {
+    ensures forall (n: Integer) {
+        (if 1 == 2 { Choice::Left } else { Choice::Right }) == Choice::Right
+    };
+} by { step_until(function.exit); intro(); normalize(); }
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[("anchor.c", c)]).unwrap();
+        });
+        for claim in ["int_if", "alg_if"] {
+            let marker = format!("\t{claim}.contract\tintro()\twritten\t");
+            assert!(
+                lines.iter().any(|line| line.starts_with("same\tgoal\t")
+                    && line.contains(&marker)
+                    && line.contains("if ")),
+                "{lines:#?}"
+            );
+        }
+    }
+
+    #[test]
     fn a_round_trip_is_classified_by_the_term_it_lowers_to() {
         let less = compare(CompareRelation::LessThan, true);
         assert_eq!(classify(&less, &less), RoundTrip::Same);

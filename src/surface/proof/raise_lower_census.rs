@@ -553,6 +553,52 @@ mod tests {
     }
 
     #[test]
+    fn closed_integer_and_algebraic_comparisons_raise_both_arms() {
+        let fixture = include_str!("../../../mdtests/closed_integer_and_algebraic_conditionals.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        for (claim, guard, then_arm, else_arm) in [
+            ("integer_order", "1 < 2", "x", "y"),
+            ("integer_equality", "false", "x", "y"),
+            (
+                "algebraic_equality",
+                "1 == 2",
+                "Choice::Left",
+                "Choice::Right",
+            ),
+            ("algebraic_argument", "true", "a", "b"),
+        ] {
+            let marker = format!("\t{claim}.ensures_0\tintro()\twritten\t");
+            let written = lines
+                .iter()
+                .filter(|line| line.starts_with("raised\tgoal\t"))
+                .find_map(|line| line.split_once(&marker).map(|(_, written)| written))
+                .unwrap_or_else(|| panic!("missing {marker:?}: {lines:#?}"));
+            for part in [
+                format!("if {guard}"),
+                format!("{{ {then_arm} }}"),
+                format!("{{ {else_arm} }}"),
+            ] {
+                assert!(written.contains(&part), "{written}");
+            }
+        }
+        let wrong = source.replacen("}) == Choice::Right", "}) == Choice::Left", 1);
+        let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
+        assert!(
+            error.to_string().contains("goal did not normalize to true"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn closed_word_equality_guards_keep_their_conditional() {
         let fixture = include_str!("../../../mdtests/closed_word_equality_conditionals.md");
         let source = fixture

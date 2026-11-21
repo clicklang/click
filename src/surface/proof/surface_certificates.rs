@@ -1574,6 +1574,11 @@ pub(super) fn resource_descriptor_rewrite_steps(
                 },
             ..
         }) => Some([base.clone(), start.clone(), end.clone()]),
+        ResourceSubject::SavedMemory {
+            base,
+            start,
+            end: Some(end),
+        } => Some([base.clone(), start.clone(), end.clone()]),
         _ => None,
     };
     let mut steps = Vec::new();

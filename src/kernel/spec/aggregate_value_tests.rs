@@ -1,6 +1,75 @@
 use super::*;
 
 #[test]
+fn unindexed_boolean_loads_use_their_certified_observation_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let pointer = ProgramValue::typed_pointer(address.clone(), ProgramType::UInt8Pointer);
+    let first = ExecutionState::new()
+        .begin_function_entry_memory()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(
+            ResourceFact::view_memory(MemoryRange::access(address.clone(), ProgramType::Bool)),
+        ));
+    let second = first.clone().begin_function_entry_memory();
+    assert_eq!(first.memory(), second.memory());
+
+    let logical = SpecExpression::MemoryLoad {
+        point: SpecPoint::Current,
+        pointer: Box::new(SpecExpression::Value(pointer.clone())),
+        value_type: ProgramType::Bool,
+        exact: false,
+    };
+    let program = ProgramExpression::TypedLoad {
+        pointer: Box::new(ProgramExpression::Value(pointer)),
+        value_type: ProgramType::Bool,
+        volatile: false,
+        pointee_constant: false,
+        access_class: None,
+        source: Default::default(),
+    };
+    let assumptions = PureFactContext::new();
+    for state in [&first, &second] {
+        let expected = ProgramValue::of_bool(ConditionTerm::boolean_cell_read(
+            state.program_point().for_exact_read(),
+            address.clone(),
+        ));
+        let mut execution = ExecutionBudget::new();
+        let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+            SpecScope::unbound(state, None),
+            &logical,
+            &assumptions,
+            &mut SpecEvaluation::logical(&mut execution),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one logical Boolean read");
+        };
+        assert_eq!(path.value.clone().into_native(), expected);
+
+        let paths = crate::kernel::eval::evaluate_expression_value_paths(
+            state,
+            &program,
+            &assumptions,
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one checked Boolean read");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!(
+                "the caller supplies a readable Boolean cell: {:?}",
+                path.outcome
+            );
+        };
+        assert_eq!(value.native().as_ref(), &expected);
+    }
+}
+
+#[test]
 fn logical_pointer_field_uses_current_pointee_memory() {
     use crate::kernel::{AggregateField, AggregateLayout};
     let slot = Address {
@@ -142,4 +211,47 @@ fn held_abstract_loads_keep_their_store_point_in_equality() {
     assert!(!graph.are_algebraic_equal(&first, &second));
     assert!(graph.add_algebraic_equality(&first, &second));
     assert!(graph.are_algebraic_equal(&first, &second));
+}
+
+#[test]
+fn a_held_abstract_read_after_storage_havoc_keeps_its_point() {
+    use crate::kernel::{AggregateLayout, TypeParameterName};
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = SymbolicMemory::local_pointer("abstract_output");
+    let parameter = TypeParameterName::intern("AbstractOutputPoint");
+    let value_type = ProgramType::Parameter(parameter);
+    let bytes = value_type.byte_width();
+    let mut before = ExecutionState::new().with_memory(
+        SymbolicMemory::new()
+            .with_block(slot.base.clone(), bytes)
+            .store(
+                slot.clone(),
+                ProgramValue::Parameter(Box::new(AlgebraicTerm {
+                    algebraic_type: parameter.algebraic_type(),
+                    node: AlgebraicTermNode::Variable(Variable(1008311)),
+                })),
+            ),
+    );
+    before.locals.set_aggregate_object_at(
+        "value",
+        AggregateLayout::holding_value(value_type),
+        slot.clone(),
+    );
+    let effect = MemoryRange::access(slot.clone(), value_type);
+    let after = before.clone().with_memory(
+        before
+            .memory()
+            .clone()
+            .with_storage_memory_havoc(Variable(1008312), &[effect], &PureFactContext::new())
+            .with_initialized_object(&slot, bytes),
+    );
+    assert_ne!(after.observation_point_id(), before.observation_point_id());
+    let ProgramValue::Parameter(read) = after.held_local_value("value").unwrap() else {
+        panic!("held abstract value");
+    };
+    let AlgebraicTermNode::MemoryLoad { point, pointer } = read.node else {
+        panic!("the name reads the abstract object");
+    };
+    assert_eq!(point.read_version_id(), after.observation_point_id());
+    assert_eq!(*pointer, slot);
 }

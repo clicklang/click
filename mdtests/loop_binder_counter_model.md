@@ -55,7 +55,7 @@ void bump_n(struct cell* p, int32 n) {
             have c.count == i by {
                 rewrite(to_integer(c.count), to_integer((old(c.count) + i)));
                 rewrite(at(function.entry, c.count), at(function.entry, 0));
-                normalize();
+                known();
             }
             unfold(c);
             step();

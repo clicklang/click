@@ -46,7 +46,7 @@ void round_trip(struct Box* p, int32 n) {
                 Shape::Node(identity) => {
                     unfold(b);
                     have select(Shape::Node(identity)) == identity by {
-                        unfold(select(Shape::Node(identity))); normalize();
+                        unfold(select(Shape::Node(identity))); known();
                     }
                     let f = fold(frame(p->next), { model: Shape::Node(identity) });
                     unfold(f);

@@ -792,3 +792,55 @@ fn bitwise_guard_comparison_work_scales_with_written_source() {
         assert!(lw * small <= sw * large * 2, "{samples:?}");
     }
 }
+
+#[test]
+fn closed_integer_conditional_lowering_ignores_ambient_bounds() {
+    let _session = VerificationSession::enter();
+    let variable = Variable(999735);
+    let arm = IntegerTerm::var(variable);
+    let expression = SpecIntegerExpression::If {
+        condition: Box::new(SpecProposition::Truth(true)),
+        then_branch: Box::new(SpecIntegerExpression::Term(arm.clone())),
+        else_branch: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(7))),
+    };
+    let mut baseline = None;
+    for size in [0, 16, 64, 256] {
+        let mut facts = PureFactContext::new();
+        for index in 0..size {
+            facts = facts
+                .assume_condition(
+                    ConditionTerm::IntegerLessThan(
+                        arm.clone().into(),
+                        IntegerTerm::constant_i64(index).into(),
+                    ),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::Variable(Variable(999800 + index as u64)),
+                    true,
+                );
+        }
+        let state = ExecutionState::new();
+        let mut execution = ExecutionBudget::new();
+        let (path, work) = crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_spec_integer_comparison_operand_in(
+                SpecScope::unbound(&state, None),
+                &expression,
+                &facts,
+                &mut SpecEvaluation::logical(&mut execution),
+                false,
+            )
+            .unwrap()
+            .remove(0)
+        });
+        assert!(matches!(
+            path.value.into_kernel().node(),
+            KernelTermNode::IntegerIf { .. }
+        ));
+        assert!(path.obligations.is_empty());
+        assert!(
+            work <= *baseline.get_or_insert(work) + 32,
+            "size={size}: {work}"
+        );
+    }
+}

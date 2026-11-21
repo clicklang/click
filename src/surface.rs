@@ -297,7 +297,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "resource",
     "region",
     "rewrite",
-    "same_object",
+    "same_allocation",
     "little_endian",
     "separate",
     "float32_from_bits",
@@ -3685,8 +3685,20 @@ struct RecordedRegionPoints {
     call_results: Vec<(usize, RetainedProgramValue)>,
 }
 
+#[derive(Default)]
+struct EntrySeparationSources {
+    facts: Vec<Proposition>,
+    ranges: BTreeMap<MemoryRange, ContractSegment>,
+}
+
 #[derive(Clone)]
 struct RecordedStates {
+    /// Source ranges from the contract's checked incoming resource section.
+    /// A proof mark at this point can cite their exact pre-copy terms.
+    entry_separation_sources: Option<(
+        crate::kernel::program_point::ProgramPointId,
+        std::sync::Arc<EntrySeparationSources>,
+    )>,
     effect_log: imbl::Vector<crate::kernel::Resource>,
     effect_gaps: imbl::Vector<usize>,
     effect_offsets: imbl::OrdMap<ProgramPointSelector, usize>,
@@ -3822,6 +3834,7 @@ struct RecordedInterfaceMarks {
 impl Default for RecordedStates {
     fn default() -> Self {
         Self {
+            entry_separation_sources: None,
             effect_log: imbl::Vector::new(),
             effect_gaps: imbl::Vector::new(),
             effect_offsets: imbl::OrdMap::new(),

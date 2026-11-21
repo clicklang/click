@@ -1957,6 +1957,62 @@ fn indexed_static_cell_names_the_latest_overlapping_write() {
 }
 
 #[test]
+fn indexed_static_cell_orders_call_ranges_and_stores_on_each_path() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let array = block("global:g");
+    let entry = SymbolicMemory::new().with_block(array.clone(), 1 << 26);
+    let store = entry.store(at(array.clone(), 0), one());
+    let havoc = |before: SymbolicMemory, offset, elements: u32, id| {
+        before.with_storage_memory_havoc(
+            Variable(id),
+            &[MemoryRange::new(
+                at(array.clone(), offset),
+                0u32.into(),
+                elements.into(),
+            )],
+            &PureFactContext::new(),
+        )
+    };
+    let disjoint = havoc(store.clone(), 16, 1u32 << 22, 935_110);
+    let overlap = havoc(disjoint.clone(), 4, 1u32, 935_111);
+    let later = havoc(overlap.clone(), 16, 1u32, 935_112);
+    let rewritten = later
+        .clone()
+        .store(at(array.clone(), 0), crate::kernel::int32(2));
+    let query = |memory: &SymbolicMemory, bytes: u32| {
+        last_same_named_cell(&at(array.clone(), 0), bytes.into(), &point(memory))
+            .expect("cell version")
+    };
+    for memory in [&disjoint, &later] {
+        let read = query(memory, 4);
+        assert_eq!(read.point, point(&store));
+        assert_eq!(read.stopped_by.reason, StopReason::Affected);
+    }
+    let read = query(&later, 8);
+    assert_eq!(read.point, point(&overlap));
+    assert_eq!(
+        read.stopped_by.reason,
+        StopReason::NotShownSeparate(SeparationCheck::RangeDisjointness)
+    );
+    let read = query(&rewritten, 8);
+    assert_eq!(read.point, point(&rewritten));
+    assert_eq!(read.stopped_by.reason, StopReason::Affected);
+    assert_eq!(query(&disjoint, 8).point, point(&store));
+
+    let read_in_large_range =
+        last_same_named_cell(&at(array.clone(), 128), 4.into(), &point(&later))
+            .expect("cell version");
+    assert_eq!(read_in_large_range.point, point(&disjoint));
+
+    let narrow = havoc(store, 16, 1u32, 935_113);
+    let (_, narrow_work) =
+        crate::instrumentation::measure_deterministic_work(|| havoc(narrow, 4, 1u32, 935_114));
+    let (_, wide_work) =
+        crate::instrumentation::measure_deterministic_work(|| havoc(disjoint, 4, 1u32, 935_115));
+    assert!(wide_work < narrow_work + 128, "{narrow_work}, {wide_work}");
+}
+
+#[test]
 fn indexed_static_cell_still_stops_at_a_symbolic_store() {
     let _session = crate::kernel::VerificationSession::enter();
     let array = block("global:g");

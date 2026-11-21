@@ -237,11 +237,15 @@ without replaying the retained effects. Statement transitions publish checked
 footprint containment into the successor's fact store. A written statement
 footprint resolves through the recorded entry and exit. The regression
 `have_at_frontier_shares_the_context_across_call_history` holds the goals fixed
-at 4/16/64/128 calls, and checks a named `preserve` proof at each size. Naming
-the historical reads in that proof still incurs a separate version walk.
-The pointer-only `with_selected_load_equality_bridge` route can still traverse
-equality chains and origin-unchanged edges. It needs its own measurement with
-a fixed goal and growing history.
+at 4/16/64/128 calls and checks a named `preserve` proof at each size. The static
+cell-version index now skips the concrete call ranges in that proof. The source
+regression `static_cell_read_steps_skip_same_array_call_history` also checks a
+cold step at those sizes and 32 distinct cold reads after 32 calls.
+
+Load-equality chain discovery for fixed-state goals and execution `have`
+scopes runs under `solve`. Expanded proof steps cite the selected equality
+premises. The rewritten-load evidence path still scans selected equality
+buckets. Measure that path with a fixed written goal and growing related facts.
 
 
 ## Operation map

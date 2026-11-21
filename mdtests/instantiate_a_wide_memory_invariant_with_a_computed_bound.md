@@ -25,7 +25,7 @@ void f(int32* p, uint64 end, uint64 count, uint64 k) {
         invariant forall (j: uint64) { j < start implies p[j] == old(p[j]) };
         initialize by {
             have forall (j: uint64) { j < start implies p[j] == old(p[j]) } by {
-                intro(); intro(); normalize();
+                intro(); intro(); known();
             }
         }
         maintain by {

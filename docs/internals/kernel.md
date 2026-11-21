@@ -1455,6 +1455,11 @@ by both the subtraction check and the subtraction itself. The lowering
 records the value at the assignment's existing source point and ends it
 on the last read. The result needs no local storage or proof name.
 
+When both arms of a Rust `if` publish a scalar operand for their shared
+continuation, each arm records the same step result. The written branch
+region owns the result. Both arm values keep their original evaluation
+points and checks.
+
 A value with a checked operator (`+ - * / % << >>`) or an indexed read
 (`a[i]`) moves only into a read whose lowering emits its panic or bounds
 check:

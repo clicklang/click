@@ -19,7 +19,7 @@ theorem integer_field_match(value: Integer) {
     ensures match Box<Integer>::Wrapped(value) {
         Box::Empty => value,
         Box::Wrapped(inner) => inner,
-    } == value by { normalize(); }
+    } == value by { known(); }
 }
 ```
 

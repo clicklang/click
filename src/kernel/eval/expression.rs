@@ -3592,8 +3592,11 @@ fn read_retained_lvalue_paths_without_ranges(
                     && can_name_read;
                 let origin = (uses_entry_version
                     || (can_name_read
-                        && crate::kernel::KernelFloatType::from_program_type(lvalue.value_type)
-                            .is_some()))
+                        && (lvalue.value_type == ProgramType::Bool
+                            || crate::kernel::KernelFloatType::from_program_type(
+                                lvalue.value_type,
+                            )
+                            .is_some())))
                 .then(|| state.program_point());
                 let entry_read = origin.as_ref().and_then(|point| {
                     let entry = match lvalue.value_type {

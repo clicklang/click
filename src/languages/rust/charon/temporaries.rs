@@ -30,7 +30,8 @@ use super::super::schema::{
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Select scalar expression results with one producer and reads along one
-/// straight-line fragment. The final reader ends the result. A slot read
+/// straight-line fragment, or one producer per arm of a two-way branch
+/// followed by reads in its continuation. The final reader ends the result. A slot read
 /// through its address, written by another operation, or live across a
 /// control-flow edge where other paths can enter still needs storage.
 pub(in crate::languages::rust) fn scalar_expression_operands(
@@ -41,7 +42,7 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
         return BTreeMap::new();
     }
     let is_candidate = |name: &str| mir.unnamed_locals.contains(name);
-    let mut definitions = BTreeMap::new();
+    let mut definitions = BTreeMap::<_, Vec<_>>::new();
     let mut reads_by_local = BTreeMap::new();
     let mut excluded = BTreeSet::new();
 
@@ -62,6 +63,33 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
             *entry = Some(index);
         }
     }
+    // Each arm and the join must have exactly the incoming edges of this
+    // branch. The forward edges also exclude a loop back edge.
+    let mut joins = BTreeMap::new();
+    for (header, block) in mir.blocks.iter().enumerate() {
+        let T::If {
+            then_target,
+            else_target,
+            ..
+        } = block.terminator
+        else {
+            continue;
+        };
+        let (lo, hi) = (then_target.min(else_target), then_target.max(else_target));
+        if !(header < lo && lo < hi) || incoming.get(hi) != Some(&1) || incoming[lo] != 1 {
+            continue;
+        }
+        let T::Goto { target: join } = mir.blocks[lo].terminator else {
+            continue;
+        };
+        if hi < join
+            && incoming.get(join) == Some(&2)
+            && matches!(mir.blocks[hi].terminator, T::Goto { target } if target == join)
+        {
+            joins.insert((lo, hi), join);
+        }
+    }
+
     let mut fragments: Vec<usize> = Vec::with_capacity(mir.blocks.len());
     for (block, code) in mir.blocks.iter().enumerate() {
         let fragment = match predecessor[block] {
@@ -69,24 +97,33 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
             _ => block,
         };
         fragments.push(fragment);
-        for (statement, code) in code.statements.iter().enumerate() {
+        let statements = code.statements.iter().map(Some).chain([None]);
+        for (statement, code_or_terminal) in statements.enumerate() {
             let point = MirPoint { block, statement };
-            if let S::Assign {
+            if let Some(S::Assign {
                 target: E::Local { name },
                 value,
-            } = code
+            }) = code_or_terminal
                 && is_candidate(name)
-                && (matches!(value, E::Call { .. } | E::ClosureInstance { .. })
-                    || definitions.insert(name.clone(), point).is_some())
             {
-                excluded.insert(name.clone());
+                if matches!(value, E::Call { .. } | E::ClosureInstance { .. }) {
+                    excluded.insert(name.clone());
+                } else {
+                    definitions.entry(name.as_str()).or_default().push(point);
+                }
             }
             let mut reads = BTreeMap::new();
-            statement_uses(code, &mut reads, &mut excluded);
-            let value_reader = matches!(
-                code,
-                S::Assert { .. } | S::Assign { .. } | S::SliceSplit { .. }
-            );
+            let value_reader = if let Some(statement) = code_or_terminal {
+                statement_uses(statement, &mut reads, &mut excluded);
+                matches!(
+                    statement,
+                    S::Assert { .. } | S::Assign { .. } | S::SliceSplit { .. }
+                )
+            } else {
+                terminator_uses(&code.terminator, &mut reads, &mut excluded);
+                excluded.extend(call_destination(&code.terminator).cloned());
+                matches!(code.terminator, T::ReturnValue { .. })
+            };
             for (name, count) in reads {
                 if !is_candidate(&name) {
                     continue;
@@ -105,10 +142,6 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
                 uses.2 = count;
             }
         }
-        let mut reads = BTreeMap::new();
-        terminator_uses(&code.terminator, &mut reads, &mut excluded);
-        excluded.extend(reads.into_keys());
-        excluded.extend(call_destination(&code.terminator).cloned());
     }
 
     mir.locals
@@ -118,12 +151,28 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
             if !local.value_type.is_scalar() || excluded.contains(name) {
                 return None;
             }
-            let producer = definitions.get(name)?;
             let &(first, last, last_read_count) = reads_by_local.get(name)?;
-            (last_read_count == 1
-                && fragments[producer.block] == fragments[first.block]
-                && *producer < first)
-                .then(|| (name.clone(), last))
+            if last_read_count != 1 {
+                return None;
+            }
+            let reaches_reader = match definitions.get(name.as_str())?.as_slice() {
+                [producer] => {
+                    fragments[producer.block] == fragments[first.block] && *producer < first
+                }
+                [left, right] => {
+                    // Both tails publish the result. This gives diagnostics
+                    // and proofs the branch region as its single source.
+                    let &join = joins.get(&(left.block, right.block))?;
+                    fragments[first.block] == join
+                        && [left, right].into_iter().all(|point| {
+                            mir.blocks[point.block].statements[point.statement + 1..]
+                                .iter()
+                                .all(|s| matches!(s, S::Site { .. }))
+                        })
+                }
+                _ => false,
+            };
+            reaches_reader.then(|| (name.clone(), last))
         })
         .collect()
 }

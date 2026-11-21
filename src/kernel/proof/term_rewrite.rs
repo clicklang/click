@@ -2092,6 +2092,11 @@ impl<'a> TermRewrite<'a> {
         self.algebraic.is_some() || self.integer_exact.is_some() || self.integer_variables.is_some()
     }
 
+    fn preserves_closed_value_conditional(&self, guard: &ConditionTerm) -> bool {
+        self.integer_variables.is_some()
+            && crate::kernel::proof::fact_reasoning::literal_value_if_guard(guard).is_some()
+    }
+
     fn preserves_machine_conditional(&self, guard: &ConditionTerm) -> bool {
         self.integer_exact.is_some()
             || (self.integer_variables.is_some()
@@ -4035,8 +4040,10 @@ impl<'a> TermRewrite<'a> {
                 if let Some(conditions) = &mut self.collected_conditions {
                     conditions.push(condition.as_ref().clone());
                 }
+                let preserve = self.integer_exact.is_some()
+                    || self.preserves_closed_value_conditional(condition);
                 let condition = self.condition(condition);
-                let condition = if self.integer_exact.is_some() {
+                let condition = if preserve {
                     condition
                 } else {
                     folded_machine_condition(condition)
@@ -4044,9 +4051,7 @@ impl<'a> TermRewrite<'a> {
                 if self.checked_work_exhausted() {
                     return exhausted_algebraic(term);
                 }
-                if self.integer_exact.is_none()
-                    && let ConditionTerm::Constant(value) = condition
-                {
+                if !preserve && let ConditionTerm::Constant(value) = condition {
                     return self.algebraic(if value { then_term } else { else_term });
                 }
                 let then_term = self.algebraic(then_term);
@@ -4545,8 +4550,10 @@ impl<'a> TermRewrite<'a> {
                 if let Some(conditions) = &mut self.collected_conditions {
                     conditions.push(condition.as_ref().clone());
                 }
+                let keep_closed = self.preserves_closed_value_conditional(condition);
+                let preserve = self.integer_exact.is_some() || keep_closed;
                 let condition = self.condition(condition);
-                let condition = if self.integer_exact.is_some() {
+                let condition = if preserve {
                     condition
                 } else {
                     folded_machine_condition(condition)
@@ -4554,9 +4561,7 @@ impl<'a> TermRewrite<'a> {
                 if self.checked_work_exhausted() {
                     return exhausted_integer(shared.as_ref());
                 }
-                if self.integer_exact.is_none()
-                    && let ConditionTerm::Constant(value) = condition
-                {
+                if !preserve && let ConditionTerm::Constant(value) = condition {
                     let result = self.integer_shared(if value { then_term } else { else_term });
                     if self.checked_work_exhausted() {
                         return exhausted_integer(shared.as_ref());
@@ -4570,7 +4575,7 @@ impl<'a> TermRewrite<'a> {
                 // like dropping a rewritten `+ 0` above, it only deletes a
                 // node, and keeping it would leave `if c { y } else { y }`
                 // beside the `y` every producer builds.
-                if self.integer_exact.is_none() || then_term == else_term {
+                if !keep_closed && (!preserve || then_term == else_term) {
                     IntegerTerm::if_then_else(condition, then_term, else_term)
                 } else {
                     IntegerTerm::If {

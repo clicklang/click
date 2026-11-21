@@ -45,13 +45,13 @@ int read_saved(struct Box *box) {
     have box->start == k;
     have at(before, box->p)[k] == 22 by { known(); }
     have box->p + box->start == at(before, box->p) + k by {
-        normalize() using { box->start == k; box->p == at(before, box->p); };
+        solve() using { box->start == k; box->p == at(before, box->p); };
     }
     have box->p[box->start] == 22 by {
         have box->p[box->start] == 22 by {
             rewrite(22, at(before, box->p)[k]);
             rewrite((box->p + box->start), (at(before, box->p) + k));
-            normalize();
+            known();
         }
         known();
     }

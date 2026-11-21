@@ -28,7 +28,7 @@ is **outside it**, with what to write instead. A simple tactic that refuses a
 case its Accepts list covers is a Click bug; one that refuses a case outside
 the list is working as documented. Behavior a section describes as beyond the
 list is not guaranteed. [Tracing](../../concepts/tracing.md) uses this
-distinction for its `failing-tactic` outcome.
+distinction for its `tactic-bug` outcome.
 
 ## Core tactics
 
@@ -2463,12 +2463,9 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
   stored tagged word to `1` lets `normalize()` close its cleared pointer's
   equality to null
   ([`a_rewritten_tagged_null_pointer_normalizes.md`](https://github.com/clicklang/click/blob/master/mdtests/a_rewritten_tagged_null_pointer_normalizes.md)).
-- When exact substitution misses an atomic native equality goal, its two
-  operands may match `L` through checked corresponding read leaves, for both
-  32-bit and 64-bit reads inside matching arithmetic operators. Alias and
-  version-point evidence comes from the shared read-equality checker; incompatible
-  read kinds, changed cells, and differing operators do not match. This
-  comparison visits only `L` and the two goal operands.
+- When the equality's left side contains a read, the occurrence in the
+  goal must read the same version. If two versions are known to agree,
+  state that equality first and use it to rewrite the occurrence.
 
 **Outside it**, with what to write instead:
 

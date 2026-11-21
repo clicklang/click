@@ -604,14 +604,21 @@ impl SourceExecutionLayout {
             }
         }
 
+        fn last_non_skip(statement: &ProgramStatement) -> Option<&ProgramStatement> {
+            match statement {
+                ProgramStatement::Skip => None,
+                ProgramStatement::Seq(statements) => statements
+                    .iter()
+                    .rev()
+                    .find_map(|statement| last_non_skip(statement.as_ref())),
+                statement => Some(statement),
+            }
+        }
+
         // A frontend can lower a conditional value to two arms that publish
         // the same result. That result belongs to the join, not either arm.
         fn terminal_value_steps(statement: &ProgramStatement) -> Option<&[u32]> {
-            let tail = match statement {
-                ProgramStatement::Seq(statements) => statements.get(statements.len() - 1)?.as_ref(),
-                statement => statement,
-            };
-            match tail {
+            match last_non_skip(statement)? {
                 ProgramStatement::StepValue { steps, .. } => Some(steps),
                 _ => None,
             }

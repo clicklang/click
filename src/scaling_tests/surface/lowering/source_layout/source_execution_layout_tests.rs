@@ -168,7 +168,7 @@ fn call_capture_selectors_use_the_index_at_multiple_sizes() {
 fn typed_conditional_value_layout_preserves_join_identity_and_scales() {
     use crate::kernel::{
         ProgramStatement, ProgramType, program_expression as e, program_function, program_if,
-        program_return, program_seq,
+        program_return, program_seq, program_skip,
     };
     let value = |step| ProgramStatement::StepValue {
         aggregate_layout: None,
@@ -177,9 +177,10 @@ fn typed_conditional_value_layout_preserves_join_identity_and_scales() {
         value_type: Some(ProgramType::Int32),
         pointee_constant: false,
     };
+    let arm = || program_seq(program_seq(value(0), program_skip()), program_skip());
     let mut samples = Vec::new();
     for count in [8, 32, 128, 512] {
-        let mut body = program_if(e::int32_literal(1), value(0), value(0));
+        let mut body = program_if(e::int32_literal(1), arm(), arm());
         for step in 1..=count {
             body = program_seq(body, value(step));
         }

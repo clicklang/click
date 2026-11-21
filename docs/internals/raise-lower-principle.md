@@ -347,7 +347,7 @@ step reads them from its context. One classification,
 `Proposition::is_kernel_authority`, decides membership; code must not
 special-case a composition or a `__click_` name elsewhere.
 
-`held`, `same_object`, and contract facts are not authority even though the
+`held`, `same_allocation`, and contract facts are not authority even though the
 kernel names them under `__click_`: `kernel::predicate_source_name` gives the
 Click name that lowers to each, and the printer, synthesis, and authority
 classification all read that one mapping.
@@ -516,6 +516,13 @@ path. Regressions: `mdtests/closed_machine_order_comparisons.md`,
 `surface::proof::surface_synthesis`. Literal arithmetic evaluation is
 unchanged, and the shared comparison constructors used by checking still
 fold.
+
+Direct logical comparisons also retain a closed `if` over simple
+`Integer` or algebraic arms. The arms can be literals or bound values, and
+algebraic arms can be constructors with simple fields. Checking reads the
+selected arm, and admission of a comparison makes the equivalent selected
+comparison available through the existing fact indexes. Partial and
+state-dependent operands use the existing evaluation paths.
 
 Machine conditionals with closed 32/64-bit order guards, closed 64-bit equality
 guards, or same-variable 32/64-bit comparison guards retain their `if` node and

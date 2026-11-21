@@ -35,9 +35,9 @@ int64 read_signed(int64 value) {
     mark written;
     step();
     have *p == value by solve();
-    have separate(memory(*q), memory(*p)) by normalize();
+    have separate(memory(*q), memory(*p)) by known();
     have separate(statement(5).footprint, memory(*p)) by {
-        normalize() using { separate(memory(*q), memory(*p)); };
+        solve() using { separate(memory(*q), memory(*p)); };
     }
     have *p == at(written, *p) by {
         preserve(memory(*p), statement(5));
@@ -53,9 +53,9 @@ uint64 read_unsigned(uint64 value) {
     mark written;
     step();
     have *p == value by solve();
-    have separate(memory(*q), memory(*p)) by normalize();
+    have separate(memory(*q), memory(*p)) by known();
     have separate(statement(5).footprint, memory(*p)) by {
-        normalize() using { separate(memory(*q), memory(*p)); };
+        solve() using { separate(memory(*q), memory(*p)); };
     }
     have *p == at(written, *p) by {
         preserve(memory(*p), statement(5));

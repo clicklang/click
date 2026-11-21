@@ -20,15 +20,15 @@ theorem binding_in_have(n: Nat) {
     ensures n == n by {
         let ih = induct(n);
         match n {
-            Nat::Zero => { normalize(); }
+            Nat::Zero => { known(); }
             Nat::Succ(previous) => {
-                have previous == previous by normalize();
-                have nat_id(previous) == nat_id(previous) by normalize();
+                have previous == previous by known();
+                have nat_id(previous) == nat_id(previous) by known();
                 have 0 == 0 by {
                     instantiate(forall (k: int32) { k == k }, nat_zero(previous));
-                    normalize();
+                    known();
                 }
-                normalize();
+                known();
             }
         }
     }

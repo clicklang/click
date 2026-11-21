@@ -63,7 +63,7 @@ void countdown(int32 n) {
                     have chain_nat(c.model) == Nat::Succ(chain_nat(rest_model)) by {
                         rewrite(c.model, Chain::Link(rest_model));
                         unfold(chain_nat(Chain::Link(rest_model)));
-                        normalize();
+                        known();
                     }
                     apply(nat::to_integer_succ(chain_nat(rest_model)));
                     have to_integer(chain_nat(c.model)) == to_integer(chain_nat(rest_model)) + 1 by {

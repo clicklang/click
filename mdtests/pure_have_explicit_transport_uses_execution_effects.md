@@ -29,7 +29,7 @@ int32 set_second_return_first(int32 p[2]) {
     step();
     have p[0] == 7 by {
         have p[0] == 7 by {
-            normalize() using {
+            solve() using {
                 old(p[0]) == 7;
             };
         }
