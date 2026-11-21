@@ -127,10 +127,7 @@ mod tests {
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(
-            error.contains("`step()` requires an explicit prerequisite proof"),
-            "{error}"
-        );
+        assert!(error.contains("this write overlaps a live view"), "{error}");
         assert!(error.contains("\ngoal: separate("), "{error}");
         assert!(error.contains("words[1..2]"), "{error}");
         assert!(
@@ -892,7 +889,7 @@ theorem clear_has_contract() executes clear(int32* p, const int32* q) {
             nested.contains("location: tactic 1 > have body tactic 1"),
             "{nested}"
         );
-        assert!(nested.contains("goal: false"), "{nested}");
+        assert!(nested.contains("goal: 0 == 1"), "{nested}");
         assert!(nested.contains("steps through: declare x"), "{nested}");
 
         let wrong = entry([
@@ -1886,7 +1883,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         ])
         .expect("click expand should emit the ordinary arithmetic proof");
         let expanded = fs::read_to_string(&expanded_path).unwrap();
-        assert!(expanded.contains("normalize() using {"), "{expanded}");
+        assert!(expanded.contains("known();"), "{expanded}");
         assert!(!expanded.contains("solve() using"), "{expanded}");
 
         entry(["verify".to_string(), expanded_path.display().to_string()])
