@@ -44,10 +44,12 @@ fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
         pointer_object_is_null_condition(&left),
         false,
     )));
-    assert!(paths[0].facts.contains(&ExecutionPureFact::condition(
-        pointer_object_identity_condition(&right, &left),
-        true,
-    )));
+    // The precondition is one `same_allocation(right, left)` fact, which
+    // raises as written (`design/pointer-model.md`).
+    assert!(paths[0].facts.iter().any(|fact| {
+        crate::kernel::assumptions::same_allocation_pointers(fact.proposition())
+            .is_some_and(|(r, l)| r.address() == &right && l.address() == &left)
+    }));
     assert!(paths[0].facts.contains(&ExecutionPureFact::new(
         Proposition::signed_arithmetic_domain(
             MachineIntegerType::Int32,
