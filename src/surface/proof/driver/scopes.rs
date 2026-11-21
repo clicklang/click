@@ -245,7 +245,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
                 Arc::new(ProofStep::Open {
                     resource: resource.clone(),
                     proof: Box::new(ProofCertificate::from_steps(steps)?),
-                    deferred_tail: false,
+                    deferred_tail: None,
                 }),
             ),
             ..closed

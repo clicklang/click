@@ -4355,12 +4355,17 @@ pub(super) fn finish_ordered_proof<'a>(
                                     });
                                 outcome = closed.focused_outcome_state()?;
                                 outcome_proof = Some(closed);
-                                if tail.is_some() || (named && !already_restored) {
+                                if tail.is_some() || named {
                                     let deferred = ProofOpen::deferred_block_tail(
                                         resource.clone(),
                                         tail.map_or_else(Vec::new, |proof| {
                                             proof.to_proof_tactics()
                                         }),
+                                        if already_restored {
+                                            DeferredOpenTail::AlreadyRestored
+                                        } else {
+                                            DeferredOpenTail::Restore
+                                        },
                                     );
                                     record_post_execution_surface_tactic(
                                         &mut path_surface_post_tactics,

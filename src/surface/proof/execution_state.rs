@@ -574,37 +574,80 @@ fn ends_in_terminal_match(mut steps: &[ProofStep]) -> bool {
 
 /// Append the deferred restoration facts to their open scope rather than
 /// leaving them in the function's post-execution suffix.
-fn attach_deferred_open_tail(steps: &mut [ProofStep], step: &ProofStep) -> bool {
+fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bool {
     let ProofStep::Open {
         resource,
         proof,
-        deferred_tail: true,
+        deferred_tail: Some(tail),
     } = step
     else {
         return false;
     };
-    let Some(ProofStep::Open {
-        resource: scope,
-        proof: scope_body,
-        deferred_tail: false,
-    }) = steps.last_mut()
-    else {
+    // An explicit restoration at return was checked before the close, so its
+    // deferred operations have already been appended. Move them inside the
+    // open scope before publishing the checked close.
+    let is_open = |step: &ProofStep| {
+        matches!(
+            step,
+            ProofStep::Open {
+                deferred_tail: None,
+                ..
+            }
+        )
+    };
+    let scope_index = match tail {
+        DeferredOpenTail::AlreadyRestored => steps.iter().rposition(is_open),
+        DeferredOpenTail::Restore => steps
+            .last()
+            .filter(|step| is_open(step))
+            .map(|_| steps.len() - 1),
+    };
+    let Some(scope_index) = scope_index else {
         return false;
     };
-    if scope != resource {
-        return false;
-    }
+    let suffix = &steps[scope_index + 1..];
+    let ProofStep::Open {
+        resource: scope,
+        proof: scope_body,
+        ..
+    } = &steps[scope_index]
+    else {
+        unreachable!("matched open scope")
+    };
     let mut body = scope_body.steps().to_vec();
-    if matches!(scope, ResourceClause::Named { .. }) && ends_in_terminal_match(&body) {
-        for step in proof.steps() {
+    if scope != resource {
+        // A nested scope reached return before its enclosing scope closed.
+        // Follow the enclosing certificate to the matching scope.
+        if *tail != DeferredOpenTail::AlreadyRestored {
+            return false;
+        }
+        body.extend(suffix.iter().cloned());
+        if !attach_deferred_open_tail(&mut body, step) {
+            return false;
+        }
+    } else if matches!(resource, ResourceClause::Named { .. }) && ends_in_terminal_match(&body) {
+        for step in suffix.iter().chain(proof.steps()) {
             append_surface_step_to_leaves_ref(&mut body, step);
         }
-        append_surface_step_to_leaves_ref(&mut body, &ProofStep::FoldResource(resource.clone()));
+        if *tail == DeferredOpenTail::Restore {
+            append_surface_step_to_leaves_ref(
+                &mut body,
+                &ProofStep::FoldResource(resource.clone()),
+            );
+        }
     } else {
+        body.extend(suffix.iter().cloned());
         body.extend(proof.steps().iter().cloned());
     }
     let Ok(body) = ProofCertificate::from_steps(body) else {
         return false;
+    };
+    steps.truncate(scope_index + 1);
+    let ProofStep::Open {
+        proof: scope_body, ..
+    } = &mut steps[scope_index]
+    else {
+        unreachable!("matched open scope")
     };
     **scope_body = body;
     true
@@ -903,7 +946,7 @@ pub(super) fn append_surface_tactics_by_leaf(
         if let Some(ProofStep::Open {
             resource,
             proof,
-            deferred_tail: false,
+            deferred_tail: None,
         }) = steps.last_mut()
             && matches!(
                 proof.steps().last(),
@@ -912,7 +955,7 @@ pub(super) fn append_surface_tactics_by_leaf(
             && path_steps.get(*next_path).is_some_and(|suffix| {
                 suffix.iter().any(|step| {
                     matches!(step, ProofStep::Open {
-                    resource: closing, deferred_tail: true, ..
+                    resource: closing, deferred_tail: Some(_), ..
                 } if closing == resource)
                 })
             })
@@ -962,12 +1005,14 @@ pub(super) fn append_surface_tactics_by_leaf(
                 if let ProofStep::Open {
                     resource,
                     proof,
-                    deferred_tail: true,
+                    deferred_tail: Some(tail),
                 } = step
                     && open_scope == Some(resource)
                 {
                     steps.extend(proof.steps().iter().cloned());
-                    if matches!(resource, ResourceClause::Named { .. }) {
+                    if *tail == DeferredOpenTail::Restore
+                        && matches!(resource, ResourceClause::Named { .. })
+                    {
                         steps.push(ProofStep::FoldResource(resource.clone()));
                     }
                 } else {
