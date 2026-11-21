@@ -1222,6 +1222,19 @@ impl ProgramPoint {
             .is_some_and(|id| self.read_key_at(id) == read.read_key())
     }
 
+    /// Whether this recorded view can name the supplied read. A selected
+    /// version admits another certified view of the same point. An
+    /// unselected read still has a memory identity in its kernel term.
+    pub(crate) fn names_read_view(&self, read: &Self) -> bool {
+        if read.read_version_id().is_some() {
+            self.names_exact_read(read)
+        } else {
+            read.id().is_some_and(|id| {
+                self.id() == Some(id) && self.memory.arena_id() == read.memory.arena_id()
+            })
+        }
+    }
+
     /// An exact read keeps the selected point even if another point has equal
     /// memory or supplies the cell's ordinary version.
     pub(in crate::kernel) fn for_exact_read(mut self) -> Self {

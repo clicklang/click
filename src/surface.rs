@@ -4884,16 +4884,31 @@ impl RecordedStates {
         Some((selector, self.get_exact(selector)?))
     }
 
-    /// The recorded point a read of `pointer` in `memory` is made at, with its
-    /// state. A read names the canonical projection of the memory it reads
-    /// (`reasoning::memory_resolution`), which no point records; the kernel
-    /// records the memory each projection was built from when it builds it,
-    /// so the read is made at the point recording that source. Two lookups.
+    /// Select a recorded read by its own point and verify the retained view.
+    fn point_naming_read(
+        &self,
+        point: &crate::kernel::ProgramPoint,
+    ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
+        crate::instrumentation::record_deterministic_work(1);
+        let selector = self.point_name(point.id()?)?;
+        let state = self.get_exact(selector)?;
+        state
+            .program_point()
+            .names_read_view(point)
+            .then_some((selector, state))
+    }
+
+    /// Name the retained read point. Detached legacy reads may carry a
+    /// canonical projection, so they consult the index of its source memory.
     fn point_reading_load(
         &self,
-        memory: &crate::kernel::SharedMemory,
+        point: &crate::kernel::ProgramPoint,
         pointer: &crate::kernel::Address,
     ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
+        if point.id().is_some() {
+            return self.point_naming_read(point);
+        }
+        let memory = point.shared_memory();
         self.point_reading_memory(memory).or_else(|| {
             let source = crate::kernel::load_projection_source(memory, pointer)?;
             self.point_reading_memory(&source)

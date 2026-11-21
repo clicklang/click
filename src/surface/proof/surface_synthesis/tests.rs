@@ -9450,11 +9450,24 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
             ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer),
         )
         .begin_function_entry_memory();
-    let post = entry.clone().with_memory(
-        entry
-            .memory()
-            .clone()
-            .store(address, ProgramValue::Int32(MachineTerm::constant(9))),
+    let post = entry.clone().with_memory(entry.memory().clone().store(
+        address.clone(),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
+    let entry_view = entry.clone().with_materialized_memory_at_current_point(
+        entry.memory().clone().materialize_cell_at(
+            address,
+            ProgramType::Int32,
+            &entry.program_point(),
+        ),
+    );
+    assert_eq!(
+        entry_view.observation_point_id(),
+        entry.observation_point_id()
+    );
+    assert_ne!(
+        entry_view.program_point().shared_memory().arena_id(),
+        entry.program_point().shared_memory().arena_id()
     );
     let file = crate::surface::parse(
         "predicate first_is(p: int32[], value: int32) { p[0] == value }
@@ -9467,18 +9480,18 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
     let points = RecordedStates::new();
     let predicates = PredicateEnvironment::new(file.predicate_definitions());
     let functions = ClickFunctionEnvironment::new(&[]);
-    let lower = |surface: &ClickProposition| {
+    let lower = |surface: &ClickProposition, entry: &ExecutionState| {
         crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
             surface,
             &PureFactContext::new(),
             ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
-            FixedStateFrame::new(&entry, &post, None, &points),
+            FixedStateFrame::new(entry, &post, None, &points),
             SpecDefinitions::new(&predicates, &functions),
             FixedStateLoweringOptions::default(),
         )
         .map(|(proposition, _, _, _)| proposition)
     };
-    let original = lower(written).unwrap();
+    let original = lower(written, &entry).unwrap();
     let Proposition::Predicate { arguments, .. } = &original else {
         panic!("declared predicate");
     };
@@ -9490,7 +9503,7 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
     let raised = synthesize_surface_proposition_at_entry_and_post(
         &original,
         ParameterBinding::default(),
-        &entry,
+        &entry_view,
         &post,
     )
     .expect("the indexed array argument has a spelling");
@@ -9498,7 +9511,7 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
         matches!(&raised, ClickProposition::PredicateCall { arguments, .. }
         if matches!(arguments.first(), Some(ContractExpression::Old(_))))
     );
-    assert_eq!(lower(&raised), Ok(original));
+    assert_eq!(lower(&raised, &entry_view), Ok(original));
 }
 
 #[test]
