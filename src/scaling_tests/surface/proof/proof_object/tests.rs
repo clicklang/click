@@ -2477,6 +2477,74 @@ fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
 }
 
 #[test]
+fn fixed_state_goal_opening_ignores_load_equality_buckets() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let state = ExecutionState::new();
+    let retained_states = RecordedStates::new();
+    let surfaces = SurfacePropositionMap::default();
+    let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
+    let read = |index| {
+        MachineTerm::MemoryLoad(
+            crate::kernel::ProgramPoint::at(&memory),
+            Box::new(crate::kernel::Address::symbolic(Variable(index))),
+            crate::kernel::LoadKind::Int32,
+        )
+    };
+    let equal = |left, right| Proposition::condition_is(ConditionTerm::equal(left, right), true);
+    let selected = read(8_185_000);
+    let goal = equal(selected.clone(), MachineTerm::constant(7));
+
+    for related in [false, true] {
+        for exact in [false, true] {
+            let mut samples = Vec::new();
+            for size in [4_u64, 16, 64, 256] {
+                let mut facts = PureFactStore::default();
+                for index in 0..size {
+                    let endpoint = if related {
+                        selected.clone()
+                    } else {
+                        read(8_186_000 + index)
+                    };
+                    facts = facts.with_kernel_checked_fact(equal(
+                        endpoint,
+                        MachineTerm::Variable(Variable(8_187_000 + index)),
+                    ));
+                }
+                if exact {
+                    facts = facts.with_kernel_checked_fact(goal.clone());
+                }
+                let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    let proof = Proof::for_fixed_state(
+                        "load equality",
+                        0,
+                        FixedStateFacts::Slice(&[]),
+                        |state| OpenBranch::proposition_in(state, goal.clone()),
+                        ParameterBinding::default(),
+                        FixedStateFrame::new(&state, &state, None, &retained_states),
+                        None,
+                        &surfaces,
+                        SpecDefinitions::new(&predicates, &functions),
+                        &theorems,
+                        &[],
+                        &[],
+                        Some(facts),
+                    );
+                    proof.apply_known().is_ok()
+                });
+                assert_eq!(holds, exact);
+                samples.push(work);
+            }
+            assert!(
+                samples[3] <= samples[0] + 128,
+                "related={related}, exact={exact}: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);

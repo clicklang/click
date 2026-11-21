@@ -4029,6 +4029,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(rewritten));
         }
+        if let Some(proof) =
+            Self::try_selected_load_equality_bridge(search_input, introduced_surfaces)?
+        {
+            return Ok(Some(proof));
+        }
         if let Some(surface_goal) = search_input.surface_goal()
             && let Some(proof) = crate::kernel::search::ProofSearch::try_state_transport_closure(
                 search_input,
@@ -5830,6 +5835,63 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         None
+    }
+
+    /// Select the equalities for a load bridge under solve's budget and
+    /// submit them to the ordinary transport checker. The checked successor
+    /// retains only its explicit proof steps, so opening the goal or replaying
+    /// the certificate never enumerates the goal's equality buckets.
+    fn try_selected_load_equality_bridge(
+        search_input: &Proof<'a>,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_load_equality_bridge");
+        let (Some(goal), Some(target)) = (search_input.goal(), search_input.surface_goal()) else {
+            return Ok(None);
+        };
+        let facts = search_input.facts();
+        if facts.pure_known_available(goal)
+            || search_input.premise_fixed_state_view().is_none()
+            || !matches!(goal, Proposition::ConditionIs(condition, true)
+            if condition.native_compat().pointer_offset_sides().is_some()
+                || matches!(condition.native_compat(), ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    relation: CompareRelation::Equal, ..
+                }))
+        {
+            return Ok(None);
+        }
+        if crate::instrumentation::replay_forbids_discovery("load equality bridge search") {
+            return Err(search_input.step_error("load equality discovery requires solve"));
+        }
+        let candidates =
+            crate::kernel::search::load_equality_candidates(facts, goal, MAX_SOLVE_SOURCE_PREMISES);
+        check_verification_deadline()?;
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+
+        let premises =
+            Self::resolve_solve_premises_unmeasured(search_input, &candidates, introduced_surfaces);
+        check_verification_deadline()?;
+        let Some(premises) = premises else {
+            return Ok(None);
+        };
+        let mut premises = premises.into_iter().map(|(_, surface)| surface);
+        let Some(source) = premises.next() else {
+            return Ok(None);
+        };
+        // The source is itself one of the available equalities. The shared
+        // planner checks and minimizes the list, and returns the checked
+        // transport in the exact form recorded for expansion.
+        Self::try_fixed_state_fact_transport(
+            search_input,
+            &source,
+            target,
+            std::iter::once(source.clone()).chain(premises),
+        )
+        .map(|proof| proof.filter(Proof::is_complete))
     }
 
     /// Tries the focused branch goal itself as one explicit fact transport from a

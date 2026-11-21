@@ -232,13 +232,12 @@ probe/reinvoke adapter. Solving belongs to the driver there; any repeated-loweri
 cost needs its own fixed-input/ambient-growth measurement. This is not evidence
 that the removed step/fold retry survives.
 
-Have opening also retains two separate preparation candidates: the pointer-only
-`with_selected_load_equality_bridge` route can traverse equality chains and
-origin-unchanged edges, and copying `execution.core.effect_facts` visits the
-retained effect collection. Measure each with a fixed written goal and growing
-unrelated history; remove automatic discovery or repeated publication rather
-than moving it into another fast helper. These are not covered by the scalar
-historical-candidate removal regression.
+Load-equality chain discovery for fixed-state goals and execution `have`
+scopes runs under `solve`. Expansion replays checked proof steps with written
+equality premises. The rewritten-load evidence path still scans selected
+equality buckets. Opening an execution `have` also copies
+`execution.core.effect_facts`. Measure those paths with a fixed written goal
+and growing related facts or history.
 
 
 ## Operation map

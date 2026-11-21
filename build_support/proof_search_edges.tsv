@@ -839,3 +839,6 @@ src/surface/proof/smart_closures/pointer_offsets.rs	mixed	Emitter::arithmetic	tr
 src/surface/proof/smart_closures/pointer_offsets.rs	search	ProofSearch::try_pointer_translation_using	driver	3
 src/surface/proof/smart_closures/pointer_offsets.rs	search	ProofSearch::try_pointer_translation_using	try_integer_composition_using	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_signed_definedness_bounds	try_signed_definedness_bounds	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_selected_load_equality_bridge	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_load_equality_bridge	resolve_solve_premises_unmeasured	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_load_equality_bridge	try_fixed_state_fact_transport	1
