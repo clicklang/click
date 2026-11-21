@@ -495,6 +495,11 @@ fn decode(text: &str) -> Option<(String, &str)> {
             {
                 break;
             }
+            // A crate type argument is its own importer name, read as its path.
+            let segment = match decode(segment) {
+                Some((path, "")) => path,
+                _ => segment.to_string(),
+            };
             match last.strip_suffix('>') {
                 Some(open) => *last = format!("{open}, {segment}>"),
                 None => last.push_str(&format!("<{segment}>")),

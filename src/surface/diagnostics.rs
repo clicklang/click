@@ -7408,6 +7408,19 @@ fn describe_contract_expression_grouping_casts(
             if let Some(literal) = describe_byte_list(expression) {
                 return literal;
             }
+            // A struct's value, `*p` or a literal of its fields.
+            if algebraic_type.name() == variant
+                && algebraic_type.arguments().is_empty()
+                && let Some(spelled) = crate::surface::struct_values::spell(
+                    variant,
+                    &arguments
+                        .iter()
+                        .map(describe_contract_expression)
+                        .collect::<Vec<_>>(),
+                )
+            {
+                return spelled;
+            }
             let type_arguments = if algebraic_type.arguments.is_empty() {
                 String::new()
             } else {

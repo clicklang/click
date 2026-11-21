@@ -1145,6 +1145,10 @@ struct Parser {
     matching_parentheses: Vec<Option<usize>>,
     position: usize,
     struct_layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
+    /// The value type of each struct a contract reads as a value, `*p`: a
+    /// datatype of one constructor whose fields are the struct's
+    /// (`struct_value_type`).
+    struct_value_types: BTreeMap<String, AlgebraicTypeDefinition>,
     /// See [`ProgramLayouts::rust_enum_types`].
     rust_enum_types: BTreeMap<String, crate::kernel::TypeParameterName>,
     union_layouts: BTreeMap<String, syntax::CUnionLayout>,
@@ -2200,6 +2204,7 @@ impl Parser {
             algebraic_type_nesting: 0,
             position: 0,
             struct_layouts,
+            struct_value_types: BTreeMap::new(),
             rust_enum_types: BTreeMap::new(),
             union_layouts,
             loop_name_context: None,
@@ -2707,6 +2712,18 @@ impl Parser {
             }
         }
 
+        for (struct_name, definition) in std::mem::take(&mut self.struct_value_types) {
+            if algebraic_type_definitions
+                .iter()
+                .any(|declared: &AlgebraicTypeDefinition| declared.name == definition.name)
+            {
+                return Err(self.error(format!(
+                    "a specification datatype is named `{}`, the name of struct `{struct_name}`'s value",
+                    definition.name
+                )));
+            }
+            algebraic_type_definitions.push(definition);
+        }
         for definition in &algebraic_type_definitions {
             if self.source_aliases.contains_key(&definition.name) {
                 return Err(self.error(format!(
@@ -10145,6 +10162,7 @@ impl Parser {
     fn parse_comparison_operand(&mut self) -> Result<ContractExpression, ClickError> {
         let start = self.position;
         let operand = self.parse_contract_expression()?;
+        let operand = self.by_value_struct_value(operand)?;
         if self.verifies_rust() {
             return Ok(operand);
         }
@@ -14276,6 +14294,293 @@ impl Parser {
         }
     }
 
+    /// Whether `pointer` is a struct double pointer's slot, whose `*`
+    /// reads a pointer, not a struct.
+    fn contract_expression_designates_struct_pointer_slot(
+        &self,
+        pointer: &ContractExpression,
+    ) -> bool {
+        matches!(pointer, ContractExpression::Binding(name)
+            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) if self
+                .names
+                .struct_params
+                .contains_key(&struct_pointer_pointer_key(name)))
+    }
+
+    /// The name of the datatype whose one constructor is a value of struct
+    /// `struct_name`: its fields are the struct's, each the value its field
+    /// holds, an embedded struct's its own struct value. A struct with an
+    /// array, union or bit field has no value here.
+    fn struct_value_type(&mut self, struct_name: &str) -> Result<String, ClickError> {
+        if let Some(definition) = self.struct_value_types.get(struct_name) {
+            return Ok(definition.name.clone());
+        }
+        let Some(layout) = self.struct_layouts.get(struct_name).cloned() else {
+            return Err(self.error(format!("unknown struct declaration `{struct_name}`")));
+        };
+        let mut fields = Vec::new();
+        let mut field_names = Vec::new();
+        for (field_name, field) in layout.fields_in_order() {
+            field_names.push(field_name.to_string());
+            if field.array_element_width().is_some()
+                || field.union_name().is_some()
+                || field.is_long_double()
+            {
+                return Err(self.error(format!(
+                    "struct `{struct_name}` has no value in a contract: its field `{field_name}` is an array, a union or a `long double`"
+                )));
+            }
+            fields.push(match field.struct_name() {
+                Some(nested) if !field.interface_type().is_pointer() => {
+                    let nested = nested.to_string();
+                    AlgebraicFieldType::Algebraic {
+                        name: self.struct_value_type(&nested)?,
+                        arguments: Vec::new(),
+                    }
+                }
+                pointee => AlgebraicFieldType::C {
+                    interface_type: field.interface_type(),
+                    struct_name: pointee.map(str::to_string),
+                    object_class: None,
+                },
+            });
+        }
+        if layout.has_bit_fields() {
+            return Err(self.error(format!(
+                "struct `{struct_name}` has no value in a contract: it has bit fields"
+            )));
+        }
+        // A C struct's value type is named `struct tag`, which no Click
+        // datatype, C alias or field can spell; a Rust struct's is its
+        // importer name.
+        let name = if self.language == SourceLanguage::Rust {
+            struct_name.to_string()
+        } else {
+            format!("struct {struct_name}")
+        };
+        crate::surface::struct_values::register(
+            &name,
+            field_names,
+            self.language == SourceLanguage::Rust,
+        );
+        self.struct_value_types.insert(
+            struct_name.to_string(),
+            AlgebraicTypeDefinition {
+                name: name.clone(),
+                type_parameters: Vec::new(),
+                variants: vec![AlgebraicVariantDefinition {
+                    name: name.clone(),
+                    fields,
+                }],
+                primitive: false,
+            },
+        );
+        Ok(name)
+    }
+
+    /// A struct value written by its fields: `(struct pair){ .x = a, .y = b }`
+    /// in C and `crate_name::Pair { x: a, y: b }` in Rust. Every field is
+    /// named once; the value is the struct's constructor of them.
+    fn parse_struct_value_literal(&mut self) -> Result<Option<ContractExpression>, ClickError> {
+        let start = self.position;
+        let (struct_name, rust) = if self.peek() == Some(&Token::LParen)
+            && matches!(self.tokens.get(start + 1), Some(Token::Ident(word)) if word == "struct")
+            && let Some(Token::Ident(name)) = self.tokens.get(start + 2)
+            && self.tokens.get(start + 3) == Some(&Token::RParen)
+            && self.tokens.get(start + 4) == Some(&Token::LBrace)
+        {
+            let name = name.clone();
+            self.position = start + 5;
+            (name, false)
+        } else if self.language == SourceLanguage::Rust {
+            let mut index = start;
+            let mut segments = Vec::new();
+            loop {
+                let Some(Token::Ident(segment)) = self.tokens.get(index) else {
+                    return Ok(None);
+                };
+                segments.push(segment.clone());
+                index += 1;
+                if self.tokens.get(index) == Some(&Token::ColonColon) {
+                    index += 1;
+                } else {
+                    break;
+                }
+            }
+            if segments.len() < 2
+                || self.tokens.get(index) != Some(&Token::LBrace)
+                || !matches!(self.tokens.get(index + 1), Some(Token::Ident(_)))
+                || self.tokens.get(index + 2) != Some(&Token::Colon)
+            {
+                return Ok(None);
+            }
+            let name =
+                crate::languages::rust::names::qualified_name(segments.iter().map(String::as_str));
+            if !self.struct_layouts.contains_key(&name) {
+                return Ok(None);
+            }
+            self.position = index + 1;
+            (name, true)
+        } else {
+            return Ok(None);
+        };
+        if !self.struct_layouts.contains_key(&struct_name) {
+            return Err(self.error(format!("unknown struct declaration `{struct_name}`")));
+        }
+        let type_name = self.struct_value_type(&struct_name)?;
+        let mut values = BTreeMap::new();
+        while self.peek() != Some(&Token::RBrace) {
+            if !rust {
+                self.expect(Token::Dot)?;
+            }
+            let field = self.expect_field_name()?;
+            if rust {
+                self.expect(Token::Colon)?;
+            } else {
+                self.expect(Token::Equal)?;
+            }
+            let value = self.parse_contract_expression()?;
+            if values.insert(field.clone(), value).is_some() {
+                return Err(self.error(format!("field `{field}` is written twice")));
+            }
+            if self.peek() == Some(&Token::Comma) {
+                self.position += 1;
+            } else if self.peek() != Some(&Token::RBrace) {
+                return Err(self.error("expected `,` or `}` after a struct field"));
+            }
+        }
+        self.expect(Token::RBrace)?;
+        let layout = self
+            .struct_layouts
+            .get(&struct_name)
+            .cloned()
+            .expect("the struct's value type was formed from its layout");
+        let mut arguments = Vec::new();
+        for (field, _) in layout.fields_in_order() {
+            let Some(value) = values.remove(field) else {
+                return Err(self.error(format!("the struct value has no field `{field}`")));
+            };
+            arguments.push(value);
+        }
+        if let Some(field) = values.keys().next() {
+            return Err(self.error(format!("struct `{struct_name}` has no field `{field}`")));
+        }
+        Ok(Some(ContractExpression::AlgebraicConstructor {
+            algebraic_type: AlgebraicTypeApplication::concrete(type_name.clone()),
+            variant: type_name,
+            arguments,
+        }))
+    }
+
+    /// A by-value struct parameter compared whole, `value` or `old(value)`,
+    /// is its struct value: the constructor of `value.field` for each field.
+    /// Anything else is itself.
+    fn by_value_struct_value(
+        &mut self,
+        operand: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
+        let wrapped = |inner: ContractExpression, outer: &ContractExpression| match outer {
+            ContractExpression::Old(_) => ContractExpression::Old(Box::new(inner)),
+            ContractExpression::Exact(_) => ContractExpression::Exact(Box::new(inner)),
+            ContractExpression::At { selector, .. } => ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(inner),
+            },
+            _ => inner,
+        };
+        let place = match &operand {
+            ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => inner.as_ref(),
+            other => other,
+        };
+        let (ContractExpression::Binding(name)
+        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            crate::kernel::BindingName::Named(name),
+        ))) = place
+        else {
+            return Ok(operand);
+        };
+        let Some(struct_name) = self.names.struct_params.get(name).cloned() else {
+            return Ok(operand);
+        };
+        let by_value = if name == "result" {
+            // The function's own result, a struct by value: never a local
+            // of that name, which is a struct pointer.
+            self.current_aggregate_result
+                || matches!(
+                    self.current_result_interface_type,
+                    Some(InterfaceType::UInt8Array(_) | InterfaceType::Parameter(_))
+                )
+        } else {
+            self.names
+                .program_parameter_types
+                .get(name)
+                .is_some_and(|ty| !ty.is_pointer())
+        };
+        if !by_value || !self.struct_layouts.contains_key(&struct_name) {
+            return Ok(operand);
+        }
+        let value = self.struct_value_expression(place.clone(), &struct_name)?;
+        Ok(wrapped(value, &operand))
+    }
+
+    /// The value of the struct `place` points at, `*place`: its type's
+    /// constructor applied to each field's value, read as `place->field`.
+    fn struct_value_expression(
+        &mut self,
+        place: ContractExpression,
+        struct_name: &str,
+    ) -> Result<ContractExpression, ClickError> {
+        let type_name = self.struct_value_type(struct_name)?;
+        let layout = self
+            .struct_layouts
+            .get(struct_name)
+            .cloned()
+            .expect("the struct's value type was formed from its layout");
+        let surface_base = place.clone();
+        let base = match &place {
+            ContractExpression::Old(inner)
+            | ContractExpression::Exact(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => contract_expression_as_program_expression(inner),
+            _ => contract_expression_as_program_expression(&place),
+        }
+        .ok_or_else(|| self.error("a struct value requires a C pointer expression"))?;
+        let mut arguments = Vec::new();
+        for (field_name, _) in layout.fields_in_order() {
+            let field_name = field_name.to_string();
+            let field = self.resolve_struct_field_metadata(struct_name, &field_name)?;
+            let pointer = self.member_field_pointer(base.clone(), &field);
+            let access = ContractExpression::Field {
+                pointee_struct: field
+                    .struct_name
+                    .clone()
+                    .filter(|_| field.interface_type.is_pointer()),
+                base: Box::new(surface_base.clone()),
+                field: field_name,
+                lowered: lowered_field_expression(pointer, &field),
+                offset_bytes: field.offset,
+            };
+            arguments.push(match &field.struct_name {
+                Some(nested) if !field.interface_type.is_pointer() => {
+                    self.struct_value_expression(access, nested)?
+                }
+                _ => access,
+            });
+        }
+        Ok(ContractExpression::AlgebraicConstructor {
+            algebraic_type: AlgebraicTypeApplication::concrete(type_name.clone()),
+            variant: type_name,
+            arguments,
+        })
+    }
+
     fn contract_expression_struct_name(&self, expression: &ContractExpression) -> Option<String> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
@@ -14365,13 +14670,21 @@ impl Parser {
         // struct's end), so ownership covers trailing alignment padding:
         // padding belongs to the object and no one else can own it.
         let slot_end_bytes = match field.offset().bytes() {
+            // A fixed-prefix field of a symbolic layout ends its slot at the
+            // next field at a number, else at its own bytes: the fields
+            // after it are at terms.
             Some(offset) => layout
                 .fields()
                 .values()
-                .map(crate::languages::interface::RecordField::offset_bytes)
+                .filter_map(|other| other.offset().bytes())
                 .filter(|other| *other > offset)
                 .min()
-                .unwrap_or_else(|| layout.size_bytes()),
+                .unwrap_or_else(|| {
+                    layout
+                        .size()
+                        .bytes()
+                        .unwrap_or_else(|| offset + field.extent().bytes().unwrap_or(0))
+                }),
             // A symbolic layout's field slot is exactly its extent.
             None => 0,
         };
@@ -14939,6 +15252,14 @@ impl Parser {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
             let pointer = self.parse_contract_unary_at_depth(depth + 1)?;
+            // A struct's value is its fields' values, never the word at
+            // its address.
+            if let Some(struct_name) = self.contract_expression_struct_name(&pointer)
+                && self.struct_layouts.contains_key(&struct_name)
+                && !self.contract_expression_designates_struct_pointer_slot(&pointer)
+            {
+                return self.struct_value_expression(pointer, &struct_name);
+            }
             let source_pointer = pointer.clone();
             let Some(pointer) = contract_expression_as_program_expression(&pointer) else {
                 return Err(
@@ -16183,6 +16504,9 @@ impl Parser {
     }
 
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        if let Some(literal) = self.parse_struct_value_literal()? {
+            return Ok(literal);
+        }
         if self.peek_ident() == Some("binder") && self.peek_next() == Some(&Token::LParen) {
             return Ok(self.expect_surface_binder("binder reference")?.reference());
         }

@@ -1400,6 +1400,31 @@ impl RecordLayout {
         })
     }
 
+    /// The fields in declaration order: by offset, a fixed prefix's before
+    /// the fields at `offsetof` terms, which follow their layout's order.
+    pub fn fields_in_order(&self) -> Vec<(&str, &RecordField)> {
+        let mut fields = self
+            .fields
+            .iter()
+            .map(|(name, field)| (name.as_str(), field))
+            .collect::<Vec<_>>();
+        fields.sort_by_key(|(name, field)| {
+            (
+                match field.offset {
+                    crate::kernel::LayoutOffset::Bytes(bytes) => (0, bytes),
+                    crate::kernel::LayoutOffset::Field(_, index) => (1, index),
+                },
+                *name,
+            )
+        });
+        fields
+    }
+
+    /// Whether the record declares bit fields, which share storage units.
+    pub fn has_bit_fields(&self) -> bool {
+        self.bit_field_bytes.is_some()
+    }
+
     pub fn fields(&self) -> &BTreeMap<String, RecordField> {
         &self.fields
     }

@@ -354,6 +354,7 @@ impl Adapter<'_> {
                     // type.
                     scalar if scalar.is_scalar() => Ok(Some(scalar)),
                     parameter @ Type::Parameter { .. } => Ok(Some(parameter)),
+                    record @ Type::Record { .. } => Ok(Some(record)),
                     _ => Err(unsupported(
                         "type parameter instantiated at a type other than a scalar",
                     )),
@@ -558,6 +559,8 @@ fn record_argument_spelling(ty: &Type) -> Option<String> {
     Some(match ty {
         Type::Parameter { name } => name.clone(),
         scalar if scalar.is_scalar() => scalar.scalar_name()?.into(),
+        // A crate struct, by the importer's name for it.
+        Type::Record { name } => name.clone(),
         _ => return None,
     })
 }
@@ -716,7 +719,10 @@ impl Adapter<'_> {
                     // `&T` of an abstract type parameter, or of the scalar a
                     // generic callee's instance takes for it: a reference to
                     // one value.
-                    value if value.is_scalar() || matches!(value, Type::Parameter { .. }) => {
+                    value
+                        if value.is_scalar()
+                            || matches!(value, Type::Parameter { .. } | Type::Record { .. }) =>
+                    {
                         Type::Reference {
                             mutable: false,
                             pointee: Box::new(value),
@@ -3160,6 +3166,23 @@ pub(super) fn decode_crate(
                         adapter.closure_calls.insert(id, state);
                         let name = adapter.closure_name(closure)?;
                         adapter.functions.insert(id, name);
+                        continue;
+                    }
+                    // A derived `clone` of a `Copy` type is the bitwise copy
+                    // Click makes of every `Copy` value; a `Copy` bound
+                    // reaches it as the supertrait's method, never a call.
+                    if tr.item_meta.lang_item == Some(LangItem::Clone)
+                        && krate.trait_impls.get(impl_ref.id).is_some_and(|imp| {
+                            imp.item_meta.attr_info.attributes.iter().any(|attribute| {
+                                matches!(
+                                    attribute,
+                                    a::Attribute::Builtin(
+                                        charon_lib::ast::from_rustc::AttributeKind::AutomaticallyDerived
+                                    )
+                                )
+                            })
+                        })
+                    {
                         continue;
                     }
                     if tr.item_meta.lang_item != Some(LangItem::Drop) {
