@@ -103,12 +103,17 @@ pub(super) fn run(
     })
 }
 
-/// `path` relative to the current directory when it lies under it.
+/// `path` relative to the current directory when it lies under it, without
+/// a leading `./`.
 fn relative_path(path: &Path) -> PathBuf {
-    std::env::current_dir()
+    let relative = std::env::current_dir()
         .ok()
         .and_then(|directory| path.strip_prefix(directory).ok().map(Path::to_path_buf))
-        .unwrap_or_else(|| path.to_path_buf())
+        .unwrap_or_else(|| path.to_path_buf());
+    relative
+        .strip_prefix(".")
+        .map(Path::to_path_buf)
+        .unwrap_or(relative)
 }
 
 /// How many failures a run prints in full; the rest are in the failures file.
