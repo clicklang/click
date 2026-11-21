@@ -912,11 +912,11 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
         &Address::symbolic(Variable(1011401)),
         1011402,
     ));
-    for changed in [can_write, wrote, symbolic] {
+    for changed in [can_write, symbolic] {
         let point = changed.program_point();
         assert!(
             point
-                .entry_array_version(&AddressBase::ExternalArgument)
+                .indexed_array_version(&AddressBase::ExternalArgument)
                 .is_none()
         );
         assert_ne!(array_ref_argument_point(&point, &argument), expected);
@@ -924,10 +924,27 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
         assert!(
             later
                 .program_point()
-                .entry_array_version(&AddressBase::ExternalArgument)
+                .indexed_array_version(&AddressBase::ExternalArgument)
                 .is_none()
         );
     }
+
+    let after_write = array_ref_argument_point(&wrote.program_point(), &argument);
+    assert_eq!(after_write.read_version_id(), wrote.observation_point_id());
+    assert_ne!(after_write, expected);
+    let work = [1, 8, 64, 256].map(|count| {
+        let mut state = wrote.clone();
+        for index in 0..count {
+            let effects = call(&state, &other, 1011500 + index).store(local.clone(), int32(3));
+            state = state.with_memory(effects);
+        }
+        let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            array_ref_argument_point(&state.program_point(), &argument)
+        });
+        assert_eq!(selected, after_write);
+        work
+    });
+    assert!(work.iter().all(|units| *units == work[0]), "{work:?}");
 }
 
 #[test]

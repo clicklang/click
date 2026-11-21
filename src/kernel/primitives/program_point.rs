@@ -264,9 +264,9 @@ struct PointNode {
     /// Earliest recorded view in a suffix of effects disjoint from parameter
     /// storage. Read selection can start here.
     external_read_start: Option<ExternalReadStart>,
-    /// Entry carried across this point's checked call. The ordinary local
-    /// suffix can reach this point without admitting the call for scalar reads.
-    array_entry_after_call: Option<ExternalReadStart>,
+    /// Array version carried across this point's checked call. The ordinary
+    /// local suffix can reach this point without crossing the call for scalars.
+    array_version_after_call: Option<ExternalReadStart>,
 }
 
 #[derive(Clone, Debug)]
@@ -445,7 +445,7 @@ impl PathLink {
                 split: split.filter(|point| point.0.is_some()).cloned(),
                 point_read_index,
                 external_read_start,
-                array_entry_after_call: None,
+                array_version_after_call: None,
             })),
             IndexedView::Recorded,
         )
@@ -464,8 +464,8 @@ impl PathLink {
             .filter(|point| point.0.is_some())
             .collect::<Box<[_]>>();
         let external_read_start = external_read_start(&predecessors, steps.as_deref(), &memory);
-        let array_entry_after_call =
-            array_entry_across_call(&predecessors, steps.as_deref(), &memory);
+        let array_version_after_call =
+            array_version_across_call(&predecessors, steps.as_deref(), &memory);
         Self(
             Some(Arc::new_cyclic(|version| {
                 let id = ProgramPointId::fresh();
@@ -486,7 +486,7 @@ impl PathLink {
                     split: split.filter(|point| point.0.is_some()),
                     point_read_index,
                     external_read_start,
-                    array_entry_after_call,
+                    array_version_after_call,
                 }
             })),
             IndexedView::Recorded,
@@ -672,7 +672,7 @@ fn external_read_start(
 /// Every write in a checked call confined to automatic objects is disjoint
 /// from arrays supplied by parameters. The log summarizes those calls and
 /// local effects when it records them, including within a transition batch.
-fn array_entry_across_call(
+fn array_version_across_call(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
     memory: &SharedMemory,
@@ -686,17 +686,31 @@ fn array_entry_across_call(
     {
         return None;
     }
-    external_array_entry(from, &log.first_base)
+    external_array_anchor(from, &log.first_base)
 }
 
-/// The ordinary local suffix may end at entry or at a call with a certified
-/// entry. Either case is one suffix lookup and at most one further lookup.
-fn external_array_entry(path: &PathLink, memory: &SharedMemory) -> Option<ExternalReadStart> {
+/// An external array can start at function entry or at a write into the
+/// shared caller storage. A named external object can only use entry here.
+fn is_external_array_origin(node: &PointNode) -> bool {
+    node.function_entry
+        || node.steps.as_ref().is_some_and(|log| {
+            log.contiguous
+                && log.produced.arena_id() == node.memory.arena_id()
+                && matches!(
+                    log.step.as_ref(),
+                    MemoryDerivation::Store { pointer, .. }
+                        if pointer.base == AddressBase::ExternalArgument
+                )
+        })
+}
+
+/// The local suffix can end at an origin or at a call that carries one.
+fn external_array_anchor(path: &PathLink, memory: &SharedMemory) -> Option<ExternalReadStart> {
     if !path.matches_indexed_view(memory) {
         return None;
     }
     let node = path.0.as_ref()?;
-    if node.function_entry {
+    if is_external_array_origin(node) {
         return Some(ExternalReadStart {
             point: Arc::downgrade(node),
             view: path.1.clone(),
@@ -705,23 +719,26 @@ fn external_array_entry(path: &PathLink, memory: &SharedMemory) -> Option<Extern
     }
     if let Some(anchor) = &node.external_read_start {
         let origin = anchor.point.upgrade()?;
-        return if origin.function_entry {
+        return if is_external_array_origin(&origin) {
             Some(anchor.clone())
         } else {
-            origin.array_entry_after_call.clone()
+            origin.array_version_after_call.clone()
         };
     }
-    node.array_entry_after_call.clone()
+    node.array_version_after_call.clone()
 }
 
 /// Retain the common entry only when every incoming path proves that it
 /// preserved external storage. The incoming points already own the anchors.
 fn joined_external_entry(points: &[ProgramPoint]) -> Option<ExternalReadStart> {
     let (first, rest) = points.split_first()?;
-    let entry = external_array_entry(&first.path, &first.memory)?;
+    let entry = external_array_anchor(&first.path, &first.memory)?;
+    if !entry.point.upgrade()?.function_entry {
+        return None;
+    }
     for point in rest {
         crate::instrumentation::record_deterministic_work(1);
-        let other = external_array_entry(&point.path, &point.memory)?;
+        let other = external_array_anchor(&point.path, &point.memory)?;
         if !Weak::ptr_eq(&entry.point, &other.point)
             || entry.memory.arena_id() != other.memory.arena_id()
         {
@@ -1286,16 +1303,20 @@ impl ProgramPoint {
         self.clone()
     }
 
-    /// A function-entry array version reached through a recorded suffix of
-    /// local operations and checked calls that preserve parameter storage.
-    pub(in crate::kernel) fn entry_array_version(&self, block: &AddressBase) -> Option<Self> {
+    /// A recorded version for a caller-owned array. A checked suffix of
+    /// local effects can leave an entry version or a later write in force.
+    pub(in crate::kernel) fn indexed_array_version(&self, block: &AddressBase) -> Option<Self> {
         if !external_storage(block) {
             return None;
         }
-        let entry = external_array_entry(&self.path, &self.memory)?;
+        let anchor = external_array_anchor(&self.path, &self.memory)?;
+        let origin = anchor.point.upgrade()?;
+        if !origin.function_entry && *block != AddressBase::ExternalArgument {
+            return None;
+        }
         Some(Self {
-            memory: entry.memory,
-            path: PathLink(Some(entry.point.upgrade()?), entry.view),
+            memory: anchor.memory,
+            path: PathLink(Some(origin), anchor.view),
             read: ReadSelection::Exact,
         })
     }

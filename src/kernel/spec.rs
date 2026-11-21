@@ -6261,13 +6261,12 @@ fn lower_spec_predicate_proposition_at_state_in(
                         ProgramValue::Pointer(pointer)
                             if pointer.program_type() == ProgramType::Int32Pointer =>
                         {
-                            indexed_array_entry_version(&source, &pointer.address().base)
+                            indexed_array_version(&source, &pointer.address().base)
                         }
                         _ => None,
                     };
-                    // Without an entry version the argument names the source
-                    // memory, so keep its recorded path: the body then reads the
-                    // same cell versions as a proposition lowered at the source.
+                    // Without an indexed version the argument names its source
+                    // memory. Keep the path for reads in the predicate body.
                     arguments.push(Term::ArrayReadPoint(
                         point.unwrap_or_else(|| source.for_legacy_read()),
                     ));
@@ -8835,16 +8834,15 @@ fn evaluate_spec_pure_function_argument_paths_in(
     }
 }
 
-/// Name an external array by its verified entry point when the recorded
-/// suffix preserves external storage, including a call confined to one
-/// automatic object. Other arrays use the block version selector.
+/// Use an indexed external array version when the recorded suffix preserves
+/// it, including across calls confined to automatic objects.
 fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> ProgramPoint {
     let ProgramValue::Pointer(pointer) = pointer else {
         return source.clone();
     };
     let block = &pointer.address().base;
-    if let Some(entry) = indexed_array_entry_version(source, block) {
-        return entry;
+    if let Some(version) = indexed_array_version(source, block) {
+        return version;
     }
     let start = source.parameter_read_start(block);
     let version = crate::kernel::resource_tracker::last_same_version_point(
@@ -8861,15 +8859,15 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
     }
 }
 
-fn indexed_array_entry_version(source: &ProgramPoint, block: &AddressBase) -> Option<ProgramPoint> {
+fn indexed_array_version(source: &ProgramPoint, block: &AddressBase) -> Option<ProgramPoint> {
     crate::instrumentation::measure_operation(
         "kernel",
         "canonical form",
-        "array-ref entry version",
+        "array-ref indexed version",
         || {
-            let entry = source.entry_array_version(block)?;
+            let version = source.indexed_array_version(block)?;
             crate::instrumentation::record_deterministic_work(1);
-            Some(entry)
+            Some(version)
         },
     )
 }
