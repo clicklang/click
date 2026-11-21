@@ -8864,6 +8864,11 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
         return version;
     }
     let start = source.parameter_read_start(block);
+    // A certified view can name the array at this point even when the
+    // index has no earlier version for its storage.
+    if start.has_certified_read_view() {
+        return start.for_exact_read();
+    }
     let version = crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Block(block),
         &start,
