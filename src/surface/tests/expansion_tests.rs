@@ -300,6 +300,32 @@ fn resource_prerequisites_span_proofs_expand_without_normalize() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 13s for five resource and count expansions and cold replays"]
+fn resource_body_and_population_proofs_expand_without_normalize() {
+    for (fixture, label) in [
+        (
+            "resource_verbs_composite_proofs",
+            "initialize_cell.produces_0",
+        ),
+        ("resource_verbs_composite_proofs", "set_cell_one.owns_0"),
+        ("authority_symbolic_birth_composition", "mint_pair.contract"),
+        ("authority_symbolic_batch_retirement", "mint_pair.contract"),
+        ("loop_binder_counter_model_concise_proof", "bump_n.contract"),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{fixture}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: two loop expansions and cold replays"]
 fn adjacent_loop_reads_expand_with_explicit_preservation() {
     for fixture in [

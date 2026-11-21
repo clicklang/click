@@ -1665,7 +1665,9 @@ order comparisons close when their symbolic terms cancel. Identical calls,
 reads, folds, and symbolic matches may cancel as opaque operands. An equality
 with an `int32` union member can also use the typed value stored at its exact
 address and memory state. A by-value copy can store the source read itself
-as that value. The check uses one typed cell lookup per operand.
+as that value. The check uses one typed cell lookup per operand. A native
+signed `int32` comparison against a literal can also use the literal
+stored at the read's exact typed cell.
 
 A machine-valued range fold whose step returns its accumulator equals its
 initial value. This check reads only the accumulator binding and the initial

@@ -1,7 +1,7 @@
 //! Goal-local computation for a simple proof leaf.
 //!
 //! The `computes_leaf` entry point uses only the goal, including exact
-//! stored views of typed union cells. Legacy normalization shares arithmetic
+//! stored scalar and union cell values. Legacy normalization shares arithmetic
 //! below but supplies its own atom key.
 
 use crate::kernel::machine_integer::bounds::positive_literal_remainder_divisor;
@@ -296,6 +296,19 @@ fn stored_int32_union_member(read: &MachineTerm) -> Option<&MachineTerm> {
     Some(value)
 }
 
+/// A native comparison can read a literal already stored at its exact
+/// typed cell. Run slots, aliases, and earlier memory states stay opaque.
+fn stored_int32_literal(term: &MachineTerm) -> Option<MachineIntegerConstant> {
+    let MachineTerm::MemoryLoad(point, pointer, LoadKind::Int32) = term else {
+        return None;
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    let ProgramValue::Int32(stored) = point.memory().indexed_scalar_value(pointer)? else {
+        return None;
+    };
+    MachineIntegerType::Int32.constant_from_term(stored)
+}
+
 fn condition_value(condition: &ConditionTerm) -> Option<bool> {
     match condition {
         ConditionTerm::Constant(value) => Some(*value),
@@ -384,10 +397,20 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             {
                 return Some(value);
             }
-            if let (Some(left), Some(right)) = (
+            let literals = (
                 format.constant_from_term(left),
                 format.constant_from_term(right),
-            ) {
+            );
+            let literals = if *format == MachineIntegerType::Int32 {
+                match literals {
+                    (Some(value), None) => (Some(value), stored_int32_literal(right)),
+                    (None, Some(value)) => (stored_int32_literal(left), Some(value)),
+                    both => both,
+                }
+            } else {
+                literals
+            };
+            if let (Some(left), Some(right)) = literals {
                 let (left, right) = (left.to_integer(), right.to_integer());
                 return Some(match relation {
                     CompareRelation::Equal => left == right,
@@ -1008,16 +1031,29 @@ pub(super) fn integer_operation_bound_comparison(condition: &ConditionTerm) -> O
         ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
         _ => return None,
     };
-    // Exact type ranges inspect just the observation and its stated endpoint.
-    // Unrelated constant comparisons should not construct affine range claims.
-    if let (IntegerTerm::Constant(endpoint), IntegerTerm::Machine(value)) =
-        (left.as_ref(), right.as_ref())
+    // A rewrite may leave the old count's zero addend in a retained sum.
+    // Its observation has the same type range as the written machine value.
+    fn unshifted_observation(term: &SharedIntegerTerm) -> Option<&SharedMachineIntegerTerm> {
+        let term = match term.as_ref() {
+            IntegerTerm::Add(a, b) if a.as_const().is_some_and(num_traits::Zero::is_zero) => b,
+            IntegerTerm::Add(a, b) | IntegerTerm::Subtract(a, b)
+                if b.as_const().is_some_and(num_traits::Zero::is_zero) =>
+            {
+                a
+            }
+            _ => term,
+        };
+        let IntegerTerm::Machine(value) = term.as_ref() else {
+            return None;
+        };
+        Some(value)
+    }
+    if let (Some(endpoint), Some(value)) = (left.as_const(), unshifted_observation(right))
         && endpoint == &crate::kernel::machine_integer::range::observation_range(value).0
     {
         return Some(true);
     }
-    if let (IntegerTerm::Machine(value), IntegerTerm::Constant(endpoint)) =
-        (left.as_ref(), right.as_ref())
+    if let (Some(value), Some(endpoint)) = (unshifted_observation(left), right.as_const())
         && endpoint == &crate::kernel::machine_integer::range::observation_range(value).1
     {
         return Some(true);
@@ -1348,6 +1384,77 @@ mod tests {
             };
             assert_eq!(computes_leaf(&goal), separate, "{goal:?}");
         }
+    }
+
+    #[test]
+    fn stored_literal_order_uses_the_named_int32_cell_and_state() {
+        let _session = VerificationSession::enter();
+        let base = SymbolicMemory::global_pointer("resource-body-literal");
+        let sample = |unrelated| {
+            let mut memory = SymbolicMemory::new();
+            for i in 0..unrelated {
+                memory = memory.store(
+                    SymbolicMemory::global_pointer(format!("resource-body-neighbor-{i}")),
+                    int32(0),
+                );
+            }
+            let before = memory.clone().store(base.clone(), int32(1));
+            let after = before.clone().store(base.clone(), int32(u32::MAX));
+            let check = |memory| {
+                let read = MachineTerm::MemoryLoad(
+                    ProgramPoint::at(&crate::kernel::intern_memory(memory)),
+                    Box::new(base.clone()),
+                    LoadKind::Int32,
+                );
+                let goal = Proposition::condition_is(
+                    ConditionTerm::signed_greater_equal(read, 0u32.into()),
+                    true,
+                );
+                crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal))
+            };
+            [check(before), check(after), check(memory)]
+        };
+        let observations = [0, 32, 128].map(sample);
+        for checks in observations {
+            assert_eq!(checks.map(|(holds, _)| holds), [true, false, false]);
+            for ((_, work), (_, baseline)) in checks.into_iter().zip(observations[0]) {
+                assert!(work <= baseline + 16, "{observations:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn rewritten_zero_count_preserves_the_observations_type_range() {
+        let _session = VerificationSession::enter();
+        let n = IntegerTerm::from_machine(
+            MachineIntegerType::Int32,
+            MachineTerm::Variable(Variable(402904)),
+        )
+        .unwrap();
+        let observed =
+            |count| IntegerTerm::Add(IntegerTerm::constant_i64(count).into(), n.clone().into());
+        let upper = |value: IntegerTerm| {
+            Proposition::condition_is(
+                ConditionTerm::IntegerLessEqual(
+                    value.into(),
+                    IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
+                ),
+                true,
+            )
+        };
+        let lower = |value: IntegerTerm| {
+            Proposition::condition_is(
+                ConditionTerm::IntegerLessEqual(
+                    IntegerTerm::constant_i64(i64::from(i32::MIN)).into(),
+                    value.into(),
+                ),
+                true,
+            )
+        };
+        assert!(computes_leaf(&upper(observed(0))));
+        assert!(computes_leaf(&lower(observed(0))));
+        assert!(!computes_leaf(&upper(observed(1))));
+        assert!(!computes_leaf(&lower(observed(-1))));
     }
 
     #[test]
