@@ -6158,10 +6158,24 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
         assert!(ProgramVerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    assert_rust_loop_condition_has_no_generated_local(&p, "sum");
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     assert_cli(&p, &["expand", "--claim", "sum.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
+}
+
+#[cfg(not(feature = "fast-gate"))]
+fn assert_rust_loop_condition_has_no_generated_local(p: &Project, function: &str) {
+    let output = p.cli(&["verify", "--trace-proof", function]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
 }
 
 #[cfg(not(feature = "fast-gate"))]
@@ -7128,6 +7142,7 @@ fn loops_gate_fixture_tools_recheck_certificates() {
     );
     let proof = include_str!("../examples/rust-loops/loops.click").replace("loops.rs", "borrow.rs");
     fs::write(p.root.join("borrow.click"), proof).unwrap();
+    assert_rust_loop_condition_has_no_generated_local(&p, "walk");
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in ["count.contract", "accumulate.contract", "walk.contract"] {
