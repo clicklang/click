@@ -1,9 +1,9 @@
-# `normalize` cancels two copies of one fold
+# Two copies of one fold cancel
 
 Each occurrence of a fold in a proposition is lowered with its own binders, so
 the two sides of `F == F - 0` hold different but alpha-equivalent fold terms.
-Integer normalization treats a fold as an opaque atom keyed by its checked
-alpha identity, so the copies cancel exactly as two copies of `n` would.
+The proof treats the fold as an opaque atom keyed by its checked alpha
+identity, so the copies cancel exactly as two copies of `n` would.
 
 ```c filename=normalize_cancels_separately_lowered_copies_of_a_fold.c
 int32 f(int32 n) {
@@ -20,11 +20,11 @@ int32 f(int32 n) {
 } by {
     have (0..n).fold(0, |acc, k| { (acc + to_integer(k)) }) ==
         ((0..n).fold(0, |acc, k| { (acc + to_integer(k)) }) - 0) by {
-        normalize();
+        known();
     }
     have -(0..n).fold(0, |acc, k| { (acc + to_integer(k)) }) ==
         (0 - (0..n).fold(0, |acc, k| { (acc + to_integer(k)) })) by {
-        normalize();
+        known();
     }
     step_until(function.exit);
 }
