@@ -238,7 +238,10 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
             }
         }
     "#;
-    verify_c_sources(source, &[]).expect("nested exact conjunction proofs");
+    let verify_explicit = |source: &str| {
+        crate::surface::proof::without_implicit_solve(|| verify_c_sources(source, &[]))
+    };
+    verify_explicit(source).expect("nested exact conjunction proofs");
     for bad in [
         source.replacen("x == x => { normalize(); }", "x == x => { }", 1),
         source.replace("x >= x", "x > x"),
@@ -249,7 +252,7 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
             "all { normalize(); } and { normalize(); }",
         ),
     ] {
-        assert!(verify_c_sources(&bad, &[]).is_err());
+        assert!(verify_explicit(&bad).is_err(), "{bad}");
     }
     let leaking = r#"theorem leak(x: int32) {
         ensures (x == 0 implies x == 0) and x == 0 by {

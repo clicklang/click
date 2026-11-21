@@ -1597,16 +1597,19 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     #[test]
     fn integer_multiply_add_rechecks_application_and_expansion() {
         let source = "import click::integer; theorem distribute(a: Integer, b: Integer, c: Integer) { ensures (a + b) * c == a * c + b * c by { apply(integer::multiply_add(a, b, c)); } }";
-        verify_c_sources(source, &[]).unwrap();
+        let verify_explicit = |source: &str| {
+            crate::surface::proof::without_implicit_solve(|| verify_c_sources(source, &[]))
+        };
+        verify_explicit(source).unwrap();
         let expanded = expand_c_claim_source_by_label(source, &[], "distribute.ensures_0").unwrap();
-        verify_c_sources(&expanded, &[]).unwrap();
+        verify_explicit(&expanded).unwrap();
         for invalid in [
             source.replace("a * c + b * c", "a * c + b"),
             source.replace("multiply_add(a, b, c)", "multiply_add(a, c, b)"),
             source.replace("multiply_add(a, b, c)", "multiply_add(a, b)"),
             source.replace(": Integer", ": int32"),
         ] {
-            assert!(verify_c_sources(&invalid, &[]).is_err(), "{invalid}");
+            assert!(verify_explicit(&invalid).is_err(), "{invalid}");
         }
     }
 
