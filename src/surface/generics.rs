@@ -1271,12 +1271,6 @@ fn instantiate_proof_tactic(
                 .map(proposition)
                 .collect::<Result<Vec<_>, _>>()?,
         ),
-        ProofTactic::OrderChain(premises) => ProofTactic::OrderChain(
-            premises
-                .iter()
-                .map(proposition)
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
         ProofTactic::Contradiction(value) => ProofTactic::Contradiction(proposition(value)?),
         ProofTactic::Rewrite(value) => ProofTactic::Rewrite(proposition(value)?),
         ProofTactic::Transport { source, target } => ProofTactic::Transport {

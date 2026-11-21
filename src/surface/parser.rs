@@ -11776,12 +11776,6 @@ impl Parser {
                 }
                 ProofTactic::Sorry
             }
-            "order_chain" => {
-                self.expect_empty_tactic_args(&name)?;
-                let premises = self.parse_exact_premises()?;
-                self.skip_redundant_semicolon();
-                return Ok(ProofTactic::OrderChain(premises));
-            }
             "normalize" => {
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
@@ -18859,7 +18853,6 @@ mod tactic_classification_tests {
         ("known", "known();"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
-        ("order-chain", "order_chain() using { x < y; };"),
         ("preserve", "preserve(memory(*p), statement(0));"),
         ("intro", "intro();"),
         ("intro-as", "let name = intro();"),

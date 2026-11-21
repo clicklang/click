@@ -6344,6 +6344,35 @@ fn chain_ordered_index_stores_in(stores: usize, descending: bool) -> (String, St
     (c_source, click_source)
 }
 
+/// Inspect the generated bounds separately from the store framing work.
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: cold expansion and replay at multiple store counts"]
+fn signed_store_order_expansion_reuses_bounds() {
+    for stores in [8, 24, 48] {
+        for descending in [false, true] {
+            let (c_source, click_source) = chain_ordered_index_stores_in(stores, descending);
+            let click_source = click_source.replace("ensures a[c0] == 0;", "ensures 1 == 1;");
+            let program = [("mark.c", c_source.as_str())];
+            let label = "mark.contract";
+            let expanded =
+                crate::surface::expand_c_claim_source_by_label(&click_source, &program, label)
+                    .unwrap_or_else(|error| panic!("{stores} stores: {}", error.report()));
+            let applications = expanded
+                .matches("apply(click::integer::int32_less_")
+                .count();
+            assert!(
+                (stores..=5 * stores).contains(&applications),
+                "{stores} stores, descending = {descending}, generated {applications} applications:\n{expanded}"
+            );
+            crate::surface::without_implicit_solve_for_claim(label, || {
+                verify_c_sources(&expanded, &program).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+        }
+    }
+}
+
 fn store_line_samples(
     label: &str,
     fixture: impl Fn(usize) -> (String, String),
