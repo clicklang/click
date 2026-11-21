@@ -28,7 +28,7 @@ is **outside it**, with what to write instead. A simple tactic that refuses a
 case its Accepts list covers is a Click bug; one that refuses a case outside
 the list is working as documented. Behavior a section describes as beyond the
 list is not guaranteed. [Tracing](../../concepts/tracing.md) uses this
-distinction for its `failing-tactic` outcome.
+distinction for its `tactic-bug` outcome.
 
 ## Core tactics
 

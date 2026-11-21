@@ -115,7 +115,7 @@ Every attempt must change that chain. A new tactic, written form, or position fo
 the same link is not progress. Stop at one of its named outcomes. A link `solve` does not prove is too big, never by itself a
 verifier problem. File defects found through this workflow as GitHub issues
 after user approval, following the skill's reporting instructions, including
-for `inexpressible-fact`, `failing-tactic`, `unclear-trace`, crashes, and hangs.
+for `inexpressible-fact`, `tactic-bug`, `unclear-trace`, crashes, and hangs.
 Do not put them in `bugs/`, even when discovered during internal development
 or a nightly investigation. Explain the evidence and proposed response to the
 user before changing tooling. Tooling design changes, including what

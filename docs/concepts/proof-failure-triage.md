@@ -113,7 +113,7 @@ attempt must change that chain; a new written form, position, or tactic for the
 same link is not progress. The procedure ends at one of seven named outcomes.
 `missing-rule` identifies a justified inference with no supported primitive
 for design discussion; it is not inferred merely from a failed search.
-The three bug outcomes (`inexpressible-fact`, `failing-tactic`,
+The three bug outcomes (`inexpressible-fact`, `tactic-bug`,
 and `unclear-trace`) leave a reduced reproduction.
 Tooling improvements in response require discussion and user approval before
 implementation, including new diagnostic content, trace presentation, or a

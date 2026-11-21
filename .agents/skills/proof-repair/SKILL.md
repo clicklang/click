@@ -126,7 +126,7 @@ A refusal that says "this is a search miss" came from an elided form, such
 as `apply(t(x))` or a bare `transport(P, Q)`, whose search for an argument
 found nothing. Write the argument: state the missing fact with `have` first,
 or write the `using` form it names. Only the written form's refusal can be
-`failing-tactic`.
+`tactic-bug`.
 
 Before each run, state in one line which link is new and why it holds. A new
 tactic, written form, or position for the same link is not a new attempt. Never
@@ -172,16 +172,26 @@ Stop at exactly one outcome:
   discussion. A search miss alone does not establish this outcome.
 - `inexpressible-fact`: the argument needs an intermediate fact that Click
   cannot write. Follow the user-facing reporting instructions below.
-- `failing-tactic`: a link that is a single simple tactic, within what that
-  tactic is documented to do (the **Accepts** list in `click docs NAME`), is
-  refused, still in its smallest form after step 6. Report a bug (below). A smart tactic such as `solve` that does not prove a
-  link is never `failing-tactic`: identify the primitive and write its premises. A search miss is
-  never `failing-tactic` either: write the argument and run again.
+- `tactic-bug`: a bug in Click. The minimized link is one simple tactic,
+  its written premises justify the goal, and the tactic's documented
+  **Accepts** list in `click docs NAME` covers the link. Click still refuses
+  it. Report the exact refusal and the applicable documentation.
 - `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the
   refusal is not "`G` was not proved". Report a bug (below).
 
-`false-goal` and `unclear-goal` usually mean the claim, the contract, or the
-argument needs another look, not that Click is wrong.
+A `failed check:` heading identifies the check Click could not complete.
+To report a `tactic-bug`, show why the inference holds and cite the documented
+behavior the refusal violates. A smart-tactic miss or a search for an omitted
+argument calls for an explicit proof link. While checking the rule or its
+premises, report that diagnosis is in progress. Use `unclear-goal` if you
+cannot justify the goal after investigation.
+
+In the outcome report, say explicitly what the result establishes about
+Click. `tactic-bug`, `inexpressible-fact`, `unclear-trace`, `crash`, and
+`hang` identify Click defects. An `unclear-trace` establishes a diagnostic
+defect and may leave the underlying proof issue open. `false-goal` and
+`unclear-goal` identify problems with the goal or argument. `missing-rule`
+identifies a gap in supported inference.
 
 ## Reporting an inexpressible fact to the user
 
@@ -207,8 +217,8 @@ one:
 2. Open an issue at https://github.com/clicklang/click/issues.
 3. Give the report below, enough for someone else to reproduce it.
 4. Label the issue with its outcome: `tracing: inexpressible-fact`,
-   `tracing: failing-tactic`, `tracing: unclear-trace`, `crash`, or `hang`.
-   Start the title with it in brackets too (`[failing-tactic] ...`,
+   `tracing: tactic-bug`, `tracing: unclear-trace`, `crash`, or `hang`.
+   Start the title with it in brackets too (`[tactic-bug] ...`,
    `[hang] ...`), so it shows even where you cannot set labels.
 
 ## What a bug report contains
@@ -224,6 +234,6 @@ one of the three outcomes contains:
 - The nearest passing link and what differs from it.
 - Why the link holds, in one line of mathematics, and the step of that
   argument Click did not take.
-- For `failing-tactic`, the item of that tactic's **Accepts** list that
+- For `tactic-bug`, the item of that tactic's **Accepts** list that
   covers the link. For `unclear-trace`, what in the output is missing or
   misleading.
