@@ -173,16 +173,16 @@ fn normal_state(paths: &[StatementExecutionPath]) -> ExecutionState {
 }
 
 fn assert_borrow_write_rejected(outcome: &StatementOutcome) {
-    let StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)) = outcome else {
+    let StatementOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)) = outcome else {
         panic!("expected a borrow refusal, got {outcome:?}");
     };
     assert_eq!(
         diagnostic.category(),
-        crate::kernel::LoanRefusalCategory::ActiveDependency
+        crate::kernel::BorrowRefusalCategory::ActiveDependency
     );
     assert_eq!(
         diagnostic.operation(),
-        crate::kernel::LoanRefusalOperation::MemoryAccess
+        crate::kernel::BorrowRefusalOperation::MemoryAccess
     );
     assert!(diagnostic.subject().conflicting_resource_fact().is_some());
 }

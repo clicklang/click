@@ -1,10 +1,9 @@
 use super::ResourceReference;
 use super::borrows::{
-    BorrowBinding, BorrowBindings, BorrowId, BorrowLedger, BorrowRefusal,
-    CheckedBorrowCallEvidence, CompositeBorrowBacking, CompositeProjectionEvidence,
-    LoanRefusalOperation, LoanRefusalSubject, StableViewTransferPlan,
-    append_checked_borrow_evidence, empty_checked_borrow_evidence_sequence,
-    plan_stable_view_transfer_with_protocol_effect,
+    BorrowBinding, BorrowBindings, BorrowId, BorrowLedger, BorrowRefusal, BorrowRefusalOperation,
+    BorrowRefusalSubject, CheckedBorrowCallEvidence, CompositeBorrowBacking,
+    CompositeProjectionEvidence, StableViewTransferPlan, append_checked_borrow_evidence,
+    empty_checked_borrow_evidence_sequence, plan_stable_view_transfer_with_protocol_effect,
 };
 use super::model_fields::{ModelFieldOrigin, ModelMint, algebraic_value_variable};
 use super::population_authority::storage_creation::CreationEvents;
@@ -867,18 +866,18 @@ fn recover_candidate_stable_view_resources(
         ));
     };
     let Some(actual_ledger) = callee_state.borrow_ledger() else {
-        return Err(RuntimeError::LoanRefusal(Box::new(
-            BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Recovery),
+        return Err(RuntimeError::BorrowRefusal(Box::new(
+            BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Recovery),
         )));
     };
     if actual_ledger != &plan.ledger {
-        return Err(RuntimeError::LoanRefusal(Box::new(
-            BorrowRefusal::StalePredecessor.diagnostic(LoanRefusalOperation::Recovery),
+        return Err(RuntimeError::BorrowRefusal(Box::new(
+            BorrowRefusal::StalePredecessor.diagnostic(BorrowRefusalOperation::Recovery),
         )));
     }
     if callee_state.borrow_participant() != Some(plan.callee_participant()) {
-        return Err(RuntimeError::LoanRefusal(Box::new(
-            BorrowRefusal::WrongHolder.diagnostic(LoanRefusalOperation::Recovery),
+        return Err(RuntimeError::BorrowRefusal(Box::new(
+            BorrowRefusal::WrongHolder.diagnostic(BorrowRefusalOperation::Recovery),
         )));
     }
     // A call with nothing lent still has step 7 work when it consumed a
@@ -1147,8 +1146,8 @@ fn recover_candidate_stable_view_resources(
     recovery
         .recheck_transitions(actual_ledger, plan.caller_participant())
         .map_err(|error| {
-            RuntimeError::LoanRefusal(Box::new(error.diagnostic_with_subject(
-                LoanRefusalOperation::Recovery,
+            RuntimeError::BorrowRefusal(Box::new(error.diagnostic_with_subject(
+                BorrowRefusalOperation::Recovery,
                 recovery.diagnostic_subject(),
             )))
         })?;
@@ -1355,8 +1354,8 @@ fn retain_rebound_composite_holds(
                 .ledger
                 .hold_with_transition(binding, caller)
                 .map_err(|error| {
-                    RuntimeError::LoanRefusal(Box::new(
-                        error.diagnostic(LoanRefusalOperation::Recovery),
+                    RuntimeError::BorrowRefusal(Box::new(
+                        error.diagnostic(BorrowRefusalOperation::Recovery),
                     ))
                 })?;
             recovery.ledger = ledger;
@@ -7214,21 +7213,23 @@ fn prepare_verified_function_call<'a>(
                 })
                 .find(|(_, relation)| *relation != CandidateMemoryRangeRelation::Disjoint)
             {
-                let subject = LoanRefusalSubject::for_write_and_view(
+                let subject = BorrowRefusalSubject::for_write_and_view(
                     mutable_range.clone(),
                     viewed_range.clone(),
                 );
                 let diagnostic = match relation {
                     CandidateMemoryRangeRelation::Overlap => BorrowRefusal::ActiveDependency
-                        .proven_overlap_diagnostic(LoanRefusalOperation::MemoryAccess, subject),
+                        .proven_overlap_diagnostic(BorrowRefusalOperation::MemoryAccess, subject),
                     CandidateMemoryRangeRelation::SeparationUnproved => {
                         BorrowRefusal::UnsupportedPartition
-                            .diagnostic_with_subject(LoanRefusalOperation::MemoryAccess, subject)
+                            .diagnostic_with_subject(BorrowRefusalOperation::MemoryAccess, subject)
                     }
                     CandidateMemoryRangeRelation::Disjoint => unreachable!(),
                 };
                 return Ok(Err(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(Box::new(diagnostic))),
+                    FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(Box::new(
+                        diagnostic,
+                    ))),
                     facts,
                     obligations,
                 )));
@@ -11097,7 +11098,7 @@ fn candidate_composite_view_adapter(
     };
     if definition.owns_population_authority()
         || definition.is_recursive()
-        || !definition.facts_are_loan_stable()
+        || !definition.facts_are_borrow_stable()
     {
         return Ok(None);
     }
@@ -11160,7 +11161,7 @@ fn candidate_composite_view_adapter(
         // Restore the exact escrowed occurrence with no authority exchange.
         if owner_definition.owns_population_authority()
             || owner_definition.is_recursive()
-            || !owner_definition.facts_are_loan_stable()
+            || !owner_definition.facts_are_borrow_stable()
             || (direct_only
                 && (owner.owned_quantity() != Some(1)
                     || !owner_definition.has_argument_direct_body()))
@@ -11469,7 +11470,7 @@ fn string_literal_composite_holds(
     if definition.is_recursive()
         || definition.owns_population_authority()
         || !definition.witnesses().is_empty()
-        || !definition.facts_are_loan_stable()
+        || !definition.facts_are_borrow_stable()
     {
         return Ok(false);
     }
@@ -11543,7 +11544,7 @@ fn local_storage_composite_pieces(
     if definition.is_recursive()
         || definition.owns_population_authority()
         || !definition.witnesses().is_empty()
-        || !definition.facts_are_loan_stable()
+        || !definition.facts_are_borrow_stable()
     {
         return Ok(None);
     }
@@ -12016,8 +12017,8 @@ fn prepare_contract_resource_transfer_unexplained(
     if purpose.lends()
         && caller_state.borrow_ledger().is_some() != caller_state.borrow_participant().is_some()
     {
-        return Ok(Err(RuntimeError::LoanRefusal(Box::new(
-            BorrowRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Plan),
+        return Ok(Err(RuntimeError::BorrowRefusal(Box::new(
+            BorrowRefusal::MissingBacking.diagnostic(BorrowRefusalOperation::Plan),
         ))));
     }
     // In particular, preparing several pure callback interfaces must not
@@ -12729,7 +12730,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 // Recovery restores the exact escrowed head, so its facts are
                 // re-asserted precisely as folded; that is sound only when
                 // everything a fact depends on is stable for the borrow.
-                if !definition.facts_are_loan_stable() {
+                if !definition.facts_are_borrow_stable() {
                     return Ok(Err(RuntimeError::FunctionContract(
                         "composite body facts depend on a resource count or an allocation-liveness claim, which a stable borrow does not stabilize".to_string(),
                     )));
@@ -12855,8 +12856,8 @@ fn prepare_contract_resource_transfer_unexplained(
                             )
                         }
                         error => error
-                            .borrow_diagnostic(LoanRefusalOperation::Plan)
-                            .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
+                            .borrow_diagnostic(BorrowRefusalOperation::Plan)
+                            .map(|refusal| RuntimeError::BorrowRefusal(Box::new(refusal)))
                             .unwrap_or_else(|| {
                                 RuntimeError::FunctionContract(
                                     "local view borrow could not be checked".to_string(),
@@ -12865,8 +12866,8 @@ fn prepare_contract_resource_transfer_unexplained(
                     }));
                 }
                 if let Err(error) = plan.recheck_entry(&ledger) {
-                    return Ok(Err(RuntimeError::LoanRefusal(Box::new(
-                        error.diagnostic(LoanRefusalOperation::Entry),
+                    return Ok(Err(RuntimeError::BorrowRefusal(Box::new(
+                        error.diagnostic(BorrowRefusalOperation::Entry),
                     ))));
                 }
                 Some(plan)
@@ -12902,8 +12903,8 @@ fn prepare_contract_resource_transfer_unexplained(
                         ResourceContextValidityError::UnestablishedOwnedBoundary(required.clone()),
                     )));
                 }
-                if let Some(diagnostic) = error.borrow_diagnostic(LoanRefusalOperation::Plan) {
-                    return Ok(Err(RuntimeError::LoanRefusal(Box::new(diagnostic))));
+                if let Some(diagnostic) = error.borrow_diagnostic(BorrowRefusalOperation::Plan) {
+                    return Ok(Err(RuntimeError::BorrowRefusal(Box::new(diagnostic))));
                 }
                 return Ok(Err(RuntimeError::FunctionContract(
                     "stable-view call transition refused".to_string(),

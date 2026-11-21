@@ -1929,7 +1929,7 @@ impl CompositeResourceDefinition {
     /// on is stable for the borrow. The body's memory and tokens are; a
     /// population count the caller may change elsewhere and the liveness of
     /// storage the fact names are not (D12).
-    pub fn facts_are_loan_stable(&self) -> bool {
+    pub fn facts_are_borrow_stable(&self) -> bool {
         !self.facts_read_counts && !self.facts_claim_liveness
     }
 

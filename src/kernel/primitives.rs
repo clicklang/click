@@ -8250,7 +8250,7 @@ pub enum RuntimeError {
         piece: Box<ResourceFact>,
         held: Box<ResourceFact>,
     },
-    LoanRefusal(Box<crate::kernel::LoanRefusalDiagnostic>),
+    BorrowRefusal(Box<crate::kernel::BorrowRefusalDiagnostic>),
     /// A call needs `assembled`, a viewed composite the caller holds the
     /// pieces of but not the instance, and assembling it is a fold: `fact`
     /// is the first body fact, lowered at the caller's memory, the caller

@@ -1380,15 +1380,15 @@ fn write_barrier_does_not_enumerate_overlapping_borrows() {
                         ledger.memory_access_refusal(
                             query.memory_range().unwrap(),
                             &assumptions,
-                            LoanRefusalOperation::MemoryAccess,
+                            BorrowRefusalOperation::MemoryAccess,
                         )
                     });
                 assert_eq!(
                     diagnostic.as_ref().map(|d| d.category()),
-                    blocked.then_some(LoanRefusalCategory::ActiveDependency)
+                    blocked.then_some(BorrowRefusalCategory::ActiveDependency)
                 );
                 assert_eq!(
-                    diagnostic.map(|d| d.subject().loan_id()),
+                    diagnostic.map(|d| d.subject().borrow_id()),
                     blocked.then(|| first.map(|borrow| (borrow.arena, borrow.ordinal)))
                 );
                 diagnostic_samples.push((count, repeat, diagnostic_work));
@@ -1460,7 +1460,7 @@ fn writes_without_active_memory_borrows_do_not_walk_pointer_aliases() {
                             ledger.memory_access_refusal(
                                 &range,
                                 &facts,
-                                LoanRefusalOperation::MemoryAccess,
+                                BorrowRefusalOperation::MemoryAccess,
                             )
                         });
                     assert!(report.is_none());

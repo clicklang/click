@@ -90,8 +90,8 @@ pub(crate) use borrows::{
     concat_checked_borrow_evidence, empty_checked_borrow_evidence_sequence,
 };
 pub use borrows::{
-    LoanOriginKind, LoanOverlapStatus, LoanRefusalCategory, LoanRefusalDiagnostic,
-    LoanRefusalOperation, LoanRefusalSubject,
+    BorrowOriginKind, BorrowOverlapStatus, BorrowRefusalCategory, BorrowRefusalDiagnostic,
+    BorrowRefusalOperation, BorrowRefusalSubject,
 };
 mod byte_representation_laws;
 mod integer_truncation_laws;

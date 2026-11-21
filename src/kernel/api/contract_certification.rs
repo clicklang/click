@@ -1179,11 +1179,11 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::UnboundedWriteWithLiveView { callee, .. } => {
             format!("call to `{callee}` has a write effect without a checked byte bound while a view is live")
         }
-        RuntimeError::LoanRefusal(diagnostic) => format_borrow_refusal_diagnostic(diagnostic),
+        RuntimeError::BorrowRefusal(diagnostic) => format_borrow_refusal_diagnostic(diagnostic),
     }
 }
 
-fn format_borrow_refusal_diagnostic(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> String {
+fn format_borrow_refusal_diagnostic(diagnostic: &crate::kernel::BorrowRefusalDiagnostic) -> String {
     format!(
         "stable-view {} refused: {}; {}{}",
         format_borrow_operation(diagnostic.operation),
@@ -1193,26 +1193,26 @@ fn format_borrow_refusal_diagnostic(diagnostic: &crate::kernel::LoanRefusalDiagn
     )
 }
 
-fn format_borrow_category(category: crate::kernel::LoanRefusalCategory) -> &'static str {
+fn format_borrow_category(category: crate::kernel::BorrowRefusalCategory) -> &'static str {
     match category {
-        crate::kernel::LoanRefusalCategory::ProvenOverlap => "a required resource overlaps",
-        crate::kernel::LoanRefusalCategory::SeparationUnproved => {
+        crate::kernel::BorrowRefusalCategory::ProvenOverlap => "a required resource overlaps",
+        crate::kernel::BorrowRefusalCategory::SeparationUnproved => {
             "resource separation was not proved"
         }
-        crate::kernel::LoanRefusalCategory::WrongHolder => "the holder is wrong",
-        crate::kernel::LoanRefusalCategory::WrongArena => "the authority arena is wrong",
-        crate::kernel::LoanRefusalCategory::WrongScope => "the borrow scope is wrong",
-        crate::kernel::LoanRefusalCategory::ActiveDependency => "an active dependency remains",
-        crate::kernel::LoanRefusalCategory::StalePredecessor => "the predecessor is stale",
-        crate::kernel::LoanRefusalCategory::Recovery => "recovery evidence is invalid",
-        crate::kernel::LoanRefusalCategory::Lifetime => "the borrow lifetime is invalid",
-        crate::kernel::LoanRefusalCategory::Unsupported => "the resource shape is unsupported",
-        crate::kernel::LoanRefusalCategory::Missing => "borrow backing or binding is missing",
-        crate::kernel::LoanRefusalCategory::InvalidEvidence => "borrow evidence is invalid",
+        crate::kernel::BorrowRefusalCategory::WrongHolder => "the holder is wrong",
+        crate::kernel::BorrowRefusalCategory::WrongArena => "the authority arena is wrong",
+        crate::kernel::BorrowRefusalCategory::WrongScope => "the borrow scope is wrong",
+        crate::kernel::BorrowRefusalCategory::ActiveDependency => "an active dependency remains",
+        crate::kernel::BorrowRefusalCategory::StalePredecessor => "the predecessor is stale",
+        crate::kernel::BorrowRefusalCategory::Recovery => "recovery evidence is invalid",
+        crate::kernel::BorrowRefusalCategory::Lifetime => "the borrow lifetime is invalid",
+        crate::kernel::BorrowRefusalCategory::Unsupported => "the resource shape is unsupported",
+        crate::kernel::BorrowRefusalCategory::Missing => "borrow backing or binding is missing",
+        crate::kernel::BorrowRefusalCategory::InvalidEvidence => "borrow evidence is invalid",
     }
 }
 
-fn format_borrow_subject(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> &'static str {
+fn format_borrow_subject(diagnostic: &crate::kernel::BorrowRefusalDiagnostic) -> &'static str {
     let subject = diagnostic.subject();
     if subject.resource_fact().is_some() {
         "selected resource"
@@ -1223,10 +1223,10 @@ fn format_borrow_subject(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> &
     }
 }
 
-fn format_borrow_ids(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> String {
+fn format_borrow_ids(diagnostic: &crate::kernel::BorrowRefusalDiagnostic) -> String {
     let subject = diagnostic.subject();
     let mut ids = Vec::new();
-    if let Some((arena, ordinal)) = subject.loan_id() {
+    if let Some((arena, ordinal)) = subject.borrow_id() {
         ids.push(format!("borrow {arena}:{ordinal}"));
     }
     if let Some((arena, ordinal)) = subject.scope_id() {
@@ -1251,14 +1251,14 @@ fn format_borrow_ids(diagnostic: &crate::kernel::LoanRefusalDiagnostic) -> Strin
     }
 }
 
-fn format_borrow_operation(operation: crate::kernel::LoanRefusalOperation) -> &'static str {
+fn format_borrow_operation(operation: crate::kernel::BorrowRefusalOperation) -> &'static str {
     match operation {
-        crate::kernel::LoanRefusalOperation::Validate => "validation",
-        crate::kernel::LoanRefusalOperation::Plan => "planning",
-        crate::kernel::LoanRefusalOperation::Entry => "entry transition",
-        crate::kernel::LoanRefusalOperation::Recovery => "recovery",
-        crate::kernel::LoanRefusalOperation::Transition => "transition",
-        crate::kernel::LoanRefusalOperation::MemoryAccess => "memory access",
+        crate::kernel::BorrowRefusalOperation::Validate => "validation",
+        crate::kernel::BorrowRefusalOperation::Plan => "planning",
+        crate::kernel::BorrowRefusalOperation::Entry => "entry transition",
+        crate::kernel::BorrowRefusalOperation::Recovery => "recovery",
+        crate::kernel::BorrowRefusalOperation::Transition => "transition",
+        crate::kernel::BorrowRefusalOperation::MemoryAccess => "memory access",
     }
 }
 

@@ -902,7 +902,7 @@ fn thread_join_preserves_other_child_borrows_in_both_orders() {
                 .memory_access_refusal(
                     &range(last_index, 1, 2),
                     &assumptions,
-                    crate::kernel::LoanRefusalOperation::MemoryAccess,
+                    crate::kernel::BorrowRefusalOperation::MemoryAccess,
                 )
                 .is_some(),
             "the other child's stable job view must remain protected"
@@ -938,7 +938,7 @@ fn thread_join_preserves_other_child_borrows_in_both_orders() {
                     .memory_access_refusal(
                         &range(index, 1, 2),
                         &assumptions,
-                        crate::kernel::LoanRefusalOperation::MemoryAccess,
+                        crate::kernel::BorrowRefusalOperation::MemoryAccess,
                     )
                     .is_none()
             );
@@ -1797,7 +1797,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
         );
         assert!(matches!(
             paths[0].outcome,
-            StatementOutcome::RuntimeError(RuntimeError::LoanRefusal(_))
+            StatementOutcome::RuntimeError(RuntimeError::BorrowRefusal(_))
         ));
     }
     let writer = program_function(

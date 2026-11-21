@@ -705,12 +705,12 @@ fn candidate_composite_view_over_an_uncovered_owner_is_refused() {
     );
     let (_, transfer) = plan_adapter_lend(&function);
     let error = transfer.expect_err("an owner that covers half the frontier is not backing");
-    let RuntimeError::LoanRefusal(diagnostic) = &error else {
+    let RuntimeError::BorrowRefusal(diagnostic) = &error else {
         panic!("{error}");
     };
     assert_eq!(
         diagnostic.category(),
-        crate::kernel::borrows::LoanRefusalCategory::Missing
+        crate::kernel::borrows::BorrowRefusalCategory::Missing
     );
     assert_eq!(
         diagnostic.subject().resource_fact(),
@@ -1392,9 +1392,9 @@ fn candidate_rejects_malformed_ledger_participant_pairs() {
     .expect_err("ledger-only caller must be refused");
     assert!(matches!(
         error,
-        RuntimeError::LoanRefusal(diagnostic)
-            if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
-                && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Plan
+        RuntimeError::BorrowRefusal(diagnostic)
+            if diagnostic.category() == crate::kernel::BorrowRefusalCategory::Missing
+                && diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Plan
     ));
 
     let ledger = BorrowLedger::new();
@@ -1419,9 +1419,9 @@ fn candidate_rejects_malformed_ledger_participant_pairs() {
     .expect_err("participant-only caller must be refused");
     assert!(matches!(
         error,
-        RuntimeError::LoanRefusal(diagnostic)
-            if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
-                && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Plan
+        RuntimeError::BorrowRefusal(diagnostic)
+            if diagnostic.category() == crate::kernel::BorrowRefusalCategory::Missing
+                && diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Plan
     ));
 }
 
@@ -1465,9 +1465,9 @@ fn candidate_rejects_wrong_callee_participant_on_recovery() {
     .expect_err("recovery without a ledger must be refused");
     assert!(matches!(
         error,
-        RuntimeError::LoanRefusal(diagnostic)
-            if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
-                && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Recovery
+        RuntimeError::BorrowRefusal(diagnostic)
+            if diagnostic.category() == crate::kernel::BorrowRefusalCategory::Missing
+                && diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Recovery
     ));
     let error = recover_candidate_stable_view_resources(
         &caller,
@@ -1482,9 +1482,9 @@ fn candidate_rejects_wrong_callee_participant_on_recovery() {
     .expect_err("recovery must refuse the wrong callee participant");
     assert!(matches!(
         error,
-        RuntimeError::LoanRefusal(diagnostic)
-            if diagnostic.category() == crate::kernel::LoanRefusalCategory::WrongHolder
-                && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Recovery
+        RuntimeError::BorrowRefusal(diagnostic)
+            if diagnostic.category() == crate::kernel::BorrowRefusalCategory::WrongHolder
+                && diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Recovery
     ));
 }
 
@@ -2033,10 +2033,10 @@ fn candidate_rejects_mutable_effect_overlapping_view() {
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::ProvenOverlap
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
             && diagnostic.subject().memory_range().is_some()
     ));
 }
@@ -2154,10 +2154,10 @@ fn candidate_rejects_symbolic_same_base_overlapping_effect() {
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::ProvenOverlap
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
     ));
 }
 
@@ -2217,10 +2217,10 @@ fn candidate_rejects_unproved_mutable_effect_separation() {
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::SeparationUnproved
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::SeparationUnproved
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::SeparationUnproved
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::SeparationUnproved
     ));
 }
 
@@ -2386,10 +2386,10 @@ fn candidate_rejects_a_mutable_effect_overlapping_a_view_from_its_own_occurrence
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::ProvenOverlap
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
     ));
 }
 
@@ -2497,10 +2497,10 @@ fn candidate_rejects_mutable_effect_overlapping_a_composite_view_piece() {
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::ProvenOverlap
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
             && diagnostic.subject().memory_range().is_some()
     ));
 }
@@ -2542,10 +2542,10 @@ fn candidate_rejects_mutable_effect_overlapping_a_local_view() {
     assert!(matches!(
         paths.as_slice(),
         [FunctionPath {
-            outcome: FunctionOutcome::RuntimeError(RuntimeError::LoanRefusal(diagnostic)),
+            outcome: FunctionOutcome::RuntimeError(RuntimeError::BorrowRefusal(diagnostic)),
             ..
-        }] if diagnostic.category() == crate::kernel::LoanRefusalCategory::ProvenOverlap
-            && diagnostic.overlap() == crate::kernel::LoanOverlapStatus::ProvenOverlap
+        }] if diagnostic.category() == crate::kernel::BorrowRefusalCategory::ProvenOverlap
+            && diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
     ));
 }
 
@@ -2591,9 +2591,9 @@ fn candidate_nested_reader_rejects_stale_outer_binding() {
     .expect("stale binding check should run");
     assert!(matches!(
         result,
-        Err(RuntimeError::LoanRefusal(diagnostic))
-            if diagnostic.category() == crate::kernel::LoanRefusalCategory::Missing
-                && diagnostic.operation() == crate::kernel::LoanRefusalOperation::Plan
+        Err(RuntimeError::BorrowRefusal(diagnostic))
+            if diagnostic.category() == crate::kernel::BorrowRefusalCategory::Missing
+                && diagnostic.operation() == crate::kernel::BorrowRefusalOperation::Plan
     ));
 }
 
@@ -2651,9 +2651,9 @@ fn candidate_wrong_scope_close_is_refused() {
         .expect_err("a non-owner cannot close the scope");
     assert_eq!(
         refusal
-            .diagnostic(crate::kernel::LoanRefusalOperation::Transition)
+            .diagnostic(crate::kernel::BorrowRefusalOperation::Transition)
             .category(),
-        crate::kernel::LoanRefusalCategory::WrongHolder
+        crate::kernel::BorrowRefusalCategory::WrongHolder
     );
     let wrong_scope = super::super::borrows::BorrowScopeId::for_test(
         opening.scope.arena_for_test(),
@@ -2664,9 +2664,9 @@ fn candidate_wrong_scope_close_is_refused() {
         .expect_err("an unknown scope cannot be closed");
     assert_eq!(
         refusal
-            .diagnostic(crate::kernel::LoanRefusalOperation::Transition)
+            .diagnostic(crate::kernel::BorrowRefusalOperation::Transition)
             .category(),
-        crate::kernel::LoanRefusalCategory::WrongScope
+        crate::kernel::BorrowRefusalCategory::WrongScope
     );
 }
 

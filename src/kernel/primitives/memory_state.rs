@@ -10840,7 +10840,7 @@ impl ExecutionState {
         self.borrow_ledger
             .as_ref()?
             .automatic_storage_retirement_refusal(block, self.memory.block_size(block)?)
-            .map(|refusal| RuntimeError::LoanRefusal(Box::new(refusal)))
+            .map(|refusal| RuntimeError::BorrowRefusal(Box::new(refusal)))
     }
 
     pub fn locals(&self) -> &LocalEnvironment {
