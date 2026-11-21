@@ -3680,10 +3680,10 @@ pub(super) fn decode_crate(
                     .and_then(|file| file.contents.as_deref())
                     .and_then(super::source_statements::parse)
             });
-        let source_statements = parsed
+        let written = parsed
             .as_ref()
             .and_then(|file| {
-                super::source_statements::function_statements(
+                super::source_statements::function_source(
                     file,
                     (item_span.beg.line as usize, item_span.beg.col as usize),
                 )
@@ -3695,13 +3695,26 @@ pub(super) fn decode_crate(
                 .flatten()
                 .find(|data| data.file_id == item_span.file_id)?;
             super::source_statements::innermost(
-                &source_statements,
+                &written.statements,
                 (at.beg.line as usize, at.beg.col as usize),
             )
             .map(|index| index as u32)
         };
         let mut blocks = Vec::new();
         let mut coercions = Vec::new();
+        let mut literal_initializers = BTreeMap::new();
+        let mut ambiguous_literals = BTreeSet::new();
+        let literal_at = |span: a::Span| {
+            let at = span.data();
+            if at.file_id != item_span.file_id || span.generated_from_span().is_some() {
+                return None;
+            }
+            let range = (
+                (at.beg.line as usize, at.beg.col as usize),
+                (at.end.line as usize, at.end.col as usize),
+            );
+            written.compound_literals.get(&range).copied()
+        };
         for (id, block) in b.body.body.iter_enumerated() {
             if let Some(message) = panic_messages.get(&id) {
                 coercions.push((blocks.len(), Vec::new()));
@@ -3739,6 +3752,26 @@ pub(super) fn decode_crate(
                     statements.push(S::Site { site });
                 }
                 current_site = site;
+                let literal_local = match converted.as_slice() {
+                    [
+                        S::Assign {
+                            target: E::Local { name },
+                            value: E::Array { .. } | E::Repeat { .. },
+                        },
+                    ] => Some(name),
+                    [S::Initialize { target, .. }] => Some(target),
+                    _ => None,
+                };
+                if let Some(name) = literal_local
+                    && temporaries.contains(name)
+                    && let u::StatementKind::Assign(place, _) = &s.kind
+                    && let Some(local) = place.as_local()
+                    && let Some(ordinal) = literal_at(s.span)
+                    && literal_at(b.body.locals.locals[local].span) == Some(ordinal)
+                    && literal_initializers.insert(ordinal, name.clone()).is_some()
+                {
+                    ambiguous_literals.insert(ordinal);
+                }
                 statements.extend(converted);
             }
             let terminator_site = site_of(block.terminator.span);
@@ -3822,8 +3855,16 @@ pub(super) fn decode_crate(
         let kept: BTreeSet<_> = locals.iter().map(|local| local.name.as_str()).collect();
         spellings.retain(|key, _| kept.contains(key.as_str()));
         temporaries.retain(|key| kept.contains(key.as_str()));
+        let compound_literals = literal_initializers
+            .into_iter()
+            .filter(|(ordinal, local)| {
+                kept.contains(local.as_str()) && !ambiguous_literals.contains(ordinal)
+            })
+            .map(|(ordinal, local)| (local, ordinal))
+            .collect();
         functions.push(out::Function {
-            sites: source_statements
+            sites: written
+                .statements
                 .iter()
                 .map(|statement| statement.path.clone())
                 .collect(),
@@ -3839,6 +3880,7 @@ pub(super) fn decode_crate(
             mir: Some(out::MirBody {
                 spellings,
                 unnamed_locals: temporaries,
+                compound_literals,
                 locals,
                 blocks,
                 return_place,

@@ -1138,17 +1138,30 @@ fn lower_function(
                 .iter()
                 .enumerate()
                 .filter_map(|(ordinal, local)| {
-                    let spelling = mir.spellings.get(&local.name)?;
-                    let ordinal = u32::try_from(ordinal).ok()?;
-                    Some((
-                        local.name.clone(),
-                        BindingName::from(LocalBindingId::new(
-                            owner.clone(),
-                            false,
-                            ordinal,
-                            Some(spelling.clone()),
-                        )),
-                    ))
+                    let id = if let Some(&ordinal) = mir.compound_literals.get(&local.name) {
+                        let id = LocalBindingId::compound_literal(owner.clone(), ordinal);
+                        match &local.value_type {
+                            Type::Array { element, length } => {
+                                let length = u32::try_from(*length).ok()?;
+                                let array_type = match element.as_ref() {
+                                    Type::I32 => ProgramType::Int32Array(length),
+                                    Type::U8 => ProgramType::UInt8Array(length),
+                                    Type::U32 => ProgramType::UInt32Array(length),
+                                    _ => return None,
+                                };
+                                id.initialize_program_type(array_type);
+                                id.initialize_array_shape(&[length]);
+                            }
+                            Type::Record { name } => id.initialize_struct_name(name),
+                            _ => return None,
+                        }
+                        id
+                    } else {
+                        let spelling = mir.spellings.get(&local.name)?;
+                        let ordinal = u32::try_from(ordinal).ok()?;
+                        LocalBindingId::new(owner.clone(), false, ordinal, Some(spelling.clone()))
+                    };
+                    Some((local.name.clone(), BindingName::from(id)))
                 })
         })
         .collect();
@@ -1217,7 +1230,7 @@ fn lower_function(
             mir.locals
                 .iter()
                 .filter_map(|local| match &local.value_type {
-                    Type::Record { name } => Some((local.name.clone().into(), name.clone())),
+                    Type::Record { name } => Some((cx.binding(&local.name), name.clone())),
                     _ => None,
                 })
                 .collect()

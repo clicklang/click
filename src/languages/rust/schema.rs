@@ -511,6 +511,9 @@ pub struct MirBody {
     /// Local keys for which the compiler supplied no source spelling.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub unnamed_locals: BTreeSet<String>,
+    /// Materialized aggregate literals, keyed by MIR local, with their source occurrence ordinal.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub compound_literals: BTreeMap<String, u32>,
 }
 
 /// The name of a function's return place.
