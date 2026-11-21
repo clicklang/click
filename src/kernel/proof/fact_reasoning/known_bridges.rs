@@ -29,6 +29,35 @@ fn comparison_holds(
             .any(|form| form != &premise && available(form))
 }
 
+/// Compare the result of a retained fold against the same written operand.
+/// The reduced comparison names a single premise for the exact-fact lookup.
+fn trivial_fold_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let integer_comparison_condition!(left, right) = condition else {
+        return None;
+    };
+    let reduce = |operand: &SharedIntegerTerm| {
+        let IntegerTerm::Machine(machine) = operand.as_ref() else {
+            return None;
+        };
+        super::computation::observe_trivial_int32_fold(machine)
+    };
+    let (left_result, right_result) = (reduce(left), reduce(right));
+    if left_result.is_none() && right_result.is_none() {
+        return None;
+    }
+    let left = left_result.unwrap_or_else(|| left.clone());
+    let right = right_result.unwrap_or_else(|| right.clone());
+    Some(match condition {
+        ConditionTerm::IntegerLessThan(..) => ConditionTerm::IntegerLessThan(left, right),
+        ConditionTerm::IntegerLessEqual(..) => ConditionTerm::IntegerLessEqual(left, right),
+        ConditionTerm::IntegerGreaterThan(..) => ConditionTerm::IntegerGreaterThan(left, right),
+        ConditionTerm::IntegerGreaterEqual(..) => ConditionTerm::IntegerGreaterEqual(left, right),
+        ConditionTerm::IntegerEqual(..) => ConditionTerm::IntegerEqual(left, right),
+        ConditionTerm::IntegerNotEqual(..) => ConditionTerm::IntegerNotEqual(left, right),
+        _ => unreachable!(),
+    })
+}
+
 fn in_range(
     value: &IntegerTerm,
     format: crate::kernel::primitives::MachineIntegerFormat,
@@ -480,6 +509,12 @@ pub(crate) fn known_bridge_leaf(
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     match goal {
+        Proposition::ConditionIs(condition, truth)
+            if let Some(reduced) = trivial_fold_comparison(condition.native_compat())
+                && comparison_holds(reduced, *truth, available) =>
+        {
+            true
+        }
         Proposition::ConditionIs(condition, true)
             if let Some(wide) = pointer_projection_source(condition.native_compat()) =>
         {

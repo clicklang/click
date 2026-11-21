@@ -1102,9 +1102,10 @@ enum AffineLeaf {
     Fold(u64),
 }
 
-/// Read the seed through consecutive empty machine folds. Their callbacks
-/// are outside the affine walk and are never read.
-fn observe_empty_int32_fold(value: &SharedMachineIntegerTerm) -> Option<SharedIntegerTerm> {
+/// Read the value of a trivial machine fold without enumerating its range.
+pub(super) fn observe_trivial_int32_fold(
+    value: &SharedMachineIntegerTerm,
+) -> Option<SharedIntegerTerm> {
     if value.ty() != MachineIntegerType::Int32 {
         return None;
     }
@@ -1112,9 +1113,9 @@ fn observe_empty_int32_fold(value: &SharedMachineIntegerTerm) -> Option<SharedIn
     let KernelTermNode::Fold(fold) = root.node() else {
         return None;
     };
-    let initial = fold.empty_int32_initial()?;
+    let result = fold.trivial_int32_result()?;
     Some(
-        MachineOperandView::Shared(initial)
+        MachineOperandView::Shared(&result)
             .observe(value.ty())?
             .into(),
     )
@@ -1151,7 +1152,7 @@ fn integer_affine_difference(
             }
             IntegerTerm::Negate(value) => stack.push((value.clone(), false)),
             IntegerTerm::Machine(value) => {
-                if let Some(value) = observe_empty_int32_fold(value) {
+                if let Some(value) = observe_trivial_int32_fold(value) {
                     stack.push((value.clone(), false));
                     reduced_operands.insert(term.id(), value);
                 }

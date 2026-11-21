@@ -10131,26 +10131,39 @@ fn evaluate_spec_range_fold_body_path_in(
         (Some(start), Some(end)) => (end as i32) <= (start as i32),
         _ => same_bound(),
     };
-    if empty && state_independent() {
-        // Lower the callback in its binder scope for proof display and rewriting.
-        // With no iterations, only evaluation of the bounds and seed owes facts
-        // or obligations. A body with no single retained value uses the usual
-        // fold evaluator below.
+    let retain_nonempty = !empty
+        && endpoints.0.is_some()
+        && endpoints.1.is_some()
+        && match body {
+            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+                name == accumulator || name == item
+            }
+            SpecExpression::Value(ProgramValue::Int32(value))
+            | SpecExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+                value,
+            ))) => value.as_const().is_some(),
+            _ => false,
+        };
+    if (empty || retain_nonempty) && state_independent() {
+        // Lower the callback in its binder scope. An empty fold never
+        // executes it, and a retained nonempty callback is a total projection
+        // or literal. Other concrete folds use the existing evaluator below.
         let body_scope = symbolic_int32_fold_scope(scope, accumulator, item);
-        let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        let body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
             body_scope.as_scope(),
             body,
             &PureFactContext::new(),
             budget,
         )?;
-        if body_paths.len() == 1
+        if let [body_path] = body_paths.as_slice()
+            && (empty || (body_path.facts.is_empty() && body_path.obligations.is_empty()))
             && let Some(value) = symbolic_spec_range_fold_value(
                 start.clone(),
                 end.clone(),
                 initial.clone(),
                 accumulator,
                 item,
-                body_paths.pop().unwrap().value,
+                body_path.value.clone(),
             )
         {
             return Ok(Some(SpecExpressionPath {

@@ -59,21 +59,38 @@ impl KernelFold {
         })
     }
 
-    /// The seed of a statically empty machine fold. The body is never read.
-    pub(crate) fn empty_int32_initial(&self) -> Option<&KernelTerm> {
+    /// Read the result of an empty fold or a literal-bounded fold with a
+    /// projection or constant callback. Empty folds never read the body.
+    pub(crate) fn trivial_int32_result(&self) -> Option<KernelTerm> {
         if self.index != KernelFoldIndex::Int32
             || self.result_type() != &KernelType::Program(ProgramType::Int32)
         {
             return None;
         }
-        let [start, end, initial, _] = &self.arguments;
+        let [start, end, initial, body] = &self.arguments;
         let constant =
             |bound| Some(MachineOperandView::Shared(bound).literal()?.as_const()? as i32);
-        let empty = match (constant(start), constant(end)) {
-            (Some(start), Some(end)) => end <= start,
-            _ => start == end || crate::kernel::shared_machine_syntax_equal(start, end),
+        let end = match (constant(start), constant(end)) {
+            (Some(start), Some(end)) if end <= start => return Some(initial.clone()),
+            (Some(_), Some(end)) => end,
+            _ if start == end || crate::kernel::shared_machine_syntax_equal(start, end) => {
+                return Some(initial.clone());
+            }
+            _ => return None,
         };
-        empty.then_some(initial)
+        match body.node() {
+            KernelTermNode::Variable(variable) if *variable == self.accumulator => {
+                Some(initial.clone())
+            }
+            KernelTermNode::Variable(variable) if *variable == self.item => {
+                Some(KernelTermImport::default().machine(
+                    MachineIntegerType::Int32,
+                    &MachineTerm::constant((end - 1) as u32),
+                ))
+            }
+            _ if constant(body).is_some() => Some(body.clone()),
+            _ => None,
+        }
     }
 
     /// Existing machine fold evaluation, used only by checking. Construction
@@ -81,8 +98,8 @@ impl KernelFold {
     pub(crate) fn simplify_machine(&self) -> Option<KernelTerm> {
         use crate::kernel::proof::term_rewrite::TermRewrite;
         let [start, end, initial, body] = &self.arguments;
-        if let Some(initial) = self.empty_int32_initial() {
-            return Some(initial.clone());
+        if let Some(value) = self.trivial_int32_result() {
+            return Some(value);
         }
         let constant = |root| {
             MachineOperandView::Shared(root)

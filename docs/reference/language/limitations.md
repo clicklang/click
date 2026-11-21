@@ -313,7 +313,9 @@ existential to be available; use `have` to establish it if necessary. Concrete
 ## Folds are partly supported
 
 Pure `.fold` supports concrete unrolling and symbolic `RangeFold` terms.
-Symbolic folds compare equal modulo accumulator/item binder names. The kernel
+Literal-bounded `int32` folds with projection or literal callbacks can keep
+their fold terms and be checked without unrolling. Retained folds compare
+equal modulo accumulator/item binder names. The kernel
 knows useful fold facts for current stdlib `count` proofs, but it is not a
 general induction engine for arbitrary folds.
 
