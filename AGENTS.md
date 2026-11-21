@@ -201,5 +201,5 @@ resources held, but facts may only refuse it, discharge its obligations, or
 add side facts; they must not change the term produced. Do not fold, resolve
 reads or aliases, pick comparison kinds, or prune disjuncts from facts during
 lowering; put equality reasoning in checking (the e-graph). Check with
-`scripts/fact-stability.sh`. See
+`scripts/audit.sh fact-stability`. See
 [fact-stable lowering](docs/internals/raise-lower-principle.md#lowering-is-fact-stable).

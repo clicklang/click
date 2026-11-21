@@ -58,7 +58,7 @@ For a change to lowering or evaluation in either part, name the facts it
 reads and confirm each only refuses the term, discharges an obligation, or
 adds a side fact, never changes the term produced
 (`docs/internals/raise-lower-principle.md#lowering-is-fact-stable`). Run
-`scripts/fact-stability.sh` before and after; the change adds no new
+`scripts/audit.sh fact-stability` before and after; the change adds no new
 `differs` lines, and the report names any change in its `refused` and
 `paths:N` counts.
 
