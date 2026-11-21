@@ -259,7 +259,7 @@ fn percent(part: usize, whole: usize) -> String {
 fn breakdown(outcomes: &BTreeMap<String, usize>) -> String {
     FAILING_ROUND_TRIPS
         .iter()
-        .map(|outcome| format!("{} {outcome}", outcomes.get(outcome).copied().unwrap_or(0)))
+        .map(|outcome| format!("{} {outcome}", outcomes.get(*outcome).copied().unwrap_or(0)))
         .collect::<Vec<_>>()
         .join(", ")
 }
