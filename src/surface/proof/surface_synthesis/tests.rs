@@ -5803,19 +5803,20 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
                     &PureFactContext::new(),
                 )
                 .unwrap();
-            let read = MachineTerm::MemoryLoad(
-                crate::kernel::ProgramPoint::at(
-                    &(crate::kernel::intern_memory_ref(state.memory())),
-                ),
-                Box::new(pointer.clone()),
-                kind,
-            );
-            let expected = match value_type {
-                ProgramType::Float32 => ProgramValue::Float32(read),
-                ProgramType::Float64 => ProgramValue::Float64(read),
-                _ => unreachable!(),
+            assert_eq!(value.program_type(), value_type, "{text}");
+            let (ProgramValue::Float32(read) | ProgramValue::Float64(read)) = value else {
+                panic!("{text}: expected a float value");
             };
-            assert_eq!(value, expected, "{text}");
+            let MachineTerm::MemoryLoad(point, address, actual_kind) = read else {
+                panic!("{text}: expected a float load");
+            };
+            assert_eq!(actual_kind, kind, "{text}");
+            assert_eq!(*address, pointer, "{text}");
+            assert_eq!(
+                point.read_version_id(),
+                state.observation_point_id(),
+                "{text}"
+            );
         }
     }
     for text in ["p as (float)", "p as (double)"] {
@@ -5928,6 +5929,44 @@ fn a_boolean_cell_read_round_trips_as_a_typed_load() {
     );
 }
 
+fn evaluate_float_cell_read(
+    state: &ExecutionState,
+    pointer: &Address,
+    format: crate::kernel::KernelFloatType,
+    exact: bool,
+) -> MachineTerm {
+    use crate::kernel::{SpecExpression, SpecPoint};
+    let ty = format.program_type();
+    let expression = SpecExpression::MemoryLoad {
+        point: SpecPoint::Current,
+        pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
+            pointer.clone(),
+            ty.pointer_to().unwrap(),
+        ))),
+        value_type: ty,
+        exact,
+    };
+    let (value, _) =
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            state,
+            &expression,
+            None,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert_eq!(value.program_type(), ty);
+    let (ProgramValue::Float32(read) | ProgramValue::Float64(read)) = value else {
+        panic!("expected a float value");
+    };
+    let MachineTerm::MemoryLoad(point, address, kind) = &read else {
+        panic!("expected a float load");
+    };
+    assert_eq!(point.read_version_id(), state.observation_point_id());
+    assert_eq!(address.as_ref(), pointer);
+    assert_eq!(*kind, format.load_kind());
+    read
+}
+
 #[test]
 fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
     for (format, spelling) in [
@@ -5945,11 +5984,7 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
                 "p",
                 ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
             );
-        let read = MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
-            Box::new(pointer),
-            format.load_kind(),
-        );
+        let read = evaluate_float_cell_read(&state, &pointer, format, false);
         let root = crate::kernel::KernelTermImport::default().float(format, &read);
         assert!(matches!(
             root.node(),
@@ -6023,37 +6058,8 @@ fn check_float_reads_at_old_and_recorded_states(exact: bool) {
             let now = selected.clone().begin_function_entry_memory();
             assert_eq!(selected.memory(), now.memory());
             assert_ne!(selected.program_point_id(), now.program_point_id());
-            let ty = format.program_type();
-            let expression = crate::kernel::SpecExpression::MemoryLoad {
-                point: crate::kernel::SpecPoint::Current,
-                pointer: Box::new(crate::kernel::SpecExpression::Value(
-                    ProgramValue::typed_pointer(pointer.clone(), ty.pointer_to().unwrap()),
-                )),
-                value_type: ty,
-                exact: true,
-            };
-            let evaluate = |state: &ExecutionState| {
-                let (value, _) =
-                    crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
-                        state,
-                        &expression,
-                        None,
-                        &PureFactContext::new(),
-                    )
-                    .unwrap();
-                let (ProgramValue::Float32(read) | ProgramValue::Float64(read)) = value else {
-                    panic!("expected a float read");
-                };
-                let MachineTerm::MemoryLoad(point, address, kind) = &read else {
-                    panic!("expected a memory load");
-                };
-                assert_eq!(point.read_version_id(), state.observation_point_id());
-                assert_eq!(address.as_ref(), &pointer);
-                assert_eq!(*kind, format.load_kind());
-                read
-            };
-            let read = evaluate(&selected);
-            assert_ne!(read, evaluate(&now));
+            let read = evaluate_float_cell_read(&selected, &pointer, format, true);
+            assert_ne!(read, evaluate_float_cell_read(&now, &pointer, format, true));
             (now, read)
         } else {
             let now = selected

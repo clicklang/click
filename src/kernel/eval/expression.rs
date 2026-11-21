@@ -3581,15 +3581,20 @@ fn read_retained_lvalue_paths_without_ranges(
                         }]);
                     }
                 }
-                let entry_source = (has_read_resource
+                let can_name_read = !lvalue.is_volatile() || SpecificationAccessScope::is_active();
+                let uses_entry_version = has_read_resource
                     && matches!(
                         lvalue.value_type,
                         ProgramType::Int32 | ProgramType::UInt32 | ProgramType::Parameter(_)
                     )
                     && pointer.base == AddressBase::ExternalArgument
-                    && (!lvalue.is_volatile() || SpecificationAccessScope::is_active()))
+                    && can_name_read;
+                let origin = (uses_entry_version
+                    || (can_name_read
+                        && crate::kernel::KernelFloatType::from_program_type(lvalue.value_type)
+                            .is_some()))
                 .then(|| state.program_point());
-                let entry_read = entry_source.as_ref().and_then(|point| {
+                let entry_read = origin.as_ref().and_then(|point| {
                     let entry = match lvalue.value_type {
                         ProgramType::Int32 => point.entry_integer_version(pointer, LoadKind::Int32),
                         ProgramType::Parameter(parameter) => {
@@ -3623,7 +3628,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         lvalue.is_volatile() && !SpecificationAccessScope::is_active(),
                         source,
                         budget.program_byte_order(),
-                        entry_source.as_ref(),
+                        origin.as_ref(),
                     )
                 };
                 for path in &mut paths {
