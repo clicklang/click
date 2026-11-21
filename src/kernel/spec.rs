@@ -1174,12 +1174,17 @@ fn lower_guarded_conjunct_in(
         &right_assumptions,
         budget,
     )? {
-        let guarded_right_obligations =
+        let mut guarded_right_obligations =
             guard_right_obligations(&left_path.proposition, right_path.obligations);
+        let right_facts = guard_right_facts(
+            &left_path.proposition,
+            &right_path.facts,
+            &mut guarded_right_obligations,
+        );
         if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
             &left_path.facts,
             &left_path.obligations,
-            &right_path.facts,
+            &right_facts,
             &guarded_right_obligations,
             assumptions,
             &right_assumptions,
@@ -1200,6 +1205,32 @@ fn lower_guarded_conjunct_in(
 
 /// The obligations of a right operand read only where `left` holds, owed
 /// as `left implies obligation`.
+/// The path facts of a side read only where `guard` holds. Its logical read
+/// equations stay facts, being consequences of the values read; every other
+/// condition its evaluation selected is owed where the guard holds, as its
+/// obligations are.
+fn guard_right_facts(
+    guard: &Proposition,
+    facts: &ExecutionFacts,
+    obligations: &mut Vec<ProofObligation>,
+) -> ExecutionFacts {
+    if !facts.has_path_conditions() {
+        return facts.clone();
+    }
+    obligations.extend(
+        facts
+            .iter()
+            .filter(|fact| !fact.is_logical_read_equation())
+            .map(|fact| {
+                ProofObligation::evaluation_domain(Proposition::Implies(
+                    Box::new(guard.clone()),
+                    Box::new(fact.proposition().clone()),
+                ))
+            }),
+    );
+    facts.filtered(|fact| fact.is_logical_read_equation())
+}
+
 fn guard_right_obligations(
     left: &Proposition,
     right_obligations: Vec<ProofObligation>,

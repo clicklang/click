@@ -1819,8 +1819,19 @@ result, claims that value's operation, so `defined(read(1))` for
 `read = |i: int32| -> int32 { p[i] }` claims the read of `p[1]`. A cast to its
 operand's own type claims the operand's operation; any other conversion is the
 operation. `if c { x } else { y }` claims
-`(c implies defined(x)) and (not c implies defined(y))`. A form with no
-operand expressions, such as a variable or a literal, is defined.
+`(c implies defined(x)) and (not c implies defined(y))`, and a `match`
+claims each arm's body where its pattern matches, with the scrutinee as an
+operand (`mdtests/defined_of_a_match_claims_its_taken_arm.md`,
+`mdtests/defined_of_a_match_owes_its_arms_operands_domains.md`). Every other
+form is its own root: a call's arguments, a conversion's Integer operand, a
+`count(...)`'s arguments and a fold's bounds and initial value are operands,
+while a fold claims every pass of its body
+(`mdtests/defined_owes_its_integer_operands_domains.md`,
+`mdtests/defined_of_a_fold_owes_its_bounds_domains.md`). In a C fragment the
+same holds operator by operator, `?:` reads as `if`, and `&&` and `||` claim
+nothing of their own, owing their right side's domain only where the left
+does not decide the result. A form with no operand expressions, such as a
+variable or a literal, is defined.
 
 For two object pointers, `defined(right - left)` is C's precondition for
 pointer subtraction (C11 6.5.6p9): both point into the same array object, or
