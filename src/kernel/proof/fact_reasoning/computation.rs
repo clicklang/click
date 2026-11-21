@@ -100,17 +100,25 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
                 ))
             }
         }
-        // A concrete span is a single bounds lookup in the goal's memory.
-        // A loaded or symbolic base needs its own proof of the address.
+        // Empty spans have no accesses to check. Other concrete spans
+        // use one bounds lookup in the exact memory of the goal.
         Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
-            wide: false,
-        } => bytes
-            .as_const()
-            .is_some_and(|size| memory.access_in_bounds(base, size))
-            .then_some(true),
+            wide,
+        } => {
+            let size = if *wide {
+                bytes
+                    .native_compat()
+                    .uint64_as_const()
+                    .and_then(|size| u32::try_from(size).ok())
+            } else {
+                bytes.as_const()
+            };
+            size.is_some_and(|size| size == 0 || memory.access_in_bounds(base, size))
+                .then_some(true)
+        }
         Proposition::MemoryReadDefined {
             memory,
             pointer,
@@ -123,7 +131,9 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
             if let (Resource::Memory(left), Resource::Memory(right)) =
                 (left.as_ref(), right.as_ref()) =>
         {
-            automatic_object_ranges_separate(left, right).then_some(true)
+            (declared_object_ranges_separate(left, right)
+                || crate::kernel::primitives::constant_memory_overlap(left, right) == Some(false))
+            .then_some(true)
         }
         Proposition::Equal(left, right)
             if matches!(
@@ -183,17 +193,18 @@ fn unchanged_machine_folds_equal(left: &MachineTerm, right: &MachineTerm) -> boo
 /// These exact block kinds use the structural separation rule without
 /// asking about pointer loads or resolving aliases. Range formation has
 /// its own checked obligations before the separation goal is opened.
-fn automatic_object_ranges_separate(left: &MemoryRange, right: &MemoryRange) -> bool {
+fn declared_object_ranges_separate(left: &MemoryRange, right: &MemoryRange) -> bool {
     use AddressBase::{AutomaticLocal, ExternalArgument, ExternalObject};
     let left = left.base();
     let right = right.base();
-    matches!(
+    (matches!(
         (&left.base, &right.base),
         (
             AutomaticLocal { .. },
             AutomaticLocal { .. } | ExternalArgument | ExternalObject(_),
         ) | (ExternalArgument | ExternalObject(_), AutomaticLocal { .. })
-    ) && left.blocks_proven_distinct(right)
+    ) || left.base.is_static_storage_block() && right.base.is_static_storage_block())
+        && left.blocks_proven_distinct(right)
 }
 
 /// Constant operands and reflexivity only: a bounded structural check, with
@@ -1275,6 +1286,67 @@ mod tests {
             for ((_, work), (_, baseline)) in checks.into_iter().zip(measurements[0]) {
                 assert!(work <= baseline + 16, "{measurements:?}");
             }
+        }
+    }
+
+    #[test]
+    fn empty_viewability_needs_no_live_base() {
+        let _session = VerificationSession::enter();
+        for wide in [false, true] {
+            let observations = [0, 32, 128].map(|unrelated| {
+                let mut memory = SymbolicMemory::new();
+                for i in 0..unrelated {
+                    memory = memory.with_block(format!("empty-unrelated-{i}"), 4);
+                }
+                [0, 1].map(|size| {
+                    let bytes = if wide {
+                        StoredMachineTerm::new(
+                            MachineIntegerType::UInt64,
+                            MachineTerm::uint64_constant(size),
+                        )
+                    } else {
+                        MachineTerm::constant(size as u32).into()
+                    };
+                    let goal = Proposition::MemoryLoadable {
+                        memory: memory.clone(),
+                        base: Address::symbolic(Variable(402901)),
+                        bytes,
+                        wide,
+                    };
+                    crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal))
+                })
+            });
+            for checks in observations {
+                assert_eq!(checks.map(|(holds, _)| holds), [true, false]);
+                for ((_, work), (_, baseline)) in checks.into_iter().zip(observations[0]) {
+                    assert_eq!(work, baseline);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn constant_span_separation_checks_the_entire_byte_interval() {
+        let _session = VerificationSession::enter();
+        let base = Address::symbolic(Variable(402902));
+        let span = |base, width| {
+            Box::new(Resource::Memory(MemoryRange::new_with_element_width(
+                base,
+                0u32.into(),
+                1u32.into(),
+                width,
+            )))
+        };
+        for (right, separate) in [
+            (base.offset_by_bytes(7), false),
+            (base.offset_by_bytes(8), true),
+            (Address::symbolic(Variable(402903)), false),
+        ] {
+            let goal = Proposition::ResourceSeparate {
+                left: span(base.clone(), 8),
+                right: span(right, 4),
+            };
+            assert_eq!(computes_leaf(&goal), separate, "{goal:?}");
         }
     }
 
