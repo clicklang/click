@@ -414,9 +414,21 @@ pub(super) fn lower(
         Ok(())
     };
     for &block in &flow.order {
-        cx.mir_point = None;
+        let terminator = &mir.blocks[block].terminator;
+        cx.mir_point = matches!(
+            terminator,
+            T::ReturnValue { .. }
+                | T::Call {
+                    through_pointer: false,
+                    ..
+                }
+        )
+        .then_some(super::super::borrow_frontiers::MirPoint {
+            block,
+            statement: mir.blocks[block].statements.len(),
+        });
         cx.mir_nodes.clear();
-        let terminal = match &mir.blocks[block].terminator {
+        let terminal = match terminator {
             T::Goto { .. } | T::If { .. } | T::Switch { .. } => program_skip(),
             T::Return => {
                 if f.return_type == Type::Unit {
@@ -432,10 +444,6 @@ pub(super) fn lower(
             }
             // The value MIR wrote to its return place, returned as written.
             T::ReturnValue { value } => {
-                cx.mir_point = Some(super::super::borrow_frontiers::MirPoint {
-                    block,
-                    statement: mir.blocks[block].statements.len(),
-                });
                 let (checks, value) = cx.prepared_expr(value)?;
                 let return_type = scalar_type(&f.return_type)?.to_kernel_type();
                 program_seq(
