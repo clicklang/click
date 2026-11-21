@@ -99,7 +99,9 @@ together. The shared caller storage can also name an array by a recorded
 write point and retain that version across local stores and local-only calls.
 Named static arrays retain entry or write points across recorded writes and
 calls confined to named static and automatic objects. Automatic arrays retain
-points from their declarations and writes across those effects. Declared predicates also retain that entry version for external
+points from their declarations and writes across those effects. A join keeps
+a common static or automatic array version and names a changed object at the
+join when the incoming indexes share a lineage. Declared predicates also retain that entry version for external
 `int32` array arguments, including when unfolding their bodies or raising a
 predicate fact. Scalar fold instantiation keeps a selected entry point
 when the substituted index still uses the indexed entry selector. Checked
