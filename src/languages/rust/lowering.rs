@@ -1138,17 +1138,26 @@ fn lower_function(
                 .iter()
                 .enumerate()
                 .filter_map(|(ordinal, local)| {
-                    let spelling = mir.spellings.get(&local.name)?;
-                    let ordinal = u32::try_from(ordinal).ok()?;
-                    Some((
-                        local.name.clone(),
-                        BindingName::from(LocalBindingId::new(
-                            owner.clone(),
-                            false,
-                            ordinal,
-                            Some(spelling.clone()),
-                        )),
-                    ))
+                    let id = if let Some(&ordinal) = mir.array_literals.get(&local.name)
+                        && let Type::Array { element, length } = &local.value_type
+                    {
+                        let length = u32::try_from(*length).ok()?;
+                        let array_type = match element.as_ref() {
+                            Type::I32 => ProgramType::Int32Array(length),
+                            Type::U8 => ProgramType::UInt8Array(length),
+                            Type::U32 => ProgramType::UInt32Array(length),
+                            _ => return None,
+                        };
+                        let id = LocalBindingId::compound_literal(owner.clone(), ordinal);
+                        id.initialize_program_type(array_type);
+                        id.initialize_array_shape(&[length]);
+                        id
+                    } else {
+                        let spelling = mir.spellings.get(&local.name)?;
+                        let ordinal = u32::try_from(ordinal).ok()?;
+                        LocalBindingId::new(owner.clone(), false, ordinal, Some(spelling.clone()))
+                    };
+                    Some((local.name.clone(), BindingName::from(id)))
                 })
         })
         .collect();

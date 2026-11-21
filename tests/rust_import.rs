@@ -4814,6 +4814,69 @@ fn front(bytes: &[u8]) -> usize {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: refreshes a Charon capture"]
+fn rust_borrowed_array_literals_use_written_occurrences_and_lifetimes() {
+    let p = Project::new(
+        "fn read(words: &[u32; 2]) -> u32 { words[0] }
+         pub fn borrowed_array(x: u32) -> u32 {
+             let first = read(&[x, 7]);
+             read(&[first; 2])
+         }",
+    );
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn read(words: &[u32; 2]) -> u32 {
+    views words[0..2];
+    ensures result == words[0];
+}
+fn borrowed_array(x: u32) -> u32 {
+    ensures result == x;
+} by {
+    step_until(statement(0).call(read, 0).entry);
+    have borrowed_array.compound_literal(0)[1] == 7u32 by solve();
+    step_until(statement(1).call(read, 0).entry);
+    have borrowed_array.compound_literal(1)[1] == x by solve();
+    have at(statement(0).call(read, 0).entry, borrowed_array.compound_literal(0)[1]) == 7u32 by solve();
+    step_until(function.exit);
+    solve();
+}
+"#;
+    let file = p.root.join("borrow.click");
+    fs::write(&file, sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "borrowed_array"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("compound_literal(0)"), "{trace}");
+    assert!(trace.contains("compound_literal(1)"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
+
+    let expired = sidecar.replace(
+        "at(statement(0).call(read, 0).entry, borrowed_array.compound_literal(0)[1])",
+        "borrowed_array.compound_literal(0)[1]",
+    );
+    fs::write(&file, expired).unwrap();
+    let output = p.cli(&["verify"]);
+    assert!(
+        !output.status.success(),
+        "an expired array literal must be unreadable"
+    );
+
+    fs::write(&file, sidecar).unwrap();
+    assert_cli(
+        &p,
+        &["expand", "--claim", "borrowed_array.contract", "--in-place"],
+    );
+    assert_cli(&p, &["verify"]);
+    let expanded = fs::read_to_string(file).unwrap();
+    assert!(!expanded.contains("__rust_mir_"), "{expanded}");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
 fn rust_if_expression_carries_its_scalar_value_without_a_local() {
     let p = Project::new("pub fn joined_value(x: u32) -> u32 { (if x == 0 { 3 } else { x }) % 2 }");
     p.refresh().unwrap();

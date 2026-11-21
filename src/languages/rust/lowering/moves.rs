@@ -997,7 +997,9 @@ pub(super) fn lower(
                     }
                     scoped[local].clone()
                 }
-                S::EndStorage { local } if scoped.contains_key(local) => {
+                S::EndStorage { local }
+                    if scoped.contains_key(local) || mir.array_literals.contains_key(local) =>
+                {
                     program_end_automatic_lifetimes(vec![cx.binding(local)])
                 }
                 // Any other repeated name's storage start, as an iterator's
@@ -1760,6 +1762,7 @@ mod tests {
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),
+                array_literals: Default::default(),
                 locals: vec![Place {
                     name: "value".into(),
                     value_type: Type::Record {
@@ -1852,6 +1855,7 @@ mod tests {
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),
+                array_literals: Default::default(),
                 locals: vec![],
                 blocks,
             };
