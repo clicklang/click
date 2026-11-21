@@ -47,5 +47,5 @@ void probe(struct node *p, struct node *q) {
 ```
 
 ```expect
-fail: unproved obligation: `p == (q as (void *))`
+fail: unproved obligation: `p == (let pointer: void* = q; pointer)`
 ```
