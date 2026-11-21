@@ -642,7 +642,7 @@ and the other tactics that change the path's facts or resources act on the path
 and leave the goal list alone; the implicit closer at the end of the script
 closes the goals still open.
 
-Goal refinements (`choose`, `witness`, `let`, `intro` and `rewrite`) work on
+Goal refinements (`witness`, `intro` and `rewrite`) work on
 the same first open claim. It must be a proposition, and the tactic applies to
 its current goal. Close an earlier resource claim with `known()` to reach the
 next claim. When a tactic leaves a claim on its own proof, later tactics
@@ -650,8 +650,7 @@ continue that proof using the path's current state and resources, so a later
 `fold` or the contract's resource transition reaches it. A `have` written after
 `intro` extends that proof. If a closer cannot handle the goal introduced by
 `intro`, it can still close the original claim directly. A closer in a proof
-opened only by `choose`, `witness` or `let` must close the goal with the chosen
-witness.
+opened only by `witness` must close the goal with the chosen witness.
 
 A written closer that closes no goal it acts on is refused, `solve` and
 `solve() using` included; only the implicit closer at the end of the script
@@ -3435,7 +3434,9 @@ and profiling charges one instantiation per value.
 The right side states the exact available proposition, up to its bound names.
 The left side names the outputs in quantifier order. Their types come from
 the existential. Each output and the instantiated body are available in
-subsequent tactics in the same proof block.
+subsequent tactics in the same proof block. After function exit, `obtain` can
+open an available fact while a resource claim is still focused. Its bindings
+remain in scope for later claims in the block.
 
 - The existential may be a requirement, a `have` conclusion, or a leaf
   conjunct of an available fact. It must be available before the tactic runs.
