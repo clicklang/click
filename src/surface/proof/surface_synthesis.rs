@@ -2351,10 +2351,12 @@ fn synthesize_boolean_cell_read(
     if !point.memory().has_boolean_cell_type(address) {
         return None;
     }
-    // A Boolean cell's byte test names the memory selected by Boolean
-    // evaluation. The integer read selector may choose a different version.
+    // A snapshot read can use a typed Boolean spelling only where lowering
+    // still uses a detached view. A certified point gives the spelling its
+    // own point-keyed read.
     let selects_read = |state: &ExecutionState| {
         &crate::kernel::intern_memory_ref(state.memory()) == point.shared_memory()
+            && !state.program_point().has_certified_read_view()
     };
     let expression = |state: &ExecutionState| {
         Some(synthesize_typed_load(

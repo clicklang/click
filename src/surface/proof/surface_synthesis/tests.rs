@@ -5844,13 +5844,45 @@ fn a_boolean_cell_read_round_trips_as_a_typed_load() {
             "p",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
         );
-    let read = crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(state.memory()));
-    let condition = ConditionTerm::boolean_cell_read(read, pointer.clone());
+    let detached = ConditionTerm::boolean_cell_read(
+        crate::kernel::ProgramPoint::of_memory(state.memory()),
+        pointer.clone(),
+    );
+    assert!(
+        synthesize_boolean_cell_read(
+            crate::kernel::BooleanOperandView::Native(detached.bool_negation_operand().unwrap()),
+            ParameterBinding::default(),
+            &state,
+            &BTreeMap::new(),
+        )
+        .is_none()
+    );
+
+    let read = crate::kernel::SpecExpression::MemoryLoad {
+        point: crate::kernel::SpecPoint::Current,
+        pointer: Box::new(crate::kernel::SpecExpression::Value(
+            ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
+        )),
+        value_type: ProgramType::Bool,
+        exact: false,
+    };
+    let (value, _) =
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            &state,
+            &read,
+            Some(&state),
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    let ProgramValue::Bool(word) = value else {
+        panic!("the typed source read is a Boolean");
+    };
+    let condition = ConditionTerm::truth_of_bool_word(&word);
     let root = crate::kernel::KernelTermImport::default().condition(&condition);
     let surface = raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
         .expect("name of the Boolean cell read");
     let text = diagnostics::describe_contract_expression(&surface);
-    assert_eq!(text, "load<Bool>(p)");
+    assert_eq!(text, "exact(load<Bool>(p))");
     let parsed = parser::parse(&format!("function probe(p: uint8*) -> Bool {{ {text} }}"))
         .expect("typed Boolean load parses");
     let expression = parsed.click_function_definitions()[0].body().unwrap();
@@ -5898,7 +5930,7 @@ fn a_boolean_cell_read_round_trips_as_a_typed_load() {
         .expect("name of the Boolean read at entry");
     assert_eq!(
         diagnostics::describe_contract_expression(&old),
-        "old(load<Bool>(p))"
+        "old(exact(load<Bool>(p)))"
     );
     assert_eq!(
         relower_written_proposition_with_states(
