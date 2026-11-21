@@ -1955,12 +1955,12 @@ fn bind_hosted_startup(
         )
     };
     if !parsed.parameters().is_empty() {
-        return Err(invalid());
+        return Err(invalid().with_proof_refusal(ProofRefusal::Contract));
     }
     let requirement = match function.requires() {
         [] => return Ok(state),
         [Requirement::Resource(requirement @ ResourceClause::Named { .. })] => requirement,
-        _ => return Err(invalid()),
+        _ => return Err(invalid().with_proof_refusal(ProofRefusal::Contract)),
     };
     let Some(ProgramValue::Pointer(stdout)) = parsed
         .globals()
@@ -1987,7 +1987,8 @@ fn bind_hosted_startup(
     if file.address() != stdout.address() {
         return Err(ClickError::new(
             "program-entry stream ownership requires the hosted stdout handle",
-        ));
+        )
+        .with_proof_refusal(ProofRefusal::Contract));
     }
     let [(field, ResourceFieldType::Algebraic(history))] = instance.schema().fields() else {
         return Err(invalid());
@@ -3149,7 +3150,8 @@ fn install_borrowed_contract_inputs(
     proof_label: &str,
 ) -> Result<ExecutionState, ClickError> {
     if let Some(message) = crate::kernel::guard_contract_refusal(function.contract_interface()) {
-        return Err(ClickError::new(format!("`{proof_label}` {message}")));
+        return Err(ClickError::new(format!("`{proof_label}` {message}"))
+            .with_proof_refusal(ProofRefusal::Contract));
     }
     crate::kernel::execution_state_with_borrowed_contract_inputs(
         state,

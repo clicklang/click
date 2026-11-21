@@ -2533,6 +2533,30 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         }
     }
 
+    #[test]
+    fn documented_entry_restrictions_report_contract_errors() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (name, detail) in [
+            (
+                "program_entry_rejects_preconditions.md",
+                "requires no parameters or preconditions",
+            ),
+            (
+                "mutex_use_rejects_consume.md",
+                "require preserving owned inputs",
+            ),
+            (
+                "mutex_helper_transfers_rejects_missing_state.md",
+                "requires one matching named protected state transfer",
+            ),
+        ] {
+            let path = fixtures.join(name);
+            let error = entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
+            assert!(error.starts_with("contract error:\n"), "{name}: {error}");
+            assert!(error.contains(detail), "{name}: {error}");
+        }
+    }
+
     /// A failure at a C operation names that statement. A proof failure with
     /// no site of its own is located at the declaration being verified.
     #[test]

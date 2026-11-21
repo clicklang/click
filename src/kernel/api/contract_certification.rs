@@ -1573,7 +1573,7 @@ fn program_function_contract_entry_facts(
     if let Some(message) =
         crate::kernel::functions::guard_contract_refusal(function.contract_interface())
     {
-        return Err(message.into());
+        return Err(ContractEntryRefusal::InvalidResource(message.to_owned()));
     }
     let mut budget = ExecutionBudget::beside_live_state();
     let Some(mut entry_state) = program_function_entry_state(caller_state, function, arguments)

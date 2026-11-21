@@ -636,14 +636,13 @@ fn prove_claims_by_checked_tactics(
                 ParameterBinding::new(parsed_function.parameters(), &arguments),
                 proof_label,
             )?;
-            crate::kernel::proof::OpenedContractEntry::open(
+            let entry = crate::kernel::proof::OpenedContractEntry::open(
                 &state,
                 &function,
                 &arguments,
                 &pure_facts,
                 function_environment,
             )
-            .and_then(|entry| entry.open_contract_root(function_source_registry.program()))
             .map_err(|error| {
                 ClickError::new(format!(
                     "could not open contract entry for `{proof_label}`: {}",
@@ -653,7 +652,15 @@ fn prove_claims_by_checked_tactics(
                     ),
                 ))
                 .with_proof_refusal(contract_entry_resource_refusal(&error))
-            })
+            })?;
+            entry
+                .open_contract_root(function_source_registry.program())
+                .map_err(|message| {
+                    ClickError::new(format!(
+                        "could not initialize the contract proof for `{proof_label}`: {message}"
+                    ))
+                    .with_kind(ClickErrorKind::Internal)
+                })
         })
         .map_err(|error| error.with_proof_refusal(crate::surface::ProofRefusal::ContractEntry))?;
     // Every clause uses the function produced by this generative entry.
