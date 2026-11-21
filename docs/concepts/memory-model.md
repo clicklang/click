@@ -70,7 +70,8 @@ available. A checked scalar-array copy captures unknown source slots at the
 point before the copy. A checked aggregate assignment from caller storage
 into a local uses that source point for compact `uint32` array fields and
 to name uncached scalar fields when the appropriate typed store, entry
-version, or float read point is available.
+version, or float read point is available. A copied object pointer field can
+retain its complete typed store, including the stored provenance and bounds.
 
 `exact(place)` keys the read by the selected program point when one is
 available. Raising uses `exact` at that point, even if another point has
