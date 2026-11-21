@@ -232,13 +232,16 @@ probe/reinvoke adapter. Solving belongs to the driver there; any repeated-loweri
 cost needs its own fixed-input/ambient-growth measurement. This is not evidence
 that the removed step/fold retry survives.
 
-Have opening also retains two separate preparation candidates: the pointer-only
-`with_selected_load_equality_bridge` route can traverse equality chains and
-origin-unchanged edges, and copying `execution.core.effect_facts` visits the
-retained effect collection. Measure each with a fixed written goal and growing
-unrelated history; remove automatic discovery or repeated publication rather
-than moving it into another fast helper. These are not covered by the scalar
-historical-candidate removal regression.
+Frontier `have` opening shares its parent's fact store and recorded execution
+without replaying the retained effects. Statement transitions publish checked
+footprint containment into the successor's fact store. A written statement
+footprint resolves through the recorded entry and exit. The regression
+`have_at_frontier_shares_the_context_across_call_history` holds the goals fixed
+at 4/16/64/128 calls, and checks a named `preserve` proof at each size. Naming
+the historical reads in that proof still incurs a separate version walk.
+The pointer-only `with_selected_load_equality_bridge` route can still traverse
+equality chains and origin-unchanged edges. It needs its own measurement with
+a fixed goal and growing history.
 
 
 ## Operation map

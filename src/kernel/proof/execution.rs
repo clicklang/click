@@ -8578,8 +8578,11 @@ impl ExecutionProofCore {
             obligations,
             borrow_evidence,
         )
+        .map(|_| ())
     }
 
+    /// Returns the statement footprint's checked containment fact, if it has
+    /// a resource bound, for publication in the successor's pure fact store.
     pub(crate) fn record_statement_transition_with_descent(
         &mut self,
         function: &ProgramFunction,
@@ -8587,7 +8590,7 @@ impl ExecutionProofCore {
         native_step: &crate::kernel::SymbolicExecutionPath,
         context: PureFactContext,
         execution_facts: &(impl ExecutionFactSource + ?Sized),
-    ) -> Result<(), EvidenceRefusal> {
+    ) -> Result<Option<Proposition>, EvidenceRefusal> {
         if let Some(opened) = &self.descent {
             opened
                 .accept_at_state(native_step.descent_step.as_ref(), self.reached_state())
@@ -8615,7 +8618,7 @@ impl ExecutionProofCore {
         execution_facts: &(impl ExecutionFactSource + ?Sized),
         _obligations: &[crate::kernel::ProofObligation],
         borrow_evidence: &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
-    ) -> Result<(), EvidenceRefusal> {
+    ) -> Result<Option<Proposition>, EvidenceRefusal> {
         debug_assert_eq!(self.execution_evidence.len(), 1);
         let (outcome, source_after) =
             self.check_statement_evidence(function, arguments, &theorem, &context)?;
@@ -8652,16 +8655,17 @@ impl ExecutionProofCore {
                 execution_facts,
             )
         });
-        if let Some(fp) = &self.last_footprint
-            && let Some(bound) = &fp.resource_bound
-        {
-            let fact = Proposition::ResourceContains {
+        let footprint_bound = self.last_footprint.as_ref().and_then(|footprint| {
+            let bound = footprint.resource_bound.as_ref()?;
+            Some(Proposition::ResourceContains {
                 parent: Box::new(bound.clone()),
-                child: Box::new(Resource::Footprint(fp.clone())),
-            };
+                child: Box::new(Resource::Footprint(footprint.clone())),
+            })
+        });
+        if let Some(fact) = &footprint_bound {
             self.effect_facts
                 .push(ExecutionPureFact::new(fact.clone()).into_certified());
-            self.retain_step_case(fact);
+            self.retain_step_case(fact.clone());
         }
         let memory_effects = self.append_statement_effects(execution_facts);
         self.advance_path_context(&context);
@@ -8825,14 +8829,14 @@ impl ExecutionProofCore {
                     self.frontier.loop_control = LoopControlExit::BodyEnd;
                     self.evidence_state = Some(*state);
                     self.evidence_completed = true;
-                    return Ok(());
+                    return Ok(footprint_bound);
                 }
                 if self.frontier.in_loop_body && function.control_target(target).is_some() {
                     self.frontier.position = FrontierPosition::RegionBoundary;
                     self.frontier.loop_control = LoopControlExit::Jump(target);
                     self.evidence_state = Some(*state);
                     self.evidence_completed = true;
-                    return Ok(());
+                    return Ok(footprint_bound);
                 }
                 let target = function
                     .control_target(target)
@@ -8853,7 +8857,7 @@ impl ExecutionProofCore {
             | StatementOutcome::UndefinedBehavior(_)
             | StatementOutcome::RuntimeError(_) => self.evidence_completed = true,
         }
-        Ok(())
+        Ok(footprint_bound)
     }
 
     /// Abandon only the lexical continuations this transfer leaves. The

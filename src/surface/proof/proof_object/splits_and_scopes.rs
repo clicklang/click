@@ -1163,16 +1163,6 @@ impl<'a> Proof<'a> {
             } else {
                 held_facts
             };
-            // A `have` stated at an execution frontier may use the frontier's
-            // effect facts exactly as the shared mid-execution law offers them.
-            if at_frontier && let Some(execution) = self.execution() {
-                for fact in execution.core.effect_facts.iter() {
-                    if !body_facts.contains(fact.proposition()) {
-                        body_facts =
-                            body_facts.with_kernel_checked_fact(fact.proposition().clone());
-                    }
-                }
-            }
             // Opening a written goal does not discover a historical fact that
             // might prove it. The body supplies that proof through ordinary
             // steps or an expandable solve; comparing older state-blind
