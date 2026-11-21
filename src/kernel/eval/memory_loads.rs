@@ -2336,9 +2336,7 @@ fn symbolic_index_run_load(
                 offset,
             };
             let source = run.source_point();
-            if let Some(read) = expected_point_named_cell_read(source, &copied_address, value_type)
-            {
-                record_indexed_cell_read(source, &read);
+            if let Some(read) = point_named_cell_load(source, &copied_address, value_type) {
                 return Some(crate::kernel::cell_run_value(value_type, read));
             }
             &copied_address
@@ -4213,12 +4211,22 @@ pub(crate) fn canonical_cell_load(
     pointer: &Address,
     ty: ProgramType,
 ) -> MachineTerm {
-    if let Some(read) = expected_point_named_cell_read(source, pointer, ty) {
-        record_indexed_cell_read(source, &read);
+    if let Some(read) = point_named_cell_load(source, pointer, ty) {
         return read;
     }
     let kind = LoadKind::of_type(ty).expect("scalar cell read kind");
     canonical_form_of_load(source.shared_memory().clone(), pointer.clone(), kind)
+}
+
+/// Construct a cell read when its recorded point can supply a name.
+pub(in crate::kernel) fn point_named_cell_load(
+    source: &ProgramPoint,
+    pointer: &Address,
+    ty: ProgramType,
+) -> Option<MachineTerm> {
+    let read = expected_point_named_cell_read(source, pointer, ty)?;
+    record_indexed_cell_read(source, &read);
+    Some(read)
 }
 
 /// Name a typed cell exposed by a resource view.

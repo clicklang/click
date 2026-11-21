@@ -1123,12 +1123,13 @@ fn copy_aggregate_fields_from(
     source_state: Option<&ExecutionState>,
 ) -> SymbolicMemory {
     let source_point = std::cell::OnceCell::new();
+    let captured_point =
+        || source_state.map(|state| source_point.get_or_init(|| state.program_point()));
     for field in layout.fields() {
         if let ProgramType::UInt32Array(count) = field.program_type() {
             let source_field = source.offset_by_layout(field.offset());
             let target_field = destination.offset_by_layout(field.offset());
-            let point =
-                source_state.map(|state| source_point.get_or_init(|| state.program_point()));
+            let point = captured_point();
             if let Ok(copied) = memory.clone().write_scalar_array_region_at(
                 &target_field,
                 ProgramType::UInt32,
@@ -1266,33 +1267,33 @@ fn copy_aggregate_fields_from(
                     return None;
                 }
                 match element_type {
-                    ProgramType::Int8 => {
-                        Some(ProgramValue::Int8(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::Int16 => {
-                        Some(ProgramValue::Int16(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::Int32 => {
-                        Some(ProgramValue::Int32(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::UInt8 => {
-                        Some(ProgramValue::UInt8(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
+                    ProgramType::Int8
+                    | ProgramType::UInt8
+                    | ProgramType::Int16
+                    | ProgramType::UInt16
+                    | ProgramType::Int32
+                    | ProgramType::UInt32
+                    | ProgramType::Int64
+                    | ProgramType::UInt64
+                    | ProgramType::Float32
+                    | ProgramType::Float64 => {
+                        let kind = LoadKind::of_type(element_type)?;
+                        let read = captured_point()
+                            .and_then(|point| {
+                                crate::kernel::eval::point_named_cell_load(
+                                    point,
+                                    &source_field,
+                                    element_type,
+                                )
+                            })
+                            .unwrap_or_else(|| {
+                                crate::kernel::canonical_form_of_load(
+                                    crate::kernel::intern_memory(memory.clone()),
+                                    source_field,
+                                    kind,
+                                )
+                            });
+                        Some(crate::kernel::cell_run_value(element_type, read))
                     }
                     ProgramType::Int32Pointer
                     | ProgramType::UInt8Pointer
@@ -1310,48 +1311,6 @@ fn copy_aggregate_fields_from(
                             true,
                         )
                     }
-                    ProgramType::UInt16 => {
-                        Some(ProgramValue::UInt16(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::UInt32 => {
-                        Some(ProgramValue::UInt32(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::Int64 => {
-                        Some(ProgramValue::Int64(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::UInt64 => {
-                        Some(ProgramValue::UInt64(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::Float32 => Some(ProgramValue::Float32(
-                        crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        ),
-                    )),
-                    ProgramType::Float64 => Some(ProgramValue::Float64(
-                        crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        ),
-                    )),
                     ProgramType::Parameter(_) => {
                         crate::kernel::eval::symbolic_load_value_unrecorded(
                             &memory,
