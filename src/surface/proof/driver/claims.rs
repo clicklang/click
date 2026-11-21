@@ -1901,7 +1901,14 @@ fn close_claim_directly_from_outcome<'a>(
     let error = proof.step_error(format!(
         "`ensures {surface}` failed for `{claim_label}` path {path_index}: unclosed goal: {surface}{evaluated_sides}{store_separation_miss}\n{context}"
     ));
+    let refusal = match closure_search {
+        ClaimClosureSearch::None => crate::surface::ProofRefusal::UnprovedGoal,
+        ClaimClosureSearch::Restricted(_) | ClaimClosureSearch::Solve => {
+            crate::surface::ProofRefusal::UnsuccessfulSearch
+        }
+    };
     Ok(Err(error
+        .with_proof_refusal(refusal)
         .with_search_failures(search.finish())
         .with_failing_path(path_index)))
 }
@@ -2493,7 +2500,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                     let claim_label = function_claim_label(function_block, &claims[claim_index]);
                     return Err(ClickError::new(format!(
                         "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` did not complete the retained claim proof for `{claim_label}`"
-                    )));
+                    )).with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch));
                 }
             }
         }
@@ -2845,7 +2852,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                         .unwrap_or_default();
                     return Err(scope.body().step_error(format!(
                         "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `{closer_name}` search did not retain a complete proof for `{claim_label}`{detail}{transition_detail}",
-                    )).with_check_observations(checks).with_search_failures(search.finish()));
+                    )).with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch).with_check_observations(checks).with_search_failures(search.finish()));
                 };
                 search.succeed();
                 let joined = scope.join()?;
@@ -3019,7 +3026,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 continue;
             };
             let claim_label = function_claim_label(function_block, claim);
-            let Ok(completed) = close_claim_directly_from_outcome(
+            let completed = match close_claim_directly_from_outcome(
                 &root,
                 function,
                 claim,
@@ -3035,9 +3042,12 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 spec_definitions,
                 search,
                 None,
-            )?
-            else {
-                continue;
+            )? {
+                Ok(completed) => completed,
+                Err(reason) => {
+                    closures[claim_index].record_failure(reason);
+                    continue;
+                }
             };
             // The closure is the exact check the end
             // of the proof makes, so it prints no
@@ -3073,6 +3083,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
         return Ok(());
     }
     let mut reasons = Vec::new();
+    let mut searched = false;
     for (claim_index, claim) in claims.iter().enumerate() {
         if closures[claim_index].is_closed() || !acts_on(claim_index) {
             continue;
@@ -3084,6 +3095,13 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
         let Ensure::Proposition(surface_goal) = ensure_clause.ensure() else {
             continue;
         };
+        if let Some(reason) = closures[claim_index].last_error()
+            && reason.proof_refusal() == Some(crate::surface::ProofRefusal::UnsuccessfulSearch)
+        {
+            searched = true;
+            reasons.push(reason.clone());
+            continue;
+        }
         let claim_label = function_claim_label(function_block, claim);
         if let Err(reason) = close_claim_directly_from_outcome(
             root,
@@ -3127,7 +3145,12 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     } else {
         format!("\n{}", reasons.join("\n"))
     };
-    Err(ClickError::new(format!("{summary}{detail}")))
+    let error = ClickError::new(format!("{summary}{detail}"));
+    Err(if searched {
+        error.with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
+    } else {
+        error
+    })
 }
 
 /// Takes the opened claim proof to continue, dropping one whose claim a
@@ -5510,7 +5533,8 @@ pub(super) fn finish_ordered_proof<'a>(
                         if let Some(error) = closures[claim_index].last_error() {
                             return Err(error.clone().with_context(summary));
                         }
-                        return Err(ClickError::new(summary));
+                        return Err(ClickError::new(summary)
+                            .with_proof_refusal(crate::surface::ProofRefusal::UnprovedGoal));
                     }
 
                     // The checked execution producer owns the specification.

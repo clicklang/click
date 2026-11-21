@@ -9,19 +9,23 @@ attempt must advance.
 [Proof-failure triage](proof-failure-triage.md) classifies a failure once it
 is understood. This page is how you come to understand it.
 
-## Every proof error has a goal
+## Classify the verification outcome
 
-Start with the terminal error kind. Use the proof steps below for a proof error.
+Start with the terminal heading.
 
 | Error kind | What it means | What to do |
 | --- | --- | --- |
 | `syntax error` | The sidecar does not parse. | Fix the source at the reported line. |
 | `type error` | The sidecar parses but does not elaborate. | Fix the named declaration. |
 | `internal error` | Click detected its own failure. | Stop at [`internal-error`](#outcomes) and capture the command, version, output, and inputs. |
-| `proof error` | A checked operation could not establish something. | Follow the procedure below. |
+| `limit error` | A configured work limit stopped verification. | Record the limit and the operation that reached it. |
+| `tactic error` | A specific tactic invocation was refused. | Check `click docs TACTIC` for where it applies and what it requires. |
+| `unsuccessful search` | An explicit or implicit proof search found no proof. | Record the goal and write smaller proof links or supply explicit premises. |
+| `unproved goal` | The proof left a required goal open. | Prove the remaining goal with the premises at the reported point. |
+| `verification error` | Verification was refused at setup, certification, or another check outside those cases. | Inspect the reported reason and follow the procedure below if a goal is given. |
 
-A proof error names its **goal**: the proposition that had to be true at a
-point and was not proved there. A goal can come from an `ensures`
+When a proposition had to be true at a point and Click did not prove it,
+the report prints it on a `goal:` line. That goal can come from an `ensures`
 clause, a written `have`, a call's precondition, a definedness requirement such
 as the absence of signed overflow, or a memory access. The report prints it on
 a `goal:` line. Whatever its source, a goal is proved the same way: by the implicit tail when
@@ -67,7 +71,7 @@ in a proof that succeeds; use it to see the facts available at a point where
 you intend to write a `have`.
 
 The trace lists each checked step on the failing path and the facts it added
-(`adds:`), then a `failed check` section with the goal, the resources held,
+(`adds:`), then a `proof refusal` section with the goal, the resources held,
 and the available premises. Those premises are what an explicit proof of the
 goal can use. [Reading trace output](#reading-trace-output) describes the
 notation.
@@ -236,8 +240,8 @@ premises; it does not by itself certify that checking is fast.
 6. **On a search miss, write the argument.** An elided form, such as
    `apply(t(x))` or a bare `transport(P, Q)`, searches for an argument that
    a simple form of the same tactic takes written. When the search finds
-   nothing, the refusal says "this is a search miss" and its `refused by:`
-   line says the search found nothing. State the missing fact with `have`
+   nothing, the heading is `unsuccessful search` and the report may name the
+   tactic on a `refused by:` line. State the missing fact with `have`
    first, or write the `using` form, and run again. Only the written form's
    refusal can be `tactic-bug`.
 
@@ -272,7 +276,7 @@ The procedure ends at exactly one of these:
 | `unclear-trace` | You could not determine what the output says was refused. Quote the output and identify what you could not determine. |
 | `internal-error` | Click printed `internal error`. Tell the user immediately that Click detected a verifier failure. A proof goal or a minimized tactic link is optional evidence. |
 
-The `failed check:` heading locates a refusal. The outcome depends on what
+The `proof refusal:` heading locates a refusal. The outcome depends on what
 the proof-repair investigation establishes. For a smart-tactic miss or a
 failed search for an omitted argument, identify the primitive and state
 its premises. Report diagnosis as in progress while checking the inference
@@ -344,7 +348,7 @@ that the addition does not overflow. It ends with the goal and how to prove it
 (abbreviated):
 
 ```text
-proof error:
+unsuccessful search:
   `frame.ensures_0` tactic 0
   `step()` produced undefined behavior
   signed overflow
@@ -358,7 +362,7 @@ help: to prove the goal explicitly, step to this statement and prove it there wi
 ```
 
 1. **Goal.** `inner <= 2147483646` before `return inner + 1;`. The trace's
-   failed check lists the bounds on `w` and `h`, and the call step added
+   proof refusal lists the bounds on `w` and `h`, and the call step added
    `inner == w * h`.
 2. **True?** Yes: `w * h` is at most `1000 * 1000`.
 3. **Argument.** `inner == w * h`, `w * h <= 1000000`, and `1000000 <=
@@ -399,7 +403,7 @@ This describes a representation mismatch, not additional proof evidence.
 Within a trace, goals, requirements, and traced facts share names and memory
 labels. A `transport` refusal that finds no frame evidence prints its own
 legend first, and the trace continues its numbering, so a label in the refusal
-and in the `failed check` goal means the same value or memory. A field of a named pointer prints as that name
+and in the `proof refusal` goal means the same value or memory. A field of a named pointer prints as that name
 plus its byte offset (`g + 16 bytes`). A bounded legend defines
 generated addresses and memory labels, including immutable proof names, pointer-read
 constructions, pure pointer calls with their typed arguments, byte offsets,
@@ -499,12 +503,12 @@ Writing the `chosen:` form removes the search for those arguments. It does
 not establish that the checked implementation avoids history walks; apply
 the one-step cost requirement above separately. A step with neither mark is one the script wrote.
 
-A failure trace also ends with a separately labelled `failed check`. It retains
+A failure trace also ends with a separately labelled `proof refusal`. It retains
 the refusal, checking stage, proof context, up to sixteen available premises,
 and up to twelve resources from the retained C state, even when the first operation fails before a checked step can
 be recorded. For postcondition failures, current-state names and resources come from the
 selected outcome; permissions consumed by a call are not shown as still held.
-The failed check is not an accepted execution step. A proposition
+The proof refusal is not an accepted execution step. A proposition
 proof has a fixed execution state; an execution tactic refused there names that
 restriction rather than implying that the tactic is unavailable everywhere.
 When an explicit script ends with a goal still open, its failure retains the

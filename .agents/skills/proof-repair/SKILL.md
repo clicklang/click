@@ -1,6 +1,6 @@
 ---
 name: proof-repair
-description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` reports a proof error, or an omitted proof, `solve()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
+description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` reports a tactic error, unsuccessful search, unproved goal, or verification error, or an omitted proof, `solve()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
 ---
 
 # Repairing a failed proof
@@ -31,7 +31,20 @@ it; shrink them if you can, but a report need not wait for that.
   apply.
 - `internal error`: stop at `internal-error`. Click has reported its own
   failure. Capture the error, version, command, and inputs.
-- `proof error`: continue.
+- `limit error`: record the limit and where Click stopped. The run did not
+  finish checking the proof.
+- `tactic error`: read `click docs TACTIC` and check whether the tactic is valid
+  at the reported point. Correct an invalid invocation. If the invocation and
+  its premises satisfy the documented rule and Click still refuses, report
+  `tactic-bug`. If the tactic owes a goal, continue with that goal below.
+- `unsuccessful search`: explicit or implicit proof search ran and found no
+  proof. Record the goal. If it holds, write an explicit chain of smaller
+  links, or supply the missing argument or premises.
+- `unproved goal`: the proof left an obligation open. Continue with the
+  remaining goal and the premises available where the script ended.
+- `verification error`: read the reported reason. This includes setup and
+  contract certification. If the report gives a proof obligation, continue
+  with that goal. Otherwise investigate the reported cause directly.
 
 ## 2. Record the goal
 
@@ -44,7 +57,7 @@ From the ordinary report, write down:
 
 If the report does not explain the premises, rerun the command under
 `To get a trace:` (`click verify --trace-proof PROOF SIDECAR`, optionally with
-`--trace-to LINE`). Read its `failed check` section.
+`--trace-to LINE`). Read its `proof refusal` section.
 
 A goal about memory (any `transport`, frame, or `read<...>(state#N, ...)`
 goal) depends on its `state#N` and `value#N` labels: write down the legend
@@ -202,7 +215,7 @@ Stop at exactly one outcome:
   immediately that Click detected a verifier failure. Use the original
   diagnostic. A proof goal and a minimized tactic link are optional evidence.
 
-A `failed check:` heading identifies the check Click could not complete.
+The trace’s `proof refusal:` section shows where the CLI outcome arose.
 To report a `tactic-bug`, show why the inference holds and cite the documented
 behavior the refusal violates. A smart-tactic miss or a search for an omitted
 argument calls for an explicit proof link. While checking the rule or its

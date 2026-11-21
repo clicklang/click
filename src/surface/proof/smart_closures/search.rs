@@ -11913,7 +11913,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     let closed = have.driver().try_solve_closure()?;
                     let Some(closed) = closed else {
-                        return Err(error);
+                        return Err(error.with_proof_refusal(
+                            crate::surface::ProofRefusal::ImplicitStatementSearch,
+                        ));
                     };
                     // `join` publishes the checked proposition into the exact
                     // enclosing frontier.  Reapply the original step value so a

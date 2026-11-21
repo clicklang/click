@@ -37,7 +37,7 @@ closest names.
 
 ## Use in refusals
 
-A proof error from [`click verify`](verify.md) that Click can attribute to a
+A tactic refusal from [`click verify`](verify.md) that Click can attribute to a
 written tactic ends with what refused it and the entry that documents it:
 
 ```text

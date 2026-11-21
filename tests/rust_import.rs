@@ -1527,7 +1527,7 @@ fn charon_slice_failure_has_a_focused_trace() {
     let output = p.cli(&["verify"]);
     assert!(!output.status.success());
     let error = String::from_utf8(output.stderr).unwrap();
-    assert!(error.contains("proof error:"), "{error}");
+    assert!(error.contains("unsuccessful search:"), "{error}");
     assert!(error.contains("--trace-proof length"), "{error}");
     let output = p.cli(&["verify", "--trace-proof", "length", "--trace-to", &trace_to]);
     assert!(!output.status.success());

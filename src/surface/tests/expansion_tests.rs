@@ -4054,7 +4054,7 @@ fn integer_sum_range_fold_expands_and_reverifies() {
         .collect::<Vec<_>>();
     let error = verify_c_sources(click_source, &wrong_sources).unwrap_err();
     assert!(
-        error.report().contains("error kind: proof error"),
+        error.report().contains("error kind: verification error"),
         "{}",
         error.report()
     );
