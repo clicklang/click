@@ -31,8 +31,9 @@ The raise-lower headline counts a fact once per container, claim and
 rendering, however many steps restate it. A fact fails when it has no raised
 form (`unraised`), its raised form does not lower (`unlowered`), or it lowers
 to another term (`differs`) or the other polarity of the same comparison
-(`polarity`). Facts at no fixed program state cannot be raised there and are
-reported as not checkable. The fact-stability headline counts lowerings
+(`polarity`). A pure proof (a theorem, a lemma, a termination check) raises
+and lowers in its own context; a program proof's fact at no fixed program
+state cannot be raised there and is reported as not checkable. The fact-stability headline counts lowerings
 whose term facts changed (`differs`) or among whose paths facts chose
 (`paths`); `refused` lowerings are tracked.
 
@@ -56,7 +57,8 @@ Every failure, with its reproduce command, is in `raise-lower.failures.tsv` or
 site, fact, raised form or fact-free lowering, lowered form, command. A
 reproduce command audits only that container, and `--claim CLAIM` (repeatable)
 counts and lists only that claim's raise-lower facts. The expansion audit
-prints a reproduce command for each failing site in the same way.
+prints a reproduce command for each failing site, and writes every failing
+site or container to `expansion.failures.tsv` in the same columns.
 
 A container that does not verify as its expectation says is counted after
 the headline and listed in `raise-lower.unexpected.tsv` or
