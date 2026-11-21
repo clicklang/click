@@ -6045,6 +6045,24 @@ fn expansion_replays_explicit_call_requirements_inside_with() {
 }
 
 #[test]
+fn expansion_keeps_the_return_closing_fact_inside_with() {
+    let (source, sources) = mdtest_sources("mdtests/open_closing_fact_inside_block.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "set_last.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let (_, body) = expanded.split_once("void set_last(").unwrap();
+    assert!(
+        body.contains("        have p[0] > 0 or p[0] < -1 by {\n            known();\n        }\n    }\n    known();"),
+        "{expanded}"
+    );
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn expansion_keeps_explicit_return_fold_inside_with() {
     let (source, sources) = mdtest_sources("mdtests/with_accepts_an_already_restored_instance.md");
     let sources = crate::cli::source_refs(&sources);

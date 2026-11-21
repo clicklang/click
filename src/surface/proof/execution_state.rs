@@ -572,7 +572,7 @@ fn append_surface_step_to_certificate(proof: &mut ProofCertificate, step: &Proof
 /// lexical arms. Outcome suffixes must stay there so constructor bindings
 /// cannot escape the resource block. An `ensuring` match instead rejoins
 /// before scope close and leaves later operations outside the block.
-fn ends_in_terminal_match(mut steps: &[ProofStep]) -> bool {
+pub(super) fn ends_in_terminal_match(mut steps: &[ProofStep]) -> bool {
     loop {
         match steps.last() {
             Some(ProofStep::Match { ensuring: None, .. }) => return true,
@@ -582,8 +582,8 @@ fn ends_in_terminal_match(mut steps: &[ProofStep]) -> bool {
     }
 }
 
-/// Append the deferred restoration facts to their open scope rather than
-/// leaving them in the function's post-execution suffix.
+/// Finish an exit-reaching open scope with its deferred operations and any
+/// restoration proof. Operations after the close are appended separately.
 fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bool {
     let ProofStep::Open {
         resource,
@@ -593,9 +593,8 @@ fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bo
     else {
         return false;
     };
-    // An explicit restoration at return was checked before the close, so its
-    // deferred operations have already been appended. Move them inside the
-    // open scope before publishing the checked close.
+    // The operations checked before this close have already been appended.
+    // Move them back into the scope where they were written.
     let is_open = |step: &ProofStep| {
         matches!(
             step,
@@ -605,14 +604,7 @@ fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bo
             }
         )
     };
-    let scope_index = match tail {
-        DeferredOpenTail::AlreadyRestored => steps.iter().rposition(is_open),
-        DeferredOpenTail::Restore => steps
-            .last()
-            .filter(|step| is_open(step))
-            .map(|_| steps.len() - 1),
-    };
-    let Some(scope_index) = scope_index else {
+    let Some(scope_index) = steps.iter().rposition(is_open) else {
         return false;
     };
     let suffix = &steps[scope_index + 1..];
@@ -628,9 +620,6 @@ fn attach_deferred_open_tail(steps: &mut Vec<ProofStep>, step: &ProofStep) -> bo
     if scope != resource {
         // A nested scope reached return before its enclosing scope closed.
         // Follow the enclosing certificate to the matching scope.
-        if *tail != DeferredOpenTail::AlreadyRestored {
-            return false;
-        }
         body.extend(suffix.iter().cloned());
         if !attach_deferred_open_tail(&mut body, step) {
             return false;
@@ -1150,7 +1139,7 @@ pub(super) fn append_surface_tactics_flat(
             append_surface_step_to_leaves(steps, step);
         }
     } else {
-        steps.extend(proof.into_steps());
+        append_surface_steps_in_order(steps, proof.into_steps());
     }
     Ok(())
 }
@@ -1661,6 +1650,7 @@ pub(super) enum PostExecutionTactic {
     CloseOpen {
         resource: ResourceClause,
         restoration: OpenResourceRestoration,
+        retain_deferred_body: bool,
     },
     Apply(TheoremApplication),
     Have(ProofHave),
