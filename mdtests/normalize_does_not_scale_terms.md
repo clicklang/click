@@ -1,11 +1,11 @@
-# Normalization checks one symbolic distribution
+# One symbolic distribution step
 
-Explicit Integer normalization accepts one written distributivity step with
-opaque operands. Full polynomial expansion still belongs to expandable search.
+The distributivity identity holds with opaque operands. It requires no facts
+about the individual operands.
 
 ```click
-theorem by_normalize(x: Integer, y: Integer, z: Integer) {
-    ensures (x + y) * z == x * z + y * z by { normalize(); }
+theorem distributes_product(x: Integer, y: Integer, z: Integer) {
+    ensures (x + y) * z == x * z + y * z by { solve(); }
 }
 ```
 

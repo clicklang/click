@@ -34,7 +34,7 @@ theorem payload(v: Payload, n: int32, p: struct node*, c: Color) {
     ensures repack(v) == Payload::At(n, p, c) by {
         unfold(repack(v));
         rewrite(v, Payload::At(n, p, c));
-        normalize();
+        known();
     }
 }
 ```
