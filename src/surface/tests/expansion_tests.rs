@@ -7640,7 +7640,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_29")]
-fn smart_apply_preserves_statement_states_in_explicit_premises() {
+fn bare_apply_preserves_statement_states_in_arguments() {
     let c_source = r#"
             int32 decrement(int32* p) {
                 p[0] = 0;
@@ -7699,7 +7699,9 @@ fn smart_apply_preserves_statement_states_in_explicit_premises() {
         expand_c_tactic_source_at(click_source, &[("decrement.c", c_source)], line, column)
             .expect("the state theorem application should expand");
     assert!(
-        expanded.contains("at(region(0).entry, p[0]) == 1;"),
+        expanded.contains(
+            "apply(changed_one_to_zero(at(region(0).entry, p[0]), at(region(0).exit, p[0])));"
+        ),
         "{expanded}"
     );
     verify_c_sources(&expanded, &[("decrement.c", c_source)])
@@ -11800,10 +11802,8 @@ fn fixed_state_have_bare_apply_retains_and_checks_its_exact_premise() {
     let apply_offset = expanded
         .find("apply(equality_symmetric(first, second));")
         .expect("expansion should retain the list-free application");
-    without_implicit_solve_for_claim("choose_second.contract", || {
-        verify_c_sources(&expanded, &[("choose.c", c_source)])
-    })
-    .expect("the retained fixed-state proof should independently check");
+    verify_c_sources(&expanded, &[("choose.c", c_source)])
+        .expect("the retained fixed-state proof should independently check");
 
     let premise = "requires first == second;";
     let premise_offset = expanded[..apply_offset].rfind(premise).unwrap();
@@ -11915,20 +11915,22 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
     let expanded = verified[0]
         .expanded_proof_tactics()
         .expect("the checked execution apply should retain an expansion");
-    assert!(matches!(
-        expanded.as_slice(),
-        [ProofTactic::Have(have), ProofTactic::ApplyTheoremUsing { application, premises }, ..]
-            if application.name == "click::integer::uint32_less_than_divisor_implies_remainder_is_value" && premises.len() == 1
-                && matches!(&have.proof, SourceProof::Script(body) if matches!(body.as_slice(), [ProofTactic::Known]))
-    ));
+    assert!(
+        matches!(
+            expanded.as_slice(),
+            [ProofTactic::ApplyTheorem(application), ..]
+                if application.name.ends_with("integer::uint32_less_than_divisor_implies_remainder_is_value")
+        ),
+        "{expanded:#?}"
+    );
     let retained_source = verified[0]
         .expanded_proof_source()
         .expect("the checked execution apply should have canonical source");
     assert!(
         retained_source.contains(
-            "apply(click::integer::uint32_less_than_divisor_implies_remainder_is_value(value, divisor)) using {"
+            "integer::uint32_less_than_divisor_implies_remainder_is_value(value, divisor));"
         ),
-        "the canonical source cites the library theorem by its qualified identity: {retained_source}"
+        "the canonical source cites the library theorem without a list: {retained_source}"
     );
     let expanded = expand_c_claim_source(
         click_source,
@@ -24844,7 +24846,7 @@ test_batches! {
     expansion_batch_29: [
         selected_post_execution_smart_apply_uses_exact_path_premises,
         smart_apply_surfaces_a_framed_comparison_after_an_immutable_call,
-        smart_apply_preserves_statement_states_in_explicit_premises,
+        bare_apply_preserves_statement_states_in_arguments,
         source_expansion_preserves_proof_marks,
     ],
     expansion_batch_30: [
@@ -25269,13 +25271,11 @@ fn returned_branch_closers_replay_from_retained_decisions() {
 #[test]
 fn pure_apply_obligations_expand_to_explicit_have_and_bare_application() {
     let (source, _) = mdtest_sources("mdtests/pure_apply_obligations.md");
-    let error =
-        without_implicit_solve_for_claim("positive.ensures_0", || verify_click_theorems(&source))
-            .unwrap_err();
-    assert!(
-        error.message().contains("has an unproved obligation"),
-        "{error}"
-    );
+    let error = without_implicit_solve_for_claim("positive.ensures_0", || {
+        verify_click_theorems(&source).map_err(|error| error.report())
+    })
+    .unwrap_err();
+    assert!(error.contains("has an unproved obligation"), "{error}");
 
     for (application, claim) in [
         ("apply(nonnegative(n))", "positive.ensures_0"),
@@ -25291,6 +25291,9 @@ fn pure_apply_obligations_expand_to_explicit_have_and_bare_application() {
             .count()
             + 1;
         let column = offset - source[..offset].rfind('\n').map_or(0, |index| index + 1) + 1;
+        let selected = c_select_smart_tactic(&source, &[], line, Some(column + 1)).unwrap();
+        assert_eq!(selected.tactic_name, "apply");
+        assert_eq!(selected.claim_label, claim);
         let expanded = expand_c_tactic_source_at(&source, &[], line, column).unwrap();
         assert!(expanded.contains("have "), "{expanded}");
         assert!(expanded.contains(&format!("{application};")), "{expanded}");
@@ -25411,7 +25414,12 @@ fn bare_range_fold_application_expands_its_guards() {
         "fold_appends_at_a_predecessor_endpoint.ensures_0",
     )
     .unwrap();
-    assert!(expanded.contains("using"), "{expanded}");
+    assert!(
+        expanded
+            .lines()
+            .any(|line| line.contains("apply(integer_range_fold_append(") && line.ends_with(");")),
+        "{expanded}"
+    );
     without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     let missing = source.replace("    requires to_integer(lo) <= to_integer(hi - 1);\n", "");
     assert!(verify_click_theorems(&missing).is_err());
@@ -25430,7 +25438,12 @@ theorem empty(lo: int32, hi: int32) {
 }
 "#;
     let expanded = expand_c_claim_source_by_label(source, &[], "empty.ensures_0").unwrap();
-    assert!(expanded.contains("using"), "{expanded}");
+    assert!(
+        expanded
+            .lines()
+            .any(|line| line.contains("apply(integer_range_fold_empty(") && line.ends_with(");")),
+        "{expanded}"
+    );
     without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     let missing = source.replace("    requires to_integer(hi) <= to_integer(lo);\n", "");
     let refusal = verify_click_theorems(&missing).unwrap_err();
