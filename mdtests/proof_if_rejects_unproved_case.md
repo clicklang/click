@@ -17,6 +17,7 @@ theorem not_always_zero(x: int32) {
 
 ```expect
 fail: could not establish `x == 0`
+  proof search miss: no proof found for this goal
   stage: proof step
   location: tactic 0 > else arm tactic 1
   goal: x == 0

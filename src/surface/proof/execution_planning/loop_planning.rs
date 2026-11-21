@@ -638,10 +638,19 @@ fn check_loop_phase_goal<'a>(
         SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
             (scope).driver().try_solve_closure()?
         }
-        SourceProof::Script(tactics) => match sites {
-            Some(sites) => scope.driver().try_addressed_linear_script(tactics, sites)?,
-            None => scope.driver().try_authoritative_linear_script(tactics)?,
-        },
+        SourceProof::Script(tactics) => {
+            let tactics = crate::surface::proof::smart_closures::with_implicit_closer(tactics);
+            match sites {
+                Some(sites) => {
+                    let mut sites = sites.to_vec();
+                    sites.push(scope.body().site().clone());
+                    scope
+                        .driver()
+                        .try_addressed_linear_script(&tactics, &sites)?
+                }
+                None => scope.driver().try_authoritative_linear_script(&tactics)?,
+            }
+        }
     }
     .ok_or_else(|| ClickError::new(format!("loop {phase_name} body did not close its goal")))?;
     if !checked.is_complete() {

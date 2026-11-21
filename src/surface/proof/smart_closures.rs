@@ -1709,6 +1709,12 @@ fn script_arm_with_continuation<'a>(
     }
 }
 
+pub(super) fn with_implicit_closer(tactics: &[ProofTactic]) -> Vec<ProofTactic> {
+    let mut tactics = tactics.to_vec();
+    tactics.push(ProofTactic::ImplicitSolve);
+    tactics
+}
+
 impl<'a> Proof<'a> {
     fn signed_surface_term(
         &self,

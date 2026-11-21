@@ -36,7 +36,6 @@ it; shrink them if you can, but a report need not wait for that.
 | --- | --- | --- |
 | `tactic failure` | A checked tactic refused its input or the C it was executing. | Check the tactic's **Accepts** list in `click docs NAME`, then check the program point, operands, and prerequisites. Fix an invalid tactic invocation or C behavior at its source. For a Click limitation on valid C, reduce the failing step and record `failing-tactic`. |
 | `proof search miss` | Search found no proof or could not fill an elided argument. | Record the goal and write the missing argument or intermediate facts. Continue with step 2. |
-| `open goal` | The script ended with a goal pending. | Record the goal and supply the proof steps. Continue with step 2. |
 
 A known Click limitation can stop a checked tactic before it creates a goal.
 Capture the tactic, the exact C expression or proof input, and the stated

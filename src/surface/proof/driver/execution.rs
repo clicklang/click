@@ -2371,60 +2371,61 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
 ) -> Result<Option<ProofScope<'a>>, ClickError> {
     let body = nested.body().clone();
     let source_proof = have.checking_proof();
-    let (selected, checks) =
-        crate::surface::proof_diagnostics::capture_check_observations(
-            || -> Result<_, ClickError> {
-                Ok(match source_proof.as_ref() {
-                    SourceProof::Tactic(SmartTactic::ImplicitTail) => {
-                        nested.driver().try_solve_closure()?
+    let (selected, checks) = crate::surface::proof_diagnostics::capture_check_observations(
+        || -> Result<_, ClickError> {
+            Ok(match source_proof.as_ref() {
+                SourceProof::Tactic(SmartTactic::ImplicitTail) => {
+                    nested.driver().try_solve_closure()?
+                }
+                SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
+                    (nested).driver().try_solve_closure()?
+                }
+                SourceProof::Script(body) => {
+                    // Check the written steps before trying the closer. A step
+                    // that declines still reports its own failure.
+                    let tactics = crate::surface::proof::smart_closures::with_implicit_closer(body);
+                    let mut declined = None;
+                    let mut unfinished = None;
+                    let selected = nested.driver().try_authoritative_linear_script_reporting(
+                        &tactics,
+                        &mut declined,
+                        &mut unfinished,
+                    )?;
+                    if selected.is_none() {
+                        let detail = match declined {
+                            Some(
+                                crate::surface::proof::smart_closures::LinearScriptDecline::Step(
+                                    index,
+                                ),
+                            ) => match body.get(index) {
+                                Some(tactic) => format!(
+                                    "step {} of its body, `{}`, declined",
+                                    index + 1,
+                                    tactic_name(tactic)
+                                ),
+                                None => format!("step {} of its body declined", index + 1),
+                            },
+                            Some(
+                                crate::surface::proof::smart_closures::LinearScriptDecline::Shape,
+                            ) => "its body is not a shape the checked driver runs".to_string(),
+                            None => "its body ran to the end with the goal still open".to_string(),
+                        };
+                        let goal = crate::surface::diagnostics::describe_click_proposition(
+                            &have.proposition,
+                        );
+                        check_verification_deadline()?;
+                        // Preserve the body's checked prefix and remaining goal,
+                        // rather than attaching the enclosing execution state.
+                        return Err(unfinished
+                            .as_ref()
+                            .unwrap_or(nested.body())
+                            .step_error(format!("`have {goal}` was not proved: {detail}")));
                     }
-                    SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
-                        (nested).driver().try_solve_closure()?
-                    }
-                    SourceProof::Script(body) => {
-                        // An explicit script is checked by its proof steps alone: a
-                        // step that fails is an error, never a miss for search to
-                        // rescue. The checked scope reports the exact declining step.
-                        let mut declined = None;
-                        let mut unfinished = None;
-                        let selected = nested.driver().try_authoritative_linear_script_reporting(
-                            body,
-                            &mut declined,
-                            &mut unfinished,
-                        )?;
-                        if selected.is_none() {
-                            let detail = match declined {
-                    Some(crate::surface::proof::smart_closures::LinearScriptDecline::Step(
-                        index,
-                    )) => match body.get(index) {
-                        Some(tactic) => format!(
-                            "step {} of its body, `{}`, declined",
-                            index + 1,
-                            tactic_name(tactic)
-                        ),
-                        None => format!("step {} of its body declined", index + 1),
-                    },
-                    Some(crate::surface::proof::smart_closures::LinearScriptDecline::Shape) => {
-                        "its body is not a shape the checked driver runs".to_string()
-                    }
-                    None => "its body ran to the end with the goal still open".to_string(),
-                };
-                            let goal = crate::surface::diagnostics::describe_click_proposition(
-                                &have.proposition,
-                            );
-                            check_verification_deadline()?;
-                            // Preserve the body's checked prefix and remaining goal,
-                            // rather than attaching the enclosing execution state.
-                            return Err(unfinished
-                                .as_ref()
-                                .unwrap_or(nested.body())
-                                .step_error(format!("`have {goal}` was not proved: {detail}")));
-                        }
-                        selected
-                    }
-                })
-            },
-        );
+                    selected
+                }
+            })
+        },
+    );
     let selected = selected.map_err(|error| error.with_check_observations(checks.clone()))?;
     // A surface `have` may lower to more than the currently focused
     // proposition goal (for example, a loadability assertion can carry an

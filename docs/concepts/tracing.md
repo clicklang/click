@@ -23,8 +23,7 @@ Click reports four kinds of error. Only a proof error enters this procedure.
 A proof error may give a more specific diagnostic. A `tactic failure`
 identifies a refused checked step. If it stops while executing C, read the
 named expression and reason before looking for a goal. A `proof search miss`
-means search found no proof or elided argument. An `open goal` means the
-script ended with a goal pending.
+means search found no proof or elided argument.
 
 When a proof error reports a **goal**, it names the proposition that had to be true at a
 point and was not proved there. A goal can come from an `ensures`

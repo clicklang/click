@@ -608,17 +608,16 @@ uint64 spell(const uint8* b, uint64 n) {
             "{overflow}"
         );
 
-        // A proof that runs out of steps leaves its goal open; its last
-        // tactic succeeded, so nothing refused it.
-        let ended_open = run(
-            "function successor(n: int32) -> int32 { n + 1 }\ntheorem left_open(x: int32) {\n    requires x == 3;\n    ensures successor(x) == 4 by {\n        unfold(successor(x));\n    }\n}\n",
+        // The implicit closer runs on the goal that a pure script establishes.
+        let pure_search = run(
+            "function successor(n: int32) -> int32 { n + 1 }\ntheorem incomplete(x: int32) {\n    requires x == 3;\n    ensures successor(x) == 5 by {\n        unfold(successor(x));\n    }\n}\n",
             &[],
         );
         assert!(
-            ended_open.contains("\nopen goal: the proof script ended")
-                && ended_open.contains("\nrefused by: nothing (the proof ended with this goal open; add the steps that prove it)\nsee: click docs tracing\n")
-                && !ended_open.contains("refused by: `unfold`"),
-            "{ended_open}"
+            pure_search.contains("proof search miss")
+                && pure_search.contains("\ngoal: to_integer(x + 1) == 5")
+                && !pure_search.contains("refused by: nothing"),
+            "{pure_search}"
         );
 
         // `normalize()` evaluates without context, so a goal that needs the

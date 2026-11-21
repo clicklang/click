@@ -117,6 +117,25 @@ impl<'proof, 'a, 'source> ConjunctArms<'proof, 'a, 'source> {
     }
 }
 
+/// Add an implicit closer to a written arm that owns its goal. Arms
+/// that share their parent's goal receive its closer in the continuation.
+fn pure_arm_with_closer(
+    tactics: &[ProofTactic],
+    mut sites: Vec<ProofStepSite>,
+    closer_site: ProofStepSite,
+    implicit: bool,
+) -> (std::borrow::Cow<'_, [ProofTactic]>, Vec<ProofStepSite>) {
+    if implicit {
+        sites.push(closer_site);
+        (
+            script_arm_with_continuation(tactics, &[ProofTactic::ImplicitSolve]),
+            sites,
+        )
+    } else {
+        (std::borrow::Cow::Borrowed(tactics), sites)
+    }
+}
+
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// Checks source whose caller has already selected this Proof driver as
     /// the semantic authority. Explicit operation failures propagate instead
@@ -362,6 +381,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         site: &ProofStepSite,
         mut unfinished: Option<&mut Option<Proof<'a>>>,
         at_root: bool,
+        implicit: bool,
     ) -> Result<Option<(Proof<'a>, Option<Arc<ClickProposition>>)>, ClickError> {
         let proof = self.proof;
         let Some(goal) = proof.goal() else {
@@ -371,9 +391,15 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let sites = (0..arm.tactics.len())
                 .map(|position| site.in_arm(index, "conjunct", position))
                 .collect::<Vec<_>>();
+            let (tactics, sites) = pure_arm_with_closer(
+                &arm.tactics,
+                sites,
+                site.in_arm(index, "conjunct", arm.tactics.len()),
+                implicit,
+            );
             return Ok(proof
                 .driver()
-                .run_addressed_linear_script(&arm.tactics, &sites, &mut None, unfinished)?
+                .run_addressed_linear_script(&tactics, &sites, &mut None, unfinished)?
                 .map(|done| (done, Some(Arc::new(arm.proposition.clone())))));
         }
         if !proof.has_conjunctive_goal() {
@@ -387,7 +413,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let Some((left, left_label)) = split_proof
             .focus_branch(ids[0])?
             .driver()
-            .run_conjunct_proofs(arms, site, unfinished.as_deref_mut(), false)?
+            .run_conjunct_proofs(arms, site, unfinished.as_deref_mut(), false, implicit)?
         else {
             return Ok(None);
         };
@@ -395,7 +421,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             .restore_induction_scope_from(&split_proof)
             .focus_branch(ids[1])?
             .driver()
-            .run_conjunct_proofs(arms, site, unfinished, false)?
+            .run_conjunct_proofs(arms, site, unfinished, false, implicit)?
         else {
             return Ok(None);
         };
@@ -425,6 +451,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             }
         };
         let pure_source = matches!(driver_proof.context.as_ref(), ProofContext::Pure(_));
+        let implicit = matches!(tactics.last(), Some(ProofTactic::ImplicitSolve));
+        let written_len = tactics.len() - usize::from(implicit);
         if tactics.is_empty() {
             *declined = Some(LinearScriptDecline::Shape);
             return Ok(None);
@@ -464,6 +492,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     tactic,
                     ProofTactic::Known
                         | ProofTactic::Solve
+                        | ProofTactic::ImplicitSolve
                         | ProofTactic::Normalize
                         | ProofTactic::NormalizeUsing(_)
                 ) {
@@ -506,13 +535,19 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::Transport { .. }
                     | ProofTactic::TransportUsing { .. }
                     | ProofTactic::LetSatisfy(_)
-            ) && tactics
-                .get(index + 1)
-                .is_some_and(|next| !matches!(next, ProofTactic::Known | ProofTactic::Solve));
+            ) && tactics.get(index + 1).is_some_and(|next| {
+                !matches!(
+                    next,
+                    ProofTactic::Known | ProofTactic::Solve | ProofTactic::ImplicitSolve
+                )
+            });
             let retain_application = retain_application
                 || (matches!(tactic, ProofTactic::ApplyTheorem(_))
                     && tactics.get(index + 1).is_some_and(|next| {
-                        !matches!(next, ProofTactic::Known | ProofTactic::Solve)
+                        !matches!(
+                            next,
+                            ProofTactic::Known | ProofTactic::Solve | ProofTactic::ImplicitSolve
+                        )
                     }));
             let before_application = retain_application.then(|| proof.clone());
             match tactic {
@@ -532,8 +567,18 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 ProofTactic::ApplyTheorem(application) => {
                     proof = proof.driver().apply_theorem_application(application)?;
                 }
-                ProofTactic::Solve => {
-                    let mut search = attempt::search_scope("written solve");
+                ProofTactic::Solve | ProofTactic::ImplicitSolve => {
+                    let automatic = matches!(tactic, ProofTactic::ImplicitSolve);
+                    if automatic && crate::surface::proof::proof_object::implicit_solve_disabled() {
+                        return Err(proof.step_error(
+                            "the implicit closer is off: write the remaining proof steps",
+                        ));
+                    }
+                    let mut search = attempt::search_scope(if automatic {
+                        "implicit pure closer"
+                    } else {
+                        "written solve"
+                    });
                     let (selected, checks) =
                         crate::surface::proof_diagnostics::capture_check_observations(|| {
                             crate::kernel::search::ProofSearch::try_solve_closure(&(proof))
@@ -547,9 +592,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         }
                     };
                     let Some(closed) = selected else {
-                        if tactics[..index].iter().any(|previous| {
-                            matches!(previous, ProofTactic::Witness(_) | ProofTactic::Choose(_))
-                        }) {
+                        if !automatic
+                            && tactics[..index].iter().any(|previous| {
+                                matches!(previous, ProofTactic::Witness(_) | ProofTactic::Choose(_))
+                            })
+                        {
                             return Err(proof.step_error(
                                 "checked `solve` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
                             ).with_search_failures(search.finish()));
@@ -634,7 +681,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             (scope).driver().try_solve_closure()?
                         }
                         SourceProof::Script(body) => {
-                            scope.driver().try_authoritative_linear_script(body)?
+                            let closer = if implicit {
+                                &[ProofTactic::ImplicitSolve][..]
+                            } else {
+                                &[]
+                            };
+                            let tactics = script_arm_with_continuation(body, closer);
+                            scope.driver().try_authoritative_linear_script(&tactics)?
                         }
                     };
                     let Some(selected) = selected else {
@@ -685,8 +738,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         .at_site(&sites[index]);
                     // Both arms checked the tactics after the `if`; a trace
                     // to one of those follows the first arm.
-                    proof
-                        .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
+                    proof.note_trace_join_continuation_arm((index + 1 < written_len).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
                 ProofTactic::All(all) => {
@@ -696,6 +748,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         &sites[index],
                         unfinished.as_deref_mut(),
                         true,
+                        implicit,
                     )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
@@ -716,15 +769,25 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             .map(|position| sites[index].in_arm(arm, name, position))
                             .collect::<Vec<_>>()
                     };
-                    let left_sites = own_arm_sites(0, "left", both.left_tactics.len());
-                    let right_sites = own_arm_sites(1, "right", both.right_tactics.len());
+                    let (left_tactics, left_sites) = pure_arm_with_closer(
+                        &both.left_tactics,
+                        own_arm_sites(0, "left", both.left_tactics.len()),
+                        sites[index].in_arm(0, "left", both.left_tactics.len()),
+                        implicit,
+                    );
+                    let (right_tactics, right_sites) = pure_arm_with_closer(
+                        &both.right_tactics,
+                        own_arm_sites(1, "right", both.right_tactics.len()),
+                        sites[index].in_arm(1, "right", both.right_tactics.len()),
+                        implicit,
+                    );
                     let (split_proof, split, ids) = proof.split_focused_both()?;
                     let marker = split_proof.conjunction_checkpoint(ids)?;
                     let Some(left_done) = split_proof
                         .focus_branch(ids[0])?
                         .driver()
                         .run_addressed_linear_script(
-                            &both.left_tactics,
+                            &left_tactics,
                             &left_sites,
                             &mut None,
                             unfinished.as_deref_mut(),
@@ -738,7 +801,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         .focus_branch(ids[1])?
                         .driver()
                         .run_addressed_linear_script(
-                            &both.right_tactics,
+                            &right_tactics,
                             &right_sites,
                             &mut None,
                             unfinished.as_deref_mut(),
@@ -787,8 +850,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     proof = done
                         .finish_execution_match(&marker, source, certificates, trace)?
                         .at_site(&sites[index]);
-                    proof
-                        .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
+                    proof.note_trace_join_continuation_arm((index + 1 < written_len).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
                 ProofTactic::Cases(proof_cases) => {
@@ -825,8 +887,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         return Ok(None);
                     };
                     proof = done.at_site(&sites[index]);
-                    proof
-                        .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
+                    proof.note_trace_join_continuation_arm((index + 1 < written_len).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
                 ProofTactic::Transport { source, target } => {
@@ -858,7 +919,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         // a single tactic). A bare `sorry` among other
                         // tactics would cover an unbounded suffix, so it is
                         // rejected to keep holes minimal.
-                        if tactics.len() != 1 {
+                        if written_len != 1 {
                             return Err(proof.step_error(
                                 "`sorry` is only allowed as a complete `have` body or a complete contract proof body; it cannot cover a suffix of other tactics",
                             ));

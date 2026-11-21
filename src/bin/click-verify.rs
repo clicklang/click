@@ -858,7 +858,6 @@ fn proof_error_report(
 fn refusal_class_lines(context: &[String], written: Option<&str>, ended_open: bool) -> Vec<String> {
     if ended_open {
         return vec![
-            "open goal: the proof script ended before closing this goal".to_owned(),
             "refused by: nothing (the proof ended with this goal open; add the steps that prove it)"
                 .to_owned(),
             "see: click docs tracing".to_owned(),
