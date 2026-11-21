@@ -9467,6 +9467,19 @@ impl AnnotationLowerer<'_> {
     ) -> Result<SpecExpression, String> {
         let name = name.into();
         crate::instrumentation::record_deterministic_work(1);
+        let name = if name.unresolved_slice_length().is_some() {
+            let state = environment
+                .reference_state
+                .as_ref()
+                .or(if environment.at_function_entry {
+                    Some(self.entry_state)
+                } else {
+                    self.local_type_state
+                });
+            state.map_or(name.clone(), |state| state.locals().resolve_binding(&name))
+        } else {
+            name
+        };
         if let Some(id) = name.static_id() {
             let metadata = id
                 .metadata()

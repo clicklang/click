@@ -5708,6 +5708,45 @@ fn shadow(bytes: &[u8]) -> usize {
         .unwrap_or_else(|error| panic!("{}", error.report()));
 }
 
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_program_slice_length_uses_the_live_binding_even_when_it_shadows_a_parameter() {
+    let p = Project::new(
+        r#"
+pub fn shadow(bytes: &[u8]) -> usize {
+    let (bytes, tail) = bytes.split_at(1);
+    let first = bytes.len();
+    let (bytes, _) = tail.split_at(2);
+    let second = bytes.len();
+    first + second
+}
+"#,
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn shadow(bytes: &[u8]) -> usize {
+    requires bytes.len() == 4u64;
+    ensures result == 3u64;
+} by {
+    step_until(assignment(first, 0).entry);
+    have program::bytes.len() == 1u64;
+    mark first_slice;
+    step_until(assignment(second, 0).entry);
+    have program::bytes.len() == 2u64;
+    have bytes.len() == 4u64;
+    have at(first_slice, program::bytes.len()) == 1u64;
+    have at(function.entry, program::bytes.len()) == 4u64;
+    step_until(function.exit);
+    have program::bytes.len() == 4u64;
+    solve();
+}
+"#;
+    ProgramVerificationSession::new_program_prepared(sidecar, &prepared)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+}
+
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 14 s, over the gate's per-test budget (2026-10-06)"]

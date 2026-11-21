@@ -6586,7 +6586,7 @@ impl Parser {
         if let Some(expression) = self.take_rust_iterator_method(&name, None)? {
             return Ok(expression);
         }
-        if let Some(length) = self.take_rust_slice_len(&name) {
+        if let Some(length) = self.take_rust_slice_len(&name, false) {
             return Ok(ContractExpression::ProgramExpression(
                 ProgramExpression::Variable(length),
             ));
@@ -16389,6 +16389,11 @@ impl Parser {
         {
             self.position += 2;
             let name = self.expect_ident("program binding name")?;
+            if let Some(length) = self.take_rust_slice_len(&name, true) {
+                return Ok(ContractExpression::ProgramExpression(
+                    ProgramExpression::Variable(length),
+                ));
+            }
             self.refuse_unknown_loop_value(&name)?;
             return Ok(ContractExpression::ProgramBinding(name));
         }
@@ -17518,7 +17523,7 @@ impl Parser {
                 })
             }
             Some(Token::Ident(name)) => {
-                if let Some(length) = self.take_rust_slice_len(&name) {
+                if let Some(length) = self.take_rust_slice_len(&name, false) {
                     return Ok(CExpression::Variable(length));
                 }
                 self.refuse_unknown_loop_value(&name)?;
