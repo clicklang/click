@@ -121,7 +121,8 @@ comparison.
 
 Exact pointer reads can recover the complete stored pointer from a typed
 index entry at their selected point, with the value's provenance and bounds.
-Raising uses retained point IDs to name array arguments and historical reads.
+Address-only recovery for symbolic layout checks uses that same typed store,
+including after the cache drops the cell. Raising uses retained point IDs to name array arguments and historical reads.
 An indexed read can raise through a certified materialized view of its point.
 
 The remaining memory-state paths have production callers:
