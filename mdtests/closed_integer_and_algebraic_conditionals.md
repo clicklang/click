@@ -6,7 +6,7 @@ spec enum Choice { Left, Right }
 theorem integer_order(x: Integer, y: Integer) {
     ensures forall (unused: Integer) {
         ((if 1 < 2 { x } else { y }) : Integer) <= x
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem integer_equality(x: Integer, y: Integer) {
@@ -22,7 +22,7 @@ theorem algebraic_equality() {
 }
 
 theorem algebraic_disequality() {
-    ensures (if 1 < 2 { Choice::Left } else { Choice::Right }) != Choice::Right by normalize();
+    ensures (if 1 < 2 { Choice::Left } else { Choice::Right }) != Choice::Right by known();
 }
 
 theorem algebraic_argument(a: Choice, b: Choice) {

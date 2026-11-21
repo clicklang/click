@@ -67,7 +67,7 @@ void clear(struct region* region) {
             mark opened;
             step();
             have separate(loop(0).statement(0).footprint, memory(region->start)) by {
-                normalize() using { at(opened, separate(memory(region->start), memory(arena->occupied[i]))); };
+                solve() using { at(opened, separate(memory(region->start), memory(arena->occupied[i]))); };
             }
             have region->start == at(opened, region->start) by {
                 preserve(memory(region->start), loop(0).statement(0));

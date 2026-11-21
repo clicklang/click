@@ -7,9 +7,9 @@ Nested conjunctions can use a flat list in any order. Universal arms keep their 
 theorem reflexive_pair(x: int32) {
     ensures x == x and (x <= x and x >= x) by {
         all {
-            x >= x => { normalize(); }
-            x == x => { normalize(); }
-            x <= x => { normalize(); }
+            x >= x => { known(); }
+            x == x => { known(); }
+            x <= x => { known(); }
         }
     }
 }
@@ -18,16 +18,16 @@ theorem quantified_pair() {
     ensures (forall (i: int32) { i == i }) and
             (forall (j: int32) { j <= j }) by {
         all {
-            forall (i: int32) { i == i } => { intro(); normalize(); }
-            forall (j: int32) { j <= j } => { intro(); normalize(); }
+            forall (i: int32) { i == i } => { intro(); known(); }
+            forall (j: int32) { j <= j } => { intro(); known(); }
         }
     }
 }
 theorem repeated_conjunct(x: int32) {
     ensures x <= x and x <= x by {
         all {
-            x <= x => { normalize(); }
-            x <= x => { normalize(); }
+            x <= x => { known(); }
+            x <= x => { known(); }
         }
     }
 }

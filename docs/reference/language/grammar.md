@@ -478,7 +478,7 @@ function singleton(x: int32) -> List<int32> {
 theorem append_nothing(xs: List<int32>) {
     ensures list::append(List::Nil, xs) == xs by {
         unfold(list::append(List::Nil, xs));
-        normalize();
+        known();
     }
 }
 ```

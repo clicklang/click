@@ -59,7 +59,7 @@ void mark(int32 *next, int32 *visited, int32 n, int32 j) {
             };
         }
         have separate(statement(0).footprint, memory(next[k])) by {
-            normalize() using { separate(memory(visited[j]), memory(next[k])); };
+            solve() using { separate(memory(visited[j]), memory(next[k])); };
         }
         have next[k] == at(entry, next[k]) by {
             preserve(memory(next[k]), statement(0));

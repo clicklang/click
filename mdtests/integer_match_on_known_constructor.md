@@ -23,7 +23,7 @@ theorem machine_rewritten(p: MachinePacket) {
     } by {
         intro();
         rewrite(p, MachinePacket::Full(7));
-        normalize();
+        known();
     }
 }
 
@@ -33,7 +33,7 @@ theorem integer_written() {
             IntegerPacket::Empty => to_integer(0),
             IntegerPacket::Full(n) => n + 1,
         }) == 8
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem integer_rewritten(p: IntegerPacket) {
@@ -46,7 +46,7 @@ theorem integer_rewritten(p: IntegerPacket) {
     } by {
         intro();
         rewrite(p, IntegerPacket::Full(7));
-        normalize();
+        known();
     }
 }
 
@@ -56,7 +56,7 @@ theorem machine_disequal() {
             MachinePacket::Empty => to_integer(0),
             MachinePacket::Full(n) => to_integer(n) - 1,
         }) != 0
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem mixed_unselected() {
@@ -65,7 +65,7 @@ theorem mixed_unselected() {
             MachinePacket::Empty => to_integer(0),
             MachinePacket::Full(n) => to_integer(n) + 1,
         }) == 0
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 ```
 

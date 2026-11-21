@@ -149,7 +149,7 @@ int32 input_cursor_clone(
     mark before_copy;
     step();
     have separate(statement(0).footprint, memory(source->data)) by {
-        normalize() using { separate(memory(target->pos), memory(source->data)); };
+        solve() using { separate(memory(target->pos), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
         preserve(memory(source->data), statement(0));
@@ -157,7 +157,7 @@ int32 input_cursor_clone(
     mark after_pos;
     step();
     have separate(statement(1).footprint, memory(source->data)) by {
-        normalize() using { separate(memory(target->len), memory(source->data)); };
+        solve() using { separate(memory(target->len), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
         have source->data == at(after_pos, source->data) by {
@@ -169,7 +169,7 @@ int32 input_cursor_clone(
     mark after_len;
     step();
     have separate(statement(2).footprint, memory(source->data)) by {
-        normalize() using { separate(memory(target->data), memory(source->data)); };
+        solve() using { separate(memory(target->data), memory(source->data)); };
     }
     have source->data == at(before_copy, source->data) by {
         have source->data == at(after_len, source->data) by {

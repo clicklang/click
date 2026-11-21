@@ -86,7 +86,7 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
                     };
                 }
                 have separate(statement(2).statement(0).footprint, memory(src[k])) by {
-                    normalize() using { separate(memory(dst[i]), memory(src[k])); };
+                    solve() using { separate(memory(dst[i]), memory(src[k])); };
                 }
                 have src[k] == at(iteration, src[k]) by {
                     preserve(memory(src[k]), statement(2).statement(0));
@@ -104,12 +104,12 @@ int32 copy_n_segment_invariant(int32 dst[], int32 src[], int32 n) {
                         apply(click::separation::separate_elements(dst, at(iteration, i), k)) using { k != at(iteration, i); };
                     }
                     have separate(statement(2).statement(0).footprint, memory(dst[k])) by {
-                        normalize() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
+                        solve() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
                     }
                     have at(statement(2).statement(0).exit, dst[k]) == at(iteration, dst[k]) by {
                         preserve(memory(dst[k]), statement(2).statement(0));
                     }
-                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { normalize() using { }; }
+                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { solve() using { }; }
                     have dst[k] == at(statement(2).statement(1).entry, dst[k]) by {
                         preserve(memory(dst[k]), statement(2).statement(1));
                     }

@@ -48,7 +48,7 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
         have contains(memory(next[0..n]), memory(next[cur])) by {
             apply(click::separation::contains_element(next, 0, n, cur)) using { 0 <= cur; cur < n; };
         }
-        have contains(memory(visited[cur]), memory(visited[cur])) by { normalize(); }
+        have contains(memory(visited[cur]), memory(visited[cur])) by { apply(click::separation::contains_refl(memory(visited[cur]))) using {}; }
         have separate(memory(visited[cur]), memory(next[cur])) by {
             apply(click::separation::separate_restrict(memory(visited[cur]), memory(next[0..n]), memory(visited[cur]), memory(next[cur]))) using {
                 separate(memory(visited[cur]), memory(next[0..n]));
@@ -57,7 +57,7 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
             };
         }
         have separate(statement(0).footprint, memory(next[cur])) by {
-            normalize() using { separate(memory(visited[cur]), memory(next[cur])); };
+            solve() using { separate(memory(visited[cur]), memory(next[cur])); };
         }
         preserve(memory(next[cur]), statement(0));
     }

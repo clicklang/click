@@ -55,7 +55,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
         };
     }
     have separate(statement(2).footprint, memory((&old->size)[0..1])) by {
-        normalize() using { separate(memory((&old->size)[0..1]), memory((&new->size)[0..1])); };
+        solve() using { separate(memory((&old->size)[0..1]), memory((&new->size)[0..1])); };
     }
     have old->size == at(before_copy, old->size) by {
         preserve(memory((&old->size)[0..1]), statement(2));
@@ -74,7 +74,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
         };
     }
     have separate(statement(2).footprint, memory(old->rb.rb_left)) by {
-        normalize() using { separate(memory(old->rb.rb_left), memory((&new->size)[0..1])); };
+        solve() using { separate(memory(old->rb.rb_left), memory((&new->size)[0..1])); };
     }
     have old->rb.rb_left == at(before_copy, old->rb.rb_left) by {
         preserve(memory(old->rb.rb_left), statement(2));
@@ -93,7 +93,7 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
         };
     }
     have separate(statement(2).footprint, memory(old->rb.rb_right)) by {
-        normalize() using { separate(memory(old->rb.rb_right), memory((&new->size)[0..1])); };
+        solve() using { separate(memory(old->rb.rb_right), memory((&new->size)[0..1])); };
     }
     have old->rb.rb_right == at(before_copy, old->rb.rb_right) by {
         preserve(memory(old->rb.rb_right), statement(2));

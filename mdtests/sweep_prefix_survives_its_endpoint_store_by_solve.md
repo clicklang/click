@@ -33,7 +33,7 @@ void sweep(int32 visited[], int32 n) {
     have 0 <= 0;
     have unmarked(visited, 0, 0) == 0 by {
         unfold(unmarked(visited, 0, 0));
-        normalize();
+        solve();
     }
     loop {
         decreases n - i;

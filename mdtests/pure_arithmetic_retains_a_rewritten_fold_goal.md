@@ -17,7 +17,7 @@ theorem count_step(n: uint64) {
         have 0u64 < n by solve();
         have 1u64 <= n by solve() using { 0u64 < n; };
         have to_integer(n - 1u64) < to_integer(n) by solve() using { 0u64 < n; };
-        have to_integer(0u64) <= to_integer(n - 1u64) by normalize();
+        have to_integer(0u64) <= to_integer(n - 1u64) by known();
         have to_integer(n - 1u64) < to_integer(18446744073709551615u64) by solve() using { 0u64 < n; };
         unfold(full_width_count(n));
         rewrite(full_width_count(n - 1u64), to_integer(n - 1u64));

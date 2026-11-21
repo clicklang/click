@@ -70,7 +70,7 @@ void walk(struct Node* p, int32* marker) {
             }
         }
     }
-    have c.model != Path::Top by normalize();
+    have c.model != Path::Top by solve();
     match c.model {
         Path::Top => { contradiction(c.model == Path::Top); },
         Path::Step(identity, before) => {
@@ -90,7 +90,7 @@ void walk(struct Node* p, int32* marker) {
             mark before_store;
             step();
             have separate(statement(2).footprint, memory(marker[0])) by {
-                normalize() using { at(before_store, separate(memory(q->next), memory(marker[0]))); };
+                solve() using { at(before_store, separate(memory(q->next), memory(marker[0]))); };
             }
             have marker[0] == at(before_store, marker[0]) by {
                 preserve(memory(marker[0]), statement(2));

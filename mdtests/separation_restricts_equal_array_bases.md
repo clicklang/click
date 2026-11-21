@@ -21,7 +21,7 @@ theorem selected(A: Resource, p: int32*, q: int32*, i: int32, cap: int32) {
                 defined(i + 1); 0 <= i; i <= ((i+1) as int32); ((i+1) as int32) <= cap;
             };
         }
-        have contains(A, A) by { normalize(); }
+        have contains(A, A) by { apply(click::separation::contains_refl(A)) using {}; }
         have separate(A, memory(q[i..i+1])) by {
             apply(separation::separate_restrict(A, memory(q[0..cap]), A, memory(q[i..i+1]))) using {
                 defined(i + 1); separate(A, memory(q[0..cap])); contains(A, A);

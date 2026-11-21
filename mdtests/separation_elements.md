@@ -18,7 +18,7 @@ void keep(uint8* bytes, uint64 i, uint64 k) {
     mark before;
     step();
     have separate(statement(0).footprint, memory(*(bytes + k))) by {
-        normalize() using { separate(memory(*(bytes + i)), memory(*(bytes + k))); };
+        solve() using { separate(memory(*(bytes + i)), memory(*(bytes + k))); };
     }
     have bytes[k] == at(before, bytes[k]) by {
         preserve(memory(*(bytes + k)), statement(0));

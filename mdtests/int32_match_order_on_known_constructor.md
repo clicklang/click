@@ -22,7 +22,7 @@ theorem rewritten(p: Packet) {
     } by {
         intro();
         rewrite(p, Packet::Full(-7));
-        normalize();
+        known();
     }
 }
 
@@ -44,7 +44,7 @@ theorem both_operands() {
             Packet::Empty => 0,
             Packet::Full(n) => n,
         })
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem non_strict() {
@@ -53,7 +53,7 @@ theorem non_strict() {
             Packet::Empty => 0,
             Packet::Full(n) => n,
         }) >= -7
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem from_bound(value: int32) {
@@ -68,7 +68,7 @@ theorem nested_cast() {
     ensures ((match Packet::Full(7) {
         Packet::Empty => 0,
         Packet::Full(n) => n,
-    }) as int64) < (9 as int64) by normalize();
+    }) as int64) < (9 as int64) by known();
 }
 
 ```

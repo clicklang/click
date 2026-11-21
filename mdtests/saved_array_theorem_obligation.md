@@ -9,7 +9,7 @@ verifying "saved_array.c";
 
 theorem visible(a: int32[]) {
     views a[0..1];
-    ensures true by { normalize(); }
+    ensures true by { solve(); }
 }
 
 void keep(int32 *p) {

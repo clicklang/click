@@ -42,7 +42,7 @@ void sweep(int32 visited[], int32 n) {
     have 0 <= 0;
     have unmarked(visited, 0, 0) == 0 by {
         unfold(unmarked(visited, 0, 0));
-        normalize();
+        known();
     }
     loop {
         decreases n - i;
@@ -69,13 +69,13 @@ void sweep(int32 visited[], int32 n) {
                         apply(click::separation::separate_elements(visited, i, k)) using { i != k; };
                     }
                     have separate(loop(0).statement(0).footprint, memory(visited[k])) by {
-                        normalize() using { separate(memory(visited[i]), memory(visited[k])); };
+                        solve() using { separate(memory(visited[i]), memory(visited[k])); };
                     }
                     preserve(memory(visited[k]), loop(0).statement(0));
                 }
                 have viewable(visited[0..n]) by { observe(visited[0..n]); known(); }
-                have 0 <= 0 by { normalize(); }
-                have i <= i by { normalize(); }
+                have 0 <= 0 by { known(); }
+                have i <= i by { known(); }
                 apply(unmarked_frame(visited, at(iter, visited), 0, n, i, i)) using {
                     0 <= 0;
                     0 <= i;

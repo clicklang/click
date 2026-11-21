@@ -33,7 +33,7 @@ int32 read_child(int32* p) {
 } by {
     have model_pointer(root.model) == p by {
         rewrite(root.model, Address::At(p));
-        unfold(model_pointer(Address::At(p))); normalize();
+        unfold(model_pointer(Address::At(p))); solve();
     }
     let { child: child } = unfold(root);
     unfold(child);

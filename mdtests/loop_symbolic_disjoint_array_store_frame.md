@@ -36,7 +36,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
     step();
     have exists (fuel: Nat) { fuel == Nat::Zero } by {
         witness(Nat::Zero);
-        normalize();
+        solve();
     }
     loop diverges {
         invariant 0 <= cur;
@@ -86,7 +86,7 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
                     };
                 }
                 have separate(loop(0).statement(1).footprint, memory(next[k])) by {
-                    normalize() using { separate(memory(visited[cur]), memory(next[k])); };
+                    solve() using { separate(memory(visited[cur]), memory(next[k])); };
                 }
                 have next[k] == at(iter, next[k]) by {
                     preserve(memory(next[k]), loop(0).statement(1));
