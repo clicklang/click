@@ -64,7 +64,9 @@ typed evaluator can name a new symbolic float read by the point where
 the read is taken when that point has a certified view. Float resource cells
 and their named runs can use the certified point where they were observed.
 An explicit `exact(place)` of a float cell names its bits at the selected
-program point.
+program point. A symbolic index into a copied run uses the same displacement
+within the captured source range and retains its recorded read version when
+available.
 
 `exact(place)` keys the read by the selected program point when one is
 available. Raising uses `exact` at that point, even if another point has
