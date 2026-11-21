@@ -54,9 +54,6 @@ ENFORCED = {("fact-stability", "differs"), ("fact-stability", "paths")}
 # The counts whose rise is flagged: everything but a faithful round trip and
 # the number of items an audit checked.
 TRACKED_GOOD = {"same", "checked"}
-# How many newly failing lowering facts the report lists per audit; the rest
-# are in the audit's `<audit>.failures.tsv` artifact.
-NEW_LOWERING_LIMIT = 20
 HARNESSES = {("mdtests", "mdtests"): "mdtest", ("examples", "example_projects"): "example"}
 
 
@@ -189,36 +186,89 @@ def read_counts(directory):
     return counts
 
 
-def read_lowering_failures(directories):
-    """Each lowering audit's failures from `<audit>.failures.tsv`: one row per
-    distinct failing fact or lowering, with the command that reproduces it."""
-    failures = {}
+def read_audit_failures(directories, failures):
+    """Every audit failure tonight, by stable id: each lowering audit's
+    `<audit>.failures.tsv` rows and each failing expansion audit site."""
+    rows = {}
     for directory in directories:
         for audit in LOWERING_AUDITS:
             for row in read_tsv(directory / f"{audit}.failures.tsv"):
-                if len(row) < 7:
+                if len(row) < 8:
                     continue
-                outcome, container, place, original = row[:4]
-                key = "\x1f".join((container, place, original))
-                failures.setdefault(audit, {})[hashlib.sha1(key.encode()).hexdigest()[:12]] = {
-                    "audit": audit, "outcome": outcome, "container": container,
-                    "place": place, "original": original, "reproduce": row[6],
+                outcome, kind, container, place, original, raised, lowered, command = row[:8]
+                key = "\x1f".join((audit, container, place, original))
+                rows[hashlib.sha1(key.encode()).hexdigest()[:12]] = {
+                    "audit": audit, "outcome": outcome, "kind": kind, "container": container,
+                    "place": place, "fact": original, "raised": raised, "lowered": lowered,
+                    "reproduce": command,
                 }
-    return failures
-
-
-def new_lowering_failures(failures, previous):
-    """Tonight's lowering failures that did not fail on the previous night,
-    by audit; none when the previous night recorded no failure set for it."""
-    before = (previous or {}).get("lowering_failures", {})
-    new = {}
-    for audit, by_id in failures.items():
-        if audit not in before:
+    for failure in failures.values():
+        if failure["kind"] != "audit":
             continue
-        known = set(before[audit])
-        rows = [row for key, row in sorted(by_id.items()) if key not in known]
-        new[audit] = {"count": len(rows), "rows": rows[:NEW_LOWERING_LIMIT]}
-    return new
+        container = re.sub(r":\d+:\d+$", "", failure["name"])
+        key = "\x1f".join(("expansion", failure["name"]))
+        rows[hashlib.sha1(key.encode()).hexdigest()[:12]] = {
+            "audit": "expansion", "outcome": "failed", "kind": "site", "container": container,
+            "place": failure["name"], "fact": failure["summary"], "raised": "", "lowered": "",
+            "reproduce": failure["reproduce"],
+        }
+    return rows
+
+
+def first_seen(rows, previous, date, commit):
+    """When each failing id first failed: carried from the previous night's
+    report, or tonight for an id that is new."""
+    before = (previous or {}).get("failure_first_seen")
+    tonight = f"{date} {commit[:12]}".strip()
+    seen = {key: (before or {}).get(key, tonight) for key in rows}
+    new = sorted(key for key in rows if before is not None and key not in before)
+    return seen, new
+
+
+def shapes(rows, new):
+    """Failures grouped by audit, outcome and kind, the largest first, each
+    with one example to reproduce."""
+    groups = {}
+    for key, row in sorted(rows.items(), key=lambda item: (item[1]["container"], item[0])):
+        group = groups.setdefault((row["audit"], row["outcome"], row["kind"]), {
+            "audit": row["audit"], "outcome": row["outcome"], "kind": row["kind"],
+            "count": 0, "new": 0,
+            "example": {"id": key, "container": row["container"], "fact": row["fact"],
+                        "reproduce": row["reproduce"]},
+        })
+        group["count"] += 1
+        group["new"] += key in new
+    return sorted(groups.values(), key=lambda group: (-group["count"], group["audit"], group["outcome"], group["kind"]))
+
+
+def audit_headlines(counts, previous):
+    """Each lowering audit's headline numbers tonight and the previous night."""
+    before = {(c["audit"], c["outcome"]): c["count"] for c in (previous or {}).get("counts", [])}
+    headlines = []
+    for audit in LOWERING_AUDITS:
+        if (audit, "checked") not in counts:
+            continue
+        headlines.append({
+            "audit": audit,
+            **{name: counts.get((audit, name), 0) for name in ("failing", "checked", "tracked", "unexpected")},
+            "previous_failing": before.get((audit, "failing")),
+        })
+    return headlines
+
+
+FAILURE_COLUMNS = ["id", "audit", "outcome", "kind", "container", "place", "fact", "raised",
+                   "lowered", "first_seen", "reproduce"]
+
+
+def write_failures(out, rows, seen):
+    """`failures.tsv`: every audit failure, one line each, sorted by audit,
+    container and claim, with a header."""
+    lines = ["\t".join(FAILURE_COLUMNS)]
+    for key, row in sorted(rows.items(), key=lambda item: (item[1]["audit"], item[1]["container"],
+                                                           item[1]["place"], item[0])):
+        values = dict(row, id=key, first_seen=seen[key])
+        lines.append("\t".join(str(values[column]).replace("\t", " ") for column in FAILURE_COLUMNS))
+    (out / "failures.tsv").write_text("\n".join(lines) + "\n")
 
 
 def first_record(directory, audit, outcome):
@@ -318,7 +368,6 @@ def lowering_counts(counts, previous):
 def build(arguments):
     directories = [Path(d) for d in arguments.input if Path(d).is_dir()]
     failures, ran, timings, phases, jobs, counts = collect(directories)
-    lowering_failures = read_lowering_failures(directories)
     for job, result in jobs:
         own = JOB_KINDS.get(job, set())
         if result not in ("success", "skipped") and not any(
@@ -334,6 +383,8 @@ def build(arguments):
     if arguments.previous and Path(arguments.previous).is_file():
         previous = json.loads(Path(arguments.previous).read_text())
     previous_ids = {f["id"] for f in previous["failures"]} if previous else set()
+    audit_failures = read_audit_failures(directories, failures)
+    seen, new_failures = first_seen(audit_failures, previous, arguments.date, arguments.commit)
     audit_ran = any(job == "expansion-audit" and result in ("success", "failure") for job, result in jobs)
     lowering_ran = any(
         job in ("raise-lower-audit", "fact-stability-audit") and result in ("success", "failure")
@@ -369,8 +420,12 @@ def build(arguments):
         "slowest": [{"id": key, "seconds": round(seconds, 2)}
                     for seconds, key in sorted(timings, reverse=True)[:SLOWEST]],
         "counts": lowering_counts(counts, previous),
-        "lowering_failures": {audit: sorted(by_id) for audit, by_id in lowering_failures.items()},
-        "new_lowering_failures": new_lowering_failures(lowering_failures, previous),
+        "failure_first_seen": seen,
+        "new_audit_failures": [dict(audit_failures[key], id=key) for key in new_failures],
+        "shapes": shapes(audit_failures, set(new_failures)),
+        "audit_headlines": audit_headlines(counts, previous),
+        # Written to `failures.tsv`, not kept in `report.json`.
+        "_audit_failures": audit_failures,
     }
     return report
 
@@ -450,19 +505,41 @@ def render(report):
                 change = f"**{change}** (rose)"
             lines.append(f"| {c['audit']} | `{c['outcome']}` | {c['count']} | {earlier} | {change} |")
         lines.append("")
-    for audit, new in sorted(report.get("new_lowering_failures", {}).items()):
-        lines += [f"## New {audit} failures", "",
-                  f"{new['count']} failing tonight that passed on the previous night"
-                  + (f"; the first {len(new['rows'])} are below, and every failure is in "
-                     f"`{audit}.failures.tsv` with its reproduce command."
-                     if new["count"] > len(new["rows"]) else "."), ""]
-        if new["rows"]:
-            lines += ["| Outcome | Container | Claim or site | Fact | Reproduce |",
-                      "|---|---|---|---|---|"]
-            for row in new["rows"]:
-                lines.append(f"| `{row['outcome']}` | `{cell(row['container'])}` | "
-                             f"`{cell(row['place'])}` | `{cell(row['original'])}` | "
+    if report.get("audit_headlines") or report.get("shapes"):
+        lines += ["## Audits", ""]
+        for h in report.get("audit_headlines", []):
+            change = ""
+            if h["previous_failing"] is not None:
+                change = f" ({h['failing'] - h['previous_failing']:+d} since the previous night)"
+            lines.append(f"- {h['audit']}: **{h['failing']} failing** of {h['checked']} checked"
+                         f"{change}; {h['tracked']} tracked; {h['unexpected']} containers "
+                         f"did not verify as expected")
+        lines += ["", "Every failure, with its first night and the command that reproduces it, "
+                  "is in `failures.tsv` beside this report "
+                  "(`git show FETCH_HEAD:failures.tsv`).", ""]
+        new = report.get("new_audit_failures", [])
+        lines += ["### New tonight", ""]
+        if "failure_first_seen" in report and report["previous_commit"] and new:
+            lines += ["| Id | Audit | Outcome | Kind | Container | Claim or site | Fact | Reproduce |",
+                      "|---|---|---|---|---|---|---|---|"]
+            for row in new:
+                lines.append(f"| `{row['id']}` | {row['audit']} | `{row['outcome']}` | "
+                             f"`{cell(row['kind'])}` | `{cell(row['container'])}` | "
+                             f"`{cell(row['place'])}` | `{cell(row['fact'])}` | "
                              f"`{cell(row['reproduce'])}` |")
+            lines.append("")
+        else:
+            lines += ["None." if report["previous_commit"] else
+                      "No previous night to compare with.", ""]
+        if report.get("shapes"):
+            lines += ["### By shape", "",
+                      "| Audit | Outcome | Kind | Failures | New | Example | Reproduce the example |",
+                      "|---|---|---|---|---|---|---|"]
+            for group in report["shapes"]:
+                example = group["example"]
+                lines.append(f"| {group['audit']} | `{group['outcome']}` | `{cell(group['kind'])}` | "
+                             f"{group['count']} | {group['new']} | `{cell(example.get('container', ''))}`: "
+                             f"`{cell(example.get('fact', ''))}` | `{cell(example.get('reproduce', ''))}` |")
             lines.append("")
     if report["slowest"]:
         lines += ["## Slowest checks", "", "| Check | Time |", "|---|---|"]
@@ -483,6 +560,7 @@ def main():
     report = build(arguments)
     out = Path(arguments.out)
     out.mkdir(parents=True, exist_ok=True)
+    write_failures(out, report.pop("_audit_failures"), report["failure_first_seen"])
     (out / "report.json").write_text(json.dumps(report, indent=1) + "\n")
     markdown = render(report)
     (out / "report.md").write_text(markdown + "\n")

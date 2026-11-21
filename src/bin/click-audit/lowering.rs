@@ -118,6 +118,9 @@ const PRINTED_FAILURES: usize = 10;
 /// a reader picks it to fix.
 struct Failure {
     outcome: String,
+    /// The fact's kind (raise-lower), or the lowering site (fact stability):
+    /// what failures of one shape share.
+    kind: String,
     container: String,
     /// The raise-lower claim, or the fact-stability lowering site.
     place: String,
@@ -148,13 +151,14 @@ fn raise_lower_failures(lines: &str) -> Vec<Failure> {
     let mut failures = Vec::new();
     for line in lines.lines() {
         let fields = line.split('\t').collect::<Vec<_>>();
-        let [outcome, _, _, claim, _, _, original, raised, lowered, ..] = fields[..] else {
+        let [outcome, _, kind, claim, _, _, original, raised, lowered, ..] = fields[..] else {
             continue;
         };
         let container = fields.get(9).copied().unwrap_or("");
         if FAILING_ROUND_TRIPS.contains(&outcome) && seen.insert((container, claim, original)) {
             failures.push(Failure {
                 outcome: outcome.to_string(),
+                kind: kind.to_string(),
                 container: container.to_string(),
                 place: claim.to_string(),
                 original: original.to_string(),
@@ -180,6 +184,7 @@ fn fact_stability_failures(lines: &str) -> Vec<Failure> {
         {
             failures.push(Failure {
                 outcome: outcome.to_string(),
+                kind: site.to_string(),
                 container: container.to_string(),
                 place: site.to_string(),
                 original: with_facts.to_string(),
@@ -191,9 +196,9 @@ fn fact_stability_failures(lines: &str) -> Vec<Failure> {
     failures
 }
 
-/// `<records>.failures.tsv`: outcome, container, claim or site, original,
-/// raised form or fact-free lowering, lowered form, and the command that
-/// reproduces it, one failure per line.
+/// `<records>.failures.tsv`: outcome, kind, container, claim or site,
+/// original, raised form or fact-free lowering, lowered form, and the
+/// command that reproduces it, one failure per line.
 fn write_failures(
     audit: LoweringAudit,
     failures: &[Failure],
@@ -204,8 +209,9 @@ fn write_failures(
         .iter()
         .map(|failure| {
             format!(
-                "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
                 failure.outcome,
+                failure.kind,
                 failure.container,
                 failure.place,
                 failure.original,
