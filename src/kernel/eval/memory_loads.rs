@@ -3612,37 +3612,31 @@ thread_local! {
 }
 
 fn immediate_stored_address_base(identity: PointerLoadId) -> Option<AddressBase> {
-    let (point, address, value_type) = registered_pointer_load_point(identity)?;
-    if let Some(stored) = indexed_pointer_read_value(&point, &address, value_type) {
-        return Some(stored.address().base.clone());
-    }
-    let memory = point.into_shared_memory();
-    if !holds_pointer_cell(memory.memory(), &address) {
-        return None;
-    }
-    let ProgramValue::Pointer(stored) =
-        memory_shown_cell_value(&memory, &address, crate::kernel::C_POINTER_BYTE_WIDTH)?
-    else {
-        return None;
-    };
-    (stored.address().base != AddressBase::LoadedPointer(identity))
-        .then(|| stored.address().base.clone())
+    stored_pointer_for_load(identity).map(|pointer| pointer.into_pointer().base)
 }
 
-/// The pointer a loaded pointer's own defining cell shows: the value the
-/// load read, when that cell holds a stored pointer.
-pub(crate) fn loaded_pointer_stored_address(identity: PointerLoadId) -> Option<Address> {
-    let (memory, address) = registered_pointer_load(identity)?;
-    if !holds_pointer_cell(memory.memory(), &address) {
+fn stored_pointer_for_load(identity: PointerLoadId) -> Option<Pointer> {
+    let (point, cell, value_type) = registered_pointer_load_point(identity)?;
+    if let Some(stored) = indexed_pointer_read_value(&point, &cell, value_type) {
+        return Some(stored);
+    }
+    let memory = point.shared_memory();
+    if !holds_pointer_cell(memory.memory(), &cell) {
         return None;
     }
     let ProgramValue::Pointer(stored) =
-        memory_shown_cell_value(&memory, &address, crate::kernel::C_POINTER_BYTE_WIDTH)?
+        memory_shown_cell_value(memory, &cell, crate::kernel::C_POINTER_BYTE_WIDTH)?
     else {
         return None;
     };
-    (stored.address().base != AddressBase::LoadedPointer(identity))
-        .then(|| stored.address().clone())
+    (stored.address().base != AddressBase::LoadedPointer(identity)).then_some(stored)
+}
+
+/// The stored address of the pointer read. A recorded typed store supplies
+/// the address even when the memory view no longer caches it.
+pub(crate) fn loaded_pointer_stored_address(identity: PointerLoadId) -> Option<Address> {
+    let address = stored_pointer_for_load(identity)?.into_pointer();
+    (address.base != AddressBase::LoadedPointer(identity)).then_some(address)
 }
 
 /// Decode a pointer-load name without consulting scalar-load metadata.
@@ -7748,6 +7742,59 @@ mod tests {
             .assume_condition(ConditionTerm::address_equal(a.clone(), b.clone()), true);
         assert!(reconstructed.pointers_known_equal(&x, &y));
         assert_eq!(reconstructed.pure_facts().len(), 1);
+    }
+
+    #[test]
+    fn exact_pointer_address_uses_its_recorded_store_after_cache_forgetting() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = SymbolicMemory::local_pointer("pointer_slot");
+        let address = Address::symbolic(Variable(210_280)).offset_by_bytes(4);
+        let value_type = ProgramType::Int32Pointer;
+        let bytes = value_type.byte_width();
+        let initial = ExecutionState::new()
+            .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), bytes));
+        let stored = initial.clone().with_memory(initial.memory().clone().store(
+            slot.clone(),
+            ProgramValue::typed_pointer(address.clone(), value_type),
+        ));
+        let forgotten =
+            stored
+                .clone()
+                .with_memory(stored.memory().without_possible_aliasing_cells(
+                    &slot,
+                    bytes,
+                    &PureFactContext::new(),
+                ));
+        assert!(forgotten.memory().known_value(&slot).is_none());
+        let read = |state: &ExecutionState, value_type| {
+            let pointer =
+                Pointer::from_point_read(state.program_point().for_exact_read(), value_type, &slot);
+            let AddressBase::LoadedPointer(identity) = pointer.address().base else {
+                panic!("an exact pointer read has a point-named identity");
+            };
+            identity
+        };
+        assert!(
+            loaded_pointer_stored_address(read(&forgotten, ProgramType::UInt32Pointer)).is_none()
+        );
+
+        let other = SymbolicMemory::local_pointer("unrelated_word");
+        let work = [1, 8, 64, 256].map(|count| {
+            let mut state = forgotten.clone();
+            for bits in 0..count {
+                state = state.clone().with_memory(state.memory().clone().store(
+                    other.clone(),
+                    ProgramValue::Int32(MachineTerm::constant(bits)),
+                ));
+            }
+            let identity = read(&state, value_type);
+            let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                loaded_pointer_stored_address(identity)
+            });
+            assert_eq!(resolved.as_ref(), Some(&address));
+            work
+        });
+        assert!(work.iter().all(|units| *units <= work[0] + 8), "{work:?}");
     }
 
     #[test]
