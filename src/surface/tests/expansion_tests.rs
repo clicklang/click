@@ -5913,6 +5913,35 @@ fn return_population_proofs_expand_without_effect_clauses() {
 }
 
 #[test]
+fn cpp_local_record_call_requirement_expands_and_replays() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/cpp_class_const_method_keeps_fields.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let inputs = crate::cli::prepare_mdtest_inputs(&fixture).unwrap();
+    let crate::cli::VerificationInput::PreparedProgram(import) = &inputs else {
+        panic!("expected a prepared C++ fixture");
+    };
+    let source = fixture.click_source.as_deref().unwrap();
+    let claim = "caller.contract";
+    let expanded = expand_claim_by_label(None, source, &inputs.program_inputs(), claim, None)
+        .unwrap_or_else(|error| panic!("{}", error.report()))
+        .source;
+    let project = crate::surface::ClickProject::new(
+        "proof.click",
+        [crate::surface::ClickModuleSource::new(
+            "proof.click",
+            &expanded,
+            [],
+        )],
+    );
+    check_audit_claim(claim, true, || {
+        crate::surface::verify_program_prepared_project(&project, import)
+            .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn expansion_keeps_explicit_return_fold_inside_with() {
     let (source, sources) = mdtest_sources("mdtests/with_accepts_an_already_restored_instance.md");
     let sources = crate::cli::source_refs(&sources);
