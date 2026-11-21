@@ -2092,6 +2092,20 @@ impl<'a> TermRewrite<'a> {
         self.algebraic.is_some() || self.integer_exact.is_some() || self.integer_variables.is_some()
     }
 
+    fn preserves_machine_conditional(&self, guard: &ConditionTerm) -> bool {
+        self.integer_exact.is_some()
+            || (self.integer_variables.is_some()
+                && matches!(
+                    guard,
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    } if left.as_const().is_some() && right.as_const().is_some()
+                ))
+    }
+
     /// Exact Integer congruence over the selected logical DAG. Internal
     /// binder scopes are refused; logical quantifiers are handled by the
     /// equality-rewrite rule before this atomic walker is entered.
@@ -6687,28 +6701,21 @@ impl<'a> TermRewrite<'a> {
                 if let Some(conditions) = &mut self.collected_conditions {
                     conditions.push(condition.as_ref().clone());
                 }
-                // Re-run the condition through its own smart constructor. A
-                // rewrite that replaced the compared terms by literals has
-                // decided this conditional, and a decided conditional is one
-                // of its arms: `MachineTerm::if_then_else` would never
-                // have built it, so leaving it standing is a term that no
-                // lowering of the same source produces.
+                // Binder substitution preserves a retained closed guard. Ordinary
+                // computation can still decide it before walking an unselected arm.
+                let preserve = self.preserves_machine_conditional(condition);
                 let condition = self.condition(condition);
-                let condition = if self.integer_exact.is_some() {
+                let condition = if preserve {
                     condition
                 } else {
                     folded_machine_condition(condition)
                 };
-                if self.integer_exact.is_none()
-                    && let ConditionTerm::Constant(value) = condition
-                {
+                if !preserve && let ConditionTerm::Constant(value) = condition {
                     return self.bits(if value { then_term } else { else_term });
                 }
                 let then_term = self.bits(then_term);
                 let else_term = self.bits(else_term);
-                // Arms the rewrite made equal decide nothing either, as
-                // `MachineTerm::if_then_else` would have built them.
-                if self.integer_exact.is_none() {
+                if !preserve {
                     return MachineTerm::if_then_else(condition, then_term, else_term);
                 }
                 MachineTerm::If {
