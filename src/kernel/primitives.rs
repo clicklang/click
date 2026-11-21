@@ -15054,6 +15054,7 @@ pub struct FunctionContractRefinementContext {
 /// Kernel-generated sufficient logical obligations for one contract relation.
 /// The states and proposition cannot be supplied by the language layer.
 pub struct FunctionContractRefinementObligations {
+    pub(super) context: FunctionContractRefinementContext,
     pub(super) entry: ExecutionState,
     pub(super) post: ExecutionState,
     pub(super) proposition: Proposition,

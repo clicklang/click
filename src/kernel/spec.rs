@@ -6263,11 +6263,16 @@ fn lower_spec_predicate_proposition_at_state_in(
                         }
                         _ => None,
                     };
-                    // Without an indexed version the argument names its source
-                    // memory. Keep the path for reads in the predicate body.
-                    arguments.push(Term::ArrayReadPoint(
-                        point.unwrap_or_else(|| source.for_legacy_read()),
-                    ));
+                    // A certified source can name the entire array when
+                    // the history has no earlier indexed version.
+                    let point = point.unwrap_or_else(|| {
+                        if source.has_certified_read_view() {
+                            source.for_exact_read()
+                        } else {
+                            source.for_legacy_read()
+                        }
+                    });
+                    arguments.push(Term::ArrayReadPoint(point));
                 }
                 arguments.push(Term::ProgramValue(argument_path.value.clone().into()));
                 next_paths.push(SpecPropositionPath {

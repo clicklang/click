@@ -1084,6 +1084,51 @@ fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
 }
 
 #[test]
+fn declared_predicate_array_keeps_its_selected_point_without_an_indexed_version() {
+    let _session = VerificationSession::enter();
+    let array = Address::symbolic(Variable(1013810));
+    let arguments = [SpecPredicateArgument::ArrayRef {
+        point: SpecPoint::Current,
+        pointer: SpecExpression::Value(ProgramValue::typed_pointer(
+            array.clone(),
+            ProgramType::Int32Pointer,
+        )),
+    }];
+    let first = ExecutionState::new().begin_function_entry_memory();
+    let second = ExecutionState::new().begin_function_entry_memory();
+    assert_eq!(first.memory(), second.memory());
+
+    for state in [&first, &second] {
+        assert!(
+            state
+                .program_point()
+                .indexed_array_version(&array.base)
+                .is_none()
+        );
+        let mut execution = ExecutionBudget::new();
+        let paths = lower_spec_predicate_proposition_at_state_in(
+            SpecScope::unbound(state, None),
+            "array_predicate",
+            &arguments,
+            false,
+            &PureFactContext::new(),
+            &mut SpecEvaluation::logical(&mut execution),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one predicate path");
+        };
+        let Proposition::Predicate { arguments, .. } = &path.proposition else {
+            panic!("declared predicate");
+        };
+        let [_, Term::ArrayReadPoint(point), Term::ProgramValue(_)] = arguments.as_slice() else {
+            panic!("array argument retains a point");
+        };
+        assert_eq!(point.read_version_id(), state.observation_point_id());
+    }
+}
+
+#[test]
 fn declared_predicate_array_names_its_entry_point_after_local_calls() {
     let _session = VerificationSession::enter();
     let array = Address {
