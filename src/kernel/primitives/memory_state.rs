@@ -8881,20 +8881,22 @@ impl SymbolicMemory {
 }
 
 impl ExecutionState {
-    /// The value local `name` keeps in its object, for a local that keeps
-    /// one value of an abstract or enum type in memory, as a Click name reads
-    /// it: the read of the object at the point it was last written, never
-    /// the value a store left there, so `o` names one read per version.
+    /// The read named by a local that holds an abstract or enum value in
+    /// memory. The indexed write supplies its version when available. A
+    /// certified observation can otherwise name an opaque type parameter
+    /// at the current program point.
     pub fn held_local_value(&self, name: impl Into<BindingName>) -> Option<ProgramValue> {
         let name = name.into();
         let (ProgramType::Parameter(value_type), slot) = self.locals().held_value_local(&name)?
         else {
             return None;
         };
-        if let Some(version) = self
-            .program_point()
-            .abstract_local_version(slot, value_type)
-        {
+        let point = self.program_point();
+        let version = point.abstract_local_version(slot, value_type).or_else(|| {
+            (value_type.has_abstract_size() && point.has_certified_read_view())
+                .then(|| point.for_exact_read())
+        });
+        if let Some(version) = version {
             return Some(AlgebraicTermNode::parameter_load_at(
                 version,
                 slot.clone(),

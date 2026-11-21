@@ -143,3 +143,46 @@ fn held_abstract_loads_keep_their_store_point_in_equality() {
     assert!(graph.add_algebraic_equality(&first, &second));
     assert!(graph.are_algebraic_equal(&first, &second));
 }
+
+#[test]
+fn a_held_abstract_read_after_storage_havoc_keeps_its_point() {
+    use crate::kernel::{AggregateLayout, TypeParameterName};
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = SymbolicMemory::local_pointer("abstract_output");
+    let parameter = TypeParameterName::intern("AbstractOutputPoint");
+    let value_type = ProgramType::Parameter(parameter);
+    let bytes = value_type.byte_width();
+    let mut before = ExecutionState::new().with_memory(
+        SymbolicMemory::new()
+            .with_block(slot.base.clone(), bytes)
+            .store(
+                slot.clone(),
+                ProgramValue::Parameter(Box::new(AlgebraicTerm {
+                    algebraic_type: parameter.algebraic_type(),
+                    node: AlgebraicTermNode::Variable(Variable(1008311)),
+                })),
+            ),
+    );
+    before.locals.set_aggregate_object_at(
+        "value",
+        AggregateLayout::holding_value(value_type),
+        slot.clone(),
+    );
+    let effect = MemoryRange::access(slot.clone(), value_type);
+    let after = before.clone().with_memory(
+        before
+            .memory()
+            .clone()
+            .with_storage_memory_havoc(Variable(1008312), &[effect], &PureFactContext::new())
+            .with_initialized_object(&slot, bytes),
+    );
+    assert_ne!(after.observation_point_id(), before.observation_point_id());
+    let ProgramValue::Parameter(read) = after.held_local_value("value").unwrap() else {
+        panic!("held abstract value");
+    };
+    let AlgebraicTermNode::MemoryLoad { point, pointer } = read.node else {
+        panic!("the name reads the abstract object");
+    };
+    assert_eq!(point.read_version_id(), after.observation_point_id());
+    assert_eq!(*pointer, slot);
+}
