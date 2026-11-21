@@ -54,7 +54,7 @@ fn nested_box_fields_keep_their_pointer_type_in_old_reads() {
                 views self.head.next;
                 requires self.head != 0;
                 requires self.head.next != 0;
-                ensures same_object(self.head.next, old(self.head.next));
+                ensures same_allocation(self.head.next, old(self.head.next));
             }
         }
     "#;

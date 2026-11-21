@@ -138,7 +138,7 @@ documentation inventory keep the following accepted words synchronized.
 | `all`, `any`, `fold` | Range proposition and expression methods. |
 | `prop` | Proposition value: `prop { P }`. |
 | `defined` | The definedness [special form](index.md#special-forms), a proposition. |
-| `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
+| `viewable`, `same_allocation`, `separate`, `aligned`, `little_endian` | Readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
 | `old`, `at` | Point-selecting [special forms](index.md#special-forms): `old(e)` reads at the function's entry, `at(point, e)` at a named point. |
 | `program` | Program-binding qualifier: `program::name` names a program binding where a Click name has the same name. |
 | `exact` | Point-selecting [special form](index.md#special-forms): `exact(place)` reads `place` named by the state in scope itself, with no version walk ([`exact(...)`](index.md#exact)). |

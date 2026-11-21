@@ -347,7 +347,7 @@ step reads them from its context. One classification,
 `Proposition::is_kernel_authority`, decides membership; code must not
 special-case a composition or a `__click_` name elsewhere.
 
-`held`, `same_object`, and contract facts are not authority even though the
+`held`, `same_allocation`, and contract facts are not authority even though the
 kernel names them under `__click_`: `kernel::predicate_source_name` gives the
 Click name that lowers to each, and the printer, synthesis, and authority
 classification all read that one mapping.
