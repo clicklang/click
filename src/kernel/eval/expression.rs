@@ -3553,6 +3553,8 @@ fn read_retained_lvalue_paths_without_ranges(
                                 | ProgramType::UInt32
                                 | ProgramType::Int64
                                 | ProgramType::UInt64
+                                | ProgramType::Int128
+                                | ProgramType::UInt128
                                 | ProgramType::Parameter(_)
                         ))
                     && pointer.base == AddressBase::ExternalArgument
@@ -3573,7 +3575,9 @@ fn read_retained_lvalue_paths_without_ranges(
                         | ProgramType::UInt16
                         | ProgramType::Int32
                         | ProgramType::Int64
-                        | ProgramType::UInt64 => point
+                        | ProgramType::UInt64
+                        | ProgramType::Int128
+                        | ProgramType::UInt128 => point
                             .entry_integer_version(pointer, LoadKind::of_type(lvalue.value_type)?),
                         ProgramType::Parameter(parameter) => {
                             point.generic_entry_version(pointer, parameter)

@@ -1541,6 +1541,8 @@ impl ProgramPoint {
                     | LoadKind::Int16
                     | LoadKind::UInt16
                     | LoadKind::Bits64
+                    | LoadKind::Int128
+                    | LoadKind::UInt128
             )
         {
             return None;
@@ -1616,7 +1618,9 @@ impl ProgramPoint {
             | ProgramType::Int16
             | ProgramType::UInt16
             | ProgramType::Int32
-            | ProgramType::UInt32 => self.external_entry_read(pointer, true),
+            | ProgramType::UInt32
+            | ProgramType::Int128
+            | ProgramType::UInt128 => self.external_entry_read(pointer, true),
             ProgramType::Int64 | ProgramType::UInt64 => self
                 .external_entry_read(pointer, true)
                 .or_else(|| self.entry_read_through_loaded_pointer(pointer)),
