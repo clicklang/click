@@ -5965,6 +5965,20 @@ fn cpp_allocation_rewrites_expand_and_replay() {
 }
 
 #[test]
+fn expansion_replays_explicit_call_requirements_inside_with() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_call_through_a_function_pointer_is_named_by_its_position.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "compute.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(expanded.contains("        step() by {"), "{expanded}");
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn expansion_keeps_explicit_return_fold_inside_with() {
     let (source, sources) = mdtest_sources("mdtests/with_accepts_an_already_restored_instance.md");
     let sources = crate::cli::source_refs(&sources);
