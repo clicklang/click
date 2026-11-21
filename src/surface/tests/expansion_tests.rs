@@ -265,6 +265,41 @@ fn copied_scalar_and_aggregate_values_expand_without_normalize() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 22s for five span expansions and cold replays"]
+fn resource_prerequisites_span_proofs_expand_without_normalize() {
+    for (fixture, label) in [
+        ("separation_span_call", "caller.ensures_0"),
+        (
+            "padded_field_scalar_call_restores_ownership",
+            "caller.contract",
+        ),
+        (
+            "packed_parent_transport_across_aliased_metadata",
+            "caller.contract",
+        ),
+        (
+            "loop_invariant_states_a_growing_viewable_prefix",
+            "any_zero.contract",
+        ),
+        (
+            "loop_invariant_growing_viewable_prefix_bounded_by_its_views_clause",
+            "any_zero.contract",
+        ),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{fixture}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: two loop expansions and cold replays"]
 fn adjacent_loop_reads_expand_with_explicit_preservation() {
     for fixture in [

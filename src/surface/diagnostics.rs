@@ -6484,15 +6484,7 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
                 describe_program_expression(base),
                 describe_program_expression(index),
             );
-            match object_at_address(&base) {
-                Some(object) if index == "0" => object.to_string(),
-                // An element of a slice value reads through its data
-                // pointer; Rust writes it `x[i]`.
-                _ => match base.strip_suffix(".as_ptr()") {
-                    Some(slice) => format!("{slice}[{index}]"),
-                    None => format!("{base}[{index}]"),
-                },
-            }
+            describe_indexed_place(&base, &index)
         }
     }
 }
@@ -6823,6 +6815,21 @@ pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
     rendered
         .strip_prefix('&')
         .filter(|name| !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_'))
+}
+
+fn describe_indexed_place(base: &str, index: &str) -> String {
+    if index == "0"
+        && let Some(object) = object_at_address(base)
+    {
+        return object.to_string();
+    }
+    // An element of a Rust slice reads through the slice's data pointer.
+    let base = base.strip_suffix(".as_ptr()").unwrap_or(base);
+    if base.starts_with(['&', '*', '-', '!', '~']) {
+        format!("({base})[{index}]")
+    } else {
+        format!("{base}[{index}]")
+    }
 }
 
 /// A field of the struct `base` points at: `c.field` through an object's
@@ -7693,15 +7700,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 return describe_program_expression(object);
             }
             let base = describe_contract_expression(base);
-            match object_at_address(&base) {
-                Some(object) if index == "0" => object.to_string(),
-                // An element of a slice value reads through its data
-                // pointer; Rust writes it `x[i]`.
-                _ => match base.strip_suffix(".as_ptr()") {
-                    Some(slice) => format!("{slice}[{index}]"),
-                    None => format!("{base}[{index}]"),
-                },
-            }
+            describe_indexed_place(&base, &index)
         }
         ContractExpression::ArrayIndex { base, indexes, .. } => format!(
             "{}{}",
