@@ -5995,6 +5995,15 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
 
 #[test]
 fn common_float_reads_retain_old_and_recorded_states() {
+    check_float_reads_at_old_and_recorded_states(false);
+}
+
+#[test]
+fn exact_float_reads_name_distinct_points_with_equal_memory() {
+    check_float_reads_at_old_and_recorded_states(true);
+}
+
+fn check_float_reads_at_old_and_recorded_states(exact: bool) {
     for format in [
         crate::kernel::KernelFloatType::Float32,
         crate::kernel::KernelFloatType::Float64,
@@ -6010,14 +6019,53 @@ fn common_float_reads_retain_old_and_recorded_states() {
                 "p",
                 ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
             );
-        let now = selected
-            .clone()
-            .with_memory(selected.memory().clone().with_block("later-block", 8));
-        let read = MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(selected.memory()))),
-            Box::new(pointer),
-            format.load_kind(),
-        );
+        let (now, read) = if exact {
+            let now = selected.clone().begin_function_entry_memory();
+            assert_eq!(selected.memory(), now.memory());
+            assert_ne!(selected.program_point_id(), now.program_point_id());
+            let ty = format.program_type();
+            let expression = crate::kernel::SpecExpression::MemoryLoad {
+                point: crate::kernel::SpecPoint::Current,
+                pointer: Box::new(crate::kernel::SpecExpression::Value(
+                    ProgramValue::typed_pointer(pointer.clone(), ty.pointer_to().unwrap()),
+                )),
+                value_type: ty,
+                exact: true,
+            };
+            let evaluate = |state: &ExecutionState| {
+                let (value, _) =
+                    crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+                        state,
+                        &expression,
+                        None,
+                        &PureFactContext::new(),
+                    )
+                    .unwrap();
+                let (ProgramValue::Float32(read) | ProgramValue::Float64(read)) = value else {
+                    panic!("expected a float read");
+                };
+                let MachineTerm::MemoryLoad(point, address, kind) = &read else {
+                    panic!("expected a memory load");
+                };
+                assert_eq!(point.read_version_id(), state.observation_point_id());
+                assert_eq!(address.as_ref(), &pointer);
+                assert_eq!(*kind, format.load_kind());
+                read
+            };
+            let read = evaluate(&selected);
+            assert_ne!(read, evaluate(&now));
+            (now, read)
+        } else {
+            let now = selected
+                .clone()
+                .with_memory(selected.memory().clone().with_block("later-block", 8));
+            let read = MachineTerm::MemoryLoad(
+                crate::kernel::ProgramPoint::of_memory(selected.memory()),
+                Box::new(pointer),
+                format.load_kind(),
+            );
+            (now, read)
+        };
         let root = crate::kernel::KernelTermImport::default().float(format, &read);
         let current = raise_kernel_term(
             &root,
@@ -6060,6 +6108,7 @@ fn common_float_reads_retain_old_and_recorded_states() {
                 );
             }
             let text = diagnostics::describe_contract_expression(&surface);
+            assert_eq!(text.contains("exact("), exact, "{text}");
             let zero = if format == crate::kernel::KernelFloatType::Float32 {
                 "float32_from_bits(0)"
             } else {

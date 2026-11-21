@@ -59,7 +59,8 @@ An object-pointer read names its address, provenance and bounds owner by
 the same read, and the recorded store can supply its complete typed value.
 A function-pointer read has its declared callback signature and the store
 can supply the call target. Floating-point lowering still uses its existing
-rule, which preserves stored bits, including signed zeros and NaNs.
+rule, which preserves stored bits, including signed zeros and NaNs. An explicit
+`exact(place)` of a float cell names its bits at the selected program point.
 
 `exact(place)` keys the read by the selected program point when one is
 available. Raising uses `exact` at that point, even if another point has

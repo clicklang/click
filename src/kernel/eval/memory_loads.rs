@@ -444,13 +444,19 @@ pub(in crate::kernel) fn evaluate_exact_logical_memory_load_paths(
 }
 
 /// [`evaluate_exact_logical_memory_load_paths`]'s value: the exact read
-/// constructor evaluation uses for a cell of `memory`, for the integer and
-/// pointer cells whose ordinary reads name their version.
+/// constructor evaluation uses for an explicitly selected scalar cell.
 fn exact_logical_read_value(
     point: ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
+    if let Some(format) = KernelFloatType::from_program_type(value_type) {
+        return Some(format.value(MachineTerm::MemoryLoad(
+            point.for_exact_read(),
+            Box::new(pointer.clone()),
+            format.load_kind(),
+        )));
+    }
     if !logical_read_names_its_version(value_type) {
         return None;
     }
