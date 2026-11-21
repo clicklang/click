@@ -46,8 +46,9 @@ fn guarded_conjunction_chains_scale_with_their_length() {
 fn operation_definedness_scales_with_expression_depth() {
     fn work(depth: u32) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut expression =
-            SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(Variable(697_000))));
+        let mut expression = SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
+            Variable(697_000),
+        )));
         for _ in 0..depth {
             expression = SpecExpression::Add(
                 Box::new(expression),
