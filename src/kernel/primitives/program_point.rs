@@ -1274,10 +1274,10 @@ impl ProgramPoint {
     /// store supplies a value. Use the recorded disjoint suffix only when
     /// it reaches a verified function-entry view.
     pub(crate) fn entry_integer_version(&self, pointer: &Address, kind: LoadKind) -> Option<Self> {
-        if kind != LoadKind::Int32 {
+        if !kind.is_word32() {
             return None;
         }
-        self.external_entry_read(pointer)
+        self.external_entry_read(pointer, false)
     }
 
     pub(crate) fn generic_entry_version(
@@ -1288,23 +1288,31 @@ impl ProgramPoint {
         if parameter.is_enum() {
             return None;
         }
-        self.external_entry_read(pointer)
+        self.external_entry_read(pointer, false)
     }
 
-    fn external_entry_read(&self, pointer: &Address) -> Option<Self> {
+    fn external_entry_read(
+        &self,
+        pointer: &Address,
+        allow_materialized_entry: bool,
+    ) -> Option<Self> {
         if pointer.base != AddressBase::ExternalArgument {
             return None;
         }
         let mut entry = self.parameter_read_start(&pointer.base);
         let node = entry.path.0.as_ref()?;
-        // The empty view has no previously materialized values to account
-        // for when selecting the version of a substituted address.
+        // Entry setup can attach a proof view to the root without executing
+        // a write. Its selected reads name the original entry bytes, including
+        // when a symbolic index does not pick one of its materialized cells.
         if !node.function_entry
             || !entry.path.matches_indexed_view(&entry.memory)
-            || entry.memory() != &SymbolicMemory::default()
+            || node.memory.memory() != &SymbolicMemory::default()
+            || (!allow_materialized_entry && entry.memory() != &SymbolicMemory::default())
         {
             return None;
         }
+        entry.memory = node.memory.clone();
+        entry.path.1 = IndexedView::Recorded;
         entry.read = ReadSelection::Entry;
         Some(entry)
     }
@@ -1327,19 +1335,34 @@ impl ProgramPoint {
         }
     }
 
+    /// The original entry version that a logical read or a materialized
+    /// observation can name even when entry setup attached a proof view.
+    pub(crate) fn entry_cell_version(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> Option<Self> {
+        match value_type {
+            ProgramType::Int32 | ProgramType::UInt32 => self.external_entry_read(pointer, true),
+            ProgramType::Parameter(parameter) if !parameter.is_enum() => {
+                self.external_entry_read(pointer, true)
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn ordinary_typed_version(
         &self,
         pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
         self.indexed_typed_version(pointer, value_type)
-            .or_else(|| match value_type {
-                ProgramType::Int32 => self
-                    .call_output_integer_version(pointer, LoadKind::Int32)
-                    .or_else(|| self.entry_integer_version(pointer, LoadKind::Int32)),
-                ProgramType::Parameter(parameter) => self.generic_entry_version(pointer, parameter),
-                _ => None,
+            .or_else(|| {
+                (value_type == ProgramType::Int32)
+                    .then(|| self.call_output_integer_version(pointer, LoadKind::Int32))
+                    .flatten()
             })
+            .or_else(|| self.entry_cell_version(pointer, value_type))
     }
 
     pub(in crate::kernel) fn supports_local_call_word(pointer: &Address) -> bool {

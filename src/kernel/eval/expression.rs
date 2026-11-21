@@ -3567,11 +3567,15 @@ fn read_retained_lvalue_paths_without_ranges(
                         }]);
                     }
                 }
-                let entry_read = (has_read_resource
+                let entry_source = (has_read_resource
+                    && matches!(
+                        lvalue.value_type,
+                        ProgramType::Int32 | ProgramType::UInt32 | ProgramType::Parameter(_)
+                    )
                     && pointer.base == AddressBase::ExternalArgument
                     && (!lvalue.is_volatile() || SpecificationAccessScope::is_active()))
-                .then(|| {
-                    let point = state.program_point();
+                .then(|| state.program_point());
+                let entry_read = entry_source.as_ref().and_then(|point| {
                     let entry = match lvalue.value_type {
                         ProgramType::Int32 => point.entry_integer_version(pointer, LoadKind::Int32),
                         ProgramType::Parameter(parameter) => {
@@ -3580,13 +3584,12 @@ fn read_retained_lvalue_paths_without_ranges(
                         _ => None,
                     }?;
                     Some((entry, point))
-                })
-                .flatten();
+                });
                 let mut paths = if let Some((entry, point)) = entry_read {
                     vec![
                         super::memory_loads::evaluate_indexed_read(
                             entry,
-                            &point,
+                            point,
                             pointer.clone(),
                             lvalue.value_type,
                             facts,
@@ -3606,6 +3609,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         lvalue.is_volatile() && !SpecificationAccessScope::is_active(),
                         source,
                         budget.program_byte_order(),
+                        entry_source.as_ref(),
                     )
                 };
                 for path in &mut paths {

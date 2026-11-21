@@ -292,6 +292,7 @@ pub struct CellRun {
 }
 
 impl CellRun {
+    #[cfg(test)]
     pub(crate) fn new(
         base: Address,
         element_width: u32,

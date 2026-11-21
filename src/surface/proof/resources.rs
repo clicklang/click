@@ -5633,9 +5633,9 @@ fn materialize_composite_resource_cells_from_state(
         return memory.materialize_entry_integer_cell_at(range.base().clone(), naming_point);
     }
     if run_type.byte_width() <= element_width {
-        let source = if point_named
-            || matches!(run_type, ProgramType::Parameter(parameter)
-                if naming_point.generic_entry_version(range.base(), parameter).is_some())
+        let source = if naming_point
+            .entry_cell_version(range.base(), run_type)
+            .is_some()
         {
             naming_point.clone()
         } else {

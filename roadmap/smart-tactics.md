@@ -101,7 +101,9 @@ an `int32` field at a fixed displacement from its external parameter. Computed
 scalar fold endpoints, ordinary checked reads, loop boundaries and iterated
 ownership guards also carry the selected entry point. Generic cells at a
 verified function entry keep that point through individual observations,
-compact runs, and substitution. A join retains the entry point when all
+compact runs, and substitution. Entry setup passes its original point through
+declared loadable ranges, resource segments and named composite openings so
+supported scalar fields and compact cells use the same selector. A join retains the entry point when all
 incoming paths establish the same unchanged entry version. Scalar
 canonicalization, congruence and Integer arithmetic retain the point through
 comparison.
