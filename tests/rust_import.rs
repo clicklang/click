@@ -5739,6 +5739,7 @@ fn shadow(bytes: &[u8]) -> usize {
     have at(first_slice, program::bytes.len()) == 1u64;
     have at(function.entry, program::bytes.len()) == 4u64;
     step_until(function.exit);
+    have program::bytes.len() == 4u64;
     solve();
 }
 "#;

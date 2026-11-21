@@ -918,6 +918,16 @@ impl BindingName {
     pub(crate) fn metadata_name(&self) -> Option<&str> {
         match self {
             Self::SliceLength(length) if length.parameter().is_some() => Some(&length.0.spelling),
+            // A qualified read can resolve to the input parameter once a
+            // shadowing local has left scope. Retain the parameter metadata
+            // for that case, ahead of resolving the proof point.
+            Self::SliceLength(length) if self.unresolved_slice_length().is_some() => Some(
+                length
+                    .0
+                    .spelling
+                    .strip_prefix("program::")
+                    .unwrap_or(&length.0.spelling),
+            ),
             _ => self.unresolved_name(),
         }
     }
