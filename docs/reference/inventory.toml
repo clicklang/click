@@ -2351,6 +2351,10 @@ id = "primitive.extern.__click_constant_p_unknown"
 path = "reference/language/index.md#__click_constant_p_unknown"
 
 [[item]]
+id = "library.extern.fprintf"
+path = "reference/library/index.md#fprintf"
+
+[[item]]
 id = "library.extern.memcpy"
 path = "reference/library/index.md#memcpy"
 
@@ -5411,6 +5415,18 @@ path = "reference/library/index.md#writeattempt-and-stream"
 [[item]]
 id = "library.resource.stream"
 path = "reference/library/index.md#writeattempt-and-stream"
+
+[[item]]
+id = "library.function.stdio::format_output"
+path = "reference/library/index.md#stdioformat_output-stdioformat_length-and-stdioliteral_format"
+
+[[item]]
+id = "library.function.stdio::format_length"
+path = "reference/library/index.md#stdioformat_output-stdioformat_length-and-stdioliteral_format"
+
+[[item]]
+id = "library.function.stdio::literal_format"
+path = "reference/library/index.md#stdioformat_output-stdioformat_length-and-stdioliteral_format"
 
 [[item]]
 id = "library.function.stdio::write_requests"

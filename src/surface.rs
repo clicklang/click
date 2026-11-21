@@ -713,12 +713,12 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         include_str!("../library/integer.click"),
     ),
     (
-        "library/c/stdio.click",
-        include_str!("../library/c/stdio.click"),
-    ),
-    (
         "library/c/stdarg.click",
         include_str!("../library/c/stdarg.click"),
+    ),
+    (
+        "library/c/stdio.click",
+        include_str!("../library/c/stdio.click"),
     ),
     (
         "library/cpp/vector_state.click",

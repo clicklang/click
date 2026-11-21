@@ -22,6 +22,59 @@ impl Proof<'_> {
                 arguments: arguments.clone(),
             });
         }
+        // `unfold(at(p, f(args)))` of a pure function: its defining
+        // equation at that program point.
+        if let ClickProposition::Value(ContractExpression::At {
+            selector,
+            expression,
+        }) = target
+            && let ContractExpression::Call { name, arguments } = expression.as_ref()
+            && definitions.predicates.get(name).is_none()
+            && definitions.functions.get(name).is_some()
+        {
+            return self.apply_function_unfold_at(
+                &ClickFunctionApplication {
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                },
+                Some(selector),
+            );
+        }
+        // A non-`Bool` application in proposition position is read as its
+        // truth, `at(p, f(args) != 0)`; the unfolded application is the call.
+        if let ClickProposition::At {
+            selector,
+            proposition,
+        } = target
+            && let ClickProposition::Comparison { left, .. } = proposition.as_ref()
+            && let ContractExpression::Call { name, arguments } = left
+            && definitions.predicates.get(name).is_none()
+            && definitions.functions.get(name).is_some()
+        {
+            return self.apply_function_unfold_at(
+                &ClickFunctionApplication {
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                },
+                Some(selector),
+            );
+        }
+        if let ClickProposition::At {
+            selector,
+            proposition,
+        } = target
+            && let ClickProposition::PredicateCall { name, arguments } = proposition.as_ref()
+            && definitions.predicates.get(name).is_none()
+            && definitions.functions.get(name).is_some()
+        {
+            return self.apply_function_unfold_at(
+                &ClickFunctionApplication {
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                },
+                Some(selector),
+            );
+        }
         let mut names = BTreeSet::new();
         crate::surface::validation::collect_called_predicates(target, &mut names);
         if names.is_empty() {

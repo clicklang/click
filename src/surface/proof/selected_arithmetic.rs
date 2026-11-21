@@ -518,7 +518,7 @@ fn proposition_operations(proposition: &ClickProposition) -> Vec<ContractExpress
 
 impl<'a> Proof<'a> {
     /// The specification functions in scope for this proof.
-    fn spec_functions(&self) -> &'a ClickFunctionEnvironment {
+    pub(in crate::surface::proof) fn spec_functions(&self) -> &'a ClickFunctionEnvironment {
         match self.context.as_ref() {
             ProofContext::Pure(context) => context.spec_definitions.functions,
             ProofContext::FixedState(context) => context.spec_definitions.functions,
