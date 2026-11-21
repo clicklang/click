@@ -2722,6 +2722,7 @@ impl<'a> Proof<'a> {
                 )
             {
                 reason.push_str(&format!("\n  {mismatch}"));
+                reason.push_str("\n  To rewrite across read versions, first state their equality and cite it with `rewrite`.");
             }
             // The structured diagnostic renders the requested equality and
             // current goal together, with the same names and label map as
