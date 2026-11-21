@@ -948,6 +948,69 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
 }
 
 #[test]
+fn static_array_versions_select_their_own_write_across_disjoint_calls() {
+    let _session = VerificationSession::enter();
+    let g = SymbolicMemory::global_pointer("g");
+    let h = SymbolicMemory::global_pointer("h");
+    let pointer = |address| ProgramValue::typed_pointer(address, ProgramType::Int32Pointer);
+    let g_argument = pointer(g.clone());
+    let h_argument = pointer(h.clone());
+    let entry = ExecutionState::new()
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block(g.base.clone(), 4)
+                .with_block(h.base.clone(), 4),
+        )
+        .begin_function_entry_memory();
+    let version =
+        |state: &ExecutionState, pointer| array_ref_argument_point(&state.program_point(), pointer);
+    let entry_h = version(&entry, &h_argument);
+    assert_eq!(entry_h.read_version_id(), entry.observation_point_id());
+    let written = entry
+        .clone()
+        .with_memory(entry.memory().clone().store(h.clone(), int32(7)));
+    let written_h = version(&written, &h_argument);
+    assert_eq!(written_h.read_version_id(), written.observation_point_id());
+    assert_ne!(written_h, entry_h);
+    assert_eq!(version(&written, &g_argument), version(&entry, &g_argument));
+
+    let assumptions = PureFactContext::new();
+    let call = |state: &ExecutionState, address: &Address, id| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().with_call_memory_havoc(
+                Variable(id),
+                &[MemoryRange::new(address.clone(), 0.into(), 1.into())],
+                &assumptions,
+                None,
+            ))
+    };
+    let work = [1, 8, 64, 256].map(|count| {
+        let mut state = written.clone();
+        for index in 0..count {
+            state = call(&state, &g, 1013000 + index);
+        }
+        let (selected, work) =
+            crate::instrumentation::measure_deterministic_work(|| version(&state, &h_argument));
+        assert_eq!(selected, written_h);
+        assert_eq!(
+            version(&state, &g_argument).read_version_id(),
+            state.observation_point_id()
+        );
+        work
+    });
+    assert!(work.iter().all(|units| *units <= work[0] + 4), "{work:?}");
+
+    let unknown = call(&written, &Address::symbolic(Variable(1013500)), 1013501);
+    assert!(
+        unknown
+            .program_point()
+            .indexed_array_version(&h.base)
+            .is_none()
+    );
+}
+
+#[test]
 fn declared_predicate_array_names_its_entry_point_after_local_calls() {
     let _session = VerificationSession::enter();
     let array = Address {

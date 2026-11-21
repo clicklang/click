@@ -263,17 +263,90 @@ struct PointNode {
     point_read_index: PointReadIndex,
     /// Earliest recorded view in a suffix of effects disjoint from parameter
     /// storage. Read selection can start here.
-    external_read_start: Option<ExternalReadStart>,
+    external_read_start: Option<ReadVersionPoint>,
     /// Array version carried across this point's checked call. The ordinary
     /// local suffix can reach this point without crossing the call for scalars.
-    array_version_after_call: Option<ExternalReadStart>,
+    array_version_after_call: Option<ReadVersionPoint>,
+    static_array_versions: Option<StaticArrayVersions>,
 }
 
 #[derive(Clone, Debug)]
-struct ExternalReadStart {
+struct ReadVersionPoint {
     point: Weak<PointNode>,
     view: IndexedView,
     memory: SharedMemory,
+}
+
+#[derive(Clone, Debug)]
+struct StaticArrayVersions {
+    entry: ReadVersionPoint,
+    writes: PersistentMap<AddressBase, Weak<PointNode>>,
+}
+
+impl StaticArrayVersions {
+    fn after(
+        predecessors: &[PathLink],
+        steps: Option<&StepLog>,
+        memory: &SharedMemory,
+        point: &Weak<PointNode>,
+        transition: PointTransition,
+    ) -> Option<Self> {
+        let [from @ PathLink(Some(before), view)] = predecessors else {
+            return None;
+        };
+        let source = match steps {
+            Some(log)
+                if log.contiguous
+                    && log.produced.arena_id() == memory.arena_id()
+                    && (transition != PointTransition::Provisional || log.previous.is_none()) =>
+            {
+                &log.first_base
+            }
+            Some(_) => return None,
+            None => memory,
+        };
+        if !from.matches_indexed_view(source) {
+            return None;
+        }
+        let mut versions = if before.function_entry {
+            Self {
+                entry: ReadVersionPoint {
+                    point: Arc::downgrade(before),
+                    view: view.clone(),
+                    memory: source.clone(),
+                },
+                writes: PersistentMap::default(),
+            }
+        } else {
+            before.static_array_versions.clone()?
+        };
+        for log in std::iter::successors(steps, |log| log.previous.as_deref()) {
+            use crate::kernel::resource_tracker::step_effect::{
+                BlockVersionEffect, block_version_effect,
+            };
+
+            crate::instrumentation::record_deterministic_work(1);
+            let mut record = |block: &AddressBase| {
+                if block.is_static_storage_block() {
+                    versions.writes.insert(block.clone(), point.clone());
+                    true
+                } else {
+                    indexed_local(block) || matches!(block, AddressBase::Temporary(_))
+                }
+            };
+            match block_version_effect(&log.step) {
+                BlockVersionEffect::Object(block, _) if record(block) => {}
+                BlockVersionEffect::WriteSet(ranges)
+                    if ranges.iter().all(|range| {
+                        crate::instrumentation::record_deterministic_work(1);
+                        record(&range.base().base)
+                    }) => {}
+                BlockVersionEffect::Unchanged => {}
+                _ => return None,
+            }
+        }
+        Some(versions)
+    }
 }
 
 impl Drop for PointNode {
@@ -446,6 +519,7 @@ impl PathLink {
                 point_read_index,
                 external_read_start,
                 array_version_after_call: None,
+                static_array_versions: None,
             })),
             IndexedView::Recorded,
         )
@@ -477,6 +551,13 @@ impl PathLink {
                     id,
                     transition,
                 );
+                let static_array_versions = StaticArrayVersions::after(
+                    &predecessors,
+                    steps.as_deref(),
+                    &memory,
+                    version,
+                    transition,
+                );
                 PointNode {
                     id,
                     function_entry: transition == PointTransition::FunctionEntry,
@@ -487,6 +568,7 @@ impl PathLink {
                     point_read_index,
                     external_read_start,
                     array_version_after_call,
+                    static_array_versions,
                 }
             })),
             IndexedView::Recorded,
@@ -642,7 +724,7 @@ fn external_read_start(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
     memory: &SharedMemory,
-) -> Option<ExternalReadStart> {
+) -> Option<ReadVersionPoint> {
     let [from @ PathLink(Some(point), view)] = predecessors else {
         return None;
     };
@@ -661,7 +743,7 @@ fn external_read_start(
         return None;
     }
     point.external_read_start.clone().or_else(|| {
-        Some(ExternalReadStart {
+        Some(ReadVersionPoint {
             point: Arc::downgrade(point),
             view: view.clone(),
             memory: source.clone(),
@@ -676,7 +758,7 @@ fn array_version_across_call(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
     memory: &SharedMemory,
-) -> Option<ExternalReadStart> {
+) -> Option<ReadVersionPoint> {
     let [from] = predecessors else { return None };
     let log = steps?;
     if !log.contiguous
@@ -705,13 +787,13 @@ fn is_external_array_origin(node: &PointNode) -> bool {
 }
 
 /// The local suffix can end at an origin or at a call that carries one.
-fn external_array_anchor(path: &PathLink, memory: &SharedMemory) -> Option<ExternalReadStart> {
+fn external_array_anchor(path: &PathLink, memory: &SharedMemory) -> Option<ReadVersionPoint> {
     if !path.matches_indexed_view(memory) {
         return None;
     }
     let node = path.0.as_ref()?;
     if is_external_array_origin(node) {
-        return Some(ExternalReadStart {
+        return Some(ReadVersionPoint {
             point: Arc::downgrade(node),
             view: path.1.clone(),
             memory: memory.clone(),
@@ -730,7 +812,7 @@ fn external_array_anchor(path: &PathLink, memory: &SharedMemory) -> Option<Exter
 
 /// Retain the common entry only when every incoming path proves that it
 /// preserved external storage. The incoming points already own the anchors.
-fn joined_external_entry(points: &[ProgramPoint]) -> Option<ExternalReadStart> {
+fn joined_external_entry(points: &[ProgramPoint]) -> Option<ReadVersionPoint> {
     let (first, rest) = points.split_first()?;
     let entry = external_array_anchor(&first.path, &first.memory)?;
     if !entry.point.upgrade()?.function_entry {
@@ -1303,9 +1385,11 @@ impl ProgramPoint {
         self.clone()
     }
 
-    /// A recorded version for a caller-owned array. A checked suffix of
-    /// local effects can leave an entry version or a later write in force.
+    /// A recorded version for an array in static or caller-owned storage.
     pub(in crate::kernel) fn indexed_array_version(&self, block: &AddressBase) -> Option<Self> {
+        if block.is_static_storage_block() {
+            return self.indexed_static_array_version(block);
+        }
         if !external_storage(block) {
             return None;
         }
@@ -1317,6 +1401,31 @@ impl ProgramPoint {
         Some(Self {
             memory: anchor.memory,
             path: PathLink(Some(origin), anchor.view),
+            read: ReadSelection::Exact,
+        })
+    }
+
+    fn indexed_static_array_version(&self, block: &AddressBase) -> Option<Self> {
+        if !self.path.matches_indexed_view(&self.memory) {
+            return None;
+        }
+        let current = self.path.0.as_ref()?;
+        if current.function_entry {
+            return Some(self.clone().for_exact_read());
+        }
+        let versions = current.static_array_versions.as_ref()?;
+        if let Some(version) = versions.writes.get(block) {
+            let version = version.upgrade()?;
+            return Some(Self {
+                memory: version.memory.clone(),
+                path: PathLink(Some(version), IndexedView::Recorded),
+                read: ReadSelection::Exact,
+            });
+        }
+        let entry = &versions.entry;
+        Some(Self {
+            memory: entry.memory.clone(),
+            path: PathLink(Some(entry.point.upgrade()?), entry.view.clone()),
             read: ReadSelection::Exact,
         })
     }

@@ -3647,11 +3647,11 @@ fn an_array_fact_carried_across_declarations_and_calls_scales_linearly() {
         ),
     );
     assert_near_linear_scaling(
-        "array-ref static block version across calls",
+        "array-ref indexed static version across calls",
         &array_version_work_curve(
             "array-fact-across-calls",
             "keep_h.c",
-            "operation `array-ref static block version`",
+            "operation `array-ref indexed version`",
             array_fact_across_calls,
         ),
     );
