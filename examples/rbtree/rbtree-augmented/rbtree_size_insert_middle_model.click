@@ -45,6 +45,6 @@ theorem sized_context_middle_rotation_preserves_inorder(g: struct rb_node*, p: s
         unfold(list::append(List::Cons(p, List::Cons(m, List::Nil)), List::Cons(g, List::Nil)));
         unfold(list::append(List::Cons(m, List::Nil), List::Cons(g, List::Nil)));
         unfold(list::append(List::Nil, List::Cons(g, List::Nil)));
-        normalize();
+        known();
     }
 }

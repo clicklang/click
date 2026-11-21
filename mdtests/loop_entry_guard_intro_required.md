@@ -34,10 +34,10 @@ int32 loop_entry_guard_intro_required(int32 p[3]) {
             have i >= 0 and i <= 3 by {
                 all {
                     i >= 0 => {
-                        normalize();
+                        known();
                     }
                     i <= 3 => {
-                        normalize();
+                        known();
                     }
                 }
             }

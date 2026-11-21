@@ -4274,11 +4274,8 @@ int32 arena_pipeline(
         known();
     }
     have first->arena->data[(first->start + 0)] == 11 by {
-        normalize() using {
-            first->arena->data[(first->start + 0)] == at(w2, first->arena->data[(first->start +
-                0)]);
-            at(w2, first->arena->data[(first->start + 0)]) == 11;
-        };
+        rewrite(first->arena->data[(first->start + 0)], at(w2, first->arena->data[(first->start +
+                0)])); known();
     }
     have second->arena->data[(second->start + 0)] == 22 by {
         known();
@@ -4326,10 +4323,7 @@ int32 arena_pipeline(
         known();
     }
     have r1.start == at(z1, first->start) by {
-        normalize() using {
-            r1.start == at(m3, r1.start);
-            at(m3, r1.start) == at(z1, first->start);
-        };
+        rewrite(r1.start, at(m3, r1.start)); known();
     }
     have r1.end == at(m3, r1.end) by {
         known();
@@ -4338,10 +4332,7 @@ int32 arena_pipeline(
         known();
     }
     have r1.end == at(z1, first->end) by {
-        normalize() using {
-            r1.end == at(m3, r1.end);
-            at(m3, r1.end) == at(z1, first->end);
-        };
+        rewrite(r1.end, at(m3, r1.end)); known();
     }
     have s0.live == at(m3, s0.live) by {
         known();
@@ -4350,10 +4341,7 @@ int32 arena_pipeline(
         known();
     }
     have s0.live == 2 by {
-        normalize() using {
-            s0.live == at(m3, s0.live);
-            at(m3, s0.live) == 2;
-        };
+        rewrite(s0.live, at(m3, s0.live)); known();
     }
     have kept_start == at(m3, kept_start) by {
         known();
@@ -4362,10 +4350,7 @@ int32 arena_pipeline(
         known();
     }
     have kept_start == at(z2, second->start) by {
-        normalize() using {
-            kept_start == at(m3, kept_start);
-            at(m3, kept_start) == at(z2, second->start);
-        };
+        rewrite(kept_start, at(m3, kept_start)); known();
     }
     have kept_end == at(m3, kept_end) by {
         known();
@@ -4374,19 +4359,13 @@ int32 arena_pipeline(
         known();
     }
     have kept_end == at(z2, second->end) by {
-        normalize() using {
-            kept_end == at(m3, kept_end);
-            at(m3, kept_end) == at(z2, second->end);
-        };
+        rewrite(kept_end, at(m3, kept_end)); known();
     }
     have first_value == 11 by {
         known();
     }
     have first->arena == arena by {
-        normalize() using {
-            first->arena == at(m3, first->arena);
-            at(m3, first->arena) == arena;
-        };
+        rewrite(first->arena, at(m3, first->arena)); known();
     }
     have first->arena->capacity == at(m3, first->arena->capacity) by {
         known();
@@ -4525,10 +4504,7 @@ int32 arena_pipeline(
         known();
     }
     have r1.start == at(z1, first->start) by {
-        normalize() using {
-            r1.start == at(m4, r1.start);
-            at(m4, r1.start) == at(z1, first->start);
-        };
+        rewrite(r1.start, at(m4, r1.start)); known();
     }
     have r1.end == at(m4, r1.end) by {
         known();
@@ -4537,10 +4513,7 @@ int32 arena_pipeline(
         known();
     }
     have r1.end == at(z1, first->end) by {
-        normalize() using {
-            r1.end == at(m4, r1.end);
-            at(m4, r1.end) == at(z1, first->end);
-        };
+        rewrite(r1.end, at(m4, r1.end)); known();
     }
     have s0.live == at(m4, s0.live) by {
         known();
@@ -4549,10 +4522,7 @@ int32 arena_pipeline(
         known();
     }
     have s0.live == 2 by {
-        normalize() using {
-            s0.live == at(m4, s0.live);
-            at(m4, s0.live) == 2;
-        };
+        rewrite(s0.live, at(m4, s0.live)); known();
     }
     have r2.start == at(m4, r2.start) by {
         known();
@@ -4561,10 +4531,7 @@ int32 arena_pipeline(
         known();
     }
     have r2.start == at(z2, second->start) by {
-        normalize() using {
-            r2.start == at(m4, r2.start);
-            at(m4, r2.start) == at(z2, second->start);
-        };
+        rewrite(r2.start, at(m4, r2.start)); known();
     }
     have r2.end == at(m4, r2.end) by {
         known();
@@ -4573,10 +4540,7 @@ int32 arena_pipeline(
         known();
     }
     have r2.end == at(z2, second->end) by {
-        normalize() using {
-            r2.end == at(m4, r2.end);
-            at(m4, r2.end) == at(z2, second->end);
-        };
+        rewrite(r2.end, at(m4, r2.end)); known();
     }
     have second_value == 22 by {
         known();
@@ -4713,10 +4677,7 @@ int32 arena_pipeline(
         known();
     }
     have r1.start == at(z1, first->start) by {
-        normalize() using {
-            r1.start == at(f2, r1.start);
-            at(f2, r1.start) == at(z1, first->start);
-        };
+        rewrite(r1.start, at(f2, r1.start)); known();
     }
     have r1.end == at(f2, r1.end) by {
         known();
@@ -4725,10 +4686,7 @@ int32 arena_pipeline(
         known();
     }
     have r1.end == at(z1, first->end) by {
-        normalize() using {
-            r1.end == at(f2, r1.end);
-            at(f2, r1.end) == at(z1, first->end);
-        };
+        rewrite(r1.end, at(f2, r1.end)); known();
     }
     have second->arena == arena by {
         known();
@@ -4758,10 +4716,7 @@ int32 arena_pipeline(
         known();
     }
     have second->start == at(z2, second->start) by {
-        normalize() using {
-            second->start == at(f2, r2.start);
-            at(f2, r2.start) == at(z2, second->start);
-        };
+        rewrite(second->start, at(f2, r2.start)); known();
     }
     have second->end == at(f2, r2.end) by {
         known();
@@ -4770,10 +4725,7 @@ int32 arena_pipeline(
         known();
     }
     have second->end == at(z2, second->end) by {
-        normalize() using {
-            second->end == at(f2, r2.end);
-            at(f2, r2.end) == at(z2, second->end);
-        };
+        rewrite(second->end, at(f2, r2.end)); known();
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity and (k < at(z1, first->start) or at(z1, first->end) <= k) implies arena->occupied[k] == 0 } by {
         intro();
@@ -4924,10 +4876,7 @@ int32 arena_pipeline(
     mark f3;
     let { after: g3 } = step(arena_free, { r: r1, st: g2 });
     have first->arena == arena by {
-        normalize() using {
-            first->arena == at(f3, first->arena);
-            at(f3, first->arena) == arena;
-        };
+        rewrite(first->arena, at(f3, first->arena)); known();
     }
     have first->arena->capacity == at(f3, first->arena->capacity) by {
         known();
@@ -4952,10 +4901,7 @@ int32 arena_pipeline(
         known();
     }
     have first->start == at(z1, first->start) by {
-        normalize() using {
-            first->start == at(f3, r1.start);
-            at(f3, r1.start) == at(z1, first->start);
-        };
+        rewrite(first->start, at(f3, r1.start)); known();
     }
     have first->end == at(f3, r1.end) by {
         known();
@@ -4964,10 +4910,7 @@ int32 arena_pipeline(
         known();
     }
     have first->end == at(z1, first->end) by {
-        normalize() using {
-            first->end == at(f3, r1.end);
-            at(f3, r1.end) == at(z1, first->end);
-        };
+        rewrite(first->end, at(f3, r1.end)); known();
     }
     have forall (k: int32) { 0 <= k and k < arena->capacity implies arena->occupied[k] == 0 } by {
         intro();
@@ -5240,9 +5183,7 @@ int32 arena_pipeline(
             known();
         }
         have at(z3, combined->start) == r3.start by {
-            normalize() using {
-                r3.start == at(z3, combined->start);
-            };
+            known();
         }
         have to_integer((at(z3, combined->start) + 4)) == (to_integer(at(z3, combined->start)) + 4) by {
             have -2147483648 <= (to_integer(at(z3, combined->start)) + 4) by {
@@ -5261,11 +5202,7 @@ int32 arena_pipeline(
             have to_integer(at(z3, combined->end)) == (to_integer(at(z3, combined->start)) + 4); known();
         }
         have to_integer(at(z3, combined->end)) == (to_integer(at(z3, combined->start)) + 4) by {
-            normalize() using {
-                to_integer(at(z3, combined->end)) == to_integer((at(z3, combined->start) + 4));
-                to_integer((at(z3, combined->start) + 4)) == (to_integer(at(z3, combined->start)) +
-                    4);
-            };
+            rewrite(to_integer(at(z3, combined->end)), to_integer((at(z3, combined->start) + 4))); known();
         }
         have to_integer(r3.end) == (to_integer(r3.start) + 4) by {
             normalize() using {

@@ -174,7 +174,7 @@ fn generic_pointer_parameters_subrange_and_expansion() {
 fn generic_pointer_parameters_require_consistent_element_types() {
     let source = r#"
         theorem same<T>(p: T*, q: T*) {
-            ensures true by { normalize(); }
+            ensures true by { known(); }
         }
         theorem wrong(p: int32*, q: uint8*) {
             ensures true by {

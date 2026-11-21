@@ -36,7 +36,7 @@ function zlib_byte_integer(value: uint8) -> Integer {
 }
 theorem zlib_byte_integer_identity(value: uint8) {
  ensures zlib_byte_integer(value) == to_integer(value as int32) by {
-  unfold(zlib_byte_integer(value)); normalize();
+  unfold(zlib_byte_integer(value)); known();
  }
 }
 theorem zlib_prefix_append(bytes: uint8[], total: uint64, remaining: uint64) {

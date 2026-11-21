@@ -60,7 +60,7 @@ theorem rb_subtree_size_rotate_left(node: struct rb_node*, parent: struct rb_nod
         unfold(rb_subtree_size(RbTree::Node(node, pivot, color, a, rb_reparent(b, node))));
         apply(rb_subtree_size_reparent(b, node));
         rewrite(rb_subtree_size(rb_reparent(b, node)), rb_subtree_size(b));
-        normalize();
+        known();
     }
 }
 
@@ -84,6 +84,6 @@ theorem rb_subtree_size_rotate_right(node: struct rb_node*, parent: struct rb_no
         unfold(rb_subtree_size(RbTree::Node(node, pivot, color, rb_reparent(b, node), c)));
         apply(rb_subtree_size_reparent(b, node));
         rewrite(rb_subtree_size(rb_reparent(b, node)), rb_subtree_size(b));
-        normalize();
+        known();
     }
 }

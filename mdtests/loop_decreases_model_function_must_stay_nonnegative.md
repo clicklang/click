@@ -59,7 +59,7 @@ void countdown(int32 n) {
                     have chain_len(c.model) == chain_len(rest_model) + 1 by {
                         rewrite(c.model, Chain::Link(rest_model));
                         unfold(chain_len(Chain::Link(rest_model)));
-                        normalize();
+                        known();
                     }
                     have chain_len(rest_model) - 5 < chain_len(c.model) - 5 by {
                         solve() using {

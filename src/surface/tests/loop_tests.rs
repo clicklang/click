@@ -2307,7 +2307,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
         } by {
             have marker() != Marker::Inactive by {
                 unfold(marker());
-                normalize();
+                known();
             }
             match marker() {
                 Marker::Active => {
@@ -2320,7 +2320,7 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
                         maintain by {
                             have marker() != Marker::Inactive by {
                                 unfold(marker());
-                                normalize();
+                                known();
                             }
                             match marker() {
                                 Marker::Active => {

@@ -2063,7 +2063,7 @@ theorem ctx_consistent_left_frame(identity: struct rb_node*, grandparent: struct
         unfold(ctx_consistent(
             Context::Left(identity, grandparent, color, sibling_model, up_model),
             sub, root_parent));
-        normalize() using {
+        solve() using {
             rb_parent_consistent(sub, identity) == 1;
             rb_parent_consistent(sibling_model, identity) == 1;
             ctx_consistent(up_model,

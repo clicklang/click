@@ -110,7 +110,7 @@ function plug(ctx: Context, sub: HeapTree) -> HeapTree
 theorem plug_top_frame(sub: HeapTree) {
     ensures plug(Context::Top, sub) == sub by {
         unfold(plug(Context::Top, sub));
-        normalize();
+        known();
     }
 }
 
@@ -119,7 +119,7 @@ theorem plug_left_frame(parent: struct tree_node*, value: int, sibling: HeapTree
     ensures plug(Context::Left(parent, value, sibling, up), sub)
         == plug(up, HeapTree::Node(parent, value, sub, sibling)) by {
         unfold(plug(Context::Left(parent, value, sibling, up), sub));
-        normalize();
+        known();
     }
 }
 
@@ -128,7 +128,7 @@ theorem plug_right_frame(parent: struct tree_node*, value: int, sibling: HeapTre
     ensures plug(Context::Right(parent, value, sibling, up), sub)
         == plug(up, HeapTree::Node(parent, value, sibling, sub)) by {
         unfold(plug(Context::Right(parent, value, sibling, up), sub));
-        normalize();
+        known();
     }
 }
 
@@ -153,7 +153,7 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
     have plug(ctx.model, t.model) == old(t.model) by {
         rewrite(ctx.model, Context::Top);
         unfold(plug(Context::Top, t.model));
-        normalize();
+        known();
     }
     loop {
         owns ctx: ctx_at(root);

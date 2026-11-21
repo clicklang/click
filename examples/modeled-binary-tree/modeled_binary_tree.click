@@ -475,7 +475,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
             }
             have not(address(node) == address(target)) by {
                 rewrite(node, root);
-                normalize() using { address(root) != address(target); };
+                known();
             }
             let { result: found_left } = step(tree_contains, { t: l });
             branch {
@@ -484,7 +484,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                     have heap_member(left_model, target) by {
                         have left_model == l.model by {
                             rewrite(l.model, left_model);
-                            normalize();
+                            known();
                         }
                         have heap_member(l.model, target) != false;
                         rewrite(left_model, l.model);
@@ -510,7 +510,11 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                     HeapTree::Node(node, value, left_model, right_model), target));
                 rewrite(heap_member(left_model, target), false);
                 rewrite(result, heap_member(right_model, target) as int32);
-                normalize() using { not(address(node) == address(target)); };
+                have (if address(node) == address(target) { true } else { (if false == true { true } else { heap_member(right_model, target) }) }) == (if false == true { true } else { heap_member(right_model, target) }) by {
+                    known();
+                }
+                rewrite((if address(node) == address(target) { true } else { (if false == true { true } else { heap_member(right_model, target) }) }), (if false == true { true } else { heap_member(right_model, target) }));
+                known();
             }
             solve();
         },

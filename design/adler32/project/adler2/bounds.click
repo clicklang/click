@@ -102,11 +102,11 @@ theorem adler_lane_ceiling_5552(n: Integer) {
 
 theorem adler_lane_initial_ceiling() {
     ensures adler_lane_a_ceiling(0) == 65520 by {
-        unfold(adler_lane_a_ceiling(0)); normalize();
+        unfold(adler_lane_a_ceiling(0)); known();
     }
     ensures adler_lane_b_ceiling(0) == 65520 by {
         unfold(adler_lane_b_ceiling(0));
-        unfold(adler_lane_triangle(0)); normalize();
+        unfold(adler_lane_triangle(0)); known();
     }
 }
 
@@ -147,16 +147,16 @@ theorem adler_lane_step_b(n: Integer, a: Integer, b: Integer, byte: Integer) {
 
 theorem adler_lane_limit_is_tight() {
     ensures adler_lane_b_ceiling(5552) == 4294690200 by {
-        unfold(adler_lane_b_ceiling(5552)); unfold(adler_lane_triangle(5552)); normalize();
+        unfold(adler_lane_b_ceiling(5552)); unfold(adler_lane_triangle(5552)); known();
     }
     ensures adler_lane_b_ceiling(5552) <= 4294967295 by {
-        unfold(adler_lane_b_ceiling(5552)); unfold(adler_lane_triangle(5552)); normalize();
+        unfold(adler_lane_b_ceiling(5552)); unfold(adler_lane_triangle(5552)); known();
     }
     ensures adler_lane_b_ceiling(5553) == 4296171735 by {
-        unfold(adler_lane_b_ceiling(5553)); unfold(adler_lane_triangle(5553)); normalize();
+        unfold(adler_lane_b_ceiling(5553)); unfold(adler_lane_triangle(5553)); known();
     }
     ensures adler_lane_b_ceiling(5553) > 4294967295 by {
-        unfold(adler_lane_b_ceiling(5553)); unfold(adler_lane_triangle(5553)); normalize();
+        unfold(adler_lane_b_ceiling(5553)); unfold(adler_lane_triangle(5553)); known();
     }
 }
 theorem adler_lane_a_invariant_step(n: Integer, a: Integer, byte: Integer) {

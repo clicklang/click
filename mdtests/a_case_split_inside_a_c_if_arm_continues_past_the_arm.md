@@ -65,7 +65,7 @@ int32 read_back(int32 u, int32 c) {
             have loc[0] == at(before_store, loc[0]) by {
                 preserve(memory(loc[0]), statement(4));
             }
-            have loc[0] == 3 by { normalize() using { loc[0] == at(before_store, loc[0]); at(before_store, loc[0]) == 3; }; }
+            have loc[0] == 3 by { rewrite(loc[0], at(before_store, loc[0])); known(); }
             known();
         }
     }

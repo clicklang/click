@@ -539,7 +539,7 @@ fn no_premise_smart_step_searches_directly_on_proof() {
                 ensures result == 0;
             } by {
                 step();
-                normalize();
+                known();
             }
         "#;
 
@@ -584,7 +584,7 @@ fn scalar_root_facts_do_not_force_smart_step_planning() {
                 ensures result == 0;
             } by {
                 step();
-                normalize();
+                known();
             }
         "#;
 
@@ -630,7 +630,7 @@ fn fact_free_linear_smart_steps_search_directly_on_proof() {
             } by {
                 step();
                 step();
-                normalize();
+                known();
             }
         "#;
 
@@ -686,7 +686,7 @@ fn local_assignment_smart_step_selects_only_local_surface_dependencies() {
             } by {
                 step();
                 step();
-                normalize();
+                known();
             }
         "#;
 
@@ -790,7 +790,7 @@ fn linear_execute_retains_its_checked_execution_proof() {
                 ensures result == 0;
             } by {
                 step_until(function.exit);
-                normalize();
+                known();
             }
         "#;
 
@@ -826,7 +826,7 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
             } by {
                 step_until(region(2).entry);
                 step_until(function.exit);
-                normalize();
+                known();
             }
         "#;
 

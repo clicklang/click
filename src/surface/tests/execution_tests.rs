@@ -19,7 +19,7 @@ fn generic_result_type_fixture() -> (&'static str, &'static str) {
             step_until(function.exit);
             have select(p, result) == p by {
                 unfold(select(p, result));
-                normalize();
+                known();
             }
             solve();
         }

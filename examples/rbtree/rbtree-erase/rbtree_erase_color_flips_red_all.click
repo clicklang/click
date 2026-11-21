@@ -534,7 +534,7 @@ p: struct rb_node*) {
             unfold(ctx_reroot(
             Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p));
             rewrite(p, cid);
-            normalize();
+            known();
         } else {
             have ctx_node_is(
             Context::Left(cid, grandparent, ccolor, sibling_model, up_model), p) != 1 by {
@@ -640,7 +640,7 @@ theorem aligned_parent_word_from_bit(p: void*, bit: int32) {
     requires 0 <= bit;
     requires bit <= 1;
     ensures (address(p) | bit) == address(p) + bit by {
-        if bit == 0 { rewrite(bit, 0); normalize(); } else {
+        if bit == 0 { rewrite(bit, 0); known(); } else {
             have 1 <= bit by { solve() using { 0 <= bit; not(bit == 0); }; }
             have bit == 1 by { solve() using { 1 <= bit; bit <= 1; }; }
             rewrite(bit, 1);

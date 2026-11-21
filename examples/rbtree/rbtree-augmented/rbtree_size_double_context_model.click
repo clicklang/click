@@ -16,7 +16,7 @@ theorem sized_double_context_counts(ctx: SizedContext, g: struct rb_node*, p: st
         have sized_value(sized_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle)) == gv by {
             unfold(sized_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle));
             unfold(sized_value(SizedTree::Node(node, above, Color::Black, gv, SizedTree::Node(p, node, Color::Red, pc, far, sized_reparent(ml, p)), SizedTree::Node(g, node, Color::Red, gc, sized_reparent(mr, g), uncle))));
-            normalize();
+            known();
         }
         apply(sized_context_early_stop(ctx, sized_double_cached_after(g, p, node, above, gv, pc, gc, far, ml, mr, uncle), gv));
         known();

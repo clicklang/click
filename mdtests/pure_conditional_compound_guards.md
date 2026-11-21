@@ -13,14 +13,18 @@ function negated_value(x: uint64, y: uint64) -> int32 {
 theorem or_left(x: uint64, y: uint64) {
     requires x == 0;
     ensures or_value(x, y) == 7 by {
-        unfold(or_value(x, y)); normalize() using { x == 0; };
+        unfold(or_value(x, y));
+        rewrite(x, 0);
+        known();
     }
 }
 theorem or_right(x: uint64, y: uint64) {
     requires not(x == 0);
     requires y == 1;
     ensures or_value(x, y) == 7 by {
-        unfold(or_value(x, y)); normalize() using { not(x == 0); y == 1; };
+        unfold(or_value(x, y));
+        rewrite(y, 1);
+        known();
     }
 }
 theorem or_neither(x: uint64, y: uint64) {
@@ -46,7 +50,9 @@ theorem and_left_false(x: uint64, y: uint64) {
 theorem and_right_false(x: uint64, y: uint64) {
     requires y == 1;
     ensures and_value(x, y) == 9 by {
-        unfold(and_value(x, y)); normalize() using { y == 1; };
+        unfold(and_value(x, y));
+        rewrite(y, 1);
+        known();
     }
 }
 theorem negated_neither(x: uint64, y: uint64) {

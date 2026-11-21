@@ -1985,7 +1985,7 @@ fn numeric_cast_certificates_keep_integer_default_arithmetic_when_printed() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_03")]
 fn bundle_and_project_expansion_check_the_selected_pure_theorem() {
     let source = r#"theorem selected(x: int32) {
-    ensures x == x by { normalize(); }
+    ensures x == x by { known(); }
 }
 theorem unrelated() {
     ensures 0 == 1 by { normalize(); }
@@ -4264,7 +4264,7 @@ theorem first_integer_unfolds(values: int32[]) {
     requires defined(values[0]);
     ensures first_integer(values) == to_integer(values[0]) by {
         unfold(first_integer(values));
-        normalize();
+        known();
     }
 }
 "#;
@@ -4430,14 +4430,14 @@ theorem machine_range_unfolds(n: int32) {
     requires defined(n + 1);
     ensures sum_machine_range(n) == (0..(n + 1)).fold(0, |acc, k| { acc + to_integer(k) }) by {
         unfold(sum_machine_range(n));
-        normalize();
+        known();
     }
 }
 
 theorem integer_range_unfolds(lo: Integer, hi: Integer) {
     ensures sum_integer_range(lo, hi) == (lo..hi).fold(0, |acc, k| { acc + k }) by {
         unfold(sum_integer_range(lo, hi));
-        normalize();
+        known();
     }
 }
 
@@ -4445,7 +4445,7 @@ theorem integer_range_captured_unfolds(lo: Integer, hi: Integer, z: Integer) {
     ensures sum_integer_range_captured(lo, hi, z) ==
         (lo + 1..hi + 1).fold(z, |acc, k| { acc + z + k }) by {
         unfold(sum_integer_range_captured(lo, hi, z));
-        normalize();
+        known();
     }
 }
 "#;
@@ -4491,7 +4491,7 @@ theorem fold_match_unfolds(value: Integer) {
     ensures fold_match(FoldInput::Wrapped(value)) ==
         (0..1).fold(0, |acc, k| { acc + value }) by {
         unfold(fold_match(FoldInput::Wrapped(value)));
-        normalize();
+        known();
     }
 }
 
@@ -4499,7 +4499,7 @@ theorem match_fold_unfolds() {
     ensures match_fold(FoldInput::Empty) ==
         (0..1).fold(0, |acc, k| { acc + to_integer(k) }) by {
         unfold(match_fold(FoldInput::Empty));
-        normalize();
+        known();
     }
 }
 "#;
@@ -6649,7 +6649,7 @@ fn post_execution_smart_have_applies_a_theorem_to_result_through_proof() {
     let click_source = r#"
             theorem int32_reflexive(value: int32) {
                 ensures value == value by {
-                    normalize();
+                    known();
                 }
             }
 
@@ -6715,8 +6715,8 @@ fn selected_post_execution_capture_ignores_nested_certificate_indices() {
                 ensures data[0] == value;
             } by {
                 step_until(function.exit);
-                have value == value by { normalize(); }
-                have result == value by { normalize(); }
+                have value == value by { known(); }
+                have result == value by { known(); }
                 have data[0] == value by solve();
                 solve();
             }
@@ -6753,7 +6753,7 @@ fn post_execution_transport_observes_a_preceding_have() {
             } by {
                 step_until(function.exit);
                 have result == x by {
-                    normalize();
+                    known();
                 }
                 transport(result == x, result == x) using {
                     result == x;
@@ -6782,7 +6782,7 @@ fn selected_post_execution_transport_emits_an_explicit_certificate() {
             } by {
                 step_until(function.exit);
                 have result == x by {
-                    normalize();
+                    known();
                 }
                 transport(result == x, result == x);
                 known();
@@ -6862,7 +6862,7 @@ fn grouped_post_execution_closers_use_independent_checked_proofs() {
         } by {
             step_until(function.exit);
             known();
-            normalize();
+            known();
         }
     "#;
 
@@ -6887,7 +6887,7 @@ fn post_execution_rewrite_retains_its_checked_proof_step() {
         } by {
             step_until(function.exit);
             rewrite(x, 0);
-            normalize();
+            known();
         }
     "#;
 
@@ -12234,7 +12234,7 @@ fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
         } by {
             step_until(function.exit);
             rewrite(result, 9);
-            normalize();
+            known();
         }
     "#;
     let sources = [("apply_write.c", apply_c), ("rewrite_write.c", rewrite_c)];
@@ -12331,7 +12331,7 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
         } by {
             step_until(function.exit);
             unfold(is_nine(result));
-            normalize();
+            known();
         }
     "#;
     let sources = [("write_first.c", c_source)];
@@ -12498,7 +12498,7 @@ fn linear_open_have_retains_the_selected_theorem_application() {
     let click_source = r#"
         theorem int32_reflexive(value: int32) {
             ensures value == value by {
-                normalize();
+                known();
             }
         }
 
@@ -12809,7 +12809,7 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
                 false => {
                     step();
                     have value == old(p[0]) or value == 0 by {
-                        have value == 0 by { normalize(); }
+                        have value == 0 by { known(); }
                         known();
                     }
                 }
@@ -13940,7 +13940,7 @@ fn branch_arms_retain_nested_have_proofs() {
     let click_source = r#"
         theorem int32_reflexive(value: int32) {
             ensures value == value by {
-                normalize();
+                known();
             }
         }
 
@@ -18249,7 +18249,7 @@ theorem mixed_integer_atoms(x: int32, n: Nat) {
     ensures mixed_clause: forall (z: Integer) { x == x and combine(n, z) == combine(n, z) } by { solve(); }
     ensures witnessed: exists (z: Integer) { z == to_integer(x) } by {
         witness(to_integer(x));
-        normalize();
+        known();
     }
 }
 "#;
@@ -18798,7 +18798,7 @@ int spin(int n) {
         invariant i <= n;
 
         initialize by {
-            have n + 0 == n by { normalize(); }
+            have n + 0 == n by { known(); }
             solve();
         }
         maintain by {
@@ -23399,7 +23399,7 @@ fn scoped_conversion_requirements_expand_before_the_have() {
                 have forall (k: int32) { k < j implies to_uint8(to_integer(j)) == to_uint8(to_integer(j)) } by {
                     intro(); intro(); solve();
                 }
-                normalize();
+                known();
             }
         }
     "#;
@@ -23438,7 +23438,7 @@ fn theorem_entry_type_bounds_discharge_without_search() {
         theorem entry_conversion() {
             ensures forall (k: uint8) {
                 to_uint8(to_integer(k)) == to_uint8(to_integer(k))
-            } by { intro(); normalize(); }
+            } by { intro(); known(); }
         }
     "#;
     without_implicit_solve(|| verify_click_theorems(source))
@@ -24152,14 +24152,14 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
                 all {
                     a == 0 => {
                         have a == 0 by {
-                            rewrite(a, b); rewrite(b, 0); normalize();
+                            rewrite(a, b); rewrite(b, 0); known();
                         }
                         known();
                     }
                     (a == 0 implies a + 1 == 1) => {
                         intro();
                         have a == 0 by { known(); }
-                        have a + 1 == 1 by { rewrite(a, 0); normalize(); }
+                        have a + 1 == 1 by { rewrite(a, 0); known(); }
                         known();
                     }
                 }
@@ -25395,7 +25395,7 @@ fn rewritten_concrete_range_fold_expands_and_replays() {
             requires n == 1;
             ensures (0..n).fold(0, |acc, item| { acc }) == 0 by {
                 rewrite(n, 1);
-                normalize();
+                known();
             }
         }
     "#;
