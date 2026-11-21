@@ -180,7 +180,16 @@ impl adler2::Adler32 {
      step_until(assignment(b, 6).entry); step();
      have b == at(tail_1_b, b) + at(tail_1_b, a);
      have b == ((393126u32 + (1u32 + old((bytes[0] as u32)))) + ((1u32 + old((bytes[0] as u32))) + old((bytes[1] as u32))));
-     have to_integer(b) <= 393893;
+     // The sum's Integer value, from the checked addition, and its bound.
+     have to_integer(b) == at(tail_1_b, to_integer(b)) + at(tail_1_b, to_integer(a)) by {
+      rewrite(b, at(tail_1_b, b) + at(tail_1_b, a));
+      known();
+     }
+     have to_integer(b) <= 393893 by solve() using {
+      to_integer(b) == at(tail_1_b, to_integer(b)) + at(tail_1_b, to_integer(a));
+      at(tail_1_b, to_integer(b)) <= 393382;
+      at(tail_1_b, to_integer(a)) <= 511;
+     };
      step(); step();
      have loop(5).iter.len() == 1u64;
      have loop(5).iter.as_slice() == old(bytes) + 2u64;
