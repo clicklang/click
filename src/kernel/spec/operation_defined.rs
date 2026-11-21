@@ -10,7 +10,8 @@
 //! root operation's own domain, the same kernel conditions the whole
 //! expression's evaluation owes for that operation.
 //!
-//! `let` and loop entry are transparent. A conversion to its operand's own
+//! `let` and loop entry are transparent, and a `let` whose body is its own
+//! name is its value's operation. A conversion to its operand's own
 //! type is transparent; any other conversion is the operation. `if` claims
 //! its selected branch's domain under its condition, as `and`, `or` and
 //! `implies` read their right sides. A form with no operand expressions is
@@ -26,6 +27,9 @@ struct DefinedPath {
     obligations: Vec<ProofObligation>,
 }
 
+// Keep this lowering's paths and operand states out of the recursive
+// proposition lowerer's frame.
+#[inline(never)]
 pub(super) fn lower(
     scope: SpecScope<'_>,
     expression: &SpecExpression,
@@ -70,6 +74,14 @@ fn paths(
                 assumptions,
                 budget,
             )
+        }
+        // A `let` whose body is its own name, possibly under conversions, as
+        // a Click function or lambda application binds its result, is those
+        // conversions of its value: its value's operation is the root.
+        SpecExpression::Let { name, value, body }
+            if let Some(result) = substitute_bound_result(name, value, body) =>
+        {
+            paths(scope, &result, assumptions, budget)
         }
         SpecExpression::Let { name, value, body } => {
             let mut result = Vec::new();
@@ -127,6 +139,29 @@ fn paths(
             budget,
         ),
         _ => operation(scope, expression, assumptions, budget),
+    }
+}
+
+/// `body` with `value` in place of `name`, when `body` is `name` under
+/// conversions only.
+fn substitute_bound_result(
+    name: &BindingName,
+    value: &SpecExpression,
+    body: &SpecExpression,
+) -> Option<SpecExpression> {
+    match body {
+        SpecExpression::ProgramExpression(ProgramExpression::Variable(bound)) if bound == name => {
+            Some(value.clone())
+        }
+        SpecExpression::Cast(inner, target) => Some(SpecExpression::Cast(
+            Box::new(substitute_bound_result(name, value, inner)?),
+            *target,
+        )),
+        SpecExpression::PointerCoercion(inner, target) => Some(SpecExpression::PointerCoercion(
+            Box::new(substitute_bound_result(name, value, inner)?),
+            *target,
+        )),
+        _ => None,
     }
 }
 

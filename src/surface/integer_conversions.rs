@@ -754,13 +754,21 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
 
     #[test]
     fn forward_conversion_keeps_intermediate_overflow_obligations() {
-        let source = "theorem nested(x: int32) { requires defined((x + 1) + 1); ensures to_integer((x + 1) + 1) == to_integer((x + 1) + 1) by solve(); }";
+        // `defined((x + 1) + 1)` claims the outer addition; the inner one is
+        // its own conjunct.
+        let source = "theorem nested(x: int32) { requires defined(x + 1) and defined((x + 1) + 1); ensures to_integer((x + 1) + 1) == to_integer((x + 1) + 1) by solve(); }";
         verify_c_sources(source, &[]).unwrap();
-        let missing = source.replace("requires defined((x + 1) + 1);", "requires defined(x + 1);");
+        let missing = source.replace(
+            "requires defined(x + 1) and defined((x + 1) + 1);",
+            "requires defined(x + 1);",
+        );
         assert!(verify_c_sources(&missing, &[]).is_err());
         let cancelled = "theorem cancelled(x: int32) { ensures to_integer((x + 1) - 1) == to_integer((x + 1) - 1) by solve(); }";
         assert!(verify_c_sources(cancelled, &[]).is_err());
-        let bounded = cancelled.replace("{ ensures", "{ requires defined((x + 1) - 1); ensures");
+        let bounded = cancelled.replace(
+            "{ ensures",
+            "{ requires defined(x + 1) and defined((x + 1) - 1); ensures",
+        );
         verify_c_sources(&bounded, &[]).unwrap();
     }
 

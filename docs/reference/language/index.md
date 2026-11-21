@@ -1813,7 +1813,10 @@ the right side of `and` is read only where its left side holds
 (`mdtests/defined_claims_its_root_operation_with_operands_as_values.md`).
 
 A form without a single root operation reads through to one. `let` binds its
-value, whose domain is owed, and claims its body's operation. A cast to its
+value, whose domain is owed, and claims its body's operation; a `let` whose
+body is its bound name, as a Click function or lambda application binds its
+result, claims that value's operation, so `defined(read(1))` for
+`read = |i: int32| -> int32 { p[i] }` claims the read of `p[1]`. A cast to its
 operand's own type claims the operand's operation; any other conversion is the
 operation. `if c { x } else { y }` claims
 `(c implies defined(x)) and (not c implies defined(y))`. A form with no
