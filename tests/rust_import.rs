@@ -3648,6 +3648,45 @@ fn charon_a_nested_call_result_is_named_by_its_call() {
     assert!(rendered.contains("1 time(s)"), "{rendered}");
 }
 
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_match_can_split_a_call_result_without_a_local() {
+    let p = Project::new(
+        "pub enum Choice { Some(u32), None }
+         fn choose(x: u32) -> Choice {
+             if x == 0 { Choice::None } else { Choice::Some(x) }
+         }
+         pub fn unwrap_value(x: u32) -> u32 {
+             match choose(x) { Choice::Some(n) => n, Choice::None => 0 }
+         }",
+    );
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn choose(x: u32) -> Choice {
+    ensures result == (if x == 0u32 { Choice::None } else { Choice::Some(x) });
+}
+fn unwrap_value(x: u32) -> u32 { ensures result == x; } by {
+    step_until(statement(0).call(choose, 0).entry);
+    step();
+    match statement(0).call(choose, 0).result {
+        Choice::Some(payload) => { step_until(function.exit); solve(); },
+        Choice::None => { step_until(function.exit); solve(); },
+    }
+}
+"#;
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "unwrap_value"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
+}
+
 // A Rust `Result<u32, u8>` is Click's `Result<u32, u8>` in a contract, as an
 // `Option` is: a function returning one, a `match` and an `if let` on one,
 // and a caller composing two through their contracts. `r?` returns `r`'s

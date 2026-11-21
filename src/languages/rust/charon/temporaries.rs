@@ -2430,7 +2430,7 @@ pub(super) fn call_steps(
         let (function, destination, target) = (function.clone(), destination.clone(), *target);
         // A result its successor tests for a variant, then reads once in the
         // arm that variant takes, as a `for` loop's `match` on `next()` does:
-        // the test keeps the result and the arm's read ends it.
+        // the test keeps the result and the payload read ends it.
         if temporaries.contains(&destination)
             && assigned.get(&destination) == Some(&1)
             && mentions.get(&destination) == Some(&2)
@@ -2445,12 +2445,13 @@ pub(super) fn call_steps(
                 function: function.clone(),
                 keeps,
             };
-            if let T::If {
-                condition: E::VariantIs { value, .. },
-                ..
-            } = &mut blocks[target].terminator
-            {
-                **value = result(true);
+            match &mut blocks[target].terminator {
+                T::If {
+                    condition: E::VariantIs { value, .. },
+                    ..
+                } => **value = result(true),
+                T::Switch { scrutinee, .. } => *scrutinee = result(true),
+                _ => unreachable!("selected a variant test"),
             }
             if let S::Assign {
                 value: E::EnumField { base, .. },
@@ -2537,38 +2538,55 @@ fn tested_then_read(
         )
     };
     let block = blocks.get(dispatch)?;
-    let T::If {
-        condition: E::VariantIs { value, variant },
-        then_target,
-        ..
-    } = &block.terminator
-    else {
-        return None;
-    };
-    if !matches!(value.as_ref(), E::Local { name } if name == destination)
-        || !block.statements.iter().all(transparent)
-        || predecessors.get(*then_target) != Some(&1)
-    {
+    if !block.statements.iter().all(transparent) {
         return None;
     }
-    let arm = blocks.get(*then_target)?;
-    let position = arm
-        .statements
-        .iter()
-        .position(|statement| !transparent(statement))?;
-    let S::Assign {
-        value: E::EnumField {
-            base,
-            variant: read,
+    let payload_read = |arm: usize, variant: &str| {
+        if predecessors.get(arm) != Some(&1) {
+            return None;
+        }
+        let arm_block = blocks.get(arm)?;
+        let position = arm_block
+            .statements
+            .iter()
+            .position(|statement| !transparent(statement))?;
+        let S::Assign {
+            value:
+                E::EnumField {
+                    base,
+                    variant: read,
+                    ..
+                },
             ..
-        },
-        ..
-    } = &arm.statements[position]
-    else {
-        return None;
+        } = &arm_block.statements[position]
+        else {
+            return None;
+        };
+        (matches!(base.as_ref(), E::Local { name } if name == destination) && read == variant)
+            .then_some((arm, position))
     };
-    (matches!(base.as_ref(), E::Local { name } if name == destination) && read == variant)
-        .then_some((*then_target, position))
+    match &block.terminator {
+        T::If {
+            condition: E::VariantIs { value, variant },
+            then_target,
+            ..
+        } if matches!(value.as_ref(), E::Local { name } if name == destination) => {
+            payload_read(*then_target, variant)
+        }
+        T::Switch {
+            scrutinee: E::Local { name },
+            cases,
+            otherwise: None,
+        } if name == destination && cases.len() == 2 && cases[0].target != cases[1].target => {
+            cases.iter().find_map(|case| {
+                let super::super::schema::SwitchLabel::Variant { name } = &case.label else {
+                    return None;
+                };
+                payload_read(case.target, name)
+            })
+        }
+        _ => None,
+    }
 }
 
 fn successors(terminator: &T) -> Vec<usize> {
