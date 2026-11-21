@@ -1248,7 +1248,7 @@ struct Context<'a> {
     /// The binding of each local whose source name is bound more than
     /// once, by its MIR key; every other local is bound by its name.
     bindings: BTreeMap<String, BindingName>,
-    /// Expression values retained until their last read in a straight-line MIR fragment.
+    /// Expression values retained until their last read.
     scalar_operands: BTreeMap<String, (u32, crate::languages::rust::borrow_frontiers::MirPoint)>,
     /// Where each of those is declared: its binding and source statement
     /// (`Function::sites`), so `statement(i).local(word)` names it.

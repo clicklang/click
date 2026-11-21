@@ -4813,6 +4813,48 @@ fn front(bytes: &[u8]) -> usize {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_if_expression_carries_its_scalar_value_without_a_local() {
+    let p = Project::new("pub fn joined_value(x: u32) -> u32 { (if x == 0 { 3 } else { x }) % 2 }");
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn joined_value(x: u32) -> u32 {
+    ensures result == (if x == 0u32 { 1u32 } else { x % 2u32 });
+} by {
+    if x == 0u32 {
+        step_until(function.exit);
+        have statement(0).result == 3u32 by solve();
+        solve();
+    } else {
+        step_until(function.exit);
+        have statement(0).result == x by solve();
+        solve();
+    }
+}
+"#;
+    let file = p.root.join("borrow.click");
+    fs::write(&file, sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "joined_value"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
+
+    assert_cli(
+        &p,
+        &["expand", "--claim", "joined_value.contract", "--in-place"],
+    );
+    let expanded = fs::read_to_string(file).unwrap();
+    assert!(!expanded.contains("__rust_mir_"), "{expanded}");
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_split_at_endpoints_and_full_width_lengths_verify() {
     let p = Project::new(
