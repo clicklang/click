@@ -241,6 +241,30 @@ fn bounded_observation_identities_expand_without_normalize() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: three copy expansions and cold replays"]
+fn copied_scalar_and_aggregate_values_expand_without_normalize() {
+    for (fixture, label) in [
+        ("struct_by_value_scalar_copy", "bump.contract"),
+        ("struct_union_by_value_copy", "copy_packet.contract"),
+        (
+            "struct_union_by_value_copy",
+            "copy_packet_pointer.ensures_0",
+        ),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{label}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies four computed offset and projection proofs"]
 fn computed_pointer_offsets_expand_without_normalize() {
     for (fixture, label) in [

@@ -1658,10 +1658,11 @@ A leaf also closes by goal-local computation: a constant truth, exact
 reflexivity (excluding IEEE floating-point comparisons), equality or inequality
 of literal integers, cancellation and regrouping of additive machine or
 `Integer` expressions, and distinct algebraic constructors. Exact `Integer`
-order comparisons close when their symbolic terms cancel. Calls, reads, folds,
-and symbolic matches are opaque operands; their identical occurrences may
-cancel, but this check never unfolds a call or resolves a read. It does not
-invoke the general atomic prover.
+order comparisons close when their symbolic terms cancel. Identical calls,
+reads, folds, and symbolic matches may cancel as opaque operands. An equality
+with an `int32` union member can also use the typed value stored at its exact
+address and memory state. A by-value copy can store the source read itself
+as that value. The check uses one typed cell lookup per operand.
 
 A machine-valued range fold whose step returns its accumulator equals its
 initial value. This check reads only the accumulator binding and the initial

@@ -1,9 +1,8 @@
 //! Goal-local computation for a simple proof leaf.
 //!
-//! The `computes_leaf` entry point receives no fact context. Reads, calls,
-//! folds with possible iterations, and symbolic matches remain opaque;
-//! it has no memory resolution, unfolding, or atomic-prover fallback. Legacy
-//! normalization shares arithmetic below but supplies its own atom key.
+//! The `computes_leaf` entry point uses only the goal, including exact
+//! stored views of typed union cells. Legacy normalization shares arithmetic
+//! below but supplies its own atom key.
 
 use crate::kernel::machine_integer::bounds::positive_literal_remainder_divisor;
 use crate::kernel::*;
@@ -270,6 +269,22 @@ pub(crate) fn trivial_condition_value(condition: &ConditionTerm) -> Option<bool>
     }
 }
 
+/// A by-value copy can hold the source member as its exact typed view.
+/// Read that immutable entry without resolving aliases or earlier writes.
+fn stored_int32_union_member(read: &MachineTerm) -> Option<&MachineTerm> {
+    let MachineTerm::MemoryLoad(point, pointer, LoadKind::Int32) = read else {
+        return None;
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    let ProgramValue::Int32(value) = point
+        .memory()
+        .indexed_union_value(pointer, ProgramType::Int32)?
+    else {
+        return None;
+    };
+    Some(value)
+}
+
 fn condition_value(condition: &ConditionTerm) -> Option<bool> {
     match condition {
         ConditionTerm::Constant(value) => Some(*value),
@@ -322,7 +337,9 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
         } => {
             if *format == MachineIntegerType::Int32
                 && *relation == CompareRelation::Equal
-                && unchanged_machine_folds_equal(left, right)
+                && (unchanged_machine_folds_equal(left, right)
+                    || stored_int32_union_member(left) == Some(right)
+                    || stored_int32_union_member(right) == Some(left))
             {
                 return Some(true);
             }
@@ -1176,6 +1193,62 @@ fn integer_affine_difference(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_union_copy_checks_only_the_selected_typed_views() {
+        let _session = VerificationSession::enter();
+        let source = Address {
+            base: "copy-source".into(),
+            offset: AddressOffset::Constant(4),
+        };
+        let destination = Address {
+            base: "copy-destination".into(),
+            offset: AddressOffset::Constant(4),
+        };
+        let read = |memory: SymbolicMemory, pointer: &Address| {
+            MachineTerm::MemoryLoad(
+                ProgramPoint::at(&crate::kernel::intern_memory(memory)),
+                Box::new(pointer.clone()),
+                LoadKind::Int32,
+            )
+        };
+        let empty = SymbolicMemory::new();
+        let copied = read(empty.clone(), &source);
+        let different = read(empty.clone(), &source.offset_by_bytes(4));
+        let check = |memory, expected: &MachineTerm| {
+            let condition = ConditionTerm::equal(read(memory, &destination), expected.clone());
+            let goal = Proposition::condition_is(condition, true);
+            crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal))
+        };
+        let samples = [0, 32, 128].map(|count| {
+            let mut memory = empty.clone().store_union(
+                destination.clone(),
+                ProgramType::Int32,
+                ProgramValue::Int32(copied.clone()),
+            );
+            for i in 0..count {
+                let other = Address {
+                    base: format!("copy-unrelated-{i}").into(),
+                    offset: AddressOffset::Constant(0),
+                };
+                memory = memory.store_union(other, ProgramType::Int32, crate::kernel::int32(i));
+            }
+            let matching = check(memory.clone(), &copied);
+            let different = check(memory.clone(), &different);
+            let overwritten = memory.store_union(
+                destination.clone(),
+                ProgramType::UInt8,
+                crate::kernel::uint8(0),
+            );
+            [matching, different, check(overwritten, &copied)]
+        });
+        for checks in samples {
+            assert_eq!(checks.map(|(holds, _)| holds), [true, false, false]);
+            for ((_, work), (_, baseline)) in checks.into_iter().zip(samples[0]) {
+                assert!(work <= baseline + 16, "{samples:?}");
+            }
+        }
+    }
 
     #[test]
     fn concrete_viewability_checks_only_the_named_span() {

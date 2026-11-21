@@ -7332,6 +7332,17 @@ impl SymbolicMemory {
             .map(ExecutionValue::into_native)
     }
 
+    /// Borrow the immutable view of one exact typed union cell.
+    pub(in crate::kernel) fn indexed_union_value(
+        &self,
+        pointer: &Address,
+        value_type: ProgramType,
+    ) -> Option<&ProgramValue> {
+        self.union_cells
+            .get(&(pointer.clone(), value_type))
+            .map(StoredMemoryValue::native)
+    }
+
     pub(in crate::kernel) fn known_retained_union_value(
         &self,
         pointer: &Address,
