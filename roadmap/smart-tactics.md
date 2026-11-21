@@ -101,10 +101,11 @@ Named static arrays retain entry or write points across recorded writes and
 calls confined to named static and automatic objects. Automatic arrays retain
 points from their declarations and writes across those effects. A join keeps
 a common static or automatic array version and names a changed object at the
-join when the incoming indexes share a lineage. Declared predicates also retain that entry version for external
-`int32` array arguments, including when unfolding their bodies or raising a
-predicate fact. Scalar fold instantiation keeps a selected entry point
-when the substituted index still uses the indexed entry selector. Checked
+join when the incoming indexes share a lineage. Declared predicates share
+the block version selector for array arguments of all admitted element types,
+including when unfolding their bodies or raising a predicate fact. Scalar
+fold instantiation keeps a selected entry point when the substituted index
+still uses the indexed entry selector. Checked
 resource quantities and materialized resource cells share that entry point for
 an `int32` field at a fixed displacement from its external parameter. Computed
 scalar fold endpoints, ordinary checked reads, loop boundaries and iterated
