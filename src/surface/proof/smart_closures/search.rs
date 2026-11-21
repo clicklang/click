@@ -2318,25 +2318,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .map(|fact| (fact.clone(), bound.clone())),
                 );
             }
-            // The observation identity consumes only the exact outer range.
-            // Asking for defined(native-expression) here is stronger: it also
-            // asks that logical/historical read operands are initialized.
-            // Native theorem arguments establish their complete domain where
+            // The observation identity consumes only the exact outer range,
+            // which is `defined(native-expression)` over total operands.
+            // Native theorem arguments establish their operands' domains where
             // they are actually applied.
             if !conversion
                 && let Some(expression) = integer_composition::observed_argument(&spelled_observed)
             {
                 let domain = ClickProposition::Defined { expression };
-                // For total operands this is precisely the range pair. Keep
+                // Over total operands this is precisely the range pair. Keep
                 // its native spelling available to subsequent theorem arguments.
-                // A domain containing read initialization is a stronger claim
-                // and is established only when an argument requires it.
-                if proof
-                    .lower_cited_surface_proposition(&domain, "native argument domain")
-                    .is_ok_and(|kernel| {
-                        crate::kernel::machine_integer::definedness::range_domain_query(&kernel)
-                            .is_some()
-                    })
+                // An operand that is itself an operation or a read owes its own
+                // domain, which is established only when an argument requires it.
+                if !integer_composition::domain_has_compound_operand(&domain)
+                    && proof
+                        .lower_cited_surface_proposition(&domain, "native argument domain")
+                        .is_ok_and(|kernel| {
+                            crate::kernel::machine_integer::definedness::range_domain_query(&kernel)
+                                .is_some()
+                        })
                 {
                     let scope = proof.driver().open_have(domain)?;
                     proof = scope.driver().apply_step(ProofStep::Known)?.join()?;

@@ -12,6 +12,7 @@ mod shared_machine;
 pub(in crate::kernel) use shared_machine::{
     bitwise_tag_equation, execution_narrow_binary, execution_rust_shift,
 };
+mod operation_defined;
 pub(in crate::kernel) mod walk;
 
 type EvaluatedSpecResource = (Resource, ExecutionFacts, Vec<ProofObligation>);
@@ -1137,40 +1138,81 @@ fn lower_spec_conjunction_left_spine_in(
     for right in right_operands.into_iter().rev() {
         let mut combined = Vec::new();
         for left_path in paths {
-            let right_assumptions = assumptions_with_path_context(
-                assumptions,
-                &left_path.facts,
-                &left_path.obligations,
-            );
-            for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
+            lower_guarded_conjunct_in(
                 scope,
+                &left_path,
                 right,
-                &right_assumptions,
+                assumptions,
                 budget,
-            )? {
-                if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
-                    &left_path.facts,
-                    &left_path.obligations,
-                    &right_path.facts,
-                    &right_path.obligations,
-                    assumptions,
-                    &right_assumptions,
-                ) {
-                    combined.push(SpecPropositionPath {
-                        introductions: Vec::new(),
-                        proposition: Proposition::And(
-                            Box::new(left_path.proposition.clone()),
-                            Box::new(right_path.proposition),
-                        ),
-                        facts,
-                        obligations,
-                    });
-                }
-            }
+                &mut combined,
+            )?;
         }
         paths = combined;
     }
     Ok(Some(paths))
+}
+
+/// Lowers the right operand of `and` where its left operand holds, as C's
+/// `&&` evaluates it: each of the right side's obligations is owed only there,
+/// as `left implies obligation`. The right side is lowered without assuming
+/// the left proposition, so the left side never changes the right term;
+/// establishing a guarded obligation assumes its guard
+/// (`ProofObligation::evaluation_requirement_is_established`).
+fn lower_guarded_conjunct_in(
+    scope: SpecScope<'_>,
+    left_path: &SpecPropositionPath,
+    right: &SpecProposition,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+    paths: &mut Vec<SpecPropositionPath>,
+) -> ExecutionResult<()> {
+    let right_assumptions =
+        assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
+    for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
+        scope,
+        right,
+        &right_assumptions,
+        budget,
+    )? {
+        let guarded_right_obligations =
+            guard_right_obligations(&left_path.proposition, right_path.obligations);
+        if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
+            &left_path.facts,
+            &left_path.obligations,
+            &right_path.facts,
+            &guarded_right_obligations,
+            assumptions,
+            &right_assumptions,
+        ) {
+            paths.push(SpecPropositionPath {
+                introductions: Vec::new(),
+                proposition: Proposition::And(
+                    Box::new(left_path.proposition.clone()),
+                    Box::new(right_path.proposition),
+                ),
+                facts,
+                obligations,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The obligations of a right operand read only where `left` holds, owed
+/// as `left implies obligation`.
+fn guard_right_obligations(
+    left: &Proposition,
+    right_obligations: Vec<ProofObligation>,
+) -> Vec<ProofObligation> {
+    right_obligations
+        .into_iter()
+        .map(|obligation| {
+            let antecedent = left.clone();
+            obligation.map_proposition(|proposition| {
+                Proposition::Implies(Box::new(antecedent), Box::new(proposition))
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone)]
@@ -1581,38 +1623,14 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 assumptions,
                 budget,
             )? {
-                let right_assumptions = assumptions_with_path_context(
-                    assumptions,
-                    &left_path.facts,
-                    &left_path.obligations,
-                );
-                for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
+                lower_guarded_conjunct_in(
                     scope,
+                    &left_path,
                     right,
-                    &right_assumptions,
+                    assumptions,
                     budget,
-                )? {
-                    if let Some((facts, obligations)) =
-                        merge_execution_pure_facts_and_obligations_under(
-                            &left_path.facts,
-                            &left_path.obligations,
-                            &right_path.facts,
-                            &right_path.obligations,
-                            assumptions,
-                            &right_assumptions,
-                        )
-                    {
-                        paths.push(SpecPropositionPath {
-                            introductions: Vec::new(),
-                            proposition: Proposition::And(
-                                Box::new(left_path.proposition.clone()),
-                                Box::new(right_path.proposition),
-                            ),
-                            facts,
-                            obligations,
-                        });
-                    }
-                }
+                    &mut paths,
+                )?;
             }
             Ok(paths)
         }
@@ -1670,17 +1688,8 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     &right_assumptions,
                     budget,
                 )? {
-                    let guarded_right_obligations = right_path
-                        .obligations
-                        .iter()
-                        .cloned()
-                        .map(|obligation| {
-                            let antecedent = left_path.proposition.clone();
-                            obligation.map_proposition(|proposition| {
-                                Proposition::Implies(Box::new(antecedent), Box::new(proposition))
-                            })
-                        })
-                        .collect::<Vec<_>>();
+                    let guarded_right_obligations =
+                        guard_right_obligations(&left_path.proposition, right_path.obligations);
                     if let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                         &left_path.facts,
                         &left_path.obligations,
@@ -2083,55 +2092,66 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         SpecProposition::Defined(expression) => {
             let mut checked = SpecEvaluation::checked(budget);
             checked.program_definedness = true;
-            // Definedness is decided from no facts, except that a contract
-            // entry's own requirement keeps assuming what its caller checked
-            // about opaque pointer bounds.
-            let context = if assumptions.should_assume_entry_clause_spans() {
-                PureFactContext::new().assume_entry_clause_spans()
-            } else {
-                PureFactContext::new()
-            };
+            let context = definedness_context(assumptions);
             let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
                 scope,
                 expression,
                 &context,
                 &mut checked,
             )?;
-            let mut normal_paths = paths.into_iter().map(|path| {
-                proposition_and_all(
-                    path.facts
-                        .into_iter()
-                        // Certified consequences (including read equations and
-                        // ledger bounds) describe the value; they are not
-                        // additional conditions for evaluating it.
-                        .filter(|fact| !fact.is_certified())
-                        .filter_map(|fact| {
-                            drop_verified_load_definition_conjuncts(fact.proposition().clone())
-                        })
-                        .chain(path.obligations.into_iter().filter_map(|obligation| {
-                            drop_verified_load_definition_conjuncts(
-                                obligation.proposition().clone(),
-                            )
-                        }))
-                        .collect(),
-                )
-            });
-            let proposition = normal_paths.next().map_or_else(
-                || Proposition::condition_is(ConditionTerm::Constant(false), true),
-                |first| {
-                    normal_paths.fold(first, |left, right| {
-                        Proposition::Or(Box::new(left), Box::new(right))
-                    })
-                },
-            );
             Ok(vec![SpecPropositionPath {
                 introductions: Vec::new(),
-                proposition,
+                proposition: definedness_claim(paths),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }])
         }
+        SpecProposition::OperationDefined(expression) => {
+            operation_defined::lower(scope, expression, assumptions, budget)
+        }
     }
+}
+
+/// Definedness is decided from no facts, except that a contract entry's own
+/// requirement keeps assuming what its caller checked about opaque pointer
+/// bounds.
+#[inline(never)]
+fn definedness_context(assumptions: &PureFactContext) -> PureFactContext {
+    if assumptions.should_assume_entry_clause_spans() {
+        PureFactContext::new().assume_entry_clause_spans()
+    } else {
+        PureFactContext::new()
+    }
+}
+
+/// The condition under which an evaluation reaches a value: on some path,
+/// every condition the path owes or selects. Certified consequences
+/// (including read equations and ledger bounds) describe the value; they are
+/// not additional conditions for evaluating it.
+#[inline(never)]
+fn definedness_claim(paths: Vec<SpecExpressionPath>) -> Proposition {
+    let mut normal_paths = paths.into_iter().map(|path| {
+        proposition_and_all(
+            path.facts
+                .into_iter()
+                .filter(|fact| !fact.is_certified())
+                .filter_map(|fact| {
+                    drop_verified_load_definition_conjuncts(fact.proposition().clone())
+                })
+                .chain(path.obligations.into_iter().filter_map(|obligation| {
+                    drop_verified_load_definition_conjuncts(obligation.proposition().clone())
+                }))
+                .collect(),
+        )
+    });
+    normal_paths.next().map_or_else(
+        || Proposition::condition_is(ConditionTerm::Constant(false), true),
+        |first| {
+            normal_paths.fold(first, |left, right| {
+                Proposition::Or(Box::new(left), Box::new(right))
+            })
+        },
+    )
 }
 
 /// Combines alternative evaluation paths without moving an existential across
@@ -11285,6 +11305,7 @@ mod arithmetic_domain_scaling_tests {
     include!("../scaling_tests/kernel/spec/arithmetic_domains.rs");
     include!("../scaling_tests/kernel/spec/rust_shifts.rs");
     include!("../scaling_tests/kernel/spec/call_arguments.rs");
+    include!("../scaling_tests/kernel/spec/guarded_definedness.rs");
 }
 
 #[cfg(test)]

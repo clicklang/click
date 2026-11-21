@@ -8380,6 +8380,9 @@ fn substitute_pointer_variable_in_spec_proposition(
         SpecProposition::Defined(expression) => SpecProposition::Defined(
             substitute_pointer_variable_in_spec_expression(expression, from, to),
         ),
+        SpecProposition::OperationDefined(expression) => SpecProposition::OperationDefined(
+            substitute_pointer_variable_in_spec_expression(expression, from, to),
+        ),
     }
 }
 

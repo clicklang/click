@@ -9951,3 +9951,110 @@ fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
     .expect("the generic entry read has a spelling");
     assert_eq!(lower(&raised), Ok(original));
 }
+
+/// A definedness fact about one operation whose operand is itself an
+/// operation raises to Surface text that lowers back to that same fact.
+/// `defined(...)` claims its root operation's domain with its operands taken
+/// as values, so `defined((a + b) + c)` is the outer addition's domain alone,
+/// as the kernel files it, and not also the inner addition's.
+#[test]
+fn nested_operand_definedness_round_trips() {
+    let format = MachineIntegerType::Int32;
+    let a = MachineTerm::Variable(Variable(973_001));
+    let b = MachineTerm::Variable(Variable(973_002));
+    let c = MachineTerm::Variable(Variable(973_003));
+    let state = ExecutionState::new()
+        .with_local("a", ProgramValue::Int32(a.clone()))
+        .with_local("b", ProgramValue::Int32(b.clone()))
+        .with_local("c", ProgramValue::Int32(c.clone()));
+    let inner = MachineTerm::machine_binary(format, MachineBinaryOp::Add, a, b);
+    let range = Proposition::signed_arithmetic_domain(format, MachineBinaryOp::Add, &inner, &c);
+    let flat_atom = Proposition::condition_is(
+        ConditionTerm::Overflows {
+            format,
+            op: OverflowOperation::Add,
+            left: Box::new(MachineTerm::Variable(Variable(973_001))),
+            right: Box::new(MachineTerm::Variable(Variable(973_002))),
+        },
+        false,
+    );
+    let atom = Proposition::condition_is(
+        ConditionTerm::Overflows {
+            format,
+            op: OverflowOperation::Add,
+            left: Box::new(inner),
+            right: Box::new(c),
+        },
+        false,
+    );
+    // Shallow `defined((a + b) + c)` claims the outer addition's domain
+    // alone: the same kernel fact as evaluating that addition owes.
+    let spelled = |atom: &Proposition| match synthesize_surface_proposition(
+        atom,
+        ParameterBinding::default(),
+        &state,
+    ) {
+        Some(ClickProposition::Defined { expression }) => expression,
+        other => panic!("an overflow atom raises as `defined`: {other:?}"),
+    };
+    let ab = spelled(&flat_atom);
+    let ac = spelled(&Proposition::condition_is(
+        ConditionTerm::Overflows {
+            format,
+            op: OverflowOperation::Add,
+            left: Box::new(MachineTerm::Variable(Variable(973_001))),
+            right: Box::new(MachineTerm::Variable(Variable(973_003))),
+        },
+        false,
+    ));
+    let ContractExpression::Add(_, c_term) = &ac else {
+        panic!("`a + c`: {ac:?}");
+    };
+    let nested = ClickProposition::Defined {
+        expression: ContractExpression::Add(Box::new(ab), c_term.clone()),
+    };
+    assert_eq!(
+        relower_written_proposition(&nested, &state).as_ref(),
+        Ok(&range),
+        "shallow `defined(a + b + c)` is the outer addition's domain"
+    );
+    // Each fact raises to Surface text that lowers to the domain the kernel
+    // files for its operation. The overflow atom is the search's private
+    // query for that domain; its spelling lowers to the filed range form.
+    let flat_range = Proposition::signed_arithmetic_domain(
+        format,
+        MachineBinaryOp::Add,
+        &MachineTerm::Variable(Variable(973_001)),
+        &MachineTerm::Variable(Variable(973_002)),
+    );
+    let mut failures = Vec::new();
+    for (name, fact, expected) in [
+        ("range", range.clone(), range.clone()),
+        ("overflow atom", atom, range),
+        ("flat atom", flat_atom, flat_range),
+    ] {
+        for (polarity, fact, expected) in [
+            ("", fact.clone(), expected.clone()),
+            (
+                "not ",
+                Proposition::Not(Box::new(fact)),
+                Proposition::Not(Box::new(expected)),
+            ),
+        ] {
+            let Some(raised) =
+                synthesize_surface_proposition(&fact, ParameterBinding::default(), &state)
+            else {
+                failures.push(format!("{polarity}{name}: no spelling"));
+                continue;
+            };
+            let lowered = relower_written_proposition(&raised, &state);
+            if lowered.as_ref() != Ok(&expected) {
+                failures.push(format!(
+                    "{polarity}{name}:\n  raised:   {}\n  lowered:  {lowered:?}\n  expected: {expected:?}",
+                    crate::surface::printing::source_click_proposition(&raised),
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

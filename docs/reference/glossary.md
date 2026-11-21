@@ -1217,7 +1217,7 @@ Click function. Click has four:
 | [`old(e)`](#old) | point selector | term | read at the function's entry |
 | [`at(x, e)`](#at) | point selector | term, proposition or resource | read at point `x` |
 | [`exact(e)`](#exact) | point selector | term | outermost read named at the point in scope, not its version point |
-| [`defined(e)`](#defined) | definedness | proposition | asks whether evaluating `e` is defined, not what it is |
+| [`defined(e)`](#defined) | definedness | proposition | asks whether `e`'s root operation is defined over its operands' values, not what it is |
 
 A **point selector** picks the point that names a read; in term position its
 result is a value that nests like any other term. `defined` doesn't move the read: it is a
@@ -1244,12 +1244,14 @@ most once, so the form has one meaning. In a proposition position,
 
 ### `defined`
 
-`defined(e)` is the proposition that evaluating the C expression `e` reaches a
-value rather than undefined behavior: the [definedness](#definedness) of `e`.
-It is a proposition, not a term, so it can't appear inside arithmetic. Its
-argument is lowered with C's own evaluation rules, keeping native address
-checks that ordinary lowering may drop, and `old`, `at`, folds, lets, and
-Click function calls inside it are refused. See the
+`defined(e)` is the proposition that the root operation of `e` reaches a value
+rather than undefined behavior, with its operands taken as values: the
+[definedness](#definedness) of that one operation. An operand's own domain is
+owed where `e` is written, like any term's, so `defined(a + b + c)` claims the
+outer addition and owes `a + b`'s domain; `defined(a + b) and defined(a + b + c)`
+claims both. It is a proposition, not a term, so it can't appear inside
+arithmetic. The operation is lowered with C's own evaluation rules, keeping
+native address checks that ordinary lowering may drop. See the
 [requirements](language/index.md#requirements) reference.
 
 ### `exact`

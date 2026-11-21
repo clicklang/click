@@ -1,8 +1,9 @@
 # Compound definedness satisfies a theorem's instantiated guard conjunction
 
-An addition theorem takes a compound first argument. Its required
-inner and outer overflow guards are both held, even if the checked fact store
-has decomposed their conjunction. Explicit evidence lists use the same rule.
+An addition theorem takes a compound first argument. Its required outer
+overflow guard is `defined(a + b + c)`, and its argument `a + b` owes the
+inner guard `defined(a + b)`; both are held, even if the checked fact store has
+decomposed their conjunction. Explicit evidence lists use the same rule.
 
 ```c filename=compound_guard.c
 int32 probe(int32 a, int32 b, int32 c) { return 0; }
@@ -17,7 +18,7 @@ theorem add_observation(left: int32, right: int32) {
 }
 
 theorem bridge(a: int32, b: int32, c: int32) {
-    requires defined(a + b + c);
+    requires defined(a + b) and defined(a + b + c);
     ensures to_integer(a + b + c) == to_integer(a + b) + to_integer(c) by {
         apply(add_observation(a + b, c));
         known();
@@ -25,14 +26,14 @@ theorem bridge(a: int32, b: int32, c: int32) {
 }
 
 int32 probe(int32 a, int32 b, int32 c) {
-    requires defined(a + b + c);
+    requires defined(a + b) and defined(a + b + c);
     ensures result == 0;
 } by {
     have to_integer(a + b + c) == to_integer(a + b) + to_integer(c) by {
         apply(add_observation(a + b, c)) using { defined(a + b + c); };
         known();
     }
-    apply(bridge(a, b, c)) using { defined(a + b + c); };
+    apply(bridge(a, b, c)) using { defined(a + b); defined(a + b + c); };
 }
 ```
 

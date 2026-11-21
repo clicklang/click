@@ -75,7 +75,8 @@ fn collect_spec_proposition_carriers(
             collect_spec_expression_carriers(expression, variables, integer_seen);
         }
         SpecProposition::FloatClassification { expression, .. }
-        | SpecProposition::Defined(expression) => {
+        | SpecProposition::Defined(expression)
+        | SpecProposition::OperationDefined(expression) => {
             collect_spec_expression_carriers(expression, variables, integer_seen);
         }
         SpecProposition::Truth(_) => {}
@@ -1105,6 +1106,9 @@ impl<'a> TermRewrite<'a> {
             }
             SpecProposition::Defined(expression) => {
                 SpecProposition::Defined(self.rewrite_spec_expression(expression)?)
+            }
+            SpecProposition::OperationDefined(expression) => {
+                SpecProposition::OperationDefined(self.rewrite_spec_expression(expression)?)
             }
         };
         self.spec_status()?;

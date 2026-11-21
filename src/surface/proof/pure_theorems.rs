@@ -1941,17 +1941,23 @@ fn verify_contract_refinement_theorem(
         })
         .collect::<Vec<_>>();
     let proof_goal = obligations.proposition().clone();
-    let presentation = super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
-        &proof_goal,
-        ParameterBinding::new(&parameters, &arguments),
-        obligations.entry(),
-        obligations.post(),
-    )
-    .ok_or_else(|| {
-        ClickError::new(format!(
-            "`{claim_label}`: cannot present contract-refinement obligations"
-        ))
-    })?;
+    let mut presentation =
+        super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
+            &proof_goal,
+            ParameterBinding::new(&parameters, &arguments),
+            obligations.entry(),
+            obligations.post(),
+        )
+        .ok_or_else(|| {
+            ClickError::new(format!(
+                "`{claim_label}`: cannot present contract-refinement obligations"
+            ))
+        })?;
+    // Expansion prints this presentation as source. A native comparison over
+    // arithmetic is spelled through its Integer observations, as written
+    // arithmetic in a comparison reads exactly; spelled bare, `result ==
+    // (x + 3)` would parse back as `to_integer(result) == to_integer(x) + 3`.
+    super::surface_synthesis::spell_conjunct_observations(&proof_goal, &mut presentation);
     let retained_states = RecordedStates::new();
     let mut surfaces = SurfacePropositionMap::default();
     let mut pending = vec![(&proof_goal, &presentation)];

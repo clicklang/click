@@ -5741,7 +5741,7 @@ impl AnnotationLowerer<'_> {
             ClickProposition::Defined { expression } => {
                 let mut checked_environment = environment.clone();
                 checked_environment.checking_definedness = true;
-                Ok(SpecProposition::Defined(
+                Ok(SpecProposition::OperationDefined(
                     self.lower_contract_expression_to_spec(expression, &checked_environment)?,
                 ))
             }

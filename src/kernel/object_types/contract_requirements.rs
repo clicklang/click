@@ -283,7 +283,9 @@ pub(in crate::kernel) fn declared_return_class(
             SpecProposition::Comparison { left, right, .. } => {
                 result_expression_class(left).or_else(|| result_expression_class(right))
             }
-            SpecProposition::Defined(value) => result_expression_class(value),
+            SpecProposition::Defined(value) | SpecProposition::OperationDefined(value) => {
+                result_expression_class(value)
+            }
             SpecProposition::AlgebraicComparison { left, right, .. } => analysis
                 .result_model_class(left)
                 .or_else(|| analysis.result_model_class(right)),
