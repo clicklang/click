@@ -2183,6 +2183,145 @@ pub(super) fn collapse_iterator_moves(
     locals.retain(|local| !removed.contains(&local.name));
 }
 
+/// Pass an adjacent by-value copy directly to the call that takes it. The
+/// callee already gets its own copy, so no caller-side storage is needed.
+pub(super) fn bind_copied_call_arguments(
+    locals: &mut Vec<Place>,
+    blocks: &mut [MirBlock],
+    temporaries: &BTreeSet<String>,
+) {
+    let mut copies = Vec::new();
+    for (block_index, block) in blocks.iter().enumerate() {
+        let T::Call {
+            owned_arguments,
+            arguments,
+            ..
+        } = &block.terminator
+        else {
+            continue;
+        };
+        let Some(argument) = owned_arguments.last() else {
+            continue;
+        };
+        if !argument.moved
+            || argument.index.checked_add(1) != Some(arguments.len())
+            || call_destination(&block.terminator) == Some(&argument.local)
+            || !temporaries.contains(&argument.local)
+        {
+            continue;
+        }
+        let Some((
+            position,
+            S::Copy {
+                target,
+                source,
+                record,
+            },
+        )) = block.statements.iter().enumerate().rev().find(|(_, code)| {
+            !matches!(
+                code,
+                S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
+            )
+        })
+        else {
+            continue;
+        };
+        if target != &argument.local
+            || record != &argument.record
+            || target == source
+            || !matches!(arguments.last(), Some(E::Local { name }) if name == target)
+        {
+            continue;
+        }
+        if block.statements[position + 1..].iter().any(|code| {
+            matches!(code, S::BeginStorage { local } | S::EndStorage { local } if local == source)
+        }) {
+            continue;
+        }
+        // The call may prepare earlier arguments. Any nested call can write
+        // the source, so the copy needs to stay at its original point.
+        if arguments[..argument.index]
+            .iter()
+            .any(|argument| contains_call(argument) || mentioned_in_expression(argument, target))
+        {
+            continue;
+        }
+        copies.push((block_index, position, target.clone(), source.clone()));
+    }
+    if copies.is_empty() {
+        return;
+    }
+
+    let mut mentions: BTreeMap<_, usize> = copies
+        .iter()
+        .map(|(_, _, target, _)| (target.clone(), 0))
+        .collect();
+    for block in blocks.iter() {
+        for statement in &block.statements {
+            for key in mentioned_locals(statement) {
+                if let Some(count) = mentions.get_mut(&key) {
+                    *count += 1;
+                }
+            }
+        }
+        let mut reads = BTreeMap::new();
+        let mut named = BTreeSet::new();
+        terminator_uses(&block.terminator, &mut reads, &mut named);
+        named.extend(reads.into_keys());
+        named.extend(call_destination(&block.terminator).cloned());
+        for key in named {
+            if let Some(count) = mentions.get_mut(&key) {
+                *count += 1;
+            }
+        }
+    }
+
+    let mut removed = BTreeSet::new();
+    for (block, position, target, source) in copies {
+        if mentions[&target] != 2 {
+            continue;
+        }
+        let block = &mut blocks[block];
+        let T::Call {
+            owned_arguments,
+            arguments,
+            ..
+        } = &mut block.terminator
+        else {
+            unreachable!("selected from a call block");
+        };
+        let argument = owned_arguments
+            .last_mut()
+            .expect("selected a copied argument");
+        *arguments.last_mut().expect("selected a copied argument") = E::Local {
+            name: source.clone(),
+        };
+        argument.local = source;
+        argument.moved = false;
+        block.statements.remove(position);
+        removed.insert(target);
+    }
+    for block in blocks.iter_mut() {
+        block.statements.retain(|statement| match statement {
+            S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
+            _ => true,
+        });
+    }
+    locals.retain(|local| !removed.contains(&local.name));
+}
+
+fn contains_call(expression: &E) -> bool {
+    matches!(expression, E::Call { .. } | E::ClosureInstance { .. })
+        || children(expression).into_iter().any(contains_call)
+}
+
+fn mentioned_in_expression(expression: &E, local: &str) -> bool {
+    let mut reads = BTreeMap::new();
+    let mut named = BTreeSet::new();
+    expression_uses(expression, &mut reads, &mut named);
+    reads.contains_key(local) || named.contains(local)
+}
+
 /// The local a call terminator assigns its result to, unless the call is
 /// already a call step.
 fn call_destination(terminator: &T) -> Option<&String> {

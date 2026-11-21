@@ -1474,6 +1474,11 @@ the step number in `result`, the read is `Expression::CallResult`, and the
 lowering emits `ProgramStatement::CallResult`. A proof names its result
 `call(f, j).result`, among the function's calls.
 
+When the last argument of a call is a by-value copy of a record,
+`temporaries::bind_copied_call_arguments` can give the call the original
+place directly. The callee's parameter copies the value, and the caller
+has no additional named object for the argument.
+
 MIR builds a `for` loop's range in a temporary and moves it, often twice,
 into the loop's own iterator. `temporaries::collapse_iterator_moves` builds
 the range in the loop's iterator directly, so its state is the proof's
