@@ -66,7 +66,7 @@ int32 through_parameter(int32* a, int32 u) {
     ensures result == 5;
 } by {
     step(); step();
-    have a[0] == 5 by { normalize(); }
+    have a[0] == 5 by { known(); }
     have u != 0 by { solve() using { 1 <= u; }; }
     have separate(memory(a[u]), memory(a[0])) by {
         apply(separation::separate_elements(a, u, 0)) using { u != 0; };
@@ -74,12 +74,12 @@ int32 through_parameter(int32* a, int32 u) {
     mark before;
     step();
     have separate(statement(2).footprint, memory(a[0])) by {
-        normalize() using { separate(memory(a[u]), memory(a[0])); };
+        solve() using { separate(memory(a[u]), memory(a[0])); };
     }
     have a[0] == at(before, a[0]) by {
         preserve(memory(a[0]), statement(2));
     }
-    have a[0] == 5 by { normalize() using { a[0] == at(before, a[0]); at(before, a[0]) == 5; }; }
+    have a[0] == 5 by { solve() using { a[0] == at(before, a[0]); at(before, a[0]) == 5; }; }
     step();
 }
 ```

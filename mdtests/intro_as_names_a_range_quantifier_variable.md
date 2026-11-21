@@ -13,7 +13,7 @@ theorem range_goal(n: int32) {
     ensures (0..n).all(|k| { k == k }) by {
         let i = intro();
         intro();
-        normalize();
+        known();
     }
 }
 

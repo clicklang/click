@@ -76,7 +76,7 @@ int chain_has_next(struct node* p) {
                     have chain_rest(old(c.model)) == rest_model by {
                         rewrite(old(c.model), Chain::Link(identity, rest_model));
                         unfold(chain_rest(Chain::Link(identity, rest_model)));
-                        normalize();
+                        known();
                     }
                     have c.model == Chain::Link(p, chain_rest(old(c.model))) by {
                         rewrite(chain_rest(old(c.model)), rest_model);
@@ -92,7 +92,7 @@ int chain_has_next(struct node* p) {
             have chain_rest(old(c.model)) == rest_model by {
                 rewrite(old(c.model), Chain::Link(identity, rest_model));
                 unfold(chain_rest(Chain::Link(identity, rest_model)));
-                normalize();
+                known();
             }
             have c.model == Chain::Link(p, chain_rest(old(c.model))) by {
                 rewrite(chain_rest(old(c.model)), rest_model);

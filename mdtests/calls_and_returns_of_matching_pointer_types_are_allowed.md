@@ -35,7 +35,7 @@ struct a *same(struct a *pa) {
     ensures address(result) == address(pa);
 } by {
     step_until(function.exit);
-    normalize();
+    known();
 }
 ```
 

@@ -67,7 +67,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             intro();
             have not (k < old(owner->len)) by {
                 rewrite(old(owner->len), k);
-                normalize();
+                known();
             }
             contradiction(k < old(owner->len));
         }
@@ -75,7 +75,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             apply(click::separation::separate_elements(old(owner->data), old(owner->len), k)) using { old(owner->len) != k; };
         }
         have separate(statement(4).footprint, memory(old(owner->data)[k])) by {
-            normalize() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
+            solve() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
         }
         have at(statement(4).exit, owner->data[k]) == at(statement(4).entry, owner->data[k]) by {
             preserve(memory(old(owner->data)[k]), statement(4));

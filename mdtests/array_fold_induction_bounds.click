@@ -51,7 +51,7 @@ theorem array_fold_induction_bounds(lo: int32, hi: int32) {
         }
         have to_integer(hi - 1) < to_integer(hi) by {
             rewrite(to_integer(hi - 1), to_integer(hi) - 1);
-            normalize();
+            known();
         }
         have 0 <= to_integer(hi - lo) by {
             rewrite(to_integer(hi - lo), to_integer(hi) - to_integer(lo));

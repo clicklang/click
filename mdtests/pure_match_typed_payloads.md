@@ -9,12 +9,12 @@ function rebuild_payload(item: Payload<Shade>) -> Payload<Shade> {
         Payload::Link(pointer, wide, count, shade) => Payload<Shade>::Link(pointer, wide, count, shade),
     }
 }
-theorem pointer_identity(pointer: int32*) { ensures pointer == pointer by { normalize(); } }
-theorem integer_identity(count: Integer) { ensures count == count by { normalize(); } }
+theorem pointer_identity(pointer: int32*) { ensures pointer == pointer by { known(); } }
+theorem integer_identity(count: Integer) { ensures count == count by { known(); } }
 theorem payload_identity(item: Payload<Shade>) {
     ensures rebuild_payload(item) == item by {
         match item {
-            Payload::Empty => { rewrite(item, Payload<Shade>::Empty); unfold(rebuild_payload(Payload<Shade>::Empty)); normalize(); },
+            Payload::Empty => { rewrite(item, Payload<Shade>::Empty); unfold(rebuild_payload(Payload<Shade>::Empty)); known(); },
             Payload::Link(pointer, wide, count, shade) => {
                 apply(pointer_identity(pointer));
                 apply(integer_identity(count));

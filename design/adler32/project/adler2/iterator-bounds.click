@@ -67,7 +67,7 @@ theorem adler_lane_iterator_initial(total: int32) {
     ensures adler_lane_vectors_consumed(total, total) == 0 by {
         have to_integer(total) - to_integer(total) == 0 by solve() using {};
         unfold(adler_lane_vectors_consumed(total, total));
-        rewrite(to_integer(total) - to_integer(total), 0); normalize();
+        rewrite(to_integer(total) - to_integer(total), 0); known();
     }
 }
 
@@ -197,7 +197,7 @@ theorem adler_lane_iterator_successor_ceilings(total: int32, remaining: int32) {
         have adler_lane_vectors_consumed(total, remaining - 4) == adler_lane_vectors_consumed(total, remaining) + 1 by apply(adler_lane_iterator_successor(total, remaining)) using { 0 <= remaining; remaining <= total; total <= 22208; defined(remaining - 4); };
         unfold(adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining - 4)));
         unfold(adler_lane_a_ceiling(adler_lane_vectors_consumed(total, remaining) + 1));
-        rewrite(adler_lane_vectors_consumed(total, remaining - 4), adler_lane_vectors_consumed(total, remaining) + 1); normalize();
+        rewrite(adler_lane_vectors_consumed(total, remaining - 4), adler_lane_vectors_consumed(total, remaining) + 1); known();
     }
     ensures adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining - 4)) == adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining) + 1) by {
         have adler_lane_vectors_consumed(total, remaining - 4) == adler_lane_vectors_consumed(total, remaining) + 1 by apply(adler_lane_iterator_successor(total, remaining)) using { 0 <= remaining; remaining <= total; total <= 22208; defined(remaining - 4); };
@@ -205,7 +205,7 @@ theorem adler_lane_iterator_successor_ceilings(total: int32, remaining: int32) {
         unfold(adler_lane_b_ceiling(adler_lane_vectors_consumed(total, remaining) + 1));
         unfold(adler_lane_triangle(adler_lane_vectors_consumed(total, remaining - 4)));
         unfold(adler_lane_triangle(adler_lane_vectors_consumed(total, remaining) + 1));
-        rewrite(adler_lane_vectors_consumed(total, remaining - 4), adler_lane_vectors_consumed(total, remaining) + 1); normalize();
+        rewrite(adler_lane_vectors_consumed(total, remaining - 4), adler_lane_vectors_consumed(total, remaining) + 1); known();
     }
 }
 
@@ -245,13 +245,13 @@ theorem adler_lane_iterator_native_preservation(total: int32, remaining: int32, 
 }
 
 theorem adler_lane_iterator_boundaries() {
-    ensures adler_lane_vectors_consumed(0, 0) == 0 by { unfold(adler_lane_vectors_consumed(0, 0)); normalize(); }
-    ensures adler_lane_vectors_consumed(3, 0) == 0 by { unfold(adler_lane_vectors_consumed(3, 0)); normalize(); }
-    ensures adler_lane_vectors_consumed(4, 0) == 1 by { unfold(adler_lane_vectors_consumed(4, 0)); normalize(); }
-    ensures adler_lane_vectors_consumed(8, 4) == 1 by { unfold(adler_lane_vectors_consumed(8, 4)); normalize(); }
-    ensures adler_lane_vectors_consumed(22204, 0) == 5551 by { unfold(adler_lane_vectors_consumed(22204, 0)); normalize(); }
-    ensures adler_lane_vectors_consumed(22208, 4) == 5551 by { unfold(adler_lane_vectors_consumed(22208, 4)); normalize(); }
-    ensures adler_lane_vectors_consumed(22208, 0) == 5552 by { unfold(adler_lane_vectors_consumed(22208, 0)); normalize(); }
+    ensures adler_lane_vectors_consumed(0, 0) == 0 by { unfold(adler_lane_vectors_consumed(0, 0)); known(); }
+    ensures adler_lane_vectors_consumed(3, 0) == 0 by { unfold(adler_lane_vectors_consumed(3, 0)); known(); }
+    ensures adler_lane_vectors_consumed(4, 0) == 1 by { unfold(adler_lane_vectors_consumed(4, 0)); known(); }
+    ensures adler_lane_vectors_consumed(8, 4) == 1 by { unfold(adler_lane_vectors_consumed(8, 4)); known(); }
+    ensures adler_lane_vectors_consumed(22204, 0) == 5551 by { unfold(adler_lane_vectors_consumed(22204, 0)); known(); }
+    ensures adler_lane_vectors_consumed(22208, 4) == 5551 by { unfold(adler_lane_vectors_consumed(22208, 4)); known(); }
+    ensures adler_lane_vectors_consumed(22208, 0) == 5552 by { unfold(adler_lane_vectors_consumed(22208, 0)); known(); }
 }
 
 // Initialization after construction or MOD reduction uses only the real lengths.

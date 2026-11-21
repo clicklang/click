@@ -18,7 +18,7 @@ theorem cast(z: Integer) {
     requires 0 <= z;
     requires z <= 255;
     ensures to_integer(to_uint8(z)) == z by {
-        normalize() using { 0 <= z; z <= 255; };
+        solve() using { 0 <= z; z <= 255; };
     }
 }
 
@@ -28,10 +28,10 @@ theorem product(a: Integer, b: Integer) {
     requires -4 <= b;
     requires b <= 5;
     ensures -12 <= a * b by {
-        normalize() using { -2 <= a; a <= 3; -4 <= b; b <= 5; };
+        solve() using { -2 <= a; a <= 3; -4 <= b; b <= 5; };
     }
     ensures a * b <= 15 by {
-        normalize() using { -2 <= a; a <= 3; -4 <= b; b <= 5; };
+        solve() using { -2 <= a; a <= 3; -4 <= b; b <= 5; };
     }
 }
 ```

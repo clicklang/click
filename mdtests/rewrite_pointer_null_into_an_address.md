@@ -74,7 +74,7 @@ void keep(struct cell* c) {
             }
             have address(up) + 1 == 1 by {
                 rewrite(up, 0);
-                normalize();
+                known();
             }
             step_until(function.exit);
             solve();

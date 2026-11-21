@@ -3580,7 +3580,7 @@ function choose(flag: Bool, x: int32) -> Bool {
 theorem three_is_in_range() {
     ensures in_range(3) by {
         unfold(in_range(3));
-        normalize();
+        known();
     }
 }
 ```

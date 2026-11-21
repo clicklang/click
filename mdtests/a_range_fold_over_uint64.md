@@ -18,7 +18,7 @@ theorem empty(n: uint64) {
     ensures total(n, n) == 0 by {
         have n <= n;
         unfold(total(n, n));
-        normalize();
+        known();
     }
 }
 
