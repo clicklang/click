@@ -5419,8 +5419,9 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Machin
     })
 }
 
-/// The equality graph can use the ordinary version of an exact read without
-/// changing the retained proof term. Local cells use their indexed receipt.
+/// The equality graph can use an indexed version of an exact read without
+/// changing the retained proof term. If only the selected point is certified,
+/// that point supplies the comparison identity.
 pub(crate) fn comparison_identity_of_exact_read(
     point: &ProgramPoint,
     pointer: &Address,
@@ -5430,6 +5431,7 @@ pub(crate) fn comparison_identity_of_exact_read(
         .indexed_integer_version(pointer, kind)
         .or_else(|| point.call_output_integer_version(pointer, kind))
         .or_else(|| point.entry_integer_version(pointer, kind))
+        .or_else(|| point.has_certified_read_view().then(|| point.clone()))
     {
         Some(version) => MachineTerm::MemoryLoad(version, Box::new(pointer.clone()), kind),
         None => canonical_form_of_load(point.shared_memory().clone(), pointer.clone(), kind),
@@ -6037,6 +6039,26 @@ mod tests {
             legacy,
             "warm compatibility path"
         );
+    }
+
+    #[test]
+    fn exact_scalar_read_comparison_keeps_the_point_without_an_indexed_version() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let memory = SymbolicMemory::new();
+        let first = ProgramPoint::starting_at(&memory).for_exact_read();
+        let second = ProgramPoint::starting_at(&memory).for_exact_read();
+        let kind = LoadKind::UInt16;
+        let compare = |point| comparison_identity_of_exact_read(point, &address, kind);
+
+        assert_eq!(
+            compare(&first),
+            MachineTerm::MemoryLoad(first.clone(), Box::new(address.clone()), kind),
+        );
+        assert_ne!(compare(&first), compare(&second));
     }
 
     #[test]
