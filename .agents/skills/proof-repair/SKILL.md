@@ -1,6 +1,6 @@
 ---
 name: proof-repair
-description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` reports a proof error, or an omitted proof, `solve()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
+description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` reports a tactic error, unsuccessful search, unproved goal, or verification error, or an omitted proof, `solve()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
 ---
 
 # Repairing a failed proof
@@ -31,7 +31,20 @@ it; shrink them if you can, but a report need not wait for that.
   apply.
 - `internal error`: stop at `internal-error`. Click has reported its own
   failure. Capture the error, version, command, and inputs.
-- `proof error`: continue.
+- `limit error`: record the limit and where Click stopped. The run did not
+  finish checking the proof.
+- `tactic error`: read `click docs TACTIC` and check whether the tactic is valid
+  at the reported point. Correct an invalid invocation. If the invocation and
+  its premises satisfy the documented rule and Click still refuses, report
+  `tactic-bug`. If the tactic owes a goal, continue with that goal below.
+- `unsuccessful search`: explicit or implicit proof search ran and found no
+  proof. Record the goal. If it holds, write an explicit chain of smaller
+  links, or supply the missing argument or premises.
+- `unproved goal`: the proof left an obligation open. Continue with the
+  remaining goal and the premises available where the script ended.
+- `verification error`: read the reported reason. This includes setup and
+  contract certification. If the report gives a proof obligation, continue
+  with that goal. Otherwise investigate the reported cause directly.
 
 ## 2. Record the goal
 
@@ -44,7 +57,7 @@ From the ordinary report, write down:
 
 If the report does not explain the premises, rerun the command under
 `To get a trace:` (`click verify --trace-proof PROOF SIDECAR`, optionally with
-`--trace-to LINE`). Read its `failed check` section.
+`--trace-to LINE`). Read its `proof refusal` section.
 
 A goal about memory (any `transport`, frame, or `read<...>(state#N, ...)`
 goal) depends on its `state#N` and `value#N` labels: write down the legend
@@ -56,8 +69,16 @@ No `goal:` line, or a goal you cannot read: the outcome is `unclear-trace`.
 
 ## 3. Decide whether `G` is true
 
-Check `G` against the contract, the branch facts, and the C semantics. If some
-execution the contract admits makes it false, the outcome is `false-goal`.
+Check `G` against the contract, the branch facts, and the C semantics. On an
+execution that refutes `G`, also check the original claim and the rule that
+introduced `G`.
+
+- If the execution refutes the original claim, stop at `false-claim`.
+- If Click introduced `G` and the applicable semantics or documented rule
+  do not require it, stop at `obligation-bug`. Show what the rule requires
+  at this point and why the original claim can hold on this execution.
+- If the proof author chose a stronger intermediate goal than the argument
+  needs, revise that step and continue.
 
 ## 4. Write the argument as a chain
 
@@ -166,8 +187,13 @@ Stop at exactly one outcome:
 
 - `success`: the proof verifies. Keep the explicit links the default
   automation needed.
-- `false-goal`: `G` does not hold on some execution the contract admits. Give
-  the counterexample.
+- `false-claim`: an execution admitted by the contract violates the original
+  claim. Give the counterexample. The proof author follows up on the claim,
+  contract, or program.
+- `obligation-bug`: Click generated a requirement unsupported by the
+  applicable semantics or documented rule. Show the required goal, its
+  program point, and the obligation the rule actually calls for. Click
+  maintainers follow up on obligation generation.
 - `unclear-goal`: you can read `G` and its premises, but the investigation
   produced neither a mathematical argument for `G` nor a counterexample.
   Say why you expected the proof to work and identify the exact step where
@@ -189,7 +215,7 @@ Stop at exactly one outcome:
   immediately that Click detected a verifier failure. Use the original
   diagnostic. A proof goal and a minimized tactic link are optional evidence.
 
-A `failed check:` heading identifies the check Click could not complete.
+The trace’s `proof refusal:` section shows where the CLI outcome arose.
 To report a `tactic-bug`, show why the inference holds and cite the documented
 behavior the refusal violates. A smart-tactic miss or a search for an omitted
 argument calls for an explicit proof link. While checking the rule or its
@@ -197,10 +223,11 @@ premises, report that diagnosis is in progress. Use `unclear-goal` if you
 cannot justify the goal after investigation.
 
 In the outcome report, say explicitly what the result establishes about
-Click. `tactic-bug`, `inexpressible-fact`, `internal-error`, `crash`, and
-`hang` identify Click defects. `unclear-trace` leaves the reason for the
-refusal undetermined. File a diagnostic bug only when you can demonstrate
-a specific defect in the output. `false-goal` gives a counterexample.
+Click. `obligation-bug`, `tactic-bug`, `inexpressible-fact`,
+`internal-error`, `crash`, and `hang` identify Click defects. `unclear-trace`
+leaves the reason for the refusal undetermined. File a diagnostic bug only
+when you can demonstrate a specific defect in the output. `false-claim`
+gives a counterexample to the original claim.
 `unclear-goal` leaves the truth of the goal open. `missing-rule` identifies a
 gap in supported inference.
 
@@ -227,8 +254,8 @@ Report a Click defect as follows:
 2. Open an issue at https://github.com/clicklang/click/issues.
 3. Give the report below, enough for someone else to reproduce it.
 4. Label the issue with its outcome: `tracing: inexpressible-fact`,
-   `tracing: tactic-bug`, `tracing: unclear-trace`, `tracing: internal-error`,
-   `crash`, or `hang`.
+   `tracing: obligation-bug`, `tracing: tactic-bug`, `tracing: unclear-trace`,
+   `tracing: internal-error`, `crash`, or `hang`.
    Start the title with it in brackets too (`[tactic-bug] ...`,
    `[hang] ...`), so it shows even where you cannot set labels.
 
@@ -238,6 +265,12 @@ For `internal-error`, give the exact command, `click --version`, the complete
 error output, and the inputs needed to reproduce it. Quote the message that
 identifies the verifier failure. For crashes and hangs, follow the requirements
 above.
+
+For `obligation-bug`, give a reduced reproduction, the original claim, the
+generated goal at its program point, and the exact command and output.
+Cite the rule or semantics that governs the check. Show the discrepancy,
+including any execution that satisfies the original claim while refuting the
+generated goal.
 
 For `tactic-bug`, `inexpressible-fact`, or a confirmed diagnostic defect
 found during `unclear-trace` triage, give:

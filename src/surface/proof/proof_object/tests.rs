@@ -1431,7 +1431,7 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
         Ok(_) => panic!("an atomic claim rejects `intro`"),
         Err(error) => error,
     };
-    assert!(error.report().contains("error kind: proof error"));
+    assert!(error.report().contains("error kind: tactic error"));
     assert!(error.report().contains("tactic: intro()"));
     assert_eq!(split_proof.branches().collect::<Vec<_>>(), ids);
     assert!(
@@ -6318,7 +6318,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
                     &missing,
                     std::iter::empty()
                 )
-                .expect("an ordinary optional transport miss is not a proof error")
+                .expect("an ordinary optional transport miss is not a verification refusal")
                 .is_none()
             );
             assert!(

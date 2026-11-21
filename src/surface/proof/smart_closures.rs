@@ -1685,6 +1685,8 @@ pub(in crate::surface::proof) enum LinearScriptDecline {
     Shape,
     /// The written tactic at this position declined.
     Step(usize),
+    /// The tactic ran a proof search that could not close the goal.
+    UnsuccessfulSearch(usize),
 }
 
 /// A branch continuation is checked in each selected arm. Borrow terminal
@@ -3187,10 +3189,12 @@ impl<'a> Proof<'a> {
         // spelling they wrote it with. The lowered rendering below would show
         // them a byte span over an internal pointer name instead.
         if let Some(reason) = self.unproved_loadable_range_goal_reason() {
-            return self.step_error(format!(
-                "`solve` failed for `{}`: {reason}",
-                self.claim_label()
-            ));
+            return self
+                .step_error(format!(
+                    "`solve` failed for `{}`: {reason}",
+                    self.claim_label()
+                ))
+                .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch);
         }
         // Name the goal as the user wrote it. Only a goal with no source
         // spelling falls back to the kind of check it makes, and that kind is
@@ -3232,6 +3236,7 @@ impl<'a> Proof<'a> {
                 .map(|mismatch| format!("\n  {mismatch}"))
                 .unwrap_or_default(),
         ))
+        .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
     }
 
     /// A goal whose reads all resolved to values, and that is false with

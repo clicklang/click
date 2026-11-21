@@ -104,7 +104,7 @@ refusal in one of those dependencies still applies to the selected claim.
 3. Diagnose the earliest failure. For a missing file, compiler, or build
    input, compare the capture configuration against the original build. For
    a frontend refusal, check the selected source and dependencies against
-   language coverage. For a proof error, follow [proof repair][repair] from
+   language coverage. For a proof failure, follow [proof repair][repair] from
    the reported goal and trace. Keep the claim and program intact while
    investigating.
 4. Report the verified function, claim and preconditions, command, and any

@@ -29,7 +29,8 @@ fn missing_prerequisite_error(
     message: impl Into<String>,
     obligation: &ProofObligation,
 ) -> ClickError {
-    let error = ClickError::new(message);
+    let error =
+        ClickError::new(message).with_proof_refusal(crate::surface::ProofRefusal::Verification);
     if obligation.is_assumable() {
         error
     } else {

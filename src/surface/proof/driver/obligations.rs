@@ -2,6 +2,22 @@
 use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
+/// The first requirement the implicit closer could not prepare or prove.
+pub(in crate::surface::proof) struct MissedObligation {
+    index: usize,
+    searched: bool,
+}
+
+impl MissedObligation {
+    fn classify(&self, error: ClickError) -> ClickError {
+        if self.searched {
+            error.with_proof_refusal(crate::surface::ProofRefusal::ImplicitStatementSearch)
+        } else {
+            error
+        }
+    }
+}
+
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// Closes the back-edge bundle as `close_invariants() by { ... }` with
     /// `solve()` on each member. The bundle conjoins its members, balanced for
@@ -75,7 +91,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let _timing = crate::surface::proof::timing::TacticTiming::implicit_solve();
         let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit solve"));
         let Some(closed) = scope.driver().try_solve_closure()? else {
-            return Err(refusal());
+            return Err(
+                refusal().with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
+            );
         };
         closed.join()
     }
@@ -248,7 +266,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     .collect::<Vec<_>>();
                 if !unwritten.is_empty() {
                     let result = if implicit_solve_disabled() {
-                        Err(0)
+                        Err(MissedObligation {
+                            index: 0,
+                            searched: false,
+                        })
                     } else {
                         current
                             .driver()
@@ -267,16 +288,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                                 .position(|requirement| {
                                     crate::kernel::proof::propositions_are_alpha_equal(
                                         &requirement.proposition,
-                                        &unwritten[missed].proposition,
+                                        &unwritten[missed.index].proposition,
                                     )
                                 })
                                 .expect("an open requirement came from preparation");
-                            return Err(unproved_step_requirement(
+                            return Err(missed.classify(unproved_step_requirement(
                                 driver_proof,
                                 &step,
-                                unwritten[missed],
+                                unwritten[missed.index],
                                 refusals[position].clone(),
-                            )?);
+                            )?));
                         }
                     }
                 }
@@ -412,16 +433,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     .position(|requirement| {
                         crate::kernel::proof::propositions_are_alpha_equal(
                             &requirement.proposition,
-                            &open[missed].proposition,
+                            &open[missed.index].proposition,
                         )
                     })
                     .expect("a missed obligation came from preparation");
-                return Err(unproved_step_requirement(
+                return Err(missed.classify(unproved_step_requirement(
                     driver_proof,
                     &step,
-                    open[missed],
+                    open[missed.index],
                     refusals[position].clone(),
-                )?);
+                )?));
             }
         };
         let stepped = driver_proof.finish_prepared_step(probe, &proved, &recorded)?;
@@ -439,7 +460,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
         step: &ProofStep,
         requirements: &[&UnresolvedRequirement],
-    ) -> Result<Result<(Proof<'a>, Vec<StepRequirementCertificate>), usize>, ClickError> {
+    ) -> Result<Result<(Proof<'a>, Vec<StepRequirementCertificate>), MissedObligation>, ClickError>
+    {
         let driver_proof = self.proof;
         let _implicit_solve = crate::surface::proof::timing::TacticTiming::implicit_solve();
         let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit solve"));
@@ -447,16 +469,25 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let mut entries = Vec::with_capacity(requirements.len());
         for (index, requirement) in requirements.iter().enumerate() {
             let Some(spelling) = current.requirement_surface(requirement, step)? else {
-                return Ok(Err(index));
+                return Ok(Err(MissedObligation {
+                    index,
+                    searched: false,
+                }));
             };
             let surface = spelling.surface.clone();
             current.debug_assert_spelling_relowers(requirement, &surface);
             let checkpoint = current.checkpoint();
             let Ok(have) = current.driver().open_have(surface.clone()) else {
-                return Ok(Err(index));
+                return Ok(Err(MissedObligation {
+                    index,
+                    searched: false,
+                }));
             };
             let Some(closed) = have.driver().try_solve_closure()? else {
-                return Ok(Err(index));
+                return Ok(Err(MissedObligation {
+                    index,
+                    searched: true,
+                }));
             };
             current = closed.join()?;
             entries.push(StepRequirementCertificate {
@@ -770,7 +801,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 "closure body did not prove every invariant obligation{open_member}{}{rejoined}{branch_join}",
                 ranking_member_diagnostic(bundle)
             ));
-            return Err(error.with_search_failures(search.finish()));
+            let refusal = if body == [ProofTactic::Solve] {
+                crate::surface::ProofRefusal::UnsuccessfulSearch
+            } else {
+                crate::surface::ProofRefusal::UnprovedGoal
+            };
+            return Err(error
+                .with_proof_refusal(refusal)
+                .with_search_failures(search.finish()));
         };
         search.succeed();
         let retain_timing = crate::instrumentation::OperationTiming::new(
@@ -990,11 +1028,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     .position(|requirement| {
                         crate::kernel::proof::propositions_are_alpha_equal(
                             &requirement.proposition,
-                            &open[missed].proposition,
+                            &open[missed.index].proposition,
                         )
                     })
                     .unwrap_or(0);
-                return Err(recorded.refusals[position].clone());
+                return Err(missed.classify(recorded.refusals[position].clone()));
             }
         };
         let haves = entries
@@ -1051,7 +1089,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             .prove_obligations_by_solve_or_name_the_first_missed(&step, &references)?
         {
             Ok((proved, _)) => Ok(proved),
-            Err(missed) => Err(requirements.refusals[pending[missed].0].clone()),
+            Err(missed) => {
+                Err(missed.classify(requirements.refusals[pending[missed.index].0].clone()))
+            }
         }
     }
 
@@ -1083,11 +1123,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     .position(|requirement| {
                         crate::kernel::proof::propositions_are_alpha_equal(
                             &requirement.proposition,
-                            &open[missed].proposition,
+                            &open[missed.index].proposition,
                         )
                     })
                     .expect("a distinct requirement came from the probe");
-                Err(recorded.refusals[position].clone())
+                Err(missed.classify(recorded.refusals[position].clone()))
             }
         }
     }

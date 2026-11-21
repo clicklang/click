@@ -22,10 +22,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             }
             let scope = current.driver().open_have(antecedent.clone())?;
             let Some(closed) = scope.driver().try_solve_closure()? else {
-                return Err(scope.body().step_error(format!(
-                    "`apply(fact)` has an unproved antecedent: `{}`",
-                    crate::surface::printing::source_click_proposition(antecedent)
-                )));
+                return Err(scope
+                    .body()
+                    .step_error(format!(
+                        "`apply(fact)` has an unproved antecedent: `{}`",
+                        crate::surface::printing::source_click_proposition(antecedent)
+                    ))
+                    .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch));
             };
             current = closed.join()?;
         }
@@ -110,11 +113,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             }
             let scope = current.driver().open_have(surface.clone())?;
             let Some(closed) = scope.driver().try_solve_closure()? else {
-                return Err(scope.body().step_error(format!(
-                    "theorem `{}` has an unproved obligation: `{}`",
-                    application.name,
-                    crate::surface::printing::source_click_proposition(&surface)
-                )));
+                return Err(scope
+                    .body()
+                    .step_error(format!(
+                        "theorem `{}` has an unproved obligation: `{}`",
+                        application.name,
+                        crate::surface::printing::source_click_proposition(&surface)
+                    ))
+                    .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch));
             };
             current = closed.join()?;
             premises.push(surface);

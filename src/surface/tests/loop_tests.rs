@@ -68,8 +68,8 @@ fn scoped_loop_facts_hide_an_intermediate_model_on_a_single_exit() {
             verify_c_sources(&source, &[("program.c", c)])
                 .expect_err("the reachable break has no pending work")
                 .trace_context_report()
-                .expect("the failed check retains an exact premise list")
-                .split_once("available premises at the failed check")
+                .expect("the proof refusal retains an exact premise list")
+                .split_once("premises in scope")
                 .expect("the failure records the loop's exported premises")
                 .1
                 .split("checks observed")

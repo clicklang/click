@@ -390,7 +390,7 @@ fn failed_call_step_reports_its_unresolved_required_precondition() {
         .expect_err("the caller establishes neither arm of the call requirement");
     let requirement = error
         .unresolved_requirement()
-        .expect("the refused call requirement should survive proof error wrapping");
+        .expect("the refused call requirement should survive verification-error wrapping");
     assert_eq!(
         requirement.context.as_deref(),
         Some("precondition clause 1 of `either_positive`")
@@ -444,7 +444,7 @@ fn ordinary_requirement_errors_have_no_call_site_metadata() {
         arguments: Vec::new(),
     });
     let error = ClickError::new("ordinary requirement").with_unresolved_requirement(&obligation);
-    assert!(error.report().contains("error kind: proof error"));
+    assert!(error.report().contains("error kind: verification error"));
     assert!(
         error.report().contains("goal: ordinary_requirement()"),
         "{}",

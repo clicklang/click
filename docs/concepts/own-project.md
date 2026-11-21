@@ -247,7 +247,7 @@ uint64 label_fit(uint64 length) {
 
 ```console
 $ click verify label.click
-proof error:
+unsuccessful search:
   `ensures result < 16` failed for `label_fit.ensures_0` path 0
   unclosed goal
   result < 16; left side evaluated to 31u64, right side evaluated to 16
