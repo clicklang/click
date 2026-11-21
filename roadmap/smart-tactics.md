@@ -95,7 +95,9 @@ reads. Symbolic-sized fields still use the memory view. Native and shared
 array arguments carry the same source point. External arrays can use function
 entry after disjoint local declarations, stores and checked calls whose write
 ranges all name automatic objects, including when several effects are recorded
-together. Declared predicates also retain that entry version for external
+together. The shared caller storage can also name an array by a recorded
+write point and retain that version across local stores and local-only calls.
+Declared predicates also retain that entry version for external
 `int32` array arguments, including when unfolding their bodies or raising a
 predicate fact. Scalar fold instantiation keeps a selected entry point
 when the substituted index still uses the indexed entry selector. Checked
@@ -122,7 +124,7 @@ The remaining memory-state paths have production callers:
 | --- | --- |
 | Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for abstract cells supplied by bare memory producers or taken outside the verified entry path. |
 | Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` still construct memory-state observations for bare memory producers and unsupported indexed types or addresses. |
-| Preservation | `array_ref_argument_point` uses the block version walk outside the indexed suffix, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
+| Preservation | `array_ref_argument_point` uses the block version walk outside the indexed entry and write paths, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
 | Raising | Detached array arguments still use `synthesize_at_memory`. Detached scalar and abstract reads still use the memory and projection indexes in `RecordedStates::point_reading_load`. |
 
 Give symbolic addresses a separate slice. A loaded or opaque symbolic pointer

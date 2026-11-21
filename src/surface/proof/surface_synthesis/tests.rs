@@ -9515,6 +9515,74 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
 }
 
 #[test]
+fn declared_predicate_array_raises_at_its_write_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let entry = ExecutionState::new()
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer),
+        )
+        .begin_function_entry_memory();
+    let write = |state: &ExecutionState| {
+        state.clone().with_memory(state.memory().clone().store(
+            address.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        ))
+    };
+    let first = write(&entry);
+    let second = write(&first);
+    assert_eq!(first.memory(), second.memory());
+
+    let file = crate::surface::parse(
+        "predicate first_is(p: int32[], value: int32) { p[0] == value }
+         theorem probe(p: int32*) { requires first_is(p, 7); ensures true; }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("predicate premise");
+    };
+    let selector = ProgramPointSelector::Mark("first".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), first.clone());
+    let predicates = PredicateEnvironment::new(file.predicate_definitions());
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let lower = |surface: &ClickProposition, current: &ExecutionState| {
+        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+            surface,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
+            FixedStateFrame::new(&entry, current, None, &points),
+            SpecDefinitions::new(&predicates, &functions),
+            FixedStateLoweringOptions::default(),
+        )
+        .map(|(proposition, _, _, _)| proposition)
+    };
+    let original = lower(written, &first).unwrap();
+    let Proposition::Predicate { arguments, .. } = &original else {
+        panic!("declared predicate");
+    };
+    assert!(matches!(
+        arguments.get(1),
+        Some(Term::ArrayReadPoint(point))
+            if point.read_version_id() == first.observation_point_id()
+    ));
+    assert_ne!(lower(written, &second).unwrap(), original);
+
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let raised = synthesize_surface_proposition(&original, ParameterBinding::default(), &second)
+        .expect("the array reference retains its write point");
+    assert!(
+        matches!(&raised, ClickProposition::PredicateCall { arguments, .. }
+        if matches!(arguments.first(), Some(ContractExpression::At { selector: at, .. }) if at == &selector))
+    );
+    assert_eq!(lower(&raised, &second), Ok(original));
+}
+
+#[test]
 fn fixed_width_opaque_field_observation_round_trips_its_store_point() {
     use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, ExpressionOutcome, TypeParameterName};
 
