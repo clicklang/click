@@ -1436,6 +1436,11 @@ impl ProgramLayouts {
         // Declarations normally share one owner. Retain the typed owner so a
         // long function/source spelling is copied once, not per temporary.
         let mut last_owner = None;
+        let slice_parameters = function
+            .parameters()
+            .iter()
+            .filter_map(|parameter| parameter.binding_name().slice_length_of())
+            .collect::<BTreeSet<_>>();
         let mut slice_locals = BTreeMap::new();
         let mut record = |binding: &crate::kernel::BindingName,
                           site: Option<&syntax::CSite>,
@@ -1452,6 +1457,17 @@ impl ProgramLayouts {
             let Some(id) = binding.local_id() else {
                 return;
             };
+            // A same-named local hides a slice parameter even if that
+            // local has no length. Resolve through the live binding in proofs.
+            if !id.is_parameter()
+                && let Some(name) = id.spelling()
+                && slice_parameters.contains(name)
+            {
+                slice_locals.insert(
+                    name.to_owned(),
+                    crate::kernel::BindingName::scoped_slice_length(name, false),
+                );
+            }
             if last_owner.as_ref() != Some(id.owner()) {
                 index
                     .owners

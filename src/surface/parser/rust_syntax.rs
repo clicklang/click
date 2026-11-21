@@ -1244,9 +1244,10 @@ impl Parser {
         }
         let local = self.rust_slice_locals.get(name);
         let parameter = self.rust_slice_params.contains(name);
+        let in_proof = self.proof_nesting > 0;
         let length = if qualified && (parameter || local?.unresolved_slice_length().is_some()) {
-            crate::kernel::BindingName::program_slice_length(name)
-        } else if parameter {
+            crate::kernel::BindingName::scoped_slice_length(name, true)
+        } else if parameter && (!in_proof || local.is_none()) {
             crate::kernel::BindingName::slice_length(name)
         } else {
             local?.clone()

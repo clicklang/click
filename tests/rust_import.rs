@@ -5801,7 +5801,7 @@ fn shadow(bytes: &[u8]) -> usize {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: refreshes a Charon capture"]
-fn rust_program_slice_length_uses_the_live_binding_even_when_it_shadows_a_parameter() {
+fn rust_slice_length_follows_the_receiver_scope_in_proofs() {
     let p = Project::new(
         r#"
 pub fn shadow(bytes: &[u8]) -> usize {
@@ -5821,14 +5821,17 @@ fn shadow(bytes: &[u8]) -> usize {
     ensures result == 3u64;
 } by {
     step_until(assignment(first, 0).entry);
+    have bytes.len() == 1u64;
     have program::bytes.len() == 1u64;
     mark first_slice;
     step_until(assignment(second, 0).entry);
+    have bytes.len() == 2u64;
     have program::bytes.len() == 2u64;
-    have bytes.len() == 4u64;
-    have at(first_slice, program::bytes.len()) == 1u64;
+    have old(program::bytes.len()) == 4u64;
+    have at(first_slice, bytes.len()) == 1u64;
     have at(function.entry, program::bytes.len()) == 4u64;
     step_until(function.exit);
+    have bytes.len() == 4u64;
     have program::bytes.len() == 4u64;
     solve();
 }
