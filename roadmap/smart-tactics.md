@@ -91,9 +91,10 @@ Concrete resource cells and compact runs can retain their source point.
 Indexed abstract reads of a directly written local use its typed store in
 equality and raising. Native and shared array arguments carry the same source
 point. External arrays can use function entry after disjoint local
-declarations, stores and checked calls whose write set is one range in an automatic
-object. Declared predicates also retain that entry version for external
-`int32` array arguments, including when unfolding their bodies or raising
+declarations, stores and checked calls whose write ranges all name automatic
+objects, including when several effects are recorded together. Declared
+predicates also retain that entry version for external `int32` array
+arguments, including when unfolding their bodies or raising
 a predicate fact. Scalar fold instantiation keeps a selected entry point
 when the substituted index still uses the indexed entry selector. Checked
 resource quantities and materialized resource cells share that entry point for
@@ -107,6 +108,9 @@ supported scalar fields and compact cells use the same selector. A join retains 
 incoming paths establish the same unchanged entry version. Scalar
 canonicalization, congruence and Integer arithmetic retain the point through
 comparison.
+
+Exact pointer reads can recover the complete stored pointer from a typed
+index entry at their selected point, with the value's provenance and bounds.
 
 The remaining memory-state paths have production callers:
 
