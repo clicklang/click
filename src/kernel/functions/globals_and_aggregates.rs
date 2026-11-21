@@ -1044,11 +1044,42 @@ pub(super) fn aggregate_copy_source_holds_nothing(
 /// of silently keeping the destination's old value. The raw
 /// `copy_aggregate_fields` is deliberately module-private; new call sites in
 /// other modules must use this checked form.
+pub(in crate::kernel) fn copy_aggregate_fields_checked_at(
+    state: &ExecutionState,
+    source: &Address,
+    destination: &Address,
+    layout: &AggregateLayout,
+) -> Result<SymbolicMemory, UndefinedBehavior> {
+    // Caller storage predates this function's locals. Earlier field stores
+    // into the local destination leave the caller's array bytes intact.
+    let source_state = (source.base == AddressBase::ExternalArgument
+        && destination.base.is_local_block())
+    .then_some(state);
+    copy_aggregate_fields_checked_from(
+        state.memory().clone(),
+        source,
+        destination,
+        layout,
+        source_state,
+    )
+}
+
+#[cfg(test)]
 pub(in crate::kernel) fn copy_aggregate_fields_checked(
     memory: SymbolicMemory,
     source: &Address,
     destination: &Address,
     layout: &AggregateLayout,
+) -> Result<SymbolicMemory, UndefinedBehavior> {
+    copy_aggregate_fields_checked_from(memory, source, destination, layout, None)
+}
+
+fn copy_aggregate_fields_checked_from(
+    memory: SymbolicMemory,
+    source: &Address,
+    destination: &Address,
+    layout: &AggregateLayout,
+    source_state: Option<&ExecutionState>,
 ) -> Result<SymbolicMemory, UndefinedBehavior> {
     if let Some(bytes) = layout.bit_field_bytes.as_deref() {
         return memory.copy_local_bit_field_record(
@@ -1062,7 +1093,13 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked(
     if aggregate_copy_reads_uninitialized(&memory, source, layout) {
         return Err(UndefinedBehavior::UninitializedRead);
     }
-    Ok(copy_aggregate_fields(memory, source, destination, layout))
+    Ok(copy_aggregate_fields_from(
+        memory,
+        source,
+        destination,
+        layout,
+        source_state,
+    ))
 }
 
 // Module-private on purpose: cross-module aggregate copies must go through
@@ -1070,16 +1107,29 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked(
 // reported. Actual call arguments are checked before binding; entry proof
 // images use the raw form because their incoming aggregate values are evaluated.
 pub(super) fn copy_aggregate_fields(
-    mut memory: SymbolicMemory,
+    memory: SymbolicMemory,
     source: &Address,
     destination: &Address,
     layout: &AggregateLayout,
 ) -> SymbolicMemory {
+    copy_aggregate_fields_from(memory, source, destination, layout, None)
+}
+
+fn copy_aggregate_fields_from(
+    mut memory: SymbolicMemory,
+    source: &Address,
+    destination: &Address,
+    layout: &AggregateLayout,
+    source_state: Option<&ExecutionState>,
+) -> SymbolicMemory {
+    let source_point = std::cell::OnceCell::new();
     for field in layout.fields() {
         if let ProgramType::UInt32Array(count) = field.program_type() {
             let source_field = source.offset_by_layout(field.offset());
             let target_field = destination.offset_by_layout(field.offset());
-            if let Ok(copied) = memory.clone().write_scalar_array_region(
+            let point =
+                source_state.map(|state| source_point.get_or_init(|| state.program_point()));
+            if let Ok(copied) = memory.clone().write_scalar_array_region_at(
                 &target_field,
                 ProgramType::UInt32,
                 count,
@@ -1087,13 +1137,14 @@ pub(super) fn copy_aggregate_fields(
                 true,
                 false,
                 &PureFactContext::new(),
+                point,
             ) {
                 memory = copied;
                 continue;
             }
             // Forgotten initialized values stay an immutable typed state,
             // without generating one load for each element of the field.
-            if let Ok(copied) = memory.clone().write_scalar_array_state(
+            if let Ok(copied) = memory.clone().write_scalar_array_state_at(
                 &target_field,
                 ProgramType::UInt32,
                 count,
@@ -1104,6 +1155,7 @@ pub(super) fn copy_aggregate_fields(
                 true,
                 false,
                 &PureFactContext::new(),
+                point,
             ) {
                 memory = copied;
                 continue;
