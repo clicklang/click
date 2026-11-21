@@ -37,6 +37,8 @@ struct ObjectFields {
     /// The function's struct layouts by name, for the struct a pointer field
     /// points at.
     structs: syntax::DeclarationMap<crate::languages::interface::RecordLayout>,
+    /// The struct each struct-pointer local points to, by its kernel name.
+    pointer_locals: std::collections::BTreeMap<crate::kernel::BindingName, String>,
 }
 
 thread_local! {
@@ -51,6 +53,7 @@ pub(crate) fn enter_ambient_object_fields(
 ) {
     let mut objects = ObjectFields {
         structs: function.structs().clone(),
+        pointer_locals: function.local_struct_pointers().clone(),
         ..ObjectFields::default()
     };
     for aggregate in function.global_aggregates().values() {
@@ -260,6 +263,28 @@ pub(super) fn ambient_struct_layout(
         slot.borrow()
             .as_ref()
             .and_then(|objects| objects.structs.get(name).cloned())
+    })
+}
+
+/// The struct a struct-pointer local of the function being described points
+/// to, by its declared name and layout. A naming table holds a local by its
+/// source spelling; declarations sharing that spelling must agree.
+pub(super) fn ambient_local_struct_pointee(
+    spelling: &str,
+) -> Option<(String, crate::languages::interface::RecordLayout)> {
+    AMBIENT_OBJECT_FIELDS.with(|slot| {
+        let objects = slot.borrow();
+        let objects = objects.as_ref()?;
+        let mut pointees = objects
+            .pointer_locals
+            .iter()
+            .filter(|(local, _)| local.source_name() == spelling)
+            .map(|(_, struct_name)| struct_name);
+        let struct_name = pointees.next()?;
+        if pointees.any(|other| other != struct_name) {
+            return None;
+        }
+        Some((struct_name.clone(), objects.structs.get(struct_name)?.clone()))
     })
 }
 
