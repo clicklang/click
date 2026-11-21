@@ -297,7 +297,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "resource",
     "region",
     "rewrite",
-    "same_object",
+    "same_allocation",
     "little_endian",
     "separate",
     "float32_from_bits",

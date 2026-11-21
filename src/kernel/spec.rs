@@ -6350,7 +6350,7 @@ fn lower_spec_predicate_proposition_at_state_in(
         paths = next_paths;
     }
 
-    if name == SAME_OBJECT_PREDICATE_NAME {
+    if name == SAME_ALLOCATION_PREDICATE_NAME {
         for path in &mut paths {
             let Proposition::Predicate { arguments, .. } = &path.proposition else {
                 unreachable!("predicate lowering retains its proposition carrier")
@@ -6373,7 +6373,7 @@ fn lower_spec_predicate_proposition_at_state_in(
             {
                 return Ok(Vec::new());
             }
-            path.proposition = pointer_same_object_proposition(left.address(), right.address());
+            path.proposition = pointer_same_allocation_proposition(left.address(), right.address());
         }
     }
     Ok(paths)

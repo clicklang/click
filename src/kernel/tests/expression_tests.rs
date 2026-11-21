@@ -2989,7 +2989,7 @@ fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object(
 #[test]
 fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
     let null = Address::null();
-    assert!(disprove_builtin_prop(&pointer_same_object_proposition(
+    assert!(disprove_builtin_prop(&pointer_same_allocation_proposition(
         &null, &null
     )));
 

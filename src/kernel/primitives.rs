@@ -27,19 +27,19 @@ pub struct ThreadHandleId(pub(crate) u64);
 
 pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
 
-pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
+pub(crate) const SAME_ALLOCATION_PREDICATE_NAME: &str = "__click_same_allocation";
 /// The prefix of the fact that opaque subobject bounds cover a range of
 /// `element_width`-byte elements: `{prefix}{element_width}(start, from, to)`
 /// (`design/pointer-subobject-bounds.md`, Phase C).
 pub(crate) const SUBOBJECT_COVERS_PREDICATE_PREFIX: &str = "__click_subobject_covers_";
 
-/// The Click spelling of the kernel predicate `name`: `same_object`
+/// The Click spelling of the kernel predicate `name`: `same_allocation`
 /// for the built-in, the declared name for a contract or a
 /// user predicate. `None` marks verifier bookkeeping under the reserved
 /// `__click_` prefix, which no Click proposition lowers to.
 pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
     match name {
-        SAME_OBJECT_PREDICATE_NAME => Some("same_object"),
+        SAME_ALLOCATION_PREDICATE_NAME => Some("same_allocation"),
         LITTLE_ENDIAN_PREDICATE_NAME => Some("little_endian"),
         _ => FunctionContract::surface_name_from_predicate(name)
             .or_else(|| (!name.starts_with("__click_")).then_some(name)),

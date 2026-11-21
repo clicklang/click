@@ -252,10 +252,10 @@ fn validate_proposition_expression_types_one(
                     Err(ClickError::new("little_endian expects no arguments"))
                 };
             }
-            if name == "same_object" {
+            if name == "same_allocation" {
                 let [left, right] = arguments.as_slice() else {
                     return Err(ClickError::new(format!(
-                        "same_object expects two pointer arguments in {context}, got {}",
+                        "same_allocation expects two pointer arguments in {context}, got {}",
                         arguments.len()
                     )));
                 };
@@ -268,7 +268,7 @@ fn validate_proposition_expression_types_one(
                     )?;
                     if !actual.is_some_and(InterfaceType::is_object_pointer) {
                         return Err(ClickError::new(format!(
-                            "same_object expects pointer arguments in {context}, got {}",
+                            "same_allocation expects pointer arguments in {context}, got {}",
                             actual.map_or_else(
                                 || "an unknown type".to_string(),
                                 describe_interface_type
@@ -5188,10 +5188,10 @@ fn validate_predicate_calls_in_proposition_one(
                     Err(ClickError::new("little_endian expects no arguments"))
                 };
             }
-            if name == "same_object" {
+            if name == "same_allocation" {
                 if arguments.len() != 2 {
                     return Err(ClickError::new(format!(
-                        "same_object expects two pointer arguments in {context}, got {}",
+                        "same_allocation expects two pointer arguments in {context}, got {}",
                         arguments.len()
                     )));
                 }
