@@ -5651,9 +5651,16 @@ fn materialize_composite_resource_cells_from_state(
         return memory.materialize_entry_integer_cell_at(range.base().clone(), naming_point);
     }
     if run_type.byte_width() <= element_width {
-        let source = if naming_point
-            .entry_cell_version(range.base(), run_type)
-            .is_some()
+        let indexed_pointer_field = run_type.is_object_pointer()
+            && start == 0
+            && end == 1
+            && naming_point
+                .indexed_typed_version(range.base(), run_type)
+                .is_some();
+        let source = if indexed_pointer_field
+            || naming_point
+                .entry_cell_version(range.base(), run_type)
+                .is_some()
         {
             naming_point.clone()
         } else {
@@ -6995,6 +7002,40 @@ mod declared_scalar_field_observation_tests {
             named.load(&base.offset_by_bytes(8)),
             ExpressionOutcome::Value(_)
         ));
+    }
+
+    #[test]
+    fn declared_pointer_field_retains_its_recorded_store() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let ty = ProgramType::Int32Pointer;
+        let stored = ExecutionState::new().with_memory(SymbolicMemory::new().store(
+            base.clone(),
+            ProgramValue::typed_pointer(Address::symbolic(Variable(985_804)), ty),
+        ));
+        let source = stored.program_point();
+        let segment = field(
+            ProgramExpression::Value(ProgramValue::pointer(base.clone())),
+            ty,
+        );
+        let named = materialize_composite_resource_cells_from_state(
+            SymbolicMemory::new(),
+            &source,
+            &ResourceClause::OwnMemory(segment),
+            &ResourceFact::own_memory(MemoryRange::new(base.clone(), 0.into(), 2.into())),
+            &[],
+            false,
+        );
+        let ExpressionOutcome::Value(ProgramValue::Pointer(named)) = named.load(&base) else {
+            panic!("expected a complete pointer observation");
+        };
+        let read = named.address().as_loaded_value().expect("pointer read");
+        assert_eq!(read.point.read_version_id(), stored.observation_point_id());
+        assert_eq!(read.defining_address, base);
+        assert_eq!(read.value_type, Some(ty));
     }
 
     #[test]

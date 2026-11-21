@@ -4133,6 +4133,34 @@ pub(crate) fn canonical_cell_load(
     canonical_form_of_load(source.shared_memory().clone(), pointer.clone(), kind)
 }
 
+/// Name a typed cell exposed by a resource view.
+pub(crate) fn canonical_cell_value(
+    source: &ProgramPoint,
+    pointer: &Address,
+    value_type: ProgramType,
+) -> ProgramValue {
+    if let ProgramType::Parameter(parameter) = value_type {
+        return AlgebraicTermNode::parameter_cell_load(source, pointer.clone(), parameter);
+    }
+    if let Some(read) = indexed_pointer_cell_read(source, pointer, value_type) {
+        return ProgramValue::Pointer(read);
+    }
+    crate::kernel::cell_run_value(value_type, canonical_cell_load(source, pointer, value_type))
+}
+
+/// Name a complete object pointer cell from its recorded typed store.
+pub(crate) fn indexed_pointer_cell_read(
+    source: &ProgramPoint,
+    pointer: &Address,
+    value_type: ProgramType,
+) -> Option<Pointer> {
+    if !value_type.is_object_pointer() {
+        return None;
+    }
+    let version = source.indexed_typed_version(pointer, value_type)?;
+    Some(Pointer::from_point_read(version, value_type, pointer))
+}
+
 fn indexed_resource_scalar_read(
     source: &ProgramPoint,
     pointer: &Address,

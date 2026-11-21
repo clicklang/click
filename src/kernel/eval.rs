@@ -63,6 +63,8 @@ pub(in crate::kernel) use byte_view::{
 pub(super) use expression::*;
 #[cfg(test)]
 pub(in crate::kernel) use memory_loads::abstract_value_source;
+#[cfg(test)]
+pub(crate) use memory_loads::canonical_cell_load;
 pub(crate) use memory_loads::canonical_condition;
 pub(crate) use memory_loads::canonical_condition_fact;
 pub(in crate::kernel) use memory_loads::canonical_scalar_read;
@@ -123,7 +125,9 @@ pub(crate) use memory_loads::{
 pub(in crate::kernel) use memory_loads::{
     cached_symbolic_storage_cell_value, symbolic_storage_cell_value,
 };
-pub(crate) use memory_loads::{canonical_cell_load, canonical_form_of_load};
+pub(crate) use memory_loads::{
+    canonical_cell_value, canonical_form_of_load, indexed_pointer_cell_read,
+};
 pub(super) use memory_loads::{
     canonical_offset_term, evaluate_exact_logical_memory_load_paths, evaluate_indexed_read,
     evaluate_logical_memory_load_paths, evaluate_retained_memory_load_paths,

@@ -3525,6 +3525,68 @@ fn resource_cell_naming_checks_the_recorded_integer_version_after_forgetting_a_n
 }
 
 #[test]
+fn resource_pointer_cell_keeps_the_complete_read_from_its_recorded_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let ty = ProgramType::Int32Pointer;
+    let bytes = ty.byte_width();
+    let initial = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("other", 4));
+    let without_name = || {
+        let stored = initial.clone().with_memory(initial.memory().clone().store(
+            slot.clone(),
+            ProgramValue::typed_pointer(Address::symbolic(Variable(986_220)), ty),
+        ));
+        let forgotten =
+            stored
+                .memory()
+                .without_possible_aliasing_cells(&slot, bytes, &PureFactContext::new());
+        stored.with_memory(forgotten)
+    };
+    let before = without_name();
+    assert!(before.memory().known_value(&slot).is_none());
+    let source = before.program_point();
+    let version = source.indexed_typed_version(&slot, ty).unwrap();
+    let pointer = crate::kernel::Pointer::from_point_read(version, ty, &slot);
+    let expected = ProgramValue::Pointer(pointer.clone());
+    let named = before
+        .memory()
+        .clone()
+        .materialize_cell_at(slot.clone(), ty, &source);
+    assert_eq!(named.known_value(&slot), Some(expected.clone()));
+    assert!(super::memory_only_adds_named_cells(&before, &named).is_ok());
+
+    let work = [1, 8, 64, 256].map(|count| {
+        let run = before
+            .memory()
+            .clone()
+            .with_named_cell_run(slot.clone(), bytes, ty, 0, count, source.clone())
+            .unwrap();
+        let ((value, checked), work) = crate::instrumentation::measure_deterministic_work(|| {
+            (
+                run.known_value(&slot),
+                super::memory_only_adds_named_cells(&before, &run),
+            )
+        });
+        assert_eq!(value, Some(expected.clone()));
+        assert!(checked.is_ok());
+        work
+    });
+    assert!(work.iter().all(|units| *units <= work[0] + 8), "{work:?}");
+
+    let forged = before.memory().clone().materialize_named_cell(
+        slot.clone(),
+        ProgramValue::Pointer(pointer.with_provenance(std::sync::Arc::new(Address::null()))),
+    );
+    assert!(super::memory_only_adds_named_cells(&before, &forged).is_err());
+    let other = without_name();
+    assert_eq!(before.memory(), other.memory());
+    assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+}
+
+#[test]
 fn resource_cell_naming_checks_the_entry_point_without_a_store() {
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {

@@ -560,50 +560,22 @@ impl CellRun {
     /// The value slot `index` holds: the load of its pointer in the source,
     /// typed as the element and spelled as the run's mode says.
     fn named_value(&self, index: u32) -> ProgramValue {
-        let pointer = self.slot_pointer(index);
-        // A slot of an abstract type parameter holds the load of its type.
-        if let ProgramType::Parameter(parameter) = self.element_type {
-            let pointer = match &self.mode {
-                RunValueMode::Copy { source_base } => {
-                    source_base.offset_by_bytes(index * self.element_width)
-                }
-                RunValueMode::Constant(value) => return value.clone(),
-                RunValueMode::Load => pointer,
-            };
-            return super::AlgebraicTermNode::parameter_cell_load(&self.source, pointer, parameter);
-        }
-        match &self.mode {
-            RunValueMode::Load => {
-                // This producer knows the element's value type even when its
-                // address is symbolic and has no array-wide width declaration.
-                crate::kernel::eval::record_load_access_width(
-                    self.source.memory(),
-                    &pointer,
-                    self.element_type.byte_width(),
-                );
-                let load = crate::kernel::eval::canonical_cell_load(
-                    &self.source,
-                    &pointer,
-                    self.element_type,
-                );
-                cell_run_value(self.element_type, load)
-            }
-            RunValueMode::Constant(value) => value.clone(),
+        let pointer = match &self.mode {
+            RunValueMode::Load => self.slot_pointer(index),
             RunValueMode::Copy { source_base } => {
-                let source_pointer = source_base.offset_by_bytes(index * self.element_width);
-                crate::kernel::eval::record_load_access_width(
-                    self.source.memory(),
-                    &source_pointer,
-                    self.element_type.byte_width(),
-                );
-                let load = crate::kernel::eval::canonical_cell_load(
-                    &self.source,
-                    &source_pointer,
-                    self.element_type,
-                );
-                cell_run_value(self.element_type, load)
+                source_base.offset_by_bytes(index * self.element_width)
             }
+            RunValueMode::Constant(value) => return value.clone(),
+        };
+        if !matches!(self.element_type, ProgramType::Parameter(_)) {
+            // The run knows the element width even at a symbolic address.
+            crate::kernel::eval::record_load_access_width(
+                self.source.memory(),
+                &pointer,
+                self.element_type.byte_width(),
+            );
         }
+        crate::kernel::eval::canonical_cell_value(&self.source, &pointer, self.element_type)
     }
 
     pub(crate) fn live_count(&self) -> u64 {
