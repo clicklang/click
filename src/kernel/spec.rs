@@ -6393,7 +6393,8 @@ fn lower_spec_predicate_proposition_at_state_in(
             {
                 return Ok(Vec::new());
             }
-            path.proposition = pointer_same_allocation_proposition(left.address(), right.address());
+            // The fact stays one predicate, so it raises to itself. Admitting it
+            // relates the two provenances (`PureFactContext::adjust_same_allocation_fact`).
         }
     }
     Ok(paths)

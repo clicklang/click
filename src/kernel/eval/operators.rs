@@ -1945,14 +1945,14 @@ fn uint32_order_condition(
 
 fn apply_same_allocation_pointer_operation(
     state: &ExecutionState,
-    left: Address,
-    right: Address,
+    left: Pointer,
+    right: Pointer,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     apply: impl FnOnce(Address, Address, ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
 ) -> Vec<ExpressionPath> {
-    let left_is_null = pointer_object_is_null_condition(&left);
+    let left_is_null = pointer_object_is_null_condition(left.address());
     apply_pointer_object_nonnull_guard(
         state,
         &left.clone(),
@@ -1961,7 +1961,7 @@ fn apply_same_allocation_pointer_operation(
         obligations,
         assumptions,
         move |facts, obligations| {
-            let right_is_null = pointer_object_is_null_condition(&right);
+            let right_is_null = pointer_object_is_null_condition(right.address());
             apply_pointer_object_nonnull_guard(
                 state,
                 &right.clone(),
@@ -1970,14 +1970,21 @@ fn apply_same_allocation_pointer_operation(
                 obligations,
                 assumptions,
                 move |facts, obligations| {
-                    let same_identity = pointer_object_identity_condition(&left, &right);
-                    apply_pointer_provenance_guard(
-                        same_identity,
-                        true,
+                    let (guard_left, guard_right) = (left.clone(), right.clone());
+                    apply_same_allocation_guard(
+                        &guard_left,
+                        &guard_right,
                         facts,
                         obligations,
                         assumptions,
-                        move |facts, obligations| apply(left, right, facts, obligations),
+                        move |facts, obligations| {
+                            apply(
+                                left.into_pointer(),
+                                right.into_pointer(),
+                                facts,
+                                obligations,
+                            )
+                        },
                     )
                 },
             )
@@ -1985,16 +1992,70 @@ fn apply_same_allocation_pointer_operation(
     )
 }
 
+/// `same_allocation(left, right)`, the precondition of a relational
+/// comparison or subtraction (`design/pointer-model.md`): decided from the
+/// two provenances, or else the path continues with the fact and the
+/// undefined-behavior path records its negation. Both raise as written.
+fn apply_same_allocation_guard(
+    left: &Pointer,
+    right: &Pointer,
+    mut facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
+) -> Vec<ExpressionPath> {
+    let fact = same_allocation_proposition(left, right);
+    if assumptions.knows_same_allocation(left, right) || facts.contains_proposition(&fact) {
+        return apply(facts, obligations);
+    }
+    let same = ConditionTerm::address_equal(left.provenance().clone(), right.provenance().clone());
+    match decide_with_facts(assumptions, &facts, &same) {
+        Some(true) => apply(facts, obligations),
+        Some(false) => vec![ExpressionPath {
+            outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::PointerArithmetic),
+            facts,
+            obligations,
+        }],
+        None => {
+            let mut invalid_facts = facts.clone();
+            if add_path_fact(&mut facts, assumptions, fact.clone()).is_none() {
+                return Vec::new();
+            }
+            let mut paths = apply(facts, obligations.clone());
+            if add_path_fact(
+                &mut invalid_facts,
+                assumptions,
+                Proposition::Not(Box::new(fact)),
+            )
+            .is_some()
+            {
+                paths.push(ExpressionPath {
+                    outcome: ExpressionOutcome::UndefinedBehavior(
+                        UndefinedBehavior::PointerArithmetic,
+                    ),
+                    facts: invalid_facts,
+                    obligations,
+                });
+            }
+            paths
+        }
+    }
+}
+
 fn apply_pointer_object_nonnull_guard(
     state: &ExecutionState,
-    pointer: &Address,
+    pointer: &Pointer,
     is_null: ConditionTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     apply: impl FnOnce(ExecutionFacts, Vec<ProofObligation>) -> Vec<ExpressionPath>,
 ) -> Vec<ExpressionPath> {
-    if pointer_has_object_provenance_evidence(state, pointer, assumptions, &facts) {
+    // A pointer a stated `same_allocation` names has an allocation, so it is
+    // not null.
+    if pointer_has_object_provenance_evidence(state, pointer.address(), assumptions, &facts)
+        || assumptions.allocation_known_nonnull(pointer.provenance())
+    {
         let mut facts = facts;
         if add_condition_path_fact(&mut facts, assumptions, is_null, false).is_none() {
             return Vec::new();
@@ -2181,26 +2242,20 @@ pub(in crate::kernel) fn pointer_object_is_null_condition(pointer: &Address) -> 
     pointer_is_null_condition(pointer.object_base())
 }
 
-pub(in crate::kernel) fn pointer_same_allocation_proposition(
-    left: &Address,
-    right: &Address,
+/// The kernel fact `same_allocation(left, right)`: one predicate, which
+/// raises to itself (`design/pointer-model.md`).
+pub(in crate::kernel) fn same_allocation_proposition(
+    left: &Pointer,
+    right: &Pointer,
 ) -> Proposition {
-    Proposition::And(
-        Box::new(Proposition::condition_is(
-            pointer_object_is_null_condition(left),
-            false,
-        )),
-        Box::new(Proposition::And(
-            Box::new(Proposition::condition_is(
-                pointer_object_is_null_condition(right),
-                false,
-            )),
-            Box::new(Proposition::condition_is(
-                pointer_object_identity_condition(left, right),
-                true,
-            )),
-        )),
-    )
+    Proposition::Predicate {
+        name: crate::kernel::SAME_ALLOCATION_PREDICATE_NAME.to_string(),
+        arguments: vec![
+            Term::ExecutionState(Box::new(ExecutionState::new())),
+            Term::ProgramValue(ProgramValue::Pointer(left.clone()).into()),
+            Term::ProgramValue(ProgramValue::Pointer(right.clone()).into()),
+        ],
+    }
 }
 
 /// The two owned members of the held resources that hold the compared
@@ -2311,8 +2366,8 @@ pub(super) fn apply_program_comparison(
             };
             apply_same_allocation_pointer_operation(
                 state,
-                left.into_pointer(),
-                right.into_pointer(),
+                left,
+                right,
                 facts,
                 obligations,
                 assumptions,
@@ -2580,8 +2635,8 @@ pub(in crate::kernel) fn apply_program_subtract(
             };
             apply_same_allocation_pointer_operation(
                 state,
-                left.into_pointer(),
-                right.into_pointer(),
+                left,
+                right,
                 facts,
                 obligations,
                 assumptions,
