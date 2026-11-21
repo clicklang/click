@@ -273,6 +273,68 @@ fn aggregate_copy_names_forgotten_integer_fields_by_their_typed_stores() {
     }
 }
 
+#[test]
+fn aggregate_copy_names_forgotten_pointer_fields_by_the_complete_typed_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let field = source.offset_by_bytes(8);
+    let target = SymbolicMemory::frame_local_pointer(1, "pointer_record_copy");
+    for ty in [ProgramType::UInt8Pointer, ProgramType::UInt32Pointer] {
+        let layout = AggregateLayout::new(
+            16,
+            8,
+            vec![
+                AggregateField::new("tag", 0, ProgramType::UInt32),
+                AggregateField::new("link", 8, ty),
+            ],
+        );
+        let domain = Address::symbolic(Variable(986_246));
+        let value = Pointer::new(domain.offset_by_bytes(4), ty).with_bounds(Some(
+            crate::kernel::SubobjectBounds {
+                start: domain,
+                width: 16u32.into(),
+            },
+        ));
+        let initial = ExecutionState::new().with_memory(
+            SymbolicMemory::new().with_block(target.base.clone(), layout.size_bytes()),
+        );
+        let stored = initial.clone().with_memory(
+            initial
+                .memory()
+                .clone()
+                .store(field.clone(), ProgramValue::Pointer(value.clone())),
+        );
+        let forgotten = stored.memory().without_possible_aliasing_cells(
+            &field,
+            ty.byte_width(),
+            &PureFactContext::new(),
+        );
+        let before = stored.clone().with_memory(forgotten);
+        assert!(before.memory().known_value(&field).is_none());
+        let copied = copy_aggregate_fields_checked_at(&before, &source, &target, &layout).unwrap();
+        let Some(ProgramValue::Pointer(read)) = copied.known_value(&target.offset_by_bytes(8))
+        else {
+            panic!("expected a complete pointer read");
+        };
+        let descriptor = read.address().as_loaded_value().expect("read pointer");
+        assert_eq!(
+            descriptor.point.read_version_id(),
+            stored.observation_point_id()
+        );
+        assert_eq!(descriptor.defining_address, field);
+        assert_eq!(descriptor.value_type, Some(ty));
+        assert_eq!(read.provenance(), read.address());
+        assert_eq!(read.bounds_owner(), Some(read.address()));
+        assert_eq!(
+            crate::kernel::eval::pointer_read_over_write_program_value(read.address()),
+            Some(value),
+        );
+    }
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/aggregate_union_copy_tests.rs");

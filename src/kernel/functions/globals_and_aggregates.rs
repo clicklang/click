@@ -1300,16 +1300,25 @@ fn copy_aggregate_fields_from(
                     | ProgramType::UInt32Pointer
                     | ProgramType::Int32PointerPointer
                     | ProgramType::UInt8PointerPointer => {
-                        // An unknown pointer is the value read from this cell,
-                        // not an offset in the object holding it. Use the same
-                        // canonical typed read as ordinary pointer loads so a
-                        // trivial copy preserves provenance and checked aliases.
-                        crate::kernel::eval::symbolic_storage_cell_value(
-                            &memory,
-                            &source_field,
-                            element_type,
-                            true,
-                        )
+                        // A complete pointer read keeps the recorded store
+                        // from which its address and domain can be recovered.
+                        captured_point()
+                            .and_then(|point| {
+                                crate::kernel::eval::indexed_pointer_cell_read(
+                                    point,
+                                    &source_field,
+                                    element_type,
+                                )
+                            })
+                            .map(ProgramValue::Pointer)
+                            .or_else(|| {
+                                crate::kernel::eval::symbolic_storage_cell_value(
+                                    &memory,
+                                    &source_field,
+                                    element_type,
+                                    true,
+                                )
+                            })
                     }
                     ProgramType::Parameter(_) => {
                         crate::kernel::eval::symbolic_load_value_unrecorded(
