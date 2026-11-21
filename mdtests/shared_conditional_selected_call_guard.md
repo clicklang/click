@@ -24,7 +24,7 @@ theorem selected(x: Payload) {
         unfold(joined(wrapped(x)));
         rewrite(flag(wrapped(x)), flag(x));
         rewrite(value(wrapped(x)), value(x));
-        normalize() using { flag(x) == 1; value(x) == 1; };
+        solve() using { flag(x) == 1; value(x) == 1; };
     }
 }
 ```

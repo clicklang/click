@@ -45,11 +45,11 @@ void *worker(void *argument) {
     have separate(memory((argument as (struct job *))->output[0]), memory((argument as (struct job *))->output)) by { solve(); }
     have separate(memory((argument as (struct job *))->output[0]), memory((argument as (struct job *))->value)) by { solve(); }
     step();
-    have separate(statement(1).footprint, memory((argument as (struct job *))->output)) by { normalize() using { at(write, separate(memory((argument as (struct job *))->output[0]), memory((argument as (struct job *))->output))); }; }
+    have separate(statement(1).footprint, memory((argument as (struct job *))->output)) by { solve() using { at(write, separate(memory((argument as (struct job *))->output[0]), memory((argument as (struct job *))->output))); }; }
     have (argument as (struct job *))->output == at(statement(1).entry, (argument as (struct job *))->output) by {
         preserve(memory((argument as (struct job *))->output), statement(1));
     }
-    have separate(statement(1).footprint, memory((argument as (struct job *))->value)) by { normalize() using { at(write, separate(memory((argument as (struct job *))->output[0]), memory((argument as (struct job *))->value))); }; }
+    have separate(statement(1).footprint, memory((argument as (struct job *))->value)) by { solve() using { at(write, separate(memory((argument as (struct job *))->output[0]), memory((argument as (struct job *))->value))); }; }
     have (argument as (struct job *))->value == at(statement(1).entry, (argument as (struct job *))->value) by { known(); }
     step_until(function.exit);
     solve();

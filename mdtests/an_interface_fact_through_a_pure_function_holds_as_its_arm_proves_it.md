@@ -35,11 +35,11 @@ int32 n(int32 j) {
         fact tmp[tl(j)] == 0u8;
     } then {
         have tl(j) == 2u64 by { unfold(tl(j)); solve(); }
-        have tmp[tl(j)] == 0u8 by { rewrite(tl(j), 2u64); normalize(); }
+        have tmp[tl(j)] == 0u8 by { rewrite(tl(j), 2u64); known(); }
     } else {
         have j == 2 by { solve() using { 1 <= j; j <= 2; j != 1; }; }
         have tl(j) == 3u64 by { unfold(tl(j)); solve(); }
-        have tmp[tl(j)] == 0u8 by { rewrite(tl(j), 3u64); normalize(); }
+        have tmp[tl(j)] == 0u8 by { rewrite(tl(j), 3u64); known(); }
     }
 }
 ```

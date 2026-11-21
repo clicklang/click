@@ -27,7 +27,7 @@ int32 exact(struct Pair* pair, struct Holder* h, int32* other) {
     ensures result == pair->first;
 } by {
     step();
-    have (h->word as (int32*)) == &pair->first by { normalize(); }
+    have (h->word as (int32*)) == &pair->first by { known(); }
     mark saved;
     step();
     have (h->word as (int32*)) == at(saved, (h->word as (int32*))) by { known(); }
@@ -46,7 +46,7 @@ int32 tagged(struct Pair* pair, struct Holder* h, int32* other) {
     ensures result == pair->first;
 } by {
     step();
-    have ((h->word & ~1u64) as (int32*)) == &pair->first by { normalize(); }
+    have ((h->word & ~1u64) as (int32*)) == &pair->first by { known(); }
     mark saved;
     step();
     have ((h->word & ~1u64) as (int32*)) == at(saved, ((h->word & ~1u64) as (int32*))) by { known(); }

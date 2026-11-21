@@ -10,10 +10,10 @@ function read_value(c: Choice) -> Integer {
 theorem concrete(x: Integer) {
     ensures read_value(Choice::Full(x)) == x + 1 by {
         unfold(read_value(Choice::Full(x)));
-        normalize();
+        known();
     }
     ensures (match Choice::Full(x) { Choice::Empty => 0, Choice::Full(n) => n + 1 }) == x + 1 by {
-        normalize();
+        known();
     }
     ensures (match Choice::Empty { Choice::Empty => 0, Choice::Full(n) => n + 1 }) == 0 by {
         known();
@@ -25,7 +25,7 @@ theorem symbolic(c: Choice, x: Integer) {
     ensures read_value(c) == x + 1 by {
         unfold(read_value(c));
         rewrite(c, Choice::Full(x));
-        normalize();
+        known();
     }
 }
 ```

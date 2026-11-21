@@ -200,7 +200,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
         Context::Top => {
             have ctx_up_is_framed(Context::Top) == 0 by {
                 unfold(ctx_up_is_framed(Context::Top));
-                normalize();
+                known();
             }
             have ctx_up_is_framed(c.model) == 0 by {
                 rewrite(c.model, Context::Top);
@@ -208,7 +208,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
             }
             have ctx_up_is_framed(c.model) != 0 by {
                 rewrite(ctx_up_is_framed(c.model), 1);
-                normalize();
+                known();
             }
             contradiction(ctx_up_is_framed(c.model) == 0);
         },
@@ -218,7 +218,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                 == ctx_is_framed(up_model) by {
                 unfold(ctx_up_is_framed(Context::Left(identity, grandparent, color,
                                                       sibling_model, up_model)));
-                normalize();
+                known();
             }
             have ctx_is_framed(up_model) == 1 by {
                 rewrite(ctx_is_framed(up_model), ctx_up_is_framed(Context::Left(identity, grandparent, color,
@@ -236,7 +236,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                 Context::Top => {
                     have ctx_is_framed(Context::Top) == 0 by {
                         unfold(ctx_is_framed(Context::Top));
-                        normalize();
+                        known();
                     }
                     have ctx_is_framed(u.model) == 0 by {
                         rewrite(u.model, Context::Top);
@@ -244,7 +244,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                     }
                     have ctx_is_framed(u.model) != 0 by {
                         rewrite(ctx_is_framed(u.model), 1);
-                        normalize();
+                        known();
                     }
                     contradiction(ctx_is_framed(u.model) == 0);
                 },
@@ -264,7 +264,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                 == ctx_is_framed(up_model) by {
                 unfold(ctx_up_is_framed(Context::Right(identity, grandparent, color,
                                                        sibling_model, up_model)));
-                normalize();
+                known();
             }
             have ctx_is_framed(up_model) == 1 by {
                 rewrite(ctx_is_framed(up_model), ctx_up_is_framed(Context::Right(identity, grandparent, color,
@@ -282,7 +282,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                 Context::Top => {
                     have ctx_is_framed(Context::Top) == 0 by {
                         unfold(ctx_is_framed(Context::Top));
-                        normalize();
+                        known();
                     }
                     have ctx_is_framed(u.model) == 0 by {
                         rewrite(u.model, Context::Top);
@@ -290,7 +290,7 @@ struct rb_node* rb_focus(struct rb_node* node, struct rb_root* root) {
                     }
                     have ctx_is_framed(u.model) != 0 by {
                         rewrite(ctx_is_framed(u.model), 1);
-                        normalize();
+                        known();
                     }
                     contradiction(ctx_is_framed(u.model) == 0);
                 },

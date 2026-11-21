@@ -9,11 +9,11 @@ function narrow(word: uint64) -> int32 { word as int32 }
 function widen(word: int32) -> int64 { word }
 theorem narrowing() {
     ensures narrow(4294967296) == 0 by {
-        unfold(narrow(4294967296)); normalize();
+        unfold(narrow(4294967296)); known();
     }
 }
 theorem widening() {
-    ensures widen(-1) == -1 by { unfold(widen(-1)); normalize(); }
+    ensures widen(-1) == -1 by { unfold(widen(-1)); known(); }
 }
 ```
 

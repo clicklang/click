@@ -7,7 +7,7 @@ function fixed_float(x: double) -> double {
 
 theorem positive_float(x: double) {
     ensures fixed_float(x) > float64_from_bits(0) by {
-        unfold(fixed_float(x)); normalize();
+        unfold(fixed_float(x)); known();
     }
 }
 

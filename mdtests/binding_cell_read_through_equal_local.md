@@ -86,12 +86,12 @@ int32 read_through_equal_local(struct cell* node, struct cell* parent) {
             have holder_reroot(Holder::Full(identity, value), parent)
                 == Holder::Full(parent, value) by {
                 unfold(holder_reroot(Holder::Full(identity, value), parent));
-                normalize();
+                known();
             }
             have identity == parent by solve();
             have holder_value(Holder::Full(identity, value)) == value by {
                 unfold(holder_value(Holder::Full(identity, value)));
-                normalize();
+                known();
             }
             have value == 7 by {
                 rewrite(value, holder_value(Holder::Full(identity, value)));

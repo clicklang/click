@@ -37,7 +37,7 @@ void touch(int32 n) {
             have depth(c.model) == wd by {
                 rewrite(c.model, Walk::At(wd, rest));
                 unfold(depth(Walk::At(wd, rest)));
-                normalize();
+                known();
             }
             have wd == 3 by {
                 solve() using { depth(c.model) == wd; depth(c.model) == 3; };

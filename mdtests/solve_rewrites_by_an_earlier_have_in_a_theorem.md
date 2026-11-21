@@ -26,7 +26,7 @@ theorem black_through_an_earlier_have(v: Walk, d: Integer, rest: Walk) {
             unfold(same(Walk::At(d, rest)));
             rewrite(v, same(Walk::At(d, rest)));
             rewrite(same(Walk::At(d, rest)), Walk::At(d, rest));
-            normalize();
+            known();
         }
         have black(v) == 1;
         known();

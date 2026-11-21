@@ -28,7 +28,7 @@ void alias_frame(struct node *p, struct node *n, struct node *g) {
     step(); step();
     have p->right == 0 by {
         rewrite(p, parent);
-        normalize();
+        known();
     }
     step_until(function.exit); known();
 }

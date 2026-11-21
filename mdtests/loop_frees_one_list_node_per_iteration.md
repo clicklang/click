@@ -42,7 +42,7 @@ theorem links_len_is_nonnegative(m: Links) {
         match m {
             Links::Nil => {
                 unfold(links_len(Links::Nil));
-                normalize();
+                known();
             }
             Links::Cons(rest) => {
                 apply(ih(rest));
@@ -83,7 +83,7 @@ void release(struct node* p) {
                     have links_len(x.model) == links_len(rest_model) + 1 by {
                         rewrite(x.model, Links::Cons(rest_model));
                         unfold(links_len(Links::Cons(rest_model)));
-                        normalize();
+                        known();
                     }
                     have links_len(rest_model) < links_len(x.model) by {
                         solve() using { links_len(x.model) == links_len(rest_model) + 1; };

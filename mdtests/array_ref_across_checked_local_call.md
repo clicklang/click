@@ -26,7 +26,7 @@ int32 keep(int32 a[]) {
 } by {
     have total(a, 0, 0) == 0 by {
         unfold(total(a, 0, 0));
-        normalize();
+        known();
     }
     step();
     step();

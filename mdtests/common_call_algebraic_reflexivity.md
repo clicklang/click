@@ -12,7 +12,7 @@ theorem unfolded_half(s: Slice<uint8>) {
     requires slice::len(s) == 4u64;
     ensures half(s) == slice::from_raw_parts(slice::as_ptr(s), slice::len(s) / 2u64) by {
         unfold(half(s));
-        normalize();
+        known();
     }
 }
 ```
