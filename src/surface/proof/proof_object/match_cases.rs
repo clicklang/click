@@ -852,6 +852,7 @@ impl<'a> Proof<'a> {
                         selector: SurfacePathSelector::Proposition(surface),
                         value: true,
                         tactic_offset,
+                        if_arm_end: None,
                     });
             }
             Ok::<_, ClickError>(())

@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn decided_outcome_if_keeps_its_obtain_scope_in_expansion() {
+    let (source, program) = mdtest_sources("mdtests/obtain_outcome_binding_is_local_to_its_arm.md");
+    let branched_source = source.replace(
+        "step_until(function.exit);",
+        "branch { true => { step_until(function.exit); } false => { step_until(function.exit); } }",
+    );
+    let branched_program = vec![(
+        program[0].0.clone(),
+        "int reuse_name(int n) { if (n < 0) { return n; } else { return n; } }".to_string(),
+    )];
+    let claim = "reuse_name.contract";
+    for (source, program) in [(source, program), (branched_source, branched_program)] {
+        let program = crate::cli::source_refs(&program);
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains("\n    if result == n {"), "{expanded}");
+        assert!(expanded.contains("\n        let k = obtain("), "{expanded}");
+        assert!(expanded.contains("\n    let k = obtain("), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
 fn explicit_observation_resource_operands_replay() {
     for (fixture, claim, operand) in [
         (

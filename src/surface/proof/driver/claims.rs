@@ -159,13 +159,18 @@ pub(in crate::surface) struct ClaimProofResult {
     pub(in crate::surface) theorems: Vec<VerifiedProgramTheorem>,
 }
 
-/// A deferred tactic still to visit, with its `outcomes` depth and the
-/// lexical scope of the `match` arm it sits in, if any.
-type PendingPostExecutionTactic<'a> = (
-    &'a DeferredPostExecutionTactic,
-    usize,
-    Option<PersistentBinderMap<ContractExpression>>,
-);
+/// A deferred tactic still to visit, or the end of a selected proof arm.
+enum PendingPostExecutionTactic<'a> {
+    Tactic(
+        &'a DeferredPostExecutionTactic,
+        usize,
+        Option<PersistentBinderMap<ContractExpression>>,
+    ),
+    EndIfArm {
+        choice: usize,
+        obtains_before_arm: usize,
+    },
+}
 
 /// The end of the written block containing each obtain, using the same
 /// source positions as the deferred program. Nested proposition proofs
@@ -229,6 +234,7 @@ struct DeferredOutcomeLocals {
     source: Option<PersistentBinderMap<ContractExpression>>,
     obtained: PersistentBinderMap<ContractExpression>,
     ends: BTreeMap<usize, Vec<String>>,
+    checked_obtains: usize,
 }
 
 impl DeferredOutcomeLocals {
@@ -301,7 +307,24 @@ fn next_checked_post_execution_tactic<'a>(
     surface_tactics: &mut Vec<ProofTactic>,
     path_index: usize,
 ) -> Result<Option<&'a DeferredPostExecutionTactic>, ClickError> {
-    while let Some((deferred, call_depth, arm_scope)) = pending.pop() {
+    while let Some(pending_tactic) = pending.pop() {
+        let (deferred, call_depth, arm_scope) = match pending_tactic {
+            PendingPostExecutionTactic::Tactic(deferred, call_depth, arm_scope) => {
+                (deferred, call_depth, arm_scope)
+            }
+            PendingPostExecutionTactic::EndIfArm {
+                choice,
+                obtains_before_arm,
+            } => {
+                let arm_end = SurfaceIfArmEnd {
+                    step_offset: surface_tactics.len(),
+                    nested_choices: choices.len() - choice - 1,
+                    binds_obtain: locals.checked_obtains != obtains_before_arm,
+                };
+                choices[choice].if_arm_end = Some(arm_end);
+                continue;
+            }
+        };
         // A deferred `match` takes the arm this path's constructor case
         // selected, under that arm's field bindings.
         if let PostExecutionTactic::Match { source, arms } = &deferred.tactic {
@@ -318,16 +341,14 @@ fn next_checked_post_execution_tactic<'a>(
                 selector: SurfacePathSelector::MatchArm(Arc::clone(source), arm),
                 value: true,
                 tactic_offset: surface_tactics.len(),
+                if_arm_end: None,
             });
             let tactics = arms.get(arm).ok_or_else(|| {
                 ClickError::new("a post-execution `match` path names an arm it does not have")
             })?;
-            pending.extend(
-                tactics
-                    .iter()
-                    .rev()
-                    .map(|tactic| (tactic, call_depth, Some(bindings.clone()))),
-            );
+            pending.extend(tactics.iter().rev().map(|tactic| {
+                PendingPostExecutionTactic::Tactic(tactic, call_depth, Some(bindings.clone()))
+            }));
             continue;
         }
         let mut scope = deferred
@@ -427,16 +448,23 @@ fn next_checked_post_execution_tactic<'a>(
                 return Ok(Some(deferred));
             }
         };
+        if matches!(selector, SurfacePathSelector::Proposition(_)) {
+            pending.push(PendingPostExecutionTactic::EndIfArm {
+                choice: choices.len(),
+                obtains_before_arm: locals.checked_obtains,
+            });
+        }
         choices.push(SurfacePathChoice {
             occurrence: deferred.source_index,
             selector,
             value,
             tactic_offset: surface_tactics.len(),
+            if_arm_end: None,
         });
         pending.extend(
-            arm.iter()
-                .rev()
-                .map(|tactic| (tactic, child_depth, scope.clone())),
+            arm.iter().rev().map(|tactic| {
+                PendingPostExecutionTactic::Tactic(tactic, child_depth, scope.clone())
+            }),
         );
     }
     Ok(None)
@@ -517,15 +545,24 @@ fn append_post_execution_paths_by_surface_leaf(
             .iter()
             .map(|&index| boolean_return(index))
             .collect::<Vec<_>>();
+        let choices = select(choices, &members);
+        let keep_scopes = outcome_paths_bind_obtain(&choices);
         let suffix = synthesize_post_execution_paths(
             &select(tactics, &members),
             &select(closers, &members),
-            &select(choices, &members),
+            &choices,
             &returns,
         )?;
-        append_surface_steps_at_step_branch_path(steps, &branch_path, suffix)?;
+        append_surface_steps_at_step_branch_path(steps, &branch_path, suffix, keep_scopes)?;
     }
     Ok(())
+}
+
+fn outcome_paths_bind_obtain(choices: &[Vec<SurfacePathChoice>]) -> bool {
+    choices
+        .iter()
+        .flatten()
+        .any(|choice| choice.if_arm_end.is_some_and(|end| end.binds_obtain))
 }
 
 fn diagnostic_claim_label(function_block: &FunctionBlock, claim: &FunctionClaimRef<'_>) -> String {
@@ -4139,13 +4176,17 @@ pub(super) fn finish_ordered_proof<'a>(
                     }
                     let mut pending_post_execution_tactics = Vec::new();
                     if require_explicit_closers {
-                        pending_post_execution_tactics.push((&implicit_closer, 0, None));
+                        pending_post_execution_tactics.push(PendingPostExecutionTactic::Tactic(
+                            &implicit_closer,
+                            0,
+                            None,
+                        ));
                     }
                     pending_post_execution_tactics.extend(
                         post_execution_tactics
                             .iter()
                             .rev()
-                            .map(|tactic| (tactic, 0, None)),
+                            .map(|tactic| PendingPostExecutionTactic::Tactic(tactic, 0, None)),
                     );
                     // A capture belongs only to paths that actually reach its
                     // source occurrence, including through newly decided arms.
@@ -4224,6 +4265,12 @@ pub(super) fn finish_ordered_proof<'a>(
                         let tactic_index = &deferred.tactic_index;
                         let source_index = &deferred.source_index;
                         let post_tactic = &deferred.tactic;
+                        if matches!(
+                            post_tactic,
+                            PostExecutionTactic::Leaf(ProofTactic::LetSatisfy(_))
+                        ) {
+                            deferred_locals.checked_obtains += 1;
+                        }
                         post_return_facts.push((*source_index, path_requirements.clone()));
                         if path_capture.is_some_and(|capture| {
                             capture.tactic_index == *tactic_index
@@ -5805,6 +5852,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         selector: SurfacePathSelector::Proposition(condition.clone()),
                         value,
                         tactic_offset: 0,
+                        if_arm_end: None,
                     },
                 );
             }
@@ -5857,6 +5905,42 @@ pub(super) fn finish_ordered_proof<'a>(
             }
             Ok(())
         };
+        let keep_post_execution_scopes = outcome_paths_bind_obtain(&surface_post_choices_by_path);
+        let append_paths_by_leaf = |steps: &mut Vec<ProofStep>, closers: &[Vec<ProofTactic>]| {
+            append_post_execution_paths_by_surface_leaf(
+                steps,
+                &surface_post_tactics_by_path,
+                closers,
+                &surface_post_choices_by_path,
+                |index| {
+                    direct_view.surface_step_branch_path(
+                        surface_post_path_indices[index],
+                        &retained_surface.steps,
+                    )
+                },
+                |index| {
+                    checked_boolean_return(
+                        execution.paths()[surface_post_path_indices[index]].outcome(),
+                    )
+                },
+            )
+        };
+        let append_scoped_suffix = |steps: &mut Vec<ProofStep>, closers: &[Vec<ProofTactic>]| {
+            match synthesize_post_execution_paths(
+                &surface_post_tactics_by_path,
+                closers,
+                &surface_post_choices_by_path,
+                &[],
+            ) {
+                Ok(suffix) => {
+                    append_surface_steps_in_order(steps, suffix);
+                    Ok(())
+                }
+                // A common suffix belongs after the execution branches.
+                // For distinct suffixes, use the retained branch routes.
+                Err(_) => append_paths_by_leaf(steps, closers),
+            }
+        };
         if proof_context.constants.grouped_contract {
             let mut expanded = retained_surface.clone();
             append_loop_return_closers(&mut expanded.steps, &loop_return_closures, None)?;
@@ -5865,7 +5949,13 @@ pub(super) fn finish_ordered_proof<'a>(
                 &expanded.steps,
                 &loop_return_closures,
             )?;
-            if surface_post_choices_by_path
+            if keep_post_execution_scopes {
+                if let Err(message) =
+                    append_scoped_suffix(&mut expanded.steps, &surface_grouped_closers_by_path)
+                {
+                    expanded.block(message);
+                }
+            } else if surface_post_choices_by_path
                 .iter()
                 .any(|choices| !choices.is_empty())
             {
@@ -5885,23 +5975,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // proof cases inside each C leaf instead.
                     Err(message) => {
                         let mut by_leaf = expanded.steps.clone();
-                        match append_post_execution_paths_by_surface_leaf(
-                            &mut by_leaf,
-                            &surface_post_tactics_by_path,
-                            &surface_grouped_closers_by_path,
-                            &surface_post_choices_by_path,
-                            |index| {
-                                direct_view.surface_step_branch_path(
-                                    surface_post_path_indices[index],
-                                    &retained_surface.steps,
-                                )
-                            },
-                            |index| {
-                                checked_boolean_return(
-                                    execution.paths()[surface_post_path_indices[index]].outcome(),
-                                )
-                            },
-                        ) {
+                        match append_paths_by_leaf(&mut by_leaf, &surface_grouped_closers_by_path) {
                             Ok(()) => expanded.steps = by_leaf,
                             Err(_) => expanded.block(message),
                         }
@@ -5955,7 +6029,12 @@ pub(super) fn finish_ordered_proof<'a>(
                 // the outcomes' recorded choices, as for a grouped proof.
                 // Without it the arms' tactics are emitted with no `if`
                 // around them, and lose the case fact each arm relies on.
-                let appended = if surface_post_choices_by_path
+                let appended = if keep_post_execution_scopes {
+                    append_scoped_suffix(
+                        &mut expanded.steps,
+                        &surface_closers_by_claim[claim_index],
+                    )
+                } else if surface_post_choices_by_path
                     .iter()
                     .any(|choices| !choices.is_empty())
                 {
@@ -6299,6 +6378,7 @@ mod tests {
                 selector: SurfacePathSelector::Proposition(condition.clone()),
                 value,
                 tactic_offset: 1,
+                if_arm_end: None,
             }]
         });
         let tactics = [true, true, false, false].map(|value| {
