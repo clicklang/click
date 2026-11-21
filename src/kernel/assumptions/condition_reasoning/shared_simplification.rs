@@ -32,9 +32,9 @@ impl PureFactContext {
             }
             crate::instrumentation::record_deterministic_work(1);
             if let KernelTermNode::Fold(fold) = root.node()
-                && let Some(initial) = fold.empty_int32_initial()
+                && let Some(result) = fold.trivial_int32_result()
             {
-                let value = walk(facts, V::Shared(initial), format, memo);
+                let value = walk(facts, V::Shared(&result), format, memo);
                 memo.insert(key, value.clone());
                 return value;
             }

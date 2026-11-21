@@ -4540,8 +4540,13 @@ renderer prefers `owner->field` whenever imported layout origin identifies
 the address. Expansion may emit a low-level read only when no source field
 place is available.
 
-Concrete folds are unrolled. Symbolic folds remain `RangeFold` value terms in
-the kernel and can be reasoned about by supported fold laws.
+Symbolic folds remain `RangeFold` value terms in the kernel and can be
+reasoned about by supported fold laws. Pure `int32` folds over one or two
+items can also retain their fold terms. With literal bounds, callbacks that
+return the accumulator, the item, or an `int32` literal can retain their
+fold terms at any range length. For a nonempty range, checking uses the
+seed, final item, or literal, respectively. Other concrete callbacks can
+be evaluated by unrolling.
 
 
 ### Methods

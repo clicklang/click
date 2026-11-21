@@ -3,7 +3,6 @@
 //! The `computes_leaf` entry point uses only the goal, including exact
 //! stored scalar and union cell values. Legacy normalization shares arithmetic
 //! below but supplies its own atom key.
-
 use crate::kernel::machine_integer::bounds::positive_literal_remainder_divisor;
 use crate::kernel::*;
 use crate::kernel::{
@@ -1213,22 +1212,24 @@ enum AffineLeaf {
     Fold(u64),
 }
 
-/// Read the seed through consecutive empty machine folds. Their callbacks
-/// are outside the affine walk and are never read.
-fn observe_empty_int32_fold(value: &SharedMachineIntegerTerm) -> Option<SharedIntegerTerm> {
+/// Read the value of a trivial machine fold without enumerating its range.
+pub(super) fn observe_trivial_int32_fold(
+    value: &SharedMachineIntegerTerm,
+) -> Option<SharedIntegerTerm> {
     if value.ty() != MachineIntegerType::Int32 {
         return None;
     }
-    let root = value.shared_operand()?;
-    let KernelTermNode::Fold(fold) = root.node() else {
+    let KernelTermNode::Fold(fold) = value.shared_operand()?.node() else {
         return None;
     };
-    let initial = fold.empty_int32_initial()?;
-    Some(
-        MachineOperandView::Shared(initial)
-            .observe(value.ty())?
-            .into(),
-    )
+    observe_machine_fold_result(value.ty(), &fold.trivial_int32_result()?)
+}
+
+fn observe_machine_fold_result(
+    format: MachineIntegerType,
+    result: &KernelTerm,
+) -> Option<SharedIntegerTerm> {
+    Some(MachineOperandView::Shared(result).observe(format)?.into())
 }
 
 fn integer_affine_difference(
@@ -1245,6 +1246,7 @@ fn integer_affine_difference(
     let mut seen = std::collections::HashSet::new();
     let mut stack = vec![(left.clone(), false), (right.clone(), false)];
     let mut reduced_operands = std::collections::HashMap::new();
+    let mut fold_reads = std::collections::HashMap::new();
     while let Some((term, expanded)) = stack.pop() {
         crate::instrumentation::record_deterministic_work(1);
         if expanded {
@@ -1262,7 +1264,9 @@ fn integer_affine_difference(
             }
             IntegerTerm::Negate(value) => stack.push((value.clone(), false)),
             IntegerTerm::Machine(value) => {
-                if let Some(value) = observe_empty_int32_fold(value) {
+                if let Some(result) = KernelFold::reduce_bounded_int32_in(value, &mut fold_reads)
+                    && let Some(value) = observe_machine_fold_result(value.ty(), &result)
+                {
                     stack.push((value.clone(), false));
                     reduced_operands.insert(term.id(), value);
                 }

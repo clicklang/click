@@ -588,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_int32_range_fold_raises_bounds_seed_and_body() {
+    fn simple_int32_range_folds_raise_bounds_seed_and_body() {
         let fixture =
             include_str!("../../../mdtests/pure_empty_int32_range_folds_keep_structure.md");
         let source = fixture
@@ -606,7 +606,8 @@ mod tests {
             lines
                 .iter()
                 .find_map(|line| {
-                    line.split_once(&marker)
+                    line.strip_prefix("raised\tgoal\t")?
+                        .split_once(&marker)
                         .map(|(_, written)| written.trim_end())
                 })
                 .unwrap_or_else(|| panic!("{claim}: {lines:#?}"))
@@ -616,6 +617,9 @@ mod tests {
             ("symbolic_empty", "n..n", "5", "k"),
             ("descending_empty", "3..1", "5", "k"),
             ("symbolic_seed", "n..n", "seed", "acc + k"),
+            ("longer_literal_nonempty", "1..4", "5", "k"),
+            ("literal_body", "1..3", "5", "7"),
+            ("accumulator_projection", "1..3", "seed", "acc"),
             ("symbolic_control", "lo..hi", "5", "k"),
         ] {
             let written = raised(claim);
@@ -623,11 +627,53 @@ mod tests {
             assert!(written.contains(&format!(".fold({seed},")), "{written}");
             assert!(written.contains(&format!("{{ {body} }}")), "{written}");
         }
-        assert_eq!(raised("literal_nonempty"), "2 == 2");
-        let wrong = source.replacen("k }) == 5", "k }) == 6", 1);
-        let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
+        for (claim, wrong) in [("k }) == 5", "k }) == 6"), ("k }) == 3", "k }) == 4")] {
+            let wrong = source.replacen(claim, wrong, 1);
+            let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
+            assert!(
+                error.to_string().contains("goal did not normalize to true"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn short_int32_range_fold_raises_before_computation() {
+        let fixture =
+            include_str!("../../../mdtests/pure_short_int32_range_folds_keep_structure.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        for (claim, expression) in [
+            ("short_fold_seed", "(1..2).fold(seed, |acc, k| { acc })"),
+            ("short_fold_sum", "(1..3).fold(5, |acc, k| { acc + k })"),
+        ] {
+            let marker = format!("\t{claim}.ensures_0\tintro()\twritten\t");
+            assert!(
+                lines.iter().any(|line| {
+                    line.split_once(&marker)
+                        .is_some_and(|(_, written)| written.contains(expression))
+                }),
+                "{claim}: {lines:#?}"
+            );
+        }
+
+        let overflowing = r#"
+            theorem overflow_in_second_step() {
+                ensures (1..3).fold(2147483646, |acc: int32, k: int32| -> int32 { acc + k })
+                    == -2147483647 by { normalize(); }
+            }
+        "#;
+        let error = crate::surface::verify_c_sources(overflowing, &[]).unwrap_err();
         assert!(
-            error.to_string().contains("goal did not normalize to true"),
+            error.to_string().contains("not established: `false`"),
             "{error}"
         );
     }

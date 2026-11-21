@@ -131,7 +131,14 @@ fn native_fold_binders_shadow_shared_let_bindings() {
     };
     let value = add(name("x"), SpecExpression::Value(int32(1)));
     let result = evaluate(SpecScope::unbound(&state, None), &bind("v", value, fold));
-    assert_eq!(result.value.into_native(), int32(2));
+    let Some(KernelTermNode::Fold(fold)) = result.value.shared().map(KernelTerm::node) else {
+        panic!("expected a retained fold");
+    };
+    let checked = fold.bounded_int32_result().unwrap();
+    assert_eq!(
+        MachineOperandView::Shared(&checked).literal(),
+        Some(MachineTerm::constant(2))
+    );
 }
 
 #[test]
