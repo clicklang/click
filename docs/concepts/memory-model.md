@@ -72,6 +72,8 @@ into a local uses that source point for compact `uint32` array fields and
 to name uncached scalar fields when the appropriate typed store, entry
 version, or float read point is available. A copied object pointer field can
 retain its complete typed store, including the stored provenance and bounds.
+The same source selectors apply to uncached integer and object pointer union
+members when the copy has a recorded caller source.
 
 `exact(place)` keys the read by the selected program point when one is
 available. Raising uses `exact` at that point, even if another point has

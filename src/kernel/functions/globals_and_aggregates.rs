@@ -1343,14 +1343,19 @@ fn copy_aggregate_fields_from(
             .iter()
             .filter_map(|field| {
                 let source_field = source_union.offset_by_layout(field.offset());
-                copy_retained_aggregate_union_member(&memory, &source_field, field.program_type())
-                    .map(|value| {
-                        (
-                            destination_union.offset_by_layout(field.offset()),
-                            field.program_type(),
-                            value,
-                        )
-                    })
+                copy_retained_aggregate_union_member(
+                    &memory,
+                    &source_field,
+                    field.program_type(),
+                    &captured_point,
+                )
+                .map(|value| {
+                    (
+                        destination_union.offset_by_layout(field.offset()),
+                        field.program_type(),
+                        value,
+                    )
+                })
             })
             .collect();
         memory = memory.store_retained_union_views(destination_union, union.size_bytes(), views);
@@ -1358,10 +1363,11 @@ fn copy_aggregate_fields_from(
     memory
 }
 
-pub(super) fn copy_retained_aggregate_union_member(
+fn copy_retained_aggregate_union_member<'a>(
     memory: &SymbolicMemory,
     source_field: &Address,
     element_type: ProgramType,
+    captured_point: impl FnOnce() -> Option<&'a ProgramPoint>,
 ) -> Option<ExecutionValue> {
     if let Some(value) = memory.known_retained_union_value(source_field, element_type) {
         return Some(value);
@@ -1381,22 +1387,36 @@ pub(super) fn copy_retained_aggregate_union_member(
     if aggregate_copy_source_holds_nothing(memory, source_field, element_type) {
         return None;
     }
-    // An unknown object pointer is the value read from this cell, as an
-    // ordinary pointer field's is: not an address in the object holding it.
     if element_type.is_object_pointer() {
-        return crate::kernel::eval::symbolic_storage_cell_value(
-            memory,
-            source_field,
-            element_type,
-            true,
-        )
-        .map(Into::into);
+        return captured_point()
+            .and_then(|point| {
+                crate::kernel::eval::indexed_pointer_cell_read(point, source_field, element_type)
+            })
+            .map(ProgramValue::Pointer)
+            .or_else(|| {
+                crate::kernel::eval::symbolic_storage_cell_value(
+                    memory,
+                    source_field,
+                    element_type,
+                    true,
+                )
+            })
+            .map(Into::into);
     }
-    let load = crate::kernel::canonical_form_of_load(
-        crate::kernel::intern_memory(memory.clone()),
-        source_field.clone(),
-        LoadKind::of_type(element_type)?,
-    );
+    let kind = LoadKind::of_type(element_type)?;
+    let load = matches!(element_type, ProgramType::Int32 | ProgramType::UInt8)
+        .then(captured_point)
+        .flatten()
+        .and_then(|point| {
+            crate::kernel::eval::point_named_cell_load(point, source_field, element_type)
+        })
+        .unwrap_or_else(|| {
+            crate::kernel::canonical_form_of_load(
+                crate::kernel::intern_memory(memory.clone()),
+                source_field.clone(),
+                kind,
+            )
+        });
     Some(
         (match element_type {
             ProgramType::Int32 => ProgramValue::Int32(load),

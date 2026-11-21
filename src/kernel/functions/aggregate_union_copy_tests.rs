@@ -335,6 +335,87 @@ fn aggregate_copy_names_forgotten_pointer_fields_by_the_complete_typed_store() {
     }
 }
 
+#[test]
+fn aggregate_copy_union_reads_keep_the_caller_versions() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let source_member = source.offset_by_bytes(8);
+    let target = SymbolicMemory::frame_local_pointer(1, "union_record_copy");
+    let target_member = target.offset_by_bytes(8);
+    let pointer_type = ProgramType::UInt32Pointer;
+    let layout = AggregateLayout::with_unions(
+        16,
+        8,
+        vec![AggregateField::new("tag", 0, ProgramType::UInt32)],
+        vec![AggregateUnion::new(
+            "payload",
+            8,
+            8,
+            vec![
+                AggregateUnionField::new("word", 0, ProgramType::Int32),
+                AggregateUnionField::new("link", 0, pointer_type),
+            ],
+        )],
+    );
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let initial = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_block(target.base.clone(), layout.size_bytes()),
+    );
+
+    let copied = copy_aggregate_fields_checked_at(&initial, &source, &target, &layout).unwrap();
+    let Some(ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, kind))) =
+        copied.known_union_value(&target_member, ProgramType::Int32)
+    else {
+        panic!("expected a typed caller word");
+    };
+    assert_eq!(kind, LoadKind::Int32);
+    assert_eq!(point.read_version_id(), entry.program_point_id());
+    assert_eq!(*address, source_member);
+
+    let domain = Address::symbolic(Variable(986_247));
+    let value = Pointer::new(domain.offset_by_bytes(4), pointer_type).with_bounds(Some(
+        crate::kernel::SubobjectBounds {
+            start: domain,
+            width: 16u32.into(),
+        },
+    ));
+    let stored = initial.clone().with_memory(
+        initial
+            .memory()
+            .clone()
+            .store(source_member.clone(), ProgramValue::Pointer(value.clone())),
+    );
+    let forgotten = stored.memory().without_possible_aliasing_cells(
+        &source_member,
+        pointer_type.byte_width(),
+        &PureFactContext::new(),
+    );
+    let before = stored.clone().with_memory(forgotten);
+    assert!(before.memory().known_value(&source_member).is_none());
+    let copied = copy_aggregate_fields_checked_at(&before, &source, &target, &layout).unwrap();
+    let Some(ProgramValue::Pointer(read)) = copied.known_union_value(&target_member, pointer_type)
+    else {
+        panic!("expected a complete pointer read");
+    };
+    let descriptor = read.address().as_loaded_value().expect("read pointer");
+    assert_eq!(
+        descriptor.point.read_version_id(),
+        stored.observation_point_id()
+    );
+    assert_eq!(descriptor.defining_address, source_member);
+    assert_eq!(descriptor.value_type, Some(pointer_type));
+    assert_eq!(
+        crate::kernel::eval::pointer_read_over_write_program_value(read.address()),
+        Some(value),
+    );
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/aggregate_union_copy_tests.rs");
