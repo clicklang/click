@@ -1115,7 +1115,7 @@ pub(super) fn copy_aggregate_fields(
     copy_aggregate_fields_from(memory, source, destination, layout, None)
 }
 
-fn copy_aggregate_fields_from(
+pub(super) fn copy_aggregate_fields_from(
     mut memory: SymbolicMemory,
     source: &Address,
     destination: &Address,

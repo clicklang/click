@@ -1222,11 +1222,17 @@ pub(super) fn bind_contract_arguments(
             }
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
-            callee_state.set_memory(copy_aggregate_fields(
+            // Argument preparation checked the read in the caller. The fresh
+            // callee slot and any earlier parameter copies leave caller storage
+            // intact, so use that point for the uncached source fields.
+            let source_state =
+                (source.base == AddressBase::ExternalArgument).then_some(caller_state);
+            callee_state.set_memory(copy_aggregate_fields_from(
                 callee_state.memory.clone(),
                 &source,
                 &slot,
                 layout,
+                source_state,
             ));
             callee_state.set_memory(
                 callee_state
