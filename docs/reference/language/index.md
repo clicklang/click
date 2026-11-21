@@ -2811,7 +2811,18 @@ A newly produced composite that contains a view names its source with
 `produces cursor(...) from source;`. The source can be a `views ... as source;`
 requirement or an existing borrowing composite named by `consumes ... as source;`.
 `requires` and `ensures` accept pure propositions
-only. `consumes X;` beside `produces X;` for the same `X` is exactly
+only.
+
+At contract entry, every memory read used to compute a resource clause must
+be readable from the contract's entry resources or a `requires viewable(...)` precondition.
+The contract can supply this access through an owned resource or a `views`
+clause, including one declared later. For example, evaluating the argument to
+`owns pair(node->left->left);` reads two pointer fields. The clauses
+`views node->left;` and `views node->left->left;` supply read access to both.
+If Click cannot establish access for a read during entry resource evaluation,
+it reports a `contract error`.
+
+`consumes X;` beside `produces X;` for the same `X` is exactly
 `owns X;`, and the pair is refused with that one clause to write (with the
 `produces` clause's proof, `owns X by proof;`;
 `mdtests/consumes_and_produces_one_place_is_owns.md`,

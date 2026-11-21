@@ -2930,7 +2930,11 @@ fn evaluate_entry_resource_context(
         Ok(Err(error)) => {
             return Err(ClickError::new(format!(
                 "`{claim_label}` setup failed: could not evaluate the contract entry resources: {}",
-                crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
+                crate::surface::diagnostics::describe_contract_entry_resource_error(
+                    &error,
+                    parameter_binding,
+                    resource_environment.struct_layouts(),
+                )
             ))
             .with_proof_refusal(contract_entry_resource_refusal(&error)));
         }
@@ -2967,11 +2971,21 @@ fn evaluate_entry_resource_context(
                         &assumptions,
                     )
                 {
-                    return Err(surface_error.with_context(format!("`{claim_label}` setup failed")));
+                    let diagnostic =
+                        surface_error.with_context(format!("`{claim_label}` setup failed"));
+                    return Err(if error.missing_contract_read().is_some() {
+                        diagnostic.with_proof_refusal(ProofRefusal::Contract)
+                    } else {
+                        diagnostic
+                    });
                 }
                 return Err(ClickError::new(format!(
                     "`{claim_label}` setup failed: could not evaluate the contract entry resources: {}",
-                    crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
+                    crate::surface::diagnostics::describe_contract_entry_resource_error(
+                        &error,
+                        parameter_binding,
+                        resource_environment.struct_layouts(),
+                    )
                 )).with_proof_refusal(contract_entry_resource_refusal(&error)));
             }
             Err(limit) => {

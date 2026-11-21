@@ -2557,6 +2557,53 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         }
     }
 
+    #[test]
+    fn contract_argument_read_reports_the_missing_view() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/contract_owns_composite_argument_rejects_missing_access.md");
+        let error = entry(["verify".to_string(), fixture.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("contract error:\n"), "{error}");
+        assert!(error.contains("add `views node->left;`"), "{error}");
+
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("f.c"),
+            "struct node { struct node *left; int32 value; };\nvoid probe(struct node *node) {}\n",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("f.click");
+        let verify = |views: &str| {
+            fs::write(
+                &sidecar,
+                format!(
+                    r#"verifying "f.c";
+resource pair(node: struct node*) {{ owns node->left->left; }}
+void probe(struct node *node) {{
+    requires node != 0;
+    {views}
+    owns pair(node->left->left);
+}}
+"#
+                ),
+            )
+            .unwrap();
+            entry(["verify".to_string(), sidecar.display().to_string()])
+        };
+        for (views, missing) in [
+            ("", "node->left"),
+            ("views node->left;", "node->left->left"),
+        ] {
+            let error = verify(views).unwrap_err();
+            assert!(error.starts_with("contract error:\n"), "{error}");
+            assert!(error.contains("pair(node->left->left)"), "{error}");
+            assert!(
+                error.contains(&format!("add `views {missing};`")),
+                "{error}"
+            );
+        }
+        verify("views node->left;\nviews node->left->left;").unwrap();
+    }
+
     /// A failure at a C operation names that statement. A proof failure with
     /// no site of its own is located at the declaration being verified.
     #[test]
