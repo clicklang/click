@@ -278,6 +278,40 @@ mod tests {
     const SOURCE: &str = "verifying \"termination.c\"; int32 leaf() { ensures result == 7; } int32 caller() { ensures result == 7; }";
 
     #[test]
+    fn targeted_proofs_check_termination_for_their_selected_bodies() {
+        let sources = [("termination.c", C)];
+        let inputs = ProgramInputs::Bundle(sources.to_vec());
+        let source = crate::surface::expand_claim_by_label(
+            None,
+            SOURCE,
+            &inputs,
+            "program.termination",
+            None,
+        )
+        .unwrap()
+        .source;
+        for claim in ["leaf.ensures_0", "caller.ensures_0"] {
+            let rewritten = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+            let at = tactic_source_position(&rewritten, &inputs, claim, 0).unwrap();
+            check_audit_claim(claim, true, || {
+                verify_c_sources_at(&rewritten, &sources, at.line, at.column)
+                    .map_err(|error| error.report())
+            })
+            .unwrap();
+            let (session, _) = ProgramVerificationSession::new(&source, &sources).unwrap();
+            session.verify_at(&rewritten, at.line, at.column).unwrap();
+        }
+        let at = tactic_source_position(&source, &inputs, "program.termination", 0).unwrap();
+        let invalid = source.replace(
+            "check_termination_local(\"leaf\")",
+            "check_termination_local(\"missing\")",
+        );
+        assert_ne!(invalid, source);
+        let error = verify_c_sources_at(&invalid, &sources, at.line, at.column).unwrap_err();
+        assert!(error.report().contains("missing"), "{error}");
+    }
+
+    #[test]
     fn explicit_termination_uses_ordinary_have_and_solve() {
         let source = format!(
             r#"{SOURCE}
