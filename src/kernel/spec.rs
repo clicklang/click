@@ -8286,7 +8286,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     SpecPoint::At(point) => point.clone(),
                     _ => selected_state.expect("selected read state").program_point(),
                 };
-                let version = if !*exact && ProgramPoint::supports_indexed_version(&pointer) {
+                let wide_read_through_loaded_pointer =
+                    matches!(*value_type, ProgramType::Int64 | ProgramType::UInt64)
+                        && matches!(pointer.base, AddressBase::LoadedPointer(_));
+                let version = if !*exact
+                    && (ProgramPoint::supports_indexed_version(&pointer)
+                        || wide_read_through_loaded_pointer)
+                {
                     read_point().ordinary_typed_version(&pointer, *value_type)
                 } else {
                     None

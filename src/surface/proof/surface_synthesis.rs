@@ -5094,12 +5094,27 @@ pub(super) fn synthesize_surface_resource_subject(
                 _ => surface_base,
             }
         };
-    // The bounds are spelled as the terms they are, in either index kind.
+    // A wide range reads its bounds as uint64. A point-named word read
+    // carries the bits, so the range supplies the interpretation.
+    let wide = range.wide_bounds().is_some();
+    let raise_bound = |bound: &MachineTerm| {
+        if wide
+            && matches!(bound, MachineTerm::MemoryLoad(point, _, crate::kernel::LoadKind::Bits64)
+                if point.read_version_id().is_some())
+        {
+            return synthesize_typed_word_read(
+                bound,
+                ProgramType::UInt64,
+                parameter_binding,
+                state,
+                bound_variables,
+            );
+        }
+        synthesize_surface_bitvector(bound, parameter_binding, state, bound_variables)
+    };
     let (range_start, range_end) = range.bound_terms();
-    let surface_start =
-        synthesize_surface_bitvector(range_start, parameter_binding, state, bound_variables)?;
-    let surface_end =
-        synthesize_surface_bitvector(range_end, parameter_binding, state, bound_variables)?;
+    let surface_start = raise_bound(range_start)?;
+    let surface_end = raise_bound(range_end)?;
     let (Some(semantic_base), Some(start), Some(end)) = (
         contract_expression_to_program_expression(&surface_base),
         contract_expression_to_program_expression(&surface_start),
