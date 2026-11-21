@@ -676,7 +676,6 @@ impl<'a> Proof<'a> {
         &self,
         prepared: PreparedTheoremApplication,
         application: &TheoremApplication,
-        premises: Vec<ClickProposition>,
     ) -> Result<Self, ClickError> {
         #[cfg(test)]
         let _operation =
@@ -708,10 +707,7 @@ impl<'a> Proof<'a> {
             node: ProofNode::step_child(
                 &self.node,
                 self.focused_branch_id(),
-                Arc::new(ProofStep::ApplyTheoremUsing {
-                    application: application.clone(),
-                    premises,
-                }),
+                Arc::new(ProofStep::ApplyTheorem(application.clone())),
             ),
         })
     }

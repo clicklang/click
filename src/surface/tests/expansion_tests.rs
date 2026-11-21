@@ -4987,7 +4987,7 @@ theorem one_tactic_proofs(x: int32) {
     let position = expansion::position_at_offset(source, offset);
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column).unwrap();
     assert!(
-        expanded.contains("ensures 0 <= x by {\n        have 0 <= x by {\n            known();\n        }\n        apply(helper(x)) using {"),
+        expanded.contains("ensures 0 <= x by {\n        apply(helper(x));"),
         "{expanded}"
     );
     assert!(
@@ -6362,7 +6362,7 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
     let expanded = expand_c_tactic_source_at(source, &[], position.line, position.column)
         .expect("refinement solve should emit its ordinary proof certificate");
     assert!(
-        expanded.contains("apply(nonnegative_equal(x, result)) using"),
+        expanded.contains("apply(nonnegative_equal(x, result));"),
         "{expanded}"
     );
     assert_eq!(expanded.matches("solve();").count(), 1, "{expanded}");
@@ -6769,7 +6769,7 @@ fn post_execution_smart_have_applies_a_theorem_to_result_through_proof() {
         .expect("expanded proof should retain its outer closer");
     let expanded_have = &expanded[expanded_have_start..expanded_have_end];
     assert!(
-        expanded_have.contains("apply(int32_reflexive(result)) using"),
+        expanded_have.contains("apply(int32_reflexive(result));"),
         "{expanded_have}"
     );
     assert!(!expanded_have.contains("solve();"), "{expanded_have}");
@@ -7533,9 +7533,8 @@ fn selected_post_execution_smart_apply_uses_exact_path_premises() {
     let expanded =
         expand_c_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("selected post-execution smart apply should expand after finalization");
-    assert!(!expanded.contains("apply(int32_equality_symmetric(result, x));"));
     assert!(
-        expanded.contains("apply(int32_equality_symmetric(result, x)) using {"),
+        expanded.contains("apply(int32_equality_symmetric(result, x));"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &[("identity.c", c_source)])
@@ -8078,7 +8077,7 @@ fn smart_apply_uses_ambient_loadability_only_for_argument_lowering() {
     )
     .expect("pointer theorem arguments should lower from the ambient viewability context");
     assert!(
-        expanded.contains("apply(pointer_equality_transitive(") && expanded.contains(" using {"),
+        expanded.contains("apply(pointer_equality_transitive(") && !expanded.contains(" using {"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &[("pointer_pipeline.c", c_source)])
@@ -11703,7 +11702,7 @@ fn source_expander_lowers_smart_apply_inside_have() {
         ..expanded
             .find("step_until(function.exit)")
             .expect("expanded proof should retain its suffix")];
-    assert!(expanded_have.contains("apply(int32_reflexive(x)) using {"));
+    assert!(expanded_have.contains("apply(int32_reflexive(x));"));
     verify_c_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded smart apply inside have should check");
 }
@@ -11758,25 +11757,21 @@ fn fixed_state_have_bare_apply_retains_and_checks_its_exact_premise() {
     let expanded = expand_c_tactic_source_at(click_source, &[("choose.c", c_source)], line, column)
         .expect("checked fixed-state apply should expand");
     let apply_offset = expanded
-        .find("apply(equality_symmetric(first, second)) using {")
-        .expect("expansion should retain the selected explicit step");
-    let premise_relative = expanded[apply_offset..]
-        .find("first == second;")
-        .expect("explicit step should retain the theorem premise");
-    let premise_offset = apply_offset + premise_relative;
-    verify_c_sources(&expanded, &[("choose.c", c_source)])
-        .expect("the retained fixed-state proof should independently check");
+        .find("apply(equality_symmetric(first, second));")
+        .expect("expansion should retain the list-free application");
+    without_implicit_solve_for_claim("choose_second.contract", || {
+        verify_c_sources(&expanded, &[("choose.c", c_source)])
+    })
+    .expect("the retained fixed-state proof should independently check");
 
+    let premise = "requires first == second;";
+    let premise_offset = expanded[..apply_offset].rfind(premise).unwrap();
     let mut corrupted = expanded.clone();
-    corrupted.replace_range(
-        premise_offset..premise_offset + "first == second;".len(),
-        "",
-    );
+    corrupted.replace_range(premise_offset..premise_offset + premise.len(), "");
     let error = verify_c_sources(&corrupted, &[("choose.c", c_source)])
-        .expect_err("omitting the selected premise must invalidate the explicit proof");
+        .expect_err("omitting the inferred premise must invalidate the proof");
     assert!(
-        error.message().contains("required exact fact")
-            || error.message().contains("unavailable exact premise"),
+        error.message().contains("has an unproved obligation"),
         "unexpected corrupted-certificate error: {}",
         error.message()
     );
@@ -11840,7 +11835,7 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
             .find("step()")
             .expect("expanded proof should retain its suffix")];
     assert!(
-        expanded_have.contains("apply(equality_symmetric(first, second)) using {"),
+        expanded_have.contains("apply(equality_symmetric(first, second));"),
         "{expanded_have}"
     );
     assert!(
@@ -25231,8 +25226,16 @@ fn returned_branch_closers_replay_from_retained_decisions() {
 }
 
 #[test]
-fn pure_apply_obligations_expand_to_explicit_have_and_using() {
+fn pure_apply_obligations_expand_to_explicit_have_and_bare_application() {
     let (source, _) = mdtest_sources("mdtests/pure_apply_obligations.md");
+    let error =
+        without_implicit_solve_for_claim("positive.ensures_0", || verify_click_theorems(&source))
+            .unwrap_err();
+    assert!(
+        error.message().contains("has an unproved obligation"),
+        "{error}"
+    );
+
     for (application, claim) in [
         ("apply(nonnegative(n))", "positive.ensures_0"),
         (
@@ -25249,7 +25252,11 @@ fn pure_apply_obligations_expand_to_explicit_have_and_using() {
         let column = offset - source[..offset].rfind('\n').map_or(0, |index| index + 1) + 1;
         let expanded = expand_c_tactic_source_at(&source, &[], line, column).unwrap();
         assert!(expanded.contains("have "), "{expanded}");
-        assert!(expanded.contains("using"), "{expanded}");
+        assert!(expanded.contains(&format!("{application};")), "{expanded}");
+        assert!(
+            !expanded.contains(&format!("{application} using")),
+            "{expanded}"
+        );
         without_implicit_solve_for_claim(claim, || {
             verify_click_theorems(&expanded).map_err(|error| error.report())
         })
@@ -25267,7 +25274,8 @@ fn live_apply_obligations_expand_at_the_original_frontier() {
     verify_c_sources(&source, &sources).unwrap();
     let expanded = expand_function_proof_source(&source, &sources, "increment").unwrap();
     assert!(
-        expanded.contains("have ") && expanded.contains("using"),
+        expanded.contains("apply(increased(old(x), x));")
+            && !expanded.contains("apply(increased(old(x), x)) using"),
         "{expanded}"
     );
     without_implicit_solve_for_claim("increment.contract", || {

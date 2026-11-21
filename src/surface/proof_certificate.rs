@@ -94,6 +94,7 @@ pub enum ProofStep {
         fact: ClickProposition,
         premises: Vec<ClickProposition>,
     },
+    ApplyTheorem(TheoremApplication),
     ApplyTheoremUsing {
         application: TheoremApplication,
         premises: Vec<ClickProposition>,
@@ -749,6 +750,7 @@ impl ProofStep {
                 arguments: arguments.clone(),
                 premises: premises.clone(),
             },
+            ProofTactic::ApplyTheorem(application) => Self::ApplyTheorem(application.clone()),
             ProofTactic::ApplyTheoremUsing {
                 application,
                 premises,
@@ -934,6 +936,7 @@ impl ProofStep {
                 arguments: arguments.clone(),
                 premises: premises.clone(),
             },
+            Self::ApplyTheorem(application) => ProofTactic::ApplyTheorem(application.clone()),
             Self::ApplyTheoremUsing {
                 application,
                 premises,
@@ -1200,9 +1203,9 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
         ProofStep::Induct { .. } => TacticClass::Simple(SimpleTactic::Induct),
         ProofStep::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
-        ProofStep::ApplyFactUsing { .. } | ProofStep::ApplyTheoremUsing { .. } => {
-            TacticClass::Simple(SimpleTactic::ApplyTheorem)
-        }
+        ProofStep::ApplyFactUsing { .. }
+        | ProofStep::ApplyTheorem(_)
+        | ProofStep::ApplyTheoremUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
         ProofStep::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
         ProofStep::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
         ProofStep::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),

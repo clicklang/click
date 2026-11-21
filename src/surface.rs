@@ -6840,12 +6840,12 @@ impl ProofTactic {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::InductionPremises))
             }
             Self::ApplyInductionUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyInduction),
-            Self::ApplyFact(_) | Self::ApplyTheorem(_) => {
+            Self::ApplyFact(_) => {
                 TacticClass::Smart(SmartSite::Elided(ElidedArgument::TheoremPremises))
             }
-            Self::ApplyFactUsing { .. } | Self::ApplyTheoremUsing { .. } => {
-                TacticClass::Simple(SimpleTactic::ApplyTheorem)
-            }
+            Self::ApplyFactUsing { .. }
+            | Self::ApplyTheorem(_)
+            | Self::ApplyTheoremUsing { .. } => TacticClass::Simple(SimpleTactic::ApplyTheorem),
             Self::Witness(_) => TacticClass::Simple(SimpleTactic::Witness),
             Self::LetSatisfy(_) => TacticClass::Simple(SimpleTactic::LetSatisfy),
             Self::Choose(_) => TacticClass::Simple(SimpleTactic::Choose),

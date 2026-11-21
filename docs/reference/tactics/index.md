@@ -8,7 +8,7 @@ language. A tactic is either **smart**, **simple**, or **control**:
   the rest are the implicit closer that ends every proof, including each loop
   `maintain` script at its back edge, and finishes a `step()` or `fold`, and
   the elided forms whose search fills one argument a simple form writes:
-  `apply(theorem(args))`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
+  `apply(fact)`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
   are the tactics that `click profile` may recommend expanding. The parser
   refuses the removed forms `auto()`, `arithmetic()`,
   `execute()` and `execute_until` and names each replacement.
@@ -1130,7 +1130,7 @@ step is still checked.
 | `instantiate(F, value)` | simple | Specialized | Instantiate an available universal fact. | [Reference](#universal-instantiation) |
 | `apply(fact)` | smart | Core | Apply an established implication, proving its antecedents. | [Reference](#fact-application) |
 | `apply(fact) using { P; ... }` | simple | Expansion output | Apply an implication using written evidence. | [Reference](#fact-application) |
-| `apply(theorem(args))` | smart | Core | Apply a theorem, looking up its premises. | [Reference](#theorem-application) |
+| `apply(theorem(args))` | simple | Core | Apply a theorem and prove any open prerequisites. | [Reference](#theorem-application) |
 | `apply(theorem(args)) using { P; ... }` | simple | Expansion output | Apply a theorem using written premises. | [Reference](#theorem-application-with-selected-premises) |
 | `unfold(function(args))` | simple | Core | Open one layer of a pure function. | [Reference](#unfolding-pure-functions) |
 | `match value [ensuring { ... }] { Type::Variant(fields) => { ... } ... }` | control | Core | Prove each constructor case of an algebraic value. | [Reference](#constructor-matches) |
@@ -2784,23 +2784,21 @@ Theorem calls keep their existing `apply(theorem(args))` spelling.
 
 **Form:** `apply(theorem(args))`
 
-**Core.** Apply a verified global theorem. In a pure theorem proof, its
-written `requires` clauses are instantiated as obligations; the proof driver
-runs ordinary implicit `solve()` on each one and retains the proofs. You can
-also establish the premises first with `have P by { ... }`.
-
-Execution and fixed-state applications still select available premises. Native,
-model, and Integer argument evaluation can require explicit domain evidence;
-this premise-obligation slice does not replace that evidence-selection route.
-Special built-in range-fold and population-count applications retain their
-existing rules.
+**Core.** Apply a verified global theorem at the written arguments. Click
+generates obligations from the instantiated theorem requirements and argument
+evaluation, in pure proofs, at the execution frontier, and on returned
+outcomes. Available facts and direct checking close these obligations.
+Ordinary implicit `solve()` proves any remaining obligations. You can
+establish a missing fact first with `have P by { ... }`.
 
 **Failure, checking, and tools:**
 
-An unknown theorem, type mismatch, or unproved premise fails without changing
-resources. Pure premise failures name the obligation. Expansion retains ordinary
-`have` proofs followed by `apply(...) using { ... }`; the explicit `using` form
-continues to require the listed facts and performs no implicit premise solving.
+An unknown theorem, type mismatch, or unproved obligation fails without
+changing resources. A missing obligation names the proposition to prove.
+Expansion retains any needed `have` proofs and writes the bare
+`apply(theorem(args))`. Replay checks the generated obligations with
+`known()` rules. The explicit `using` form also checks a theorem application
+from written evidence.
 
 **Checked examples:** [`pure_theorem_apply.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_theorem_apply.md), [`pure_apply_obligations.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_apply_obligations.md), [`apply_cites_a_premise_stated_first.md`](https://github.com/clicklang/click/blob/master/mdtests/apply_cites_a_premise_stated_first.md)
 

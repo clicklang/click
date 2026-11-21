@@ -348,6 +348,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 }
             };
         }
+        if let ProofStep::ApplyTheorem(application) = &step {
+            return driver_proof
+                .driver()
+                .apply_prepared_theorem(application, false);
+        }
         if let ProofStep::ApplyTheoremUsing { application, .. } = &step
             && matches!(
                 driver_proof.focused_obligation(),

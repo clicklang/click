@@ -1193,10 +1193,9 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
     )
     .expect("the retained initialization theorem step should expand");
     assert!(
-        expanded.contains("apply(nonnegative_is_acceptable(x)) using"),
+        expanded.contains("apply(nonnegative_is_acceptable(x));"),
         "{expanded}"
     );
-    assert!(expanded.contains("x >= 0;"), "{expanded}");
     verify_c_sources(&expanded, &[("initialize_with_theorem.c", c_source)])
         .expect("expanded initialization theorem application should independently verify");
 }
