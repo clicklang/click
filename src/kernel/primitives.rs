@@ -5006,16 +5006,16 @@ impl AlgebraicTermNode {
         Self::parameter_load_at(ProgramPoint::at(&memory), pointer, parameter)
     }
 
-    /// A checked cell observation uses the entry version when the point
-    /// establishes that the caller's storage is unchanged.
+    /// A checked cell observation uses the same typed version as a logical read.
     pub(crate) fn parameter_cell_load(
         source: &ProgramPoint,
         pointer: Address,
         parameter: TypeParameterName,
     ) -> ProgramValue {
-        if let Some(entry) = source.entry_cell_version(&pointer, ProgramType::Parameter(parameter))
+        if let Some(version) =
+            source.ordinary_typed_version(&pointer, ProgramType::Parameter(parameter))
         {
-            return Self::parameter_load_at(entry, pointer, parameter);
+            return Self::parameter_load_at(version, pointer, parameter);
         }
         Self::parameter_load(source.shared_memory().clone(), pointer, parameter)
     }

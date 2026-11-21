@@ -89,13 +89,15 @@ Named scalar observations and read congruence use indexed versions where the
 producer has a recorded typed write or one of the supported entry versions.
 Concrete resource cells and compact runs can retain their source point.
 Indexed abstract reads of a directly written local use its typed store in
-equality and raising. Native and shared array arguments carry the same source
-point. External arrays can use function entry after disjoint local
-declarations, stores and checked calls whose write ranges all name automatic
-objects, including when several effects are recorded together. Declared
-predicates also retain that entry version for external `int32` array
-arguments, including when unfolding their bodies or raising
-a predicate fact. Scalar fold instantiation keeps a selected entry point
+equality and raising. Materialized fixed-width opaque resource fields at
+constant offsets in local objects use the same indexed store as logical
+reads. Symbolic-sized fields still use the memory view. Native and shared
+array arguments carry the same source point. External arrays can use function
+entry after disjoint local declarations, stores and checked calls whose write
+ranges all name automatic objects, including when several effects are recorded
+together. Declared predicates also retain that entry version for external
+`int32` array arguments, including when unfolding their bodies or raising a
+predicate fact. Scalar fold instantiation keeps a selected entry point
 when the substituted index still uses the indexed entry selector. Checked
 resource quantities and materialized resource cells share that entry point for
 an `int32` field at a fixed displacement from its external parameter. Computed

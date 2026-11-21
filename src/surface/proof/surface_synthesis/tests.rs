@@ -9515,6 +9515,121 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
 }
 
 #[test]
+fn fixed_width_opaque_field_observation_round_trips_its_store_point() {
+    use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, ExpressionOutcome, TypeParameterName};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let parameter = TypeParameterName::of(&crate::surface::generics::primitive_instance_type(
+        "Vec",
+        &[crate::kernel::AlgebraicValueType::Program(
+            ProgramType::UInt32,
+        )],
+    ));
+    let ty = ProgramType::Parameter(parameter);
+    let block = local_read_test_address("record");
+    let field = block.offset_by_bytes(8);
+    let pointer =
+        ProgramValue::typed_pointer(field.clone(), ProgramType::ParameterPointer(parameter));
+    let parameters = [crate::languages::interface::ImportedParameter::new(
+        InterfaceType::ParameterPointer(parameter),
+        "p".into(),
+        None,
+    )];
+    let arguments = [ProgramExpression::Value(pointer.clone())];
+    let state = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().with_block(block.base.clone(), 16))
+        .with_local("p", pointer);
+    let opaque = |parameter: TypeParameterName, id| {
+        ProgramValue::Parameter(Box::new(AlgebraicTerm {
+            algebraic_type: parameter.algebraic_type(),
+            node: AlgebraicTermNode::Variable(Variable(id)),
+        }))
+    };
+    let store = |state: &ExecutionState, address: &Address, value| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().store(address.clone(), value))
+    };
+    let first = store(&state, &field, opaque(parameter, 1008403));
+    let observe = |state: &ExecutionState| {
+        let memory =
+            SymbolicMemory::new().materialize_cell_at(field.clone(), ty, &state.program_point());
+        let ExpressionOutcome::Value(ProgramValue::Parameter(term)) = memory.load(&field) else {
+            panic!("expected a named opaque resource cell");
+        };
+        term
+    };
+    let first_read = observe(&first);
+    assert!(
+        matches!(&first_read.node, AlgebraicTermNode::MemoryLoad { point, .. }
+        if point.read_version_id() == first.program_point_id())
+    );
+
+    let mut current = first.clone();
+    let mut samples = Vec::new();
+    for count in [4, 16, 64, 256] {
+        for value in 0..count {
+            current = local_read_test_store(&current, &block, ProgramType::Int32, value);
+        }
+        let ((version, read), work) = crate::instrumentation::measure_deterministic_work(|| {
+            (
+                current.program_point().ordinary_typed_version(&field, ty),
+                observe(&current),
+            )
+        });
+        assert_eq!(
+            version.and_then(|point| point.read_version_id()),
+            first.program_point_id()
+        );
+        assert_eq!(read, first_read);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work <= samples[0] + 8),
+        "{samples:?}"
+    );
+
+    let second = store(&current, &field, opaque(parameter, 1008404));
+    let second_read = observe(&second);
+    assert!(
+        matches!(&second_read.node, AlgebraicTermNode::MemoryLoad { point, .. }
+        if point.read_version_id() == second.program_point_id())
+    );
+    assert_ne!(first_read, second_read);
+
+    let goal = Proposition::Equal(
+        Term::Algebraic((*first_read).into()),
+        Term::Algebraic((*second_read).into()),
+    );
+    let selector = ProgramPointSelector::Mark("before".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), first);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let raised = synthesize_surface_proposition(
+        &goal,
+        ParameterBinding::new(&parameters, &arguments),
+        &second,
+    )
+    .expect("the indexed field reads have a Click spelling");
+    assert!(matches!(&raised, ClickProposition::Comparison { left, .. }
+        if matches!(left, ContractExpression::At { selector: point, .. } if *point == selector)));
+    assert_eq!(
+        relower_written_proposition_with_states(&raised, &state, &second, &points),
+        Ok(goal),
+    );
+
+    let generic = TypeParameterName::intern("UnknownOpaqueField");
+    assert!(generic.has_abstract_size());
+    let unknown_overlap = store(&second, &block, opaque(generic, 1008405));
+    assert!(
+        unknown_overlap
+            .program_point()
+            .ordinary_typed_version(&field, ty)
+            .is_none()
+    );
+}
+
+#[test]
 fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
     use crate::kernel::{AlgebraicTermNode, TypeParameterName};
 
