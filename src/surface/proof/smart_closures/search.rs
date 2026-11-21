@@ -3552,6 +3552,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) = Self::try_resource_descriptor_rewrite_closure(search_input)? {
             return Ok(Some(proof));
         }
+        // Restrict a current separation fact before trying historical
+        // transport. The library application records both containment
+        // premises for replay.
+        if let Some(surface_goal) = search_input.surface_goal()
+            && let Some(proof) = Self::try_resource_separation_restriction_closure(
+                search_input,
+                surface_goal,
+                introduced_surfaces,
+            )?
+        {
+            return Ok(Some(proof));
+        }
         if let Some(proof) = Self::try_ordinary_viewability_restriction_closure(search_input, None)
         {
             return Ok(Some(proof));
@@ -6774,13 +6786,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
-        if let Some(proof) = Self::try_resource_separation_restriction_closure(
-            search_input,
-            surface_goal,
-            introduced_surfaces,
-        )? {
-            return Ok(Some(proof));
-        }
         if search_input.has_conjunctive_goal() {
             // The split owns the checked Surface-to-kernel correspondence.
             // In particular, a lowered existential body may be a conjunction
