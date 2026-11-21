@@ -2896,8 +2896,10 @@ second persistent view is created. A view that was already present in the
 caller remains persistent. The entry clauses of a contract may claim ownership
 of each byte at most once, including ownership inside folded resources. A
 contract may not own and view the same memory. That overlap is refused at
-entry and at the call. Owned elements are transferred by `owns`, `consumes`,
-and `produces`.
+entry and at the call. This also applies to a folded resource. An `owns`
+input already supplies read access to that resource, so a contract cannot
+also request a `views` input for the same resource. Owned elements are
+transferred by `owns`, `consumes`, and `produces`.
 
 Fixed-size heap objects add the built-in owned resource
 `allocation(base, bytes)`. It is exclusive authority and responsibility for
