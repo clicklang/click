@@ -3587,6 +3587,37 @@ fn resource_pointer_cell_keeps_the_complete_read_from_its_recorded_store() {
 }
 
 #[test]
+fn resource_float_cell_naming_distinguishes_equal_memory_source_points() {
+    use crate::kernel::KernelFloatType;
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let before = ExecutionState::new().begin_function_entry_memory();
+    let other = before.clone().begin_function_entry_memory();
+    assert_eq!(before.memory(), other.memory());
+    for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+        let point = before.program_point();
+        let named = before.memory().clone().materialize_cell_at(
+            slot.clone(),
+            format.program_type(),
+            &point,
+        );
+        assert_eq!(
+            named.known_value(&slot),
+            Some(format.value(MachineTerm::MemoryLoad(
+                point.for_exact_read(),
+                Box::new(slot.clone()),
+                format.load_kind(),
+            ))),
+        );
+        assert!(super::memory_only_adds_named_cells(&before, &named).is_ok());
+        assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+    }
+}
+
+#[test]
 fn resource_cell_naming_checks_the_entry_point_without_a_store() {
     let _session = crate::kernel::VerificationSession::enter();
     let slot = Address {

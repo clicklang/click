@@ -472,7 +472,7 @@ fn exact_logical_read_value(
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
     if let Some(format) = KernelFloatType::from_program_type(value_type) {
-        return Some(float_read_value(point, pointer, format));
+        return Some(format.value(float_read_term(point, pointer, format)));
     }
     if !logical_read_names_its_version(value_type) {
         return None;
@@ -507,16 +507,23 @@ fn exact_logical_read_value(
     Some(complete_loaded_word(value, point.memory(), pointer))
 }
 
-fn float_read_value(
-    point: ProgramPoint,
-    pointer: &Address,
-    format: KernelFloatType,
-) -> ProgramValue {
-    format.value(MachineTerm::MemoryLoad(
+fn float_read_term(point: ProgramPoint, pointer: &Address, format: KernelFloatType) -> MachineTerm {
+    MachineTerm::MemoryLoad(
         point.for_exact_read(),
         Box::new(pointer.clone()),
         format.load_kind(),
-    ))
+    )
+}
+
+fn point_named_float_load(
+    source: &ProgramPoint,
+    pointer: &Address,
+    value_type: ProgramType,
+) -> Option<MachineTerm> {
+    let format = KernelFloatType::from_program_type(value_type)?;
+    source
+        .has_certified_read_view()
+        .then(|| float_read_term(source.clone(), pointer, format))
 }
 
 /// Give a new symbolic float read the point where the read was taken.
@@ -526,16 +533,10 @@ fn point_named_symbolic_float_read(
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
-    let format = KernelFloatType::from_program_type(value_type)?;
     let origin = origin?;
-    if !matches!(
-        origin.observation_key(),
-        crate::kernel::program_point::ReadKey::Point(_)
-    ) {
-        return None;
-    }
+    let read = point_named_float_load(origin, pointer, value_type)?;
     record_load_access_width(origin.memory(), pointer, value_type.byte_width());
-    Some(float_read_value(origin.clone(), pointer, format))
+    ProgramValue::from_bitvector_term(value_type, read)
 }
 
 fn evaluate_logical_memory_load_paths_unbridged(
@@ -2298,6 +2299,14 @@ fn symbolic_index_run_load(
     // every live slot holds the run's one value, so the load reads it.
     if let crate::kernel::primitives::RunValueMode::Constant(value) = run.value_mode() {
         return value_type.read_cell(value);
+    }
+    if matches!(
+        run.value_mode(),
+        crate::kernel::primitives::RunValueMode::Load
+    ) && let Some(value) =
+        point_named_symbolic_float_read(Some(run.source_point()), pointer, value_type)
+    {
+        return Some(value);
     }
     canonicalized_symbolic_load_value_with_identity(
         run.source().memory(),
@@ -4224,18 +4233,20 @@ pub(in crate::kernel) fn expected_point_named_cell_read(
     pointer: &Address,
     ty: ProgramType,
 ) -> Option<MachineTerm> {
-    indexed_resource_scalar_read(source, pointer, ty).or_else(|| {
-        let kind = LoadKind::of_type(ty)?;
-        if !kind.is_word32() {
-            return None;
-        }
-        let point = source.entry_cell_version(pointer, ty)?;
-        Some(MachineTerm::MemoryLoad(
-            point,
-            Box::new(pointer.clone()),
-            kind,
-        ))
-    })
+    point_named_float_load(source, pointer, ty)
+        .or_else(|| indexed_resource_scalar_read(source, pointer, ty))
+        .or_else(|| {
+            let kind = LoadKind::of_type(ty)?;
+            if !kind.is_word32() {
+                return None;
+            }
+            let point = source.entry_cell_version(pointer, ty)?;
+            Some(MachineTerm::MemoryLoad(
+                point,
+                Box::new(pointer.clone()),
+                kind,
+            ))
+        })
 }
 
 pub(in crate::kernel) fn observe_entry_integer_cell(
@@ -10067,6 +10078,54 @@ mod float_memory_handoff_tests {
                 };
                 assert_eq!(value.native().as_ref(), &expected);
             }
+        }
+    }
+
+    #[test]
+    fn symbolic_float_run_reads_name_the_source_point_without_visiting_slots() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = ExecutionState::new().begin_function_entry_memory();
+        let point = source.program_point();
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let value_type = format.program_type();
+            let bytes = value_type.byte_width();
+            let index = MachineTerm::Variable(Variable(986_234));
+            let pointer = Address {
+                base: base.base.clone(),
+                offset: AddressOffset::scale_int32(index.clone(), i64::from(bytes)),
+            };
+            let assumptions = PureFactContext::new()
+                .assume_condition(ConditionTerm::equal(index, MachineTerm::constant(0)), true);
+            let expected = format.value(MachineTerm::MemoryLoad(
+                point.clone().for_exact_read(),
+                Box::new(pointer.clone()),
+                format.load_kind(),
+            ));
+            let work = [1, 8, 64, 256].map(|count| {
+                let memory = source
+                    .memory()
+                    .clone()
+                    .with_named_cell_run(base.clone(), bytes, value_type, 0, count, point.clone())
+                    .unwrap();
+                let (read, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    symbolic_index_run_load(
+                        &memory,
+                        &pointer,
+                        value_type,
+                        &mut ExecutionFacts::new(),
+                        &assumptions,
+                        None,
+                        LoadPurpose::Logical,
+                    )
+                });
+                assert_eq!(read, Some(expected.clone()));
+                work
+            });
+            assert!(work.iter().all(|units| *units <= work[0] + 8), "{work:?}");
         }
     }
 
