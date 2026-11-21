@@ -277,21 +277,85 @@ struct ReadVersionPoint {
     memory: SharedMemory,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct ArrayBlockVersions {
+    /// A fresh lineage after an unclassified effect prevents a join from
+    /// diffing maps with no shared base.
+    generation: ProgramPointId,
     static_entry: Option<ReadVersionPoint>,
-    writes: PersistentMap<AddressBase, Weak<PointNode>>,
+    writes: PersistentMap<AddressBase, ArrayBlockWrite>,
+}
+
+#[derive(Clone, Debug)]
+struct ArrayBlockWrite(Weak<PointNode>);
+
+impl PartialEq for ArrayBlockWrite {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.0, &other.0)
+    }
 }
 
 impl ArrayBlockVersions {
+    fn at_verified_view(path: &PathLink, memory: &SharedMemory) -> Option<Self> {
+        let node = path.0.as_ref()?;
+        if !node.function_entry {
+            return node.array_block_versions.clone();
+        }
+        Some(Self {
+            generation: node.id,
+            static_entry: Some(ReadVersionPoint {
+                point: Arc::downgrade(node),
+                view: path.1.clone(),
+                memory: memory.clone(),
+            }),
+            writes: PersistentMap::default(),
+        })
+    }
+
+    /// Walk only changed keys between maps with the same lineage. An array
+    /// with different versions on different arms receives the join's version.
+    fn joining(points: &[ProgramPoint], joined: &Weak<PointNode>) -> Option<Self> {
+        let versions_at = |point: &ProgramPoint| {
+            if !point.path.matches_indexed_view(&point.memory) {
+                return None;
+            }
+            Self::at_verified_view(&point.path, &point.memory)
+        };
+        let (first, rest) = points.split_first()?;
+        let base = versions_at(first)?;
+        let mut result = base.clone();
+        for point in rest {
+            crate::instrumentation::record_deterministic_work(1);
+            let other = versions_at(point)?;
+            if other.generation != base.generation {
+                return None;
+            }
+            for (block, left, right) in base.writes.diff(&other.writes) {
+                if block.is_static_storage_block()
+                    || (left.is_some() && right.is_some() && result.writes.get(block).is_some())
+                {
+                    result
+                        .writes
+                        .insert(block.clone(), ArrayBlockWrite(joined.clone()));
+                } else {
+                    // A local must exist on every arm. Its entry cannot
+                    // stand for another lifetime.
+                    result.writes.remove(block);
+                }
+            }
+        }
+        Some(result)
+    }
+
     fn after(
         predecessors: &[PathLink],
         steps: Option<&StepLog>,
         memory: &SharedMemory,
         point: &Weak<PointNode>,
+        id: ProgramPointId,
         transition: PointTransition,
     ) -> Option<Self> {
-        let [from @ PathLink(Some(before), view)] = predecessors else {
+        let [from] = predecessors else {
             return None;
         };
         let source = match steps {
@@ -308,18 +372,11 @@ impl ArrayBlockVersions {
         if !from.matches_indexed_view(source) {
             return None;
         }
-        let mut versions = if before.function_entry {
-            Self {
-                static_entry: Some(ReadVersionPoint {
-                    point: Arc::downgrade(before),
-                    view: view.clone(),
-                    memory: source.clone(),
-                }),
-                writes: PersistentMap::default(),
-            }
-        } else {
-            before.array_block_versions.clone().unwrap_or_default()
-        };
+        let mut versions = Self::at_verified_view(from, source).unwrap_or_else(|| Self {
+            generation: id,
+            static_entry: None,
+            writes: PersistentMap::default(),
+        });
         if let Some(log) = steps {
             if log.previous.is_none() {
                 versions.record(&log.step, point)?;
@@ -348,7 +405,8 @@ impl ArrayBlockVersions {
         }
         let mut record_object = |block: &AddressBase| {
             if block.is_static_storage_block() || indexed_local(block) {
-                self.writes.insert(block.clone(), point.clone());
+                self.writes
+                    .insert(block.clone(), ArrayBlockWrite(point.clone()));
                 true
             } else {
                 matches!(block, AddressBase::Temporary(_))
@@ -530,7 +588,7 @@ impl PathLink {
             join_point_read_indexes(points).unwrap_or_else(|| PointReadIndex::empty(id));
         let external_read_start = joined_external_entry(points);
         Self(
-            Some(Arc::new(PointNode {
+            Some(Arc::new_cyclic(|joined| PointNode {
                 id,
                 function_entry: false,
                 memory,
@@ -540,7 +598,7 @@ impl PathLink {
                 point_read_index,
                 external_read_start,
                 array_version_after_call: None,
-                array_block_versions: None,
+                array_block_versions: ArrayBlockVersions::joining(points, joined),
             })),
             IndexedView::Recorded,
         )
@@ -577,6 +635,7 @@ impl PathLink {
                     steps.as_deref(),
                     &memory,
                     version,
+                    id,
                     transition,
                 );
                 PointNode {
@@ -1435,7 +1494,7 @@ impl ProgramPoint {
             return Some(self.clone().for_exact_read());
         }
         let versions = current.array_block_versions.as_ref()?;
-        if let Some(version) = versions.writes.get(block) {
+        if let Some(ArrayBlockWrite(version)) = versions.writes.get(block) {
             let version = version.upgrade()?;
             return Some(Self {
                 memory: version.memory.clone(),
@@ -1883,6 +1942,68 @@ mod tests {
                 .entry_integer_version(&pointer, LoadKind::Int32)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn a_join_keeps_shared_array_versions_and_renames_changed_blocks() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let static_cell = SymbolicMemory::global_pointer("static_array");
+        let local_array = SymbolicMemory::local_pointer("local_array");
+        let other = slot();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let entry_id = entry.observation_point_id();
+        let write = |state: &ExecutionState, address: &Address, bits| {
+            state.clone().with_memory(state.memory().clone().store(
+                address.clone(),
+                ProgramValue::Int32(MachineTerm::constant(bits)),
+            ))
+        };
+        let version = |point: &ProgramPoint, address: &Address| {
+            point
+                .indexed_array_version(&address.base)
+                .and_then(|point| point.read_version_id())
+        };
+        let mut work = Vec::new();
+        for count in [4, 16, 64, 256] {
+            let mut before = entry.clone().with_memory(
+                entry
+                    .memory()
+                    .clone()
+                    .with_block(other.base.clone(), 4)
+                    .with_block(local_array.base.clone(), 4),
+            );
+            for index in 0..count {
+                let local = SymbolicMemory::local_pointer(format!("unrelated_{index}"));
+                before = before
+                    .clone()
+                    .with_memory(before.memory().clone().with_block(local.base, 4));
+            }
+            let before = write(&before, &local_array, 7);
+            let left = write(&before, &other, 1);
+            let right = write(&before, &other, 2);
+            let join = |left: &ExecutionState, right: &ExecutionState| {
+                let mut result = left.clone();
+                result.join_program_points(left, right, before.path_link());
+                result.program_point()
+            };
+            let (joined, cost) =
+                crate::instrumentation::measure_deterministic_work(|| join(&left, &right));
+            assert_eq!(version(&joined, &static_cell), entry_id);
+            assert_eq!(
+                version(&joined, &local_array),
+                before.observation_point_id(),
+            );
+            assert_eq!(version(&joined, &other), joined.id());
+            work.push(cost);
+
+            let changed = write(&right, &static_cell, 7);
+            let joined = join(&left, &changed);
+            assert_eq!(version(&joined, &static_cell), joined.id());
+
+            let unclassified = write(&right, &Address::symbolic(Variable(1_037_601)), 7);
+            assert!(version(&join(&left, &unclassified), &static_cell).is_none());
+        }
+        assert!(work.iter().all(|&cost| cost <= work[0] + 64), "{work:?}");
     }
 
     #[test]
