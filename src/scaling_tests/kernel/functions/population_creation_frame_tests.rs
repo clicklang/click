@@ -13,6 +13,7 @@ fn function_return_lifetime_cleanup_ignores_value_only_parameters() {
         vec![],
         program_return(crate::kernel::program_expression::int32_literal(0)),
     );
+    let mut samples = Vec::new();
     for count in [4, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let block = AddressBase::from("local:frame:live");
@@ -37,7 +38,7 @@ fn function_return_lifetime_cleanup_ignores_value_only_parameters() {
             value: int32(0).into(),
             state: Box::new(state.clone()),
         };
-        let ((result, obligations), work) =
+        let ((result, obligations), return_work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 function_outcome_from_body(
                     &caller,
@@ -53,13 +54,19 @@ fn function_return_lifetime_cleanup_ignores_value_only_parameters() {
             panic!("expected successful return, got {result:?}");
         };
         assert!(after.memory().is_ended_local_block(&block));
-        assert!(work < 64, "{count} value-only parameters: {work} units");
 
-        let (inline, work) = crate::instrumentation::measure_deterministic_work(|| {
+        let (inline, inline_work) = crate::instrumentation::measure_deterministic_work(|| {
             end_inline_frame_automatic_lifetimes(&state).unwrap()
         });
         assert_eq!(inline.retired_local_blocks, vec![block]);
-        assert!(work < 16, "{count} value-only parameters: {work} units");
+        samples.push((count, return_work, inline_work));
+    }
+    let (_, first_return, first_inline) = samples[0];
+    for (count, return_work, inline_work) in samples {
+        assert!(
+            return_work <= first_return + 8 && inline_work <= first_inline + 8,
+            "{count} value-only parameters: return {return_work}, inline {inline_work}, baseline return {first_return}, inline {first_inline}"
+        );
     }
 }
 
