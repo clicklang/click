@@ -1986,7 +1986,8 @@ fn verify_contract_refinement_theorem(
         theorem_environment,
     );
     let mut search = super::attempt::search_scope("contract refinement");
-    let attempted = match root.driver().try_authoritative_linear_script(proof_tactics) {
+    let script = super::smart_closures::with_implicit_closer(proof_tactics);
+    let attempted = match root.driver().try_authoritative_linear_script(&script) {
         Ok(attempted) => attempted,
         Err(error) => {
             return Err(error
@@ -2670,6 +2671,8 @@ fn check_pure_script_with_proof(
         ),
     }
     .with_recorded_goal_introductions(Some(goal_introductions.clone()));
+    let tactics_with_closer = super::smart_closures::with_implicit_closer(tactics);
+    let tactics = tactics_with_closer.as_slice();
     let all_sites = claim_script_sites(&root, tactics, 0);
     let prefix = if entry_requirements.recorded.is_empty() {
         0

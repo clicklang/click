@@ -73,7 +73,9 @@ impl TacticClass {
     pub fn refusal_meaning(self) -> &'static str {
         match self {
             Self::Simple => "a refusal within its documented behavior is a bug",
-            Self::Smart => "it may miss; if the goal holds, prove it through smaller steps",
+            Self::Smart => {
+                "proof search can miss a valid proof; if the goal holds, prove it through smaller steps"
+            }
             Self::Control => "the refusal is in the tactics it contains",
         }
     }

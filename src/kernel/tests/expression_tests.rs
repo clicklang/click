@@ -2095,7 +2095,11 @@ fn function_pointer_operations_report_indeterminate_pointee_type() {
         ),
     ];
 
-    for expression in expressions {
+    for (expression, error) in expressions.into_iter().zip([
+        RuntimeError::IndeterminatePointeeType,
+        RuntimeError::IndeterminatePointeeType,
+        RuntimeError::UnsupportedFunctionPointerOffset,
+    ]) {
         let theorem = prove_program_expression_evaluation(state.clone(), expression.clone())
             .expect("a function-pointer object operation should produce a model error");
         assert_eq!(
@@ -2103,7 +2107,7 @@ fn function_pointer_operations_report_indeterminate_pointee_type() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
+                outcome: ExpressionOutcome::RuntimeError(error),
             }
         );
     }

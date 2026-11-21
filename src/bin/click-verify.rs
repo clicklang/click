@@ -874,6 +874,8 @@ fn refusal_class_lines(context: &[String], written: Option<&str>, ended_open: bo
     {
         let smart = click::docs::TacticClass::Smart;
         return vec![
+            "proof search miss: the implicit closer did not prove the statement requirement"
+                .to_owned(),
             format!(
                 "refused by: the implicit closer that proves this statement's requirements ({}: {})",
                 smart.label(),
@@ -888,11 +890,17 @@ fn refusal_class_lines(context: &[String], written: Option<&str>, ended_open: bo
     let mut lines = Vec::new();
     if written_text.is_some_and(click::docs::written_tactic_elides_argument) {
         lines.push(format!(
+            "proof search miss: `{name}` did not find its elided argument"
+        ));
+        lines.push(format!(
             "refused by: `{name}` ({}: {})",
             class.label(),
             click::docs::SEARCH_MISS_MEANING
         ));
     } else if class != click::docs::TacticClass::Control {
+        if class == click::docs::TacticClass::Simple {
+            lines.push(format!("tactic failure: `{name}` refused the checked step"));
+        }
         lines.push(format!(
             "refused by: `{name}` ({}: {})",
             class.label(),

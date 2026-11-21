@@ -20,7 +20,12 @@ Click reports four kinds of error. Only a proof error enters this procedure.
 | `internal error` | The verifier failed. | The outcome is [`unclear-trace`](#outcomes). |
 | `proof error` | A checked operation could not establish something. | Follow the procedure below. |
 
-A proof error names its **goal**: the proposition that had to be true at a
+A proof error may give a more specific diagnostic. A `tactic failure`
+identifies a refused checked step. If it stops while executing C, read the
+named expression and reason before looking for a goal. A `proof search miss`
+means search found no proof or elided argument.
+
+When a proof error reports a **goal**, it names the proposition that had to be true at a
 point and was not proved there. A goal can come from an `ensures`
 clause, a written `have`, a call's precondition, a definedness requirement such
 as the absence of signed overflow, or a memory access. The report prints it on
@@ -197,8 +202,10 @@ premises; it does not by itself certify that checking is fast.
 ## The procedure
 
 1. **Record the goal.** Write down the failing goal `G`, the point
-   where it is required, and the premises available there. If the report has
-   no `goal:` line, or you cannot read it, stop at `unclear-trace`.
+   where it is required, and the premises available there. If the report
+   should name a goal but omits it or gives an unreadable one, stop at
+   `unclear-trace`. A checked execution step may identify a Click limitation
+   before generating a goal. Reduce that step as `failing-tactic`.
 2. **Decide whether `G` is true.** Check it against the contract, the branch
    facts, and the C semantics. If it is false on some execution the contract
    admits, stop at `false-goal`.
@@ -263,8 +270,8 @@ The procedure ends at exactly one of these:
 | `unclear-goal` | You cannot say why `G` holds. Give `G`, the premises, and what you tried. |
 | `missing-rule` | The premises and conclusion are expressible and the inference is justified, but no supported primitive connects them. Record the rule schema, the references checked, and the reduced example for design discussion. This is not established by a search miss alone. |
 | `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory syntax, or resource form. Report a bug. |
-| `failing-tactic` | Every link is written, and one link is a single simple tactic that is refused although the link is within what that tactic is documented to do. Report a bug. |
-| `unclear-trace` | The failure has no `goal:` line, the goal cannot be read (for example, it prints with placeholders such as `<unnamed A>` that no proof can name), or the refusal is not "goal `G` was not proved". Report a bug. |
+| `failing-tactic` | Every link is written, and one link is a single simple tactic that is refused although the link is within what that tactic is documented to do, or a checked execution tactic names a Click limitation on valid C. Report the reduced refusal. |
+| `unclear-trace` | The report omits or obscures the goal or the reason a tactic refused (for example, it prints an unnameable `<unnamed A>` instead of the required value). Report a bug. |
 
 A smart tactic that does not prove a link is never `failing-tactic`: smart
 tactics may miss even a primitive link; identify its rule and supply its premises. A search miss is never

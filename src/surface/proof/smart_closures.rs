@@ -1709,6 +1709,12 @@ fn script_arm_with_continuation<'a>(
     }
 }
 
+pub(super) fn with_implicit_closer(tactics: &[ProofTactic]) -> Vec<ProofTactic> {
+    let mut tactics = tactics.to_vec();
+    tactics.push(ProofTactic::ImplicitSolve);
+    tactics
+}
+
 impl<'a> Proof<'a> {
     fn signed_surface_term(
         &self,
@@ -3230,7 +3236,7 @@ impl<'a> Proof<'a> {
             self.describe_goal_version_mismatch()
                 .or_else(|| self.describe_goal_decided_false())
                 .map(|mismatch| format!("\n  {mismatch}"))
-                .unwrap_or_default(),
+                .unwrap_or_else(|| "\n  proof search miss: no proof found for this goal".into()),
         ))
     }
 
