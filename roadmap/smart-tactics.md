@@ -97,7 +97,8 @@ entry after disjoint local declarations, stores and checked calls whose write
 ranges all name automatic objects, including when several effects are recorded
 together. The shared caller storage can also name an array by a recorded
 write point and retain that version across local stores and local-only calls.
-Declared predicates also retain that entry version for external
+Named static arrays also retain entry or write points across recorded writes
+and calls confined to named static and automatic objects. Declared predicates also retain that entry version for external
 `int32` array arguments, including when unfolding their bodies or raising a
 predicate fact. Scalar fold instantiation keeps a selected entry point
 when the substituted index still uses the indexed entry selector. Checked
