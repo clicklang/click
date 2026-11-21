@@ -106,6 +106,8 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
             base: AddressBase::Heap(index),
             offset: AddressOffset::Constant(0),
         };
+        // A library instance, as Surface registers it: opaque, of fixed width.
+        TypeParameterName::declare_library_instance("SliceIter<uint8>");
         let algebraic_type = AlgebraicType {
             rigid: true,
             name: "SliceIter<uint8>".into(),

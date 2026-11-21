@@ -143,7 +143,7 @@ impl Gen {
                 base: Box::new(self.pointer(d)),
                 steps: vec![
                     SpecAddressStep::Subobject { width: 4 },
-                    SpecAddressStep::OffsetBytes { bytes: 8 },
+                    SpecAddressStep::OffsetBytes { bytes: 8.into() },
                 ],
                 value_type: ProgramType::Int32,
                 volatile: false,

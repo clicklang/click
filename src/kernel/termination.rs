@@ -5090,7 +5090,7 @@ mod address_escape_tests {
             pointer: Box::new(ProgramExpression::Subobject {
                 pointer: Box::new(ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(ProgramExpression::Variable("p".into())),
-                    bytes: 8,
+                    bytes: 8.into(),
                 }),
                 width: 8,
             }),

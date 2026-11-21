@@ -369,6 +369,7 @@ pub(crate) fn primitive_instance_type(
             .write()
             .expect("primitive instance table")
             .insert(kernel_name.clone(), (name.to_string(), arguments.to_vec()));
+        crate::kernel::TypeParameterName::declare_library_instance(&kernel_name);
     }
     crate::kernel::AlgebraicType::parameter(kernel_name)
 }

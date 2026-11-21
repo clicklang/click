@@ -283,6 +283,7 @@ impl Parser {
         } else {
             false
         };
+        self.record_abstract_pointer_params(&parameters);
         Ok(ParsedFunctionSignature {
             signature: FunctionSignature {
                 c_source: None,
@@ -1619,6 +1620,23 @@ impl Parser {
                 _ => return Err(self.error("a Rust pointer type is `*const T` or `*mut T`")),
             };
             self.position += 2;
+            // A raw pointer to a value of an abstract type parameter,
+            // `*mut T`, as a `fn` signature reads `&mut T`.
+            if let Some(name) = self.peek_ident()
+                && self.rust_abstract_type_parameters.contains(name)
+                && self.peek_next() != Some(&Token::ColonColon)
+            {
+                let parameter = crate::kernel::TypeParameterName::intern(name);
+                self.position += 1;
+                return Ok(Some(ParsedType {
+                    interface_type: InterfaceType::ParameterPointer(parameter),
+                    struct_name: None,
+                    struct_pointer: false,
+                    constant: false,
+                    pointee_constant: !mutable,
+                    reference: false,
+                }));
+            }
             // A raw pointer to a crate struct, `*const crate::S`, as a
             // `fn` signature reads its references to one.
             if self

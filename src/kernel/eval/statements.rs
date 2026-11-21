@@ -523,13 +523,18 @@ fn memory_write_ownership_outcome(
     assumptions: &PureFactContext,
 ) -> Option<StatementOutcome> {
     let pointer = range.base();
-    let bytes = range.element_width();
-    if state.memory.requires_explicit_scalar_ownership(pointer)
-        && state
+    // Only a block that requires explicit ownership looks up its owner.
+    let held = || match range.single_element_width() {
+        Some(bytes) => state
             .resources()
             .memory_write_range(pointer, bytes, assumptions)
-            .is_none()
-    {
+            .is_some(),
+        // A value of an abstract type is written whole: its object.
+        None => state
+            .resources()
+            .permits_object_access(&range, true, assumptions),
+    };
+    if state.memory.requires_explicit_scalar_ownership(pointer) && !held() {
         return Some(StatementOutcome::RuntimeError(
             RuntimeError::MissingResource {
                 resource: Box::new(ResourceFact::own_memory(range)),
@@ -710,7 +715,7 @@ fn write_program_lvalue_paths_for_initialization(
                 && let Some(refusal) = subobject_access_refusal(
                     pointer,
                     lvalue_domain_source,
-                    lvalue_value_type.byte_width(),
+                    crate::kernel::AccessExtent::of_type(lvalue_value_type),
                     &facts,
                     &obligations,
                     &effective_assumptions,
@@ -855,7 +860,7 @@ fn write_program_lvalue_paths_for_initialization(
             if let Some(refusal) = subobject_access_refusal(
                 &pointer,
                 lvalue_domain_source,
-                lvalue_value_type.byte_width(),
+                crate::kernel::AccessExtent::of_type(lvalue_value_type),
                 &facts,
                 &obligations,
                 &effective_assumptions,
@@ -927,7 +932,10 @@ fn write_program_lvalue_paths_for_initialization(
                     !effective_assumptions.provenance_equal(origin, &pointer.object_identity())
                         || !lvalue.bounds_known && lvalue.bounds_owner.is_some()
                 });
-            let authorized_range = is_external
+            // A value of an abstract type is written whole: its object.
+            let abstract_object = matches!(value.program_type(),
+                ProgramType::Parameter(parameter) if parameter.has_abstract_size());
+            let authorized_range = (is_external && !abstract_object)
                 .then(|| {
                     state.resources().designated_memory_write_range(
                         &pointer,
@@ -938,7 +946,16 @@ fn write_program_lvalue_paths_for_initialization(
                 })
                 .flatten()
                 .cloned();
-            let has_external_write_resource = is_external && authorized_range.is_some();
+            let has_external_write_resource = is_external
+                && if abstract_object {
+                    state.resources().permits_object_access(
+                        &MemoryRange::access(pointer.clone(), value.program_type()),
+                        true,
+                        &effective_assumptions,
+                    )
+                } else {
+                    authorized_range.is_some()
+                };
             // Keep the checked owner's base for a captured external address
             // without an explicit additive spine. Ordinary source addresses
             // retain their typed field/index coordinates, which subsequent
@@ -962,12 +979,7 @@ fn write_program_lvalue_paths_for_initialization(
                 .unwrap_or(pointer);
 
             if is_external && !has_external_write_resource {
-                let missing = MemoryRange::new_with_element_width(
-                    pointer.clone(),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(1),
-                    value.byte_width(),
-                );
+                let missing = MemoryRange::access(pointer.clone(), value.program_type());
                 // A live mutex holds storage its initialization consumed;
                 // name it rather than the missing ownership.
                 let error = crate::kernel::mutexes::consumed_storage_refusal(
@@ -986,14 +998,9 @@ fn write_program_lvalue_paths_for_initialization(
             }
             // Ownership was established above. Borrow separation is a proof
             // obligation for the driver, not an alias search during the store.
-            let mut write_range = MemoryRange::new_with_element_width(
-                source_pointer,
-                0u32.into(),
-                1u32.into(),
-                value.byte_width(),
-            )
-            .with_bounds_owner(lvalue.bounds_owner.clone(), lvalue.bounds_known)
-            .with_typed_carrier();
+            let mut write_range = MemoryRange::access(source_pointer, value.program_type())
+                .with_bounds_owner(lvalue.bounds_owner.clone(), lvalue.bounds_known)
+                .with_typed_carrier();
             if let Some(provenance) = &lvalue.provenance {
                 write_range = write_range.with_provenance(provenance.clone());
             }
@@ -1662,14 +1669,14 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
     for field in layout.fields() {
         crate::instrumentation::record_deterministic_work(1);
         if !state.resources().permits_designated_memory_read(
-            &source.offset_by_bytes(field.offset_bytes()),
+            &source.offset_by_layout(field.offset()),
             Some(source.access_provenance()),
             field.program_type().byte_width(),
             assumptions,
         ) {
             return Some(ResourceFact::view_memory(
                 MemoryRange::new_with_element_width(
-                    source.offset_by_bytes(field.offset_bytes()),
+                    source.offset_by_layout(field.offset()),
                     MachineTerm::constant(0),
                     MachineTerm::constant(1),
                     crate::kernel::assumptions::read_candidate_byte_width(
@@ -2476,6 +2483,11 @@ pub(in crate::kernel) fn uint64_allocation_size_bytes_are_exact(
             MachineTerm::uint64_constant(0),
         ))
     };
+    // A symbolic layout's size: an object type's size is at most
+    // `PTRDIFF_MAX`, and it is positive when a field takes known bytes.
+    if let Some((layout, None)) = crate::kernel::SymbolicLayoutName::of_term(bytes) {
+        return layout.size_is_positive();
+    }
     match bytes {
         // `1 <= n <= PTRDIFF_MAX / k` makes `n * k` exact, so it is also
         // positive and at most `PTRDIFF_MAX`.
@@ -6460,17 +6472,23 @@ pub(in crate::kernel) fn declare_local(
         program_type,
         declared_class,
     ));
+    // A local of a type of unknown size owns its whole object, the
+    // `sizeof(T)` bytes from its address, as each access of it reaches.
+    let owned = match program_type {
+        ProgramType::Parameter(parameter) if parameter.has_abstract_size() => {
+            MemoryRange::access(pointer.clone(), program_type)
+        }
+        _ => MemoryRange::new_with_element_width(
+            pointer.clone(),
+            MachineTerm::constant(0),
+            MachineTerm::constant(byte_width),
+            1,
+        ),
+    };
     state.resources = state
         .resources
         .clone()
-        .unchecked_with_fact(ResourceFact::own_memory(
-            MemoryRange::new_with_element_width(
-                pointer.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(byte_width),
-                1,
-            ),
-        ));
+        .unchecked_with_fact(ResourceFact::own_memory(owned));
     if volatile {
         state.locals.set_uninitialized_with_all_qualifiers(
             name.clone(),
@@ -6510,14 +6528,14 @@ pub(in crate::kernel) fn declare_aggregate_local(
     let memory = match layout.value_type() {
         Some(value_type) => state.memory.clone().with_classed_scalar_block(
             pointer.base.clone(),
-            layout.size_bytes(),
+            layout.size(),
             value_type,
             declared_class,
         ),
         None => state.memory.clone().with_classed_block(
             pointer.base.clone(),
             declared_class,
-            layout.size_bytes(),
+            layout.size(),
         ),
     };
     state.set_memory(memory);
@@ -6528,17 +6546,18 @@ pub(in crate::kernel) fn declare_aggregate_local(
     // local or a construction destination. A modular pointer result can name
     // this storage through a symbolic address, where implicit local access
     // alone cannot provide the caller's field-read permission.
+    // An object holding one value of a type of unknown size owns that
+    // value's whole object, `sizeof(T)` bytes, as each access of it reaches.
+    let owned = match layout.value_type() {
+        Some(value_type @ ProgramType::Parameter(parameter)) if parameter.has_abstract_size() => {
+            MemoryRange::access(pointer, value_type)
+        }
+        _ => MemoryRange::object(pointer, layout.size()),
+    };
     state.resources = state
         .resources
         .clone()
-        .unchecked_with_fact(ResourceFact::own_memory(
-            MemoryRange::new_with_element_width(
-                pointer,
-                MachineTerm::constant(0),
-                MachineTerm::constant(layout.size_bytes()),
-                1,
-            ),
-        ));
+        .unchecked_with_fact(ResourceFact::own_memory(owned));
     Ok(state)
 }
 
@@ -6572,7 +6591,7 @@ fn begin_aggregate_construction(
             state
                 .memory
                 .clone()
-                .store(pointer.offset_by_bytes(field.offset_bytes()), value),
+                .store(pointer.offset_by_layout(field.offset()), value),
         );
     }
     Ok(Ok(state))

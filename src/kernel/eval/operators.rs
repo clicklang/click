@@ -2902,21 +2902,22 @@ fn byte_product_no_overflow(
 pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
     state: &ExecutionState,
     pointer: Pointer,
-    bytes: u32,
+    bytes: impl Into<crate::kernel::LayoutOffset>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
+    let bytes = bytes.into();
     let value = pointer;
     let pointer = value.address().clone();
-    if pointer.base.is_function() && bytes != 0 {
+    if pointer.base.is_function() && bytes != crate::kernel::LayoutOffset::Bytes(0) {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::RuntimeError(RuntimeError::IndeterminatePointeeType),
             facts,
             obligations,
         }];
     }
-    let result = pointer.offset_by_bytes(bytes);
+    let result = pointer.offset_by_layout(bytes);
     let Some(mut guards) = address_base_bounds(state, &result, 1, assumptions) else {
         return Vec::new();
     };
@@ -3213,6 +3214,15 @@ fn address_base_bounds(
                 value: true,
             }]);
         }
+        return Some(Vec::new());
+    }
+
+    // A field of a symbolic layout lies inside its object: its address in
+    // a block of `sizeof(L)` is in bounds by the layout's rule, by lookup.
+    if let Some((None, layout, _)) =
+        crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset)
+        && *allocation_size.bytes() == layout.size_term()
+    {
         return Some(Vec::new());
     }
 
@@ -5924,7 +5934,7 @@ fn subobject_bounds_proven(
 pub(in crate::kernel) fn subobject_access_refusal<'a>(
     pointer: &Address,
     source: impl Into<crate::kernel::assumptions::PointerDomainSource<'a>>,
-    bytes: u32,
+    bytes: impl Into<crate::kernel::AccessExtent>,
     facts: &ExecutionFacts,
     obligations: &[ProofObligation],
     assumptions: &PureFactContext,
@@ -5935,9 +5945,56 @@ pub(in crate::kernel) fn subobject_access_refusal<'a>(
         return None;
     };
     let bounds = &bounds;
+    let extent = bytes.into();
+    if symbolic_field_within_bounds(pointer, bounds, extent) {
+        return None;
+    }
+    // An access of a whole value of abstract size is in its bounds only by
+    // the layout rule above.
+    let crate::kernel::AccessExtent::Bytes(bytes) = extent else {
+        return Some(subobject_access_refusal_of(pointer, bounds, 0));
+    };
     if subobject_bounds_proven(pointer, bounds, bytes, facts, obligations, assumptions) {
         return None;
     }
+    Some(subobject_access_refusal_of(pointer, bounds, bytes))
+}
+
+/// Whether an access reaching `extent` at `pointer` is a whole value of
+/// abstract type its bounds are exactly, or is in one field of the
+/// symbolic object `bounds` designate: at `start + offsetof(L, f)`, reaching
+/// no further than `f`, in bounds of `sizeof(L)` bytes. Fields lie inside
+/// their object by the layout's rule, decided by lookup.
+fn symbolic_field_within_bounds(
+    pointer: &Address,
+    bounds: &SubobjectBounds,
+    extent: crate::kernel::AccessExtent,
+) -> bool {
+    // A whole value of abstract type at the start of bounds of its size.
+    if *pointer == bounds.start
+        && let crate::kernel::AccessExtent::Object(parameter) = extent
+    {
+        return bounds.width == parameter.size_term();
+    }
+    let Some((rest, layout, field)) =
+        crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset)
+    else {
+        return false;
+    };
+    pointer.base == bounds.start.base
+        && rest.map_or(bounds.start.offset.as_const() == Some(0), |rest| {
+            *rest == bounds.start.offset
+        })
+        && bounds.width == layout.size_term()
+        && layout.within_field(field, extent)
+}
+
+/// The refusal of an access of `bytes` at `pointer` outside `bounds`.
+fn subobject_access_refusal_of(
+    pointer: &Address,
+    bounds: &SubobjectBounds,
+    bytes: u32,
+) -> UndefinedBehavior {
     // Retain the selected access and its actual designated bounds. Construct
     // this diagnostic only after checking has refused the access.
     let required = Proposition::ResourceContains {
@@ -5954,9 +6011,9 @@ pub(in crate::kernel) fn subobject_access_refusal<'a>(
             1,
         ))),
     };
-    Some(UndefinedBehavior::SubobjectAccess {
+    UndefinedBehavior::SubobjectAccess {
         required: Box::new(required),
-    })
+    }
 }
 
 /// The strict-aliasing check of an access through `lvalue` at `pointer`

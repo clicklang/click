@@ -856,7 +856,7 @@ impl TermClasses {
                                 if let Some(origin) = crate::kernel::prelude::value_load_origin(
                                     memory.shared_memory(),
                                     pointer,
-                                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                    crate::kernel::AccessExtent::of_algebraic(&term.algebraic_type),
                                 ) {
                                     let origin_head = self.intern_node(Node::AlgebraicMemoryRead(
                                         ty,

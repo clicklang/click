@@ -5543,6 +5543,24 @@ fn materialize_composite_resource_cells_from_state(
     }) else {
         return memory;
     };
+    // A whole object of a symbolic layout, `[p, p + sizeof(S))`, has its
+    // fields at their `offsetof` terms: each is observed as a concrete
+    // object's is.
+    if let Some(layout) = range.symbolic_object()
+        && !range.has_holes()
+    {
+        for field in 0..layout.field_count() {
+            // An embedded record holds no one cell.
+            let Some(field_type) = layout.field_type(field) else {
+                continue;
+            };
+            let pointer = range.base().offset_by_layout(layout.field_offset(field));
+            if !matches!(memory.load(&pointer), ExpressionOutcome::Value(_)) {
+                memory = memory.materialize_cell_at(pointer, field_type, naming_point);
+            }
+        }
+        return memory;
+    }
     // Only signed constant spans have the bounded cell-materialization rule.
     let Some((int32_constant!(start), bits32_constant!(end))) = range.int32_bounds() else {
         return memory;

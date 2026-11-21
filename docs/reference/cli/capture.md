@@ -1486,9 +1486,9 @@ contains no allocator layout, object fields, or library body
 ### Class templates verified once
 
 A class template a source lists in `templates`, `Cell<T>`, is also exported at
-an abstract type argument for each of its type parameters: a record of one
-machine word that the exporter declares ahead of the translation unit and
-prints as the parameter's name. A written method of an instance a caller
+an abstract type argument for each of its type parameters: a record that
+the exporter declares ahead of the translation unit and prints as the
+parameter's name, whose size Click reads as `sizeof(T)`. A written method of an instance a caller
 reaches, `Cell<int>::set`, is exported with its signature only and the method
 it is an instance of, `Cell<T>::set`, whose body is exported at the abstract
 argument. In that body a value of `T` is a value of the type parameter `T`:
@@ -1505,17 +1505,28 @@ template<class T> void Cell<T>::set(T v) {
 
 Each instance has that contract at its types, written out from the generic
 block and read at the instance's own Clang layout: `Cell<int>`'s `value` is a
-4-byte `int`, `Cell<T>`'s a word. The sidecar does not write an instance's
+4-byte `int`, `Cell<T>`'s `sizeof(T)` bytes. The sidecar does not write an instance's
 contract; `void Cell<int>::set(int v) { ... }` is refused. An instance's
 parameters take the instance's own names, by position: if Clang names
 `Cell<int>::set`'s parameter `value`, the written-out contract reads `value`
 where the template wrote `v`, so a template need not write an implementation's
 reserved names (libstdc++'s `__count`). A non-template head restates its one
-declaration and keeps its names exactly. A record holding a
-value of an abstract type is laid out at a word for each such value, which no
-instance need be, so a sidecar's `sizeof(Cell<T>)` is refused, except as the
-whole size of an allocation, `owns allocation(p, sizeof(Node<T>))`: that is
-the size each instance's `new` allocates, at each instance its own.
+declaration and keeps its names exactly.
+
+A value of `T` takes `sizeof(T)` bytes, a size Click does not know, so a
+record holding one, `Node<T>`, has a symbolic layout. Its fields before the
+first that depends on `T` (a `T` value or an embedded record that holds
+one) keep their fixed ABI offsets, after the vtable pointer of a polymorphic
+class; that field and each after it lie at `offsetof(Node<T>, value)`, and
+the record's size is `sizeof(Node<T>)`, terms that are each instance's own
+numbers. Two fields of one object are apart by the layout, whatever their
+offsets, and each lies inside the object's `sizeof(Node<T>)` bytes. So
+`*p` for a `Node<T>* p` is `p[0u64..sizeof(Node<T>)]`, `new Node<T>`
+allocates `sizeof(Node<T>)` bytes, `owns allocation(p, sizeof(Node<T>))`
+states that allocation, and a `T&` parameter owns `sizeof(T)` bytes. A claim
+that a size is one number, `sizeof(Pair<T>) == 16`, does not hold for every
+`T` and fails
+([`mdtests/cpp_class_template_size_depends_on_its_arguments.md`](https://github.com/clicklang/click/blob/master/mdtests/cpp_class_template_size_depends_on_its_arguments.md)).
 
 A resource takes type parameters as a method does, `resource nodes<T>(p:
 Node<T>*) { field items: List<T>; ... }`, and each use names its arguments,

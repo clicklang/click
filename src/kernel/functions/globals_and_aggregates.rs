@@ -640,7 +640,7 @@ pub(super) fn zero_aggregate_fields(
             .filter_map(|field| {
                 zero_union_member_value(field.program_type()).map(|value| {
                     (
-                        union_base.offset_by_bytes(field.offset_bytes()),
+                        union_base.offset_by_layout(field.offset()),
                         field.program_type(),
                         value,
                     )
@@ -864,7 +864,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
     // of leaving them readable, so it cannot go stale here.
     for field in layout.fields() {
         if let ProgramType::UInt32Array(count) = field.program_type() {
-            let source_field = source.offset_by_bytes(field.offset_bytes());
+            let source_field = source.offset_by_layout(field.offset());
             let Some(bytes) = count.checked_mul(4) else {
                 return true;
             };
@@ -915,6 +915,18 @@ pub(super) fn aggregate_copy_reads_uninitialized(
             | ProgramType::FunctionPointer(_) => (field.program_type(), 1),
             _ => continue,
         };
+        // A scalar field of a symbolic layout is at its `offsetof`; only
+        // arrays, which a symbolic layout does not hold, need byte offsets.
+        if element_count == 1 {
+            if uninitialized_aggregate_copy_source_cell(
+                memory,
+                &source.offset_by_layout(field.offset()),
+                element_type,
+            ) {
+                return true;
+            }
+            continue;
+        }
         for index in 0..element_count {
             let element_offset = field
                 .offset_bytes()
@@ -940,7 +952,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
         // read is uninitialized. Only a wholly unread union can leave the
         // destination holding a stale cell.
         let union_initialized = union.fields().iter().any(|field| {
-            let source_field = union_source.offset_by_bytes(field.offset_bytes());
+            let source_field = union_source.offset_by_layout(field.offset());
             // Mirror `copy_aggregate_union_member`: a value stored through
             // any member is carried.
             memory
@@ -957,7 +969,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
             continue;
         }
         for field in union.fields() {
-            let source_field = union_source.offset_by_bytes(field.offset_bytes());
+            let source_field = union_source.offset_by_layout(field.offset());
             if uninitialized_aggregate_copy_source_cell(memory, &source_field, field.program_type())
             {
                 return true;
@@ -1065,8 +1077,8 @@ pub(super) fn copy_aggregate_fields(
 ) -> SymbolicMemory {
     for field in layout.fields() {
         if let ProgramType::UInt32Array(count) = field.program_type() {
-            let source_field = source.offset_by_bytes(field.offset_bytes());
-            let target_field = destination.offset_by_bytes(field.offset_bytes());
+            let source_field = source.offset_by_layout(field.offset());
+            let target_field = destination.offset_by_layout(field.offset());
             if let Ok(copied) = memory.clone().write_scalar_array_region(
                 &target_field,
                 ProgramType::UInt32,
@@ -1086,7 +1098,7 @@ pub(super) fn copy_aggregate_fields(
                 ProgramType::UInt32,
                 count,
                 ProgramValue::typed_pointer(
-                    source.offset_by_bytes(field.offset_bytes()),
+                    source.offset_by_layout(field.offset()),
                     ProgramType::UInt32Pointer,
                 ),
                 true,
@@ -1138,16 +1150,27 @@ pub(super) fn copy_aggregate_fields(
             }
         };
         for index in 0..element_count {
-            let element_offset = field
-                .offset_bytes()
-                .checked_add(
-                    index
-                        .checked_mul(element_type.byte_width())
-                        .expect("validated aggregate field offset"),
+            // A scalar field is at its offset, a symbolic layout's term
+            // included; an array's elements are at byte offsets.
+            let (source_field, destination_field) = if element_count == 1 {
+                (
+                    source.offset_by_layout(field.offset()),
+                    destination.offset_by_layout(field.offset()),
                 )
-                .expect("validated aggregate field offset");
-            let source_field = source.offset_by_bytes(element_offset);
-            let destination_field = destination.offset_by_bytes(element_offset);
+            } else {
+                let element_offset = field
+                    .offset_bytes()
+                    .checked_add(
+                        index
+                            .checked_mul(element_type.byte_width())
+                            .expect("validated aggregate field offset"),
+                    )
+                    .expect("validated aggregate field offset");
+                (
+                    source.offset_by_bytes(element_offset),
+                    destination.offset_by_bytes(element_offset),
+                )
+            };
             if let Some(value) = memory.known_retained_value(&source_field) {
                 memory = memory.store_retained(destination_field, value);
                 continue;
@@ -1299,11 +1322,11 @@ pub(super) fn copy_aggregate_fields(
             .fields()
             .iter()
             .filter_map(|field| {
-                let source_field = source_union.offset_by_bytes(field.offset_bytes());
+                let source_field = source_union.offset_by_layout(field.offset());
                 copy_retained_aggregate_union_member(&memory, &source_field, field.program_type())
                     .map(|value| {
                         (
-                            destination_union.offset_by_bytes(field.offset_bytes()),
+                            destination_union.offset_by_layout(field.offset()),
                             field.program_type(),
                             value,
                         )

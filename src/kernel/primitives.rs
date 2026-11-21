@@ -65,6 +65,10 @@ impl Proposition {
 mod allocation_size_tests;
 mod bool_sort;
 mod contracts;
+mod symbolic_layout;
+pub use symbolic_layout::{
+    AccessExtent, LayoutOffset, LayoutSize, SymbolicField, SymbolicLayoutName, layout_term_spelling,
+};
 pub(in crate::kernel) mod float_conversion;
 #[cfg(test)]
 mod memory_construction_tests;
@@ -567,6 +571,10 @@ pub enum LoadKind {
     Int32,
     UInt32,
     Bits64,
+    /// A read of a whole value of an abstract type `T`, the stand-in an
+    /// algebraic read of a `T` takes in memory reasoning: it reaches
+    /// `sizeof(T)` bytes ([`Self::extent`]), not a word's.
+    Abstract(TypeParameterName),
     /// Wide loads retain signedness because their constant payloads are typed.
     Int128,
     UInt128,
@@ -695,6 +703,30 @@ impl LoadKind {
             Self::Int32 | Self::UInt32 | Self::Float32 => 4,
             Self::Bits64 | Self::Float64 => 8,
             Self::Int128 | Self::UInt128 => 16,
+            // A cell holding a value of abstract type keeps the model width;
+            // the bytes the read reaches are its extent.
+            Self::Abstract(_) => ABSTRACT_VALUE_WIDTH,
+        }
+    }
+
+    /// The bytes a read of this kind reaches: its width, or the whole
+    /// object of an abstract type.
+    pub(crate) fn extent(self) -> crate::kernel::AccessExtent {
+        match self {
+            Self::Abstract(parameter) => {
+                crate::kernel::AccessExtent::of_type(ProgramType::Parameter(parameter))
+            }
+            other => crate::kernel::AccessExtent::Bytes(other.byte_width()),
+        }
+    }
+
+    /// The kind of the stand-in load an algebraic read of `algebraic_type`
+    /// takes: [`Self::Abstract`] for a type Click knows nothing of but its
+    /// name, else the model's 64-bit word.
+    pub(crate) fn of_algebraic(algebraic_type: &AlgebraicType) -> Self {
+        match crate::kernel::AccessExtent::of_algebraic(algebraic_type) {
+            crate::kernel::AccessExtent::Object(parameter) => Self::Abstract(parameter),
+            crate::kernel::AccessExtent::Bytes(_) => Self::Bits64,
         }
     }
 }
@@ -3963,9 +3995,11 @@ pub enum ProgramExpression {
     /// live storage. Unlike C's &* cancellation, this excludes one-past and
     /// expired addresses. It performs no load and grants no access authority.
     CheckedObjectAddress(Box<ProgramExpression>),
+    /// The address `bytes` into the object `pointer` designates: a member's
+    /// offset, a number or a symbolic layout's `offsetof` term.
     PointerOffsetBytes {
         pointer: Box<ProgramExpression>,
-        bytes: u32,
+        bytes: LayoutOffset,
     },
     /// The pointer narrowed to the `width`-byte subobject that starts at its
     /// address: a member access selects the member's own bounds
@@ -4355,7 +4389,7 @@ pub enum SpecExpression {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecAddressStep {
     Subobject { width: u32 },
-    OffsetBytes { bytes: u32 },
+    OffsetBytes { bytes: LayoutOffset },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -4926,8 +4960,16 @@ impl AlgebraicTermNode {
     /// The scalar load term at the same memory and address as a
     /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
     /// address as it reaches a scalar load's.
-    pub(crate) fn memory_load_carrier(point: &ProgramPoint, pointer: &Address) -> MachineTerm {
-        MachineTerm::MemoryLoad(point.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
+    pub(crate) fn memory_load_carrier(
+        point: &ProgramPoint,
+        pointer: &Address,
+        algebraic_type: &AlgebraicType,
+    ) -> MachineTerm {
+        MachineTerm::MemoryLoad(
+            point.clone(),
+            Box::new(pointer.clone()),
+            LoadKind::of_algebraic(algebraic_type),
+        )
     }
 
     /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
@@ -4935,12 +4977,14 @@ impl AlgebraicTermNode {
     /// address. `None` when the rewrite replaced the load.
     pub(crate) fn memory_load_from_carrier(carrier: &ProgramValue) -> Option<Self> {
         match carrier {
-            ProgramValue::UInt64(MachineTerm::MemoryLoad(point, pointer, LoadKind::Bits64)) => {
-                Some(Self::MemoryLoad {
-                    point: point.clone(),
-                    pointer: pointer.clone(),
-                })
-            }
+            ProgramValue::UInt64(MachineTerm::MemoryLoad(
+                point,
+                pointer,
+                LoadKind::Bits64 | LoadKind::Abstract(_),
+            )) => Some(Self::MemoryLoad {
+                point: point.clone(),
+                pointer: pointer.clone(),
+            }),
             _ => None,
         }
     }
@@ -4957,7 +5001,7 @@ impl AlgebraicTermNode {
         let memory = crate::kernel::memory_history::canonical_value_load_memory(
             &memory,
             &pointer,
-            ABSTRACT_VALUE_WIDTH,
+            AccessExtent::of_algebraic(&parameter.algebraic_type()),
         );
         Self::parameter_load_at(ProgramPoint::at(&memory), pointer, parameter)
     }
@@ -4994,9 +5038,12 @@ impl AlgebraicTermNode {
     pub(crate) fn memory_load_carrier_value(
         point: &ProgramPoint,
         pointer: &Address,
+        algebraic_type: &AlgebraicType,
     ) -> AlgebraicValue {
         AlgebraicValue::Program(ProgramValue::UInt64(Self::memory_load_carrier(
-            point, pointer,
+            point,
+            pointer,
+            algebraic_type,
         )))
     }
 }
@@ -5127,7 +5174,11 @@ impl AlgebraicTerm {
                         pointer,
                     } => {
                         visit(MachineOperandView::Legacy(
-                            &AlgebraicTermNode::memory_load_carrier(memory, pointer),
+                            &AlgebraicTermNode::memory_load_carrier(
+                                memory,
+                                pointer,
+                                &term.algebraic_type,
+                            ),
                         ));
                     }
                     AlgebraicTermNode::If {
@@ -6137,6 +6188,11 @@ pub struct MemoryRange {
     /// Parent-member bounds established while evaluating this footprint.
     /// Evidence only: it never changes the identity or authority of the range.
     pub(super) formation_coverage: Arc<[Proposition]>,
+    /// For the whole object of a symbolic layout, `[p, p + sizeof(L))`, the
+    /// fields of `L` taken out of it, sorted: the range holds the object's
+    /// bytes but theirs. Empty for every other range. Only the field rules
+    /// read a range with holes; every other route refuses it.
+    pub(super) holes: Arc<[u32]>,
 }
 
 impl MemoryRange {
@@ -6152,6 +6208,7 @@ impl MemoryRange {
         &StoredMachineTerm,
         u32,
         RangeIndexKind,
+        &[u32],
     ) {
         (
             &self.base,
@@ -6161,6 +6218,7 @@ impl MemoryRange {
             &self.end_bound,
             self.element_width,
             self.kind,
+            &self.holes,
         )
     }
 }
@@ -6214,7 +6272,9 @@ pub struct ProgramParameter {
     pub(super) slice_length_parameter: Option<usize>,
     /// Byte width of the bounds of a valid fixed-size Rust array reference. This grants
     /// pointer formation bounds, independently of byte access authority.
-    pub(super) fixed_reference_bounds: Option<u32>,
+    /// The bytes a Rust array or struct reference designates: a number,
+    /// or a symbolic struct's `sizeof`.
+    pub(super) fixed_reference_bounds: Option<LayoutSize>,
 }
 
 /// A linked file-scope scalar. Globals use one stable memory block across all
@@ -6547,7 +6607,8 @@ pub struct StringLiteral {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct AggregateField {
     pub(super) name: String,
-    pub(super) offset_bytes: u32,
+    /// A number, or in a symbolic layout the field's `offsetof` term.
+    pub(super) offset: LayoutOffset,
     pub(super) program_type: ProgramType,
     /// The source dimensions of an array field with more than one, outermost
     /// first. `program_type` holds such a field as one flat array; nothing reasons
@@ -6570,6 +6631,11 @@ impl AggregateUnionField {
             offset_bytes,
             program_type,
         }
+    }
+
+    /// The member's offset, a number: unions have concrete layouts.
+    pub fn offset(&self) -> LayoutOffset {
+        LayoutOffset::Bytes(self.offset_bytes)
     }
 
     pub fn offset_bytes(&self) -> u32 {
@@ -6618,10 +6684,14 @@ impl AggregateUnion {
 }
 
 impl AggregateField {
-    pub fn new(name: impl Into<String>, offset_bytes: u32, program_type: ProgramType) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        offset: impl Into<LayoutOffset>,
+        program_type: ProgramType,
+    ) -> Self {
         Self {
             name: name.into(),
-            offset_bytes,
+            offset: offset.into(),
             program_type,
             array_shape: None,
         }
@@ -6641,8 +6711,14 @@ impl AggregateField {
         &self.name
     }
 
+    /// The field's byte offset in a concrete layout. A symbolic layout's
+    /// field has [`Self::offset`] only.
     pub fn offset_bytes(&self) -> u32 {
-        self.offset_bytes
+        self.offset.concrete()
+    }
+
+    pub fn offset(&self) -> LayoutOffset {
+        self.offset
     }
 
     pub fn program_type(&self) -> ProgramType {
@@ -6685,7 +6761,8 @@ pub struct AggregateLayout {
     /// The declared bits copied by an assignment of a local C bit-field
     /// record. Padding is outside the assigned value.
     pub(super) bit_field_bytes: Option<BitFieldBytes>,
-    pub(super) size_bytes: u32,
+    /// A number, or a symbolic layout's `sizeof` term.
+    pub(super) size: LayoutSize,
     pub(super) alignment_bytes: u32,
     pub(super) fields: Vec<AggregateField>,
     pub(super) unions: Vec<AggregateUnion>,
@@ -6696,10 +6773,14 @@ pub struct AggregateLayout {
 }
 
 impl AggregateLayout {
-    pub fn new(size_bytes: u32, alignment_bytes: u32, fields: Vec<AggregateField>) -> Self {
+    pub fn new(
+        size: impl Into<LayoutSize>,
+        alignment_bytes: u32,
+        fields: Vec<AggregateField>,
+    ) -> Self {
         assert!(alignment_bytes.is_power_of_two());
         Self {
-            size_bytes,
+            size: size.into(),
             alignment_bytes,
             fields,
             unions: Vec::new(),
@@ -6730,14 +6811,14 @@ impl AggregateLayout {
     }
 
     pub fn with_unions(
-        size_bytes: u32,
+        size: impl Into<LayoutSize>,
         alignment_bytes: u32,
         fields: Vec<AggregateField>,
         unions: Vec<AggregateUnion>,
     ) -> Self {
         assert!(alignment_bytes.is_power_of_two());
         Self {
-            size_bytes,
+            size: size.into(),
             alignment_bytes,
             fields,
             unions,
@@ -6746,8 +6827,14 @@ impl AggregateLayout {
         }
     }
 
+    /// The size of a concrete layout. A symbolic layout has [`Self::size`]
+    /// only.
     pub fn size_bytes(&self) -> u32 {
-        self.size_bytes
+        self.size.concrete()
+    }
+
+    pub fn size(&self) -> LayoutSize {
+        self.size
     }
 
     pub fn alignment_bytes(&self) -> u32 {
@@ -10183,6 +10270,21 @@ impl MemoryDerivation {
             Self::Store { pointer, value, .. } => Some((pointer, value.byte_width())),
             Self::RepresentationWrite { pointer, bytes, .. } => Some((pointer, *bytes)),
             _ => None,
+        }
+    }
+
+    /// [`Self::single_write`] with the write's extent: a stored value of an
+    /// abstract type reaches its whole object, `sizeof(T)` bytes.
+    pub(in crate::kernel) fn single_write_extent(&self) -> Option<(&Address, AccessExtent)> {
+        match self {
+            Self::Store { pointer, value, .. }
+                if let ProgramValue::Parameter(term) = value.native() =>
+            {
+                Some((pointer, AccessExtent::of_algebraic(&term.algebraic_type)))
+            }
+            _ => self
+                .single_write()
+                .map(|(pointer, bytes)| (pointer, AccessExtent::Bytes(bytes))),
         }
     }
 
@@ -14242,7 +14344,7 @@ pub enum Proposition {
     MemoryMutatesOnly {
         before: SymbolicMemory,
         after: SymbolicMemory,
-        writes: Vec<(Address, u32)>,
+        writes: Vec<(Address, AccessExtent)>,
     },
     /// Internal write bound expressed as [`MemoryRange`] descriptors, including
     /// symbolic spans. Like [`Self::MemoryMutatesOnly`], this bounds possible
@@ -16739,12 +16841,16 @@ struct TypeParameterNames {
     types: Vec<&'static AlgebraicType>,
     // Rigid values use only their name, never the unrelated enum definitions.
     rigid: std::collections::BTreeMap<String, TypeParameterName>,
+    // Rigid names of library instances, `Vec<uint32>`: opaque values of a
+    // fixed width, not of a size Click does not know.
+    library_instances: std::collections::BTreeSet<String>,
 }
 
 static TYPE_PARAMETER_NAMES: std::sync::Mutex<TypeParameterNames> =
     std::sync::Mutex::new(TypeParameterNames {
         types: Vec::new(),
         rigid: std::collections::BTreeMap::new(),
+        library_instances: std::collections::BTreeSet::new(),
     });
 
 impl TypeParameterName {
@@ -16778,6 +16884,52 @@ impl TypeParameterName {
             names.rigid.insert(algebraic_type.name.clone(), id);
         }
         id
+    }
+
+    /// Whether Click knows nothing of this type but its name, as of a type
+    /// parameter: its values are opaque and its size is `sizeof(T)`. An
+    /// enum, with its variants, or an instance such as `Vec<u32>` is not.
+    pub fn has_abstract_size(self) -> bool {
+        let names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        let algebraic_type = names.types[self.0 as usize];
+        algebraic_type.rigid
+            && algebraic_type.arguments.is_empty()
+            && algebraic_type.variants.is_empty()
+            && !names.library_instances.contains(&algebraic_type.name)
+    }
+
+    /// Records that the rigid type `name` is an instance of a library type,
+    /// such as `Vec<uint32>`, whose values are opaque but of a fixed width.
+    pub fn declare_library_instance(name: &str) {
+        let mut names = TYPE_PARAMETER_NAMES.lock().expect("type parameter names");
+        if !names.library_instances.contains(name) {
+            names.library_instances.insert(name.to_string());
+        }
+    }
+
+    /// The bytes a value of this type takes in memory, `sizeof(T)`: a
+    /// number the type fixes and Click does not know. Two uses of one type
+    /// name the same term; a proof learns of it only the facts the program's
+    /// language states for every type, and an instance reads it as its own
+    /// type's size.
+    /// The type whose `sizeof(T)` `term` is, for a type of abstract size.
+    pub fn of_size_term(term: &MachineTerm) -> Option<Self> {
+        let MachineTerm::PureFunctionApplication { name, arguments } = term else {
+            return None;
+        };
+        let type_name = name.strip_prefix("sizeof<")?.strip_suffix('>')?;
+        if !arguments.is_empty() {
+            return None;
+        }
+        let parameter = Self::intern(type_name);
+        (parameter.has_abstract_size() && parameter.size_term() == *term).then_some(parameter)
+    }
+
+    pub fn size_term(self) -> MachineTerm {
+        MachineTerm::PureFunctionApplication {
+            name: format!("sizeof<{}>", self.name()),
+            arguments: Vec::new(),
+        }
     }
 
     pub fn name(self) -> &'static str {

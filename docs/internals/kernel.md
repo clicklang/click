@@ -1073,6 +1073,53 @@ it must not encode a struct offset by pretending that a struct pointer is an
 `int32*`. Tests compare mixed scalar/pointer layouts against Rust `repr(C)` on
 the supported LP64 host ABI.
 
+### Symbolic layouts
+
+A record that holds a value of an abstract type, `Cell<T>` verified once for
+every `T`, has no byte layout: a value of `T` takes `sizeof(T)` bytes, a
+number each instance fixes and Click does not know. Such a record is a
+`SymbolicLayoutName` (`src/kernel/primitives/symbolic_layout.rs`), interned
+once per record with each field's name, `AccessExtent` (`Bytes(n)` or
+`Object(T)`), program type and offset. Its size is the opaque term
+`sizeof(Cell<T>)` and a field's offset is a `LayoutOffset`: a number for a
+field of the fixed prefix, else the opaque term `offsetof(Cell<T>, value)`.
+The terms are ordinary pure applications that Surface spells as written, so
+they lower, print and re-lower like any other term.
+
+The prefix is language policy, decided by the importer. A C++ class
+template keeps its ABI offsets up to its first field that depends on `T` (a
+`T` value or an embedded symbolic record), after an eight-byte vtable
+pointer for a polymorphic class with no base; that field and every later
+one are terms (`RecordLayout::symbolic_with_prefix`). A Rust generic struct
+has no prefix, because rustc may reorder its fields. A record without a
+`T`-dependent field keeps its plain byte layout.
+
+What every layout satisfies is decided by lookup in the registry, never by
+stated pairwise facts:
+
+- two accesses at one base through two different fields of one layout, each
+  no wider than its field, are apart (`symbolic_fields_apart`); a prefix
+  access is apart from every term field because no term field starts before
+  `prefix_end`;
+- an access through a field, or within the prefix, lies inside the whole
+  object `[base, base + sizeof(L))` (`symbolic_object_holds_field_access`);
+- the size is positive when the prefix or some field has known nonzero
+  bytes (`size_is_positive`).
+
+Each answer is one registry lookup, so the fast part stays linear in the
+accesses it checks. A claim that a size or offset is one number, such as
+`sizeof(Pair<T>) == 16`, is not decided by anything and fails.
+
+An access of a `T` value reaches `AccessExtent::Object(T)`: its load kind is
+`LoadKind::Abstract(T)`, its cells and resource-tracker cells carry the
+extent, and store, free and history checks take the extent rather than a
+byte count. Only the checks that take an extent can carry such an access:
+a stated separation, the owner of a whole object found by its base, a span
+in the separated-address index keyed by the size term (`SpanWidth`), or the
+layout lookups above. A rigid library instance such as `Vec<uint32>` is
+opaque like `T` but keeps its model's fixed width
+(`TypeParameterName::declare_library_instance`).
+
 ### Index and offset arithmetic
 
 Two number systems meet in every memory rule, and confusing them is a

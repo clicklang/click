@@ -2866,7 +2866,7 @@ fn frame_queries_ignore_folded_compositions_until_explicitly_opened() {
                         &produced,
                         crate::kernel::resource_tracker::TrackedResource::Cell {
                             pointer: read,
-                            bytes: 4
+                            bytes: crate::kernel::AccessExtent::from(4)
                         },
                         &Evidence {
                             assumptions: facts,

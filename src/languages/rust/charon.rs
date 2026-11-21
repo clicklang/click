@@ -3324,6 +3324,7 @@ pub(super) fn decode_crate(
                 .get(id)
                 .or(adapter.drop_glues.get(id))
                 .map(|f| adapter.functions[f].clone()),
+            symbolic: false,
         });
     }
     let mut enums = Vec::new();
@@ -3971,9 +3972,16 @@ pub(super) fn decode_crate(
                 .map(|field| adapter.ty(&field.ty))
                 .collect::<Result<Vec<_>, _>>();
             *adapter.callable_parameters.borrow_mut() = parameters;
+            let field_types = field_types?;
+            // A field of an abstract type takes `sizeof(T)` bytes, so the
+            // instance's size and offsets are terms: it is laid out
+            // symbolically, and the importer states no numbers for it.
+            let symbolic = field_types
+                .iter()
+                .any(|ty| matches!(ty, out::Type::Parameter { .. }));
             let mut fields = Vec::new();
             let (mut size, mut alignment) = (0u32, 1u32);
-            for (field, ty) in adapter.fields(id)?.iter().zip(field_types?) {
+            for (field, ty) in adapter.fields(id)?.iter().zip(field_types) {
                 // A field is of one of the struct's parameters, at the
                 // instance's argument, of a scalar type, or a box of a struct.
                 let field_size = model_field_size(&ty).ok_or_else(|| {
@@ -3985,7 +3993,7 @@ pub(super) fn decode_crate(
                 fields.push(out::Field {
                     name: field.name.clone(),
                     value_type: ty,
-                    offset,
+                    offset: if symbolic { 0 } else { offset },
                 });
             }
             // The instance's drop glue, when the struct holds a box.
@@ -4004,10 +4012,15 @@ pub(super) fn decode_crate(
             };
             records.push(out::Record {
                 name,
-                size: size.next_multiple_of(alignment),
+                size: if symbolic {
+                    0
+                } else {
+                    size.next_multiple_of(alignment)
+                },
                 alignment,
                 fields,
                 destructor,
+                symbolic,
             });
         }
     }

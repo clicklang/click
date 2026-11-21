@@ -7844,8 +7844,12 @@ pub(super) fn collect_loop_effect_check_obligations(
                 .known_value(&pointer)
                 .or_else(|| before_state.memory().known_value(&pointer))
                 .map_or_else(
-                    crate::kernel::resource_tracker::widest_scalar_access_bytes,
-                    |value| value.byte_width(),
+                    || {
+                        crate::kernel::AccessExtent::Bytes(
+                            crate::kernel::resource_tracker::widest_scalar_access_bytes(),
+                        )
+                    },
+                    |value| crate::kernel::assumptions::access_extent_of_value(&value),
                 );
             (pointer, bytes)
         })
@@ -7942,13 +7946,16 @@ pub(super) fn collect_loop_effect_check_obligations(
         }
 
         for (pointer, bytes) in &writes {
-            if !segments.iter().any(|segment| {
-                loop_effect_segment_contains_pointer(
-                    segment,
-                    pointer,
-                    *bytes,
-                    &effective_assumptions,
-                )
+            // A whole object of abstract size fits no byte-counted segment.
+            if !bytes.bytes().is_some_and(|bytes| {
+                segments.iter().any(|segment| {
+                    loop_effect_segment_contains_pointer(
+                        segment,
+                        pointer,
+                        bytes,
+                        &effective_assumptions,
+                    )
+                })
             }) {
                 push_false_loop_effect_obligation(
                     &mut obligations,

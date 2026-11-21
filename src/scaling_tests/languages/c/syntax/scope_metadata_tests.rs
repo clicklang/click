@@ -78,7 +78,7 @@ fn explicit_embedded_layout_work_tracks_materialized_leaves() {
                 .unwrap();
                 assert_eq!(layout.aggregate_fields.len(), index as usize + 1);
                 assert_eq!(
-                    layout.aggregate_fields.last().unwrap().offset_bytes,
+                    layout.aggregate_fields.last().unwrap().offset_bytes(),
                     index * 4
                 );
                 layouts.insert(format!("R{index}"), layout);

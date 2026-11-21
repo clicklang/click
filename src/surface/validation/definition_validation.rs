@@ -1547,6 +1547,8 @@ struct ResourceFactRead {
     index: ProgramExpression,
     expression: String,
     enclosing_range: Option<(ProgramExpression, ProgramExpression)>,
+    /// The bytes a typed read reaches from its base, when it is one.
+    extent: Option<crate::kernel::AccessExtent>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2669,6 +2671,7 @@ fn collect_resource_fact_reads_from_contract_expression(
                 base,
                 index,
                 enclosing_range: None,
+                extent: None,
             });
             Ok(())
         }
@@ -2941,15 +2944,21 @@ fn collect_resource_fact_reads_from_program_expression(
                 index: ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
                 expression: describe_program_expression(expression),
                 enclosing_range: None,
+                extent: None,
             });
         }
-        ProgramExpression::TypedLoad { pointer, .. } => {
+        ProgramExpression::TypedLoad {
+            pointer,
+            value_type,
+            ..
+        } => {
             collect_resource_fact_reads_from_program_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
                 index: ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
                 expression: describe_program_expression(expression),
                 enclosing_range: None,
+                extent: Some(crate::kernel::AccessExtent::of_type(*value_type)),
             });
         }
         ProgramExpression::Index(base, index) => {
@@ -2960,6 +2969,7 @@ fn collect_resource_fact_reads_from_program_expression(
                 index: index.as_ref().clone(),
                 expression: describe_program_expression(expression),
                 enclosing_range: None,
+                extent: None,
             });
         }
         crate::kernel::binary_c_operation!(left, right) => {
@@ -2970,6 +2980,49 @@ fn collect_resource_fact_reads_from_program_expression(
             collect_resource_fact_reads_from_program_expression(expression, reads);
         }
     }
+}
+
+/// Whether `segment` is the whole object a typed read at its base reaches,
+/// `(p as *u8)[0u64..n]` with `n` the read's extent: a field of a symbolic
+/// layout, or a value of abstract type, held whole.
+fn object_segment_covers_typed_read(segment: &ContractSegment, read: &ResourceFactRead) -> bool {
+    let (
+        ProgramExpression::Value(ProgramValue::UInt64(start)),
+        ProgramExpression::Value(ProgramValue::UInt64(end)),
+        Some(extent),
+    ) = (&segment.start, &segment.end, read.extent)
+    else {
+        return false;
+    };
+    // A byte range's base, written `(p as *u8)` or, for a symbolic object or
+    // field, `p` itself.
+    let base = match &segment.base {
+        ProgramExpression::Cast {
+            expression,
+            target_type: ProgramType::UInt8Pointer,
+            ..
+        } => expression.as_ref(),
+        base => base,
+    };
+    if !matches!(&read.index, ProgramExpression::Value(ProgramValue::Int32(index)) if index.as_const() == Some(0))
+        || start.uint64_as_const() != Some(0)
+    {
+        return false;
+    }
+    if *base == read.base {
+        return *end == extent.term();
+    }
+    // A field's read inside the whole object of its symbolic layout, by the
+    // layout's rule: `p + offsetof(L, f)` reaching no further than `f`, in
+    // `(p as *u8)[0u64..sizeof(L)]`.
+    let ProgramExpression::PointerOffsetBytes {
+        pointer,
+        bytes: crate::kernel::LayoutOffset::Field(layout, field),
+    } = &read.base
+    else {
+        return false;
+    };
+    **pointer == *base && *end == layout.size_term() && layout.within_field(*field, extent)
 }
 
 fn analyze_resource_fact_read_authority(
@@ -2999,6 +3052,12 @@ fn analyze_resource_fact_read_authority(
                 "`{resource_description}` is not a current-state {access} memory resource"
             ));
             continue;
+        }
+        if object_segment_covers_typed_read(segment, read) {
+            return ResourceFactReadAuthorityAnalysis {
+                covered: true,
+                notes,
+            };
         }
         if segment.base == read.base
             && constant_segment_covers_index(&segment.start, &segment.end, &read.index)
@@ -3413,6 +3472,7 @@ mod read_authority_tests {
             index,
             expression: "cell[index]".to_string(),
             enclosing_range: None,
+            extent: None,
         }
     }
 

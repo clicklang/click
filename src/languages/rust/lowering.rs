@@ -814,30 +814,47 @@ pub(crate) fn lower_with_identity(
                 ))
             })
             .collect::<Result<Vec<_>, String>>()?;
-        // Rust may reorder fields; declaration order still selects constructor
-        // operands, while layout validation consumes physical offset order.
-        layout_fields.sort_by_key(|f| f.3);
-        // Pointer fields keep their nominal pointee for chained field reads.
-        // They do not embed its layout, so recursive records need no traversal.
-        let layout = RecordLayout::from_explicit_fields_with_structs(
-            layout_fields,
-            record.size,
-            record.alignment,
-            &BTreeMap::new(),
-        )?;
-        if layouts.insert(record.name.clone(), layout).is_some() {
-            return Err("duplicate Rust record".into());
-        }
+        let layout = if record.symbolic {
+            // An abstract instance's offsets are terms, in declaration order.
+            RecordLayout::symbolic(
+                &record.name,
+                layout_fields
+                    .into_iter()
+                    .map(|(name, field_type, pointee, _, _)| (name, field_type, pointee))
+                    .collect(),
+                record.alignment,
+            )?
+        } else {
+            // Rust may reorder fields; declaration order still selects
+            // constructor operands, while layout validation consumes
+            // physical offset order.
+            layout_fields.sort_by_key(|f| f.3);
+            // Pointer fields keep their nominal pointee for chained field
+            // reads. They do not embed its layout, so recursive records
+            // need no traversal.
+            RecordLayout::from_explicit_fields_with_structs(
+                layout_fields,
+                record.size,
+                record.alignment,
+                &BTreeMap::new(),
+            )?
+        };
         for f in &record.fields {
             if fields
                 .insert(
                     (record.name.as_str(), f.name.as_str()),
-                    (f.offset, record_field_type(&f.value_type)?.to_kernel_type()),
+                    (
+                        layout.field(&f.name).ok_or("unknown Rust field")?.offset(),
+                        record_field_type(&f.value_type)?.to_kernel_type(),
+                    ),
                 )
                 .is_some()
             {
                 return Err("duplicate Rust field".into());
             }
+        }
+        if layouts.insert(record.name.clone(), layout).is_some() {
+            return Err("duplicate Rust record".into());
         }
     }
     let record_index = export
@@ -885,7 +902,7 @@ fn lower_function(
     export: &RustExport,
     identity: Option<&str>,
     f: &Function,
-    fields: &BTreeMap<(&str, &str), (u32, ProgramType)>,
+    fields: &BTreeMap<(&str, &str), (crate::kernel::LayoutOffset, ProgramType)>,
     layouts: &BTreeMap<String, RecordLayout>,
     records: &BTreeMap<&str, &Record>,
     functions: &BTreeMap<&str, &Function>,
@@ -1047,11 +1064,19 @@ fn lower_function(
             .with_pointee_constant(constant);
         // The record's layout is what seeds a whole-record `owns *x` at its
         // fields' widths, so a 64-bit field reads as one cell.
-        if let Some(layout) = tag.as_ref().and_then(|name| layouts.get(name)) {
-            parameter = parameter.with_pointee_struct_layout(tag.clone().unwrap(), layout.clone());
-        }
         let mut kernel_parameter = program_parameter(&p.name, interface_type.to_kernel_type())
             .with_pointee_constant(constant);
+        if let Some(layout) = tag.as_ref().and_then(|name| layouts.get(name)) {
+            parameter = parameter.with_pointee_struct_layout(tag.clone().unwrap(), layout.clone());
+            // A reference or box to a symbolic struct designates its whole
+            // object, `sizeof(S)` bytes, inside which each field lies.
+            if matches!(p.value_type, Type::Reference { .. } | Type::Box { .. })
+                && let size @ crate::kernel::LayoutSize::Of(_) = layout.size()
+            {
+                parameter = parameter.with_fixed_reference_bounds(size);
+                kernel_parameter = kernel_parameter.with_fixed_reference_bounds(size);
+            }
+        }
         if let Some((length, element, _)) = arrays.get(&p.name) {
             let bytes = u32::try_from(*length * u64::from(element.byte_width()))
                 .expect("validated fixed array length");
@@ -1248,7 +1273,7 @@ struct Context<'a> {
     references: BTreeMap<String, bool>,
     source: &'a str,
     function: &'a str,
-    fields: &'a BTreeMap<(&'a str, &'a str), (u32, ProgramType)>,
+    fields: &'a BTreeMap<(&'a str, &'a str), (crate::kernel::LayoutOffset, ProgramType)>,
     next_load: u32,
     import_identity: Option<std::sync::Arc<str>>,
     mir_point: Option<super::borrow_frontiers::MirPoint>,
@@ -2524,6 +2549,19 @@ impl Context<'_> {
             ));
         }
         Ok((program_skip(), self.address(e)?))
+    }
+    /// The offset of `record`'s `field` in its layout: a number, or for a
+    /// symbolic layout its `offsetof` term. The export's own `offset` is
+    /// read only through the layout.
+    pub(super) fn field_offset(
+        &self,
+        record: &str,
+        field: &str,
+    ) -> Result<crate::kernel::LayoutOffset, String> {
+        self.fields
+            .get(&(record, field))
+            .map(|(offset, _)| *offset)
+            .ok_or_else(|| "unknown Rust field".into())
     }
     fn address(&mut self, e: &E) -> Result<ProgramExpression, String> {
         match e {

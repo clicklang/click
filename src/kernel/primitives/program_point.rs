@@ -1719,8 +1719,11 @@ mod tests {
                 .indexed_integer_version(&right, LoadKind::Int32)
                 .and_then(|point| point.read_version_id())
         };
-        let walked =
-            crate::kernel::resource_tracker::cell_version_on_path(sibling.path_link(), &right, 4);
+        let walked = crate::kernel::resource_tracker::cell_version_on_path(
+            sibling.path_link(),
+            &right,
+            4.into(),
+        );
         assert_eq!(
             walked.and_then(|point| point.id()),
             written.program_point_id()
@@ -1776,8 +1779,11 @@ mod tests {
                 .and_then(|point| point.read_version_id())
         };
         assert_eq!(version(&joined, &slot), split.program_point_id());
-        let walked =
-            crate::kernel::resource_tracker::cell_version_on_path(joined.path_link(), &slot, 4);
+        let walked = crate::kernel::resource_tracker::cell_version_on_path(
+            joined.path_link(),
+            &slot,
+            4.into(),
+        );
         assert_eq!(
             walked.and_then(|point| point.id()),
             split.program_point_id()

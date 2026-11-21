@@ -1,11 +1,11 @@
 # The size of a record at abstract type arguments is not one number
 
-A class template verified once for every type is laid out at its abstract
-type argument with a machine word for each value of it, and each instance as
-Clang lays it out: `Pair<T>` takes 16 bytes there and `Pair<int>` 8. A
-generic method's contract that read `sizeof(Pair<T>)` could prove a size no
-instance has, so the size of a record holding a value of an abstract type is
-refused.
+A class template verified once for every type holds each value of its
+abstract type argument in `sizeof(T)` bytes, so the size of a record holding
+one, `sizeof(Pair<T>)`, is the instance's own size: `Pair<int>` takes 8 bytes
+and `Pair<long long>` 16. It is no one number, so a generic method's contract
+cannot prove it is 16, while the method's own postcondition about its fields
+holds for every type.
 
 ```cpp filename=pair.cpp function=swap_ints profile=normal_only templates=Pair<T>
 template<class T> class Pair {
@@ -39,5 +39,5 @@ void swap_ints(Pair<int>& pair) {
 ```
 
 ```expect
-fail: the size of `Pair<T>` depends on its abstract type arguments
+fail: did not retain a complete proof for `Pair<T>::swap.ensures_1`
 ```

@@ -124,3 +124,43 @@ fn exact_separation_lookup_ignores_related_widths_and_alias_history() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn symbolic_size_span_lookup_visits_only_its_authority() {
+    // A whole object of abstract size is a span keyed by its size term:
+    // finding its stated separation reads that one authority among many.
+    for size in [16u64, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = |id| Address::symbolic(Variable(id));
+        let parameter = TypeParameterName::intern("ScaledSpanT");
+        let object = |p: Address| {
+            Resource::Memory(MemoryRange::of_access(&p, AccessExtent::Object(parameter)))
+        };
+        let bytes = |p: Address, n: u32| {
+            Resource::Memory(MemoryRange::new_with_element_width(
+                p,
+                0u32.into(),
+                n.into(),
+                1,
+            ))
+        };
+        let separated = |left, right| Proposition::ResourceSeparate {
+            left: Box::new(left),
+            right: Box::new(right),
+        };
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_proposition(separated(
+                object(pointer(9_951_000 + 2 * index)),
+                bytes(pointer(9_951_001 + 2 * index), 8),
+            ));
+        }
+        let (value, header) = (pointer(9_950_001), pointer(9_950_002));
+        context =
+            context.assume_proposition(separated(object(value.clone()), bytes(header.clone(), 8)));
+        let before = SOURCE_VISITS.with(Cell::get);
+        assert!(context.contains_known(&separated(bytes(header, 8), object(value))));
+        let visits = SOURCE_VISITS.with(Cell::get) - before;
+        assert_eq!(visits, 1, "size={size}");
+    }
+}

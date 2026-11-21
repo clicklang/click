@@ -136,8 +136,12 @@ pub(crate) enum TrackedResource<'a> {
     /// Read descriptors use their recorded access width, or their kind's
     /// conservative width when unobserved. Callers holding only an address
     /// pass [`MAX_SCALAR_ACCESS_BYTES`]. Over-stating a width can only shrink
-    /// the separated set, never grow it.
-    Cell { pointer: &'a Address, bytes: u32 },
+    /// the separated set, never grow it. A value of abstract type reaches its
+    /// whole object, `sizeof(T)` bytes ([`AccessExtent::Object`]).
+    Cell {
+        pointer: &'a Address,
+        bytes: AccessExtent,
+    },
     /// A whole memory block, as a pure function reads it through an array
     /// argument: the footprint is every cell reachable through the pointer.
     Block(&'a AddressBase),
@@ -210,7 +214,7 @@ impl TrackedResource<'_> {
 pub(crate) enum OwnedResource {
     Cell {
         pointer: Address,
-        bytes: u32,
+        bytes: AccessExtent,
     },
     Block(AddressBase),
     Ranges(Vec<MemoryRange>),
@@ -528,7 +532,7 @@ impl Explanation {
 
 thread_local! {
     static PATH_CELL_VERSION_MEMO: std::cell::RefCell<
-        std::collections::HashMap<(ProgramPointId, Address, u32), PathLink>,
+        std::collections::HashMap<(ProgramPointId, Address, AccessExtent), PathLink>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
@@ -550,7 +554,7 @@ thread_local! {
 pub(crate) fn cell_version_on_path(
     at: &PathLink,
     pointer: &Address,
-    bytes: u32,
+    bytes: AccessExtent,
 ) -> Option<PathLink> {
     at.id()?;
     with_extended_dag_bridging(|| {
@@ -712,7 +716,7 @@ pub(crate) fn last_same(resource: TrackedResource<'_>, at: &ProgramPoint) -> Opt
 /// for pays no second walk.
 pub(crate) fn last_same_named_cell(
     pointer: &Address,
-    bytes: u32,
+    bytes: AccessExtent,
     at: &ProgramPoint,
 ) -> Option<LastSame> {
     let version = cell_last_same_version(at.shared_memory(), pointer, bytes)?;
@@ -1193,7 +1197,7 @@ struct NamedCellVersion {
 pub(super) fn cell_last_same_version_point(
     memory: &SharedMemory,
     pointer: &Address,
-    bytes: u32,
+    bytes: AccessExtent,
 ) -> Option<SharedMemory> {
     cell_last_same_version(memory, pointer, bytes).map(|version| version.memory)
 }
@@ -1201,7 +1205,7 @@ pub(super) fn cell_last_same_version_point(
 fn cell_last_same_version(
     memory: &SharedMemory,
     pointer: &Address,
-    bytes: u32,
+    bytes: AccessExtent,
 ) -> Option<NamedCellVersion> {
     // Assumption-free and a function of the interned state, the pointer,
     // the access width and the recorded edges, so the answer is memoized per
@@ -1254,7 +1258,10 @@ fn cell_last_same_version(
                     else {
                         break None;
                     };
-                    match current.indexed_static_cell_store_version(pointer, bytes) {
+                    match bytes
+                        .bytes()
+                        .and_then(|bytes| current.indexed_static_cell_store_version(pointer, bytes))
+                    {
                         Some(StaticCellStoreVersion::Written(memory)) => {
                             break Some(NamedCellVersion {
                                 memory,
@@ -1380,7 +1387,7 @@ pub(crate) fn static_cell_unwritten_since_entry_on_path(
         cell_source::MemoryDagCell::Unwritten { node, .. }
             if node != *at
                 && node.known_value(pointer).is_none()
-                && cell_last_same_version(&node, pointer, bytes)
+                && cell_last_same_version(&node, pointer, bytes.into())
                     .is_some_and(|version| version.reason == StopReason::HistoryEnds) =>
         {
             Some(node)
@@ -1392,7 +1399,7 @@ pub(crate) fn static_cell_unwritten_since_entry_on_path(
 thread_local! {
     static CELL_VERSION_MEMO: std::cell::RefCell<
         std::collections::HashMap<
-            (crate::kernel::SharedMemory, Address, u32),
+            (crate::kernel::SharedMemory, Address, AccessExtent),
             Option<NamedCellVersion>,
         >,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
@@ -1627,7 +1634,7 @@ fn collect_address_base_reads(block: &AddressBase, reads: &mut Vec<ResourceRead>
             reads,
             OwnedResource::Cell {
                 pointer: address,
-                bytes: crate::kernel::C_POINTER_BYTE_WIDTH,
+                bytes: crate::kernel::AccessExtent::from(crate::kernel::C_POINTER_BYTE_WIDTH),
             },
             ProgramPoint::at(&memory),
         );
@@ -1810,7 +1817,7 @@ fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
                     reads,
                     OwnedResource::Cell {
                         pointer: read.pointer,
-                        bytes: read.bytes,
+                        bytes: read.bytes.into(),
                     },
                     ProgramPoint::at(
                         &read

@@ -428,7 +428,7 @@ fn constant_memory_span(key: &ImmutableMemoryKey) -> Option<(ConstantMemoryBase,
             }
             ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
                 let (base, offset) = address(pointer)?;
-                Some((base, offset.checked_add(i128::from(*bytes))?))
+                Some((base, offset.checked_add(i128::from(bytes.bytes()?))?))
             }
             ProgramExpression::Subobject { pointer, .. } => address(pointer),
             ProgramExpression::Cast {

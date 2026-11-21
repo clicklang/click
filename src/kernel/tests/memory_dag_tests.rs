@@ -2977,7 +2977,7 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
         crate::kernel::resource_tracker::last_same_version_point(
             crate::kernel::resource_tracker::TrackedResource::Cell {
                 pointer: cell,
-                bytes: 4,
+                bytes: crate::kernel::AccessExtent::from(4),
             },
             &crate::kernel::resource_tracker::ProgramPoint::at(&intern_memory_ref(memory)),
         )
@@ -3024,7 +3024,7 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
             &retired_state,
             crate::kernel::resource_tracker::TrackedResource::Cell {
                 pointer: &owner,
-                bytes: 4,
+                bytes: crate::kernel::AccessExtent::from(4),
             },
             &crate::kernel::resource_tracker::step_effect::Evidence {
                 assumptions: &assumptions,

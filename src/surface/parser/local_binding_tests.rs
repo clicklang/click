@@ -61,7 +61,7 @@ fn compound_literal_occurrences_are_distinct_from_local_declarations() {
     assert!(matches!(
         field,
         ContractExpression::Field {
-            offset_bytes: 4,
+            offset_bytes: crate::kernel::LayoutOffset::Bytes(4),
             ..
         }
     ));
@@ -90,7 +90,7 @@ fn declaration_references_retain_nominal_fields_and_array_shapes() {
     assert!(matches!(
         field,
         ContractExpression::Field {
-            offset_bytes: 4,
+            offset_bytes: crate::kernel::LayoutOffset::Bytes(4),
             ..
         }
     ));
@@ -165,7 +165,7 @@ fn parameter_declaration_references_keep_pointer_field_syntax() {
     assert!(matches!(
         expression,
         ContractExpression::Field {
-            offset_bytes: 4,
+            offset_bytes: crate::kernel::LayoutOffset::Bytes(4),
             ..
         }
     ));
@@ -182,7 +182,7 @@ fn function_statics_keep_types_and_exact_storage_spelling() {
     assert!(matches!(
         field,
         ContractExpression::Field {
-            offset_bytes: 4,
+            offset_bytes: crate::kernel::LayoutOffset::Bytes(4),
             ..
         }
     ));
@@ -190,7 +190,7 @@ fn function_statics_keep_types_and_exact_storage_spelling() {
     assert!(matches!(
         field,
         ContractExpression::Field {
-            offset_bytes: 8,
+            offset_bytes: crate::kernel::LayoutOffset::Bytes(8),
             ..
         }
     ));

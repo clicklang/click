@@ -4952,7 +4952,9 @@ fn caller_embedded_record_argument(
     {
         crate::instrumentation::record_deterministic_work(1);
         let (parent, offset) = match expression.as_ref() {
-            ProgramExpression::PointerOffsetBytes { pointer, bytes } => (pointer.as_ref(), *bytes),
+            ProgramExpression::PointerOffsetBytes { pointer, bytes } => {
+                (pointer.as_ref(), bytes.bytes()?)
+            }
             parent => (parent, 0),
         };
         projections.push((offset, target.as_str()));
@@ -5006,7 +5008,7 @@ fn caller_embedded_record_argument(
                 source_root.clone(),
                 accumulated_offset,
             ),
-            offset_bytes: field.offset_bytes(),
+            offset_bytes: field.offset_bytes().into(),
         };
         layout = function
             .record_layout(nominal)
