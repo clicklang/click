@@ -15,10 +15,10 @@ theorem round_once_per_operation() {
 theorem exceptional_results() {
     ensures forall (unused: Integer) {
         isnan(float32_from_bits(0u32) / float32_from_bits(0u32))
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
     ensures forall (unused: Integer) {
         not (((float64_from_bits(0u64) / float64_from_bits(0u64)) as double) <= float64_from_bits(0u64))
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 ```
 

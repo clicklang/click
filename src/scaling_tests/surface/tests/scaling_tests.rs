@@ -12095,3 +12095,49 @@ int32 probe() {{
     // The last goal checks that an explicit preservation proof still works.
     // Naming its two historical reads has a separate version-walk cost.
 }
+
+#[test]
+fn struct_value_equality_costs_what_its_field_equalities_cost() {
+    use crate::instrumentation::measure_deterministic_work;
+    // `*dst == *src` is its fields' equalities: forming the two values and
+    // comparing them is linear in the fields, as writing the comparisons
+    // out is.
+    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    let mut samples = Vec::new();
+    for fields in [2usize, 4, 6] {
+        let names = (0..fields).map(|i| format!("f{i}")).collect::<Vec<_>>();
+        let declaration = names
+            .iter()
+            .map(|name| format!("int32 {name};"))
+            .collect::<String>();
+        let copies = names
+            .iter()
+            .map(|name| format!("dst->{name} = src->{name};"))
+            .collect::<String>();
+        let program = format!(
+            "struct wide {{ {declaration} }}; void copy(struct wide* dst, const struct wide* src) {{ {copies} }}"
+        );
+        let written = names
+            .iter()
+            .map(|name| format!("dst->{name} == src->{name}"))
+            .collect::<Vec<_>>()
+            .join(" and ");
+        let mut pair = Vec::new();
+        for claim in ["*dst == *src".to_string(), written] {
+            let source = format!(
+                "verifying \"probe.c\"; void copy(struct wide* dst, const struct wide* src) {{ owns *dst; views *src; requires separate(memory(*dst), memory(*src)); ensures {claim}; }}"
+            );
+            let (result, work) = measure_deterministic_work(|| {
+                verify_c_sources(&source, &[("probe.c", program.as_str())])
+            });
+            result.unwrap_or_else(|error| panic!("{fields} fields: {}", error.message()));
+            pair.push(work);
+        }
+        assert!(
+            pair[0] <= pair[1] * 2,
+            "struct value equality over {fields} fields: {pair:?}"
+        );
+        samples.push((fields, pair));
+    }
+    eprintln!("struct value equality work (fields, [value, written]): {samples:?}");
+}

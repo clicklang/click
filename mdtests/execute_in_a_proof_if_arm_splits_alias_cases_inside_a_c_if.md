@@ -39,7 +39,7 @@ int32 f(int32 u, int32 w) {
     if buf == 0 {
     } else {
         step_until(statement(5).entry);
-        have buf[0] == 3 by normalize();
+        have buf[0] == 3 by known();
         mark before_store;
         step();
         if u == 0 {
@@ -62,14 +62,14 @@ int32 f(int32 u, int32 w) {
                 }
             }
             have separate(statement(5).footprint, memory(buf[0])) by {
-                normalize() using { separate(memory(buf[u]), memory(buf[0])); };
+                solve() using { separate(memory(buf[u]), memory(buf[0])); };
             }
             have buf[0] == at(before_store, buf[0]) by {
                 preserve(memory(buf[0]), statement(5));
             }
             have buf[0] == 3 by {
                 rewrite(buf[0], at(before_store, buf[0]));
-                normalize();
+                known();
             }
             if w > 0 { step_until(function.exit); } else { step_until(function.exit); }
         }

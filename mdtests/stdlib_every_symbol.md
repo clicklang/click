@@ -1121,7 +1121,7 @@ theorem use_format_signed_length(v: int32) {
     ensures stdio::signed_length(v) == stdio::decimal_length(stdio::magnitude(v)) by {
         have not (v < 0) by { known(); }
         have (if v < 0 { 1u64 + stdio::decimal_length(stdio::magnitude(v)) } else { stdio::decimal_length(stdio::magnitude(v)) }) == stdio::decimal_length(stdio::magnitude(v)) by {
-            normalize() using { not (v < 0); };
+            solve() using { not (v < 0); };
         }
         unfold(stdio::signed_length(v));
         solve();
@@ -1956,12 +1956,12 @@ theorem use_slice(p: uint8*, n: uint64) {
     ensures slice::len(slice::from_raw_parts(p, n)) == n by {
         unfold(slice::from_raw_parts(p, n));
         unfold(slice::len(Slice<uint8>::Slice(p, n)));
-        normalize();
+        solve();
     }
     ensures slice::as_ptr(slice::from_raw_parts(p, n)) == p by {
         unfold(slice::from_raw_parts(p, n));
         unfold(slice::as_ptr(Slice<uint8>::Slice(p, n)));
-        normalize();
+        solve();
     }
 }
 theorem restricted_view(A: Resource, B: Resource) {
@@ -1994,7 +1994,7 @@ theorem check_integer_add_le(a: Integer, b: Integer, c: Integer, d: Integer) {
 theorem check_integer_round_down_le(x: Integer) {
     requires x * 2 <= 5;
     ensures x <= 2 by {
-        have (2 * 2) + 1 == 5 by { normalize(); }
+        have (2 * 2) + 1 == 5 by { solve(); }
         have x * 2 <= (2 * 2) + 1 by {
             rewrite((2 * 2) + 1, 5);
             known();

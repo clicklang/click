@@ -13,14 +13,14 @@ theorem by_two_is_zero(n: int32) {
         let ih = induct(n);
         if n <= 1 {
             unfold(by_two(n));
-            normalize() using { n <= 1; };
+            solve() using { n <= 1; };
         } else {
             have 0 <= to_integer(n - 2);
             have to_integer(n - 2) < to_integer(n);
             apply(ih(n - 2));
             unfold(by_two(n));
             rewrite(by_two(n - 2), 0);
-            normalize();
+            known();
         }
     }
 }

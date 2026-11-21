@@ -19,7 +19,7 @@ theorem selected(c: Color) {
     ensures choose(c) == Color::Red by {
         unfold(choose(c));
         rewrite(c, Color::Black);
-        normalize();
+        solve();
     }
 }
 spec enum Payload { Empty, At(int32, struct node*, Color) }

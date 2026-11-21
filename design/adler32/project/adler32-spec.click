@@ -38,7 +38,7 @@ theorem adler_weighted_append(bytes: uint8[], n: int32, weight_end: int32) {
   have 0 <= to_integer(n - 1) by { solve() using { 0 < n; }; }
   have to_integer(n - 1) < 2147483647 by { solve() using { 0 < n; }; }
   unfold(adler_weighted_sum(bytes, n, weight_end));
-  normalize();
+  known();
  }
 }
 

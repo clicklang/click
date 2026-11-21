@@ -32,7 +32,7 @@ int32 parent_value(struct node* node, struct node* next) {
     mark before;
     step();
     have separate(statement(0).region(0).footprint, memory(node->word)) by {
-        normalize() using {};
+        solve() using {};
     }
     have *((&node->word) as (int32 **)) == at(before, *((&node->word) as (int32 **))) by {
         preserve(memory(node->word), statement(0).region(0));

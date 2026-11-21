@@ -49,7 +49,7 @@ uint32 count_nodes(struct node* node) {
         mark before_local;
         step();
         have separate(statement(1).region(0).footprint, memory(node->word)) by {
-            normalize() using {};
+            solve() using {};
         }
         have *((&node->word) as (int32 **)) == at(before_local, *((&node->word) as (int32 **))) by {
             preserve(memory(node->word), statement(1).region(0));
@@ -72,7 +72,7 @@ uint32 count_nodes(struct node* node) {
         mark before_assignment;
         step();
         have separate(statement(1).assignment(rest, 0).footprint, memory(node->word)) by {
-            normalize() using {};
+            solve() using {};
         }
         have *((&node->word) as (int32 **)) == at(before_assignment, *((&node->word) as (int32 **))) by {
             preserve(memory(node->word), statement(1).assignment(rest, 0));

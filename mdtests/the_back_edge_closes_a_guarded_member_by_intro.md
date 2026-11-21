@@ -71,7 +71,7 @@ int32 count_run(int32 n) {
                 have to_integer(n) - to_integer(i) < to_integer(n) - to_integer(at(iteration, i)) by {
                     have to_integer(i) == to_integer(at(iteration, i)) + 1;
                     rewrite(to_integer(i), to_integer(at(iteration, i)) + 1);
-                    normalize();
+                    known();
                 }
             } else {
                 have 2 <= i by { solve() using { not (i < 2); }; }
@@ -81,7 +81,7 @@ int32 count_run(int32 n) {
                             have i == 2;
                             rewrite(run, 0);
                             rewrite(i, 2);
-                            normalize() using { i <= 2; };
+                            solve() using { i <= 2; };
                         }
                         (2 <= i and to_integer(2 + run) == to_integer(i)) => {
                             have to_integer(2 + run) == to_integer(i);
@@ -124,7 +124,7 @@ int32 count_run(int32 n) {
                 have to_integer(n) - to_integer(i) < to_integer(n) - to_integer(at(iteration, i)) by {
                     have to_integer(i) == to_integer(at(iteration, i)) + 1;
                     rewrite(to_integer(i), to_integer(at(iteration, i)) + 1);
-                    normalize();
+                    known();
                 }
             }
         }

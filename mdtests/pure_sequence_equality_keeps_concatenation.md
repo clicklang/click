@@ -11,7 +11,7 @@ theorem keeps_rewritten_concatenation(a: int32, b: int32) {
     requires a == b;
     ensures forall (unused: Integer) {
         [a] ++ [] == [b]
-    } by { intro(); rewrite(a, b); normalize(); }
+    } by { intro(); rewrite(a, b); known(); }
 }
 
 theorem sequence_premise_exposes_elements(a: int32, b: int32, c: int32, d: int32) {
@@ -34,7 +34,7 @@ theorem all_checks_each_element(a: int32, b: int32, c: int32, d: int32) {
 }
 
 theorem wrong_length(a: int32) {
-    ensures [a] ++ [] != [a, a] by normalize();
+    ensures [a] ++ [] != [a, a] by known();
 }
 
 theorem wrong_element(a: int32, b: int32) {

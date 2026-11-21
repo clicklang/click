@@ -17,7 +17,7 @@ tactic sized_link_replacement_distinct(child: struct rb_node*, replacement: stru
             have link.model == old(link.model) by { normalize(); }
             have sized_context_parent(link.model, 0) == 0 by {
                 rewrite(link.model, SizedContext::Top);
-                unfold(sized_context_parent(SizedContext::Top, 0)); normalize();
+                unfold(sized_context_parent(SizedContext::Top, 0)); known();
             }
             have sized_context_parent(link.model, 0) == 0 or replacement != sized_context_parent(link.model, 0) by {
                 known();

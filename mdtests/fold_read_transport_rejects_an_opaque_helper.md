@@ -90,7 +90,7 @@ void set_end(int32 *v, int32 i, int32 n) {
             apply(click::separation::separate_elements(v, i, k)) using { i != k; };
         }
         have separate(statement(0).footprint, memory(v[k])) by {
-            normalize() using { separate(memory(v[i]), memory(v[k])); };
+            solve() using { separate(memory(v[i]), memory(v[k])); };
         }
         preserve(memory(v[k]), statement(0));
     }

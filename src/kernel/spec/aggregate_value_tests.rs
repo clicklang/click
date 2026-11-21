@@ -71,16 +71,23 @@ fn unindexed_boolean_loads_use_their_certified_observation_point() {
 
 #[test]
 fn caller_int16_reads_keep_the_entry_point() {
+    assert_caller_integer_reads_keep_the_entry_point(&[ProgramType::Int16, ProgramType::UInt16]);
+}
+
+#[test]
+fn caller_byte_reads_keep_the_entry_point() {
+    assert_caller_integer_reads_keep_the_entry_point(&[ProgramType::Int8, ProgramType::UInt8]);
+}
+
+fn assert_caller_integer_reads_keep_the_entry_point(value_types: &[ProgramType]) {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::Constant(0),
     };
     let local = crate::kernel::SymbolicMemory::local_pointer("unrelated");
-    for (ty, pointer_type) in [
-        (ProgramType::Int16, ProgramType::Int16Pointer),
-        (ProgramType::UInt16, ProgramType::UInt16Pointer),
-    ] {
+    for &ty in value_types {
+        let pointer_type = ty.pointer_to().unwrap();
         let entry = ExecutionState::new()
             .begin_function_entry_memory()
             .with_resource_context(ResourceContext::new().unchecked_with_fact(

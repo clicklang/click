@@ -69,7 +69,7 @@ theorem walk_frame(a: int32[], b: int32[], n: int32, from: int32, fuel: Nat) {
             Nat::Zero => {
                 unfold(walk(a, from, Nat::Zero));
                 unfold(walk(b, from, Nat::Zero));
-                normalize();
+                solve();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
@@ -112,7 +112,7 @@ void mark(int32 *next, int32 *visited) {
     have at(entry, next[0]) == 0;
     step();
     have separate(statement(0).footprint, memory(next[0])) by {
-        normalize() using { separate(memory(next[0..1]), memory(visited[0..1])); };
+        solve() using { separate(memory(next[0..1]), memory(visited[0..1])); };
     }
     have next[0] == at(entry, next[0]) by {
         preserve(memory(next[0]), statement(0));

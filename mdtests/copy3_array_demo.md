@@ -42,17 +42,17 @@ int32 copy3(int32 dst[3], int32 src[3]) {
             have i >= 0 and i <= 3 by {
                 all {
                     i >= 0 => {
-                        normalize();
+                        known();
                     }
                     i <= 3 => {
-                        normalize();
+                        known();
                     }
                 }
             }
             have forall (k: int32) { 0 <= k and k < 3 implies src[k] == old(src[k]) } by {
                 intro();
                 intro();
-                normalize();
+                known();
             }
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
                 enumerate();
@@ -91,7 +91,7 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                     };
                 }
                 have separate(statement(2).statement(0).footprint, memory(src[k])) by {
-                    normalize() using { separate(memory(dst[i]), memory(src[k])); };
+                    solve() using { separate(memory(dst[i]), memory(src[k])); };
                 }
                 have src[k] == at(iteration, src[k]) by {
                     preserve(memory(src[k]), statement(2).statement(0));
@@ -109,12 +109,12 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                         apply(click::separation::separate_elements(dst, at(iteration, i), k)) using { k != at(iteration, i); };
                     }
                     have separate(statement(2).statement(0).footprint, memory(dst[k])) by {
-                        normalize() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
+                        solve() using { at(iteration, separate(memory(dst[i]), memory(dst[k]))); };
                     }
                     have at(statement(2).statement(0).exit, dst[k]) == at(iteration, dst[k]) by {
                         preserve(memory(dst[k]), statement(2).statement(0));
                     }
-                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { normalize() using { }; }
+                    have separate(statement(2).statement(1).footprint, memory(dst[k])) by { solve() using { }; }
                     have dst[k] == at(statement(2).statement(1).entry, dst[k]) by {
                         preserve(memory(dst[k]), statement(2).statement(1));
                     }

@@ -297,7 +297,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     }
     step();
     have result == 1 by {
-        normalize();
+        solve();
     }
     have result == 0 or result == 1 by {
         known();

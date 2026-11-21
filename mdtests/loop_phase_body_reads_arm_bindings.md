@@ -102,12 +102,12 @@ int spin(struct node* p, int n) {
                 invariant t.model == Tree::Node(id, value, left_model);
 
                 initialize by {
-                    have i >= 0 by normalize();
+                    have i >= 0 by known();
                     have i <= n;
                     have t.model == Tree::Node(id, value, left_model) by {
                         have head_value(Tree::Node(id, value, left_model)) == value by {
                             unfold(head_value(Tree::Node(id, value, left_model)));
-                            normalize();
+                            known();
                         }
                         known();
                     }
@@ -116,7 +116,7 @@ int spin(struct node* p, int n) {
                 maintain by {
                     have head_value(Tree::Node(id, value, left_model)) == value by {
                         unfold(head_value(Tree::Node(id, value, left_model)));
-                        normalize();
+                        known();
                     }
                     have 0 <= to_integer(n - i - 1) by { solve() using { i < n; i >= 0; n >= 0; }; }
                     have to_integer(n - i - 1) < to_integer(n - i) by { solve() using { i < n; i >= 0; n >= 0; }; }

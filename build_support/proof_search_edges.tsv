@@ -483,6 +483,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_unch
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_unchanged_load_forall_goal	try_fixed_state_fact_transport	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_smart_statement_step	try_statement_step_with_apply	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_smart_statement_step	try_statement_step_with_retries	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_resource_separation_restriction_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure	try_state_transport_closure_candidates	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_cell_frame_transport_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_state_transport_closure_candidates	try_fixed_state_fact_transport	2
@@ -570,7 +571,6 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_pr
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_predicate_solve_closure	try_solve_closure_with_surfaces	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_constructor_witness_exists_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_implication_solve_closure	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_resource_separation_restriction_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_structural_and_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_structural_exists_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_solve_closure_with_surfaces	try_structural_forall_solve_closure	1

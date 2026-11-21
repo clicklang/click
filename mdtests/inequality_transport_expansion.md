@@ -15,7 +15,7 @@ void keep(int32* p, int32* q) {
 } by {
     step();
     have separate(statement(0).footprint, memory(*q)) by {
-        normalize() using { separate(memory(*p), memory(*q)); };
+        solve() using { separate(memory(*p), memory(*q)); };
     }
     have *q > 0 by {
         transport(at(statement(0).entry, *q) > 0, *q > 0);

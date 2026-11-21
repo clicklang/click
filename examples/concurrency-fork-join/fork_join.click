@@ -23,7 +23,7 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, lo: int3
                 contains(memory(p[lo..hi]), memory(p[i..i + 1]));
             };
         }
-        have contains(kept, kept) by { normalize(); }
+        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)) using {}; }
         have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
         apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
             defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);

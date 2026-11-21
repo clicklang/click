@@ -89,7 +89,7 @@ theorem walk_frame(a: int32[], b: int32[], n: int32, from: int32, fuel: Nat) {
             Nat::Zero => {
                 unfold(walk(a, from, Nat::Zero));
                 unfold(walk(b, from, Nat::Zero));
-                normalize();
+                solve();
             }
             Nat::Succ(previous) => {
                 apply(ih(previous));
@@ -189,7 +189,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                     };
                 }
                 have separate(loop(0).statement(1).footprint, memory(next[k])) by {
-                    normalize() using { separate(memory(visited[cur]), memory(next[k])); };
+                    solve() using { separate(memory(visited[cur]), memory(next[k])); };
                 }
                 have next[k] == at(iter, next[k]) by {
                     preserve(memory(next[k]), loop(0).statement(1));
@@ -216,7 +216,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                     apply(click::separation::separate_elements(visited, cur, k)) using { cur != k; };
                 }
                 have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
-                    normalize() using { separate(memory(visited[cur]), memory(visited[k])); };
+                    solve() using { separate(memory(visited[cur]), memory(visited[k])); };
                 }
                 have visited[k] == at(iter, visited[k]) by {
                     preserve(memory(visited[k]), loop(0).statement(1));
@@ -230,7 +230,7 @@ int32 search(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
                     apply(click::separation::separate_elements(visited, cur, k)) using { cur != k; };
                 }
                 have separate(loop(0).statement(1).footprint, memory(visited[k])) by {
-                    normalize() using { separate(memory(visited[cur]), memory(visited[k])); };
+                    solve() using { separate(memory(visited[cur]), memory(visited[k])); };
                 }
                 have visited[k] == at(iter, visited[k]) by {
                     preserve(memory(visited[k]), loop(0).statement(1));

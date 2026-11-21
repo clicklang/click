@@ -739,12 +739,22 @@ scalar types, `echo.keep(x)` with `x: i32`, calls the instance
 declares and whose contract is the generic function's at those types: a
 clause that reads its abstract values only by `==` and `!=` means the same
 at every type. A type parameter is instantiated at `i32`, `u8`, `u16`,
-`u32`, `usize` or `bool`, or at an abstract type of the calling generic
-code: `read_twice<U: Copy>` calling `read(cell)` calls `read<U>`, whose
+`u32`, `usize` or `bool`, at a crate struct, or at an abstract type of the
+calling generic code. At a struct, `exchange<T: Copy>(left: &mut T, right:
+&mut T)` called with two `&mut generic_struct_values::Pair` is the instance
+`exchange<generic_struct_values::Pair>`, and its `ensures *left ==
+old(*right)` compares two struct values: every field of one equal to the
+same field of the other. A struct's value is all its fields: `*p`, and a
+by-value struct parameter or result compared whole, compare field by field,
+and a struct value is written `generic_struct_values::Pair { x: a, y: b }`.
+A derived `Clone` of a `Copy` struct, which a `Copy` bound reaches, is the
+copy Click already makes
+([`design/charon-trial/generic-struct-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-struct-values/values.click)).
+At an abstract type, `read_twice<U: Copy>` calling `read(cell)` calls `read<U>`, whose
 contract is `read`'s with `T` read as `U`, and a call at the callee's own
 parameter names calls the generic function itself. A reference to a value
-of `T`, `&T` or `&mut T`, points at one value of `T` in memory, a word as a
-generic struct's field is: `fn peek<T: Copy>(value: &T) -> T { views
+of `T`, `&T` or `&mut T`, points at one value of `T` in memory, its
+`sizeof(T)` bytes, as a generic struct's field is: `fn peek<T: Copy>(value: &T) -> T { views
 *value; ensures result == *value; }` reads it, and a caller at `u32` lends
 `&mut slots.a` as it lends any `&mut u32`
 ([`design/charon-trial/generic-refs`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-refs/refs.click)).
@@ -754,8 +764,10 @@ its type parameters in memory. Each instance a type names is a record of its
 own, written with its arguments in the sidecar, `generic_structs::Cell<T>` in
 generic code and `generic_structs::Cell<i32>` in a caller. Rust fixes no
 layout for a generic struct and safe code reads none, so Click lays each
-instance out in declaration order: a scalar field at its size and alignment,
-a field of an abstract `T` at eight bytes. A generic function over the
+instance at scalar types out in declaration order, each field at its size
+and alignment; the instance at an abstract `T` has a symbolic layout, its
+fields at `offsetof` terms and a `T` field taking `sizeof(T)` bytes (below).
+A generic function over the
 struct, `fn read<T: Copy>(cell: &generic_structs::Cell<T>) -> T { views
 cell.value; ensures result == cell.value; }`, is verified once: a store of a
 `T` value into a field and a load from it are value moves, and two fields of

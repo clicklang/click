@@ -154,7 +154,7 @@ void checkout(struct pool* pool, struct payload* p) {
     known();
     known();
     known();
-    normalize();
+    solve();
 }
 void give_back(struct pool* pool, struct payload* p) {
     owns control(pool);
@@ -192,7 +192,7 @@ void give_back(struct pool* pool, struct payload* p) {
         have separate(memory(p->value), memory(pool->checked_out));
         step();
         have separate(statement(0).footprint, memory(p->value)) by {
-            normalize() using { separate(memory(p->value), memory(pool->checked_out)); };
+            solve() using { separate(memory(p->value), memory(pool->checked_out)); };
         }
         have p->value == old(p->value) by {
             preserve(memory(p->value), statement(0));
@@ -298,7 +298,7 @@ void give_back(struct pool* pool, struct payload* p) {
     known();
     known();
     known();
-    normalize();
+    solve();
     known();
     known();
     have p->value == old(p->value) by known();
@@ -326,7 +326,7 @@ void pipeline(struct pool* pool, struct payload* first, struct payload* second) 
     }
     step();
     have to_integer(count(item(pool, first))) == 1 by {
-        normalize();
+        solve();
     }
     step();
     step();

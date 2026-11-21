@@ -363,6 +363,7 @@ pub(super) fn substitute_pure_values(
         // Finish collapsing reborrow chains before moving their final
         // borrow into a slice operation.
         fold_adjacent_slice_borrows(&mut block.statements, &substitutable, &mut removed);
+        fold_slice_coercion_operands(block, &substitutable, &mut removed);
         if !constant_initializers.is_empty() {
             fold_constant_remainder_casts(
                 &mut block.statements,
@@ -439,6 +440,91 @@ fn fold_adjacent_slice_borrows(
         }
         statements.push(statement);
     }
+}
+
+/// A fixed-array coercion can supply the pointer and length directly to its
+/// immediate consumer: a length read or a call's sole argument.
+fn fold_slice_coercion_operands(
+    block: &mut MirBlock,
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    let mut previous = None;
+    for position in 0..block.statements.len() {
+        let (earlier, later) = block.statements.split_at_mut(position);
+        let statement = &mut later[0];
+        if matches!(
+            statement,
+            S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
+        ) {
+            continue;
+        }
+        if let Some(previous) = previous
+            && let S::Assign {
+                target: E::Local { .. },
+                value: E::SliceLength { slice },
+            } = statement
+        {
+            inline_slice_coercion(&earlier[previous..], slice, true, substitutable, removed);
+        }
+        previous = Some(position);
+    }
+    if let Some(previous) = previous
+        && let T::Call { arguments, .. } = &mut block.terminator
+        && let [argument] = arguments.as_mut_slice()
+    {
+        inline_slice_coercion(
+            &block.statements[previous..],
+            argument,
+            false,
+            substitutable,
+            removed,
+        );
+    }
+}
+
+/// The array must be a local or a borrow of a local array or reference.
+/// The intervening markers must keep its storage live through the read.
+fn inline_slice_coercion(
+    statements: &[S],
+    operand: &mut E,
+    shared_only: bool,
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    let S::Assign {
+        target: E::Local { name },
+        value: value @ E::ArrayToSlice { array, mutable },
+    } = &statements[0]
+    else {
+        return;
+    };
+    if (shared_only && *mutable)
+        || !matches!(operand, E::Local { name: read } if read == name)
+        || !substitutable(name)
+    {
+        return;
+    }
+    let source = match array.as_ref() {
+        E::Borrow {
+            place,
+            value_type: Type::Reference { pointee, .. },
+        } if matches!(pointee.as_ref(), Type::Array { .. }) => match place.as_ref() {
+            E::Deref { reference, .. } => reference.as_ref(),
+            place => place,
+        },
+        array => array,
+    };
+    let E::Local { name: source } = source else {
+        return;
+    };
+    if statements[1..].iter().any(|statement| {
+        matches!(statement, S::BeginStorage { local } | S::EndStorage { local } if local == source || local == name)
+    }) {
+        return;
+    }
+    *operand = value.clone();
+    removed.insert(name.clone());
 }
 
 /// A scalar copy or intrinsic can leave a goto between the expression and

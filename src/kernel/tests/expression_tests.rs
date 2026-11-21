@@ -2989,9 +2989,10 @@ fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object(
 #[test]
 fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
     let null = Address::null();
-    assert!(disprove_builtin_prop(&pointer_same_allocation_proposition(
-        &null, &null
-    )));
+    let null_pointer = Pointer::new(null.clone(), ProgramType::Int32Pointer);
+    assert!(disprove_builtin_prop(
+        &crate::kernel::eval::same_allocation_proposition(&null_pointer, &null_pointer)
+    ));
 
     let state = ExecutionState::new()
         .with_local("left", ProgramValue::pointer(null.clone()))

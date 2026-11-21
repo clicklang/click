@@ -2996,6 +2996,22 @@ values, and that private storage cannot be an input resource. For example,
 or writing its pointed-to elements still needs the corresponding resource;
 the copied value does not extend their lifetime.
 
+### Struct values in contracts
+
+In a contract a struct's value is all its fields. `*p` for a `struct pair *p`
+is the value `p` points at, and `*dst == *src` holds exactly when every field
+of one equals the same field of the other, so it is checked field by field.
+A by-value struct parameter or result compared whole, `value` or
+`old(value)`, is its value too. A struct value is written by its fields with a
+compound literal, `(struct pair){ .x = a, .y = b }`, each field named once;
+Click prints a value as `*p` when its fields are `p`'s own and as a literal
+otherwise. An embedded struct field's value is its own struct value. A struct
+with an array, union, bit field or `long double` field has no value in a
+contract yet, and `*p` of one is refused.
+
+<!-- verified-example: mdtests/a_struct_equality_compares_every_field.md -->
+<!-- verified-example: mdtests/a_struct_equality_is_not_its_first_field.md -->
+
 ## Heap allocation
 
 Click recognizes a deliberately small set of allocation patterns:

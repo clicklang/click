@@ -10,7 +10,7 @@ needle = "match c.model {"
 [[form]]
 id = "all"
 path = "mdtests/proof_both_and.md"
-needle = "x <= x => { normalize(); }"
+needle = "x <= x => { known(); }"
 
 [[form]]
 id = "mark"

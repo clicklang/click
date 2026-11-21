@@ -100,7 +100,7 @@ int32 owned_split_buffer_set_left(
         };
     }
     have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { normalize(); }
-    have contains(memory(owner->data), memory(owner->data)) by { normalize(); }
+    have contains(memory(owner->data), memory(owner->data)) by { apply(click::separation::contains_refl(memory(owner->data))) using {}; }
     have separate(memory(owner->data), memory(owner->data[index])) by {
         apply(separation::separate_restrict(memory(owner->data), memory(owner->data[index..index + 1]),
             memory(owner->data), memory(owner->data[index]))) using {
@@ -168,7 +168,7 @@ int32 owned_split_buffer_set_right(
         };
     }
     have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { normalize(); }
-    have contains(memory(owner->data), memory(owner->data)) by { normalize(); }
+    have contains(memory(owner->data), memory(owner->data)) by { apply(click::separation::contains_refl(memory(owner->data))) using {}; }
     have separate(memory(owner->data), memory(owner->data[index])) by {
         apply(separation::separate_restrict(memory(owner->data), memory(owner->data[index..index + 1]),
             memory(owner->data), memory(owner->data[index]))) using {

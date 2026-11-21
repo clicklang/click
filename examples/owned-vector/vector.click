@@ -21,7 +21,7 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
                 contains(memory(p[0..len]), memory(p[i..i + 1]));
             };
         }
-        have contains(kept, kept) by { normalize(); }
+        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)) using {}; }
         have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
         apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
             defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
@@ -123,7 +123,7 @@ int32 vector_copy(
             0 <= 0; 0 <= length; length <= dst_capacity;
         };
     }
-    have contains(memory(src[0..src_capacity]), memory(src[0..src_capacity])) by { normalize(); }
+    have contains(memory(src[0..src_capacity]), memory(src[0..src_capacity])) by { apply(click::separation::contains_refl(memory(src[0..src_capacity]))) using {}; }
     have separate(memory(dst[0..length]), memory(src[0..src_capacity])) by {
         apply(separation::separate_restrict(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]), memory(dst[0..length]), memory(src[0..src_capacity]))) using {
             separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]));
@@ -167,7 +167,7 @@ int32 vector_copy(
                 instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry, src[k]) == old(src[k]) }, k);
                 have at(region(3).entry, src[k]) == src[k] by {
                     have k < src_capacity by { solve() using { k < length; length <= src_capacity; }; }
-                    have contains(memory(dst[i]), memory(dst[i])) by { normalize(); }
+                    have contains(memory(dst[i]), memory(dst[i])) by { apply(click::separation::contains_refl(memory(dst[i]))) using {}; }
                     have contains(memory(src[0..src_capacity]), memory(src[k])) by {
                         apply(separation::contains_element(src, 0, src_capacity, k)) using { 0 <= k; k < src_capacity; };
                     }
@@ -179,7 +179,7 @@ int32 vector_copy(
                         };
                     }
                     have separate(loop(0).statement(0).footprint, memory(src[k])) by {
-                        normalize() using { separate(memory(dst[i]), memory(src[k])); };
+                        solve() using { separate(memory(dst[i]), memory(src[k])); };
                     }
                     have at(loop(0).statement(0).exit, src[k]) == at(loop(0).statement(0).entry, src[k]) by {
                         preserve(memory(src[k]), loop(0).statement(0));
@@ -219,7 +219,7 @@ int32 vector_copy(
                         apply(separation::separate_elements(dst, k, at(region(3).entry, i))) using { k != at(region(3).entry, i); };
                     }
                     have separate(loop(0).statement(0).footprint, memory(dst[k])) by {
-                        normalize() using { at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))); };
+                        solve() using { at(region(3).entry, separate(memory(dst[k]), memory(dst[i]))); };
                     }
                     have at(loop(0).statement(0).exit, dst[k]) == at(loop(0).statement(0).entry, dst[k]) by {
                         preserve(memory(dst[k]), loop(0).statement(0));
@@ -408,19 +408,19 @@ int32 vector_grow(struct vector* owner) {
             }
             // Keep the copied cell across the two field writes and old-buffer release.
             have separate(statement(11).footprint, memory(new_data[k])) by {
-                normalize() using { separate(memory(owner->data), memory(new_data[k])); };
+                solve() using { separate(memory(owner->data), memory(new_data[k])); };
             }
             have at(statement(11).exit, new_data[k]) == at(statement(11).entry, new_data[k]) by {
                 preserve(memory(new_data[k]), statement(11));
             }
             have separate(statement(12).footprint, memory(new_data[k])) by {
-                normalize() using { separate(memory(owner->cap), memory(new_data[k])); };
+                solve() using { separate(memory(owner->cap), memory(new_data[k])); };
             }
             have at(statement(12).exit, new_data[k]) == at(statement(12).entry, new_data[k]) by {
                 preserve(memory(new_data[k]), statement(12));
             }
             have separate(statement(13).footprint, memory(new_data[k])) by {
-                normalize() using { separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)])); owner->data == new_data; };
+                solve() using { separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)])); owner->data == new_data; };
             }
             have at(statement(13).exit, new_data[k]) == at(statement(13).entry, new_data[k]) by {
                 preserve(memory(new_data[k]), statement(13));

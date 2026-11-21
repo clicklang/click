@@ -1533,7 +1533,12 @@ impl ProgramPoint {
     /// store supplies a value. Use the recorded disjoint suffix only when
     /// it reaches a verified function-entry view.
     pub(crate) fn entry_integer_version(&self, pointer: &Address, kind: LoadKind) -> Option<Self> {
-        if !kind.is_word32() && !matches!(kind, LoadKind::Int16 | LoadKind::UInt16) {
+        if !kind.is_word32()
+            && !matches!(
+                kind,
+                LoadKind::Int8 | LoadKind::UInt8 | LoadKind::Int16 | LoadKind::UInt16
+            )
+        {
             return None;
         }
         self.external_entry_read(pointer, false)
@@ -1602,9 +1607,12 @@ impl ProgramPoint {
         value_type: ProgramType,
     ) -> Option<Self> {
         match value_type {
-            ProgramType::Int16 | ProgramType::UInt16 | ProgramType::Int32 | ProgramType::UInt32 => {
-                self.external_entry_read(pointer, true)
-            }
+            ProgramType::Int8
+            | ProgramType::UInt8
+            | ProgramType::Int16
+            | ProgramType::UInt16
+            | ProgramType::Int32
+            | ProgramType::UInt32 => self.external_entry_read(pointer, true),
             value_type if value_type.is_object_pointer() => self.external_entry_read(pointer, true),
             ProgramType::Parameter(parameter) if !parameter.is_enum() => {
                 self.external_entry_read(pointer, true)

@@ -58,8 +58,8 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
      contains(memory(bytes[4 * outer..4 * outer + 4]), memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]));
     };
    }
-   have 0 <= 0 by { normalize(); }
-   have 0 <= 4 by { normalize(); }
+   have 0 <= 0 by { known(); }
+   have 0 <= 4 by { known(); }
    have to_integer(4) <= to_integer((4 * outer + 4) - (4 * outer)) by { normalize(); }
    have contains(memory((bytes + (4 * outer))[0..(4 * outer + 4) - (4 * outer)]), memory((bytes + (4 * outer))[0..4])) by {
     apply(separation::contains_subrange(bytes + (4 * outer), 0, (4 * outer + 4) - (4 * outer), 0, 4)) using {

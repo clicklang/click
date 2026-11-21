@@ -550,6 +550,26 @@ impl AuditKind {
     }
 }
 
+/// A lowering audit's own arguments: the path and any `--claim`s.
+fn lowering_arguments(raw: &[String]) -> Result<(PathBuf, Vec<String>), String> {
+    let mut path = None;
+    let mut claims = Vec::new();
+    let mut arguments = raw.iter();
+    while let Some(argument) = arguments.next() {
+        if argument == "--claim" {
+            claims.push(
+                arguments
+                    .next()
+                    .ok_or_else(|| format!("missing claim after `--claim`\n{USAGE}"))?
+                    .clone(),
+            );
+        } else if argument.starts_with('-') || path.replace(PathBuf::from(argument)).is_some() {
+            return Err(USAGE.to_string());
+        }
+    }
+    Ok((path.ok_or_else(|| USAGE.to_string())?, claims))
+}
+
 /// Where a lowering audit writes its records unless `--records` says.
 const DEFAULT_RECORDS_DIRECTORY: &str = "target/click-audit";
 
@@ -587,12 +607,9 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
     } else {
         None
     };
-    let path = match &expansion_arguments {
-        Some(arguments) => arguments.path.clone(),
-        None => match raw.as_slice() {
-            [path] if !path.starts_with('-') => PathBuf::from(path),
-            _ => return Err(USAGE.to_string()),
-        },
+    let (path, claims) = match &expansion_arguments {
+        Some(arguments) => (arguments.path.clone(), arguments.claims.clone()),
+        None => lowering_arguments(&raw)?,
     };
     let mut headlines = Vec::new();
     let mut failures = Vec::new();
@@ -610,8 +627,9 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
             }
             AuditKind::Lowering(audit) => {
                 let file = records.join(format!("{}.tsv", lowering::name(audit)));
-                let report = lowering::run(audit, &path, &file)?;
+                let report = lowering::run(audit, &path, &file, &claims)?;
                 println!("{}", report.headline);
+                print!("{}", report.failures);
                 if !report.unexpected_outcomes.is_empty() {
                     println!(
                         "  {} proof containers did not verify as their expectation says; the gate and the nightly tests own those verdicts (listed in {})",

@@ -20,7 +20,7 @@ theorem rewritten(p: Packet) {
         Packet::Full(n) => Output::Value(n),
     }) == Output::Value(7) by {
         rewrite(p, Packet::Full(7));
-        normalize();
+        solve();
     }
 }
 ```
