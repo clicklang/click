@@ -104,6 +104,11 @@ impl StepLog {
                 indexed_local(block) || matches!(block, AddressBase::Temporary(_))
             }
             MemoryDerivation::LocalLifetimeEnded { block, .. } => indexed_local(block),
+            // The write, if any, is recorded by the producer separately.
+            // The return clause only supplies initialization evidence.
+            MemoryDerivation::ObjectInitializationRecorded {
+                call_word: false, ..
+            } => true,
             MemoryDerivation::LoopHavoc {
                 mutable_ranges: Some(ranges),
                 ..

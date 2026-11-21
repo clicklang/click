@@ -121,15 +121,18 @@ fn opening_control_retains_loaded_pointer_facts() {
         .unwrap();
     let opened = named
         .begin_open(open.resource.clone(), 3)
-        .expect("recording open must retain its constructed pointer-identity facts");
-    let introduced = opened
+        .expect("opening the control must retain its loaded-pointer facts");
+    // Entry reads can already name the same pointer before the control opens.
+    // Check that the scope retains the equality the proof can use.
+    opened
         .body()
-        .facts()
-        .introduced_since(named.facts())
+        .driver()
+        .open_have(have.proposition.clone())
+        .unwrap()
+        .driver()
+        .apply_step(ProofStep::Known)
+        .unwrap()
+        .join()
         .unwrap();
-    assert!(
-        introduced.iter().any(|fact| matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(..), _))))),
-        "open must retain the newly constructed pointer identity: {introduced:?}"
-    );
     assert!(root.certificate().steps().is_empty());
 }
