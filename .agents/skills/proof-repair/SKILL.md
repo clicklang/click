@@ -30,7 +30,18 @@ it; shrink them if you can, but a report need not wait for that.
 - `syntax error` or `type error`: fix the reported source. This skill does not
   apply.
 - `internal error`: the outcome is `unclear-trace`.
-- `proof error`: continue.
+- `proof error`: follow the diagnostic below.
+
+| Diagnostic | What stopped | Next step |
+| --- | --- | --- |
+| `tactic failure` | A checked tactic refused its input or the C it was executing. | Check the tactic's **Accepts** list in `click docs NAME`, then check the program point, operands, and prerequisites. Fix an invalid tactic invocation or C behavior at its source. For a Click limitation on valid C, reduce the failing step and record `failing-tactic`. |
+| `proof search miss` | Search found no proof or could not fill an elided argument. | Record the goal and write the missing argument or intermediate facts. Continue with step 2. |
+| `open goal` | The script ended with a goal pending. | Record the goal and supply the proof steps. Continue with step 2. |
+
+A known Click limitation can stop a checked tactic before it creates a goal.
+Capture the tactic, the exact C expression or proof input, and the stated
+limitation. The absence of a `goal:` line in this case does not make the trace
+unclear.
 
 ## 2. Record the goal
 
@@ -51,7 +62,8 @@ line that defines each label the goal uses. Two written forms of one C address
 (`p` and `g + 16 bytes`, or a read at entry and a read in the loop) are often
 the whole story. Otherwise ignore the legend.
 
-No `goal:` line, or a goal you cannot read: the outcome is `unclear-trace`.
+If the report should describe a goal but omits it or gives an unreadable
+one, the outcome is `unclear-trace`.
 
 ## 3. Decide whether `G` is true
 
@@ -172,9 +184,10 @@ Stop at exactly one outcome:
   discussion. A search miss alone does not establish this outcome.
 - `inexpressible-fact`: the argument needs an intermediate fact that Click
   cannot write. Follow the user-facing reporting instructions below.
-- `failing-tactic`: a link that is a single simple tactic, within what that
-  tactic is documented to do (the **Accepts** list in `click docs NAME`), is
-  refused, still in its smallest form after step 6. Report a bug (below). A smart tactic such as `solve` that does not prove a
+- `failing-tactic`: a simple tactic refuses a link within its documented
+  **Accepts** list, or a checked execution tactic identifies a Click
+  limitation while executing valid C. Reduce the refusal to the smallest
+  form and report it below. A smart tactic such as `solve` that does not prove a
   link is never `failing-tactic`: identify the primitive and write its premises. A search miss is
   never `failing-tactic` either: write the argument and run again.
 - `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the

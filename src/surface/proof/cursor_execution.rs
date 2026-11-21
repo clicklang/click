@@ -1973,6 +1973,26 @@ pub(super) fn execute_step_successor_from_frontier_position(
     })
 }
 
+fn step_runtime_refusal_description(
+    error: &crate::kernel::RuntimeError,
+    kind: crate::surface::ClickErrorKind,
+    tactic_name: &str,
+) -> String {
+    use crate::kernel::RuntimeError;
+    match error {
+        RuntimeError::IndeterminatePointeeType
+        | RuntimeError::UnsupportedPointerSubtractionOffsets
+        | RuntimeError::UnsupportedPointerComparisonOffsets
+        | RuntimeError::UnsupportedFunctionPointerOffset => {
+            format!("tactic failure: `{tactic_name}` failed while executing C")
+        }
+        _ if kind == crate::surface::ClickErrorKind::Internal => {
+            format!("`{tactic_name}` reached an unsupported modeled operation")
+        }
+        _ => format!("`{tactic_name}` could not verify C operation"),
+    }
+}
+
 /// Prefer parameter-relative places; where those leave a value unnamed, try
 /// the locals live before the operation too. Recognize the shared printer's
 /// explicit placeholders as well as legacy source-place elisions.
@@ -2896,12 +2916,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     })
             {
                 let kind = runtime_refusal_kind(error);
-                let unsupported = kind == crate::surface::ClickErrorKind::Internal;
-                let description = if unsupported {
-                    "reached an unsupported modeled operation"
-                } else {
-                    "could not verify C operation"
-                };
+                let description = step_runtime_refusal_description(error, kind, tactic_name);
                 let resources = step_diagnostic_resources(&current_state);
                 let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
                     error,
@@ -2935,7 +2950,7 @@ fn execute_step_from_frontier_position_selecting_path(
                     return Err(ClickError::new(detail).with_kind(kind));
                 }
                 return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
+                "`{claim_label}` tactic {tactic_index}: {description}: {}\n  C operation: {}{}{}\n{}",
                 detail,
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),
@@ -3713,12 +3728,7 @@ fn execute_step_from_frontier_position_selecting_path(
         }
         StatementOutcome::RuntimeError(error) => {
             let kind = runtime_refusal_kind(&error);
-            let unsupported = kind == crate::surface::ClickErrorKind::Internal;
-            let description = if unsupported {
-                "reached an unsupported modeled operation"
-            } else {
-                "could not verify C operation"
-            };
+            let description = step_runtime_refusal_description(&error, kind, tactic_name);
             let resources = step_diagnostic_resources(&current_state);
             let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
                 &error,
@@ -3752,7 +3762,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 return Err(ClickError::new(detail).with_kind(kind));
             }
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
+                "`{claim_label}` tactic {tactic_index}: {description}: {}\n  C operation: {}{}{}\n{}",
                 detail,
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),

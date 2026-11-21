@@ -1109,7 +1109,16 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         ),
         RuntimeError::LoadTypeMismatch { .. } => error.kernel_summary(),
         RuntimeError::IndeterminatePointeeType => {
-            "a pointer operation has no known pointee type".to_string()
+            "Click could not determine the pointee type for this operation".into()
+        }
+        RuntimeError::UnsupportedPointerSubtractionOffsets => {
+            "Click does not yet support pointer subtraction with these offsets".into()
+        }
+        RuntimeError::UnsupportedPointerComparisonOffsets => {
+            "Click does not yet support ordered pointer comparison with these offsets".into()
+        }
+        RuntimeError::UnsupportedFunctionPointerOffset => {
+            "Click does not support adding a byte offset to a function pointer".into()
         }
         RuntimeError::WrongArity { expected, actual } => {
             format!("wrong argument count: expected {expected}, got {actual}")

@@ -540,7 +540,8 @@ uint64 spell(const uint8* b, uint64 n) {
         // A written `step()` is simple, but the implicit `solve` proves its
         // open requirements, so the refusal is that smart tactic's miss.
         assert!(
-            call.contains(
+            call.contains("\nproof search miss: the implicit closer")
+                && call.contains(
                 "\nrefused by: the implicit closer that proves this statement's requirements (smart: "
             ) && call.contains("\nsee: click docs tracing\n"),
             "{call}"
@@ -614,7 +615,8 @@ uint64 spell(const uint8* b, uint64 n) {
             &[],
         );
         assert!(
-            ended_open.contains("\nrefused by: nothing (the proof ended with this goal open; add the steps that prove it)\nsee: click docs tracing\n")
+            ended_open.contains("\nopen goal: the proof script ended")
+                && ended_open.contains("\nrefused by: nothing (the proof ended with this goal open; add the steps that prove it)\nsee: click docs tracing\n")
                 && !ended_open.contains("refused by: `unfold`"),
             "{ended_open}"
         );
@@ -626,7 +628,8 @@ uint64 spell(const uint8* b, uint64 n) {
             &[],
         );
         assert!(
-            closer.contains(
+            closer.contains("\ntactic failure: `normalize` refused the checked step")
+                && closer.contains(
                 "\nrefused by: `normalize` (simple: a refusal within its documented behavior is a bug)\nsee: click docs normalize\n"
             ),
             "{closer}"
