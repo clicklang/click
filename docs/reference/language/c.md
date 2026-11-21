@@ -947,24 +947,28 @@ Supported C surface includes:
 - `if` with an optional `else`, using C scalar truthiness; each arm may be a
   single statement, so ordinary `else if` chains are accepted
 - direct function-body labels and unconditional forward `goto` to them from
-  either the function body or an `if` arm. The edge preserves the current C
-  state and skips intervening ordinary statements; jumping and fallthrough
-  paths remain distinct until they meet at the label. A narrow natural-cycle
-  form also permits one direct function-body label at the entry and backward
+  the function body, an `if` arm, or inside a loop or switch. The edge skips
+  intervening statements and retires the automatic objects in the scopes it
+  leaves. It carries the remaining C state and resources to the named label.
+  A jump out of a loop leaves directly from the body, so it owes neither a
+  false test nor the invariant and measure checks of a back edge. A
+  summarized `loop` proof step may still be refused when a jump and ordinary
+  fallthrough are both feasible.
+  A narrow natural-cycle form also permits one direct function-body label at the entry and backward
   `goto` edges to that label in its re-entered region, including edges nested
   in an `if`; the existing `loop` proof supplies that cycle's invariant and
   termination measure. Forward exits from a supported natural cycle share
   one later target label; distinct forward exit targets remain unsupported.
-  Outside a natural cycle, loops and switches may come before every label,
-  so `if (size == 0) goto out;` may skip the loops that do a function's work;
-  each loop then runs in full or is skipped whole. A label there may also
-  govern an `if` whose arms contain no labels, jumps, loops, or switches, as
+  Outside a natural cycle, loops and switches may come before every label.
+  A forward jump may skip them or leave them for a later label. A label may
+  also govern an `if` whose arms contain no labels, jumps, loops, or switches, as
   in `out: if (...) unit = "UNK"; else ...`
   (`mdtests/goto_out_may_skip_loops_that_precede_its_label.md`).
-  Unknown, duplicate, general backward, or nested
-  targets, a loop or switch after a label or containing a label or `goto`
-  (`mdtests/goto_refuses_a_loop_after_a_label.md`), and jumps that bypass a
-  function-body local declaration remain rejected.
+  Unknown, duplicate, general backward, and nested targets remain rejected,
+  as do loops and switches after a label
+  (`mdtests/goto_refuses_a_loop_after_a_label.md`). A jump cannot bypass a
+  function-body local declaration. In flattened inner blocks it may skip
+  scalar declarations whose storage cannot be reached through an alias.
   Multiple later labels may form an ordinary fallthrough cleanup chain; each
   release remains an explicit C statement rather than an implicit edge effect
 - `switch (expression)` with a compound body whose direct labels are integer

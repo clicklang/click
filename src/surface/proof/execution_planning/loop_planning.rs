@@ -1329,7 +1329,6 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         detach_generated_suffix_from_source_indices(&mut program, first_generated_tactic_index);
     }
     let source_layout = environment.source_layout.clone();
-    let natural_loop = source_layout.natural_loop_target(loop_index).is_some();
     let loop_body_statement_index = source_layout.loop_body_entry(loop_index).ok_or_else(|| {
         ClickError::new(format!("`{claim_label}` has no source loop({loop_index})"))
     })?;
@@ -1652,14 +1651,11 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         // a function-exit path of the enclosing execution in every loop form,
         // and owes neither an invariant nor a measure.
         let is_return_exit = context_frontier.is_at_function_exit();
-        // A natural cycle's checked forward `goto` leaves the loop at its
-        // named exit target.
-        let is_natural_exit_jump = natural_loop
-            && matches!(
-                context_frontier.loop_control,
-                crate::kernel::proof::LoopControlExit::NaturalExit(_)
-            );
-        let is_terminal_return_exit = is_return_exit || is_natural_exit_jump;
+        let jump_target = match context_frontier.loop_control {
+            crate::kernel::proof::LoopControlExit::Jump(target) => Some(target),
+            _ => None,
+        };
+        let is_terminal_return_exit = is_return_exit || jump_target.is_some();
         let has_retained_invariant_body =
             context_execution.core.checked_invariant_lowerings.is_some();
         let statement_index = context_frontier.next_statement_index;
@@ -1909,20 +1905,16 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                         .clone(),
                 }));
             }
-        } else if is_natural_exit_jump {
-            // A natural cycle's forward `goto` is a terminal loop exit at its
-            // named target. It does not owe the loop invariant or ranking
-            // bundle; the kernel joins it with the other exits.
+        } else if let Some(target) = jump_target {
+            // The jump leaves for its named label without owing the loop
+            // invariant or ranking bundle.
             let (state, exit_facts) = preservation.restored_exit(
                 &checked_execution.core.state,
                 checked.facts(),
                 &assumptions_from_propositions(checked.facts()),
             );
             let exit = LoopFinalExitCandidate::from_store(state, &exit_facts)
-                .with_jump_target(match context_frontier.loop_control {
-                    crate::kernel::proof::LoopControlExit::NaturalExit(target) => target,
-                    _ => unreachable!("the checked frontier is a natural exit jump"),
-                })
+                .with_jump_target(target)
                 .with_borrow_evidence(checked_execution.core.borrow_evidence().clone());
             if seen_final_exits.is_new(
                 exit.state(),

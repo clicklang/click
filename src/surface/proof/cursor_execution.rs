@@ -3609,13 +3609,11 @@ fn execute_step_from_frontier_position_selecting_path(
                 execution.core.state = (*next_state).into();
                 return Ok(introduced_facts);
             }
-            if execution.core.frontier.natural_exit_target == Some(target)
-                && execution.core.frontier.in_loop_body
-            {
+            if execution.core.frontier.in_loop_body && function.control_target(target).is_some() {
                 *available_pure_facts = successor_pure_facts;
                 execution.core.frontier.position = FrontierPosition::RegionBoundary;
                 execution.core.frontier.loop_control =
-                    crate::kernel::proof::LoopControlExit::NaturalExit(target);
+                    crate::kernel::proof::LoopControlExit::Jump(target);
                 execution.core.frontier.execution_start_state = Some(execution_start_state);
                 execution.core.state = (*next_state).into();
                 return Ok(introduced_facts);
@@ -3899,6 +3897,7 @@ fn statement_successors_are_path_cases(transitions: &[CertifiedStatementTransiti
             transition.outcome,
             StatementOutcome::Normal(_)
                 | StatementOutcome::Return { .. }
+                | StatementOutcome::Jump { .. }
                 | StatementOutcome::LoopTestFalse(_)
         ) && !distinguishing_path_facts(&transition.path_facts, &facts).is_empty()
     })
@@ -4290,7 +4289,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         ProgramStatement::Skip => "skip".to_string(),
         ProgramStatement::Break => "break".to_string(),
         ProgramStatement::Continue => "continue".to_string(),
-        ProgramStatement::Goto { target } => format!("goto target({})", target.0),
+        ProgramStatement::Goto { target, .. } => format!("goto target({})", target.0),
         ProgramStatement::EndAutomaticLifetimes { .. } => "automatic lifetime end".to_string(),
 
         ProgramStatement::Declare { name, .. } => format!("declare {name}"),

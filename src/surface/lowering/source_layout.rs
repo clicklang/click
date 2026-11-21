@@ -3105,6 +3105,7 @@ mod source_execution_layout_tests {
         let body = program_seq(
             ProgramStatement::Goto {
                 target: ControlTargetId(1),
+                exited_locals: Default::default(),
             },
             program_return(crate::kernel::program_expression::variable(CONTRACT_RESULT)),
         );
