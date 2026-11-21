@@ -4714,6 +4714,57 @@ fn rust_split_at_metadata_and_reads_verify() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_unnamed_scalar_storage_has_no_generated_name_in_proofs() {
+    let p = Project::new(
+        "pub fn front(bytes: &[u8]) -> usize {
+             let (front, tail) = bytes.split_at(bytes.len() - bytes.len() % 4);
+             let __rust_mir_17 = tail.len();
+             front.len() + __rust_mir_17
+         }",
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let mir = prepared.export().functions[0].mir.as_ref().unwrap();
+    let unnamed_scalars: Vec<_> = mir
+        .locals
+        .iter()
+        .filter(|local| local.value_type.is_scalar() && mir.unnamed_locals.contains(&local.name))
+        .collect();
+    assert!(!unnamed_scalars.is_empty());
+    assert!(!mir.unnamed_locals.contains("__rust_mir_17"));
+    let sidecar = r#"verifying "borrow.rs";
+fn front(bytes: &[u8]) -> usize {
+    requires bytes.len() == 7u64;
+    ensures result == 7u64;
+} by {
+    step_until(function.exit);
+    solve();
+}
+"#;
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "front"]);
+    let trace = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "{trace}");
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(trace.contains("__rust_mir_17 = tail.len()"), "{trace}");
+    for local in unnamed_scalars {
+        assert!(
+            !trace.lines().any(|line| line
+                .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+                .any(|word| word == local.name)),
+            "unnamed scalar {} leaked into the trace: {trace}",
+            local.name
+        );
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn rust_split_at_endpoints_and_full_width_lengths_verify() {
     let p = Project::new(

@@ -110,6 +110,10 @@ pub(super) fn lower(
         .chain(&mir.locals)
         .map(|local| (local.name.as_str(), &local.value_type))
         .collect();
+    for (name, last_use) in super::super::charon::scalar_expression_operands(mir) {
+        cx.scalar_operands
+            .insert(name, (cx.result_step(), last_use));
+    }
     // Index storage starts once. Locals without a compiler storage event
     // retain their function-entry backing (including return-place arrays).
     let storage_starts: BTreeSet<&str> = mir
@@ -167,6 +171,9 @@ pub(super) fn lower(
         .enumerate()
     {
         let parameter = index < owned_parameter_count;
+        if cx.scalar_operands.contains_key(&local.name) {
+            continue;
+        }
         if let Type::SharedArrayIterator { element } | Type::SharedArrayOption { element } =
             &local.value_type
         {
@@ -758,6 +765,15 @@ pub(super) fn lower(
                     payload,
                     taken,
                 } => cx.chunk_next(iterator, option.as_deref(), payload.as_deref(), *taken)?,
+                S::Assign {
+                    target: E::Local { name },
+                    value,
+                } if cx.scalar_operands.contains_key(name) => {
+                    let (prefix, value) = cx.prepared_expr(value)?;
+                    let ty = scalar_type(local_types[name.as_str()])?.to_kernel_type();
+                    let step = cx.scalar_operands[name].0;
+                    program_seq(prefix, typed_value_step(vec![step], value, ty, false))
+                }
                 S::Assign {
                     target: E::Local { name },
                     value,
@@ -1738,6 +1754,7 @@ mod tests {
             mir: Some(MirBody {
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
+                unnamed_locals: Default::default(),
                 locals: vec![Place {
                     name: "value".into(),
                     value_type: Type::Record {
@@ -1829,6 +1846,7 @@ mod tests {
             let mir = MirBody {
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
+                unnamed_locals: Default::default(),
                 locals: vec![],
                 blocks,
             };
@@ -1842,6 +1860,7 @@ mod tests {
             let records = BTreeMap::new();
             let functions = BTreeMap::new();
             let mut cx = Context {
+                scalar_operands: BTreeMap::new(),
                 bindings: BTreeMap::new(),
                 declaration_sites: Vec::new(),
                 references: BTreeMap::new(),

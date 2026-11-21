@@ -29,6 +29,7 @@ mod split_slices;
 #[cfg(test)]
 mod split_slices_tests;
 mod temporaries;
+pub(super) use temporaries::scalar_expression_operands;
 mod traits;
 mod user_iterators;
 mod vec_methods;
@@ -3817,6 +3818,9 @@ pub(super) fn decode_crate(
         );
         temporaries::return_values(&mut locals, &mut blocks, &return_place);
         temporaries::remove_unused(&mut locals, &mut blocks, &temporaries);
+        let kept: BTreeSet<_> = locals.iter().map(|local| local.name.as_str()).collect();
+        spellings.retain(|key, _| kept.contains(key.as_str()));
+        temporaries.retain(|key| kept.contains(key.as_str()));
         functions.push(out::Function {
             sites: source_statements
                 .iter()
@@ -3832,17 +3836,8 @@ pub(super) fn decode_crate(
             parameters,
             body: vec![],
             mir: Some(out::MirBody {
-                spellings: {
-                    // Only the locals the passes kept.
-                    let kept: BTreeSet<&str> = locals
-                        .iter()
-                        .map(|local: &out::Place| local.name.as_str())
-                        .collect();
-                    spellings
-                        .into_iter()
-                        .filter(|(key, _): &(String, String)| kept.contains(key.as_str()))
-                        .collect()
-                },
+                spellings,
+                unnamed_locals: temporaries,
                 locals,
                 blocks,
                 return_place,

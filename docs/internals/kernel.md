@@ -1448,6 +1448,13 @@ expression that reads it. To move, the temporary must:
 
 `x = a + b * c` is then one expression again.
 
+An unnamed scalar with one assignment and reads along a straight-line MIR
+fragment can also be an expression-step result. For example, the remainder
+in `bytes.split_at(bytes.len() - bytes.len() % 4)` is evaluated once and read
+by both the subtraction check and the subtraction itself. The lowering
+records the value at the assignment's existing source point and ends it
+on the last read. The result needs no local storage or proof name.
+
 A value with a checked operator (`+ - * / % << >>`) or an indexed read
 (`a[i]`) moves only into a read whose lowering emits its panic or bounds
 check:

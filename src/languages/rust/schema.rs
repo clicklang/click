@@ -1,6 +1,6 @@
 //! Compiler-owned typed Rust source vocabulary. No printed compiler dumps.
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const SCHEMA: u32 = 8;
 pub const TARGET: &str = "x86_64-unknown-linux-gnu";
@@ -508,6 +508,9 @@ pub struct MirBody {
     /// `word` names the innermost live one, as in C.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub spellings: BTreeMap<String, String>,
+    /// Local keys for which the compiler supplied no source spelling.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub unnamed_locals: BTreeSet<String>,
 }
 
 /// The name of a function's return place.

@@ -1154,6 +1154,7 @@ fn lower_function(
         .collect();
     let mut cx = Context {
         bindings,
+        scalar_operands: BTreeMap::new(),
         declaration_sites: Vec::new(),
         shared_array_iterators: BTreeMap::new(),
         ranges: BTreeMap::new(),
@@ -1247,6 +1248,8 @@ struct Context<'a> {
     /// The binding of each local whose source name is bound more than
     /// once, by its MIR key; every other local is bound by its name.
     bindings: BTreeMap<String, BindingName>,
+    /// Expression values retained until their last read in a straight-line MIR fragment.
+    scalar_operands: BTreeMap<String, (u32, crate::languages::rust::borrow_frontiers::MirPoint)>,
     /// Where each of those is declared: its binding and source statement
     /// (`Function::sites`), so `statement(i).local(word)` names it.
     declaration_sites: Vec<(BindingName, u32)>,
@@ -2741,6 +2744,14 @@ impl Context<'_> {
             } => {
                 let value = self.expr(value)?;
                 integer_from(value, source_type, value_type)
+            }
+            E::Local { name } if self.scalar_operands.contains_key(name) => {
+                let (step, last_use) = self.scalar_operands[name];
+                Ok(ProgramExpression::StepResult {
+                    step,
+                    origin: crate::kernel::StepOrigin::Value("Rust operand"),
+                    ends: self.mir_point == Some(last_use),
+                })
             }
             E::Local { name } if self.memory_values.contains_key(name) => {
                 let value_type = self.memory_values[name];
