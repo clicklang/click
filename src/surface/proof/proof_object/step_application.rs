@@ -432,7 +432,12 @@ impl<'a> Proof<'a> {
         for (role, original) in facts.chain(goal) {
             let scope = crate::surface::proof::attempt::search_scope("raise-lower audit");
             let (outcome, raised, lowered) = crate::instrumentation::without_charging(|| {
-                if next.premise_fixed_state_view().is_none() {
+                // A pure proof (a theorem, a lemma, a termination check) raises
+                // and lowers in its own context; only a program proof needs a
+                // fixed state to raise at.
+                if !matches!(next.context.as_ref(), super::ProofContext::Pure(_))
+                    && next.premise_fixed_state_view().is_none()
+                {
                     return (RoundTrip::NoState, String::new(), String::new());
                 }
                 // Raise as goal presentation does: with the path's recorded
