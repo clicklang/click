@@ -363,6 +363,7 @@ pub(super) fn substitute_pure_values(
         // Finish collapsing reborrow chains before moving their final
         // borrow into a slice operation.
         fold_adjacent_slice_borrows(&mut block.statements, &substitutable, &mut removed);
+        fold_slice_call_operand(block, &substitutable, &mut removed);
         if !constant_initializers.is_empty() {
             fold_constant_remainder_casts(
                 &mut block.statements,
@@ -439,6 +440,62 @@ fn fold_adjacent_slice_borrows(
         }
         statements.push(statement);
     }
+}
+
+/// A fixed-array coercion that immediately feeds the call's sole argument
+/// can supply the array's pointer and length there. Only accept a local
+/// array or a borrow of a local array or reference, and keep its storage
+/// live through the argument evaluation.
+fn fold_slice_call_operand(
+    block: &mut MirBlock,
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    let T::Call { arguments, .. } = &mut block.terminator else {
+        return;
+    };
+    let [argument @ E::Local { .. }] = arguments.as_mut_slice() else {
+        return;
+    };
+    let Some(position) = block.statements.iter().rposition(|statement| {
+        !matches!(
+            statement,
+            S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
+        )
+    }) else {
+        return;
+    };
+    let S::Assign {
+        target: E::Local { name },
+        value: value @ E::ArrayToSlice { array, .. },
+    } = &block.statements[position]
+    else {
+        return;
+    };
+    if !matches!(argument, E::Local { name: read } if read == name) || !substitutable(name) {
+        return;
+    }
+    let source = match array.as_ref() {
+        E::Borrow {
+            place,
+            value_type: Type::Reference { pointee, .. },
+        } if matches!(pointee.as_ref(), Type::Array { .. }) => match place.as_ref() {
+            E::Deref { reference, .. } => reference.as_ref(),
+            place => place,
+        },
+        array => array,
+    };
+    let E::Local { name: source } = source else {
+        return;
+    };
+    if block.statements[position + 1..].iter().any(|statement| {
+        matches!(statement, S::BeginStorage { local } | S::EndStorage { local } if local == source || local == name)
+    }) {
+        return;
+    }
+    *argument = value.clone();
+    removed.insert(name.clone());
+    block.statements.remove(position);
 }
 
 /// A scalar copy or intrinsic can leave a goto between the expression and

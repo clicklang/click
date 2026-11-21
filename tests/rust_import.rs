@@ -5537,6 +5537,17 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    for function in ["array_len", "mutate", "local", "borrow_shared"] {
+        let output = p.cli(&["verify", "--trace-proof", function]);
+        let trace = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(trace.contains("proof trace"), "{trace}");
+        assert!(!trace.contains("__rust_mir_"), "{trace}");
+    }
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [
@@ -5551,14 +5562,15 @@ fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
     for incorrect in [
         sidecar.replace("ensures result == 4u64;", "ensures result == 1u64;"),
         sidecar.replace(
-            "fn read(bytes: &[u8; 3]) -> u8 {\n    views bytes[0..1];",
-            "fn read(bytes: &[u8; 3]) -> u8 {",
+            "fn read(bytes: &[u8; 3]) -> u8 {\n    views bytes[0..1];\n    ensures result == bytes[0];",
+            "fn read(bytes: &[u8; 3]) -> u8 {\n    views bytes[0..1];\n    ensures result == 0;",
         ),
         sidecar.replace(
             "fn mutate(bytes: &mut [u8; 3]) -> u8 {\n    owns bytes[1..2];",
             "fn mutate(bytes: &mut [u8; 3]) -> u8 {\n    views bytes[1..2];",
         ),
     ] {
+        assert_ne!(incorrect, sidecar);
         assert!(ProgramVerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
     }
     let overflow = Project::new(
