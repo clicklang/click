@@ -99,6 +99,7 @@ impl SourceContext {
                     | ProofTactic::IntroAs(_)
                     | ProofTactic::IntroBinder(_)
                     | ProofTactic::Known
+                    | ProofTactic::Enumerate
                     | ProofTactic::Normalize
                     | ProofTactic::NormalizeUsing(_)
                     | ProofTactic::ArithmeticUsing(_)

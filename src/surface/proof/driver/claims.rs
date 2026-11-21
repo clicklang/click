@@ -4091,6 +4091,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             deferred.tactic,
                             PostExecutionTactic::Leaf(
                                 ProofTactic::Known
+                                    | ProofTactic::Enumerate
                                     | ProofTactic::Normalize
                                     | ProofTactic::NormalizeUsing(_)
                                     | ProofTactic::ArithmeticUsing(_)
@@ -4269,6 +4270,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             tactic,
                                             ProofTactic::UnfoldProposition(_)
                                                 | ProofTactic::UnfoldFunction(_)
+                                                | ProofTactic::Rewrite(_)
                                         )
                                     || unfolds_outcome_goal(
                                         tactic,
@@ -4706,6 +4708,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                             PostExecutionTactic::Leaf(
                                 ProofTactic::Known
+                                | ProofTactic::Enumerate
                                 | ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
                                 | ProofTactic::ArithmeticUsing(_)
