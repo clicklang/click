@@ -2,7 +2,7 @@
 
 This page is the procedure for repairing a failed proof from its diagnostic
 and `--trace-proof` output: find the goal that could not be proved, prove it
-through explicit intermediate goals, and stop at one of seven named outcomes. It
+through explicit intermediate goals, and stop at a named outcome. It
 replaces trial-and-error tactic variation with a decomposition that each
 attempt must advance.
 
@@ -11,13 +11,13 @@ is understood. This page is how you come to understand it.
 
 ## Every proof error has a goal
 
-Click reports four kinds of error. Only a proof error enters this procedure.
+Start with the terminal error kind. Use the proof steps below for a proof error.
 
 | Error kind | What it means | What to do |
 | --- | --- | --- |
 | `syntax error` | The sidecar does not parse. | Fix the source at the reported line. |
 | `type error` | The sidecar parses but does not elaborate. | Fix the named declaration. |
-| `internal error` | The verifier failed. | The outcome is [`unclear-trace`](#outcomes). |
+| `internal error` | Click detected its own failure. | Stop at [`internal-error`](#outcomes) and capture the command, version, output, and inputs. |
 | `proof error` | A checked operation could not establish something. | Follow the procedure below. |
 
 A proof error names its **goal**: the proposition that had to be true at a
@@ -127,7 +127,7 @@ and the inference is sound, but no supported primitive expresses it, stop at
 `missing-rule`. Give that inference for design discussion instead of repeatedly
 changing tactics or demanding intermediate facts with no rule to connect them.
 If a documented rule already covers the link and refuses it, use
-`failing-tactic` instead. If the mathematics itself is not established, use
+`tactic-bug` instead. If the mathematics itself is not established, use
 `unclear-goal`; a failed search alone is not evidence of a missing rule.
 
 ### One-step preservation must be fast
@@ -221,7 +221,7 @@ premises; it does not by itself certify that checking is fast.
    and `click docs NAME` prints its forms and documented behavior. A refusal
    may identify the tactic with `refused by:`; `refused by: nothing` means
    that the proof ended with the goal open. If a written primitive is refused
-   within its documented **Accepts** list, stop at `failing-tactic`.
+   within its documented **Accepts** list, stop at `tactic-bug`.
 
    To split a link that a smart tactic proved part of, read its trace: a step
    marked ``(from `implicit tail`)``, ``(from `solve`)`` or
@@ -235,7 +235,7 @@ premises; it does not by itself certify that checking is fast.
    nothing, the refusal says "this is a search miss" and its `refused by:`
    line says the search found nothing. State the missing fact with `have`
    first, or write the `using` form, and run again. Only the written form's
-   refusal can be `failing-tactic`.
+   refusal can be `tactic-bug`.
 
 Before each run, say in one line which link is new and why it should hold.
 Changing a tactic, its written form, or its position without changing the chain
@@ -260,30 +260,37 @@ The procedure ends at exactly one of these:
 | --- | --- |
 | `success` | The proof verifies. Keep the explicit links that the default automation needed; they document the argument. |
 | `false-goal` | `G` does not hold on some execution the contract admits. Give the counterexample: the claim, the contract, or the C is wrong, not the proof. |
-| `unclear-goal` | You cannot say why `G` holds. Give `G`, the premises, and what you tried. |
+| `unclear-goal` | You can read `G` and its premises, but have neither a justification nor a counterexample. Say why you expected the proof to work and identify the local gap in the argument. |
 | `missing-rule` | The premises and conclusion are expressible and the inference is justified, but no supported primitive connects them. Record the rule schema, the references checked, and the reduced example for design discussion. This is not established by a search miss alone. |
 | `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory syntax, or resource form. Report a bug. |
-| `failing-tactic` | Every link is written, and one link is a single simple tactic that is refused although the link is within what that tactic is documented to do. Report a bug. |
-| `unclear-trace` | The failure has no `goal:` line, the goal cannot be read (for example, it prints with placeholders such as `<unnamed A>` that no proof can name), or the refusal is not "goal `G` was not proved". Report a bug. |
+| `tactic-bug` | Click refuses a minimized simple tactic whose written premises justify its goal and whose documented **Accepts** list covers the link. Report a Click bug. |
+| `unclear-trace` | You could not determine what the output says was refused. Quote the output and identify what you could not determine. |
+| `internal-error` | Click printed `internal error`. Tell the user immediately that Click detected a verifier failure. A proof goal or a minimized tactic link is optional evidence. |
 
-A smart tactic that does not prove a link is never `failing-tactic`: smart
-tactics may miss even a primitive link; identify its rule and supply its premises. A search miss is never
-`failing-tactic` either: the argument is still to be written. `false-goal` and
-`unclear-goal` usually mean the claim, the contract, or the argument needs
-another look rather than that Click is wrong.
+The `failed check:` heading locates a refusal. The outcome depends on what
+the proof-repair investigation establishes. For a smart-tactic miss or a
+failed search for an omitted argument, identify the primitive and state
+its premises. Report diagnosis as in progress while checking the inference
+and its documented support. An `unclear-trace` leaves the reason for the
+refusal undetermined. File a diagnostic bug only when you can demonstrate
+a specific defect in the output.
 
 ### Reporting a bug
 
-The three bug outcomes, a crash, and a hang are defects in Click. Report one
-with the user's approval, as an issue at
+Report a Click defect with the user's approval as an issue at
 <https://github.com/clicklang/click/issues> that contains enough to reproduce
 it. Label the issue with its outcome (`tracing: inexpressible-fact`,
-`tracing: failing-tactic`, `tracing: unclear-trace`, `crash`, or `hang`), and
-start its title with it in brackets (`[failing-tactic] ...`, `[hang] ...`) so
+`tracing: tactic-bug`, `tracing: unclear-trace`, `tracing: internal-error`,
+`crash`, or `hang`), and
+start its title with it in brackets (`[tactic-bug] ...`, `[hang] ...`) so
 it shows even without permission to set labels.
 
-A crash or hang report contains what [Crashes and hangs](#crashes-and-hangs)
-lists. A report of one of the three outcomes contains:
+For `internal-error`, include the exact command, the `click --version` output,
+the full diagnostic, and the inputs needed to reproduce it. For a crash or
+hang, follow [Crashes and hangs](#crashes-and-hangs).
+
+For `tactic-bug`, `inexpressible-fact`, or a confirmed diagnostic defect
+found during `unclear-trace` triage, include:
 
 - the smallest C and Click that still fail, keeping the original source
   pattern, with the exact command and its output, including the `goal:` line;
@@ -293,9 +300,9 @@ lists. A report of one of the three outcomes contains:
 - the nearest passing link and what differs from it;
 - why the link holds, in one line of mathematics, and the step of that
   argument Click did not take; and
-- for `failing-tactic`, the item of that tactic's **Accepts** list that
-  covers the link, or for `unclear-trace`, what in the output is missing or
-  misleading.
+- for `tactic-bug`, the item of that tactic's **Accepts** list that
+  covers the link, or for a diagnostic defect, the specific missing or
+  misleading output and the evidence of the defect.
 
 ## Worked example
 
