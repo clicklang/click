@@ -19,13 +19,29 @@ pub(super) enum ArgumentTag {
     Value(ProgramType),
     Array(crate::kernel::program_point::ReadKey, ProgramType),
     Algebraic,
-    ProvenanceRead((u32, u32)),
-    PointerBoundsRead((u32, u32)),
+    ProvenanceRead(ReadKey),
+    PointerBoundsRead(ReadKey),
     PointerRootBounds,
     PointerSubobjectBounds,
     PointerCallProvenance,
     PointerCallBounds,
     Integer,
+}
+
+fn pointer_domain_read_key(read: &crate::kernel::LoadedPointerView) -> ReadKey {
+    if read.point.read_version_id().is_some() {
+        return read.point.congruence_read_key();
+    }
+    let source = crate::kernel::prelude::canonical_load_projection_source(
+        &read.defining_memory,
+        &read.defining_address,
+    );
+    ReadKey::Memory(
+        source
+            .as_ref()
+            .unwrap_or(&read.defining_memory)
+            .read_identity(),
+    )
 }
 
 /// The head an interned call gets: a pointer function's value, its
@@ -1828,17 +1844,11 @@ impl TermClasses {
             return *node;
         }
         if let Some(read) = origin.as_loaded_value() {
-            let source = crate::kernel::prelude::canonical_load_projection_source(
-                &read.defining_memory,
-                &read.defining_address,
-            )
-            .unwrap_or(read.defining_memory);
+            let key = pointer_domain_read_key(&read);
             let cell = self
                 .address(read.defining_address.base, read.defining_address.offset)
                 .0;
-            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerBoundsRead(
-                source.read_identity(),
-            )));
+            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::PointerBoundsRead(key)));
             let node = self.intern_node(Node::Apply(head, cell));
             self.bounds_origin_nodes.insert(origin, node);
             return node;
@@ -1941,15 +1951,12 @@ impl TermClasses {
         if let Some(node) = self.read_provenance_nodes.get(&origin) {
             return *node;
         }
-        if let crate::kernel::AddressBase::LoadedPointer(identity) = &origin.base
-            && let Some((memory, cell)) = crate::kernel::eval::registered_pointer_load(*identity)
-        {
-            let source = crate::kernel::prelude::canonical_load_projection_source(&memory, &cell)
-                .unwrap_or(memory);
-            let cell = self.address(cell.base, cell.offset).0;
-            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::ProvenanceRead(
-                source.read_identity(),
-            )));
+        if let Some(read) = origin.as_loaded_value() {
+            let key = pointer_domain_read_key(&read);
+            let cell = self
+                .address(read.defining_address.base, read.defining_address.offset)
+                .0;
+            let head = self.intern_node(Node::ArgumentTag(ArgumentTag::ProvenanceRead(key)));
             let node = self.intern_node(Node::Apply(head, cell));
             self.read_provenance_nodes.insert(origin, node);
             return node;

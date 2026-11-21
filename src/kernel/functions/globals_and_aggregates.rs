@@ -1300,11 +1300,11 @@ pub(super) fn copy_aggregate_fields_from(
                     | ProgramType::UInt32Pointer
                     | ProgramType::Int32PointerPointer
                     | ProgramType::UInt8PointerPointer => {
-                        // Keep the caller's entry version or the complete
-                        // typed store that supplies this pointer.
+                        // A complete pointer read keeps the recorded store
+                        // from which its address and domain can be recovered.
                         captured_point()
                             .and_then(|point| {
-                                crate::kernel::eval::point_named_pointer_cell_read(
+                                crate::kernel::eval::indexed_pointer_cell_read(
                                     point,
                                     &source_field,
                                     element_type,
@@ -1390,11 +1390,7 @@ fn copy_retained_aggregate_union_member<'a>(
     if element_type.is_object_pointer() {
         return captured_point()
             .and_then(|point| {
-                crate::kernel::eval::point_named_pointer_cell_read(
-                    point,
-                    source_field,
-                    element_type,
-                )
+                crate::kernel::eval::indexed_pointer_cell_read(point, source_field, element_type)
             })
             .map(ProgramValue::Pointer)
             .or_else(|| {

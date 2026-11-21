@@ -1593,7 +1593,6 @@ impl ProgramPoint {
     ) -> Option<Self> {
         match value_type {
             ProgramType::Int32 | ProgramType::UInt32 => self.external_entry_read(pointer, true),
-            value_type if value_type.is_object_pointer() => self.external_entry_read(pointer, true),
             ProgramType::Parameter(parameter) if !parameter.is_enum() => {
                 self.external_entry_read(pointer, true)
             }
@@ -1917,12 +1916,12 @@ mod tests {
         let version = select(&entry).expect("an ordinary entry version");
         assert_eq!(version.read_version_id(), entry.program_point().id());
         assert!(version.indexed_integer_store_bits().is_none());
-        let pointer_entry = entry
-            .program_point()
-            .ordinary_typed_version(&pointer, ProgramType::Int32Pointer)
-            .expect("an ordinary entry pointer version");
-        assert_eq!(pointer_entry, version);
-        assert!(pointer_entry.indexed_stored_value().is_none());
+        assert!(
+            entry
+                .program_point()
+                .ordinary_typed_version(&pointer, ProgramType::Int32Pointer)
+                .is_none()
+        );
         assert_ne!(select(&other_entry).unwrap(), version);
 
         let declared = entry

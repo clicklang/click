@@ -1152,7 +1152,7 @@ fn memory_only_adds_named_cells(
                 .as_loaded_value()
                 .is_some_and(|read| read.point.read_version_id().is_some())
         {
-            let expected = crate::kernel::eval::point_named_pointer_cell_read(
+            let expected = crate::kernel::eval::indexed_pointer_cell_read(
                 &source,
                 pointer,
                 named.program_type(),
