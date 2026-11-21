@@ -3586,7 +3586,9 @@ fn read_retained_lvalue_paths_without_ranges(
                     && (lvalue.value_type.is_object_pointer()
                         || matches!(
                             lvalue.value_type,
-                            ProgramType::Int16
+                            ProgramType::Int8
+                                | ProgramType::UInt8
+                                | ProgramType::Int16
                                 | ProgramType::UInt16
                                 | ProgramType::Int32
                                 | ProgramType::UInt32
@@ -3604,7 +3606,11 @@ fn read_retained_lvalue_paths_without_ranges(
                 .then(|| state.program_point());
                 let entry_read = origin.as_ref().and_then(|point| {
                     let entry = match lvalue.value_type {
-                        ProgramType::Int16 | ProgramType::UInt16 | ProgramType::Int32 => point
+                        ProgramType::Int8
+                        | ProgramType::UInt8
+                        | ProgramType::Int16
+                        | ProgramType::UInt16
+                        | ProgramType::Int32 => point
                             .entry_integer_version(pointer, LoadKind::of_type(lvalue.value_type)?),
                         ProgramType::Parameter(parameter) => {
                             point.generic_entry_version(pointer, parameter)
