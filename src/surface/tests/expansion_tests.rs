@@ -3707,6 +3707,30 @@ fn post_execution_closer_continues_the_proof_a_witness_opened() {
     assert!(!expanded.contains("have exists (len: int32)"), "{expanded}");
 }
 
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: expands and cold-verifies three symbolic alignment and tag proofs"]
+fn symbolic_pointer_alignments_and_tags_expand_without_normalize() {
+    for (fixture, label) in [
+        ("aligned_from_contract", "aligned_from_contract.contract"),
+        (
+            "aligned_struct_contract_casts",
+            "element_is_aligned.contract",
+        ),
+        ("tagged_pointer_round_trip", "tag_round_trip.contract"),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{label}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+    }
+}
+
 /// The `solve()` closing the loop's `maintain` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the

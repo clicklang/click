@@ -90,6 +90,46 @@ fn sum_operands(e: &E) -> Option<(E, E)> {
         _ => None,
     }
 }
+fn named_word(e: &E) -> bool {
+    match e {
+        E::Binding(_)
+        | E::ProgramBinding(_)
+        | E::Field { .. }
+        | E::Index(..)
+        | E::ArrayIndex { .. }
+        | E::ProgramExpression(
+            ProgramExpression::Variable(_)
+            | ProgramExpression::Load(_)
+            | ProgramExpression::TypedLoad { .. },
+        )
+        | E::CUnary {
+            lowered: ProgramExpression::Load(_) | ProgramExpression::TypedLoad { .. },
+            ..
+        } => true,
+        E::At { expression, .. } | E::Old(expression) => named_word(expression),
+        _ => false,
+    }
+}
+
+fn alignment_mask(expression: &E) -> Option<(E, &E)> {
+    match expression {
+        E::BitwiseAnd(base, mask) => Some((base.as_ref().clone(), mask)),
+        E::At {
+            selector,
+            expression,
+        } => {
+            let (base, mask) = alignment_mask(expression)?;
+            Some((
+                E::At {
+                    selector: selector.clone(),
+                    expression: Box::new(base),
+                },
+                mask,
+            ))
+        }
+        _ => None,
+    }
+}
 struct Words<'p, 'a> {
     input: &'p Proof<'a>,
     alignments: Vec<(E, u64, ClickProposition)>,
@@ -416,12 +456,8 @@ impl Words<'_, '_> {
         if !unsigned {
             return Ok(e.clone());
         }
-        if matches!(
-            e,
-            E::Binding(_)
-                | E::ProgramBinding(_)
-                | E::ProgramExpression(ProgramExpression::Variable(_))
-        ) && let ProgramValue::UInt64(word) = native.numeric_value()
+        if named_word(e)
+            && let ProgramValue::UInt64(word) = native.numeric_value()
         {
             let mut atoms = Vec::new();
             for source in self
@@ -769,6 +805,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_address_words_using");
+        if let Some(goal) = input.goal()
+            && goal.condition_native().is_some_and(|(condition, _)| {
+                crate::kernel::proof::arithmetic_special::checked_pointer_alignment(condition)
+                    .is_some()
+            })
+        {
+            let mut selected = Vec::new();
+            for premise in premises {
+                let premise =
+                    input.lower_cited_surface_proposition(premise, "alignment premise")?;
+                if !input.facts().listed_premise_available(&premise, &[], false) {
+                    return Ok(None);
+                }
+                selected.push(premise);
+            }
+            let facts = crate::kernel::proof::PureFactStore::from_ordered(&selected);
+            if crate::kernel::proof::arithmetic_special::known_pointer_alignment(
+                goal,
+                facts.assumptions(),
+            ) {
+                return input.driver().apply_step(ProofStep::Known).map(Some);
+            }
+        }
         let native_word_goal = input.goal().is_some_and(|p| {
             let Proposition::ConditionIs(c, _) = p else {
                 return false;
@@ -789,6 +848,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        let observe_word = |e: &E| -> Result<E, ClickError> {
+            if let E::Call { name, arguments } = e
+                && name == "to_integer"
+                && let [operand] = arguments.as_slice()
+                && matches!(
+                    input.capture_native_argument(operand)?.numeric_value(),
+                    ProgramValue::UInt64(_)
+                )
+            {
+                Ok(operand.clone())
+            } else {
+                Ok(e.clone())
+            }
+        };
+        let (left, right) = (observe_word(left)?, observe_word(right)?);
+        let (left, right) = (&left, &right);
         let mut words = Words {
             input,
             alignments: Vec::new(),
@@ -806,38 +881,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 left,
                 operator: ComparisonOperator::Equal,
                 right,
-            } = premise
-                && words.constant(right)? == Some(0)
-                && let E::BitwiseAnd(base, mask) = left
+            } = surface_comparison_with_anchored_operands(premise)
+                && words.constant(&right)? == Some(0)
+                && let Some((base, mask)) = alignment_mask(&left)
                 && let Some(mask) = words.constant(mask)?
             {
-                words
-                    .alignments
-                    .push((base.as_ref().clone(), mask, premise.clone()));
+                words.alignments.push((base, mask, premise.clone()));
             }
         }
         if words.alignments.is_empty() {
             return Ok(None);
-        }
-        fn leaf(e: &E) -> bool {
-            match e {
-                E::Binding(_)
-                | E::ProgramBinding(_)
-                | E::Field { .. }
-                | E::Index(..)
-                | E::ArrayIndex { .. }
-                | E::ProgramExpression(
-                    ProgramExpression::Variable(_)
-                    | ProgramExpression::Load(_)
-                    | ProgramExpression::TypedLoad { .. },
-                )
-                | E::CUnary {
-                    lowered: ProgramExpression::Load(_) | ProgramExpression::TypedLoad { .. },
-                    ..
-                } => true,
-                E::At { expression, .. } | E::Old(expression) => leaf(expression),
-                _ => false,
-            }
         }
         for premise in premises {
             let kernel = input.lower_cited_surface_proposition(premise, "address-word relation")?;
@@ -851,9 +904,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 right,
             } = premise
             {
-                if leaf(left) {
+                if named_word(left) {
                     words.aliases.push((left.clone(), right.clone()));
-                } else if leaf(right) {
+                } else if named_word(right) {
                     words.aliases.push((right.clone(), left.clone()));
                 }
             }
