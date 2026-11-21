@@ -31,8 +31,9 @@ The raise-lower headline counts a fact once per container, claim and
 rendering, however many steps restate it. A fact fails when it has no raised
 form (`unraised`), its raised form does not lower (`unlowered`), or it lowers
 to another term (`differs`) or the other polarity of the same comparison
-(`polarity`). Facts at no fixed program state cannot be raised there and are
-reported as not checkable. The fact-stability headline counts lowerings
+(`polarity`). A pure proof (a theorem, a lemma, a termination check) raises
+and lowers in its own context; a program proof's fact at no fixed program
+state cannot be raised there and is reported as not checkable. The fact-stability headline counts lowerings
 whose term facts changed (`differs`) or among whose paths facts chose
 (`paths`); `refused` lowerings are tracked.
 
