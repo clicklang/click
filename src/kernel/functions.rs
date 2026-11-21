@@ -20740,13 +20740,18 @@ fn evaluate_function_declared_resource_spec(
                 Err(error) => {
                     if let Some(mut diagnostic) = diagnostic {
                         if let (
-                            Some(spelling),
+                            Some((arguments, spelling)),
                             RuntimeError::ContractResourceDiagnostic { reason, .. },
                         ) = (
-                            source_arguments.and_then(|items| items.get(index)),
+                            source_arguments.and_then(|items| {
+                                items.get(index).map(|spelling| (items, spelling))
+                            }),
                             &mut diagnostic,
                         ) {
-                            *reason = format!("{reason}; expression `{spelling}`");
+                            *reason = format!(
+                                "{reason}; expression `{spelling}` in the clause for `{name}({})`",
+                                arguments.join(", ")
+                            );
                         }
                         return Ok(Err(diagnostic));
                     }

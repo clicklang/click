@@ -8515,13 +8515,27 @@ impl std::fmt::Display for RuntimeError {
 }
 
 impl RuntimeError {
+    /// The exact view requested by a load while evaluating a resource clause.
+    /// A comparison between held and required resources carries both operands.
+    pub(crate) fn missing_contract_read(&self) -> Option<&MemoryRange> {
+        match self {
+            Self::ContractResourceDiagnostic {
+                held: None,
+                required,
+                ..
+            } if required.is_view() => required.memory_range(),
+            _ => None,
+        }
+    }
+
     /// Whether evaluating or admitting the declared entry resources identified a
     /// violation of a contract rule.
     pub(crate) fn is_contract_entry_resource_error(&self) -> bool {
-        matches!(
-            self,
-            Self::InvalidContractResource(_) | Self::OverlappingOwnedMemoryResources { .. }
-        )
+        self.missing_contract_read().is_some()
+            || matches!(
+                self,
+                Self::InvalidContractResource(_) | Self::OverlappingOwnedMemoryResources { .. }
+            )
     }
 
     /// The sentence for [`RuntimeError::UnbackedReturnedView`], which the

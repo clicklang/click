@@ -3463,16 +3463,13 @@ impl OpenedContractEntry {
     pub(crate) fn open_contract_root(
         mut self,
         program: Option<&crate::kernel::ProgramContractBodies>,
-    ) -> Result<Self, RuntimeError> {
-        self.contract_root = Some(
-            match program {
-                Some(program) => {
-                    crate::kernel::WholeContractRoot::open_in_program(self.cases.clone(), program)
-                }
-                None => crate::kernel::WholeContractRoot::open(self.cases.clone()),
+    ) -> Result<Self, String> {
+        self.contract_root = Some(match program {
+            Some(program) => {
+                crate::kernel::WholeContractRoot::open_in_program(self.cases.clone(), program)?
             }
-            .map_err(RuntimeError::FunctionContract)?,
-        );
+            None => crate::kernel::WholeContractRoot::open(self.cases.clone())?,
+        });
         Ok(self)
     }
 
