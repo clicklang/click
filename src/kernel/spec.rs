@@ -8238,13 +8238,16 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         obligations,
                     )
                 } else {
-                    crate::kernel::eval::evaluate_logical_memory_load_paths(
+                    crate::kernel::eval::evaluate_logical_memory_load_paths_at(
                         memory_view,
                         pointer,
                         *value_type,
                         pointer_path.facts,
                         obligations,
                         assumptions,
+                        KernelFloatType::from_program_type(*value_type)
+                            .map(|_| read_point())
+                            .as_ref(),
                     )
                 };
                 if let Some((point, address)) = observation

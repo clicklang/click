@@ -114,7 +114,7 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
     volatile: bool,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
-    entry_origin: Option<&ProgramPoint>,
+    origin: Option<&ProgramPoint>,
 ) -> Vec<ExecutionValuePath> {
     let _assumptions_id_scope = assumptions.enter_id_scope();
     if has_pending_reallocation_for_pointer(memory, &pointer) {
@@ -150,7 +150,7 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
         &mut alias_cache,
         source,
         byte_order,
-        entry_origin,
+        origin,
     );
     if let Some(address) = word_storage {
         for path in &mut paths {
@@ -265,6 +265,26 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
+    evaluate_logical_memory_load_paths_at(
+        memory,
+        pointer,
+        value_type,
+        facts,
+        obligations,
+        assumptions,
+        None,
+    )
+}
+
+pub(in crate::kernel) fn evaluate_logical_memory_load_paths_at(
+    memory: &SymbolicMemory,
+    pointer: Address,
+    value_type: ProgramType,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    float_origin: Option<&ProgramPoint>,
+) -> Vec<ExpressionPath> {
     let mut paths = evaluate_logical_memory_load_paths_unbridged(
         memory,
         pointer.clone(),
@@ -272,6 +292,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
         facts,
         obligations,
         assumptions,
+        float_origin,
     );
     retain_indexed_scalar_cell_value(memory, &pointer, value_type, assumptions, &mut paths);
     #[cfg(test)]
@@ -451,11 +472,7 @@ fn exact_logical_read_value(
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
     if let Some(format) = KernelFloatType::from_program_type(value_type) {
-        return Some(format.value(MachineTerm::MemoryLoad(
-            point.for_exact_read(),
-            Box::new(pointer.clone()),
-            format.load_kind(),
-        )));
+        return Some(float_read_value(point, pointer, format));
     }
     if !logical_read_names_its_version(value_type) {
         return None;
@@ -490,6 +507,37 @@ fn exact_logical_read_value(
     Some(complete_loaded_word(value, point.memory(), pointer))
 }
 
+fn float_read_value(
+    point: ProgramPoint,
+    pointer: &Address,
+    format: KernelFloatType,
+) -> ProgramValue {
+    format.value(MachineTerm::MemoryLoad(
+        point.for_exact_read(),
+        Box::new(pointer.clone()),
+        format.load_kind(),
+    ))
+}
+
+/// Give a new symbolic float read the point where the read was taken.
+/// Alias-resolution views may discard cached cells while answering a load.
+fn point_named_symbolic_float_read(
+    origin: Option<&ProgramPoint>,
+    pointer: &Address,
+    value_type: ProgramType,
+) -> Option<ProgramValue> {
+    let format = KernelFloatType::from_program_type(value_type)?;
+    let origin = origin?;
+    if !matches!(
+        origin.observation_key(),
+        crate::kernel::program_point::ReadKey::Point(_)
+    ) {
+        return None;
+    }
+    record_load_access_width(origin.memory(), pointer, value_type.byte_width());
+    Some(float_read_value(origin.clone(), pointer, format))
+}
+
 fn evaluate_logical_memory_load_paths_unbridged(
     memory: &SymbolicMemory,
     pointer: Address,
@@ -497,7 +545,21 @@ fn evaluate_logical_memory_load_paths_unbridged(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
+    float_origin: Option<&ProgramPoint>,
 ) -> Vec<ExpressionPath> {
+    let symbolic_value = |facts: &mut ExecutionFacts| {
+        point_named_symbolic_float_read(float_origin, &pointer, value_type).or_else(|| {
+            canonicalized_symbolic_load_value_with_identity(
+                memory,
+                &pointer,
+                value_type,
+                facts,
+                assumptions,
+                None,
+                LoadPurpose::Logical,
+            )
+        })
+    };
     // The read keeps the address it was written with: lowering is
     // fact-stable (`docs/internals/raise-lower-principle.md`). A value stored under
     // another spelling of an equal address reaches the read through the
@@ -512,7 +574,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
         let _assumptions_id_scope = assumptions.enter_id_scope();
         // Logical reads denote state cells. Forward a forced-symbolic
         // request to the typed producer without performing a C read.
-        let mut paths = evaluate_memory_load_paths_with_alias_cache(
+        let paths = evaluate_retained_memory_load_paths_with_alias_cache(
             memory,
             pointer.clone(),
             value_type,
@@ -524,20 +586,17 @@ fn evaluate_logical_memory_load_paths_unbridged(
             &mut MemoryLoadAliasCache::default(),
             None,
             None,
+            float_origin,
         );
+        let mut paths: Vec<_> = paths
+            .into_iter()
+            .map(ExecutionValuePath::into_native)
+            .collect();
         for path in &mut paths {
             // An invalid typed read still denotes a logical value. The C
             // evaluator's refusal is retained only by checked evaluation.
             if matches!(path.outcome, ExpressionOutcome::RuntimeError(_))
-                && let Some(value) = canonicalized_symbolic_load_value_with_identity(
-                    memory,
-                    &pointer,
-                    value_type,
-                    &mut path.facts,
-                    assumptions,
-                    None,
-                    LoadPurpose::Logical,
-                )
+                && let Some(value) = symbolic_value(&mut path.facts)
             {
                 path.outcome = ExpressionOutcome::Value(value);
             }
@@ -609,17 +668,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
                     })
                 })
         })
-        .or_else(|| {
-            canonicalized_symbolic_load_value_with_identity(
-                memory,
-                &pointer,
-                value_type,
-                &mut facts,
-                assumptions,
-                None,
-                LoadPurpose::Logical,
-            )
-        });
+        .or_else(|| symbolic_value(&mut facts));
     facts.retain(|fact| !is_load_variable_defining_fact(fact.proposition()));
     value
         .into_iter()
@@ -843,7 +892,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
     alias_cache: &mut MemoryLoadAliasCache,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
-    entry_origin: Option<&ProgramPoint>,
+    origin: Option<&ProgramPoint>,
 ) -> Vec<ExecutionValuePath> {
     let mut distinct_case = None;
     let mut paths = evaluate_retained_memory_load_case(
@@ -859,7 +908,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
         alias_cache,
         source,
         byte_order,
-        entry_origin,
+        origin,
         true,
         &mut distinct_case,
     );
@@ -904,7 +953,7 @@ fn evaluate_retained_memory_load_paths_with_alias_cache(
             alias_cache,
             source,
             byte_order,
-            entry_origin,
+            origin,
             splits,
             &mut distinct_case,
         ));
@@ -944,12 +993,28 @@ fn evaluate_retained_memory_load_case(
     alias_cache: &mut MemoryLoadAliasCache,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
-    entry_origin: Option<&ProgramPoint>,
+    origin: Option<&ProgramPoint>,
     splits: bool,
     distinct_case: &mut Option<DistinctLoadCase>,
 ) -> Vec<ExecutionValuePath> {
     let branches_on_unresolved_aliases =
         splits && matches!(purpose, LoadPurpose::Program | LoadPurpose::VolatileProgram);
+    let symbolic_value =
+        |memory: &SymbolicMemory, facts: &mut ExecutionFacts, assumptions: &PureFactContext| {
+            point_named_symbolic_float_read(origin, &pointer, value_type)
+                .map(ExecutionValue::from)
+                .or_else(|| {
+                    canonicalized_retained_symbolic_load_value_with_identity(
+                        memory,
+                        &pointer,
+                        value_type,
+                        facts,
+                        assumptions,
+                        source,
+                        purpose,
+                    )
+                })
+        };
     let mut facts = facts;
     if purpose != LoadPurpose::Logical && memory.is_ended_local_address(&pointer) {
         return vec![ExpressionPath {
@@ -1053,18 +1118,14 @@ fn evaluate_retained_memory_load_case(
         && assumptions.should_force_symbolic_external_loads()
         && !matches!(value_type, ProgramType::Parameter(_))
     {
-        let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
+        let Some(value) = symbolic_value(
             if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
                 written
             } else {
                 memory
             },
-            &pointer,
-            value_type,
             &mut facts,
             assumptions,
-            source,
-            purpose,
         ) else {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
@@ -1301,7 +1362,7 @@ fn evaluate_retained_memory_load_case(
 
     let prefers_symbolic = assumptions.should_prefer_symbolic_external_loads();
     if allow_symbolic_external_load && (prefers_symbolic || reads_written_state) {
-        if let Some(origin) = entry_origin
+        if let Some(origin) = origin
             && let Some(version) = origin.entry_cell_version(&pointer, value_type)
         {
             return vec![
@@ -1314,18 +1375,14 @@ fn evaluate_retained_memory_load_case(
             // reduction path did before naming the value at the written state.
             record_load_access_width(memory, &pointer, value_type.byte_width());
         }
-        let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
+        let Some(value) = symbolic_value(
             if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
                 written
             } else {
                 memory
             },
-            &pointer,
-            value_type,
             &mut facts,
             assumptions,
-            source,
-            purpose,
         ) else {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
@@ -1430,7 +1487,7 @@ fn evaluate_retained_memory_load_case(
     }
 
     if pointer.has_symbolic_block() && allow_symbolic_external_load {
-        if let Some(origin) = entry_origin
+        if let Some(origin) = origin
             && let Some(version) = origin.entry_cell_version(&pointer, value_type)
         {
             return vec![
@@ -1438,15 +1495,7 @@ fn evaluate_retained_memory_load_case(
                     .map_value(Into::into),
             ];
         }
-        let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
-            &memory,
-            &pointer,
-            value_type,
-            &mut facts,
-            assumptions,
-            source,
-            purpose,
-        ) else {
+        let Some(value) = symbolic_value(&memory, &mut facts, assumptions) else {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
                     pointer: pointer.clone(),
@@ -1641,18 +1690,14 @@ fn evaluate_retained_memory_load_case(
                 // The cell may still hold some of the loaded bytes, so the
                 // load's value is its load over this state, which keeps
                 // the cell, and no further case is split from it.
-                let outcome = match canonicalized_retained_symbolic_load_value_with_identity(
+                let outcome = match symbolic_value(
                     if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
                         written
                     } else {
                         &memory
                     },
-                    &pointer,
-                    value_type,
                     &mut distinct_facts,
                     assumptions,
-                    source,
-                    purpose,
                 ) {
                     Some(value) => ExpressionOutcome::Value(value),
                     None => ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
@@ -1734,18 +1779,14 @@ fn evaluate_retained_memory_load_case(
                 obligations,
             }];
         }
-        let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
+        let Some(value) = symbolic_value(
             if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
                 written
             } else {
                 &memory
             },
-            &pointer,
-            value_type,
             &mut facts,
             assumptions,
-            source,
-            purpose,
         ) else {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
@@ -1841,18 +1882,14 @@ fn evaluate_retained_memory_load_case(
         }];
     }
 
-    let Some(value) = canonicalized_retained_symbolic_load_value_with_identity(
+    let Some(value) = symbolic_value(
         if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
             written
         } else {
             &memory
         },
-        &pointer,
-        value_type,
         &mut facts,
         assumptions,
-        source,
-        purpose,
     ) else {
         return vec![ExpressionPath {
             outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
@@ -9969,6 +10006,69 @@ mod float_conversion_load_tests {
 #[cfg(test)]
 mod float_memory_handoff_tests {
     use super::*;
+
+    #[test]
+    fn ordinary_symbolic_float_reads_keep_the_observation_point() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let first = ExecutionState::new().begin_function_entry_memory();
+        let second = first.clone().begin_function_entry_memory();
+        assert_eq!(first.memory(), second.memory());
+        assert_ne!(first.program_point_id(), second.program_point_id());
+
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            for state in [&first, &second] {
+                let origin = state.program_point();
+                let expected = format.value(MachineTerm::MemoryLoad(
+                    origin.clone().for_exact_read(),
+                    Box::new(address.clone()),
+                    format.load_kind(),
+                ));
+                let value_type = format.program_type();
+                let ordinary = PureFactContext::new().prefer_symbolic_external_loads();
+                let forced = ordinary.clone().force_symbolic_external_loads();
+                for assumptions in [&ordinary, &forced] {
+                    let logical = evaluate_logical_memory_load_paths_at(
+                        state.memory(),
+                        address.clone(),
+                        value_type,
+                        ExecutionFacts::new(),
+                        vec![],
+                        assumptions,
+                        Some(&origin),
+                    );
+                    let [path] = logical.as_slice() else {
+                        panic!("expected one logical read");
+                    };
+                    assert_eq!(path.outcome, ExpressionOutcome::Value(expected.clone()));
+                }
+
+                let program = evaluate_retained_memory_load_paths(
+                    state.memory(),
+                    address.clone(),
+                    value_type,
+                    ExecutionFacts::new(),
+                    vec![],
+                    &ordinary,
+                    true,
+                    false,
+                    None,
+                    None,
+                    Some(&origin),
+                );
+                let [path] = program.as_slice() else {
+                    panic!("expected one program read");
+                };
+                let ExpressionOutcome::Value(value) = &path.outcome else {
+                    panic!("expected a symbolic program value");
+                };
+                assert_eq!(value.native().as_ref(), &expected);
+            }
+        }
+    }
 
     #[test]
     fn float_cells_preserve_exact_bits_and_retained_load_roots() {
