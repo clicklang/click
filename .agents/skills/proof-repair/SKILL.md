@@ -29,7 +29,8 @@ it; shrink them if you can, but a report need not wait for that.
 
 - `syntax error` or `type error`: fix the reported source. This skill does not
   apply.
-- `internal error`: the outcome is `unclear-trace`.
+- `internal error`: stop at `internal-error`. Click has reported its own
+  failure. Capture the error, version, command, and inputs.
 - `proof error`: continue.
 
 ## 2. Record the goal
@@ -176,8 +177,11 @@ Stop at exactly one outcome:
   its written premises justify the goal, and the tactic's documented
   **Accepts** list in `click docs NAME` covers the link. Click still refuses
   it. Report the exact refusal and the applicable documentation.
-- `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the
-  refusal is not "`G` was not proved". Report a bug (below).
+- `unclear-trace`: a proof refusal has no `goal:` line, the goal cannot be
+  read, or the output obscures what the check refused. Report a diagnostic bug.
+- `internal-error`: Click itself reports `internal error`. Tell the user
+  immediately that Click detected a verifier failure. Use the original
+  diagnostic. A proof goal and a minimized tactic link are optional evidence.
 
 A `failed check:` heading identifies the check Click could not complete.
 To report a `tactic-bug`, show why the inference holds and cite the documented
@@ -187,8 +191,8 @@ premises, report that diagnosis is in progress. Use `unclear-goal` if you
 cannot justify the goal after investigation.
 
 In the outcome report, say explicitly what the result establishes about
-Click. `tactic-bug`, `inexpressible-fact`, `unclear-trace`, `crash`, and
-`hang` identify Click defects. An `unclear-trace` establishes a diagnostic
+Click. `tactic-bug`, `inexpressible-fact`, `unclear-trace`,
+`internal-error`, `crash`, and `hang` identify Click defects. An `unclear-trace` establishes a diagnostic
 defect and may leave the underlying proof issue open. `false-goal` and
 `unclear-goal` identify problems with the goal or argument. `missing-rule`
 identifies a gap in supported inference.
@@ -210,21 +214,25 @@ failure to the user, before asking for approval to file a bug.
 
 ## Reporting a bug
 
-The three bug outcomes, a crash, and a hang are defects in Click. To report
-one:
+Report a Click defect as follows:
 
 1. Get the user's approval before reporting it.
 2. Open an issue at https://github.com/clicklang/click/issues.
 3. Give the report below, enough for someone else to reproduce it.
 4. Label the issue with its outcome: `tracing: inexpressible-fact`,
-   `tracing: tactic-bug`, `tracing: unclear-trace`, `crash`, or `hang`.
+   `tracing: tactic-bug`, `tracing: unclear-trace`, `tracing: internal-error`,
+   `crash`, or `hang`.
    Start the title with it in brackets too (`[tactic-bug] ...`,
    `[hang] ...`), so it shows even where you cannot set labels.
 
 ## What a bug report contains
 
-A crash or hang report contains what its section above lists. A report of
-one of the three outcomes contains:
+For `internal-error`, give the exact command, `click --version`, the complete
+error output, and the inputs needed to reproduce it. Quote the message that
+identifies the verifier failure. For crashes and hangs, follow the requirements
+above.
+
+For `tactic-bug`, `inexpressible-fact`, or `unclear-trace`, give:
 
 - The smallest C and Click that still fail, with the original source pattern,
   and the exact command and its output, including the `goal:` line.

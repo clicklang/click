@@ -2,7 +2,7 @@
 
 This page is the procedure for repairing a failed proof from its diagnostic
 and `--trace-proof` output: find the goal that could not be proved, prove it
-through explicit intermediate goals, and stop at one of seven named outcomes. It
+through explicit intermediate goals, and stop at a named outcome. It
 replaces trial-and-error tactic variation with a decomposition that each
 attempt must advance.
 
@@ -11,13 +11,13 @@ is understood. This page is how you come to understand it.
 
 ## Every proof error has a goal
 
-Click reports four kinds of error. Only a proof error enters this procedure.
+Start with the terminal error kind. Use the proof steps below for a proof error.
 
 | Error kind | What it means | What to do |
 | --- | --- | --- |
 | `syntax error` | The sidecar does not parse. | Fix the source at the reported line. |
 | `type error` | The sidecar parses but does not elaborate. | Fix the named declaration. |
-| `internal error` | The verifier failed. | The outcome is [`unclear-trace`](#outcomes). |
+| `internal error` | Click detected its own failure. | Stop at [`internal-error`](#outcomes) and capture the command, version, output, and inputs. |
 | `proof error` | A checked operation could not establish something. | Follow the procedure below. |
 
 A proof error names its **goal**: the proposition that had to be true at a
@@ -264,7 +264,8 @@ The procedure ends at exactly one of these:
 | `missing-rule` | The premises and conclusion are expressible and the inference is justified, but no supported primitive connects them. Record the rule schema, the references checked, and the reduced example for design discussion. This is not established by a search miss alone. |
 | `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory syntax, or resource form. Report a bug. |
 | `tactic-bug` | Click refuses a minimized simple tactic whose written premises justify its goal and whose documented **Accepts** list covers the link. Report a Click bug. |
-| `unclear-trace` | The failure has no `goal:` line, the goal cannot be read (for example, it prints with placeholders such as `<unnamed A>` that no proof can name), or the refusal is not "goal `G` was not proved". Report a bug. |
+| `unclear-trace` | A proof refusal has no readable goal or obscures what the check refused. Report a diagnostic bug. |
+| `internal-error` | Click printed `internal error`. Tell the user immediately that Click detected a verifier failure. A proof goal or a minimized tactic link is optional evidence. |
 
 The `failed check:` heading locates a refusal. The outcome depends on what
 the proof-repair investigation establishes. For a smart-tactic miss or a
@@ -275,16 +276,19 @@ defect and may leave the underlying proof issue open.
 
 ### Reporting a bug
 
-The three bug outcomes, a crash, and a hang are defects in Click. Report one
-with the user's approval, as an issue at
+Report a Click defect with the user's approval as an issue at
 <https://github.com/clicklang/click/issues> that contains enough to reproduce
 it. Label the issue with its outcome (`tracing: inexpressible-fact`,
-`tracing: tactic-bug`, `tracing: unclear-trace`, `crash`, or `hang`), and
+`tracing: tactic-bug`, `tracing: unclear-trace`, `tracing: internal-error`,
+`crash`, or `hang`), and
 start its title with it in brackets (`[tactic-bug] ...`, `[hang] ...`) so
 it shows even without permission to set labels.
 
-A crash or hang report contains what [Crashes and hangs](#crashes-and-hangs)
-lists. A report of one of the three outcomes contains:
+For `internal-error`, include the exact command, the `click --version` output,
+the full diagnostic, and the inputs needed to reproduce it. For a crash or
+hang, follow [Crashes and hangs](#crashes-and-hangs).
+
+For `tactic-bug`, `inexpressible-fact`, or `unclear-trace`, include:
 
 - the smallest C and Click that still fail, keeping the original source
   pattern, with the exact command and its output, including the `goal:` line;
