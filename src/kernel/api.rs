@@ -7756,10 +7756,11 @@ impl FunctionContractRefinementObligations {
 
 /// Issues contract authority only from the exact closed ordinary proof obligation.
 pub(crate) fn prove_program_function_contract_refinement(
-    context: &FunctionContractRefinementContext,
+    obligations: &FunctionContractRefinementObligations,
     conclusion: Proposition,
     proof: &crate::kernel::proof::CheckedProposition,
 ) -> Option<VerifiedPureTheorem> {
+    let context = &obligations.context;
     let Proposition::Predicate { name, arguments } = &conclusion else {
         return None;
     };
@@ -7788,8 +7789,8 @@ pub(crate) fn prove_program_function_contract_refinement(
         return None;
     }
 
-    let obligations = prepare_contract_refinement_obligations(context)?;
-    if !proof.is_closed() || proof.proposition() != &obligations.proposition {
+    // Keep the original post-state point when checking the closed proof.
+    if !proof.is_closed() || proof.proposition() != obligations.proposition() {
         return None;
     }
     let theorem = match &context.source_contract {
