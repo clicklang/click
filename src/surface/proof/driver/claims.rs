@@ -4192,6 +4192,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         if let PostExecutionTactic::CloseOpen {
                             resource: ResourceClause::Named { binding, .. },
                             restoration: OpenResourceRestoration::Named(instance),
+                            ..
                         } = &deferred.tactic
                         {
                             named_open_templates.insert(binding.instance()?, instance);
@@ -4534,6 +4535,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::CloseOpen {
                                 resource,
                                 restoration,
+                                retain_deferred_body,
                             } => {
                                 if let ResourceClause::Named { binding, .. } = resource {
                                     named_open_templates.remove(&binding.instance()?);
@@ -4572,7 +4574,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     });
                                 outcome = closed.focused_outcome_state()?;
                                 outcome_proof = Some(closed);
-                                if tail.is_some() || named {
+                                if tail.is_some() || named || *retain_deferred_body {
                                     let deferred = ProofOpen::deferred_block_tail(
                                         resource.clone(),
                                         tail.map_or_else(Vec::new, |proof| {
