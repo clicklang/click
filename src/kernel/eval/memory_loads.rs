@@ -6041,6 +6041,50 @@ mod tests {
     }
 
     #[test]
+    fn a_checked_c_read_keeps_the_caller_pointer_cell_entry_version() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let ty = ProgramType::Int32Pointer;
+        let state = ExecutionState::new()
+            .begin_function_entry_memory()
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                ResourceFact::view_memory(MemoryRange::access(cell.clone(), ty)),
+            ));
+        let expression = ProgramExpression::Load(Box::new(ProgramExpression::Value(
+            ProgramValue::typed_pointer(cell.clone(), ProgramType::Int32PointerPointer),
+        )));
+        let paths = super::super::evaluate_expression_value_paths(
+            &state,
+            &expression,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one checked pointer read");
+        };
+        let ExpressionOutcome::Value(value) = &path.outcome else {
+            panic!(
+                "the caller supplies a readable pointer cell: {:?}",
+                path.outcome
+            );
+        };
+        let pointer = value.pointer().expect("complete pointer read");
+        let defining_read = pointer.address().as_loaded_value().expect("read identity");
+        assert_eq!(
+            defining_read.point.read_version_id(),
+            state.program_point_id()
+        );
+        assert_eq!(defining_read.defining_address, cell);
+        assert_eq!(defining_read.value_type, Some(ty));
+        assert_eq!(pointer.provenance(), pointer.address());
+        assert_eq!(pointer.bounds_owner(), Some(pointer.address()));
+    }
+
+    #[test]
     fn an_unwritten_entry_pointer_has_one_identity_for_address_and_domain() {
         let _session = crate::kernel::VerificationSession::enter();
         let state = ExecutionState::new().begin_function_entry_memory();
