@@ -7827,11 +7827,14 @@ fn synthesize_pointer_equality_operand(
     // An address can survive a later store while the complete pointer's
     // provenance still names the earlier read. Spell that value at the
     // state that introduced its domain. A memory-named load whose address
-    // and provenance agree still belongs to its original memory.
+    // and provenance agree needs an explicit state only for a historical read.
     let read_source = value.complete_read_source().or_else(|| {
         let read = address_read.as_ref()?;
-        (read.value_type.is_none() && value.provenance() == value.address())
-            .then(|| (read.defining_memory.clone(), read.defining_address.clone()))
+        (read.value_type.is_none()
+            && value.provenance() == value.address()
+            && read.defining_memory
+                != crate::kernel::intern_memory_ref(state.memory()).unchanged_bytes_source())
+        .then(|| (read.defining_memory.clone(), read.defining_address.clone()))
     });
     if let Some((source, address)) = read_source {
         let at_state = |state: &ExecutionState| {
