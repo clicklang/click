@@ -28,7 +28,7 @@ void copy_beside_view(uint8* dst, uint8* src, const uint8* q) {
         have separate(memory(dst[0..4]), memory(src[0..4])) by { known(); }
         step() by { known(); }
         have separate(statement(0).footprint, memory(src[0..4])) by {
-            normalize() using { separate(memory(dst[0..4]), memory(src[0..4])); };
+            solve() using { separate(memory(dst[0..4]), memory(src[0..4])); };
         }
         have contains(statement(0).footprint, statement(0).footprint) by {
             apply(click::separation::contains_refl(statement(0).footprint));

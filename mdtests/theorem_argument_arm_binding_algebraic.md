@@ -36,11 +36,11 @@ theorem depth_ok_of(t: Tree) {
         match t {
             Tree::Empty => {
                 unfold(depth_ok(Tree::Empty));
-                normalize();
+                known();
             }
             Tree::Node(id, value, left) => {
                 unfold(depth_ok(Tree::Node(id, value, left)));
-                normalize();
+                known();
             }
         }
     }

@@ -27,7 +27,7 @@ theorem adler_c_rust_results(c_bytes: uint8[], rust_bytes: uint8[], length: uint
    unfold(adler_spec_checksum_u64(rust_bytes, length, initial_a, initial_b));
    rewrite(adler_spec_a_u64(c_bytes, length, initial_a), adler_spec_a_u64(rust_bytes, length, initial_a));
    rewrite(adler_spec_b_u64(c_bytes, length, initial_a, initial_b), adler_spec_b_u64(rust_bytes, length, initial_a, initial_b));
-   normalize();
+   known();
   }
   apply(adler_result_widen(rust_result));
   have to_integer(c_result) == to_integer(rust_result as uint64) by solve() using {

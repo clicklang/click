@@ -21,8 +21,8 @@ int32 bump(int32 x) {
     step();
     mark after;
     step_until(function.exit);
-    have (old(x) as int32) == at(before, x) by normalize();
-    have (at(before, x) as int64) == old(x as int64) by normalize();
+    have (old(x) as int32) == at(before, x) by known();
+    have (at(before, x) as int64) == old(x as int64) by known();
     have ((at(after, x) - at(before, x)) as int32) == 1 by normalize();
     solve();
 }

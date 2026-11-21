@@ -63,8 +63,8 @@ void keep(const uint8* p, int32 n, int32 i) {
                         contains(memory(p[i..i + 4]), memory((p + i)[0..(i + 4) - i]));
                     };
                 }
-                have 0 <= 0 by { normalize(); }
-                have 0 <= 4 by { normalize(); }
+                have 0 <= 0 by { known(); }
+                have 0 <= 4 by { known(); }
                 have to_integer(4) <= to_integer((i + 4) - i) by { normalize(); }
                 have contains(memory((p + i)[0..(i + 4) - i]), memory((p + i)[0..4])) by {
                     apply(click::separation::contains_subrange(p + i, 0, (i + 4) - i, 0, 4)) using {

@@ -24,14 +24,14 @@ theorem block_have(n: int32) {
         let ih = induct(n);
         if n <= 0 {
             unfold(cd(n));
-            normalize() using { n <= 0; };
+            solve() using { n <= 0; };
         } else {
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);
             have cd(n - 1) == 0 by { apply(ih(n - 1)) using { 0 <= to_integer(n - 1); to_integer(n - 1) < to_integer(n); }; }
             unfold(cd(n));
             rewrite(cd(n - 1), 0);
-            normalize();
+            known();
         }
     }
 }
@@ -42,14 +42,14 @@ theorem bare_have(n: int32) {
         let ih = induct(n);
         if n <= 0 {
             unfold(cd(n));
-            normalize() using { n <= 0; };
+            solve() using { n <= 0; };
         } else {
             have 0 <= to_integer(n - 1);
             have to_integer(n - 1) < to_integer(n);
             have cd(n - 1) == 0 by apply(ih(n - 1));
             unfold(cd(n));
             rewrite(cd(n - 1), 0);
-            normalize();
+            known();
         }
     }
 }

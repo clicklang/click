@@ -21,7 +21,7 @@ int32 assoc(const uint8* b, uint64 n, uint64 d) {
     have to_integer(d) + 4 <= to_integer(n);
     have to_integer(d) + 4 <= 18446744073709551615;
     have (b + d) + 4u64 == b + (d + 4u64) by {
-        normalize() using { to_integer(d) + 4 <= 18446744073709551615; };
+        solve() using { to_integer(d) + 4 <= 18446744073709551615; };
     }
     have (b + d) + 4u64 == b + (d + 4u64);
     step_until(function.exit);

@@ -42,7 +42,7 @@ function depth_ok(t: Tree) -> int32 {
 theorem depth_ok_node(id: struct node*, value: int, left: Tree) {
     ensures depth_ok(Tree::Node(id, value, left)) == 1 by {
         unfold(depth_ok(Tree::Node(id, value, left)));
-        normalize();
+        known();
     }
 }
 

@@ -18,14 +18,14 @@ theorem sized_reparent_observations(tree: SizedTree, parent: struct rb_node*) {
                 rewrite(tree, SizedTree::Empty);
                 unfold(sized_reparent(SizedTree::Empty, parent));
                 unfold(sized_value(SizedTree::Empty));
-                normalize();
+                known();
             },
             SizedTree::Node(node, before, color, value, left, right) => {
                 rewrite(tree, SizedTree::Node(node, before, color, value, left, right));
                 unfold(sized_reparent(SizedTree::Node(node, before, color, value, left, right), parent));
                 unfold(sized_value(SizedTree::Node(node, parent, color, value, left, right)));
                 unfold(sized_value(SizedTree::Node(node, before, color, value, left, right)));
-                normalize();
+                known();
             },
         }
     }
@@ -35,14 +35,14 @@ theorem sized_reparent_observations(tree: SizedTree, parent: struct rb_node*) {
                 rewrite(tree, SizedTree::Empty);
                 unfold(sized_reparent(SizedTree::Empty, parent));
                 unfold(sized_counts_valid(SizedTree::Empty));
-                normalize();
+                known();
             },
             SizedTree::Node(node, before, color, value, left, right) => {
                 rewrite(tree, SizedTree::Node(node, before, color, value, left, right));
                 unfold(sized_reparent(SizedTree::Node(node, before, color, value, left, right), parent));
                 unfold(sized_counts_valid(SizedTree::Node(node, parent, color, value, left, right)));
                 unfold(sized_counts_valid(SizedTree::Node(node, before, color, value, left, right)));
-                normalize();
+                known();
             },
         }
     }
@@ -52,13 +52,13 @@ theorem sized_reparent_observations(tree: SizedTree, parent: struct rb_node*) {
                 rewrite(tree, SizedTree::Empty);
                 unfold(sized_reparent(SizedTree::Empty, parent));
                 unfold(sized_parent_is(SizedTree::Empty, parent));
-                normalize();
+                known();
             },
             SizedTree::Node(node, before, color, value, left, right) => {
                 rewrite(tree, SizedTree::Node(node, before, color, value, left, right));
                 unfold(sized_reparent(SizedTree::Node(node, before, color, value, left, right), parent));
                 unfold(sized_parent_is(SizedTree::Node(node, parent, color, value, left, right), parent));
-                normalize();
+                known();
             },
         }
     }
@@ -69,7 +69,7 @@ theorem sized_reparent_observations(tree: SizedTree, parent: struct rb_node*) {
                 unfold(sized_reparent(SizedTree::Empty, parent));
                 unfold(sized_shape(SizedTree::Empty));
                 unfold(rb_reparent(RbTree::Empty, parent));
-                normalize();
+                known();
             },
             SizedTree::Node(node, before, color, value, left, right) => {
                 rewrite(tree, SizedTree::Node(node, before, color, value, left, right));
@@ -77,7 +77,7 @@ theorem sized_reparent_observations(tree: SizedTree, parent: struct rb_node*) {
                 unfold(sized_shape(SizedTree::Node(node, parent, color, value, left, right)));
                 unfold(sized_shape(SizedTree::Node(node, before, color, value, left, right)));
                 unfold(rb_reparent(RbTree::Node(node, before, color, sized_shape(left), sized_shape(right)), parent));
-                normalize();
+                known();
             },
         }
     }

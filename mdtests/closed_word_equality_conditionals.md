@@ -20,8 +20,8 @@ theorem unsigned_words() {
 }
 
 theorem dead_arm() {
-    ensures (if 9u32 == 8u32 { 1u32 << 32u32 } else { 3u32 }) == 3u32 by normalize();
-    ensures (if 9u32 != 8u32 { 3u32 } else { 1u32 << 32u32 }) == 3u32 by normalize();
+    ensures (if 9u32 == 8u32 { 1u32 << 32u32 } else { 3u32 }) == 3u32 by known();
+    ensures (if 9u32 != 8u32 { 3u32 } else { 1u32 << 32u32 }) == 3u32 by known();
 }
 
 theorem pointer_control(p: int32*, q: int32*) {

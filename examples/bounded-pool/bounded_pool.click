@@ -249,7 +249,7 @@ void pool_grow(struct pool* pool, int32 amount) {
 } by {
     with(pool_control(pool)) {
         have defined(count(pool_slot(pool)) + amount);
-        have defined(pool->capacity) by { normalize(); }
+        have defined(pool->capacity) by { known(); }
         have defined(pool->capacity + amount);
         step();
         fold(amount of pool_slot(pool));

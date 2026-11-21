@@ -7,8 +7,8 @@ theorem adler_empty_remainder_position(total: int32, remaining: int32) {
  requires remaining == total;
  ensures to_integer(total - remaining) == 0 by {
   have 0 <= remaining by { rewrite(remaining, total); known(); }
-  have remaining <= total by { rewrite(remaining, total); normalize(); }
-  have to_integer(remaining) == to_integer(total) by { rewrite(remaining, total); normalize(); }
+  have remaining <= total by { rewrite(remaining, total); known(); }
+  have to_integer(remaining) == to_integer(total) by { rewrite(remaining, total); known(); }
   have to_integer(total - remaining) == to_integer(total) - to_integer(remaining);
   solve() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == to_integer(total); };
  }
@@ -18,9 +18,9 @@ theorem adler_complete_remainder_position(total: int32, remaining: int32) {
  requires 0 <= total;
  requires remaining == 0;
  ensures to_integer(total - remaining) == to_integer(total) by {
-  have 0 <= remaining by { rewrite(remaining, 0); normalize(); }
+  have 0 <= remaining by { rewrite(remaining, 0); known(); }
   have remaining <= total by { rewrite(remaining, 0); known(); }
-  have to_integer(remaining) == 0 by { rewrite(remaining, 0); normalize(); }
+  have to_integer(remaining) == 0 by { rewrite(remaining, 0); known(); }
   have to_integer(total - remaining) == to_integer(total) - to_integer(remaining);
   solve() using { to_integer(total - remaining) == to_integer(total) - to_integer(remaining); to_integer(remaining) == 0; };
  }

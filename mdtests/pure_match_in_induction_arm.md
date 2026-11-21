@@ -11,7 +11,7 @@ theorem copy_identity(xs: List<int32>, choice: Choice) {
     ensures copy(xs) == xs by {
         let ih = induct(xs);
         match xs {
-            List::Nil => { unfold(copy(List<int32>::Nil)); normalize(); },
+            List::Nil => { unfold(copy(List<int32>::Nil)); known(); },
             List::Cons(head, tail) => {
                 match choice {
                     Choice::C => { apply(ih(tail)); unfold(copy(List<int32>::Cons(head, tail))); solve(); },
