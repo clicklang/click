@@ -5937,6 +5937,34 @@ fn cpp_local_record_call_requirement_expands_and_replays() {
 }
 
 #[test]
+fn cpp_allocation_rewrites_expand_and_replay() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/cpp_generic_class_state_in_a_resource.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let inputs = crate::cli::prepare_mdtest_inputs(&fixture).unwrap();
+    let program = inputs.program_inputs();
+    let source = fixture.click_source.as_deref().unwrap();
+    let function = "__cpp_q_X8_537461636b3c543e_I4_push";
+    let claim = format!("{function}.contract");
+    let expanded = expand_claim_by_label(None, source, &program, &claim, None)
+        .unwrap_or_else(|error| panic!("{}", error.report()))
+        .source;
+    let project = crate::surface::ClickProject::new(
+        "proof.click",
+        [crate::surface::ClickModuleSource::new(
+            "proof.click",
+            &expanded,
+            [],
+        )],
+    );
+    check_audit_claim(&claim, true, || {
+        crate::surface::verify_project_functions(&project, &program, [function.to_owned()])
+            .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn expansion_keeps_explicit_return_fold_inside_with() {
     let (source, sources) = mdtest_sources("mdtests/with_accepts_an_already_restored_instance.md");
     let sources = crate::cli::source_refs(&sources);
