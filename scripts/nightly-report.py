@@ -25,6 +25,7 @@ counts are listed beside the previous night's, and a rise in an outcome that
 is not `same` is flagged.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -53,6 +54,9 @@ ENFORCED = {("fact-stability", "differs"), ("fact-stability", "paths")}
 # The counts whose rise is flagged: everything but a faithful round trip and
 # the number of items an audit checked.
 TRACKED_GOOD = {"same", "checked"}
+# How many newly failing lowering facts the report lists per audit; the rest
+# are in the audit's `<audit>.failures.tsv` artifact.
+NEW_LOWERING_LIMIT = 20
 HARNESSES = {("mdtests", "mdtests"): "mdtest", ("examples", "example_projects"): "example"}
 
 
@@ -185,6 +189,38 @@ def read_counts(directory):
     return counts
 
 
+def read_lowering_failures(directories):
+    """Each lowering audit's failures from `<audit>.failures.tsv`: one row per
+    distinct failing fact or lowering, with the command that reproduces it."""
+    failures = {}
+    for directory in directories:
+        for audit in LOWERING_AUDITS:
+            for row in read_tsv(directory / f"{audit}.failures.tsv"):
+                if len(row) < 7:
+                    continue
+                outcome, container, place, original = row[:4]
+                key = "\x1f".join((container, place, original))
+                failures.setdefault(audit, {})[hashlib.sha1(key.encode()).hexdigest()[:12]] = {
+                    "audit": audit, "outcome": outcome, "container": container,
+                    "place": place, "original": original, "reproduce": row[6],
+                }
+    return failures
+
+
+def new_lowering_failures(failures, previous):
+    """Tonight's lowering failures that did not fail on the previous night,
+    by audit; none when the previous night recorded no failure set for it."""
+    before = (previous or {}).get("lowering_failures", {})
+    new = {}
+    for audit, by_id in failures.items():
+        if audit not in before:
+            continue
+        known = set(before[audit])
+        rows = [row for key, row in sorted(by_id.items()) if key not in known]
+        new[audit] = {"count": len(rows), "rows": rows[:NEW_LOWERING_LIMIT]}
+    return new
+
+
 def first_record(directory, audit, outcome):
     """The fixture of the first `outcome` record `audit` wrote."""
     for row in read_tsv(directory / f"{audit}.tsv"):
@@ -282,6 +318,7 @@ def lowering_counts(counts, previous):
 def build(arguments):
     directories = [Path(d) for d in arguments.input if Path(d).is_dir()]
     failures, ran, timings, phases, jobs, counts = collect(directories)
+    lowering_failures = read_lowering_failures(directories)
     for job, result in jobs:
         own = JOB_KINDS.get(job, set())
         if result not in ("success", "skipped") and not any(
@@ -332,6 +369,8 @@ def build(arguments):
         "slowest": [{"id": key, "seconds": round(seconds, 2)}
                     for seconds, key in sorted(timings, reverse=True)[:SLOWEST]],
         "counts": lowering_counts(counts, previous),
+        "lowering_failures": {audit: sorted(by_id) for audit, by_id in lowering_failures.items()},
+        "new_lowering_failures": new_lowering_failures(lowering_failures, previous),
     }
     return report
 
@@ -411,6 +450,20 @@ def render(report):
                 change = f"**{change}** (rose)"
             lines.append(f"| {c['audit']} | `{c['outcome']}` | {c['count']} | {earlier} | {change} |")
         lines.append("")
+    for audit, new in sorted(report.get("new_lowering_failures", {}).items()):
+        lines += [f"## New {audit} failures", "",
+                  f"{new['count']} failing tonight that passed on the previous night"
+                  + (f"; the first {len(new['rows'])} are below, and every failure is in "
+                     f"`{audit}.failures.tsv` with its reproduce command."
+                     if new["count"] > len(new["rows"]) else "."), ""]
+        if new["rows"]:
+            lines += ["| Outcome | Container | Claim or site | Fact | Reproduce |",
+                      "|---|---|---|---|---|"]
+            for row in new["rows"]:
+                lines.append(f"| `{row['outcome']}` | `{cell(row['container'])}` | "
+                             f"`{cell(row['place'])}` | `{cell(row['original'])}` | "
+                             f"`{cell(row['reproduce'])}` |")
+            lines.append("")
     if report["slowest"]:
         lines += ["## Slowest checks", "", "| Check | Time |", "|---|---|"]
         lines += [f"| `{cell(s['id'])}` | {s['seconds']:.1f}s |" for s in report["slowest"]]

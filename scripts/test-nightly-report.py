@@ -191,4 +191,37 @@ with tempfile.TemporaryDirectory(prefix="click-nightly-report-") as directory:
     assert "**Lowering audits rose:** raise-lower `differs` 1201 → 1210" in markdown, markdown
     assert "| raise-lower | `differs` | 1210 | 1201 | **+9** (rose) |" in markdown, markdown
     assert "| raise-lower | `unlowered` | 360 | 367 | -7 |" in markdown, markdown
+
+    # A lowering failure new since the previous night is listed with the
+    # command that reproduces it; one that also failed then is not.
+    old_fact = ("unraised", "mdtests/a.md", "f.contract", "x == 1")
+    new_fact = ("differs", "mdtests/b.md", "g.contract", "y == 2")
+    (lowering / "raise-lower.failures.tsv").write_text("".join(
+        "\t".join(fact + ("raised", "", f"click audit raise-lower --claim {fact[2]} {fact[1]}")) + "\n"
+        for fact in (old_fact, new_fact)))
+    subprocess.run(
+        ["python3", "-I", str(Path(__file__).with_name("nightly-report.py")),
+         "--input", str(jobs), "--input", str(lowering), "--out", str(out), "--commit", "e" * 40],
+        check=True, capture_output=True, text=True,
+    )
+    first = json.loads((out / "report.json").read_text())
+    assert first["new_lowering_failures"] == {}, first["new_lowering_failures"]
+    ids = first["lowering_failures"]["raise-lower"]
+    assert len(ids) == 2, ids
+    import hashlib
+    old_id = hashlib.sha1("\x1f".join(old_fact[1:]).encode()).hexdigest()[:12]
+    previous.write_text(json.dumps({"commit": "0" * 40, "failures": [], "counts": [],
+                                    "lowering_failures": {"raise-lower": [old_id]}}))
+    subprocess.run(
+        ["python3", "-I", str(Path(__file__).with_name("nightly-report.py")),
+         "--input", str(jobs), "--input", str(lowering), "--previous", str(previous),
+         "--out", str(out), "--commit", "e" * 40],
+        check=True, capture_output=True, text=True,
+    )
+    report = json.loads((out / "report.json").read_text())
+    new = report["new_lowering_failures"]["raise-lower"]
+    assert new["count"] == 1 and new["rows"][0]["container"] == "mdtests/b.md", new
+    markdown = (out / "report.md").read_text()
+    assert "## New raise-lower failures" in markdown, markdown
+    assert "`click audit raise-lower --claim g.contract mdtests/b.md`" in markdown, markdown
 print("nightly report: synthetic run summarized")
