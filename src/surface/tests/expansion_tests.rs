@@ -25632,7 +25632,7 @@ fn local_byte_predicate_unfolds_expand_and_replay() {
     let expanded = expand_function_proof_source(&source, &sources, "copy_u")
         .expect("the copy should have an explicit local predicate proof");
     assert!(expanded.contains("old(src)"), "{expanded}");
-    without_implicit_solve_for_claim("copy_u.contract", || {
+    without_implicit_solve_for_claim("copy_u.ensures_0", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .expect("the expanded byte proof should replay independently");

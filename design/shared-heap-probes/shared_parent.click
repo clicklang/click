@@ -136,7 +136,7 @@ int32 parent_read_payload(struct parent* p) {
         ParentLink::Linked(entry_child) => {
             unfold(link);
             have old(p->kid) == entry_child;
-            open(child_control(p->kid)) { step_until(function.exit); }
+            with(child_control(p->kid)) { step_until(function.exit); }
             let link = fold(parent(p), { link: ParentLink::Linked(entry_child) });
             solve();
         },
@@ -208,7 +208,7 @@ int32 run_first_destroyed(int32 payload) {
     step(child_release);
     have first->kid == kid;
     have kid->payload == payload;
-    open(child_control(kid)) {
+    with(child_control(kid)) {
         have to_integer(count(child_ref(kid))) > 1;
         have 2 <= to_integer(kid->refs) by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
@@ -251,7 +251,7 @@ int32 run_first_destroyed(int32 payload) {
     have out == at(reading, second->kid->payload);
     have out == payload;
     have second->kid == kid;
-    open(child_control(kid)) {
+    with(child_control(kid)) {
         have 1 <= to_integer(kid->refs) by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
             solve();
@@ -286,7 +286,7 @@ int32 run_second_destroyed(int32 payload) {
     step(child_release);
     have second->kid == kid;
     have kid->payload == payload;
-    open(child_control(kid)) {
+    with(child_control(kid)) {
         have to_integer(count(child_ref(kid))) > 1;
         have 2 <= to_integer(kid->refs) by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
@@ -329,7 +329,7 @@ int32 run_second_destroyed(int32 payload) {
     have out == at(reading, first->kid->payload);
     have out == payload;
     have first->kid == kid;
-    open(child_control(kid)) {
+    with(child_control(kid)) {
         have 1 <= to_integer(kid->refs) by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
             solve();

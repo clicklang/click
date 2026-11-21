@@ -48,12 +48,22 @@ fn expand_function_proof_source(
     )
     .or_else(|error| {
         if error.message().contains("has no source `by` clause") {
-            expand_c_claim_source(
+            // The first written ensure, by its label: an `owns` clause's
+            // generated ensure comes first by index. A contract with no
+            // written ensure proves that generated one.
+            expand_c_claim_source_by_label(
                 click_source,
                 c_sources,
-                function,
-                ContractProofClaim::Ensure(0),
+                &format!("{function}.ensures_0"),
             )
+            .or_else(|_| {
+                expand_c_claim_source(
+                    click_source,
+                    c_sources,
+                    function,
+                    ContractProofClaim::Ensure(0),
+                )
+            })
         } else {
             Err(error)
         }
