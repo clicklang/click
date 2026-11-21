@@ -7328,6 +7328,13 @@ fn describe_byte_list(mut expression: &ContractExpression) -> Option<String> {
 }
 
 pub(super) fn describe_contract_expression(expression: &ContractExpression) -> String {
+    describe_contract_expression_grouping_casts(expression, true)
+}
+
+fn describe_contract_expression_grouping_casts(
+    expression: &ContractExpression,
+    group_cast: bool,
+) -> String {
     if matches!(expression, ContractExpression::Add(_, _)) {
         return describe_add_contract_expression(expression);
     }
@@ -7512,23 +7519,29 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                     pointee_volatile,
                     ..
                 } => {
-                    if pointee_struct.is_none()
+                    let cast = if pointee_struct.is_none()
                         && rust_spelling()
                         && let Some(spelling) = rust_scalar_spelling(target_type)
                     {
-                        return format!("({operand} as {spelling})");
+                        format!("{operand} as {spelling}")
+                    } else {
+                        let spelling = pointee_struct
+                            .as_ref()
+                            .map(|name| format!("struct {name} *"))
+                            .unwrap_or_else(|| {
+                                qualified_native_pointer_spelling(
+                                    crate::kernel::program_type_spelling(*target_type),
+                                    *pointee_constant,
+                                    *pointee_volatile,
+                                )
+                            });
+                        click_cast(&operand, &spelling)
+                    };
+                    if group_cast {
+                        format!("({cast})")
+                    } else {
+                        cast
                     }
-                    let spelling = pointee_struct
-                        .as_ref()
-                        .map(|name| format!("struct {name} *"))
-                        .unwrap_or_else(|| {
-                            qualified_native_pointer_spelling(
-                                crate::kernel::program_type_spelling(*target_type),
-                                *pointee_constant,
-                                *pointee_volatile,
-                            )
-                        });
-                    format!("({})", click_cast(&operand, &spelling))
                 }
                 ProgramExpression::PointerOffsetBytes { bytes, .. } => {
                     format!("byte_offset({operand}, {bytes})")
@@ -7645,9 +7658,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             format!("-{}", describe_contract_expression(expression))
         }
         ContractExpression::Add(_, _) => unreachable!("addition is rendered iteratively above"),
-        ContractExpression::Subtract(left, right) => {
-            describe_binary_contract_expression(left, "-", right)
-        }
+        ContractExpression::Subtract(left, right) => format!(
+            "({} - {})",
+            describe_additive_operand(left),
+            describe_additive_operand(right)
+        ),
         ContractExpression::Multiply(left, right) => {
             describe_binary_contract_expression(left, "*", right)
         }
@@ -7838,6 +7853,13 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
     }
 }
 
+/// A cast binds more tightly than addition and subtraction. Its own operand
+/// still needs grouping when it contains arithmetic, but grouping the cast
+/// itself adds another level at every step of an unfolded recurrence.
+fn describe_additive_operand(expression: &ContractExpression) -> String {
+    describe_contract_expression_grouping_casts(expression, false)
+}
+
 fn describe_add_contract_expression(expression: &ContractExpression) -> String {
     // The parser already associates a flat sum to the left. Walk only that
     // spine: reassociating the right operand could change C overflow or
@@ -7849,10 +7871,10 @@ fn describe_add_contract_expression(expression: &ContractExpression) -> String {
         rights.push(second.as_ref());
         left = first;
     }
-    let mut output = format!("({}", describe_contract_expression(left));
+    let mut output = format!("({}", describe_additive_operand(left));
     for right in rights.into_iter().rev() {
         output.push_str(" + ");
-        output.push_str(&describe_contract_expression(right));
+        output.push_str(&describe_additive_operand(right));
     }
     output.push(')');
     output

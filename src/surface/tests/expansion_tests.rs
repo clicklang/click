@@ -1271,6 +1271,19 @@ fn tactic_argument_obligation_expands_and_replays_without_implicit_solve() {
 }
 
 #[test]
+fn recursive_byte_unfolds_expand_within_the_parser_nesting_limit() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_recursive_byte_function_evaluates_automatically.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "greet.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn fold_initializer_obligation_expands_and_replays_without_implicit_solve() {
     let (source, sources) = mdtest_sources("mdtests/fold_initializer_obligation.md");
     let sources = sources
