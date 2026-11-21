@@ -21292,6 +21292,63 @@ fn loop_otherwise_expands_without_by() {
     verify_c_sources(&expanded, &sources).unwrap();
 }
 
+#[test]
+fn loop_maintain_expansion_preserves_pointer_arm_binding() {
+    let sources = [(
+        "spin.c",
+        r#"
+            struct node { unsigned long word; };
+            unsigned long spin(struct node *p, int n) {
+                while (n > 0) { n = n - 1; }
+                return p->word;
+            }
+        "#,
+    )];
+    let source = r#"
+        verifying "spin.c";
+        spec enum Tree { Empty, Node(struct node*) }
+        resource tree_at(p: struct node*) {
+            field model: Tree;
+            match model {
+                Tree::Empty => { fact p == 0; },
+                Tree::Node(id) => {
+                    owns p->word;
+                    fact p != 0;
+                    fact p == id;
+                },
+            }
+        }
+        unsigned long spin(struct node* p, int n) {
+            owns t: tree_at(p);
+            requires n >= 0;
+            requires t.model != Tree::Empty;
+            ensures t.model == old(t.model);
+        } by {
+            match t.model {
+                Tree::Empty => { contradiction(t.model == Tree::Empty); },
+                Tree::Node(id) => {
+                    loop {
+                        decreases n;
+                        owns t: tree_at(p);
+                        invariant n >= 0;
+                        invariant t.model == Tree::Node(id);
+                        initialize by solve();
+                        maintain by { step(); }
+                    }
+                    step();
+                    solve();
+                },
+            }
+        }
+    "#;
+    verify_c_sources(source, &sources).expect("the original proof checks");
+    let expanded = expand_c_claim_source_by_label(source, &sources, "spin.loop(0).maintain")
+        .expect("the maintain proof expands with its match-arm binding");
+    let (_, phase) = expanded.split_once("maintain by {").unwrap();
+    assert!(phase.contains("Tree::Node(id)"), "{phase}");
+    verify_c_sources(&expanded, &sources).expect("the expanded proof checks");
+}
+
 /// A loop phase written in a grouped proof's `loop` tactic is a claim of its
 /// own: its label, and a line of its proof, select just that phase, and the
 /// expansion replaces only the phase's `by` clause with its checked
