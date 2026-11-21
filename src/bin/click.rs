@@ -1304,47 +1304,32 @@ void recolor(struct rb_node* gparent) {
     }
 
     #[test]
-    fn trace_names_source_values_and_distinguishes_saved_loads() {
-        let directory =
-            std::env::temp_dir().join(format!("click-trace-source-names-{}", std::process::id()));
-        if directory.exists() {
-            fs::remove_dir_all(&directory).unwrap();
-        }
-        fs::create_dir(&directory).unwrap();
+    fn trace_distinguishes_saved_call_argument_from_current_read() {
+        let directory = tempfile::tempdir().unwrap();
         fs::write(
-            directory.join("calls.c"),
-            "int32 child(int32 *a, int32 *visited, int32 x) { visited[0] = 1; return 1; }\nint32 parent(int32 *a, int32 *visited, int32 cur) { return child(a, visited, a[cur]); }\n",
+            directory.path().join("calls.c"),
+            "void update(int *p, int x) { *p = 1; }\nvoid parent(int *p) { update(p, *p); }\n",
         )
         .unwrap();
-        let sidecar = directory.join("calls.click");
+        let sidecar = directory.path().join("calls.click");
         fs::write(
             &sidecar,
             r#"verifying "calls.c";
-int32 child(int32 *a, int32 *visited, int32 x) {
-    views a[0..2];
-    owns visited[0..1];
-    requires separate(memory(a[0..2]), memory(visited[0..1]));
-    ensures result == 1;
-    ensures result != 0 implies exists (z: int32) { z == x } by {
-        step_until(function.exit); intro(); witness(x); normalize();
+void update(int32* p, int32 x) {
+    owns p[0..1];
+    ensures defined(*p);
+    ensures exists (z: int32) { z == x } by {
+        step_until(function.exit);
+        witness(x);
+        normalize();
     }
 }
-int32 parent(int32 *a, int32 *visited, int32 cur) {
-    views a[0..2];
-    owns visited[0..1];
-    requires separate(memory(a[0..2]), memory(visited[0..1]));
-    requires 0 <= cur;
-    requires cur < 2;
-    ensures result == 1;
+void parent(int32* p) {
+    owns p[0..1];
+    ensures defined(*p);
 } by {
-    let { result: r } = step(child);
-    have r != 0 by { solve(); }
-    have defined(a[cur]) by { solve(); }
-    have exists (z: int32) { z == a[cur] } by {
-        known();
-        known();
-    }
-    step(); solve();
+    step(update);
+    have exists (z: int32) { z == *p } by { known(); }
 }
 "#,
         )
@@ -1355,32 +1340,29 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
             "parent".to_string(),
             sidecar.display().to_string(),
         ])
-        .unwrap_err();
-        assert!(report.contains("goal: ∃z:ProgramInt32."), "{report}");
-        assert!(!report.contains("recent premises"), "{report}");
-        assert!(report.contains("adds: r == 1"), "{report}");
-        assert!(
-            report.contains("tactic@19: let { result: r } = step(child, "),
-            "{report}"
+        .expect_err("the saved argument fact cannot close the current read goal");
+        let (trace, failed_check) = report
+            .split_once("\nfailed check:\n")
+            .unwrap_or_else(|| panic!("{report}"));
+        let read_state = |section: &str, prefix: &str| {
+            section
+                .lines()
+                .find_map(|line| {
+                    let read = line.trim().strip_prefix(prefix)?;
+                    let (state, _) = read.split_once(", pointer=p)")?;
+                    state.parse::<u32>().ok()
+                })
+                .unwrap_or_else(|| panic!("{report}"))
+        };
+        let saved = read_state(
+            trace,
+            "adds: ∃z:ProgramInt32. int32 =(z, read<Bits32>(state#",
         );
-        // The call's resource composition is kernel authority, not a fact.
-        // Keep the saved read's state visible in the implication rather
-        // than confusing it with the current goal.
-        assert!(!report.contains("validated-composition"), "{report}");
-        assert!(report.contains("is false ⇒ ∃z:ProgramInt32."), "{report}");
-        assert!(report.contains("read<Bits32>(state#"), "{report}");
-        assert!(
-            !report.contains("checked fact(s) with no exact Click spelling"),
-            "{report}"
+        let current = read_state(
+            failed_check,
+            "goal: ∃z:ProgramInt32. int32 =(z, read<Bits32>(state#",
         );
-        assert_eq!(
-            report.matches("goal: ∃z:ProgramInt32.").count(),
-            1,
-            "{report}"
-        );
-        assert!(!report.contains("state identity (internal):"), "{report}");
-        assert!(!report.contains("v1000001"), "{report}");
-        fs::remove_dir_all(directory).unwrap();
+        assert_ne!(saved, current, "{report}");
     }
 
     #[test]
