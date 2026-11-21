@@ -148,7 +148,7 @@ fn compare_uncharged(site: &str, with_facts: &Proposition, fact_free: &FactFree)
 }
 
 /// The running thread's name, which names the mdtest fixture under
-/// `scripts/fact-stability.sh`.
+/// `scripts/audit.sh fact-stability`.
 fn thread_name() -> String {
     std::thread::current().name().unwrap_or("").to_string()
 }

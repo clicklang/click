@@ -7,7 +7,7 @@
 //! (`Proof::structural_proposition_candidate`: the step's fixed state, its
 //! entry state and the path's recorded points). It lowers
 //! that Surface form again in the same proof and appends one line saying how the
-//! round trip ended. `scripts/raise-lower.sh` runs the corpus under it.
+//! round trip ended. `scripts/audit.sh raise-lower` runs the corpus under it.
 //!
 //! This checks the canonical Surface form. The raise-lower census separately
 //! measures facts that cannot be raised; a mismatch here is a raised form

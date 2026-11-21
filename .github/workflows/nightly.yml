@@ -1,13 +1,18 @@
 name: nightly
 
-# Production builds, Clippy, CLI behavior, and everything the budgeted gate
-# leaves out. The `nightly` job runs the tests
-# marked `#[ignore = "nightly: ..."]`, the nightly examples, `click audit` in
-# the import tests, and the live Charon re-extraction. The `audit` job
-# expands and reverifies every smart tactic in the examples and mdtests. The
-# `lowering` job runs the mdtests under the fact-stability audit, which the
-# report enforces, and the raise/lower audit, whose counts it tracks. None
-# has a time budget.
+# Everything the budgeted gate leaves out, as four parallel jobs:
+#
+#   slow-tests            production builds, Clippy, CLI behavior, the tests
+#                         marked `#[ignore = "nightly: ..."]`, the nightly
+#                         examples and the live Charon re-extraction
+#   expansion-audit       every smart tactic in the examples and mdtests
+#                         expands to a simple proof that verifies
+#   raise-lower-audit     every fact and goal round-trips through Surface
+#   fact-stability-audit  lowering never depends on facts
+#
+# The three audits are `click audit <audit>` (`scripts/audit.sh`). The report
+# fails on expansion and fact-stability failures and tracks the raise-lower
+# counts night to night. None has a time budget.
 on:
   schedule:
     - cron: '17 6 * * *'
@@ -18,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  nightly:
+  slow-tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
@@ -58,11 +63,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: nightly-results
+          name: slow-tests-results
           path: ${{ runner.temp }}/nightly-report
           if-no-files-found: ignore
 
-  audit:
+  expansion-audit:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
@@ -80,18 +85,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release
-      - name: Audit every smart tactic in the repository
+      - name: Audit expansion of every smart tactic
         env:
           CLICK_NIGHTLY_REPORT_DIR: ${{ runner.temp }}/nightly-report
-        run: scripts/check.sh --audit
+        run: scripts/check.sh --audit expansion
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: audit-results
+          name: expansion-audit-results
           path: ${{ runner.temp }}/nightly-report
           if-no-files-found: ignore
 
-  lowering:
+  raise-lower-audit:
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
@@ -102,8 +107,33 @@ jobs:
           key: ${{ runner.os }}-click-tools-${{ hashFiles('scripts/tools.sh') }}
       - uses: actions/cache@v4
         with:
-          path: ~/.cargo/bin/cargo-nextest
-          key: ${{ runner.os }}-click-nextest-${{ hashFiles('scripts/setup-environment.sh') }}
+          path: ~/.cache/click/llvm
+          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh', 'scripts/cache-llvm.sh') }}
+      - name: Set up full test environment
+        run: scripts/setup-environment.sh
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+      - name: Audit the raise-lower round trip of every fact and goal
+        env:
+          CLICK_NIGHTLY_REPORT_DIR: ${{ runner.temp }}/nightly-report
+        run: scripts/check.sh --audit raise-lower
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: raise-lower-audit-results
+          path: ${{ runner.temp }}/nightly-report
+          if-no-files-found: ignore
+
+  fact-stability-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/click/tools
+          key: ${{ runner.os }}-click-tools-${{ hashFiles('scripts/tools.sh') }}
       - uses: actions/cache@v4
         with:
           path: ~/.cache/click/llvm
@@ -111,14 +141,16 @@ jobs:
       - name: Set up full test environment
         run: scripts/setup-environment.sh
       - uses: Swatinem/rust-cache@v2
-      - name: Run the fact-stability and raise/lower audits
+        with:
+          key: release
+      - name: Audit that lowering never depends on facts
         env:
           CLICK_NIGHTLY_REPORT_DIR: ${{ runner.temp }}/nightly-report
-        run: scripts/check.sh --lowering
+        run: scripts/check.sh --audit fact-stability
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lowering-results
+          name: fact-stability-audit-results
           path: ${{ runner.temp }}/nightly-report
           if-no-files-found: ignore
 
@@ -128,7 +160,7 @@ jobs:
   # shares no history with `master`, and shown on the run page
   # (docs/internals/testing.md, "Nightly report").
   report:
-    needs: [nightly, audit, lowering]
+    needs: [slow-tests, expansion-audit, raise-lower-audit, fact-stability-audit]
     if: always()
     runs-on: ubuntu-24.04
     permissions:
@@ -141,10 +173,12 @@ jobs:
       - name: Record job results
         run: |
           mkdir -p "$RUNNER_TEMP/results/jobs"
-          printf 'nightly\t%s\naudit\t%s\nlowering\t%s\n' \
-            '${{ needs.nightly.result }}' '${{ needs.audit.result }}' \
-            '${{ needs.lowering.result }}' \
-            > "$RUNNER_TEMP/results/jobs/jobs.tsv"
+          {
+            printf 'slow-tests\t%s\n' '${{ needs.slow-tests.result }}'
+            printf 'expansion-audit\t%s\n' '${{ needs.expansion-audit.result }}'
+            printf 'raise-lower-audit\t%s\n' '${{ needs.raise-lower-audit.result }}'
+            printf 'fact-stability-audit\t%s\n' '${{ needs.fact-stability-audit.result }}'
+          } > "$RUNNER_TEMP/results/jobs/jobs.tsv"
       - name: Build the report
         run: |
           if git fetch --depth 1 origin nightly-reports; then

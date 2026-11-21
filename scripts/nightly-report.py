@@ -10,8 +10,10 @@ Reads the result directories the nightly jobs fill when
   junit-*.xml  nextest's JUnit results for each nightly test run
   phases.tsv   `name<TAB>seconds<TAB>exit status` per phase
   jobs.tsv     `job<TAB>result` written by the workflow
-  counts.tsv   `audit<TAB>outcome<TAB>count` from `scripts/lowering-audits.sh`,
-               with `fact-stability.tsv` holding that audit's own records
+  counts.tsv   `audit<TAB>outcome<TAB>count` from `scripts/audit.sh`: each
+               lowering audit's headline numbers (`failing`, `checked`,
+               `tracked`, `changed`) and outcome counts, with `<audit>.tsv`
+               holding that audit's own records
 
 and writes `report.md` and `report.json` to `--out`. With `--previous` (the
 last night's `report.json`) each failure is marked new or persisting, and
@@ -37,15 +39,20 @@ UNIT_ENV = "RUST_MIN_STACK=8388608 CLICK_NIGHTLY=1"
 # The checks each workflow job records, to tell a job that failed without
 # recording any of them (a build error, a crash, a timeout).
 JOB_KINDS = {
-    "nightly": {"mdtest", "example", "test", "clippy"},
-    "audit": {"audit"},
-    "lowering": {"lowering"},
+    "slow-tests": {"mdtest", "example", "test", "clippy"},
+    "expansion-audit": {"audit"},
+    "raise-lower-audit": {"lowering"},
+    "fact-stability-audit": {"lowering"},
 }
 # The lowering audits' phases, and the fact-stability outcomes that fail.
-LOWERING_AUDITS = {"fact-stability": "scripts/fact-stability.sh", "raise-lower": "scripts/raise-lower.sh"}
+LOWERING_AUDITS = {
+    "fact-stability": "scripts/audit.sh fact-stability",
+    "raise-lower": "scripts/audit.sh raise-lower",
+}
 ENFORCED = {("fact-stability", "differs"), ("fact-stability", "paths")}
-# The outcomes whose rise is flagged: everything but a faithful round trip.
-TRACKED_GOOD = {"same"}
+# The counts whose rise is flagged: everything but a faithful round trip and
+# the number of items an audit checked.
+TRACKED_GOOD = {"same", "checked"}
 HARNESSES = {("mdtests", "mdtests"): "mdtest", ("examples", "example_projects"): "example"}
 
 
@@ -82,6 +89,8 @@ def reproduce(kind, name, binary=None):
                 f"-E {shell_quote(f'test(={name})')}")
     if kind == "clippy":
         return "cargo clippy --all-targets -- -D warnings"
+    if kind == "job" and name.endswith("-audit"):
+        return f"scripts/check.sh --audit {name[:-len('-audit')]}"
     return "scripts/check.sh --nightly"
 
 
@@ -245,8 +254,8 @@ def collect(directories):
             if phase["status"] != 0:
                 failures[key] = {
                     "kind": "lowering", "name": f"{phase['name']} run",
-                    "summary": f"the mdtest corpus exited {phase['status']} under the audit; "
-                               "an audit must not change a proof's outcome",
+                    "summary": "a proof container verified differently from its expectation "
+                               "under the audit; an audit must not change a proof's outcome",
                     "seconds": phase["seconds"], "reproduce": reproduce("lowering", phase["name"]),
                 }
         if phase["name"] == "clippy" and phase["status"] != 0:
@@ -289,8 +298,11 @@ def build(arguments):
     if arguments.previous and Path(arguments.previous).is_file():
         previous = json.loads(Path(arguments.previous).read_text())
     previous_ids = {f["id"] for f in previous["failures"]} if previous else set()
-    audit_ran = any(job == "audit" and result in ("success", "failure") for job, result in jobs)
-    lowering_ran = any(job == "lowering" and result in ("success", "failure") for job, result in jobs)
+    audit_ran = any(job == "expansion-audit" and result in ("success", "failure") for job, result in jobs)
+    lowering_ran = any(
+        job in ("raise-lower-audit", "fact-stability-audit") and result in ("success", "failure")
+        for job, result in jobs
+    )
     for key, failure in failures.items():
         failure["id"] = key
         failure["status"] = "persisting" if key in previous_ids else ("new" if previous else "unknown")
