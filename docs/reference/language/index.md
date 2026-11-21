@@ -4241,8 +4241,8 @@ only: `exact(p[i]->next)` reads `->next` exactly through the ordinary read of
 
 <!-- verified-example: mdtests/an_exact_read_of_an_unchanged_cell_equals_its_ordinary_read.md -->
 ```click
-have exact(p[0]) == p[0] by normalize();
-have old(exact(p[0])) == old(p[0]) by normalize();
+have exact(p[0]) == p[0] by known();
+have old(exact(p[0])) == old(p[0]) by known();
 ```
 
 `exact` grants no access permission and adds no facts. A C read after it

@@ -22,23 +22,23 @@ void scalars(int32 value) {
     ensures true;
 } by {
     step_until(statement(2).entry);
-    have statement(0).result == statement(1).read_event(0).result by normalize();
-    have statement(1).read_event(0).result == statement(1).read_event(1).result by normalize();
+    have statement(0).result == statement(1).read_event(0).result by known();
+    have statement(1).read_event(0).result == statement(1).read_event(1).result by known();
     step_until(function.exit);
-    have statement(0).read_event(0).result == old(value) by normalize();
+    have statement(0).read_event(0).result == old(value) by known();
 }
 int32 *pointer_result(int32 **cell) {
     views *cell;
     ensures result == 0;
 } by {
     step_until(statement(1).entry);
-    have statement(0).result == saved by normalize();
+    have statement(0).result == saved by known();
     step_until(function.exit);
-    have statement(0).read_event(0).result == statement(0).result by normalize();
+    have statement(0).read_event(0).result == statement(0).result by known();
 }
 int32 returned(int32 value) { ensures result == value; } by {
     step_until(function.exit);
-    have statement(0).result == result by normalize();
+    have statement(0).result == result by known();
 }
 ```
 
