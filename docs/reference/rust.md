@@ -1295,12 +1295,13 @@ arithmetic operands and enum call results. When the importer still lowers
 an unnamed MIR local as a binding, its compiler identity can change when
 the artifact is refreshed.
 
-A materialized array literal, such as the array in `read(&[x, 7])`,
+A materialized array or struct literal, such as the array in `read(&[x, 7])`,
 can be named as `f.compound_literal(i)`. The index counts written array
-literals in the function from zero, including repeat expressions such as
-`[x; 2]`. For example, read the array's first element as
-`f.compound_literal(0)[0]`. Use a program point where the array's storage
-is live. A recorded point can still name the array that was live there.
+and struct literals in the function from zero, including repeat expressions
+such as `[x; 2]`. For example, read the array's first element as
+`f.compound_literal(0)[0]` or a struct's field as `f.compound_literal(0).value`.
+Use a program point where the object's storage is live. A recorded point can
+still name the object that was live there.
 
 Conditions currently support scalar comparisons, boolean combinations,
 negation, casts, and builtin `.len()`. Calls, indexing, and arithmetic in a

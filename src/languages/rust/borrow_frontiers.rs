@@ -836,7 +836,7 @@ mod tests {
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),
-                array_literals: Default::default(),
+                compound_literals: Default::default(),
                 locals: vec![
                     place("child", reference_type()),
                     place("alias", reference_type()),

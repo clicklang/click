@@ -537,7 +537,7 @@ mod tests {
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),
-                array_literals: Default::default(),
+                compound_literals: Default::default(),
                 locals: vec![Place {
                     name: "marker".into(),
                     value_type: Type::I32,
@@ -633,7 +633,7 @@ mod tests {
             return_place: "__rust_mir_0".into(),
             spellings: Default::default(),
             unnamed_locals: Default::default(),
-            array_literals: Default::default(),
+            compound_literals: Default::default(),
             locals: vec![],
             blocks: vec![
                 MirBlock {
@@ -903,7 +903,7 @@ mod tests {
             return_place: "__rust_mir_0".into(),
             spellings: Default::default(),
             unnamed_locals: Default::default(),
-            array_literals: Default::default(),
+            compound_literals: Default::default(),
             locals: vec![],
             blocks: vec![MirBlock {
                 terminator_site: None,

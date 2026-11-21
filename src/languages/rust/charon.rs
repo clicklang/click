@@ -3713,7 +3713,7 @@ pub(super) fn decode_crate(
                 (at.beg.line as usize, at.beg.col as usize),
                 (at.end.line as usize, at.end.col as usize),
             );
-            written.array_literals.get(&range).copied()
+            written.compound_literals.get(&range).copied()
         };
         for (id, block) in b.body.body.iter_enumerated() {
             if let Some(message) = panic_messages.get(&id) {
@@ -3752,12 +3752,17 @@ pub(super) fn decode_crate(
                     statements.push(S::Site { site });
                 }
                 current_site = site;
-                if let [
-                    S::Assign {
-                        target: E::Local { name },
-                        value: E::Array { .. } | E::Repeat { .. },
-                    },
-                ] = converted.as_slice()
+                let literal_local = match converted.as_slice() {
+                    [
+                        S::Assign {
+                            target: E::Local { name },
+                            value: E::Array { .. } | E::Repeat { .. },
+                        },
+                    ] => Some(name),
+                    [S::Initialize { target, .. }] => Some(target),
+                    _ => None,
+                };
+                if let Some(name) = literal_local
                     && temporaries.contains(name)
                     && let u::StatementKind::Assign(place, _) = &s.kind
                     && let Some(local) = place.as_local()
@@ -3850,7 +3855,7 @@ pub(super) fn decode_crate(
         let kept: BTreeSet<_> = locals.iter().map(|local| local.name.as_str()).collect();
         spellings.retain(|key, _| kept.contains(key.as_str()));
         temporaries.retain(|key| kept.contains(key.as_str()));
-        let array_literals = literal_initializers
+        let compound_literals = literal_initializers
             .into_iter()
             .filter(|(ordinal, local)| {
                 kept.contains(local.as_str()) && !ambiguous_literals.contains(ordinal)
@@ -3875,7 +3880,7 @@ pub(super) fn decode_crate(
             mir: Some(out::MirBody {
                 spellings,
                 unnamed_locals: temporaries,
-                array_literals,
+                compound_literals,
                 locals,
                 blocks,
                 return_place,

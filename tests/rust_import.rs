@@ -4877,6 +4877,57 @@ fn borrowed_array(x: u32) -> u32 {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: refreshes a Charon capture"]
+fn rust_borrowed_struct_literal_fields_use_written_occurrences() {
+    let p = Project::new(
+        "pub struct Pair { pub value: u32, pub spare: u32 }
+         fn read(pair: &Pair) -> u32 { pair.value }
+         pub fn borrowed_record(x: u32) -> u32 {
+             let named = [x, 7u32];
+             read(&Pair { value: named[0], spare: 9 })
+         }",
+    );
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn read(pair: &Pair) -> u32 {
+    views pair.value;
+    ensures result == pair.value;
+}
+fn borrowed_record(x: u32) -> u32 { ensures result == x; } by {
+    step_until(statement(1).call(read, 0).entry);
+    have borrowed_record.compound_literal(1).value == x by solve();
+    step_until(function.exit);
+    have at(statement(1).call(read, 0).entry, borrowed_record.compound_literal(1).spare) == 9u32 by solve();
+    solve();
+}
+"#;
+    let file = p.root.join("borrow.click");
+    fs::write(&file, sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "borrowed_record"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        trace.contains("declare aggregate \"borrow.rs\"::borrowed_record.compound_literal(1)"),
+        "{trace}"
+    );
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "borrowed_record.contract",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
 fn rust_if_expression_carries_its_scalar_value_without_a_local() {
     let p = Project::new("pub fn joined_value(x: u32) -> u32 { (if x == 0 { 3 } else { x }) % 2 }");
     p.refresh().unwrap();
