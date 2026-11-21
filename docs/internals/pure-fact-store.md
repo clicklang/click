@@ -170,8 +170,8 @@ an unused witness sequence. No compatibility alias remains. Proof branches,
 checked proof transitions, loop exits, resource operations, normalization,
 quantified framing, termination, and search adapters now use `PureFactStore`.
 The removed witness sequence had only initialization, append, and copy sites;
-its objects had no drop hooks or ownership callbacks. Witness validation within
-`with_checked_rewritten_loads` and execution-certificate evidence are unchanged.
+its objects had no drop hooks or ownership callbacks. Execution certificates
+retain their own evidence.
 
 | Interface | Meaning and retained boundary | Source |
 | --- | --- | --- |

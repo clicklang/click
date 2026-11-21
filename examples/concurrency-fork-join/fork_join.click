@@ -174,7 +174,30 @@ void *fill_range(void *argument) {
                     instantiate(at(region(5).entry, forall (k: int32) {
                         job->begin <= k and k < index implies job->output[k] == job->value
                     }), k);
-                    solve();
+                    have at(iteration, job->output[k]) == at(iteration, job->value) by { known(); }
+                    // The write at index preserves the earlier cell at k.
+                    have k != index;
+                    have at(iteration, separate(memory(job->output[index]), memory(job->output[k]))) by {
+                        apply(separation::separate_elements(at(iteration, job->output), at(iteration, index), k)) using { at(iteration, index) != k; };
+                    }
+                    have contains(at(iteration, memory(job->output[k])), at(iteration, memory((&job->output[k])[0..1]))) by { normalize(); }
+                    have contains(at(iteration, memory(job->output[index])), at(iteration, memory(job->output[index]))) by { normalize(); }
+                    have separate(at(iteration, memory(job->output[index])), at(iteration, memory((&job->output[k])[0..1]))) by {
+                        apply(separation::separate_restrict(at(iteration, memory(job->output[index])), at(iteration, memory(job->output[k])), at(iteration, memory(job->output[index])), at(iteration, memory((&job->output[k])[0..1])))) using {
+                            contains(at(iteration, memory(job->output[index])), at(iteration, memory(job->output[index])));
+                            at(iteration, separate(memory(job->output[index]), memory(job->output[k])));
+                            contains(at(iteration, memory(job->output[k])), at(iteration, memory((&job->output[k])[0..1])));
+                        };
+                    }
+                    have separate(loop(0).statement(0).footprint, at(iteration, memory((&job->output[k])[0..1]))) by {
+                        normalize() using { separate(at(iteration, memory(job->output[index])), at(iteration, memory((&job->output[k])[0..1]))); };
+                    }
+                    have at(loop(0).statement(0).exit, load<int32>(at(iteration, &job->output[k])))
+                        == at(loop(0).statement(0).entry, load<int32>(at(iteration, &job->output[k]))) by {
+                        preserve(at(iteration, memory((&job->output[k])[0..1])), loop(0).statement(0));
+                    }
+                    rewrite(job->output, at(iteration, job->output));
+                    known();
                 } else {
                     have k <= index;
                     have k == index;

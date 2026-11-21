@@ -1777,6 +1777,23 @@ impl ProgramPoint {
         integer_store_bits(self.indexed_write()?).map(|(_, bits)| bits)
     }
 
+    /// A detached observation can name the same store as an indexed read
+    /// when it retains that store's exact snapshot and cell.
+    pub(in crate::kernel) fn names_detached_store_read(
+        &self,
+        detached: &Self,
+        address: &Address,
+        kind: LoadKind,
+    ) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        detached.id().is_none()
+            && detached.shared_memory().arena_id() == self.shared_memory().arena_id()
+            && self.indexed_write().is_some_and(|write| {
+                matches!(write, MemoryDerivation::Store { pointer, .. } if pointer == address)
+                    && integer_store_bits(write).is_some_and(|(stored, _)| stored == kind)
+            })
+    }
+
     pub(in crate::kernel) fn indexed_stored_value(&self) -> Option<&StoredMemoryValue> {
         let MemoryDerivation::Store { value, .. } = self.indexed_write()? else {
             return None;
@@ -1959,6 +1976,14 @@ mod tests {
             new_version.indexed_integer_store_bits(),
             Some(&MachineTerm::constant(7))
         );
+        let detached = ProgramPoint::at(new_version.shared_memory());
+        assert!(new_version.names_detached_store_read(&detached, &pointer, LoadKind::Int32));
+        assert!(!new_version.names_detached_store_read(&detached, &pointer, LoadKind::UInt32));
+        assert!(!new_version.names_detached_store_read(
+            &ProgramPoint::at(version.shared_memory()),
+            &pointer,
+            LoadKind::Int32,
+        ));
     }
 
     #[test]

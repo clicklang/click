@@ -2734,42 +2734,48 @@ impl<'a> Proof<'a> {
             )
         })?;
         let induction = self.uses_structural_induction();
-        let surface_goal = self.surface_goal().and_then(|surface_goal| {
-            let checked_candidate = |candidate: ClickProposition| {
-                self.lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
-                    .ok()
-                    .filter(|lowered| {
-                        if induction {
-                            rewritten.try_present_induction_case_as(lowered)
-                        } else {
-                            rewritten.try_present_as(lowered)
-                        }
-                    })
-                    .map(|_| candidate)
+        let checked_candidate =
+            |rewritten: &mut crate::kernel::proof::equality_rewrite::CheckedEqualityRewrite,
+             candidate: ClickProposition| {
+                let lowered = self
+                    .lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
+                    .ok()?;
+                let accepted = if induction {
+                    rewritten.try_present_induction_case_as(&lowered)
+                } else {
+                    rewritten.try_present_as(&lowered)
+                };
+                accepted.then_some(candidate)
             };
-            let mut checked_candidate = checked_candidate;
-            rewrite_click_proposition_by_surface_equality(surface_goal, surface_equality)
-                .and_then(&mut checked_candidate)
-                .or_else(|| {
-                    crate::surface::lowering::rewrite_surface_equality_preserving_states(
-                        surface_goal,
-                        surface_equality,
-                    )
-                    .and_then(checked_candidate)
-                })
-        });
-        let surface_goal = surface_goal.or_else(|| {
-            if !induction {
-                return self.spelled_goal(rewritten.proposition());
-            }
-            let candidate = self.structural_proposition_candidate(rewritten.proposition())?;
-            let lowered = self
-                .lower_surface_proposition_direct(&candidate, "rewritten goal raising")
-                .ok()?;
-            rewritten
-                .try_present_induction_case_as(&lowered)
-                .then_some(candidate)
-        });
+        let surface_goal = self
+            .surface_goal()
+            .and_then(|surface_goal| {
+                rewrite_click_proposition_by_surface_equality(surface_goal, surface_equality)
+                    .and_then(|candidate| checked_candidate(&mut rewritten, candidate))
+                    .or_else(|| {
+                        crate::surface::lowering::rewrite_surface_equality_preserving_states(
+                            surface_goal,
+                            surface_equality,
+                        )
+                        .and_then(|candidate| checked_candidate(&mut rewritten, candidate))
+                    })
+            })
+            .or_else(|| {
+                // An explicit fact can already name the precise observation.
+                // Select one source by the whole result, without enumerating
+                // equivalent facts or trying alternate read identities.
+                let goal = rewritten.proposition();
+                let candidate = self
+                    .local_surface_facts()
+                    .recorded_surface(goal)
+                    .or_else(|| self.context_surface_propositions()?.recorded_surface(goal))?
+                    .clone();
+                checked_candidate(&mut rewritten, candidate)
+            })
+            .or_else(|| {
+                let candidate = self.structural_proposition_candidate(rewritten.proposition())?;
+                checked_candidate(&mut rewritten, candidate)
+            });
         let presentation = self.refinement_presentation(surface_goal, None);
         let (obligation, facts) =
             rewritten.into_obligation(presentation, self.refinement_outcome());
