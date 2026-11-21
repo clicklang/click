@@ -8278,6 +8278,18 @@ fn raise_float_read(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     let (point, address) = read.parts();
+    if point.read_version_id().is_some() {
+        return synthesize_at_program_point(point, state, |state| {
+            let place = raise_float_read_place(
+                address,
+                value_type,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?;
+            Some(SurfaceTerm::Exact(Box::new(place)))
+        });
+    }
     let memory = point.shared_memory();
     // Float producers retain the raw state, rather than the integer load's
     // canonical selection. Spelling must reproduce that same producer input.
@@ -8313,6 +8325,22 @@ fn raise_float_read(
             )?),
         });
     }
+    raise_float_read_place(
+        address,
+        value_type,
+        parameter_binding,
+        state,
+        bound_variables,
+    )
+}
+
+fn raise_float_read_place(
+    address: &crate::kernel::SharedAddress,
+    value_type: ProgramType,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<SurfaceTerm> {
     let pointer = synthesize_surface_pointer(
         address.exact_cell_key(),
         parameter_binding,
