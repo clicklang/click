@@ -5493,6 +5493,17 @@ fn rust_local_array_construction_and_whole_value_copies_verify() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    for function in ["argument_order", "assignment_order"] {
+        let output = p.cli(&["verify", "--trace-proof", function]);
+        let trace = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(trace.contains("proof trace"), "{trace}");
+        assert!(!trace.contains("__rust_mir_"), "{trace}");
+    }
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     for claim in [

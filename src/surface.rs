@@ -33,10 +33,10 @@ use crate::kernel::{
     assume_universally_quantified_pure_implication, contract_refinement_context, int32,
     loop_invariants_hold_at_entry, program_assign, program_condition_fact_memories,
     program_declare, program_do_while_with_invariant_and_effect_checks, program_function,
-    program_function_contract_entry_state, program_function_contract_refinement_arguments,
-    program_function_contract_refinement_context, program_function_entry_state,
-    program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
-    program_seq, program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
+    program_function_contract_refinement_arguments, program_function_contract_refinement_context,
+    program_function_entry_state, program_function_termination_plan, program_if,
+    program_pointer_offsets_proven_equal_for_effect, program_seq,
+    program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
     prove_owned_resource_quantity_nonnegative, prove_program_condition_fact_transport,
     prove_program_function_contract_refinement,
     prove_symbolic_execution_statement_verification_paths_with_environment_and_loop_rule_using_budget,
@@ -8956,7 +8956,7 @@ impl ClickErrorKind {
             Self::Syntax => "syntax error",
             Self::Limit => "limit error",
             Self::Type => "type error",
-            Self::Proof => "verification error",
+            Self::Proof => "unclassified verification refusal",
             Self::Internal => "internal error",
         }
     }
@@ -8969,7 +8969,15 @@ pub enum ProofRefusal {
     UnsuccessfulSearch,
     ImplicitStatementSearch,
     UnprovedGoal,
-    Verification,
+    Contract,
+    ContractEntry,
+    ExecutionPrerequisite,
+    Execution,
+    ContractExit,
+    ContractRefinement,
+    Termination,
+    DivergenceDeclaration,
+    UnsupportedProof,
 }
 
 impl ProofRefusal {
@@ -8978,7 +8986,15 @@ impl ProofRefusal {
             Self::Tactic => "tactic error",
             Self::UnsuccessfulSearch | Self::ImplicitStatementSearch => "unsuccessful search",
             Self::UnprovedGoal => "unproved goal",
-            Self::Verification => "verification error",
+            Self::Contract => "contract error",
+            Self::ContractEntry => "contract entry refused",
+            Self::ExecutionPrerequisite => "execution prerequisite unmet",
+            Self::Execution => "execution refused",
+            Self::ContractExit => "contract exit refused",
+            Self::ContractRefinement => "contract refinement refused",
+            Self::Termination => "termination not established",
+            Self::DivergenceDeclaration => "invalid divergence declaration",
+            Self::UnsupportedProof => "unsupported proof",
         }
     }
 }
@@ -11274,11 +11290,13 @@ impl ClickError {
     pub(crate) fn with_proof_refusal(mut self, refusal: ProofRefusal) -> Self {
         // Preserve the innermost operation's classification through wrappers.
         if self.proof_refusal.is_none()
-            || self.proof_refusal == Some(ProofRefusal::Verification)
-                && matches!(
-                    refusal,
-                    ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch
-                )
+            || matches!(
+                self.proof_refusal,
+                Some(ProofRefusal::Execution | ProofRefusal::ExecutionPrerequisite)
+            ) && matches!(
+                refusal,
+                ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch
+            )
         {
             self.proof_refusal = Some(refusal);
         }

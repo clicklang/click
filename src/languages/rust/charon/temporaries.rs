@@ -46,8 +46,10 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
     let mut reads_by_local = BTreeMap::new();
     let mut excluded = BTreeSet::new();
 
-    // A forward goto into a block with exactly one incoming edge continues
-    // the fragment. In particular a join or a loop back edge starts another.
+    // A forward goto or direct call into a block with exactly one incoming
+    // edge continues the fragment. A call can change what the producer read,
+    // but the captured value has already been evaluated. A join or a loop
+    // back edge starts another fragment.
     let mut incoming = vec![0usize; mir.blocks.len()];
     let mut predecessor = vec![None; mir.blocks.len()];
     for (index, block) in mir.blocks.iter().enumerate() {
@@ -56,7 +58,12 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
                 *count += 1;
             }
         }
-        if let T::Goto { target } = block.terminator
+        if let T::Goto { target }
+        | T::Call {
+            target,
+            through_pointer: false,
+            ..
+        } = block.terminator
             && index < target
             && let Some(entry) = predecessor.get_mut(target)
         {
@@ -122,7 +129,14 @@ pub(in crate::languages::rust) fn scalar_expression_operands(
             } else {
                 terminator_uses(&code.terminator, &mut reads, &mut excluded);
                 excluded.extend(call_destination(&code.terminator).cloned());
-                matches!(code.terminator, T::ReturnValue { .. })
+                matches!(
+                    code.terminator,
+                    T::ReturnValue { .. }
+                        | T::Call {
+                            through_pointer: false,
+                            ..
+                        }
+                )
             };
             for (name, count) in reads {
                 if !is_candidate(&name) {

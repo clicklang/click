@@ -129,7 +129,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let driver_proof = self.proof;
         driver_proof
             .driver()
-            .try_authoritative_linear_script_reporting(tactics, &mut None, None)
+            .try_authoritative_linear_script_reporting(tactics, &mut None, None, false)
     }
 
     /// [`Self::try_authoritative_linear_script`], also reporting why the body
@@ -140,6 +140,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         tactics: &[ProofTactic],
         declined: &mut Option<LinearScriptDecline>,
         unfinished: Option<&mut Option<Proof<'a>>>,
+        implicit_tail: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
         // Address each tactic's diagnostics by its position in the block the
@@ -148,9 +149,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let sites = (0..tactics.len())
             .map(|index| driver_proof.site().at_block_position(index))
             .collect::<Vec<_>>();
-        driver_proof
-            .driver()
-            .try_addressed_linear_script(tactics, &sites, declined, unfinished)
+        driver_proof.driver().try_addressed_linear_script(
+            tactics,
+            &sites,
+            declined,
+            unfinished,
+            implicit_tail,
+        )
     }
 
     /// Checks an explicit planner candidate without attributing its block
@@ -179,11 +184,16 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         sites: &[ProofStepSite],
         declined: &mut Option<LinearScriptDecline>,
         unfinished: Option<&mut Option<Proof<'a>>>,
+        implicit_tail: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
-        driver_proof
-            .driver()
-            .run_addressed_linear_script(tactics, sites, declined, unfinished)
+        driver_proof.driver().run_addressed_linear_script(
+            tactics,
+            sites,
+            declined,
+            unfinished,
+            implicit_tail && !crate::surface::proof::proof_object::implicit_solve_disabled(),
+        )
     }
 
     /// [`Self::try_authoritative_linear_script`], also keeping the proof a
@@ -195,11 +205,17 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
         tactics: &[ProofTactic],
         unfinished: &mut Option<Proof<'a>>,
+        implicit_tail: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
         driver_proof
             .driver()
-            .try_authoritative_linear_script_reporting(tactics, &mut None, Some(unfinished))
+            .try_authoritative_linear_script_reporting(
+                tactics,
+                &mut None,
+                Some(unfinished),
+                implicit_tail,
+            )
     }
 
     /// Runs the arms of one `cases` to completion. The kernel splits a
@@ -210,6 +226,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
         arms: &[CaseArmScript<'_>],
         mut unfinished: Option<&mut Option<Proof<'a>>>,
+        implicit_tail: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
         let (last, leading) = arms.split_last().expect("`cases` has arms");
@@ -237,10 +254,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 &only.sites,
                 &mut None,
                 unfinished.as_deref_mut(),
+                implicit_tail,
             )?,
-            _ => leading_branch
-                .driver()
-                .run_case_arms(leading, unfinished.as_deref_mut())?,
+            _ => leading_branch.driver().run_case_arms(
+                leading,
+                unfinished.as_deref_mut(),
+                implicit_tail,
+            )?,
         };
         let Some(leading_done) = leading_done else {
             return Ok(None);
@@ -249,7 +269,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             .restore_induction_scope_from(&split_proof)
             .focus_branch(ids[1])?
             .driver()
-            .run_addressed_linear_script(&last.tactics, &last.sites, &mut None, unfinished)?
+            .run_addressed_linear_script(
+                &last.tactics,
+                &last.sites,
+                &mut None,
+                unfinished,
+                implicit_tail,
+            )?
         else {
             return Ok(None);
         };
@@ -269,21 +295,24 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         certificates: &mut Vec<ProofCertificate>,
         trace: &mut Option<crate::surface::proof_trace::TraceMatch>,
         mut unfinished: Option<&mut Option<Proof<'a>>>,
+        implicit_tail: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
         if let [index] = indices {
             let arm = driver_proof.enter_pure_match_case(plan, *index)?;
             let marker = arm.checkpoint();
             let written = source.arms[*index].tactics.len();
-            let mut pending = Some(arm.clone());
-            let closed = if written == 0 {
-                None
+            let mut pending = None;
+            let terminal = written == arm_tactics[*index].len();
+            let closed = if written == 0 && !(terminal && implicit_tail) {
+                Some(arm.clone())
             } else {
                 arm.driver().run_addressed_linear_script(
                     &arm_tactics[*index][..written],
                     &arm_sites[*index][..written],
                     &mut None,
                     Some(&mut pending),
+                    terminal && implicit_tail,
                 )?
             };
             let Some(body_done) = closed.or(pending) else {
@@ -296,6 +325,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     &arm_sites[*index][written..],
                     &mut None,
                     unfinished,
+                    implicit_tail,
                 )?
                 else {
                     return Ok(None);
@@ -330,6 +360,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 certificates,
                 trace,
                 unfinished.as_deref_mut(),
+                implicit_tail,
             )?
         else {
             return Ok(None);
@@ -347,6 +378,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 certificates,
                 trace,
                 unfinished,
+                implicit_tail,
             )?
         else {
             return Ok(None);
@@ -361,6 +393,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         arms: &mut ConjunctArms<'_, 'a, '_>,
         site: &ProofStepSite,
         mut unfinished: Option<&mut Option<Proof<'a>>>,
+        implicit_tail: bool,
         at_root: bool,
     ) -> Result<Option<(Proof<'a>, Option<Arc<ClickProposition>>)>, ClickError> {
         let proof = self.proof;
@@ -373,7 +406,13 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 .collect::<Vec<_>>();
             return Ok(proof
                 .driver()
-                .run_addressed_linear_script(&arm.tactics, &sites, &mut None, unfinished)?
+                .run_addressed_linear_script(
+                    &arm.tactics,
+                    &sites,
+                    &mut None,
+                    unfinished,
+                    implicit_tail,
+                )?
                 .map(|done| (done, Some(Arc::new(arm.proposition.clone())))));
         }
         if !proof.has_conjunctive_goal() {
@@ -387,7 +426,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let Some((left, left_label)) = split_proof
             .focus_branch(ids[0])?
             .driver()
-            .run_conjunct_proofs(arms, site, unfinished.as_deref_mut(), false)?
+            .run_conjunct_proofs(arms, site, unfinished.as_deref_mut(), implicit_tail, false)?
         else {
             return Ok(None);
         };
@@ -395,7 +434,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             .restore_induction_scope_from(&split_proof)
             .focus_branch(ids[1])?
             .driver()
-            .run_conjunct_proofs(arms, site, unfinished, false)?
+            .run_conjunct_proofs(arms, site, unfinished, implicit_tail, false)?
         else {
             return Ok(None);
         };
@@ -411,21 +450,47 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         sites: &[ProofStepSite],
         declined: &mut Option<LinearScriptDecline>,
         mut unfinished: Option<&mut Option<Proof<'a>>>,
+        implicit_tail: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
         debug_assert_eq!(tactics.len(), sites.len());
+        let solve = |proof: &Proof<'a>| {
+            crate::surface::proof_diagnostics::capture_check_observations(|| {
+                crate::kernel::search::ProofSearch::try_solve_closure(proof)
+            })
+        };
         let finish = |proof: Proof<'a>, unfinished: Option<&mut Option<Proof<'a>>>| {
             if proof.focused_discharged() {
-                Some(proof)
+                Ok(Some(proof))
+            } else if implicit_tail {
+                check_verification_deadline()?;
+                let _timing =
+                    TacticTiming::new(proof.claim_label(), 0, 0, &ProofTactic::ImplicitSolve, 0);
+                let _origin =
+                    crate::surface::proof_trace::TraceOrigin::enter(Some("implicit tail"));
+                let mut search = attempt::search_scope("implicit script tail");
+                let (result, checks) = solve(&proof);
+                check_verification_deadline()?;
+                let error = match result {
+                    Ok(Some(closed)) => {
+                        search.succeed();
+                        return Ok(Some(closed));
+                    }
+                    Ok(None) => proof.solve_failure(),
+                    Err(error) => error,
+                };
+                Err(error
+                    .with_check_observations(checks)
+                    .with_search_failures(search.finish()))
             } else {
                 if let Some(unfinished) = unfinished {
                     *unfinished = Some(proof);
                 }
-                None
+                Ok(None)
             }
         };
         let pure_source = matches!(driver_proof.context.as_ref(), ProofContext::Pure(_));
-        if tactics.is_empty() {
+        if tactics.is_empty() && !implicit_tail {
             *declined = Some(LinearScriptDecline::Shape);
             return Ok(None);
         }
@@ -534,10 +599,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 }
                 ProofTactic::Solve => {
                     let mut search = attempt::search_scope("written solve");
-                    let (selected, checks) =
-                        crate::surface::proof_diagnostics::capture_check_observations(|| {
-                            crate::kernel::search::ProofSearch::try_solve_closure(&(proof))
-                        });
+                    let (selected, checks) = solve(&proof);
                     let selected = match selected {
                         Ok(selected) => selected,
                         Err(error) => {
@@ -643,7 +705,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             selected
                         }
                         SourceProof::Script(body) => {
-                            scope.driver().try_authoritative_linear_script(body)?
+                            scope.driver().try_authoritative_linear_script_reporting(
+                                body,
+                                &mut None,
+                                &mut None,
+                                implicit_tail,
+                            )?
                         }
                     };
                     let Some(selected) = selected else {
@@ -670,6 +737,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             &then_sites,
                             &mut None,
                             unfinished.as_deref_mut(),
+                            implicit_tail,
                         )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
@@ -684,6 +752,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             &else_sites,
                             &mut None,
                             unfinished.as_deref_mut(),
+                            implicit_tail,
                         )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
@@ -696,7 +765,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     // to one of those follows the first arm.
                     proof
                         .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
-                    return Ok(finish(proof, unfinished));
+                    return finish(proof, unfinished);
                 }
                 ProofTactic::All(all) => {
                     let mut arms = ConjunctArms::new(&proof, &all.arms);
@@ -704,6 +773,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         &mut arms,
                         &sites[index],
                         unfinished.as_deref_mut(),
+                        implicit_tail,
                         true,
                     )?
                     else {
@@ -737,6 +807,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             &left_sites,
                             &mut None,
                             unfinished.as_deref_mut(),
+                            implicit_tail,
                         )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
@@ -751,6 +822,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             &right_sites,
                             &mut None,
                             unfinished.as_deref_mut(),
+                            implicit_tail,
                         )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
@@ -788,6 +860,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         &mut certificates,
                         &mut trace,
                         unfinished.as_deref_mut(),
+                        implicit_tail,
                     )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
@@ -798,7 +871,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         .at_site(&sites[index]);
                     proof
                         .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
-                    return Ok(finish(proof, unfinished));
+                    return finish(proof, unfinished);
                 }
                 ProofTactic::Cases(proof_cases) => {
                     // Each arm runs its own tactics and then the rest of the
@@ -826,9 +899,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             ),
                         })
                         .collect::<Vec<_>>();
-                    let Some(done) = proof
-                        .driver()
-                        .run_case_arms(&arms, unfinished.as_deref_mut())?
+                    let Some(done) = proof.driver().run_case_arms(
+                        &arms,
+                        unfinished.as_deref_mut(),
+                        implicit_tail,
+                    )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
@@ -836,7 +911,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     proof = done.at_site(&sites[index]);
                     proof
                         .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
-                    return Ok(finish(proof, unfinished));
+                    return finish(proof, unfinished);
                 }
                 ProofTactic::Transport { source, target } => {
                     // The bare form selects its frame evidence at the
@@ -937,7 +1012,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             }
         }
 
-        Ok(finish(proof, unfinished))
+        finish(proof, unfinished)
     }
 }
 

@@ -6,6 +6,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn apply_all_source(
         &self,
         tactic: &ProofTactic,
+        implicit_tail: bool,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
         // Keep the conjunction at its claim-level source site so each
@@ -17,6 +18,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 std::slice::from_ref(driver_proof.site()),
                 &mut None,
                 None,
+                implicit_tail,
             )?
             .ok_or_else(|| {
                 driver_proof.step_error("`all` requires complete proofs of its conjuncts")

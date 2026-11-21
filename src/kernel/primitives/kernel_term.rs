@@ -676,14 +676,12 @@ impl Interner {
         // this queue reaches it, but no whole interner scan is performed.
         for _ in 0..self.cleanup.len().min(8) {
             let key = self.cleanup.pop_front().unwrap();
-            if self
-                .terms
-                .get(&key)
-                .is_some_and(|value| value.strong_count() == 0)
-            {
-                self.terms.remove(&key);
-            } else {
-                self.cleanup.push_back(key);
+            match self.terms.get(&key) {
+                Some(value) if value.strong_count() > 0 => self.cleanup.push_back(key),
+                Some(_) => {
+                    self.terms.remove(&key);
+                }
+                None => {}
             }
         }
         if let Some(existing) = self.terms.get(&key).and_then(Weak::upgrade) {
@@ -698,8 +696,15 @@ impl Interner {
             machine_leaf: Default::default(),
             argument_leaf: Default::default(),
         });
-        self.terms.insert(key.clone(), Arc::downgrade(&value));
-        self.cleanup.push_back(key);
+        // A dead value can be replaced before its key reaches the front of
+        // the queue. The existing queue entry will examine the replacement.
+        if self
+            .terms
+            .insert(key.clone(), Arc::downgrade(&value))
+            .is_none()
+        {
+            self.cleanup.push_back(key);
+        }
         KernelTerm(value)
     }
 }

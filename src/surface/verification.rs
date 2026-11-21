@@ -8162,6 +8162,10 @@ int32 reader(int32 p[], int32 q[]) {
             "{}",
             error.message()
         );
+        assert!(
+            error.concise_report().starts_with("contract error"),
+            "{error}"
+        );
         // The refusal names the invariant and both clauses, so the contract
         // can be repaired without reading the ledger.
         assert!(
@@ -8914,6 +8918,7 @@ pub(in crate::surface) fn program_contract_failure(
     tactic_names: &BTreeSet<String>,
 ) -> ClickError {
     use crate::kernel::{ProgramContractFailure, ProgramContractGoal};
+    use crate::surface::ProofRefusal;
     match failure {
         ProgramContractFailure::UnfinishedBody(name) => {
             let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
@@ -8921,9 +8926,11 @@ pub(in crate::surface) fn program_contract_failure(
                 "contract proof for `{name}` still owes its body obligations"
             ))
             .at_declaration(name)
+            .with_proof_refusal(ProofRefusal::ContractExit)
         }
         ProgramContractFailure::Analysis(error) => {
-            let located = ClickError::new(format!("could not certify C termination: {error}"));
+            let located = ClickError::new(format!("could not certify C termination: {error}"))
+                .with_proof_refusal(ProofRefusal::Termination);
             match error.function() {
                 Some(function) => located
                     .at_declaration(function.split_once('#').map_or(function, |(name, _)| name)),
@@ -8939,7 +8946,7 @@ pub(in crate::surface) fn program_contract_failure(
             match goal {
                 ProgramContractGoal::DivergencePolicy(name) => {
                     let name = spelling(&name);
-                    ClickError::new(format!("`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker")).at_declaration(&name)
+                    ClickError::new(format!("`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker")).at_declaration(&name).with_proof_refusal(ProofRefusal::DivergenceDeclaration)
                 }
                 ProgramContractGoal::CallbackSafety => {
                     let unsuitable = &verdicts.unsuitable_callbacks[0];
@@ -8956,7 +8963,7 @@ pub(in crate::surface) fn program_contract_failure(
                         ),
                         None => "it has no termination evidence".to_string(),
                     };
-                    ClickError::new(format!("could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}")).at_declaration(&taker)
+                    ClickError::new(format!("could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}")).at_declaration(&taker).with_proof_refusal(ProofRefusal::Termination)
                 }
                 ProgramContractGoal::Returns(name) => {
                     let refusal = &verdicts.refusals[&name];
@@ -8973,6 +8980,7 @@ pub(in crate::surface) fn program_contract_failure(
                         )
                     ))
                     .at_declaration(&name)
+                    .with_proof_refusal(ProofRefusal::Termination)
                 }
                 ProgramContractGoal::Program
                 | ProgramContractGoal::Body { .. }

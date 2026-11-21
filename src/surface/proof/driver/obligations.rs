@@ -503,6 +503,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
         body: &[ProofTactic],
         boundary: Option<&LoopBoundary>,
+        implicit_tail: bool,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
         driver_proof.require_execution_frontier("`close_invariants() by`")?;
@@ -748,8 +749,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     "close invariants",
                     "close invariants: explicit body",
                     || {
-                        root.driver()
-                            .try_authoritative_linear_script_leaving_open(body, &mut unfinished)
+                        root.driver().try_authoritative_linear_script_leaving_open(
+                            body,
+                            &mut unfinished,
+                            implicit_tail,
+                        )
                     },
                 );
                 if matches!(attempted, Ok(None))
@@ -1187,9 +1191,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let proof = if execution.core.checked_invariant_lowerings.is_some() {
             driver_proof.clone()
         } else {
-            driver_proof
-                .driver()
-                .apply_close_invariants_body(&[ProofTactic::Solve], Some(&boundary))?
+            driver_proof.driver().apply_close_invariants_body(
+                &[ProofTactic::Solve],
+                Some(&boundary),
+                true,
+            )?
         };
         proof.validate_loop_invariant_bundle(
             invariant_checks,

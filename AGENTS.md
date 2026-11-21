@@ -115,7 +115,7 @@ Every attempt must change that chain. A new tactic, written form, or position fo
 the same link is not progress. Stop at one of its named outcomes. A link `solve` does not prove is too big, never by itself a
 verifier problem. File defects found through this workflow as GitHub issues
 after user approval, following the skill's reporting instructions, including
-for `inexpressible-fact`, `obligation-bug`, `tactic-bug`, `internal-error`,
+for `inexpressible-fact`, `contract-bug`, `obligation-bug`, `tactic-bug`, `internal-error`,
 crashes, hangs, and confirmed diagnostic defects. An `unclear-trace` outcome requires
 independent evidence of a diagnostic defect before filing.
 Do not put them in `bugs/`, even when discovered during internal development

@@ -2,6 +2,40 @@ use super::*;
 use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
+fn interner_cleanup_drains_replaced_terms() {
+    let live_count = 768;
+    for rounds in [200, 2_000] {
+        let mut interner = Interner::default();
+        let mut intern = |value: usize| {
+            interner.intern(NodeKey::new(
+                KernelType::Integer,
+                KernelTermNode::IntegerLiteral(value.into()),
+            ))
+        };
+        let live: Vec<_> = (1..=live_count).map(&mut intern).collect();
+        for value in (live_count + 1)..=(live_count + rounds) {
+            // The second insertion can replace a dead value before the
+            // cleanup cursor reaches its key.
+            for _ in 0..2 {
+                drop(intern(value));
+                for _ in 0..40 {
+                    assert_eq!(intern(1), live[0]);
+                }
+            }
+        }
+        drop(live);
+
+        let sentinel = intern(0);
+        // Traverse the full queue after dropping the old live terms.
+        for _ in 0..live_count + 2 * rounds {
+            assert_eq!(intern(0), sentinel);
+        }
+        assert_eq!(interner.terms.len(), 1, "rounds={rounds}");
+        assert_eq!(interner.cleanup.len(), 1, "rounds={rounds}");
+    }
+}
+
+#[test]
 fn shared_term_bridges_visit_nodes_once_beside_unrelated_terms() {
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)

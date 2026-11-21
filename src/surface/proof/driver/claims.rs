@@ -61,11 +61,16 @@ fn contract_closing_input(
     post_return_facts: &[(usize, PureFactStore)],
 ) -> Result<ContractClosingInput, ClickError> {
     let returned = if has_return_resource_rewrite {
-        let root =
-            root.ok_or_else(|| ClickError::new("return instance fold lost its outcome proof"))?;
+        let root = root.ok_or_else(|| {
+            ClickError::new("return instance fold lost its outcome proof")
+                .with_kind(ClickErrorKind::Internal)
+        })?;
         let core = &root
             .execution()
-            .ok_or_else(|| ClickError::new("return instance fold lost its checked execution"))?
+            .ok_or_else(|| {
+                ClickError::new("return instance fold lost its checked execution")
+                    .with_kind(ClickErrorKind::Internal)
+            })?
             .core;
         Some(core.checked_return_path(path_index).map_err(|refusal| {
             let message = format!("could not certify return instance fold: {}", refusal.reason);
@@ -87,6 +92,7 @@ fn contract_closing_input(
         Some(returned) => returned.path(),
         None => execution.paths().get(path_index).ok_or_else(|| {
             ClickError::new("return instance fold changed execution path coverage")
+                .with_kind(ClickErrorKind::Internal)
         })?,
     }
     .clone();
@@ -416,7 +422,7 @@ fn unsupported_proof_shape(
     if decline == Decline::RegionDepth {
         return ClickError::new(format!(
             "`{proof_label}`: checked execution-region recursion exceeds the supported depth of {MAX_CHECKED_PROOF_REGION_RECURSION}. This bound counts active recursive regions, not written proof nesting; completed early-return cases run iteratively. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."
-        ));
+        )).with_proof_refusal(crate::surface::ProofRefusal::UnsupportedProof);
     }
     if decline == Decline::ShortOfExit {
         // The written shape is supported; what stopped the drivers is a path
@@ -424,7 +430,7 @@ fn unsupported_proof_shape(
         // unimplemented, since the fix is in the proof script.
         return ClickError::new(format!(
             "`{proof_label}`: a `branch` or proof `if` split the path, one arm returned, and the tactics after the split ran out before the continuing arm reached the function exit, so that path is still open. The proof after the split runs inside the continuing arm; finish it there (for example with `step_until(function.exit);`), or check the continuation's last tactics."
-        ));
+        )).with_proof_refusal(crate::surface::ProofRefusal::Execution);
     }
     let claim_description = if claim_labels.len() == 1 {
         format!("the contract claim `{}`", claim_labels[0])
@@ -443,7 +449,7 @@ fn unsupported_proof_shape(
     };
     ClickError::new(format!(
         "`{proof_label}`: no checked proof driver accepts this proof script's shape for {claim_description}, and none reported a tactic it refused. No listed claim was shown false. To find the tactic no driver supports here, remove tactics from the end of the script until it is accepted. {rewrite}"
-    ))
+    )).with_proof_refusal(crate::surface::ProofRefusal::UnsupportedProof)
 }
 
 pub(in crate::surface) fn prove_claim_by_tactics(
@@ -588,7 +594,11 @@ fn prove_claims_by_checked_tactics(
                 Some(&caller_source_owner),
             )
         })
-        .map_err(|error| error.at_declaration(function_block.signature().name()))?;
+        .map_err(|error| {
+            error
+                .at_declaration(function_block.signature().name())
+                .with_proof_refusal(crate::surface::ProofRefusal::ContractEntry)
+        })?;
     // A shared context was built for an earlier claim; name this function's
     // parameters for diagnostics as building it would have.
     crate::surface::proof_diagnostics::render::enter_ambient_naming(
@@ -596,53 +606,56 @@ fn prove_claims_by_checked_tactics(
         &state,
     );
     crate::surface::diagnostics::enter_ambient_object_fields(parsed_function);
-    let opened_entry = shared_entry.get_or_open(|| {
-        let function = annotated_function_with_assumptions(
-            function_block,
-            parsed_function,
-            &state,
-            &arguments,
-            spec_definitions,
-            resource_environment,
-            Some(ResourceFrameEntry {
-                assumptions: &assumptions_from_propositions(&pure_facts),
-                checked_entry_state: None,
-            }),
-            None,
-        )?;
-        let state = canonical_claim_caller_state(
-            state,
-            function_block.structural_clauses().any_loop(),
-            &function,
-            &arguments,
-            &pure_facts,
-            proof_label,
-        )?;
-        let state = install_borrowed_contract_inputs(
-            state,
-            &function,
-            &pure_facts,
-            ParameterBinding::new(parsed_function.parameters(), &arguments),
-            proof_label,
-        )?;
-        crate::kernel::proof::OpenedContractEntry::open(
-            &state,
-            &function,
-            &arguments,
-            &pure_facts,
-            function_environment,
-        )
-        .and_then(|entry| entry.open_contract_root(function_source_registry.program()))
-        .map_err(|error| {
-            ClickError::new(format!(
-                "could not open contract entry for `{proof_label}`: {}",
-                crate::surface::diagnostics::describe_runtime_error(
-                    &error,
-                    ParameterBinding::new(parsed_function.parameters(), &arguments),
-                ),
-            ))
+    let opened_entry = shared_entry
+        .get_or_open(|| {
+            let function = annotated_function_with_assumptions(
+                function_block,
+                parsed_function,
+                &state,
+                &arguments,
+                spec_definitions,
+                resource_environment,
+                Some(ResourceFrameEntry {
+                    assumptions: &assumptions_from_propositions(&pure_facts),
+                    checked_entry_state: None,
+                }),
+                None,
+            )?;
+            let state = canonical_claim_caller_state(
+                state,
+                function_block.structural_clauses().any_loop(),
+                &function,
+                &arguments,
+                &pure_facts,
+                proof_label,
+            )?;
+            let state = install_borrowed_contract_inputs(
+                state,
+                &function,
+                &pure_facts,
+                ParameterBinding::new(parsed_function.parameters(), &arguments),
+                proof_label,
+            )?;
+            crate::kernel::proof::OpenedContractEntry::open(
+                &state,
+                &function,
+                &arguments,
+                &pure_facts,
+                function_environment,
+            )
+            .and_then(|entry| entry.open_contract_root(function_source_registry.program()))
+            .map_err(|error| {
+                ClickError::new(format!(
+                    "could not open contract entry for `{proof_label}`: {}",
+                    crate::surface::diagnostics::describe_runtime_error(
+                        &error,
+                        ParameterBinding::new(parsed_function.parameters(), &arguments),
+                    ),
+                ))
+                .with_proof_refusal(contract_entry_resource_refusal(&error))
+            })
         })
-    })?;
+        .map_err(|error| error.with_proof_refusal(crate::surface::ProofRefusal::ContractEntry))?;
     // Every clause uses the function produced by this generative entry.
     // Re-lowering a sibling clause can allocate different binder identities.
     let function = opened_entry.function().clone();
@@ -4749,7 +4762,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     path_index,
                                     |proof| {
                                         if let PostExecutionTactic::Both(both) = post_tactic {
-                                            proof.driver().apply_all_source(both)
+                                            proof.driver().apply_all_source(both, true)
                                         } else {
                                             proof.driver().apply_step(closer_step.clone())
                                         }
@@ -4979,7 +4992,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 return Ok(focused
                                                     .at_source_tactic(*source_index)
                                                     .driver()
-                                                    .apply_all_source(both));
+                                                    .apply_all_source(both, true));
                                             }
                                             let PostExecutionTactic::Leaf(
                                                 ProofTactic::ArithmeticUsing(surface_premises),

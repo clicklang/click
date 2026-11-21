@@ -1922,6 +1922,7 @@ fn verify_contract_refinement_theorem(
         ClickError::new(format!(
             "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
         ))
+        .with_proof_refusal(crate::surface::ProofRefusal::ContractRefinement)
     };
     let obligations = program_function_contract_refinement_obligations(&refinement)
         .ok_or_else(refinement_failure)?;
@@ -1992,7 +1993,12 @@ fn verify_contract_refinement_theorem(
         theorem_environment,
     );
     let mut search = super::attempt::search_scope("contract refinement");
-    let attempted = match root.driver().try_authoritative_linear_script(proof_tactics) {
+    let attempted = match root.driver().try_authoritative_linear_script_reporting(
+        proof_tactics,
+        &mut None,
+        None,
+        true,
+    ) {
         Ok(attempted) => attempted,
         Err(error) => {
             return Err(error
@@ -2008,20 +2014,17 @@ fn verify_contract_refinement_theorem(
         None => return Err(refinement_failure().with_search_failures(search.finish())),
     };
     let checked = proof.completed_proposition()?;
-    let kernel_authority = prove_program_function_contract_refinement(
-        &obligations,
-        goal.clone(),
-        &checked,
-    )
-    .ok_or_else(|| {
-        let subject = concrete_target
-            .map(|target| format!("&{target}"))
-            .or_else(|| symbolic_binding.map(str::to_string))
-            .expect("refinement theorem has a subject");
-        ClickError::new(format!(
+    let kernel_authority =
+        prove_program_function_contract_refinement(&obligations, goal.clone(), &checked)
+            .ok_or_else(|| {
+                let subject = concrete_target
+                    .map(|target| format!("&{target}"))
+                    .or_else(|| symbolic_binding.map(str::to_string))
+                    .expect("refinement theorem has a subject");
+                ClickError::new(format!(
             "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
-        ))
-    })?;
+        )).with_proof_refusal(crate::surface::ProofRefusal::ContractRefinement)
+            })?;
     let mut certificate_steps =
         ProofCertificate::from_proof_tactics(&tactics[..tactics.len() - proof_tactics.len()])
             .map_err(|error| ClickError::new(format!("{error}")))?
@@ -2694,6 +2697,7 @@ fn check_pure_script_with_proof(
             &all_sites[..prefix],
             &mut None,
             Some(&mut unfinished),
+            false,
         )?;
         if completed.is_some() {
             return Err(ClickError::new(
@@ -2716,6 +2720,7 @@ fn check_pure_script_with_proof(
         sites,
         &mut declined,
         Some(&mut unfinished),
+        true,
     ) {
         Ok(checked) => checked,
         Err(error) => return Err(error.with_search_failures(search.finish())),
@@ -3871,7 +3876,7 @@ mod tests {
         let error = verify_instantiation_theorem(&open)
             .expect_err("instantiation does not change the selected goal");
         assert!(
-            error.message().contains("goal still open"),
+            error.proof_refusal() == Some(crate::surface::ProofRefusal::UnsuccessfulSearch),
             "{}",
             error.message()
         );

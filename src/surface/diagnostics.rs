@@ -1971,6 +1971,7 @@ pub(super) fn describe_runtime_error(
             format!("call to `{callee}` has no checked byte bound for {effect} while {view} is live")
         }
         crate::kernel::RuntimeError::FunctionContract(message)
+        | crate::kernel::RuntimeError::InvalidContractResource(message)
         | crate::kernel::RuntimeError::UnsuppliedResourceValue(message) => {
             format!("function contract could not be applied: {message}")
         }

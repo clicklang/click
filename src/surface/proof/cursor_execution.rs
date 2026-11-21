@@ -745,6 +745,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
                     crate::surface::diagnostics::describe_execution_statement_site(),
                 ))
                 .with_kind(runtime_refusal_kind(&error))
+                .with_proof_refusal(crate::surface::ProofRefusal::Execution)
             })?;
         execution
             .presentation
@@ -2876,7 +2877,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 ));
                 let error = error
                     .with_reported_assertion_goal(required)
-                    .with_proof_refusal(crate::surface::ProofRefusal::Verification);
+                    .with_proof_refusal(crate::surface::ProofRefusal::Execution);
                 let Some(goal) = goal else {
                     return Err(error);
                 };
@@ -2940,7 +2941,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 ) {
                     return Err(ClickError::new(detail)
                         .with_kind(kind)
-                        .with_proof_refusal(crate::surface::ProofRefusal::Verification));
+                        .with_proof_refusal(crate::surface::ProofRefusal::Execution));
                 }
                 return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
@@ -2957,7 +2958,7 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
             .with_kind(kind)
             .with_runtime_missing_resource(error)
-            .with_proof_refusal(crate::surface::ProofRefusal::Verification));
+            .with_proof_refusal(crate::surface::ProofRefusal::Execution));
             }
             let path_case_split = statement_successors_are_path_cases(&transitions);
             let split_condition = if path_case_split {
@@ -3292,6 +3293,7 @@ fn execute_step_from_frontier_position_selecting_path(
                         crate::surface::diagnostics::describe_execution_statement_site(),
                     ))
                     .with_kind(runtime_refusal_kind(&error))
+                    .with_proof_refusal(crate::surface::ProofRefusal::Execution)
                 })?;
             if loop_index.is_none() {
                 execution.core.last_footprint =
@@ -3721,7 +3723,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 }
             ))
             .with_reported_assertion_goal(required)
-            .with_proof_refusal(crate::surface::ProofRefusal::Verification));
+            .with_proof_refusal(crate::surface::ProofRefusal::Execution));
         }
         StatementOutcome::RuntimeError(error) => {
             let kind = runtime_refusal_kind(&error);
@@ -3763,7 +3765,7 @@ fn execute_step_from_frontier_position_selecting_path(
             ) {
                 return Err(ClickError::new(detail)
                     .with_kind(kind)
-                    .with_proof_refusal(crate::surface::ProofRefusal::Verification));
+                    .with_proof_refusal(crate::surface::ProofRefusal::Execution));
             }
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
@@ -3780,7 +3782,7 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
             .with_kind(kind)
             .with_runtime_missing_resource(&error)
-            .with_proof_refusal(crate::surface::ProofRefusal::Verification));
+            .with_proof_refusal(crate::surface::ProofRefusal::Execution));
         }
     }
     execution
