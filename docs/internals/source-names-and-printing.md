@@ -149,7 +149,7 @@ Top-level declarations go through one declaration table,
 resource and theorem of the file and its library there, in that order, and
 `declare` is the only place that decides whether a name may be declared:
 it refuses a second declaration of a name, as the same kind or another, and a
-name the language reserves for the kind (`same_object` and `held` for
+name the language reserves for the kind (`same_allocation` and `held` for
 propositions, Integer conversions for functions, `read` and `write` for
 resources, kernel laws for theorems, built-in forms such as `old(...)` for
 anything called). Validation reads each kind's arities from the table.

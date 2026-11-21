@@ -66,3 +66,23 @@ pub(crate) fn connected_disjunction_candidates(
     }
     selected
 }
+
+/// Probe a load equality bridge over a bounded prefix of indexed candidates.
+pub(crate) fn load_equality_candidates(
+    facts: &crate::kernel::proof::PureFactStore,
+    goal: &crate::kernel::Proposition,
+    limit: usize,
+) -> Vec<crate::kernel::Proposition> {
+    let candidates = facts.load_equality_candidates_for_solve(goal, limit, SearchPermission::new());
+    if !candidates.is_empty()
+        && crate::kernel::proof::fact_reasoning::plan_load_variable_bridge(
+            goal,
+            &candidates,
+            facts.assumptions(),
+        )
+    {
+        candidates
+    } else {
+        Vec::new()
+    }
+}

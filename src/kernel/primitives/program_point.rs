@@ -104,6 +104,11 @@ impl StepLog {
                 indexed_local(block) || matches!(block, AddressBase::Temporary(_))
             }
             MemoryDerivation::LocalLifetimeEnded { block, .. } => indexed_local(block),
+            // The write, if any, is recorded by the producer separately.
+            // The return clause only supplies initialization evidence.
+            MemoryDerivation::ObjectInitializationRecorded {
+                call_word: false, ..
+            } => true,
             MemoryDerivation::LoopHavoc {
                 mutable_ranges: Some(ranges),
                 ..
@@ -338,8 +343,8 @@ impl ArrayBlockVersions {
                         .writes
                         .insert(block.clone(), ArrayBlockWrite(joined.clone()));
                 } else {
-                    // A local must exist on every arm. Its entry cannot
-                    // stand for another lifetime.
+                    // An automatic or heap object must exist on every
+                    // arm. Its entry cannot stand for another lifetime.
                     result.writes.remove(block);
                 }
             }
@@ -393,18 +398,19 @@ impl ArrayBlockVersions {
 
     fn record(&mut self, step: &MemoryDerivation, point: &Weak<PointNode>) -> Option<()> {
         use crate::kernel::resource_tracker::step_effect::{
-            BlockVersionEffect, block_version_effect,
+            BlockSeparation, BlockVersionEffect, block_version_effect,
         };
 
         crate::instrumentation::record_deterministic_work(1);
-        if let MemoryDerivation::LocalLifetimeEnded { block, .. } = step
-            && indexed_local(block)
+        let effect = block_version_effect(step);
+        if let BlockVersionEffect::Object(block, BlockSeparation::ReleaseOfDistinctBlock) = effect
+            && (indexed_local(block) || matches!(block, AddressBase::Heap(_)))
         {
             self.writes.remove(block);
             return Some(());
         }
         let mut record_object = |block: &AddressBase| {
-            if block.is_static_storage_block() || indexed_local(block) {
+            if indexed_array_object(block) {
                 self.writes
                     .insert(block.clone(), ArrayBlockWrite(point.clone()));
                 true
@@ -412,7 +418,7 @@ impl ArrayBlockVersions {
                 matches!(block, AddressBase::Temporary(_))
             }
         };
-        match block_version_effect(step) {
+        match effect {
             BlockVersionEffect::Object(block, _) if record_object(block) => Some(()),
             BlockVersionEffect::WriteSet(ranges)
                 if ranges.iter().all(|range| {
@@ -699,6 +705,10 @@ impl PathLink {
 fn indexed_local(block: &AddressBase) -> bool {
     matches!(block, AddressBase::AutomaticLocal { .. })
         || matches!(block, AddressBase::Concrete(_) if block.is_local_block())
+}
+
+fn indexed_array_object(block: &AddressBase) -> bool {
+    block.is_static_storage_block() || indexed_local(block) || matches!(block, AddressBase::Heap(_))
 }
 
 /// Parameter addresses can alias across differently written bases. Keep one
@@ -1397,6 +1407,12 @@ impl ProgramPoint {
         }
     }
 
+    /// The read can be identified by the point alone, including through a
+    /// view that only materialized names for bytes the point already held.
+    pub(crate) fn has_certified_read_view(&self) -> bool {
+        matches!(self.observation_key(), ReadKey::Point(_))
+    }
+
     fn read_key_at(&self, id: ProgramPointId) -> ReadKey {
         if self.path.matches_indexed_view(&self.memory) {
             ReadKey::Point(id)
@@ -1465,9 +1481,9 @@ impl ProgramPoint {
         self.clone()
     }
 
-    /// A recorded version for an array in automatic, static or caller storage.
+    /// A recorded version for an array in automatic, static, heap, or caller storage.
     pub(in crate::kernel) fn indexed_array_version(&self, block: &AddressBase) -> Option<Self> {
-        if block.is_static_storage_block() || indexed_local(block) {
+        if indexed_array_object(block) {
             return self.indexed_block_array_version(block);
         }
         if !external_storage(block) {
@@ -1517,7 +1533,7 @@ impl ProgramPoint {
     /// store supplies a value. Use the recorded disjoint suffix only when
     /// it reaches a verified function-entry view.
     pub(crate) fn entry_integer_version(&self, pointer: &Address, kind: LoadKind) -> Option<Self> {
-        if !kind.is_word32() {
+        if !kind.is_word32() && !matches!(kind, LoadKind::Int16 | LoadKind::UInt16) {
             return None;
         }
         self.external_entry_read(pointer, false)
@@ -1586,7 +1602,10 @@ impl ProgramPoint {
         value_type: ProgramType,
     ) -> Option<Self> {
         match value_type {
-            ProgramType::Int32 | ProgramType::UInt32 => self.external_entry_read(pointer, true),
+            ProgramType::Int16 | ProgramType::UInt16 | ProgramType::Int32 | ProgramType::UInt32 => {
+                self.external_entry_read(pointer, true)
+            }
+            value_type if value_type.is_object_pointer() => self.external_entry_read(pointer, true),
             ProgramType::Parameter(parameter) if !parameter.is_enum() => {
                 self.external_entry_read(pointer, true)
             }
@@ -1910,12 +1929,12 @@ mod tests {
         let version = select(&entry).expect("an ordinary entry version");
         assert_eq!(version.read_version_id(), entry.program_point().id());
         assert!(version.indexed_integer_store_bits().is_none());
-        assert!(
-            entry
-                .program_point()
-                .ordinary_typed_version(&pointer, ProgramType::Int32Pointer)
-                .is_none()
-        );
+        let pointer_entry = entry
+            .program_point()
+            .ordinary_typed_version(&pointer, ProgramType::Int32Pointer)
+            .expect("an ordinary entry pointer version");
+        assert_eq!(pointer_entry, version);
+        assert!(pointer_entry.indexed_stored_value().is_none());
         assert_ne!(select(&other_entry).unwrap(), version);
 
         let declared = entry

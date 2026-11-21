@@ -1,18 +1,18 @@
 # Every uint64 is at most the largest
 
 `value <= 18446744073709551615u64` holds for every `uint64`, as
-`0u64 <= value` does, and `normalize` closes both with no facts. The upper
-one was left open, and a `uint64` observation's range rests on it.
+`0u64 <= value` does, and `known()` checks both without premises. Together
+they give the intrinsic bounds of a `uint64` observation.
 
 `a_uint64_is_not_always_below_the_largest.md` lowers the bound by one.
 
 ```click
 theorem top(value: uint64) {
     ensures value <= 18446744073709551615u64 by {
-        normalize();
+        known();
     }
     ensures 0u64 <= value by {
-        normalize();
+        known();
     }
 }
 ```

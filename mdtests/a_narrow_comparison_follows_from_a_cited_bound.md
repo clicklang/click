@@ -24,7 +24,7 @@ theorem strict(b: uint8, x: uint8, y: uint8) {
 
 theorem weaker(b: uint8) {
     requires 50u8 <= b;
-    ensures 48u8 <= b by { normalize() using { 50u8 <= b; }; }
+    ensures 48u8 <= b by { solve() using { 50u8 <= b; }; }
 }
 ```
 

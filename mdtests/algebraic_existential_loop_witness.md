@@ -18,7 +18,7 @@ int32 count_to(int32 n) {
 verifying "algebraic_existential_loop_witness.c";
 
 theorem nat_reflexive(value: Nat) {
-    ensures value == value by normalize();
+    ensures value == value by known();
 }
 
 int32 count_to(int32 n) diverges {
@@ -38,12 +38,12 @@ int32 count_to(int32 n) diverges {
             apply(nat_reflexive(previous));
             have exists (fuel: Nat) { fuel == fuel } by {
                 witness(Nat::Succ(previous));
-                normalize();
+                known();
             }
         }
     }
     step_until(function.exit);
-    normalize();
+    known();
 }
 ```
 

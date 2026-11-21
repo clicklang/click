@@ -1763,7 +1763,7 @@ requires n >= 0;
 requires viewable(p[0..n]);
 requires viewable((p + 1)[0..1]);
 requires separate(memory(dst[0..n]), memory(src[0..n]));
-requires same_object(begin, end);
+requires same_allocation(begin, end);
 requires defined(x + 1);
 views p[0..1];
 consumes p[0..1];
@@ -1822,26 +1822,28 @@ operation. `if c { x } else { y }` claims
 `(c implies defined(x)) and (not c implies defined(y))`. A form with no
 operand expressions, such as a variable or a literal, is defined.
 
-For two object pointers, `defined(right - left)` includes both the
-`same_object(right, left)` provenance condition and the requirement that their
-element distance fit in `int32`. A modular pointer-distance helper can use that
+For two object pointers, `defined(right - left)` is C's precondition for
+pointer subtraction (C11 6.5.6p9): both point into the same array object, or
+one past its end, and their element distance fits in `int32`. It implies
+`same_allocation(right, left)`. A modular pointer-distance helper can use that
 single requirement; a concrete same-array caller, including one using its
 one-past endpoint, discharges it from the pointer objects and their offsets.
 
-`same_object(left, right)` states that two object pointers carry provenance
-from the same C array or aggregate object. It is the required precondition for
-relational pointer comparison or pointer subtraction between independently
-supplied pointer parameters. Pointer arithmetic preserves the relationship,
-so the fact also covers pointers derived from either argument. It does not say
-that the pointer values are equal, grant access to pointee memory, or replace
-an `owns`, `views`, or `viewable` clause. Conversely, pointer equality does
-not establish `same_object`: equal addresses can carry provenance from
-adjacent objects. Null pointers do not carry object provenance, so
-`same_object(0, 0)` is false even though the pointers compare equal. The caller
-must establish the relationship from its concrete pointer objects, a nonempty
-`viewable` proposition or memory resource, or its own retained `same_object`
-requirement. An empty viewable or memory range does not establish that its
-base has object provenance.
+`same_allocation(left, right)` states that two object pointers were derived
+from the same allocation: the same variable instance, heap allocation, or
+literal (C's storage instance, Rust's allocation). It is C's precondition for
+relational pointer comparison (C11 6.5.8p5) and Rust's for `offset_from`,
+between independently supplied pointer parameters. Pointer arithmetic
+preserves it, so the fact also covers pointers derived from either argument.
+It does not say that the pointer values are equal, grant access to pointee
+memory, or replace an `owns`, `views`, or `viewable` clause. Conversely,
+pointer equality does not establish `same_allocation`: equal addresses can
+carry provenance from adjacent allocations. A null pointer has no provenance,
+so `same_allocation(0, 0)` is false even though the pointers compare equal.
+The caller must establish the relationship from its concrete pointer objects,
+a nonempty `viewable` proposition or memory resource, or its own retained
+`same_allocation` requirement. An empty viewable or memory range does not
+establish that its base has object provenance.
 
 `aligned(pointer, n)` states that the pointer's address is a multiple of `n`,
 a power of two. It is sugar for `(address(pointer) & (n - 1)) == 0`. Click
@@ -4263,8 +4265,8 @@ only: `exact(p[i]->next)` reads `->next` exactly through the ordinary read of
 
 <!-- verified-example: mdtests/an_exact_read_of_an_unchanged_cell_equals_its_ordinary_read.md -->
 ```click
-have exact(p[0]) == p[0] by normalize();
-have old(exact(p[0])) == old(p[0]) by normalize();
+have exact(p[0]) == p[0] by known();
+have old(exact(p[0])) == old(p[0]) by known();
 ```
 
 `exact` grants no access permission and adds no facts. A C read after it

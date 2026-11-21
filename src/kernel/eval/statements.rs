@@ -1564,8 +1564,8 @@ fn execute_program_aggregate_copy_paths(
                 continue;
             }
             let mut state = state.clone();
-            let next_memory = match crate::kernel::functions::copy_aggregate_fields_checked(
-                state.memory.clone(),
+            let next_memory = match crate::kernel::functions::copy_aggregate_fields_checked_at(
+                &state,
                 source_pointer.address(),
                 target_pointer.address(),
                 layout,
@@ -4378,10 +4378,16 @@ fn execute_execution_statement_leaf_paths(
             Vec::new().into(),
             Vec::new(),
         )],
-        ProgramStatement::Goto { target } => vec![StatementExecutionPath::new(
-            StatementOutcome::Jump {
-                target: *target,
-                state: Box::new(state.clone()),
+        ProgramStatement::Goto {
+            target,
+            exited_locals,
+        } => vec![StatementExecutionPath::new(
+            match end_scope_automatic_lifetimes(state, exited_locals) {
+                Ok(state) => StatementOutcome::Jump {
+                    target: *target,
+                    state: Box::new(state),
+                },
+                Err(refusal) => StatementOutcome::RuntimeError(refusal),
             },
             Vec::new().into(),
             Vec::new(),

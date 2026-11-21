@@ -858,7 +858,7 @@ id = "language.word.rewrite"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.same_object"
+id = "language.word.same_allocation"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1692,6 +1692,10 @@ path = "reference/cli/expand.md#options"
 
 [[item]]
 id = "cli.expand.--claim"
+path = "reference/cli/expand.md#options"
+
+[[item]]
+id = "cli.expand.--migrate-normalize"
 path = "reference/cli/expand.md#options"
 
 [[item]]

@@ -13,7 +13,7 @@ theorem symmetric<T>(left: T, right: T) {
     requires left == right;
     ensures right == left by {
         rewrite(left, right);
-        normalize();
+        known();
     }
 }
 

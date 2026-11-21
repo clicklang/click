@@ -575,6 +575,7 @@ fn prove_claims_by_checked_tactics(
         pure_facts,
         entry_fact_origins,
         mut surface_propositions,
+        entry_separation_sources,
     } = function_source_registry
         .claim_entries()
         .get_or_build(source_path, function_block, || {
@@ -780,6 +781,11 @@ fn prove_claims_by_checked_tactics(
     let frontier = ExecutionFrontier::default();
     let mut recorded_states =
         RecordedStates::new().with_source_layout(constants.source_layout.clone());
+    if !entry_separation_sources.facts.is_empty()
+        && let Some(point) = state.observation_point_id()
+    {
+        recorded_states.entry_separation_sources = Some((point, entry_separation_sources));
+    }
     record_current_statement_entry(
         &frontier,
         &mut recorded_states,
@@ -3703,25 +3709,30 @@ pub(super) fn finish_ordered_proof<'a>(
                         &proof_label,
                         "execution path preparation",
                     );
-                    if !matches!(path.outcome(), FunctionOutcome::VerificationDiverges)
-                        && !outcome_branches.contains_key(&path_index)
-                    {
+                    let focused_outcome = if let Some(goal) = outcome_branches.get(&path_index) {
+                        Some(outcome_substrate.focus_branch(*goal)?)
+                    } else if matches!(path.outcome(), FunctionOutcome::VerificationDiverges) {
+                        None
+                    } else {
                         // The outcome derivation rejected this candidate under
                         // an exact contradictory path fact; it owns no goal.
                         continue 'execution_path;
-                    }
+                    };
                     let mut path_grouped_surface_closers = Vec::new();
                     let mut path_surface_post_tactics = Vec::new();
                     let mut path_deferred_capture_tactics = Vec::new();
                     let mut path_deferred_capture_prefix = (0, 0);
-                    // A returned path of a summarized loop keeps the fact base
-                    // it was certified under; nothing the continuing path
-                    // established after the loop holds on it.
-                    let path_base_facts = proof_execution
-                        .core
-                        .pending_loop_return_pure_facts(path_index)
-                        .cloned()
-                        .unwrap_or_else(|| proof.facts().clone());
+                    // Read the checked facts attached to this outcome. The
+                    // joined frontier only holds facts shared by all arms.
+                    let path_base_facts = if let Some(outcome) = &focused_outcome {
+                        outcome.facts().clone()
+                    } else {
+                        proof_execution
+                            .core
+                            .pending_loop_return_pure_facts(path_index)
+                            .cloned()
+                            .unwrap_or_else(|| proof.facts().clone())
+                    };
                     // What the path still owes at exit: the obligations the
                     // kernel filed on the way to its outcome, converting the
                     // returned value to the function's type among them,
@@ -3800,22 +3811,11 @@ pub(super) fn finish_ordered_proof<'a>(
                         ));
                     }
                     let mut outcome = path.outcome().clone();
-                    let mut outcome_proof =
-                        if matches!(outcome, FunctionOutcome::VerificationDiverges) {
-                            None
-                        } else {
-                            let goal = outcome_branches.get(&path_index).copied().ok_or_else(|| {
-                            ClickError::new(format!(
-                                "`{proof_label}` path {path_index}: missing checked outcome goal"
-                            ))
-                        })?;
-                            outcome_substrate
-                                .focus_branch(goal)?
-                                .prepare_outcome_cases(
-                                    &mut outcome_substrate,
-                                    &mut contract_owner,
-                                )?
-                        };
+                    let mut outcome_proof = match focused_outcome {
+                        Some(outcome) => outcome
+                            .prepare_outcome_cases(&mut outcome_substrate, &mut contract_owner)?,
+                        None => None,
+                    };
                     if outcome_proof.is_none()
                         && !matches!(outcome, FunctionOutcome::VerificationDiverges)
                     {

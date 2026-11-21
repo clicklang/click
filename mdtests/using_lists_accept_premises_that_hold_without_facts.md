@@ -75,7 +75,7 @@ void empty_prefix(int32 a[], int32 n) {
     step();
     have icount(a, 0, 0) == 0 by {
         unfold(icount(a, 0, 0));
-        normalize();
+        known();
     }
 }
 
@@ -86,7 +86,7 @@ void empty_suffix(int32 a[], int32 n) {
     step();
     have icount(a, n, n) == 0 by {
         unfold(icount(a, n, n));
-        normalize();
+        known();
     }
 }
 

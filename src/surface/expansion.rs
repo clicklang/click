@@ -1135,6 +1135,103 @@ pub struct SmartTacticSourceSite {
     pub position: SourcePosition,
 }
 
+/// A written legacy normalization tactic, addressed in the entry source.
+pub struct NormalizeSourceSite {
+    pub claim: String,
+    pub position: SourcePosition,
+    pub offset: usize,
+    pub using: bool,
+}
+
+pub fn normalize_source_sites(
+    project: Option<&ClickProject>,
+    source: &str,
+    inputs: &ProgramInputs<'_>,
+) -> Result<Vec<NormalizeSourceSite>, ClickError> {
+    let file = normalize_source_file(project, source, inputs)?;
+    let tokens = proof_source_tokens(source, &file.source_spans().implicit_proofs)?;
+    let entries = source_tactic_entries_with_tokens(&file, &ProofTokens::new(&file, &tokens))?;
+    // Use the flat written tactic index for identity. The token after the
+    // empty arguments distinguishes the premise-list form without rewriting it.
+    let mut sites = std::collections::BTreeMap::new();
+    for entry in entries
+        .into_iter()
+        .filter(|entry| entry.tactic_name == "normalize")
+    {
+        let index = tokens.partition_point(|token| token.span.start < entry.anchor);
+        let mut call = tokens[index..]
+            .iter()
+            .filter(|token| !token.span.is_empty());
+        let prefix = [call.next(), call.next(), call.next()];
+        if !prefix
+            .iter()
+            .zip(["normalize", "(", ")"])
+            .all(|(token, text)| token.is_some_and(|token| token.text == text))
+        {
+            return Err(ClickError::new(
+                "could not locate the written normalize tactic",
+            ));
+        }
+        let using = call.next().is_some_and(|token| token.text == "using");
+        sites
+            .entry(entry.anchor)
+            .or_insert_with(|| NormalizeSourceSite {
+                claim: entry.claim_label,
+                position: position_at_offset(source, entry.anchor),
+                offset: entry.anchor,
+                using,
+            });
+    }
+    Ok(sites.into_values().collect())
+}
+
+/// Find a legacy call anywhere in the proof unit's source, including
+/// generated proof bodies whose tactics are not individually indexed.
+pub fn first_normalize_in_claim(
+    project: Option<&ClickProject>,
+    source: &str,
+    inputs: &ProgramInputs<'_>,
+    claim: &str,
+) -> Result<Option<SourcePosition>, ClickError> {
+    if !source.contains("normalize") {
+        return Ok(None);
+    }
+    let file = normalize_source_file(project, source, inputs)?;
+    let mut regions = claim_source_regions(source, &file, ClaimLocationScope::ProofUnit)?;
+    regions.retain(|region| region.label == claim);
+    if regions.is_empty() {
+        return Err(ClickError::new(format!(
+            "could not locate proof unit `{claim}`"
+        )));
+    }
+    let site = plain_source_tokens(source)?
+        .windows(3)
+        .find(|tokens| {
+            tokens[0].text == "normalize"
+                && tokens[1].text == "("
+                && tokens[2].text == ")"
+                && regions
+                    .iter()
+                    .any(|region| region.span.contains(&tokens[0].span.start))
+        })
+        .map(|tokens| tokens[0].start.clone());
+    Ok(site)
+}
+
+fn normalize_source_file(
+    project: Option<&ClickProject>,
+    source: &str,
+    inputs: &ProgramInputs<'_>,
+) -> Result<ClickFile, ClickError> {
+    let sources = ProgramSourceContext::of(inputs)?;
+    match project {
+        Some(project) => {
+            resolve_click_project_context(project, &sources.with_click_project(project))
+        }
+        None => parse_source_with_program_layouts_context(source, &sources),
+    }
+}
+
 pub fn c_smart_tactic_source_sites(
     click_source: &str,
     c_sources: &[(&str, &str)],

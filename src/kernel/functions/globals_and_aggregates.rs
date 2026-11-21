@@ -1044,11 +1044,42 @@ pub(super) fn aggregate_copy_source_holds_nothing(
 /// of silently keeping the destination's old value. The raw
 /// `copy_aggregate_fields` is deliberately module-private; new call sites in
 /// other modules must use this checked form.
+pub(in crate::kernel) fn copy_aggregate_fields_checked_at(
+    state: &ExecutionState,
+    source: &Address,
+    destination: &Address,
+    layout: &AggregateLayout,
+) -> Result<SymbolicMemory, UndefinedBehavior> {
+    // Caller storage predates this function's locals. Earlier field stores
+    // into the local destination leave the caller's array bytes intact.
+    let source_state = (source.base == AddressBase::ExternalArgument
+        && destination.base.is_local_block())
+    .then_some(state);
+    copy_aggregate_fields_checked_from(
+        state.memory().clone(),
+        source,
+        destination,
+        layout,
+        source_state,
+    )
+}
+
+#[cfg(test)]
 pub(in crate::kernel) fn copy_aggregate_fields_checked(
     memory: SymbolicMemory,
     source: &Address,
     destination: &Address,
     layout: &AggregateLayout,
+) -> Result<SymbolicMemory, UndefinedBehavior> {
+    copy_aggregate_fields_checked_from(memory, source, destination, layout, None)
+}
+
+fn copy_aggregate_fields_checked_from(
+    memory: SymbolicMemory,
+    source: &Address,
+    destination: &Address,
+    layout: &AggregateLayout,
+    source_state: Option<&ExecutionState>,
 ) -> Result<SymbolicMemory, UndefinedBehavior> {
     if let Some(bytes) = layout.bit_field_bytes.as_deref() {
         return memory.copy_local_bit_field_record(
@@ -1062,7 +1093,13 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked(
     if aggregate_copy_reads_uninitialized(&memory, source, layout) {
         return Err(UndefinedBehavior::UninitializedRead);
     }
-    Ok(copy_aggregate_fields(memory, source, destination, layout))
+    Ok(copy_aggregate_fields_from(
+        memory,
+        source,
+        destination,
+        layout,
+        source_state,
+    ))
 }
 
 // Module-private on purpose: cross-module aggregate copies must go through
@@ -1070,16 +1107,30 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked(
 // reported. Actual call arguments are checked before binding; entry proof
 // images use the raw form because their incoming aggregate values are evaluated.
 pub(super) fn copy_aggregate_fields(
-    mut memory: SymbolicMemory,
+    memory: SymbolicMemory,
     source: &Address,
     destination: &Address,
     layout: &AggregateLayout,
 ) -> SymbolicMemory {
+    copy_aggregate_fields_from(memory, source, destination, layout, None)
+}
+
+pub(super) fn copy_aggregate_fields_from(
+    mut memory: SymbolicMemory,
+    source: &Address,
+    destination: &Address,
+    layout: &AggregateLayout,
+    source_state: Option<&ExecutionState>,
+) -> SymbolicMemory {
+    let source_point = std::cell::OnceCell::new();
+    let captured_point =
+        || source_state.map(|state| source_point.get_or_init(|| state.program_point()));
     for field in layout.fields() {
         if let ProgramType::UInt32Array(count) = field.program_type() {
             let source_field = source.offset_by_layout(field.offset());
             let target_field = destination.offset_by_layout(field.offset());
-            if let Ok(copied) = memory.clone().write_scalar_array_region(
+            let point = captured_point();
+            if let Ok(copied) = memory.clone().write_scalar_array_region_at(
                 &target_field,
                 ProgramType::UInt32,
                 count,
@@ -1087,13 +1138,14 @@ pub(super) fn copy_aggregate_fields(
                 true,
                 false,
                 &PureFactContext::new(),
+                point,
             ) {
                 memory = copied;
                 continue;
             }
             // Forgotten initialized values stay an immutable typed state,
             // without generating one load for each element of the field.
-            if let Ok(copied) = memory.clone().write_scalar_array_state(
+            if let Ok(copied) = memory.clone().write_scalar_array_state_at(
                 &target_field,
                 ProgramType::UInt32,
                 count,
@@ -1104,6 +1156,7 @@ pub(super) fn copy_aggregate_fields(
                 true,
                 false,
                 &PureFactContext::new(),
+                point,
             ) {
                 memory = copied;
                 continue;
@@ -1214,92 +1267,59 @@ pub(super) fn copy_aggregate_fields(
                     return None;
                 }
                 match element_type {
-                    ProgramType::Int8 => {
-                        Some(ProgramValue::Int8(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::Int16 => {
-                        Some(ProgramValue::Int16(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::Int32 => {
-                        Some(ProgramValue::Int32(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::UInt8 => {
-                        Some(ProgramValue::UInt8(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
+                    ProgramType::Int8
+                    | ProgramType::UInt8
+                    | ProgramType::Int16
+                    | ProgramType::UInt16
+                    | ProgramType::Int32
+                    | ProgramType::UInt32
+                    | ProgramType::Int64
+                    | ProgramType::UInt64
+                    | ProgramType::Float32
+                    | ProgramType::Float64 => {
+                        let kind = LoadKind::of_type(element_type)?;
+                        let read = captured_point()
+                            .and_then(|point| {
+                                crate::kernel::eval::point_named_cell_load(
+                                    point,
+                                    &source_field,
+                                    element_type,
+                                )
+                            })
+                            .unwrap_or_else(|| {
+                                crate::kernel::canonical_form_of_load(
+                                    crate::kernel::intern_memory(memory.clone()),
+                                    source_field,
+                                    kind,
+                                )
+                            });
+                        Some(crate::kernel::cell_run_value(element_type, read))
                     }
                     ProgramType::Int32Pointer
                     | ProgramType::UInt8Pointer
                     | ProgramType::UInt32Pointer
                     | ProgramType::Int32PointerPointer
                     | ProgramType::UInt8PointerPointer => {
-                        // An unknown pointer is the value read from this cell,
-                        // not an offset in the object holding it. Use the same
-                        // canonical typed read as ordinary pointer loads so a
-                        // trivial copy preserves provenance and checked aliases.
-                        crate::kernel::eval::symbolic_storage_cell_value(
-                            &memory,
-                            &source_field,
-                            element_type,
-                            true,
-                        )
+                        // Keep the caller's entry version or the complete
+                        // typed store that supplies this pointer.
+                        captured_point()
+                            .and_then(|point| {
+                                crate::kernel::eval::point_named_pointer_cell_read(
+                                    point,
+                                    &source_field,
+                                    element_type,
+                                )
+                            })
+                            .map(ProgramValue::Pointer)
+                            .or_else(|| {
+                                crate::kernel::eval::symbolic_storage_cell_value(
+                                    &memory,
+                                    &source_field,
+                                    element_type,
+                                    true,
+                                )
+                            })
                     }
-                    ProgramType::UInt16 => {
-                        Some(ProgramValue::UInt16(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::UInt32 => {
-                        Some(ProgramValue::UInt32(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::Int64 => {
-                        Some(ProgramValue::Int64(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::UInt64 => {
-                        Some(ProgramValue::UInt64(crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        )))
-                    }
-                    ProgramType::Float32 => Some(ProgramValue::Float32(
-                        crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        ),
-                    )),
-                    ProgramType::Float64 => Some(ProgramValue::Float64(
-                        crate::kernel::canonical_form_of_load(
-                            crate::kernel::intern_memory(memory.clone()),
-                            source_field,
-                            LoadKind::of_type(element_type)?,
-                        ),
-                    )),
                     ProgramType::Parameter(_) => {
                         crate::kernel::eval::symbolic_load_value_unrecorded(
                             &memory,
@@ -1323,14 +1343,19 @@ pub(super) fn copy_aggregate_fields(
             .iter()
             .filter_map(|field| {
                 let source_field = source_union.offset_by_layout(field.offset());
-                copy_retained_aggregate_union_member(&memory, &source_field, field.program_type())
-                    .map(|value| {
-                        (
-                            destination_union.offset_by_layout(field.offset()),
-                            field.program_type(),
-                            value,
-                        )
-                    })
+                copy_retained_aggregate_union_member(
+                    &memory,
+                    &source_field,
+                    field.program_type(),
+                    &captured_point,
+                )
+                .map(|value| {
+                    (
+                        destination_union.offset_by_layout(field.offset()),
+                        field.program_type(),
+                        value,
+                    )
+                })
             })
             .collect();
         memory = memory.store_retained_union_views(destination_union, union.size_bytes(), views);
@@ -1338,10 +1363,11 @@ pub(super) fn copy_aggregate_fields(
     memory
 }
 
-pub(super) fn copy_retained_aggregate_union_member(
+fn copy_retained_aggregate_union_member<'a>(
     memory: &SymbolicMemory,
     source_field: &Address,
     element_type: ProgramType,
+    captured_point: impl FnOnce() -> Option<&'a ProgramPoint>,
 ) -> Option<ExecutionValue> {
     if let Some(value) = memory.known_retained_union_value(source_field, element_type) {
         return Some(value);
@@ -1361,22 +1387,40 @@ pub(super) fn copy_retained_aggregate_union_member(
     if aggregate_copy_source_holds_nothing(memory, source_field, element_type) {
         return None;
     }
-    // An unknown object pointer is the value read from this cell, as an
-    // ordinary pointer field's is: not an address in the object holding it.
     if element_type.is_object_pointer() {
-        return crate::kernel::eval::symbolic_storage_cell_value(
-            memory,
-            source_field,
-            element_type,
-            true,
-        )
-        .map(Into::into);
+        return captured_point()
+            .and_then(|point| {
+                crate::kernel::eval::point_named_pointer_cell_read(
+                    point,
+                    source_field,
+                    element_type,
+                )
+            })
+            .map(ProgramValue::Pointer)
+            .or_else(|| {
+                crate::kernel::eval::symbolic_storage_cell_value(
+                    memory,
+                    source_field,
+                    element_type,
+                    true,
+                )
+            })
+            .map(Into::into);
     }
-    let load = crate::kernel::canonical_form_of_load(
-        crate::kernel::intern_memory(memory.clone()),
-        source_field.clone(),
-        LoadKind::of_type(element_type)?,
-    );
+    let kind = LoadKind::of_type(element_type)?;
+    let load = matches!(element_type, ProgramType::Int32 | ProgramType::UInt8)
+        .then(captured_point)
+        .flatten()
+        .and_then(|point| {
+            crate::kernel::eval::point_named_cell_load(point, source_field, element_type)
+        })
+        .unwrap_or_else(|| {
+            crate::kernel::canonical_form_of_load(
+                crate::kernel::intern_memory(memory.clone()),
+                source_field.clone(),
+                kind,
+            )
+        });
     Some(
         (match element_type {
             ProgramType::Int32 => ProgramValue::Int32(load),

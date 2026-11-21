@@ -658,7 +658,7 @@ pub(super) mod tests {
     #[test]
     fn natural_cycle_identity_exists_before_frontier_annotations() {
         let target = ControlTargetId(7);
-        let source = ProgramStatement::Goto { target };
+        let source = crate::kernel::program_goto(target);
         let function = function(source.clone()).with_natural_loop_source(Some((target, None)));
         function.prepare_loop_proofs();
         let statement = crate::kernel::program_while(int32_literal(1), Vec::new(), source)

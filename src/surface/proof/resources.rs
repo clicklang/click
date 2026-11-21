@@ -5651,9 +5651,20 @@ fn materialize_composite_resource_cells_from_state(
         return memory.materialize_entry_integer_cell_at(range.base().clone(), naming_point);
     }
     if run_type.byte_width() <= element_width {
-        let source = if naming_point
-            .entry_cell_version(range.base(), run_type)
+        let indexed_pointer_field = run_type.is_object_pointer()
+            && start == 0
+            && end == 1
+            && naming_point
+                .indexed_typed_version(range.base(), run_type)
+                .is_some();
+        let point_named_float = crate::kernel::KernelFloatType::from_program_type(run_type)
             .is_some()
+            && naming_point.has_certified_read_view();
+        let source = if point_named_float
+            || indexed_pointer_field
+            || naming_point
+                .entry_cell_version(range.base(), run_type)
+                .is_some()
         {
             naming_point.clone()
         } else {
@@ -6995,6 +7006,83 @@ mod declared_scalar_field_observation_tests {
             named.load(&base.offset_by_bytes(8)),
             ExpressionOutcome::Value(_)
         ));
+    }
+
+    #[test]
+    fn declared_pointer_field_retains_its_recorded_store() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let ty = ProgramType::Int32Pointer;
+        let stored = ExecutionState::new().with_memory(SymbolicMemory::new().store(
+            base.clone(),
+            ProgramValue::typed_pointer(Address::symbolic(Variable(985_804)), ty),
+        ));
+        let source = stored.program_point();
+        let segment = field(
+            ProgramExpression::Value(ProgramValue::pointer(base.clone())),
+            ty,
+        );
+        let named = materialize_composite_resource_cells_from_state(
+            SymbolicMemory::new(),
+            &source,
+            &ResourceClause::OwnMemory(segment),
+            &ResourceFact::own_memory(MemoryRange::new(base.clone(), 0.into(), 2.into())),
+            &[],
+            false,
+        );
+        let ExpressionOutcome::Value(ProgramValue::Pointer(named)) = named.load(&base) else {
+            panic!("expected a complete pointer observation");
+        };
+        let read = named.address().as_loaded_value().expect("pointer read");
+        assert_eq!(read.point.read_version_id(), stored.observation_point_id());
+        assert_eq!(read.defining_address, base);
+        assert_eq!(read.value_type, Some(ty));
+    }
+
+    #[test]
+    fn declared_float_field_retains_its_resource_source_point() {
+        use crate::kernel::KernelFloatType;
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let state = ExecutionState::new().begin_function_entry_memory();
+        let source = state.program_point();
+        for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+            let ty = format.program_type();
+            let segment = field(
+                ProgramExpression::Value(ProgramValue::typed_pointer(
+                    base.clone(),
+                    ty.pointer_to().unwrap(),
+                )),
+                ty,
+            );
+            let named = materialize_composite_resource_cells_from_state(
+                SymbolicMemory::new(),
+                &source,
+                &ResourceClause::OwnMemory(segment),
+                &ResourceFact::own_memory(MemoryRange::new(base.clone(), 0.into(), 2.into())),
+                &[],
+                false,
+            );
+            let ExpressionOutcome::Value(value) = named.load(&base) else {
+                panic!("expected an observed float field");
+            };
+            assert_eq!(value.program_type(), ty);
+            let (ProgramValue::Float32(term) | ProgramValue::Float64(term)) = value else {
+                panic!("expected a float value");
+            };
+            let MachineTerm::MemoryLoad(point, address, kind) = term else {
+                panic!("expected a float read");
+            };
+            assert_eq!(point.read_version_id(), state.observation_point_id());
+            assert_eq!(*address, base);
+            assert_eq!(kind, format.load_kind());
+        }
     }
 
     #[test]

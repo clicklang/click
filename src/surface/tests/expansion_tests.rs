@@ -1285,6 +1285,22 @@ fn fold_initializer_obligation_expands_and_replays_without_implicit_solve() {
 }
 
 #[test]
+fn fold_null_pointer_obligation_expands_and_replays_without_implicit_solve() {
+    let (source, sources) = mdtest_sources("mdtests/model_payload_null_pointer.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "detach.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(
+        expanded.contains("requires n->parent == 0 by {"),
+        "{expanded}"
+    );
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: constructor pointer prerequisite expansion and cold replay"]
 fn fold_constructor_pointer_obligations_expand_and_cold_replay() {
@@ -25630,7 +25646,7 @@ fn local_byte_predicate_unfolds_expand_and_replay() {
     let expanded = expand_function_proof_source(&source, &sources, "copy_u")
         .expect("the copy should have an explicit local predicate proof");
     assert!(expanded.contains("old(src)"), "{expanded}");
-    without_implicit_solve_for_claim("copy_u.contract", || {
+    without_implicit_solve_for_claim("copy_u.ensures_0", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .expect("the expanded byte proof should replay independently");

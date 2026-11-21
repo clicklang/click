@@ -8,7 +8,7 @@ of a later constructor witness.
 theorem nat_zero_exists() {
     ensures exists (fuel: Nat) { fuel == Nat::Zero } by {
         witness(Nat::Zero);
-        normalize();
+        known();
     }
 }
 
@@ -18,14 +18,14 @@ theorem nat_successor_exists() {
         let fuel = obtain(exists (fuel: Nat) { fuel == Nat::Zero });
         witness(Nat::Succ(fuel));
         rewrite(fuel, Nat::Zero);
-        normalize();
+        known();
     }
 }
 
 theorem nat_reflexive_forall() {
     ensures forall (value: Nat) { value == value } by {
         intro();
-        normalize();
+        known();
     }
 }
 ```

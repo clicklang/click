@@ -202,11 +202,21 @@ impl TermRewrite<'_> {
                         return None;
                     }
                     if !finish {
+                        let preserve = self.integer_variables.is_some()
+                            && crate::kernel::proof::fact_reasoning::is_literal_value_if_guard_root(
+                                &arguments[0],
+                            );
                         let guard = self.shared_boolean_operand(&arguments[0])?;
-                        let guard = common_boolean::folded_shared_machine_condition(guard);
-                        guards.insert(term.id(), guard.clone());
+                        let guard = if preserve {
+                            guard
+                        } else {
+                            common_boolean::folded_shared_machine_condition(guard)
+                        };
+                        guards.insert(term.id(), (guard.clone(), preserve));
                         pending.push((term.clone(), true));
-                        if let Some(value) = BooleanOperandView::Shared(&guard).constant() {
+                        if !preserve
+                            && let Some(value) = BooleanOperandView::Shared(&guard).constant()
+                        {
                             pending.push((arguments[if value { 1 } else { 2 }].clone(), false));
                         } else {
                             pending.push((arguments[2].clone(), false));
@@ -214,14 +224,16 @@ impl TermRewrite<'_> {
                         }
                         continue;
                     }
-                    let guard = guards.remove(&term.id()).expect("rewritten Integer guard");
-                    if let Some(value) = BooleanOperandView::Shared(&guard).constant() {
+                    let (guard, preserve) =
+                        guards.remove(&term.id()).expect("rewritten Integer guard");
+                    if !preserve && let Some(value) = BooleanOperandView::Shared(&guard).constant()
+                    {
                         memo.borrow()[&key(&arguments[if value { 1 } else { 2 }])].clone()
                     } else {
                         let yes = memo.borrow()[&key(&arguments[1])].clone();
                         let no = memo.borrow()[&key(&arguments[2])].clone();
                         crate::instrumentation::record_deterministic_work(1);
-                        if yes.integer_native_syntax_equal(&no) {
+                        if !preserve && yes.integer_native_syntax_equal(&no) {
                             yes
                         } else {
                             KernelTerm::integer_if_raw([guard, yes, no])

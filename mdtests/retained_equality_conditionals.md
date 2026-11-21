@@ -16,8 +16,8 @@ theorem closed_uint64_equality_guards() {
 }
 
 theorem dead_equality_shift() {
-    ensures (if 9u64 == 8u64 { 1u64 << 64u64 } else { 3u64 }) == 3u64 by { normalize(); }
-    ensures (if 9u64 != 8u64 { 3u64 } else { 1u64 << 64u64 }) == 3u64 by { normalize(); }
+    ensures (if 9u64 == 8u64 { 1u64 << 64u64 } else { 3u64 }) == 3u64 by { known(); }
+    ensures (if 9u64 != 8u64 { 3u64 } else { 1u64 << 64u64 }) == 3u64 by { known(); }
 }
 
 theorem dead_equality_read(p: int32*) {

@@ -43,7 +43,7 @@ theorem append_nil(xs: IntList) {
                 apply(ih(tail));
                 unfold(append(IntList::Cons(head, tail), IntList::Nil));
                 rewrite(append(tail, IntList::Nil), tail);
-                normalize();
+                known();
             }
         }
     }

@@ -32,7 +32,7 @@ void bump(int32 a[], int32 n) {
     have 0 <= 0;
     have icount(a, 0, 0) == 0 by {
         unfold(icount(a, 0, 0));
-        normalize();
+        known();
     }
     step();
     have a[0] == 5;

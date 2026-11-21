@@ -744,11 +744,19 @@ pub(in crate::surface) fn value_naming_tables(
     let mut parameters = Vec::with_capacity(values.len());
     let mut arguments = Vec::with_capacity(values.len());
     for (name, value) in values {
-        parameters.push(crate::languages::interface::ImportedParameter::new(
+        let parameter = crate::languages::interface::ImportedParameter::new(
             crate::surface::generics::interface_type_from_program_type(value.program_type()),
             name.clone(),
             None,
-        ));
+        );
+        // A struct-pointer local spells its pointee's fields: `job->begin`.
+        let parameter = match object_fields::ambient_local_struct_pointee(name) {
+            Some((struct_name, layout)) if parameter.interface_type().is_pointer() => {
+                parameter.with_pointee_struct_layout(struct_name, layout)
+            }
+            _ => parameter,
+        };
+        parameters.push(parameter);
         arguments.push(ProgramExpression::Value(value.numeric_value().clone()));
     }
     (parameters, arguments)
@@ -7009,7 +7017,7 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
         ProgramStatement::Skip => ";".to_string(),
         ProgramStatement::Break => "break;".to_string(),
         ProgramStatement::Continue => "continue;".to_string(),
-        ProgramStatement::Goto { target } => format!("goto target({});", target.0),
+        ProgramStatement::Goto { target, .. } => format!("goto target({});", target.0),
         ProgramStatement::EndAutomaticLifetimes { .. } => "automatic lifetime end".to_string(),
 
         ProgramStatement::Declare { name, .. } => format!("declaration of `{name}`"),

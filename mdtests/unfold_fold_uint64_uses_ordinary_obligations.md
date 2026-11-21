@@ -10,7 +10,7 @@ theorem tally_append(lo: uint64, hi: uint64) {
     requires lo < hi;
     ensures tally(lo, hi) == tally(lo, hi - 1u64) + 1 by {
         unfold(tally(lo, hi));
-        normalize();
+        known();
     }
 }
 ```

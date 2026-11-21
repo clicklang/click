@@ -2,6 +2,10 @@ mod computation;
 mod intervals;
 mod known_bridges;
 mod machine_ranges;
+pub(in crate::kernel) use computation::{
+    closed_algebraic_if_comparison, closed_integer_if_comparison, is_literal_value_if_guard_root,
+    literal_value_if_guard, reduce_known_int32_match_comparison,
+};
 pub(crate) use computation::{computes_leaf, trivial_condition_value};
 pub(crate) use known_bridges::{
     is_quotient_remainder_order, known_bridge_leaf, pointer_projection_source,
@@ -13,6 +17,11 @@ use crate::kernel::binary_term;
 use crate::kernel::*;
 
 pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
+    if let Some(reduced) = closed_algebraic_if_comparison(goal)
+        && normalizes_context_free(&reduced)
+    {
+        return true;
+    }
     if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = goal {
         let reduced_left =
             super::term_rewrite::TermRewrite::normalize_algebraic(left.native_compat());
@@ -3172,8 +3181,8 @@ pub(super) fn shared_premise_bridged_by_load_chain(
     facts: &[Proposition],
     assumptions: &PureFactContext,
 ) -> bool {
-    bridged_by_load_variable_edges::<KernelTerm>(premise, facts)
-        || bridged_with_origins::<KernelTerm>(premise, facts, assumptions)
+    bridged_by_load_variable_edges::<KernelTerm>(premise, facts, |_| false)
+        || bridged_with_origins::<KernelTerm>(premise, facts, assumptions, |_| false)
 }
 
 /// Whether an equality premise follows from recorded equalities through
@@ -3182,7 +3191,11 @@ pub(super) fn shared_premise_bridged_by_load_chain(
 fn bridged_by_load_variable_edges<S: ScalarReadBridgeSide>(
     premise: &Proposition,
     facts: &[Proposition],
+    exceeds_budget: fn(usize) -> bool,
 ) -> bool {
+    if exceeds_budget(facts.len()) {
+        return false;
+    }
     let Some((start, goal)) = S::equality_sides(premise) else {
         return false;
     };
@@ -3202,6 +3215,9 @@ fn bridged_by_load_variable_edges<S: ScalarReadBridgeSide>(
         }
         if visited.contains(&current) {
             continue;
+        }
+        if exceeds_budget(edges.len() + visited.len()) {
+            return false;
         }
         visited.push(current.clone());
         for (left, right) in &edges {
@@ -3284,12 +3300,16 @@ fn origin_renamings<S: ScalarReadBridgeSide>(
     side: &S,
     endpoints: &[S],
     origins: &mut OriginsUnchanged<'_>,
+    exceeds_budget: fn(usize) -> bool,
 ) -> Vec<S> {
     let Some(variable) = side.scalar_read() else {
         return vec![side.clone()];
     };
     let mut forms = vec![side.clone()];
     for endpoint in endpoints {
+        if exceeds_budget(1) {
+            break;
+        }
         let candidate = endpoint.scalar_read().expect("filtered by the caller");
         if candidate != variable
             && origins.decide(variable.clone(), candidate)
@@ -3305,7 +3325,11 @@ fn bridged_with_origins<S: ScalarReadBridgeSide>(
     premise: &Proposition,
     facts: &[Proposition],
     assumptions: &PureFactContext,
+    exceeds_budget: fn(usize) -> bool,
 ) -> bool {
+    if exceeds_budget(facts.len()) {
+        return false;
+    }
     let Some((start, goal)) = S::equality_sides(premise) else {
         return false;
     };
@@ -3327,47 +3351,23 @@ fn bridged_with_origins<S: ScalarReadBridgeSide>(
         .flat_map(|(left, right)| [left, right])
         .filter(|side| side.scalar_read().is_some())
         .collect();
-    let start_forms = origin_renamings(&start, &endpoints, &mut origins);
-    let goal_forms = origin_renamings(&goal, &endpoints, &mut origins);
+    let start_forms = origin_renamings(&start, &endpoints, &mut origins, exceeds_budget);
+    let goal_forms = origin_renamings(&goal, &endpoints, &mut origins, exceeds_budget);
     for start_form in &start_forms {
         for goal_form in &goal_forms {
+            if exceeds_budget(1) {
+                return false;
+            }
             if start_form == goal_form {
                 return true;
             }
             let candidate = S::equality(start_form.clone(), goal_form.clone());
-            if bridged_by_load_variable_edges::<S>(&candidate, facts) {
+            if bridged_by_load_variable_edges::<S>(&candidate, facts, exceeds_budget) {
                 return true;
             }
         }
     }
     false
-}
-
-pub(crate) fn premise_bridged_by_load_variable_chain(
-    premise: &Proposition,
-    facts: &[Proposition],
-) -> bool {
-    match premise {
-        Proposition::ConditionIs(condition, true)
-            if condition.native_compat().pointer_offset_sides().is_some() =>
-        {
-            bridged_by_load_variable_edges::<AddressOffset>(premise, facts)
-        }
-        condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    left: _,
-                    right: _,
-                },
-                _,
-            )) = condition_source_0.condition_native() =>
-        {
-            bridged_by_load_variable_edges::<MachineTerm>(premise, facts)
-        }
-        _ => false,
-    }
 }
 
 /// The chain closure with origin-unchanged implicit edges. Two load variables
@@ -3382,14 +3382,41 @@ pub(crate) fn premise_bridged_by_load_variable_chain_with_origins(
     facts: &[Proposition],
     assumptions: &PureFactContext,
 ) -> bool {
-    if premise_bridged_by_load_variable_chain(premise, facts) {
-        return true;
-    }
+    load_variable_bridge(premise, facts, assumptions, |_| false)
+}
+
+/// A planner probe charges edge visits and origin comparisons to the active
+/// search budget. Its answer has no checking authority.
+pub(in crate::kernel) fn plan_load_variable_bridge(
+    premise: &Proposition,
+    facts: &[Proposition],
+    assumptions: &PureFactContext,
+) -> bool {
+    load_variable_bridge(
+        premise,
+        facts,
+        assumptions,
+        crate::instrumentation::deadline_exceeded_with_work,
+    )
+}
+
+fn load_variable_bridge(
+    premise: &Proposition,
+    facts: &[Proposition],
+    assumptions: &PureFactContext,
+    exceeds_budget: fn(usize) -> bool,
+) -> bool {
     match premise {
         Proposition::ConditionIs(condition, true)
             if condition.native_compat().pointer_offset_sides().is_some() =>
         {
-            bridged_with_origins::<AddressOffset>(premise, facts, assumptions)
+            bridged_by_load_variable_edges::<AddressOffset>(premise, facts, exceeds_budget)
+                || bridged_with_origins::<AddressOffset>(
+                    premise,
+                    facts,
+                    assumptions,
+                    exceeds_budget,
+                )
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
@@ -3402,7 +3429,8 @@ pub(crate) fn premise_bridged_by_load_variable_chain_with_origins(
                 _,
             )) = condition_source_0.condition_native() =>
         {
-            bridged_with_origins::<MachineTerm>(premise, facts, assumptions)
+            bridged_by_load_variable_edges::<MachineTerm>(premise, facts, exceeds_budget)
+                || bridged_with_origins::<MachineTerm>(premise, facts, assumptions, exceeds_budget)
         }
         _ => false,
     }

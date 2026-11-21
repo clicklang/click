@@ -6827,7 +6827,12 @@ impl PureFactContext {
             self.adjust_memory_effect_fact(proposition);
             self.adjust_pointer_class_fact(proposition);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
+            let closed_if =
+                crate::kernel::proof::fact_reasoning::closed_algebraic_if_comparison(proposition);
             self.admit_shared_exact_propagation(shared);
+            if let Some(reading) = closed_if {
+                self.insert_proposition_fact(reading);
+            }
         }
     }
 
@@ -7647,7 +7652,34 @@ impl PureFactContext {
         let sign_cast_division = (condition.names_sign_cast_division()
             && self.condition_facts.get(&condition) != Some(&value))
         .then(|| condition.clone());
+        // A constructor-selected match gives the same bound on its
+        // payload. File that bound for overflow checks when admitting the
+        // specialized premise, keeping the written comparison as a fact.
+        let match_order = if matches!(
+            condition,
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan
+                    | CompareRelation::LessEqual
+                    | CompareRelation::GreaterThan
+                    | CompareRelation::GreaterEqual,
+                ..
+            }
+        ) && self.condition_facts.get(&condition).is_none()
+        {
+            crate::kernel::proof::fact_reasoning::reduce_known_int32_match_comparison(&condition)
+        } else {
+            None
+        };
+        let closed_if =
+            crate::kernel::proof::fact_reasoning::closed_integer_if_comparison(&condition);
         let mut next = self.assume_condition_once_shared(condition, value, source);
+        if let Some(reading) = closed_if {
+            next = next.assume_condition_once(reading, value);
+        }
+        if let Some(reading) = match_order {
+            next = next.assume_condition_once(reading, value);
+        }
         if !sign_bit_equivalents.is_empty() {
             next = Self::without_sign_bit_rule(|| {
                 sign_bit_equivalents

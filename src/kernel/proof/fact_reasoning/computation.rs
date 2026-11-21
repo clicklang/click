@@ -8,6 +8,7 @@ use crate::kernel::*;
 use crate::kernel::{
     constant_i64, constant_u32, constant_u64, int32_constant, int64_constant, uint64_constant,
 };
+use std::borrow::Cow;
 
 /// Whether this leaf is true by direct computation alone. A negated
 /// connective can be checked here as a leaf of the caller's structural walk.
@@ -82,12 +83,20 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
             })
             .map(|value| value == *truth),
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            if let (Some(left), Some(right)) = (left.root(), right.root())
+            let left_root = left.root().map(select_closed_algebraic_root);
+            let right_root = right.root().map(select_closed_algebraic_root);
+            if let (Some(left), Some(right)) = (left_root, right_root)
                 && left == right
             {
                 Some(true)
             } else {
-                algebraic_equality(left.native_compat(), right.native_compat())
+                let left = left_root
+                    .and_then(KernelTerm::algebraic_native_term)
+                    .unwrap_or_else(|| left.native_compat());
+                let right = right_root
+                    .and_then(KernelTerm::algebraic_native_term)
+                    .unwrap_or_else(|| right.native_compat());
+                algebraic_equality(left, right)
             }
         }
         Proposition::Equal(Term::Integer(left), Term::Integer(right)) => {
@@ -279,6 +288,34 @@ pub(crate) fn trivial_condition_value(condition: &ConditionTerm) -> Option<bool>
             })
         }
         _ => None,
+    }
+}
+
+/// Guards whose truth is determined by their literal operands.
+pub(in crate::kernel) fn literal_value_if_guard(condition: &ConditionTerm) -> Option<bool> {
+    match condition {
+        ConditionTerm::Constant(_) => {}
+        ConditionTerm::Compare { left, right, .. }
+            if matches!(left.as_ref(), MachineTerm::Constant { .. })
+                && matches!(right.as_ref(), MachineTerm::Constant { .. }) => {}
+        integer_comparison_condition!(left, right)
+            if matches!(left.as_ref(), IntegerTerm::Constant(_))
+                && matches!(right.as_ref(), IntegerTerm::Constant(_)) => {}
+        _ => return None,
+    }
+    trivial_condition_value(condition)
+}
+
+pub(in crate::kernel) fn is_literal_value_if_guard_root(guard: &KernelTerm) -> bool {
+    match guard.node() {
+        KernelTermNode::BoolLiteral(_) => true,
+        KernelTermNode::BoolCompare { arguments, .. } => arguments
+            .iter()
+            .all(|operand| matches!(operand.node(), KernelTermNode::MachineLiteral(_))),
+        KernelTermNode::IntegerCompare { arguments, .. } => arguments
+            .iter()
+            .all(|operand| matches!(operand.node(), KernelTermNode::IntegerLiteral(_))),
+        _ => false,
     }
 }
 
@@ -543,7 +580,9 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
     }
 }
 
-pub(super) fn known_int32_match_comparison_value(condition: &ConditionTerm) -> Option<bool> {
+fn reduce_known_int32_match_operands(
+    condition: &ConditionTerm,
+) -> Option<(CompareRelation, [Cow<'_, MachineTerm>; 2])> {
     use crate::kernel::proof::term_rewrite::TermRewrite;
     let ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
@@ -554,13 +593,30 @@ pub(super) fn known_int32_match_comparison_value(condition: &ConditionTerm) -> O
     else {
         return None;
     };
-    let reduced_left = TermRewrite::reduce_known_int32_match(left);
-    let reduced_right = TermRewrite::reduce_known_int32_match(right);
-    if reduced_left.is_none() && reduced_right.is_none() {
-        return None;
-    }
-    let left = reduced_left.as_ref().unwrap_or(left);
-    let right = reduced_right.as_ref().unwrap_or(right);
+    let operands = [left.as_ref(), right.as_ref()].map(|operand| {
+        TermRewrite::reduce_known_int32_match(operand)
+            .map_or_else(|| Cow::Borrowed(operand), Cow::Owned)
+    });
+    operands
+        .iter()
+        .any(|operand| matches!(operand, Cow::Owned(_)))
+        .then_some((*relation, operands))
+}
+
+pub(in crate::kernel) fn reduce_known_int32_match_comparison(
+    condition: &ConditionTerm,
+) -> Option<ConditionTerm> {
+    let (relation, [left, right]) = reduce_known_int32_match_operands(condition)?;
+    Some(ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation,
+        left: Box::new(left.into_owned()),
+        right: Box::new(right.into_owned()),
+    })
+}
+
+pub(super) fn known_int32_match_comparison_value(condition: &ConditionTerm) -> Option<bool> {
+    let (relation, [left, right]) = reduce_known_int32_match_operands(condition)?;
     let ordering = if left == right {
         std::cmp::Ordering::Equal
     } else {
@@ -642,7 +698,132 @@ fn conditional_int32_equality(left: &IntegerTerm, right: &IntegerTerm) -> Option
     }
 }
 
+// Read the selected branch before crossing the native compatibility
+// boundary. A dormant branch may refer to a large shared constructor.
+fn select_closed_algebraic_root(mut root: &KernelTerm) -> &KernelTerm {
+    while let KernelTermNode::AlgebraicIf {
+        arguments: [guard, then_term, else_term],
+    } = root.node()
+    {
+        if !is_literal_value_if_guard_root(guard) {
+            break;
+        }
+        let Some(truth) = KernelTermExport::condition(guard)
+            .ok()
+            .and_then(|guard| literal_value_if_guard(&guard))
+        else {
+            break;
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        root = if truth { then_term } else { else_term };
+    }
+    root
+}
+
+/// Read a direct algebraic equation or disequation through its closed arms.
+pub(in crate::kernel) fn closed_algebraic_if_comparison(goal: &Proposition) -> Option<Proposition> {
+    let (equality, equal) = match goal {
+        Proposition::Not(body) => (body.as_ref(), false),
+        proposition => (proposition, true),
+    };
+    let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = equality else {
+        return None;
+    };
+    let reduced = |term: &StoredAlgebraicTerm| {
+        if let Some(root) = term.root() {
+            let selected = select_closed_algebraic_root(root);
+            return (selected != root).then(|| {
+                StoredAlgebraicTerm::from_root(selected.clone()).expect("typed algebraic arm")
+            });
+        }
+        let input = term.native_compat();
+        let selected = select_closed_algebraic_arm(input);
+        (!std::ptr::eq(input, selected)).then(|| selected.clone().into())
+    };
+    let (a, b) = (reduced(left), reduced(right));
+    if a.is_none() && b.is_none() {
+        return None;
+    }
+    let proposition = Proposition::Equal(
+        Term::Algebraic(a.unwrap_or_else(|| left.clone())),
+        Term::Algebraic(b.unwrap_or_else(|| right.clone())),
+    );
+    Some(if equal {
+        proposition
+    } else {
+        Proposition::Not(Box::new(proposition))
+    })
+}
+
+fn selected_closed_integer_arm(term: &SharedIntegerTerm) -> Option<&SharedIntegerTerm> {
+    let IntegerTerm::If {
+        condition,
+        then_term,
+        else_term,
+    } = term.as_ref()
+    else {
+        return None;
+    };
+    let truth = literal_value_if_guard(condition)?;
+    Some(if truth { then_term } else { else_term })
+}
+
+pub(in crate::kernel) fn closed_integer_if_comparison(
+    condition: &ConditionTerm,
+) -> Option<ConditionTerm> {
+    map_integer_comparison(condition, |term| {
+        let mut arm = selected_closed_integer_arm(term)?;
+        while let Some(selected) = selected_closed_integer_arm(arm) {
+            crate::instrumentation::record_deterministic_work(1);
+            arm = selected;
+        }
+        Some(arm.clone())
+    })
+}
+
+pub(super) fn map_integer_comparison(
+    condition: &ConditionTerm,
+    reduce: impl Fn(&SharedIntegerTerm) -> Option<SharedIntegerTerm>,
+) -> Option<ConditionTerm> {
+    let integer_comparison_condition!(left, right) = condition else {
+        return None;
+    };
+    let (left_result, right_result) = (reduce(left), reduce(right));
+    if left_result.is_none() && right_result.is_none() {
+        return None;
+    }
+    let left = left_result.unwrap_or_else(|| left.clone());
+    let right = right_result.unwrap_or_else(|| right.clone());
+    Some(match condition {
+        ConditionTerm::IntegerLessThan(..) => ConditionTerm::IntegerLessThan(left, right),
+        ConditionTerm::IntegerLessEqual(..) => ConditionTerm::IntegerLessEqual(left, right),
+        ConditionTerm::IntegerGreaterThan(..) => ConditionTerm::IntegerGreaterThan(left, right),
+        ConditionTerm::IntegerGreaterEqual(..) => ConditionTerm::IntegerGreaterEqual(left, right),
+        ConditionTerm::IntegerEqual(..) => ConditionTerm::IntegerEqual(left, right),
+        ConditionTerm::IntegerNotEqual(..) => ConditionTerm::IntegerNotEqual(left, right),
+        _ => unreachable!(),
+    })
+}
+
+fn select_closed_algebraic_arm(mut term: &AlgebraicTerm) -> &AlgebraicTerm {
+    while let AlgebraicTermNode::If {
+        condition,
+        then_term,
+        else_term,
+    } = &term.node
+    {
+        let Some(truth) = literal_value_if_guard(condition) else {
+            break;
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        term = if truth { then_term } else { else_term };
+    }
+    term
+}
+
 fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<bool> {
+    let left = select_closed_algebraic_arm(left);
+    let right = select_closed_algebraic_arm(right);
     if left.algebraic_type != right.algebraic_type {
         return None;
     }
@@ -1269,6 +1450,12 @@ fn integer_affine_difference(
                 {
                     stack.push((value.clone(), false));
                     reduced_operands.insert(term.id(), value);
+                }
+            }
+            IntegerTerm::If { .. } => {
+                if let Some(arm) = selected_closed_integer_arm(&term) {
+                    stack.push((arm.clone(), false));
+                    reduced_operands.insert(term.id(), arm.clone());
                 }
             }
             IntegerTerm::AlgebraicMatch { .. } => {

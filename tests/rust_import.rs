@@ -2663,6 +2663,15 @@ fn rust_moves_drop_effect_and_return_capture_verify() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     ProgramVerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "restore"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
     for wrong in [
         sidecar.replace("ensures *value == old(*value);", "ensures *value == 7;"),
         sidecar.replace(
@@ -3637,6 +3646,45 @@ fn charon_a_nested_call_result_is_named_by_its_call() {
     let rendered =
         click::languages::rust::names::display_rust_names(&format!("{error}")).into_owned();
     assert!(rendered.contains("1 time(s)"), "{rendered}");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_match_can_split_a_call_result_without_a_local() {
+    let p = Project::new(
+        "pub enum Choice { Some(u32), None }
+         fn choose(x: u32) -> Choice {
+             if x == 0 { Choice::None } else { Choice::Some(x) }
+         }
+         pub fn unwrap_value(x: u32) -> u32 {
+             match choose(x) { Choice::Some(n) => n, Choice::None => 0 }
+         }",
+    );
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn choose(x: u32) -> Choice {
+    ensures result == (if x == 0u32 { Choice::None } else { Choice::Some(x) });
+}
+fn unwrap_value(x: u32) -> u32 { ensures result == x; } by {
+    step_until(statement(0).call(choose, 0).entry);
+    step();
+    match statement(0).call(choose, 0).result {
+        Choice::Some(payload) => { step_until(function.exit); solve(); },
+        Choice::None => { step_until(function.exit); solve(); },
+    }
+}
+"#;
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "unwrap_value"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
 }
 
 // A Rust `Result<u32, u8>` is Click's `Result<u32, u8>` in a contract, as an
@@ -4710,6 +4758,99 @@ fn rust_split_at_metadata_and_reads_verify() {
     ] {
         assert!(ProgramVerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
     }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_unnamed_scalar_storage_has_no_generated_name_in_proofs() {
+    let p = Project::new(
+        "pub fn front(bytes: &[u8]) -> usize {
+             let (front, tail) = bytes.split_at(bytes.len() - bytes.len() % 4);
+             let __rust_mir_17 = tail.len();
+             front.len() + __rust_mir_17
+         }",
+    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let mir = prepared.export().functions[0].mir.as_ref().unwrap();
+    let unnamed_scalars: Vec<_> = mir
+        .locals
+        .iter()
+        .filter(|local| local.value_type.is_scalar() && mir.unnamed_locals.contains(&local.name))
+        .collect();
+    assert!(!unnamed_scalars.is_empty());
+    assert!(!mir.unnamed_locals.contains("__rust_mir_17"));
+    let sidecar = r#"verifying "borrow.rs";
+fn front(bytes: &[u8]) -> usize {
+    requires bytes.len() == 7u64;
+    ensures result == 7u64;
+} by {
+    step_until(function.exit);
+    solve();
+}
+"#;
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "front"]);
+    let trace = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.status.success(), "{trace}");
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(trace.contains("__rust_mir_17 = tail.len()"), "{trace}");
+    for local in unnamed_scalars {
+        assert!(
+            !trace.lines().any(|line| line
+                .split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+                .any(|word| word == local.name)),
+            "unnamed scalar {} leaked into the trace: {trace}",
+            local.name
+        );
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_if_expression_carries_its_scalar_value_without_a_local() {
+    let p = Project::new("pub fn joined_value(x: u32) -> u32 { (if x == 0 { 3 } else { x }) % 2 }");
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn joined_value(x: u32) -> u32 {
+    ensures result == (if x == 0u32 { 1u32 } else { x % 2u32 });
+} by {
+    if x == 0u32 {
+        step_until(function.exit);
+        have statement(0).result == 3u32 by solve();
+        solve();
+    } else {
+        step_until(function.exit);
+        have statement(0).result == x by solve();
+        solve();
+    }
+}
+"#;
+    let file = p.root.join("borrow.click");
+    fs::write(&file, sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "joined_value"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("proof trace"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
+
+    assert_cli(
+        &p,
+        &["expand", "--claim", "joined_value.contract", "--in-place"],
+    );
+    let expanded = fs::read_to_string(file).unwrap();
+    assert!(!expanded.contains("__rust_mir_"), "{expanded}");
+    assert_cli(&p, &["verify"]);
 }
 
 #[test]

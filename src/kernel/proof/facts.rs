@@ -1833,13 +1833,10 @@ impl PureFactStore {
         facts
     }
 
-    /// Materializes one selected equality across a checked chain of load
-    /// variables. This keeps the ordinary `Known` checker exact while
-    /// allowing a new fixed-state goal to consume equality transport explicitly
-    /// carried through the preceding statement. Selection follows only the
-    /// goal's indexed equality buckets; unrelated ambient equalities remain
-    /// implicit and are never visited.
-    pub(crate) fn with_selected_load_equality_bridge(&self, goal: &Proposition) -> Self {
+    /// Legacy evidence for a selected leaf of a rewritten comparison.
+    /// Scans the leaf's equality buckets. Proof-goal preparation never uses
+    /// this route.
+    fn with_selected_load_equality_bridge(&self, goal: &Proposition) -> Self {
         if self.pure_known_available(goal)
             || !matches!(goal, Proposition::ConditionIs(condition, true)
                 if matches!(condition.native_compat(), ConditionTerm::Compare { format: MachineIntegerType::Int8 | MachineIntegerType::UInt8 | MachineIntegerType::Int16 | MachineIntegerType::UInt16 | MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. })
@@ -2648,6 +2645,20 @@ impl PureFactStore {
             .collect()
     }
 
+    /// Read the same equality index under the active search budget, with a
+    /// bound on how many candidates the source-proof planner will spell.
+    pub(crate) fn load_equality_candidates_for_solve(
+        &self,
+        proposition: &Proposition,
+        limit: usize,
+        _permission: crate::kernel::search::SearchPermission,
+    ) -> Vec<Proposition> {
+        self.collect_indexed_load_equalities(proposition, Some(limit))
+            .into_iter()
+            .map(|fact| fact.as_ref().clone())
+            .collect()
+    }
+
     /// Definedness-guarded comparisons (`defined(e) implies a == b`) whose
     /// consequent shares an atomic operand with `proposition`, oldest first
     /// within each atom and deduplicated by identity. The lookup visits only
@@ -2680,6 +2691,14 @@ impl PureFactStore {
         &self,
         proposition: &Proposition,
     ) -> Vec<Arc<Proposition>> {
+        self.collect_indexed_load_equalities(proposition, None)
+    }
+
+    fn collect_indexed_load_equalities(
+        &self,
+        proposition: &Proposition,
+        search_limit: Option<usize>,
+    ) -> Vec<Arc<Proposition>> {
         let mut atoms = BTreeSet::new();
         collect_proposition_bitvector_atoms(proposition, &mut atoms);
         // One fact is filed under each of its operands' atoms; pointer
@@ -2710,6 +2729,12 @@ impl PureFactStore {
         for atom in exact_pointers.into_iter().chain(other_operands) {
             if let Some(bucket) = self.bitvector_equalities_by_atom.get(atom) {
                 for equality in bucket.iter() {
+                    if let Some(limit) = search_limit
+                        && (equalities.len() == limit
+                            || crate::instrumentation::deadline_exceeded_with_work(1))
+                    {
+                        return equalities;
+                    }
                     if seen.insert(Arc::as_ptr(equality) as usize) {
                         equalities.push(equality.clone());
                     }

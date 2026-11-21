@@ -28,10 +28,10 @@ uint64 inspect(const uint8* p, uint64 n) {
    have n > 0u64 by known();
    have 0u64 < n by {
     if 0u64 < n { known(); } else {
-     have 0u64 <= n by normalize();
+     have 0u64 <= n by known();
      have 0u64 == n;
-     have n == 0u64 by { rewrite(0u64, n); normalize(); }
-     have not (n > 0u64) by { rewrite(n, 0u64); normalize(); }
+     have n == 0u64 by { rewrite(0u64, n); known(); }
+     have not (n > 0u64) by { rewrite(n, 0u64); known(); }
      contradiction(n > 0u64);
     }
    }
@@ -50,7 +50,7 @@ uint64 inspect(const uint8* p, uint64 n) {
   }
  }
  have n <= 0u64 by known();
- have not (n < 0u64) by normalize();
+ have not (n < 0u64) by known();
  have n == 0u64;
 }
 ```

@@ -73,7 +73,13 @@ impl ProgramStatement {
             Self::ThrowOpaque(payload) => Self::ThrowOpaque(*payload),
             Self::Break => Self::Break,
             Self::Continue => Self::Continue,
-            Self::Goto { target } => Self::Goto { target: *target },
+            Self::Goto {
+                target,
+                exited_locals,
+            } => Self::Goto {
+                target: *target,
+                exited_locals: exited_locals.clone(),
+            },
 
             Self::Declare {
                 initializer,

@@ -2673,8 +2673,12 @@ pub fn program_continue() -> ProgramStatement {
     ProgramStatement::Continue
 }
 
+#[cfg(test)]
 pub(crate) fn program_goto(target: ControlTargetId) -> ProgramStatement {
-    ProgramStatement::Goto { target }
+    ProgramStatement::Goto {
+        target,
+        exited_locals: Default::default(),
+    }
 }
 
 pub fn program_switch(expression: ProgramExpression, cases: Vec<SwitchCase>) -> ProgramStatement {
@@ -5329,7 +5333,7 @@ fn symbolic_execution_statement_execution_with_loop_rule(
     loop_evidence: Option<crate::kernel::termination::loop_evidence::LoopEvidence>,
 ) -> (SymbolicExecution, Option<VerifiedLoopRule>) {
     // A rule's paths are the loop statement's successors: the joined exit,
-    // a proven-divergent loop, each checked natural forward jump, and each
+    // a proven-divergent loop, each checked forward jump, and each
     // `return` the body reaches. A returned
     // path leaves the function from inside the loop; the rule carries it so
     // the enclosing execution continues with it as a returned path instead of
@@ -5341,6 +5345,15 @@ fn symbolic_execution_statement_execution_with_loop_rule(
                 StatementOutcome::Normal(_)
                     | StatementOutcome::Return { .. }
                     | StatementOutcome::VerificationDiverges
+            ) || matches!(
+                (&statement, &path.outcome),
+                (
+                    ProgramStatement::Loop {
+                        backedge_target: None,
+                        ..
+                    },
+                    StatementOutcome::Jump { .. }
+                )
             ) || matches!(
                 (&statement, &path.outcome),
                 (ProgramStatement::Loop {
@@ -7756,10 +7769,11 @@ impl FunctionContractRefinementObligations {
 
 /// Issues contract authority only from the exact closed ordinary proof obligation.
 pub(crate) fn prove_program_function_contract_refinement(
-    context: &FunctionContractRefinementContext,
+    obligations: &FunctionContractRefinementObligations,
     conclusion: Proposition,
     proof: &crate::kernel::proof::CheckedProposition,
 ) -> Option<VerifiedPureTheorem> {
+    let context = &obligations.context;
     let Proposition::Predicate { name, arguments } = &conclusion else {
         return None;
     };
@@ -7788,8 +7802,8 @@ pub(crate) fn prove_program_function_contract_refinement(
         return None;
     }
 
-    let obligations = prepare_contract_refinement_obligations(context)?;
-    if !proof.is_closed() || proof.proposition() != &obligations.proposition {
+    // Keep the original post-state point when checking the closed proof.
+    if !proof.is_closed() || proof.proposition() != obligations.proposition() {
         return None;
     }
     let theorem = match &context.source_contract {

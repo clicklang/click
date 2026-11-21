@@ -7,7 +7,7 @@ theorem add_int32(flag: Bool, x: int32, z: int32, w: int32) {
     ensures flag implies (if flag { x } else { 3 }) == ((z + w) as int32) by {
         intro();
         rewrite(x, ((z + w) as int32));
-        normalize() using { flag; };
+        solve() using { flag; };
     }
 }
 
@@ -17,7 +17,7 @@ theorem sub_int32(flag: Bool, x: int32, z: int32, w: int32) {
     ensures flag implies (if flag { x } else { 3 }) == ((z - w) as int32) by {
         intro();
         rewrite(x, ((z - w) as int32));
-        normalize() using { flag; };
+        solve() using { flag; };
     }
 }
 
@@ -27,7 +27,7 @@ theorem mul_int32(flag: Bool, x: int32, z: int32, w: int32) {
     ensures flag implies (if flag { x } else { 3 }) == ((z * w) as int32) by {
         intro();
         rewrite(x, ((z * w) as int32));
-        normalize() using { flag; };
+        solve() using { flag; };
     }
 }
 
@@ -37,7 +37,7 @@ theorem add_int64(flag: Bool, x: int64, z: int64, w: int64) {
     ensures flag implies (if flag { x } else { 3i64 }) == ((z + w) as int64) by {
         intro();
         rewrite(x, ((z + w) as int64));
-        normalize() using { flag; };
+        solve() using { flag; };
     }
 }
 
@@ -47,7 +47,7 @@ theorem sub_int64(flag: Bool, x: int64, z: int64, w: int64) {
     ensures flag implies (if flag { x } else { 3i64 }) == ((z - w) as int64) by {
         intro();
         rewrite(x, ((z - w) as int64));
-        normalize() using { flag; };
+        solve() using { flag; };
     }
 }
 
@@ -57,7 +57,7 @@ theorem mul_int64(flag: Bool, x: int64, z: int64, w: int64) {
     ensures flag implies (if flag { x } else { 3i64 }) == ((z * w) as int64) by {
         intro();
         rewrite(x, ((z * w) as int64));
-        normalize() using { flag; };
+        solve() using { flag; };
     }
 }
 ```

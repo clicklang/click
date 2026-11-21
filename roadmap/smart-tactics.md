@@ -121,7 +121,11 @@ comparison.
 
 Exact pointer reads can recover the complete stored pointer from a typed
 index entry at their selected point, with the value's provenance and bounds.
-Raising uses retained point IDs to name array arguments and historical reads.
+Address-only recovery for symbolic layout checks uses that same typed store,
+including after the cache drops the cell. Resource pointer cells, including
+named run slots, can use the same typed store when the source point is
+retained. Raising uses retained point IDs to name array arguments and
+historical reads.
 An indexed read can raise through a certified materialized view of its point.
 
 The remaining memory-state paths have production callers:
@@ -130,7 +134,7 @@ The remaining memory-state paths have production callers:
 | --- | --- |
 | Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for abstract cells supplied by bare memory producers or taken outside the verified entry path. |
 | Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` still construct memory-state observations for bare memory producers and unsupported indexed types or addresses. |
-| Preservation | `array_ref_argument_point` uses the block version walk outside the indexed entry and write paths, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
+| Preservation | `array_ref_argument_point` uses the block version walk for detached and uncertified views. The scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
 | Raising | Detached array arguments still use `synthesize_at_memory`. Detached scalar and abstract reads still use the memory and projection indexes in `RecordedStates::point_reading_load`. |
 
 Give symbolic addresses a separate slice. A loaded or opaque symbolic pointer
@@ -228,13 +232,20 @@ probe/reinvoke adapter. Solving belongs to the driver there; any repeated-loweri
 cost needs its own fixed-input/ambient-growth measurement. This is not evidence
 that the removed step/fold retry survives.
 
-Have opening also retains two separate preparation candidates: the pointer-only
-`with_selected_load_equality_bridge` route can traverse equality chains and
-origin-unchanged edges, and copying `execution.core.effect_facts` visits the
-retained effect collection. Measure each with a fixed written goal and growing
-unrelated history; remove automatic discovery or repeated publication rather
-than moving it into another fast helper. These are not covered by the scalar
-historical-candidate removal regression.
+Frontier `have` opening shares its parent's fact store and recorded execution
+without replaying the retained effects. Statement transitions publish checked
+footprint containment into the successor's fact store. A written statement
+footprint resolves through the recorded entry and exit. The regression
+`have_at_frontier_shares_the_context_across_call_history` holds the goals fixed
+at 4/16/64/128 calls and checks a named `preserve` proof at each size. The static
+cell-version index now skips the concrete call ranges in that proof. The source
+regression `static_cell_read_steps_skip_same_array_call_history` also checks a
+cold step at those sizes and 32 distinct cold reads after 32 calls.
+
+Load-equality chain discovery for fixed-state goals and execution `have`
+scopes runs under `solve`. Expanded proof steps cite the selected equality
+premises. The rewritten-load evidence path still scans selected equality
+buckets. Measure that path with a fixed written goal and growing related facts.
 
 
 ## Operation map
@@ -280,9 +291,9 @@ excluding prose and Rust test strings, leaves:
 | Corpus | Files | Sites |
 | --- | ---: | ---: |
 | `mdtests/` | 0 | 0 |
-| `examples/` | 7 | 42 |
+| `examples/` | 6 | 39 |
 | `library/` | 0 | 0 |
-| Total | 7 | 42 |
+| Total | 6 | 39 |
 
 Positive fixtures also supply exact input text to expansion and mutation tests.
 Migrate those inputs together with their tests and keep the smart proof inputs.

@@ -168,100 +168,11 @@ impl PureFactStore {
                 "`rewrite` requires its equality to be an exact available fact".to_string(),
             );
         }
-        match rewrite_with_admitted_equality(goal, equality) {
-            Ok(proposition) => Ok(CheckedEqualityRewrite::constructed(
-                proposition,
-                self.clone(),
-            )),
-            Err(original_error) => {
-                // Compare only the cited expression with the two operands of
-                // this atomic goal. Corresponding operators stay exact; the
-                // shared transport checker validates any changed read leaves.
-                let (from, to, wide) = match equality {
-                    condition_source_0 @ Proposition::ConditionIs(_, true)
-                        if let Some((
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                                relation: CompareRelation::Equal,
-                                left: a,
-                                right: b,
-                            },
-                            _,
-                        )) = condition_source_0.condition_native() =>
-                    {
-                        (a, b, false)
-                    }
-                    condition_source_0 @ Proposition::ConditionIs(_, true)
-                        if let Some((
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int64,
-                                relation: CompareRelation::Equal,
-                                left: a,
-                                right: b,
-                            },
-                            _,
-                        )) = condition_source_0.condition_native() =>
-                    {
-                        (a, b, true)
-                    }
-                    _ => return Err(original_error),
-                };
-                let (left, right) = match goal {
-                    condition_source_0 @ Proposition::ConditionIs(_, _)
-                        if let Some((
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                                relation: CompareRelation::Equal,
-                                left: a,
-                                right: b,
-                            },
-                            _,
-                        )) = condition_source_0.condition_native()
-                            && (!wide) =>
-                    {
-                        (a, b)
-                    }
-                    condition_source_0 @ Proposition::ConditionIs(_, _)
-                        if let Some((
-                            ConditionTerm::Compare {
-                                format: MachineIntegerType::Int64,
-                                relation: CompareRelation::Equal,
-                                left: a,
-                                right: b,
-                            },
-                            _,
-                        )) = condition_source_0.condition_native()
-                            && (wide) =>
-                    {
-                        (a, b)
-                    }
-                    _ => return Err(original_error),
-                };
-                for selected in [left, right] {
-                    if selected == from {
-                        continue;
-                    }
-                    let condition = if wide {
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int64,
-                            relation: CompareRelation::Equal,
-                            left: selected.clone(),
-                            right: to.clone(),
-                        }
-                    } else {
-                        ConditionTerm::equal(selected.as_ref().clone(), to.as_ref().clone())
-                    };
-                    let adapted = Proposition::condition_is(condition, true);
-                    let Some(facts) = self.with_checked_rewritten_loads(equality, &adapted) else {
-                        continue;
-                    };
-                    if let Ok(proposition) = rewrite_with_admitted_equality(goal, &adapted) {
-                        return Ok(CheckedEqualityRewrite::constructed(proposition, facts));
-                    }
-                }
-                Err(original_error)
-            }
-        }
+        let proposition = rewrite_with_admitted_equality(goal, equality)?;
+        Ok(CheckedEqualityRewrite::constructed(
+            proposition,
+            self.clone(),
+        ))
     }
 }
 
@@ -4018,8 +3929,7 @@ mod tests {
         assert!(retained.shares_premises_with(&facts));
     }
 
-    // Both widths use the same corresponding-leaf checker. A write, a
-    // different read kind, address, or operator cannot stand in for that leaf.
+    // Native rewrites keep read identity, including version and width.
     #[test]
     fn compound_read_rewrite_checks_states_kinds_and_operators() {
         let _session = crate::kernel::VerificationSession::enter();
@@ -4085,31 +3995,11 @@ mod tests {
             };
             let cited = eq(mask(load(&before, pointer.clone(), kind)), one.clone());
             let facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
-            let goal = eq(mask(load(&after, pointer.clone(), kind)), one.clone());
-            let checked = facts
-                .check_equality_rewrite(&goal, &cited)
-                .expect("unchanged selected cell");
-            assert_eq!(
-                checked.proposition(),
-                &Proposition::condition_is(
-                    if wide {
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int64,
-                            relation: CompareRelation::Equal,
-                            left: Box::new(one.clone()),
-                            right: Box::new(one.clone()),
-                        }
-                    } else {
-                        ConditionTerm::Constant(true)
-                    },
-                    true
-                )
-            );
-            assert!(
-                PureFactStore::default()
-                    .check_equality_rewrite(&goal, &cited)
-                    .is_err()
-            );
+            assert!(facts.check_equality_rewrite(&cited, &cited).is_ok());
+            let later = eq(mask(load(&changed, pointer.clone(), kind)), one.clone());
+            assert!(facts.check_equality_rewrite(&later, &cited).is_err());
+            let later_facts = PureFactStore::from_ordered(std::slice::from_ref(&later));
+            assert!(later_facts.check_equality_rewrite(&later, &later).is_ok());
             for wrong in [
                 mask(load(&changed, pointer.clone(), kind)),
                 mask(load(
@@ -4163,7 +4053,10 @@ mod tests {
         };
         crate::kernel::eval::declare_load_access_width(&pointer, 8);
         let before = SymbolicMemory::new().with_block("compound-rewrite-work", 8);
-        let after = before.clone().with_block("local:compound-rewrite-work", 4);
+        let after = before.clone().store(
+            pointer.clone(),
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(933_000))),
+        );
         let expression = |memory: &SymbolicMemory, size| {
             let mut term = MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
@@ -4194,25 +4087,30 @@ mod tests {
         let mut costs = Vec::new();
         for size in [8, 32, 128] {
             let cited = eq(expression(&before, size), MachineTerm::uint64_constant(1));
-            let goal = eq(expression(&after, size), MachineTerm::uint64_constant(1));
+            let goal = eq(expression(&before, size), MachineTerm::uint64_constant(1));
+            let miss = eq(expression(&after, size), MachineTerm::uint64_constant(1));
             let mut context_costs = Vec::new();
-            for ambient in [0, 32, 128] {
+            for ambient in [4, 16, 64, 256] {
                 let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
                 for i in 0..ambient {
-                    facts = facts.with_fact(equality(
-                        MachineTerm::Variable(Variable(930_000 + i)),
-                        MachineTerm::constant(i as u32),
+                    let other = MachineTerm::Variable(Variable(930_000 + i));
+                    facts = facts.with_fact(equality(other, MachineTerm::constant(i as u32)));
+                    facts = facts.with_fact(eq(
+                        expression(&before, 0),
+                        MachineTerm::Variable(Variable(932_000 + i)),
                     ));
                 }
                 crate::kernel::eval::clear_load_canonicalization_caches();
-                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    facts.check_equality_rewrite(&goal, &cited)
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    assert!(facts.check_equality_rewrite(&goal, &cited).is_ok());
+                    assert!(facts.check_equality_rewrite(&miss, &cited).is_err());
                 });
-                assert!(result.is_ok());
                 context_costs.push(work);
             }
             assert!(
-                context_costs.iter().all(|work| *work <= context_costs[0]),
+                context_costs
+                    .iter()
+                    .all(|work| *work <= context_costs[0] + 64),
                 "{context_costs:?}"
             );
             costs.push(context_costs[0]);

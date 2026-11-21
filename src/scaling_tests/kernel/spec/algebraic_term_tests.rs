@@ -49,22 +49,28 @@ fn int32_match_comparison_keeps_shared_constructor_payloads() {
         )
         .unwrap()
         .into_term();
-        let exports = KernelTermExport::algebraic_export_count();
-        let (goal, work) = crate::instrumentation::measure_deterministic_work(|| {
-            SpecValue::Shared(matched.clone())
-                .comparison_in(ComparisonOperator::Equal, &int32(7).into(), false)
-                .unwrap()
-                .unwrap()
-        });
-        let Proposition::ConditionIs(condition, true) = goal else {
-            panic!("machine equality");
-        };
-        assert!(matches!(
-            condition.root().unwrap().node(),
-            KernelTermNode::BoolCompare { arguments, .. } if arguments[0] == matched
-        ));
-        assert_eq!(KernelTermExport::algebraic_export_count(), exports);
-        assert!(work <= 24, "size={size} work={work}");
+        for (operator, relation) in [
+            (ComparisonOperator::Equal, CompareRelation::Equal),
+            (ComparisonOperator::LessThan, CompareRelation::LessThan),
+        ] {
+            let exports = KernelTermExport::algebraic_export_count();
+            let (goal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                SpecValue::Shared(matched.clone())
+                    .comparison_in(operator, &int32(7).into(), false)
+                    .unwrap()
+                    .unwrap()
+            });
+            let Proposition::ConditionIs(condition, true) = goal else {
+                panic!("machine comparison");
+            };
+            assert!(matches!(
+                condition.root().unwrap().node(),
+                KernelTermNode::BoolCompare { relation: found, arguments, .. }
+                        if *found == relation && arguments[0] == matched
+            ));
+            assert_eq!(KernelTermExport::algebraic_export_count(), exports);
+            assert!(work <= 24, "size={size} work={work}");
+        }
     }
 }
 

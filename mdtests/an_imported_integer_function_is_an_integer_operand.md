@@ -13,7 +13,7 @@ import "an_imported_integer_function_is_an_integer_operand_module.click";
 theorem doubled_is_twice(x: int32) {
     ensures to_integer(x) + to_integer(x) == doubled(x) by {
         unfold(doubled(x));
-        normalize();
+        known();
     }
 }
 

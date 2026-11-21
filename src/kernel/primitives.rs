@@ -27,19 +27,19 @@ pub struct ThreadHandleId(pub(crate) u64);
 
 pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
 
-pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
+pub(crate) const SAME_ALLOCATION_PREDICATE_NAME: &str = "__click_same_allocation";
 /// The prefix of the fact that opaque subobject bounds cover a range of
 /// `element_width`-byte elements: `{prefix}{element_width}(start, from, to)`
 /// (`design/pointer-subobject-bounds.md`, Phase C).
 pub(crate) const SUBOBJECT_COVERS_PREDICATE_PREFIX: &str = "__click_subobject_covers_";
 
-/// The Click spelling of the kernel predicate `name`: `same_object`
+/// The Click spelling of the kernel predicate `name`: `same_allocation`
 /// for the built-in, the declared name for a contract or a
 /// user predicate. `None` marks verifier bookkeeping under the reserved
 /// `__click_` prefix, which no Click proposition lowers to.
 pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
     match name {
-        SAME_OBJECT_PREDICATE_NAME => Some("same_object"),
+        SAME_ALLOCATION_PREDICATE_NAME => Some("same_allocation"),
         LITTLE_ENDIAN_PREDICATE_NAME => Some("little_endian"),
         _ => FunctionContract::surface_name_from_predicate(name)
             .or_else(|| (!name.starts_with("__click_")).then_some(name)),
@@ -133,6 +133,7 @@ pub(crate) use cell_store::{
     CellStore, DroppedRunSlots, IndexIntervals, RuleAnswer, RunValueMode, SlotSet, cell_run_value,
     offset_stem_and_constant,
 };
+mod cell_version_intervals;
 mod derivations;
 mod heap_effective_types;
 mod initialized_bytes;
@@ -5811,6 +5812,8 @@ pub enum ProgramStatement {
     /// function's checked control-flow table.
     Goto {
         target: ControlTargetId,
+        /// Automatic objects in the lexical scopes the edge leaves.
+        exited_locals: std::sync::Arc<[BindingName]>,
     },
 
     Declare {
@@ -9814,33 +9817,40 @@ impl SharedMemory {
         })
     }
 
-    /// Resolve a fixed-width static cell within a suffix of recorded scalar
-    /// stores. A miss returns the first edge outside that suffix.
-    pub(in crate::kernel) fn indexed_static_cell_store_version(
+    /// Skip the recorded store and checked call suffix for a static cell.
+    /// An intersecting call is selected for the ordinary edge check.
+    pub(in crate::kernel) fn indexed_static_cell_version(
         &self,
         pointer: &Address,
         bytes: u32,
-    ) -> Option<StaticCellStoreVersion> {
+    ) -> Option<StaticCellVersion> {
         let span = static_cell_byte_span(pointer, bytes)?;
         C_MEMORY_ARENA.with(|arena| {
             let arena = arena.borrow();
             if arena.0 != self.arena {
                 return None;
             }
-            let index = arena.1.static_cell_store_versions[self.id as usize].as_ref()?;
+            let index = arena.1.static_cell_versions[self.id as usize].as_ref()?;
             crate::instrumentation::record_deterministic_work(1);
             // All these IDs are on this chain, where each derivation
             // points back to a strictly older arena state.
-            let latest = index
-                .changed
-                .get(&pointer.base)
-                .and_then(|block| span.filter_map(|byte| block.get(&byte).copied()).max());
-            Some(match latest {
-                Some(id) => StaticCellStoreVersion::Written(arena.1.memory_handle(self.arena, id)),
-                None => StaticCellStoreVersion::Boundary(
-                    arena.1.memory_handle(self.arena, index.boundary),
-                ),
-            })
+            let writes = index.changed.get(&pointer.base);
+            let store = writes.and_then(|block| {
+                span.clone()
+                    .filter_map(|byte| block.stores.get(&byte).copied())
+                    .max()
+            });
+            let call = writes.and_then(|block| block.calls.latest_candidate(&span));
+            if let Some(store) = store.filter(|&store| Some(store) > call) {
+                return Some(StaticCellVersion::Written(
+                    arena.1.memory_handle(self.arena, store),
+                ));
+            }
+            let boundary = call.unwrap_or(index.boundary);
+            // At the selected call itself the legacy walk checks this edge,
+            // including any ownership the caller kept across it.
+            (boundary != self.id)
+                .then(|| StaticCellVersion::Boundary(arena.1.memory_handle(self.arena, boundary)))
         })
     }
 
@@ -10389,8 +10399,8 @@ struct MemoryArena {
     local_definedness_versions: Vec<LocalDefinednessVersions>,
     /// Block versions follow the same first-recorded edges as derivations.
     static_block_versions: Vec<Option<StaticBlockVersions>>,
-    /// Fixed-offset scalar stores, indexed along the cell walk's byte sources.
-    static_cell_store_versions: Vec<Option<StaticCellStoreVersions>>,
+    /// Fixed-offset stores and checked call ranges on the cell walk's byte sources.
+    static_cell_versions: Vec<Option<StaticCellVersions>>,
 }
 
 impl MemoryArena {
@@ -10405,51 +10415,123 @@ impl MemoryArena {
         }
     }
 
-    fn record_static_cell_stores(&mut self, step: &MemoryDerivation, id: u32) {
-        let Some((pointer, bytes)) = step.single_write() else {
-            return;
-        };
+    fn record_static_cell_versions(&mut self, step: &MemoryDerivation, id: u32) {
         // The cell walk normalizes the base to the retained bytes source
         // after each hop. Index exactly that chain.
         let before = self.read_identities[step.base().id as usize];
-        let previous = &self.static_cell_store_versions[before as usize];
-        if pointer.base.is_local_block() {
-            // A store through a recorded local block is structurally
-            // disjoint from static storage, even with a symbolic offset.
-            self.static_cell_store_versions[id as usize] = previous.clone();
-            return;
-        }
-        let Some(span) = static_cell_byte_span(pointer, bytes) else {
-            return;
-        };
-        let mut index = previous.clone().unwrap_or_else(|| StaticCellStoreVersions {
+        let previous = &self.static_cell_versions[before as usize];
+        let mut index = previous.clone().unwrap_or_else(|| StaticCellVersions {
             boundary: before,
             changed: Default::default(),
         });
-        let mut block = index
-            .changed
-            .get(&pointer.base)
-            .cloned()
-            .unwrap_or_default();
-        for byte in span {
-            block.insert(byte, id);
+        if let Some((pointer, bytes)) = step.single_write() {
+            // A recorded local block is distinct from every static block.
+            if pointer.base.is_local_block() {
+                self.static_cell_versions[id as usize] = previous.clone();
+                return;
+            }
+            let Some(span) = static_cell_byte_span(pointer, bytes) else {
+                return;
+            };
+            index.update_block(&pointer.base, |block| {
+                for byte in span {
+                    block.stores.insert(byte, id);
+                }
+            });
+        } else if let MemoryDerivation::CallHavoc { mutable_ranges, .. } = step {
+            for range in mutable_ranges {
+                crate::instrumentation::record_deterministic_work(1);
+                let (start, end) = range.bound_terms();
+                if start == end {
+                    continue;
+                }
+                let Some((span, alignment)) = static_call_range(range) else {
+                    return;
+                };
+                index.update_block(&range.base().base, |block| {
+                    block.calls.ranges.write(span, id);
+                    block.calls.by_alignment[alignment] = Some(id);
+                });
+            }
+        } else {
+            return;
         }
-        index.changed.insert(pointer.base.clone(), block);
-        self.static_cell_store_versions[id as usize] = Some(index);
+        self.static_cell_versions[id as usize] = Some(index);
     }
 }
 
 #[derive(Clone)]
-struct StaticCellStoreVersions {
+struct StaticCellVersions {
     boundary: u32,
-    // A scalar touches at most MAX_SCALAR_ACCESS_BYTES keys. Each key keeps
-    // the most recent store to that byte, even after a partial overwrite.
-    changed: PersistentMap<AddressBase, PersistentMap<i64, u32>>,
+    changed: PersistentMap<AddressBase, StaticCellWrites>,
 }
 
-pub(in crate::kernel) enum StaticCellStoreVersion {
+impl StaticCellVersions {
+    fn update_block(&mut self, base: &AddressBase, update: impl FnOnce(&mut StaticCellWrites)) {
+        let mut block = self.changed.get(base).cloned().unwrap_or_default();
+        update(&mut block);
+        self.changed.insert(base.clone(), block);
+    }
+}
+
+#[derive(Clone, Default)]
+struct StaticCellWrites {
+    // A scalar touches at most MAX_SCALAR_ACCESS_BYTES keys. Each key keeps
+    // the most recent store to that byte, even after a partial overwrite.
+    stores: PersistentMap<i64, u32>,
+    calls: StaticCallWrites,
+}
+
+#[derive(Clone, Default)]
+struct StaticCallWrites {
+    ranges: cell_version_intervals::CellVersionIntervals,
+    // Latest call requiring each alignment (1, 2, 4, 8 or 16 bytes). The
+    // existing constant separation rule requires an exact element index.
+    by_alignment: [Option<u32>; 5],
+}
+
+impl StaticCallWrites {
+    fn latest_candidate(&self, span: &std::ops::Range<i64>) -> Option<u32> {
+        if span.end > i64::from(i32::MAX) {
+            return self.by_alignment.iter().copied().max().flatten();
+        }
+        let start = span.start as u32;
+        let alignments = start.trailing_zeros().min(4) as usize;
+        let unaligned = self.by_alignment[alignments + 1..]
+            .iter()
+            .copied()
+            .max()
+            .flatten();
+        unaligned.max(self.ranges.latest(start..span.end as u32))
+    }
+}
+
+pub(in crate::kernel) enum StaticCellVersion {
     Written(SharedMemory),
     Boundary(SharedMemory),
+}
+
+/// Keep the constant element geometry that the legacy call separator uses.
+/// Unknown blocks, offsets, bounds, or shapes leave an ordinary walk boundary.
+fn static_call_range(range: &MemoryRange) -> Option<(std::ops::Range<u32>, usize)> {
+    let AddressOffset::Constant(base) = range.base().offset else {
+        return None;
+    };
+    let width = range.element_width();
+    if !range.base().base.is_static_storage_block()
+        || range.wide_bounds().is_some()
+        || !width.is_power_of_two()
+        || i64::from(width) > MAX_SCALAR_ACCESS_BYTES
+        || i32::try_from(base).ok()? < 0
+        || base % i64::from(width) != 0
+    {
+        return None;
+    }
+    let (start, end) = resource_algebra::concrete_memory_range_bounds(range)?;
+    Some((
+        u32::try_from(start).ok()?..u32::try_from(end).ok()?,
+        width.trailing_zeros() as usize,
+    ))
 }
 
 fn static_cell_byte_span(pointer: &Address, bytes: u32) -> Option<std::ops::Range<i64>> {
@@ -10803,7 +10885,7 @@ pub(crate) fn record_memory_derivation(result: &mut SymbolicMemory, derivation: 
             &derivation,
             &derived,
         ));
-        arena.record_static_cell_stores(&derivation, derived.id);
+        arena.record_static_cell_versions(&derivation, derived.id);
         arena.derivations[derived.id as usize] = Some(derivation);
         arena
             .derived_children
@@ -11001,7 +11083,7 @@ fn intern_memory_with(
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
         arena.static_block_versions.push(None);
-        arena.static_cell_store_versions.push(None);
+        arena.static_cell_versions.push(None);
         arena
             .local_definedness_versions
             .push(LocalDefinednessVersions::fresh(id));
@@ -15061,6 +15143,7 @@ pub struct FunctionContractRefinementContext {
 /// Kernel-generated sufficient logical obligations for one contract relation.
 /// The states and proposition cannot be supplied by the language layer.
 pub struct FunctionContractRefinementObligations {
+    pub(super) context: FunctionContractRefinementContext,
     pub(super) entry: ExecutionState,
     pub(super) post: ExecutionState,
     pub(super) proposition: Proposition,

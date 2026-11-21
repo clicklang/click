@@ -21,7 +21,7 @@ int32 found(int32 from) {
         witness(Path::Left(Path::Here));
         unfold(endpoint(from, Path::Left(Path::Here)));
         unfold(endpoint(from, Path::Here));
-        normalize();
+        known();
     }
     step(); solve();
 }

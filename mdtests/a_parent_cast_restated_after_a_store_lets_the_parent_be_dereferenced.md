@@ -96,11 +96,11 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                 Up::Frame(xid, xc) => {
                     have node_parent(Node::Inner(gid, gp)) == gp by {
                         unfold(node_parent(Node::Inner(gid, gp)));
-                        normalize();
+                        known();
                     }
                     have up_identity(Up::Frame(xid, xc)) == xid by {
                         unfold(up_identity(Up::Frame(xid, xc)));
-                        normalize();
+                        known();
                     }
                     have gp == xid by {
                         rewrite(gp, node_parent(Node::Inner(gid, gp)));
@@ -115,21 +115,35 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                     mark before_store;
                     step();
                     have separate(statement(0).footprint, memory(g->__rb_parent_color)) by {
-                        normalize() using { separate(memory(o->__rb_parent_color), memory(g->__rb_parent_color)); };
+                        solve() using { separate(memory(o->__rb_parent_color), memory(g->__rb_parent_color)); };
                     }
                     have *((&g->__rb_parent_color) as (int32 **)) == at(before_store, *((&g->__rb_parent_color) as (int32 **))) by {
                         preserve(memory(g->__rb_parent_color), statement(0));
                     }
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { known(); }
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by {
+                        have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == at(before_store, ((g->__rb_parent_color & ~3) as (struct rb_node *))) by {
+                            rewrite(g->__rb_parent_color, at(before_store, g->__rb_parent_color));
+                            known();
+                        }
+                        rewrite(((g->__rb_parent_color & ~3) as (struct rb_node *)), at(before_store, ((g->__rb_parent_color & ~3) as (struct rb_node *))));
+                        known();
+                    }
                     mark before_local;
                     step();
                     have separate(statement(1).region(0).footprint, memory(g->__rb_parent_color)) by {
-                        normalize() using {  };
+                        solve() using {  };
                     }
                     have *((&g->__rb_parent_color) as (int32 **)) == at(before_local, *((&g->__rb_parent_color) as (int32 **))) by {
                         preserve(memory(g->__rb_parent_color), statement(1).region(0));
                     }
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { known(); }
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by {
+                        have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == at(before_local, ((g->__rb_parent_color & ~3) as (struct rb_node *))) by {
+                            rewrite(g->__rb_parent_color, at(before_local, g->__rb_parent_color));
+                            known();
+                        }
+                        rewrite(((g->__rb_parent_color & ~3) as (struct rb_node *)), at(before_local, ((g->__rb_parent_color & ~3) as (struct rb_node *))));
+                        known();
+                    }
                     step();
                     step();
                     have p == xid by { known(); }

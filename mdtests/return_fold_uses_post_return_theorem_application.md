@@ -21,7 +21,7 @@ function first(s: Shape) -> int32 {
     }
 }
 theorem first_pair(a: int32, b: int32) {
-    ensures first(Shape::Pair(a, b)) == a by { unfold(first(Shape::Pair(a, b))); normalize(); }
+    ensures first(Shape::Pair(a, b)) == a by { unfold(first(Shape::Pair(a, b))); known(); }
 }
 resource Cell(p: int32*) {
     field model: int32;

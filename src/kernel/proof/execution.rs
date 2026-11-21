@@ -60,9 +60,8 @@ pub(crate) enum LoopControlExit {
     Break,
     /// A `continue`: the path reaches the back edge before the body's end.
     Continue,
-    /// The natural cycle's checked forward `goto` leaves the loop at its
-    /// named exit target.
-    NaturalExit(crate::kernel::ControlTargetId),
+    /// A checked forward `goto` leaves the loop for a function label.
+    Jump(crate::kernel::ControlTargetId),
     /// The loop's own test is false: the path leaves the loop there.
     TestFalse,
 }
@@ -70,7 +69,7 @@ pub(crate) enum LoopControlExit {
 impl LoopControlExit {
     /// Whether this path leaves the loop rather than returning to its head.
     pub(crate) fn is_exit(self) -> bool {
-        matches!(self, Self::Break | Self::NaturalExit(_) | Self::TestFalse)
+        matches!(self, Self::Break | Self::Jump(_) | Self::TestFalse)
     }
 }
 
@@ -1143,6 +1142,24 @@ fn memory_only_adds_named_cells(
             );
             if value != load {
                 return Err("added an abstract-type cell that is not its own load".into());
+            }
+            continue;
+        }
+        if let ProgramValue::Pointer(named) = &value
+            && named
+                .address()
+                .as_loaded_value()
+                .is_some_and(|read| read.point.read_version_id().is_some())
+        {
+            let expected = crate::kernel::eval::point_named_pointer_cell_read(
+                &source,
+                pointer,
+                named.program_type(),
+            );
+            if expected.as_ref() != Some(named) {
+                return Err(format!(
+                    "added a pointer cell at {pointer:?} without its complete indexed source read"
+                ));
             }
             continue;
         }
@@ -8561,8 +8578,11 @@ impl ExecutionProofCore {
             obligations,
             borrow_evidence,
         )
+        .map(|_| ())
     }
 
+    /// Returns the statement footprint's checked containment fact, if it has
+    /// a resource bound, for publication in the successor's pure fact store.
     pub(crate) fn record_statement_transition_with_descent(
         &mut self,
         function: &ProgramFunction,
@@ -8570,7 +8590,7 @@ impl ExecutionProofCore {
         native_step: &crate::kernel::SymbolicExecutionPath,
         context: PureFactContext,
         execution_facts: &(impl ExecutionFactSource + ?Sized),
-    ) -> Result<(), EvidenceRefusal> {
+    ) -> Result<Option<Proposition>, EvidenceRefusal> {
         if let Some(opened) = &self.descent {
             opened
                 .accept_at_state(native_step.descent_step.as_ref(), self.reached_state())
@@ -8598,7 +8618,7 @@ impl ExecutionProofCore {
         execution_facts: &(impl ExecutionFactSource + ?Sized),
         _obligations: &[crate::kernel::ProofObligation],
         borrow_evidence: &crate::kernel::borrows::CheckedBorrowCallEvidenceSequence,
-    ) -> Result<(), EvidenceRefusal> {
+    ) -> Result<Option<Proposition>, EvidenceRefusal> {
         debug_assert_eq!(self.execution_evidence.len(), 1);
         let (outcome, source_after) =
             self.check_statement_evidence(function, arguments, &theorem, &context)?;
@@ -8635,16 +8655,17 @@ impl ExecutionProofCore {
                 execution_facts,
             )
         });
-        if let Some(fp) = &self.last_footprint
-            && let Some(bound) = &fp.resource_bound
-        {
-            let fact = Proposition::ResourceContains {
+        let footprint_bound = self.last_footprint.as_ref().and_then(|footprint| {
+            let bound = footprint.resource_bound.as_ref()?;
+            Some(Proposition::ResourceContains {
                 parent: Box::new(bound.clone()),
-                child: Box::new(Resource::Footprint(fp.clone())),
-            };
+                child: Box::new(Resource::Footprint(footprint.clone())),
+            })
+        });
+        if let Some(fact) = &footprint_bound {
             self.effect_facts
                 .push(ExecutionPureFact::new(fact.clone()).into_certified());
-            self.retain_step_case(fact);
+            self.retain_step_case(fact.clone());
         }
         let memory_effects = self.append_statement_effects(execution_facts);
         self.advance_path_context(&context);
@@ -8808,18 +8829,19 @@ impl ExecutionProofCore {
                     self.frontier.loop_control = LoopControlExit::BodyEnd;
                     self.evidence_state = Some(*state);
                     self.evidence_completed = true;
-                    return Ok(());
+                    return Ok(footprint_bound);
                 }
-                if self.frontier.natural_exit_target == Some(target) && self.frontier.in_loop_body {
+                if self.frontier.in_loop_body && function.control_target(target).is_some() {
                     self.frontier.position = FrontierPosition::RegionBoundary;
-                    self.frontier.loop_control = LoopControlExit::NaturalExit(target);
+                    self.frontier.loop_control = LoopControlExit::Jump(target);
                     self.evidence_state = Some(*state);
                     self.evidence_completed = true;
-                    return Ok(());
+                    return Ok(footprint_bound);
                 }
                 let target = function
                     .control_target(target)
                     .ok_or_else(|| EvidenceRefusal::from("goto target is not in its function"))?;
+                self.frontier.continuations.clear();
                 self.frontier.next_statement_index = target.statement_index;
                 self.frontier.position = FrontierPosition::StatementEntry {
                     remaining: target.remaining.clone(),
@@ -8835,7 +8857,7 @@ impl ExecutionProofCore {
             | StatementOutcome::UndefinedBehavior(_)
             | StatementOutcome::RuntimeError(_) => self.evidence_completed = true,
         }
-        Ok(())
+        Ok(footprint_bound)
     }
 
     /// Abandon only the lexical continuations this transfer leaves. The
@@ -9608,7 +9630,9 @@ impl ExecutionProofCore {
             };
         match (&**proved_statement, outcome) {
             (
-                ProgramStatement::Goto { target: expected },
+                ProgramStatement::Goto {
+                    target: expected, ..
+                },
                 StatementOutcome::Jump { target: actual, .. },
             ) if expected == actual && function.control_target(*actual).is_some() => {}
             (ProgramStatement::Goto { .. }, _) => {
@@ -9622,8 +9646,16 @@ impl ExecutionProofCore {
                 },
                 StatementOutcome::Jump { target: actual, .. },
             ) if expected == actual && function.control_target(*actual).is_some() => {}
+            (
+                ProgramStatement::Loop {
+                    backedge_target: None,
+                    ..
+                }
+                | ProgramStatement::Switch { .. },
+                StatementOutcome::Jump { target, .. },
+            ) if function.control_target(*target).is_some() => {}
             (_, StatementOutcome::Jump { .. }) => {
-                return Err("non-goto evidence carries a control-flow jump".into());
+                return Err("statement evidence carries an invalid control-flow jump".into());
             }
             _ => {}
         }

@@ -2351,10 +2351,12 @@ fn synthesize_boolean_cell_read(
     if !point.memory().has_boolean_cell_type(address) {
         return None;
     }
-    // A Boolean cell's byte test names the memory selected by Boolean
-    // evaluation. The integer read selector may choose a different version.
+    // A snapshot read can use a typed Boolean spelling only where lowering
+    // still uses a detached view. A certified point gives the spelling its
+    // own point-keyed read.
     let selects_read = |state: &ExecutionState| {
         &crate::kernel::intern_memory_ref(state.memory()) == point.shared_memory()
+            && !state.program_point().has_certified_read_view()
     };
     let expression = |state: &ExecutionState| {
         Some(synthesize_typed_load(
@@ -3637,18 +3639,15 @@ fn machine_spelling_lowers_to_integer(
     relation: CompareRelation,
     operands: [crate::kernel::KernelTerm; 2],
 ) -> bool {
-    let [left, right] = &operands;
-    !matches!(
-        crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
-            format,
-            relation,
-            [
-                crate::kernel::MachineOperandView::Shared(left),
-                crate::kernel::MachineOperandView::Shared(right),
-            ],
-        ),
-        ConditionTerm::Compare { .. } | ConditionTerm::Constant(_)
-    )
+    use crate::kernel::machine_integer::comparison;
+    let operands = operands
+        .each_ref()
+        .map(crate::kernel::MachineOperandView::Shared);
+    !comparison::retains_int32_match(format, operands)
+        && !matches!(
+            comparison::logical_condition_for_operand_views(format, relation, operands),
+            ConditionTerm::Compare { .. } | ConditionTerm::Constant(_)
+        )
 }
 
 /// `to_integer(left) OP to_integer(right)` with an explicit Integer context:
@@ -3693,13 +3692,39 @@ fn synthesize_surface_integer(
     raise_kernel_term(&term, parameter_binding, state, bound_variables)
 }
 
+// The comparison renderer spells a proposition used as a Bool via
+// `if guard { true } else { false }`. An Integer or algebraic `if` expects a
+// proposition directly, so recover the comparison instead of wrapping it.
+fn raise_value_if_guard(
+    guard: &crate::kernel::KernelTerm,
+    expression: SurfaceTerm,
+) -> ClickProposition {
+    use crate::kernel::KernelTermNode as Node;
+    match (guard.node(), expression) {
+        (Node::BoolLiteral(_), literal) => ClickProposition::Value(literal),
+        (
+            Node::BoolCompare { .. } | Node::IntegerCompare { .. },
+            SurfaceTerm::If {
+                condition,
+                then_branch,
+                else_branch,
+            },
+        ) if bool_literal_value(&then_branch) == Some(true)
+            && bool_literal_value(&else_branch) == Some(false) =>
+        {
+            *condition
+        }
+        (_, expression) => bool_truth(expression),
+    }
+}
+
 // Keep this construction outside the recursive general dispatch frame.
 fn raise_algebraic_if<'a>(
     arguments: &'a [crate::kernel::KernelTerm; 3],
     mut raise: impl FnMut(&'a crate::kernel::KernelTerm) -> Option<SurfaceTerm>,
 ) -> Option<SurfaceTerm> {
     Some(SurfaceTerm::If {
-        condition: Box::new(bool_truth(raise(&arguments[0])?)),
+        condition: Box::new(raise_value_if_guard(&arguments[0], raise(&arguments[0])?)),
         then_branch: Box::new(raise(&arguments[1])?),
         else_branch: Box::new(raise(&arguments[2])?),
     })
@@ -4344,7 +4369,7 @@ fn raise_kernel_term_dispatch(
         }
         Node::AlgebraicIf { arguments } => raise_algebraic_if(arguments, recurse)?,
         Node::IntegerIf { arguments } => SurfaceTerm::If {
-            condition: Box::new(bool_truth(recurse(&arguments[0])?)),
+            condition: Box::new(raise_value_if_guard(&arguments[0], recurse(&arguments[0])?)),
             then_branch: Box::new(integer_typed_expression(recurse(&arguments[1])?)),
             else_branch: Box::new(integer_typed_expression(recurse(&arguments[2])?)),
         },
@@ -8278,6 +8303,18 @@ fn raise_float_read(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     let (point, address) = read.parts();
+    if point.read_version_id().is_some() {
+        return synthesize_at_program_point(point, state, |state| {
+            let place = raise_float_read_place(
+                address,
+                value_type,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?;
+            Some(SurfaceTerm::Exact(Box::new(place)))
+        });
+    }
     let memory = point.shared_memory();
     // Float producers retain the raw state, rather than the integer load's
     // canonical selection. Spelling must reproduce that same producer input.
@@ -8313,6 +8350,22 @@ fn raise_float_read(
             )?),
         });
     }
+    raise_float_read_place(
+        address,
+        value_type,
+        parameter_binding,
+        state,
+        bound_variables,
+    )
+}
+
+fn raise_float_read_place(
+    address: &crate::kernel::SharedAddress,
+    value_type: ProgramType,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<SurfaceTerm> {
     let pointer = synthesize_surface_pointer(
         address.exact_cell_key(),
         parameter_binding,
@@ -8365,6 +8418,10 @@ fn synthesize_surface_algebraic(
         return Some(name.reference());
     }
     match &term.node {
+        crate::kernel::AlgebraicTermNode::If { .. } => {
+            let root = crate::kernel::KernelTermImport::default().algebraic(term);
+            raise_kernel_term(&root, parameter_binding, state, bound_variables)
+        }
         crate::kernel::AlgebraicTermNode::Match { .. } => {
             let matched = crate::kernel::KernelMatch::import_algebraic(
                 &mut crate::kernel::KernelTermImport::default(),
@@ -8599,7 +8656,6 @@ fn synthesize_surface_algebraic(
                 arguments,
             })
         }
-        _ => None,
     }
 }
 

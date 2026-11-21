@@ -36,7 +36,7 @@ void keep(struct pair* p, int32 x) {
     have p->count == 17 by { known(); }
     have p->tag == 42 by {
         have p->tag == 42 by {
-            normalize() using {
+            solve() using {
                 at(before_join, p->tag) == 42;
             };
         }

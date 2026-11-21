@@ -102,10 +102,10 @@ fn refuse_reserved_name(kind: DeclarationKind, name: &str) -> Result<(), ClickEr
             }
             if matches!(
                 name,
-                "same_object" | crate::kernel::SAME_OBJECT_PREDICATE_NAME
+                "same_allocation" | crate::kernel::SAME_ALLOCATION_PREDICATE_NAME
             ) {
                 return Err(ClickError::new(
-                    "`same_object` is a built-in proposition and cannot be redefined",
+                    "`same_allocation` is a built-in proposition and cannot be redefined",
                 ));
             }
             if name == "held" {

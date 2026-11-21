@@ -536,6 +536,7 @@ mod tests {
             mir: Some(MirBody {
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
+                unnamed_locals: Default::default(),
                 locals: vec![Place {
                     name: "marker".into(),
                     value_type: Type::I32,
@@ -630,6 +631,7 @@ mod tests {
         let mut mir = MirBody {
             return_place: "__rust_mir_0".into(),
             spellings: Default::default(),
+            unnamed_locals: Default::default(),
             locals: vec![],
             blocks: vec![
                 MirBlock {
@@ -898,6 +900,7 @@ mod tests {
         let mut mir = MirBody {
             return_place: "__rust_mir_0".into(),
             spellings: Default::default(),
+            unnamed_locals: Default::default(),
             locals: vec![],
             blocks: vec![MirBlock {
                 terminator_site: None,

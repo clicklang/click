@@ -12,7 +12,7 @@ void tag(struct node *n, struct node *p, int32 color) {
 ```click
 verifying "roundtrip.c";
 theorem direct_roundtrip(p: struct node*) {
-    ensures (address(p) as (struct node *)) == p by { normalize(); }
+    ensures (address(p) as (struct node *)) == p by { known(); }
 }
 void tag(struct node* n, struct node* p, int32 color) {
     owns n->word;

@@ -936,7 +936,7 @@ fn rejects_unknown_predicate_call() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_07")]
-fn rejects_same_object_with_non_pointer_arguments() {
+fn rejects_same_allocation_with_non_pointer_arguments() {
     let c_source = r#"
             int32 identity(int32 x) {
                 return x;
@@ -946,18 +946,18 @@ fn rejects_same_object_with_non_pointer_arguments() {
             verifying "identity.c";
 
             int32 identity(int32 x) {
-                requires same_object(x, x);
+                requires same_allocation(x, x);
                 ensures result == x;
             }
         "#;
 
     let error = verify_c_sources(source, &[("identity.c", c_source)])
-        .expect_err("same_object should require object pointers");
+        .expect_err("same_allocation should require object pointers");
 
     assert!(
         error
             .message()
-            .contains("same_object expects pointer arguments"),
+            .contains("same_allocation expects pointer arguments"),
         "{}",
         error.message()
     );
@@ -965,14 +965,14 @@ fn rejects_same_object_with_non_pointer_arguments() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_07")]
-fn rejects_redefinition_of_same_object() {
+fn rejects_redefinition_of_same_allocation() {
     let source = r#"
-            predicate same_object(x: int32) {
+            predicate same_allocation(x: int32) {
                 x == x
             }
         "#;
 
-    let error = parse(source).expect_err("same_object should remain a built-in proposition");
+    let error = parse(source).expect_err("same_allocation should remain a built-in proposition");
 
     assert!(
         error
@@ -3562,8 +3562,8 @@ test_batches! {
     ],
     logical_tactics_batch_07: [
         rejects_unknown_predicate_call,
-        rejects_same_object_with_non_pointer_arguments,
-        rejects_redefinition_of_same_object,
+        rejects_same_allocation_with_non_pointer_arguments,
+        rejects_redefinition_of_same_allocation,
         rejects_predicate_call_with_wrong_arity,
     ],
     logical_tactics_batch_08: [

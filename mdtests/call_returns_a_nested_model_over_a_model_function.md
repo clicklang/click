@@ -61,7 +61,7 @@ void graft(int32* p) {
             have shape_left(old(t.model)) == left by {
                 rewrite(old(t.model), Shape::Node(left, right));
                 unfold(shape_left(Shape::Node(left, right)));
-                normalize();
+                known();
             }
             have left != Shape::Empty;
             unfold(t);

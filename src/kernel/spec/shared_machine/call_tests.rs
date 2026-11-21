@@ -1011,6 +1011,76 @@ fn static_array_versions_select_their_own_write_across_disjoint_calls() {
 }
 
 #[test]
+fn heap_array_versions_ignore_disjoint_local_stores() {
+    let _session = VerificationSession::enter();
+    let other = SymbolicMemory::local_pointer("unrelated");
+    let request = Address::symbolic(Variable(1013830));
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let pending = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_block(other.base.clone(), 4)
+            .with_pending_heap_allocation(
+                request.clone(),
+                crate::kernel::AllocationSize::int32(4),
+                false,
+            ),
+    );
+    let (memory, _, array) = pending
+        .memory()
+        .clone()
+        .resolve_pending_heap_allocation(&request, true)
+        .expect("successful allocation");
+    let allocated = pending.with_memory(memory);
+    let written = allocated
+        .clone()
+        .with_memory(allocated.memory().clone().store(array.clone(), int32(7)));
+    let argument = ProgramValue::typed_pointer(array.clone(), ProgramType::Int32Pointer);
+    let expected = written.observation_point_id();
+    let samples = [1, 8, 64, 256].map(|count| {
+        let mut state = written.clone();
+        for index in 0..count {
+            let memory = state.memory().clone().store(other.clone(), int32(index));
+            state = state.with_memory(memory);
+        }
+        crate::kernel::resource_tracker::clear_version_memos();
+        let point = state.program_point();
+        let (version, work) = crate::instrumentation::measure_deterministic_work(|| {
+            array_ref_argument_point(&point, &argument)
+        });
+        (version.read_version_id(), work)
+    });
+    let work = samples.map(|(_, work)| work);
+    assert!(work.iter().all(|units| *units <= work[0] + 4), "{work:?}");
+    assert!(
+        samples.iter().all(|(version, _)| *version == expected),
+        "{samples:?}"
+    );
+
+    let rewritten = written
+        .clone()
+        .with_memory(written.memory().clone().store(array.clone(), int32(7)));
+    assert_eq!(
+        array_ref_argument_point(&rewritten.program_point(), &argument).read_version_id(),
+        rewritten.observation_point_id(),
+    );
+    assert_ne!(rewritten.observation_point_id(), expected);
+    let memory = rewritten
+        .memory()
+        .clone()
+        .free_heap_block(&array, &PureFactContext::new())
+        .expect("free the live allocation");
+    let freed = rewritten.with_memory(memory);
+    assert!(
+        freed
+            .program_point()
+            .indexed_array_version(&array.base)
+            .is_none()
+    );
+}
+
+#[test]
 fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
     let _session = VerificationSession::enter();
     let array = SymbolicMemory::local_pointer("array");
@@ -1081,6 +1151,102 @@ fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
         work
     });
     assert!(work.iter().all(|units| *units <= work[0] + 4), "{work:?}");
+}
+
+#[test]
+fn pure_function_array_keeps_its_selected_point_without_an_indexed_version() {
+    let _session = VerificationSession::enter();
+    let array = Address::symbolic(Variable(1013811));
+    let argument = SpecPureFunctionArgument::ArrayRef {
+        point: SpecPoint::Current,
+        pointer: SpecExpression::Value(ProgramValue::typed_pointer(
+            array.clone(),
+            ProgramType::Int32Pointer,
+        )),
+        element_type: ProgramType::Int32,
+    };
+    let first = ExecutionState::new().begin_function_entry_memory();
+    let second = ExecutionState::new().begin_function_entry_memory();
+    assert_eq!(first.memory(), second.memory());
+
+    for state in [&first, &second] {
+        assert!(
+            state
+                .program_point()
+                .indexed_array_version(&array.base)
+                .is_none()
+        );
+        for native in [false, true] {
+            let mut execution = ExecutionBudget::new();
+            let mut budget = SpecEvaluation::logical(&mut execution);
+            budget.machine_result_production_disabled = native;
+            let paths = evaluate_spec_pure_function_argument_paths_in(
+                SpecScope::unbound(state, None),
+                &argument,
+                &PureFactContext::new(),
+                &mut budget,
+            )
+            .unwrap();
+            let [path] = paths.as_slice() else {
+                panic!("one array argument path");
+            };
+            let argument = match &path.value {
+                SpecCallArgument::Native(argument) => argument.clone(),
+                SpecCallArgument::Shared(root) => {
+                    KernelTermExport::default().argument(root).unwrap()
+                }
+            };
+            let PureFunctionArgument::ArrayRef { point, .. } = argument else {
+                panic!("array argument retains a point");
+            };
+            assert_eq!(point.read_version_id(), state.observation_point_id());
+        }
+    }
+}
+
+#[test]
+fn declared_predicate_array_keeps_its_selected_point_without_an_indexed_version() {
+    let _session = VerificationSession::enter();
+    let array = Address::symbolic(Variable(1013810));
+    let arguments = [SpecPredicateArgument::ArrayRef {
+        point: SpecPoint::Current,
+        pointer: SpecExpression::Value(ProgramValue::typed_pointer(
+            array.clone(),
+            ProgramType::Int32Pointer,
+        )),
+    }];
+    let first = ExecutionState::new().begin_function_entry_memory();
+    let second = ExecutionState::new().begin_function_entry_memory();
+    assert_eq!(first.memory(), second.memory());
+
+    for state in [&first, &second] {
+        assert!(
+            state
+                .program_point()
+                .indexed_array_version(&array.base)
+                .is_none()
+        );
+        let mut execution = ExecutionBudget::new();
+        let paths = lower_spec_predicate_proposition_at_state_in(
+            SpecScope::unbound(state, None),
+            "array_predicate",
+            &arguments,
+            false,
+            &PureFactContext::new(),
+            &mut SpecEvaluation::logical(&mut execution),
+        )
+        .unwrap();
+        let [path] = paths.as_slice() else {
+            panic!("one predicate path");
+        };
+        let Proposition::Predicate { arguments, .. } = &path.proposition else {
+            panic!("declared predicate");
+        };
+        let [_, Term::ArrayReadPoint(point), Term::ProgramValue(_)] = arguments.as_slice() else {
+            panic!("array argument retains a point");
+        };
+        assert_eq!(point.read_version_id(), state.observation_point_id());
+    }
 }
 
 #[test]

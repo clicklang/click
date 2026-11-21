@@ -1,10 +1,10 @@
 # same-object requirements preserve pointer provenance through calls
 
-An explicit `same_object` requirement lets a helper compare independently
+An explicit `same_allocation` requirement lets a helper compare independently
 supplied pointer parameters. The caller discharges it with two pointers into
 one array. Relational ordering of members of the same aggregate remains valid.
 
-```c filename=c_pointer_same_object_requirement.c
+```c filename=c_pointer_same_allocation_requirement.c
 struct pair {
     int32 first;
     int32 second;
@@ -29,10 +29,10 @@ int32 members_in_order(struct pair *pair) {
 ```
 
 ```click
-verifying "c_pointer_same_object_requirement.c";
+verifying "c_pointer_same_allocation_requirement.c";
 
 int32 compare(int32* left, int32* right) {
-    requires same_object(left, right);
+    requires same_allocation(left, right);
     ensures result == 0 or result == 1;
 }
 
@@ -41,7 +41,7 @@ int32 compare_array_elements() {
 }
 
 int32 compare_forwarded(int32* left, int32* right) {
-    requires same_object(left, right);
+    requires same_allocation(left, right);
     ensures result == 0 or result == 1;
 }
 

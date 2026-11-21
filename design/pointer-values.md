@@ -1,6 +1,6 @@
 # Pointer values: a Surface form for a pointer's parts
 
-Status: approved (D1-D5, 2026-11-20). Not implemented.
+Status: superseded by `design/pointer-model.md` before implementation. Its decisions D1-D5 were approved on 2026-11-20.
 
 ## Problem
 
@@ -155,7 +155,7 @@ one is a visible case to fix at its construction site or to accept.
 ## Steps
 
 Each step is one PR, measured with the raise-lower audit and
-`scripts/fact-stability.sh`.
+`scripts/audit.sh fact-stability`.
 
 1. **The Surface form.** Parse, validate, lower and print `pointer<T>(..)`.
    Add mdtests:

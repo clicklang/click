@@ -610,6 +610,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
         )),
     );
     Some(FunctionContractRefinementObligations {
+        context: context.clone(),
         entry,
         post,
         proposition,

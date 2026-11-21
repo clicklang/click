@@ -840,6 +840,11 @@ impl EqualityGraph {
         while let Some(value) = pending.pop() {
             let direct_read = value.as_loaded_value();
             let sources = direct_read.as_ref().map(|load| {
+                // A selected point already names the read. Projection edges
+                // belong to the compatibility path for reads named by memory.
+                if load.point.read_version_id().is_some() {
+                    return [None, None, None];
+                }
                 [
                     crate::kernel::prelude::canonical_load_projection_source(
                         &load.defining_memory,
@@ -950,6 +955,7 @@ impl EqualityGraph {
             // exact registry lookup connects the application to its original
             // state without searching history or inspecting other reads.
             if let Some(load) = application.as_loaded_value()
+                && load.point.read_version_id().is_none()
                 && let Some(source) = crate::kernel::prelude::canonical_load_projection_source(
                     &load.defining_memory,
                     address,
@@ -3409,6 +3415,33 @@ fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pointer_domains_distinguish_points_with_equal_memory() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::SymbolicMemory::new();
+        let cell = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let read = || {
+            let point = crate::kernel::ProgramPoint::starting_at(&memory).for_exact_read();
+            Pointer::from_point_read(point, crate::kernel::ProgramType::Int32Pointer, &cell)
+        };
+        let left = read();
+        let right = read();
+        assert_ne!(left.address(), right.address());
+
+        let mut graph = EqualityGraph::default();
+        let left_bounds = left.bounds_owner().expect("complete pointer bounds");
+        let right_bounds = right.bounds_owner().expect("complete pointer bounds");
+        assert!(!graph.provenance_equal(left.provenance(), right.provenance()));
+        assert!(!graph.bounds_owners_equal(left_bounds, right_bounds));
+
+        graph.add_pointer_equality(&left, &right);
+        assert!(graph.provenance_equal(left.provenance(), right.provenance()));
+        assert!(graph.bounds_owners_equal(left_bounds, right_bounds));
+    }
 
     #[test]
     fn pointer_fact_search_uses_admission_order_across_allocations_and_rebuilds() {

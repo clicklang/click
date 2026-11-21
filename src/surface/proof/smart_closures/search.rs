@@ -4029,6 +4029,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(rewritten));
         }
+        if let Some(proof) =
+            Self::try_selected_load_equality_bridge(search_input, introduced_surfaces)?
+        {
+            return Ok(Some(proof));
+        }
         if let Some(surface_goal) = search_input.surface_goal()
             && let Some(proof) = crate::kernel::search::ProofSearch::try_state_transport_closure(
                 search_input,
@@ -5832,6 +5837,63 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         None
     }
 
+    /// Select the equalities for a load bridge under solve's budget and
+    /// submit them to the ordinary transport checker. The checked successor
+    /// retains only its explicit proof steps, so opening the goal or replaying
+    /// the certificate never enumerates the goal's equality buckets.
+    fn try_selected_load_equality_bridge(
+        search_input: &Proof<'a>,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_selected_load_equality_bridge");
+        let (Some(goal), Some(target)) = (search_input.goal(), search_input.surface_goal()) else {
+            return Ok(None);
+        };
+        let facts = search_input.facts();
+        if facts.pure_known_available(goal)
+            || search_input.premise_fixed_state_view().is_none()
+            || !matches!(goal, Proposition::ConditionIs(condition, true)
+            if condition.native_compat().pointer_offset_sides().is_some()
+                || matches!(condition.native_compat(), ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    relation: CompareRelation::Equal, ..
+                }))
+        {
+            return Ok(None);
+        }
+        if crate::instrumentation::replay_forbids_discovery("load equality bridge search") {
+            return Err(search_input.step_error("load equality discovery requires solve"));
+        }
+        let candidates =
+            crate::kernel::search::load_equality_candidates(facts, goal, MAX_SOLVE_SOURCE_PREMISES);
+        check_verification_deadline()?;
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+
+        let premises =
+            Self::resolve_solve_premises_unmeasured(search_input, &candidates, introduced_surfaces);
+        check_verification_deadline()?;
+        let Some(premises) = premises else {
+            return Ok(None);
+        };
+        let mut premises = premises.into_iter().map(|(_, surface)| surface);
+        let Some(source) = premises.next() else {
+            return Ok(None);
+        };
+        // The source is itself one of the available equalities. The shared
+        // planner checks and minimizes the list, and returns the checked
+        // transport in the exact form recorded for expansion.
+        Self::try_fixed_state_fact_transport(
+            search_input,
+            &source,
+            target,
+            std::iter::once(source.clone()).chain(premises),
+        )
+        .map(|proof| proof.filter(Proof::is_complete))
+    }
+
     /// Tries the focused branch goal itself as one explicit fact transport from a
     /// recorded program point. This also applies to proposition scopes opened
     /// mid-execution, such as loop-invariant initialization and preservation.
@@ -6344,19 +6406,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(surfaces) = search_input.premise_surface_facts() else {
             return Ok(None);
         };
-        let mut attempts = 0;
-        for kernel in surfaces.requirement_kernel_atoms_for_search() {
+        let written_sources = surfaces
+            .requirement_kernel_atoms_for_search()
+            .filter(|fact| matches!(fact, Proposition::ResourceSeparate { .. }))
+            .take(16)
+            .map(|fact| {
+                surfaces
+                    .recorded_requirement_surface(fact)
+                    .expect("requirement atoms retain their enclosing source clause")
+                    .clone()
+            });
+        for source in Self::marked_entry_separation_sources(search_input, target)
+            .into_iter()
+            .chain(written_sources)
+        {
             check_verification_deadline()?;
-            if !matches!(kernel, Proposition::ResourceSeparate { .. }) {
-                continue;
-            }
-            if attempts == 16 {
-                break;
-            }
-            attempts += 1;
-            let mut source = surfaces
-                .recorded_requirement_surface(kernel)
-                .expect("requirement atoms retain their enclosing source clause");
+            let mut source = &source;
             while let ClickProposition::At { proposition, .. } = source {
                 source = proposition;
             }
@@ -6377,6 +6442,82 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         Ok(None)
+    }
+
+    fn marked_entry_separation_sources(
+        proof: &Proof<'a>,
+        target: &ClickProposition,
+    ) -> Vec<ClickProposition> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("marked_entry_separation_sources");
+        use crate::surface::{ContractSegmentSurface, ProgramPointSelector, ResourceSubject};
+        let Some(view) = proof.premise_fixed_state_view() else {
+            return Vec::new();
+        };
+        let points = view.fixed_state.recorded_states;
+        let Some((entry, sources)) = &points.entry_separation_sources else {
+            return Vec::new();
+        };
+        let Some(selector @ ProgramPointSelector::Mark(_)) = points.point_name(*entry) else {
+            return Vec::new();
+        };
+        let Some(mut goal) = proof.goal() else {
+            return Vec::new();
+        };
+        while let Proposition::And(stated, _) = goal {
+            goal = stated;
+        }
+        let (
+            ClickProposition::Separate { left, right },
+            Proposition::ResourceSeparate {
+                left: goal_left,
+                right: goal_right,
+            },
+        ) = (target, goal)
+        else {
+            return Vec::new();
+        };
+        let anchor = |expression: &ContractExpression| match expression {
+            ContractExpression::ProgramExpression(ProgramExpression::Value(_)) => {
+                expression.clone()
+            }
+            _ => ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(expression.clone()),
+            },
+        };
+        let source = |resource: &Resource, goal: &Resource, written: &ResourceSubject| {
+            if resource == goal {
+                return Some(written.clone());
+            }
+            let Resource::Memory(range) = resource else {
+                return None;
+            };
+            let segment = sources.ranges.get(range)?;
+            let ContractSegmentSurface::Range { base, start, end } = &segment.surface else {
+                return None;
+            };
+            Some(ResourceSubject::SavedMemory {
+                base: anchor(base),
+                start: anchor(start),
+                end: Some(anchor(end)),
+            })
+        };
+        sources
+            .facts
+            .iter()
+            .take(16)
+            .filter_map(|fact| {
+                crate::instrumentation::record_deterministic_work(1);
+                let Proposition::ResourceSeparate { left: a, right: b } = fact else {
+                    return None;
+                };
+                Some(ClickProposition::Separate {
+                    left: source(a, goal_left, left)?,
+                    right: source(b, goal_right, right)?,
+                })
+            })
+            .collect()
     }
 
     /// Search chooses enclosing separated regions; replay cites containment

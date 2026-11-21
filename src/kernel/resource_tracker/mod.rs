@@ -1260,15 +1260,15 @@ fn cell_last_same_version(
                     };
                     match bytes
                         .bytes()
-                        .and_then(|bytes| current.indexed_static_cell_store_version(pointer, bytes))
+                        .and_then(|bytes| current.indexed_static_cell_version(pointer, bytes))
                     {
-                        Some(StaticCellStoreVersion::Written(memory)) => {
+                        Some(StaticCellVersion::Written(memory)) => {
                             break Some(NamedCellVersion {
                                 memory,
                                 reason: StopReason::Affected,
                             });
                         }
-                        Some(StaticCellStoreVersion::Boundary(memory)) => {
+                        Some(StaticCellVersion::Boundary(memory)) => {
                             current = memory;
                             continue;
                         }

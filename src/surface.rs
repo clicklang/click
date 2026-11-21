@@ -100,21 +100,21 @@ use checking::*;
 pub(crate) use expansion::click_import_sites_in_container;
 pub use expansion::{
     ClaimExpansion, ClaimLocationError, ClaimLocationScope, ClickImportSite, ContractProofClaim,
-    ProofSourceIndex, SelectedTacticExpansion, SmartTacticCandidate, SmartTacticSelectionError,
-    SmartTacticSourceSite, SourceClaim, SourcePosition, c_select_smart_tactic,
-    c_smart_tactic_source_sites, c_tactic_source_position, claim_at,
+    NormalizeSourceSite, ProofSourceIndex, SelectedTacticExpansion, SmartTacticCandidate,
+    SmartTacticSelectionError, SmartTacticSourceSite, SourceClaim, SourcePosition,
+    c_select_smart_tactic, c_smart_tactic_source_sites, c_tactic_source_position, claim_at,
     click_declaration_source_position, click_import_sites, expand_c_claim_source,
     expand_c_claim_source_by_label, expand_c_prepared_claim_source_by_label,
     expand_c_prepared_tactic_source_at, expand_c_tactic_source_at, expand_c_tactics_source_at,
     expand_claim_by_label, expand_program_prepared_claim_source_by_label,
     expand_program_prepared_tactic_source_at, expand_project_claim_source_by_label,
     expand_project_tactic_source_at, expand_project_tactics_source_at, expand_tactics_source_at,
-    expand_verified_function_claim_source_by_label, project_select_smart_tactic,
-    project_smart_tactic_source_sites, project_tactic_source_position,
-    project_tactic_source_positions, select_smart_tactic, selected_c_target,
-    selected_project_c_target, selected_project_thread_runtime, selected_thread_runtime,
-    smart_tactic_source_sites, tactic_source_position, tidy_expansion_closers,
-    verifying_source_paths,
+    expand_verified_function_claim_source_by_label, first_normalize_in_claim,
+    normalize_source_sites, project_select_smart_tactic, project_smart_tactic_source_sites,
+    project_tactic_source_position, project_tactic_source_positions, select_smart_tactic,
+    selected_c_target, selected_project_c_target, selected_project_thread_runtime,
+    selected_thread_runtime, smart_tactic_source_sites, tactic_source_position,
+    tidy_expansion_closers, verifying_source_paths,
 };
 use expansion::{
     ExpansionCapture, NestedTacticCapture, ProofSite, VerificationTarget, verification_target_at,
@@ -297,7 +297,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "resource",
     "region",
     "rewrite",
-    "same_object",
+    "same_allocation",
     "little_endian",
     "separate",
     "float32_from_bits",
@@ -3685,8 +3685,20 @@ struct RecordedRegionPoints {
     call_results: Vec<(usize, RetainedProgramValue)>,
 }
 
+#[derive(Default)]
+struct EntrySeparationSources {
+    facts: Vec<Proposition>,
+    ranges: BTreeMap<MemoryRange, ContractSegment>,
+}
+
 #[derive(Clone)]
 struct RecordedStates {
+    /// Source ranges from the contract's checked incoming resource section.
+    /// A proof mark at this point can cite their exact pre-copy terms.
+    entry_separation_sources: Option<(
+        crate::kernel::program_point::ProgramPointId,
+        std::sync::Arc<EntrySeparationSources>,
+    )>,
     effect_log: imbl::Vector<crate::kernel::Resource>,
     effect_gaps: imbl::Vector<usize>,
     effect_offsets: imbl::OrdMap<ProgramPointSelector, usize>,
@@ -3822,6 +3834,7 @@ struct RecordedInterfaceMarks {
 impl Default for RecordedStates {
     fn default() -> Self {
         Self {
+            entry_separation_sources: None,
             effect_log: imbl::Vector::new(),
             effect_gaps: imbl::Vector::new(),
             effect_offsets: imbl::OrdMap::new(),

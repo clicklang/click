@@ -1418,7 +1418,7 @@ pub(super) fn route_throw_to_handler(
             )));
         };
         let next_state = next_state.clone();
-        execution.core.record_statement_transition_with_descent(
+        let footprint_bound = execution.core.record_statement_transition_with_descent(
             function,
             parameter_binding.arguments,
             &transition.native_step,
@@ -1443,6 +1443,8 @@ pub(super) fn route_throw_to_handler(
         );
         facts = transition.pure_facts.clone();
         introduced_facts.extend(transition.introduced_facts.iter().cloned());
+        facts.extend(footprint_bound.iter().cloned());
+        introduced_facts.extend(footprint_bound);
         state = *next_state;
     }
     *available_pure_facts = facts;
@@ -1783,7 +1785,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
     execution
         .presentation
         .record_generated_load_source_events(&transition.generated_load_source_events);
-    execution
+    let footprint_bound = execution
         .core
         .record_statement_transition_with_descent(
             function,
@@ -1807,6 +1809,9 @@ pub(super) fn apply_prepared_call_outcome_transition(
         &transition.execution_facts,
     );
     introduced_facts.extend(transition.introduced_facts.iter().cloned());
+    let mut successor_pure_facts = transition.pure_facts.clone();
+    successor_pure_facts.extend(footprint_bound.iter().cloned());
+    introduced_facts.extend(footprint_bound);
 
     let (next_state, is_throw) = match &transition.outcome {
         StatementOutcome::Normal(state) => (state.clone(), false),
@@ -1845,20 +1850,19 @@ pub(super) fn apply_prepared_call_outcome_transition(
             context,
             &value.native(),
             state,
-            &transition.pure_facts,
+            &successor_pure_facts,
         )? {
             // No handler: the throw is this path's function outcome.
             record_completed_continuation_exits(&mut execution.core.frontier);
             // Over a proof context the transition's facts are only what the
             // call added; the return is decided under that context with them.
             let return_assumptions = match context {
-                Some(context) => transition
-                    .pure_facts
+                Some(context) => successor_pure_facts
                     .iter()
                     .fold(context.clone(), |assumptions, fact| {
                         assumptions.assume_proposition(fact.clone())
                     }),
-                None => transition.pure_facts.context(),
+                None => successor_pure_facts.context(),
             };
             let case_outcomes =
                 crate::kernel::program_function_outcomes_from_statement_outcome_with_resource_cases(
@@ -1884,7 +1888,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
                 ));
             }
             append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
-            *available_pure_facts = transition.pure_facts.clone();
+            *available_pure_facts = successor_pure_facts;
             let completed =
                 crate::kernel::program_function_execution_candidates_from_completed_outcomes(
                     prepared.execution_start_state.clone(),
@@ -1906,7 +1910,7 @@ pub(super) fn apply_prepared_call_outcome_transition(
         return Ok(());
     }
 
-    *available_pure_facts = transition.pure_facts.clone();
+    *available_pure_facts = successor_pure_facts;
     execution.core.frontier.execution_start_state = Some(prepared.execution_start_state.clone());
     execution.core.state = (*next_state.clone()).into();
     let remaining = if let Some(remaining) = prepared.continuation_remaining.clone() {
@@ -3035,7 +3039,7 @@ fn execute_step_from_frontier_position_selecting_path(
             .record_loop_iterations_root(loop_index, iterations.clone());
     }
 
-    execution
+    let footprint_bound = execution
         .core
         .record_statement_transition_with_descent(
             function,
@@ -3219,7 +3223,9 @@ fn execute_step_from_frontier_position_selecting_path(
     let execution_pure_facts = transition.execution_facts;
     append_execution_effect_facts(&mut execution.core.effect_facts, &execution_pure_facts);
     let transition_obligations = transition.obligations;
-    let successor_pure_facts = transition.pure_facts;
+    let mut successor_pure_facts = transition.pure_facts;
+    successor_pure_facts.extend(footprint_bound.iter().cloned());
+    introduced_facts.extend(footprint_bound);
     // Falling off a void function is a return in the kernel's C semantics.
     // A source-less one-call proof can reach this boundary without the
     // explicit return node normally inserted by C parsing.
@@ -3609,13 +3615,11 @@ fn execute_step_from_frontier_position_selecting_path(
                 execution.core.state = (*next_state).into();
                 return Ok(introduced_facts);
             }
-            if execution.core.frontier.natural_exit_target == Some(target)
-                && execution.core.frontier.in_loop_body
-            {
+            if execution.core.frontier.in_loop_body && function.control_target(target).is_some() {
                 *available_pure_facts = successor_pure_facts;
                 execution.core.frontier.position = FrontierPosition::RegionBoundary;
                 execution.core.frontier.loop_control =
-                    crate::kernel::proof::LoopControlExit::NaturalExit(target);
+                    crate::kernel::proof::LoopControlExit::Jump(target);
                 execution.core.frontier.execution_start_state = Some(execution_start_state);
                 execution.core.state = (*next_state).into();
                 return Ok(introduced_facts);
@@ -3899,6 +3903,7 @@ fn statement_successors_are_path_cases(transitions: &[CertifiedStatementTransiti
             transition.outcome,
             StatementOutcome::Normal(_)
                 | StatementOutcome::Return { .. }
+                | StatementOutcome::Jump { .. }
                 | StatementOutcome::LoopTestFalse(_)
         ) && !distinguishing_path_facts(&transition.path_facts, &facts).is_empty()
     })
@@ -4290,7 +4295,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         ProgramStatement::Skip => "skip".to_string(),
         ProgramStatement::Break => "break".to_string(),
         ProgramStatement::Continue => "continue".to_string(),
-        ProgramStatement::Goto { target } => format!("goto target({})", target.0),
+        ProgramStatement::Goto { target, .. } => format!("goto target({})", target.0),
         ProgramStatement::EndAutomaticLifetimes { .. } => "automatic lifetime end".to_string(),
 
         ProgramStatement::Declare { name, .. } => format!("declare {name}"),

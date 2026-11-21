@@ -46,8 +46,7 @@ fn integer_comparison_operator(
     })
 }
 
-/// The cells whose ordinary reads name their version point, and so have an
-/// `exact` read too: integer, `bool` and pointer cells.
+/// The scalar cell types supported by `exact`.
 fn exact_readable_type(value_type: ProgramType) -> bool {
     matches!(
         value_type,
@@ -60,6 +59,8 @@ fn exact_readable_type(value_type: ProgramType) -> bool {
             | ProgramType::UInt32
             | ProgramType::Int64
             | ProgramType::UInt64
+            | ProgramType::Float32
+            | ProgramType::Float64
     ) || value_type.is_pointer()
 }
 
@@ -5369,16 +5370,16 @@ impl AnnotationLowerer<'_> {
                         arguments: vec![],
                     });
                 }
-                if name == "same_object" {
+                if name == "same_allocation" {
                     let [left, right] = arguments.as_slice() else {
                         return Err(format!(
-                            "same_object expects two pointer arguments, got {}",
+                            "same_allocation expects two pointer arguments, got {}",
                             arguments.len()
                         ));
                     };
                     return Ok(SpecProposition::Predicate {
                         resource_state_dependent: false,
-                        name: crate::kernel::SAME_OBJECT_PREDICATE_NAME.to_string(),
+                        name: crate::kernel::SAME_ALLOCATION_PREDICATE_NAME.to_string(),
                         arguments: vec![
                             SpecPredicateArgument::Value(
                                 self.lower_contract_expression_to_spec(left, environment)?,
@@ -6786,7 +6787,7 @@ impl AnnotationLowerer<'_> {
         match exact_read(self.lower_contract_expression_to_spec(place, environment)?) {
             Ok(read) => Ok(read),
             Err(SpecExpression::MemoryLoad { .. }) => Err(format!(
-                "`exact` reads an integer or pointer cell; `{}` reads neither",
+                "`exact` does not support the cell type of `{}`",
                 diagnostics::describe_contract_expression(place)
             )),
             Err(_) => Err(refuse()),

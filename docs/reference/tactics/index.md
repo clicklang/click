@@ -28,7 +28,7 @@ is **outside it**, with what to write instead. A simple tactic that refuses a
 case its Accepts list covers is a Click bug; one that refuses a case outside
 the list is working as documented. Behavior a section describes as beyond the
 list is not guaranteed. [Tracing](../../concepts/tracing.md) uses this
-distinction for its `failing-tactic` outcome.
+distinction for its `tactic-bug` outcome.
 
 ## Core tactics
 
@@ -1858,7 +1858,7 @@ upper bound with slack `c - 1`, and the corresponding signed slack bounds.
 The divisor and shift count retain the native operation's type and domain.
 No operand history or ambient facts are read.
 
-**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md), [`normalize_evaluates_a_substituted_conversion.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_evaluates_a_substituted_conversion.md), [`normalize_compares_machine_sums_at_every_width.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_machine_sums_at_every_width.md), [`normalize_compares_integer_sums_exactly.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_compares_integer_sums_exactly.md), [`normalize_scales_integer_coefficients.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_scales_integer_coefficients.md), [`normalize_does_not_scale_terms.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_does_not_scale_terms.md)
+**Checked examples:** [`simple_tactics.md`](https://github.com/clicklang/click/blob/master/mdtests/simple_tactics.md)
 
 ### Normalization with selected premises
 
@@ -1956,7 +1956,6 @@ cited premise is accepted:
   `to_integer(total) == to_integer(prefix) + 3`. A native sum
   (`total == prefix + suffix`) does not, because it may wrap
   ([`normalize_using_adds_element_indices_by_a_cited_integer_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_adds_element_indices_by_a_cited_integer_sum.md),
-  [`normalize_using_adds_a_constant_element_offset_by_a_cited_integer_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_adds_a_constant_element_offset_by_a_cited_integer_sum.md),
   [`normalize_using_refuses_a_wrapping_index_sum_for_an_address.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_wrapping_index_sum_for_an_address.md)).
 - For a top-level read equality of any width, a pointer read equality, or a
   pointer-offset equality, the cited conditions can justify the read's
@@ -2469,12 +2468,9 @@ fact. Write `rewrite(x, y)`; the old `rewrite(x == y)` form is refused.
   stored tagged word to `1` lets `normalize()` close its cleared pointer's
   equality to null
   ([`a_rewritten_tagged_null_pointer_normalizes.md`](https://github.com/clicklang/click/blob/master/mdtests/a_rewritten_tagged_null_pointer_normalizes.md)).
-- When exact substitution misses an atomic native equality goal, its two
-  operands may match `L` through checked corresponding read leaves, for both
-  32-bit and 64-bit reads inside matching arithmetic operators. Alias and
-  version-point evidence comes from the shared read-equality checker; incompatible
-  read kinds, changed cells, and differing operators do not match. This
-  comparison visits only `L` and the two goal operands.
+- When the equality's left side contains a read, the occurrence in the
+  goal must read the same version. If two versions are known to agree,
+  state that equality first and use it to rewrite the occurrence.
 
 **Outside it**, with what to write instead:
 
