@@ -5373,6 +5373,16 @@ fn synthesize_point_read(
     {
         return Some(ContractExpression::Old(Box::new(expression(&entry)?)));
     }
+    // A checked read of a caller's cell the path leaves unchanged reads it at
+    // the function-entry version (`ProgramPoint::entry_integer_version`): it
+    // is that cell's entry value, spelled at the entry state.
+    if !version.is_exact_read()
+        && let Some(kind) = crate::kernel::LoadKind::of_type(value_type)
+        && state.program_point().entry_integer_version(pointer, kind).as_ref() == Some(version)
+        && let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
+    {
+        return Some(ContractExpression::Old(Box::new(place(&entry)?)));
+    }
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let points = slot.borrow();
         let points = points.as_ref()?;
