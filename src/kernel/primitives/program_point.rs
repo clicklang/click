@@ -50,6 +50,7 @@ pub(crate) struct StepLog {
     first_base: SharedMemory,
     contiguous: bool,
     preserves_external_storage: bool,
+    preserves_external_arrays: bool,
 }
 
 /// The exact source of a suffix that only names existing cells. The log
@@ -94,29 +95,37 @@ impl StepLog {
                 )
             },
         );
-        let preserves_external_storage = previous
+        let step_preserves_external_storage = match step.as_ref() {
+            MemoryDerivation::Store { pointer, .. }
+            | MemoryDerivation::RepresentationWrite { pointer, .. } => indexed_local(&pointer.base),
+            // A declaration makes fresh storage: a local, or the
+            // temporary a call result is built in.
+            MemoryDerivation::BlockDeclared { block, .. } => {
+                indexed_local(block) || matches!(block, AddressBase::Temporary(_))
+            }
+            MemoryDerivation::LocalLifetimeEnded { block, .. } => indexed_local(block),
+            MemoryDerivation::LoopHavoc {
+                mutable_ranges: Some(ranges),
+                ..
+            } => ranges.iter().all(|range| {
+                crate::instrumentation::record_deterministic_work(1);
+                indexed_local(&range.base().base)
+            }),
+            _ => names_existing_cells,
+        };
+        let preserves_external_storage = step_preserves_external_storage
+            && previous
+                .as_ref()
+                .is_none_or(|old| old.preserves_external_storage);
+        let preserves_external_arrays = previous
             .as_ref()
-            .is_none_or(|old| old.preserves_external_storage)
-            && match step.as_ref() {
-                MemoryDerivation::Store { pointer, .. }
-                | MemoryDerivation::RepresentationWrite { pointer, .. } => {
-                    indexed_local(&pointer.base)
-                }
-                // A declaration makes fresh storage: a local, or the
-                // temporary a call result is built in.
-                MemoryDerivation::BlockDeclared { block, .. } => {
-                    indexed_local(block) || matches!(block, AddressBase::Temporary(_))
-                }
-                MemoryDerivation::LocalLifetimeEnded { block, .. } => indexed_local(block),
-                MemoryDerivation::LoopHavoc {
-                    mutable_ranges: Some(ranges),
-                    ..
-                } => ranges.iter().all(|range| {
+            .is_none_or(|old| old.preserves_external_arrays)
+            && (step_preserves_external_storage
+                || matches!(step.as_ref(), MemoryDerivation::CallHavoc { mutable_ranges, .. }
+                if mutable_ranges.iter().all(|range| {
                     crate::instrumentation::record_deterministic_work(1);
                     indexed_local(&range.base().base)
-                }),
-                _ => names_existing_cells,
-            };
+                })));
         Arc::new(Self {
             step,
             produced,
@@ -125,6 +134,7 @@ impl StepLog {
             first_base,
             contiguous,
             preserves_external_storage,
+            preserves_external_arrays,
         })
     }
 
@@ -659,8 +669,9 @@ fn external_read_start(
     })
 }
 
-/// A checked call with one write range in a fresh automatic object cannot
-/// write any array supplied by a parameter. Use exactly that recorded edge.
+/// Every write in a checked call confined to automatic objects is disjoint
+/// from arrays supplied by parameters. The log summarizes those calls and
+/// local effects when it records them, including within a transition batch.
 fn array_entry_across_call(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
@@ -668,24 +679,14 @@ fn array_entry_across_call(
 ) -> Option<ExternalReadStart> {
     let [from] = predecessors else { return None };
     let log = steps?;
-    if log.previous.is_some() || log.produced.arena_id() != memory.arena_id() {
+    if !log.contiguous
+        || !log.preserves_external_arrays
+        || log.preserves_external_storage
+        || log.produced.arena_id() != memory.arena_id()
+    {
         return None;
     }
-    let MemoryDerivation::CallHavoc {
-        mutable_ranges,
-        base,
-        ..
-    } = log.step.as_ref()
-    else {
-        return None;
-    };
-    let [written] = mutable_ranges.as_slice() else {
-        return None;
-    };
-    if !indexed_local(&written.base().base) {
-        return None;
-    }
-    external_array_entry(from, base)
+    external_array_entry(from, &log.first_base)
 }
 
 /// The ordinary local suffix may end at entry or at a call with a certified

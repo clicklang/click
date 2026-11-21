@@ -3183,20 +3183,39 @@ pub(crate) fn pointer_read_over_write_value(pointer: &Address) -> Option<Address
     pointer_read_over_write_program_value(pointer).map(|stored| stored.address().clone())
 }
 
+fn indexed_pointer_read_value(
+    point: &ProgramPoint,
+    address: &Address,
+    value_type: Option<ProgramType>,
+) -> Option<Pointer> {
+    let version;
+    let point = if point.is_exact_read() {
+        let value_type = value_type.filter(|ty| ty.is_pointer())?;
+        crate::instrumentation::record_deterministic_work(1);
+        version = point.indexed_typed_version(address, value_type)?;
+        &version
+    } else {
+        point
+    };
+    let ProgramValue::Pointer(stored) = point.indexed_stored_value()?.native() else {
+        return None;
+    };
+    Some(stored.clone())
+}
+
 /// The complete pointer stored at this read's address, when the state's
-/// fact-free version walk establishes it. Retained caches alone are not evidence.
+/// typed point index or fact-free version walk establishes it. Retained
+/// caches alone are not evidence.
 pub(crate) fn pointer_read_over_write_program_value(pointer: &Address) -> Option<Pointer> {
     let read = pointer.as_loaded_value()?;
     if read.displacement != AddressOffset::Constant(0) {
         return None;
     }
 
-    if let Some(ProgramValue::Pointer(stored)) = read
-        .point
-        .indexed_stored_value()
-        .map(StoredMemoryValue::native)
+    if let Some(stored) =
+        indexed_pointer_read_value(&read.point, &read.defining_address, read.value_type)
     {
-        return Some(stored.clone());
+        return Some(stored);
     }
     // Only a cached pointer can be the stored pointer; anything else needs no
     // walk of the cell's history, nor a run's element built to look at.
@@ -3581,10 +3600,8 @@ thread_local! {
 }
 
 fn immediate_stored_address_base(identity: PointerLoadId) -> Option<AddressBase> {
-    let (point, address, _) = registered_pointer_load_point(identity)?;
-    if let Some(ProgramValue::Pointer(stored)) =
-        point.indexed_stored_value().map(StoredMemoryValue::native)
-    {
+    let (point, address, value_type) = registered_pointer_load_point(identity)?;
+    if let Some(stored) = indexed_pointer_read_value(&point, &address, value_type) {
         return Some(stored.address().base.clone());
     }
     let memory = point.into_shared_memory();
