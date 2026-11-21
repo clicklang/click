@@ -4746,7 +4746,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     path_index,
                                     |proof| {
                                         if let PostExecutionTactic::Both(both) = post_tactic {
-                                            proof.driver().apply_all_source(both)
+                                            proof.driver().apply_all_source(both, true)
                                         } else {
                                             proof.driver().apply_step(closer_step.clone())
                                         }
@@ -4976,7 +4976,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 return Ok(focused
                                                     .at_source_tactic(*source_index)
                                                     .driver()
-                                                    .apply_all_source(both));
+                                                    .apply_all_source(both, true));
                                             }
                                             let PostExecutionTactic::Leaf(
                                                 ProofTactic::ArithmeticUsing(surface_premises),

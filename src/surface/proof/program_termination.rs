@@ -184,6 +184,7 @@ pub(in crate::surface) fn prove(
             &sites,
             &mut None,
             Some(&mut unfinished),
+            true,
         )? {
             Some(proof) => proof,
             None => solve_omitted(&unfinished.unwrap_or(root), true)?,

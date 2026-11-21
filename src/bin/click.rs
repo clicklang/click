@@ -510,6 +510,30 @@ uint64 spell(const uint8* b, uint64 n) {
         assert!(!trace.contains("<symbol "), "{trace}");
     }
 
+    #[test]
+    fn source_proof_tails_close_in_their_scope_and_expand_for_explicit_replay() {
+        let source = r#"
+            function successor(n: int32) -> int32 { n + 1 }
+            theorem tail(x: int32, b: bool) {
+                requires x == 3;
+                ensures successor(x) == 4 by {
+                    if b == true {
+                        have successor(x) == 4 by { unfold(successor(x)); }
+                    } else {
+                        unfold(successor(x));
+                    }
+                }
+            }
+        "#;
+        use click::surface::{verify_c_sources, without_implicit_solve};
+        assert!(without_implicit_solve(|| verify_c_sources(source, &[])).is_err());
+        verify_c_sources(source, &[]).unwrap();
+        let expanded =
+            click::surface::expand_c_claim_source_by_label(source, &[], "tail.ensures_0").unwrap();
+        assert_ne!(expanded, source);
+        without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+    }
+
     /// Every refused statement names its goal: the requirement it could not
     /// establish at its pre-state, in source names, with the explicit form
     /// that proves it. A refused call precondition, and an overflow that the
@@ -644,18 +668,19 @@ uint64 spell(const uint8* b, uint64 n) {
             "{overflow}"
         );
 
-        // A proof that runs out of steps leaves its goal open; its last
-        // tactic succeeded, so nothing refused it.
-        let ended_open = run(
-            "function successor(n: int32) -> int32 { n + 1 }\ntheorem left_open(x: int32) {\n    requires x == 3;\n    ensures successor(x) == 4 by {\n        unfold(successor(x));\n    }\n}\n",
+        let tail_miss = run(
+            "function successor(n: int32) -> int32 { n + 1 }\ntheorem tail_miss(x: int32) {\n    requires x == 3;\n    ensures successor(x) == 5 by {\n        unfold(successor(x));\n    }\n}\n",
             &[],
         );
-        assert!(ended_open.starts_with("unproved goal:\n"), "{ended_open}");
         assert!(
-            ended_open.contains("\nrefused by: nothing (the proof ended with this goal open; add the steps that prove it)\nsee: click docs tracing\n")
-                && !ended_open.contains("refused by: `unfold`"),
-            "{ended_open}"
+            tail_miss.starts_with("unsuccessful search:\n"),
+            "{tail_miss}"
         );
+        assert!(
+            tail_miss.contains("goal: to_integer(x + 1) == 5"),
+            "{tail_miss}"
+        );
+        assert!(!tail_miss.contains("refused by: `unfold`"), "{tail_miss}");
 
         // `normalize()` evaluates without context, so a goal that needs the
         // premise is outside what it does.

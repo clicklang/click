@@ -639,8 +639,12 @@ fn check_loop_phase_goal<'a>(
             (scope).driver().try_solve_closure()?
         }
         SourceProof::Script(tactics) => match sites {
-            Some(sites) => scope.driver().try_addressed_linear_script(tactics, sites)?,
-            None => scope.driver().try_authoritative_linear_script(tactics)?,
+            Some(sites) => scope
+                .driver()
+                .try_addressed_linear_script(tactics, sites, true)?,
+            None => scope
+                .driver()
+                .try_authoritative_linear_script_reporting(tactics, &mut None, &mut None, true)?,
         },
     }
     .ok_or_else(|| ClickError::new(format!("loop {phase_name} body did not close its goal")))?;

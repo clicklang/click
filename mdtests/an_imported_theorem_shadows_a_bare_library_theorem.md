@@ -14,10 +14,11 @@ import click::integer;
 theorem uses(a: Integer, b: Integer, c: Integer) {
     ensures (a + b) * c == a * c + b * c by {
         apply(multiply_add(a, b, c));
+        known();
     }
 }
 ```
 
 ```expect
-fail: ended with its goal still open
+fail: `known` requires the current goal as an available semantic fact
 ```

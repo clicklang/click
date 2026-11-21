@@ -1144,7 +1144,7 @@ fn apply_frontier_source_tactic<'a>(
     let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
         proof
             .driver()
-            .apply_close_invariants_body(&[ProofTactic::Solve], None)?
+            .apply_close_invariants_body(&[ProofTactic::Solve], None, true)?
     } else if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
         proof
             .driver()
@@ -1161,7 +1161,9 @@ fn apply_frontier_source_tactic<'a>(
     {
         apply_source_step_proofs(&proof, step, step_proof, indexed.index)?
     } else if let ProofTactic::CloseInvariantsBy(body) = &indexed.tactic {
-        proof.driver().apply_close_invariants_body(body, None)?
+        proof
+            .driver()
+            .apply_close_invariants_body(body, None, true)?
     } else if let ProofTactic::Choose(choice) = &indexed.tactic {
         proof
             .driver()
@@ -2385,15 +2387,15 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
                     (nested).driver().try_solve_closure()?
                 }
                 SourceProof::Script(body) => {
-                    // An explicit script is checked by its proof steps alone: a
-                    // step that fails is an error, never a miss for search to
-                    // rescue. The checked scope reports the exact declining step.
+                    // A refused written step is final. The tail runs only
+                    // after the written body has reached an open goal.
                     let mut declined = None;
                     let mut unfinished = None;
                     let selected = nested.driver().try_authoritative_linear_script_reporting(
                         body,
                         &mut declined,
                         &mut unfinished,
+                        true,
                     )?;
                     if selected.is_none() {
                         let detail = match declined {

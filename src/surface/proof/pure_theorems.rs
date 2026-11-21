@@ -1986,7 +1986,12 @@ fn verify_contract_refinement_theorem(
         theorem_environment,
     );
     let mut search = super::attempt::search_scope("contract refinement");
-    let attempted = match root.driver().try_authoritative_linear_script(proof_tactics) {
+    let attempted = match root.driver().try_authoritative_linear_script_reporting(
+        proof_tactics,
+        &mut None,
+        None,
+        true,
+    ) {
         Ok(attempted) => attempted,
         Err(error) => {
             return Err(error
@@ -2688,6 +2693,7 @@ fn check_pure_script_with_proof(
             &all_sites[..prefix],
             &mut None,
             Some(&mut unfinished),
+            false,
         )?;
         if completed.is_some() {
             return Err(ClickError::new(
@@ -2710,6 +2716,7 @@ fn check_pure_script_with_proof(
         sites,
         &mut declined,
         Some(&mut unfinished),
+        true,
     ) {
         Ok(checked) => checked,
         Err(error) => return Err(error.with_search_failures(search.finish())),
@@ -3848,7 +3855,7 @@ mod tests {
         let error = verify_instantiation_theorem(&open)
             .expect_err("instantiation does not change the selected goal");
         assert!(
-            error.message().contains("goal still open"),
+            error.proof_refusal() == Some(crate::surface::ProofRefusal::UnsuccessfulSearch),
             "{}",
             error.message()
         );
