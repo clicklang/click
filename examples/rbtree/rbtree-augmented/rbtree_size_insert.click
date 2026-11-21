@@ -5,6 +5,22 @@ verifying "rbtree_size_copy.c";
 verifying "rbtree_size_compute.c";
 import "rbtree_size_recolor.click";
 
+theorem sized_recolor_preserves_model_fields(before: SizedTree, after: SizedTree,
+    identity: struct rb_node*, previous_parent: struct rb_node*, parent: struct rb_node*,
+    value: int32, left: SizedTree, right: SizedTree) {
+    requires before == SizedTree::Node(identity, previous_parent, Color::Red, value, left, right);
+    requires after == SizedTree::Node(identity, parent, Color::Black, value, left, right);
+    requires parent == previous_parent;
+    ensures sized_recolor(before, Color::Black) == after by {
+        rewrite(after, SizedTree::Node(identity, parent, Color::Black, value, left, right));
+        rewrite(parent, previous_parent);
+        rewrite(sized_recolor(before, Color::Black),
+            sized_recolor(SizedTree::Node(identity, previous_parent, Color::Red, value, left, right), Color::Black));
+        unfold(sized_recolor(SizedTree::Node(identity, previous_parent, Color::Red, value, left, right), Color::Black));
+        known();
+    }
+}
+
 contract void InsertSizedRoot(struct rb_node* node, struct rb_root* root,
                   void (*augment_rotate)(struct rb_node*, struct rb_node*)) {
     owns root->rb_node;
@@ -79,12 +95,14 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 requires aligned(parent, 8) by known();
                 requires node->__rb_parent_color == address(parent) + (node->__rb_parent_color & 1) by known();
             };
-            have sized_recolor(old(tree.model), Color::Black) == tree.model by {
-                rewrite(parent, 0);
-                rewrite(sized_recolor(old(tree.model), Color::Black),
-                    sized_recolor(SizedTree::Node(node, 0, Color::Red, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model))), Color::Black));
-                unfold(sized_recolor(SizedTree::Node(node, 0, Color::Red, sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model))), Color::Black));
-            }
+            apply(sized_recolor_preserves_model_fields(old(tree.model), tree.model, node, 0, parent,
+                sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model)))) using {
+                old(tree.model) == SizedTree::Node(node, 0, Color::Red,
+                    sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model)));
+                tree.model == SizedTree::Node(node, parent, Color::Black,
+                    sized_value(old(tree.model)), sized_left(old(tree.model)), sized_right(old(tree.model)));
+                parent == 0;
+            };
             step();
         }
     }
