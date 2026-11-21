@@ -10288,18 +10288,23 @@ impl MemoryArena {
         let Some((pointer, bytes)) = step.single_write() else {
             return;
         };
-        let Some(span) = static_cell_byte_span(pointer, bytes) else {
-            return;
-        };
         // The cell walk normalizes the base to the retained bytes source
         // after each hop. Index exactly that chain.
         let before = self.read_identities[step.base().id as usize];
-        let mut index = self.static_cell_store_versions[before as usize]
-            .clone()
-            .unwrap_or_else(|| StaticCellStoreVersions {
-                boundary: before,
-                changed: Default::default(),
-            });
+        let previous = &self.static_cell_store_versions[before as usize];
+        if pointer.base.is_local_block() {
+            // A store through a recorded local block is structurally
+            // disjoint from static storage, even with a symbolic offset.
+            self.static_cell_store_versions[id as usize] = previous.clone();
+            return;
+        }
+        let Some(span) = static_cell_byte_span(pointer, bytes) else {
+            return;
+        };
+        let mut index = previous.clone().unwrap_or_else(|| StaticCellStoreVersions {
+            boundary: before,
+            changed: Default::default(),
+        });
         let mut block = index
             .changed
             .get(&pointer.base)
