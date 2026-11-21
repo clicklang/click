@@ -82,6 +82,63 @@ fn first_entry_cell_lookup_has_bounded_work_after_disjoint_stores() {
 }
 
 #[test]
+fn static_cell_read_steps_skip_same_array_store_history() {
+    use crate::instrumentation::{VerificationEvent, collect};
+
+    // Each read is the first access to its offset. The fixed store target is
+    // in the same array, so the whole-block selector cannot skip the prefix.
+    for (stores, reads) in [(4, 1), (16, 1), (64, 1), (128, 1), (32, 32)] {
+        let mut c = String::from("int32 g[256];\nint32 probe() {\n    int32 x;\n");
+        for value in 1..=stores {
+            c.push_str(&format!("    g[255] = {value};\n"));
+        }
+        for index in 0..reads - 1 {
+            c.push_str(&format!("    x = g[{index}];\n"));
+        }
+        c.push_str(&format!("    return g[{}];\n}}\n", reads - 1));
+        let steps = "    step();\n".repeat(stores + reads + 1);
+        let source = format!(
+            r#"verifying "probe.c";
+int32 probe() {{
+    owns g[0..256];
+}} by {{
+{steps}}}
+"#
+        );
+        let (verified, events) = collect(|| verify_c_sources(&source, &[("probe.c", &c)]));
+        verified
+            .unwrap_or_else(|error| panic!("stores={stores}, reads={reads}: {}", error.message()));
+        let mut checking_read = false;
+        let mut completed = 0;
+        let mut version_work = 0;
+        for event in events {
+            match event {
+                VerificationEvent::TacticStarted(tactic) if tactic.tactic_name == "step" => {
+                    checking_read = tactic.tactic_index > stores;
+                }
+                VerificationEvent::TacticFinished { tactic, .. }
+                    if tactic.tactic_name == "step" =>
+                {
+                    completed += usize::from(checking_read);
+                    checking_read = false;
+                }
+                VerificationEvent::OperationFinished { name, work, .. }
+                    if checking_read && name == "cell version walk" =>
+                {
+                    version_work += work;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(completed, reads);
+        assert!(
+            (reads..=4 * reads).contains(&version_work),
+            "{stores} stores and {reads} reads used {version_work} version work"
+        );
+    }
+}
+
+#[test]
 fn writing_the_entry_cell_changes_its_ordinary_read_version() {
     let (c, source) = entry_cell_after_local_stores(4, true, "a[0] == 7");
     verify_c_sources(&source, &[("probe.c", &c)]).expect("the read names the written value");
