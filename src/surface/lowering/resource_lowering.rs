@@ -813,15 +813,18 @@ fn reject_aggregate_parameter_storage_resource(
     Ok(())
 }
 
-// Use the original point only when its receipt covers external storage.
-// Detached and unsupported producers retain the existing naming view.
+// Use the original entry when it can name the typed read. Detached and
+// unsupported producers retain the existing naming view.
 fn entry_cell_source<'a>(
     entry: &'a crate::kernel::ProgramPoint,
     fallback: &'a crate::kernel::ProgramPoint,
     pointer: &Address,
     ty: ProgramType,
 ) -> &'a crate::kernel::ProgramPoint {
-    if entry.entry_cell_version(pointer, ty).is_some() {
+    if entry.entry_cell_version(pointer, ty).is_some()
+        || (crate::kernel::KernelFloatType::from_program_type(ty).is_some()
+            && entry.has_certified_read_view())
+    {
         entry
     } else {
         fallback
@@ -4383,6 +4386,45 @@ mod input_identity_tests {
 #[cfg(test)]
 mod entry_cell_tests {
     use super::*;
+
+    #[test]
+    fn entry_seeded_float_cells_retain_their_point() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let source = entry.program_point();
+        let base = Address {
+            base: crate::kernel::AddressBase::ExternalArgument,
+            offset: crate::kernel::AddressOffset::Constant(0),
+        };
+        for ty in [ProgramType::Float32, ProgramType::Float64] {
+            let width = ty.byte_width();
+            let ranges = BTreeMap::from([(
+                "input".into(),
+                ConcreteMemoryRangeSeed {
+                    base: base.clone(),
+                    bytes: 8 * width,
+                    element_width: width,
+                    element_type: Some(ty),
+                    struct_layout: None,
+                },
+            )]);
+            let memory =
+                memory_with_symbolic_loadable_cells(entry.memory().clone(), &source, &ranges);
+            let cell = base.offset_by_bytes(4 * width);
+            let value = match memory.load(&cell) {
+                ExpressionOutcome::Value(
+                    ProgramValue::Float32(value) | ProgramValue::Float64(value),
+                ) => value,
+                other => panic!("expected a seeded {ty:?} cell, got {other:?}"),
+            };
+            let MachineTerm::MemoryLoad(point, address, kind) = value else {
+                panic!("expected a symbolic float read");
+            };
+            assert_eq!(point.read_version_id(), source.id());
+            assert_eq!(*address, cell);
+            assert_eq!(kind, crate::kernel::LoadKind::of_type(ty).unwrap());
+        }
+    }
 
     #[test]
     fn entry_seeded_compact_cells_retain_their_point_without_visiting_other_slots() {
