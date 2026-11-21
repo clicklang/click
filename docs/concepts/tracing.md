@@ -260,19 +260,20 @@ The procedure ends at exactly one of these:
 | --- | --- |
 | `success` | The proof verifies. Keep the explicit links that the default automation needed; they document the argument. |
 | `false-goal` | `G` does not hold on some execution the contract admits. Give the counterexample: the claim, the contract, or the C is wrong, not the proof. |
-| `unclear-goal` | You cannot say why `G` holds. Give `G`, the premises, and what you tried. |
+| `unclear-goal` | You can read `G` and its premises, but have neither a justification nor a counterexample. Say why you expected the proof to work and identify the local gap in the argument. |
 | `missing-rule` | The premises and conclusion are expressible and the inference is justified, but no supported primitive connects them. Record the rule schema, the references checked, and the reduced example for design discussion. This is not established by a search miss alone. |
 | `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory syntax, or resource form. Report a bug. |
 | `tactic-bug` | Click refuses a minimized simple tactic whose written premises justify its goal and whose documented **Accepts** list covers the link. Report a Click bug. |
-| `unclear-trace` | A proof refusal has no readable goal or obscures what the check refused. Report a diagnostic bug. |
+| `unclear-trace` | You could not determine what the output says was refused. Quote the output and identify what you could not determine. |
 | `internal-error` | Click printed `internal error`. Tell the user immediately that Click detected a verifier failure. A proof goal or a minimized tactic link is optional evidence. |
 
 The `failed check:` heading locates a refusal. The outcome depends on what
 the proof-repair investigation establishes. For a smart-tactic miss or a
 failed search for an omitted argument, identify the primitive and state
 its premises. Report diagnosis as in progress while checking the inference
-and its documented support. An `unclear-trace` identifies a diagnostic
-defect and may leave the underlying proof issue open.
+and its documented support. An `unclear-trace` leaves the reason for the
+refusal undetermined. File a diagnostic bug only when you can demonstrate
+a specific defect in the output.
 
 ### Reporting a bug
 
@@ -288,7 +289,8 @@ For `internal-error`, include the exact command, the `click --version` output,
 the full diagnostic, and the inputs needed to reproduce it. For a crash or
 hang, follow [Crashes and hangs](#crashes-and-hangs).
 
-For `tactic-bug`, `inexpressible-fact`, or `unclear-trace`, include:
+For `tactic-bug`, `inexpressible-fact`, or a confirmed diagnostic defect
+found during `unclear-trace` triage, include:
 
 - the smallest C and Click that still fail, keeping the original source
   pattern, with the exact command and its output, including the `goal:` line;
@@ -299,8 +301,8 @@ For `tactic-bug`, `inexpressible-fact`, or `unclear-trace`, include:
 - why the link holds, in one line of mathematics, and the step of that
   argument Click did not take; and
 - for `tactic-bug`, the item of that tactic's **Accepts** list that
-  covers the link, or for `unclear-trace`, what in the output is missing or
-  misleading.
+  covers the link, or for a diagnostic defect, the specific missing or
+  misleading output and the evidence of the defect.
 
 ## Worked example
 

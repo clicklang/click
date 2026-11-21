@@ -70,8 +70,11 @@ have B by { ... }
 // G now follows from A and B
 ```
 
-If you cannot say why `G` holds, the outcome is `unclear-goal`. If you cannot
-write one of the intermediate facts in Click, it is `inexpressible-fact`.
+The original proof or overall argument may give a reason to expect success.
+Check that the local goal follows at this program point. If you cannot justify
+that step or give a counterexample, stop at `unclear-goal`. If you can justify
+it but cannot write a needed intermediate fact in Click, use
+`inexpressible-fact`.
 
 ## 5. Run, then refine the first failing link
 
@@ -165,8 +168,10 @@ Stop at exactly one outcome:
   automation needed.
 - `false-goal`: `G` does not hold on some execution the contract admits. Give
   the counterexample.
-- `unclear-goal`: you cannot say why `G` holds. Give `G`, the premises, and
-  what you tried.
+- `unclear-goal`: you can read `G` and its premises, but the investigation
+  produced neither a mathematical argument for `G` nor a counterexample.
+  Say why you expected the proof to work and identify the exact step where
+  that expectation lacks a justification.
 - `missing-rule`: the premises and conclusion are expressible and the
   inference is justified, but no supported primitive connects them. Preserve
   the rule schema, references checked, and reduced example for design
@@ -177,8 +182,9 @@ Stop at exactly one outcome:
   its written premises justify the goal, and the tactic's documented
   **Accepts** list in `click docs NAME` covers the link. Click still refuses
   it. Report the exact refusal and the applicable documentation.
-- `unclear-trace`: a proof refusal has no `goal:` line, the goal cannot be
-  read, or the output obscures what the check refused. Report a diagnostic bug.
+- `unclear-trace`: you could not determine from the output what was refused,
+  such as the exact goal, its program point, or the facts the tactic used.
+  Quote the relevant output and say what you could not determine.
 - `internal-error`: Click itself reports `internal error`. Tell the user
   immediately that Click detected a verifier failure. Use the original
   diagnostic. A proof goal and a minimized tactic link are optional evidence.
@@ -191,11 +197,12 @@ premises, report that diagnosis is in progress. Use `unclear-goal` if you
 cannot justify the goal after investigation.
 
 In the outcome report, say explicitly what the result establishes about
-Click. `tactic-bug`, `inexpressible-fact`, `unclear-trace`,
-`internal-error`, `crash`, and `hang` identify Click defects. An `unclear-trace` establishes a diagnostic
-defect and may leave the underlying proof issue open. `false-goal` and
-`unclear-goal` identify problems with the goal or argument. `missing-rule`
-identifies a gap in supported inference.
+Click. `tactic-bug`, `inexpressible-fact`, `internal-error`, `crash`, and
+`hang` identify Click defects. `unclear-trace` leaves the reason for the
+refusal undetermined. File a diagnostic bug only when you can demonstrate
+a specific defect in the output. `false-goal` gives a counterexample.
+`unclear-goal` leaves the truth of the goal open. `missing-rule` identifies a
+gap in supported inference.
 
 ## Reporting an inexpressible fact to the user
 
@@ -232,7 +239,8 @@ error output, and the inputs needed to reproduce it. Quote the message that
 identifies the verifier failure. For crashes and hangs, follow the requirements
 above.
 
-For `tactic-bug`, `inexpressible-fact`, or `unclear-trace`, give:
+For `tactic-bug`, `inexpressible-fact`, or a confirmed diagnostic defect
+found during `unclear-trace` triage, give:
 
 - The smallest C and Click that still fail, with the original source pattern,
   and the exact command and its output, including the `goal:` line.
@@ -243,5 +251,5 @@ For `tactic-bug`, `inexpressible-fact`, or `unclear-trace`, give:
 - Why the link holds, in one line of mathematics, and the step of that
   argument Click did not take.
 - For `tactic-bug`, the item of that tactic's **Accepts** list that
-  covers the link. For `unclear-trace`, what in the output is missing or
-  misleading.
+  covers the link. For a diagnostic defect, the specific missing or
+  misleading output and the evidence of the defect.
