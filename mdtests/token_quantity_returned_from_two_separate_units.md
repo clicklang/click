@@ -191,6 +191,12 @@ void give_back(struct pool* pool, struct payload* p) {
         unfold(item(pool, p));
         have separate(memory(p->value), memory(pool->checked_out));
         step();
+        have separate(statement(0).footprint, memory(p->value)) by {
+            normalize() using { separate(memory(p->value), memory(pool->checked_out)); };
+        }
+        have p->value == old(p->value) by {
+            preserve(memory(p->value), statement(0));
+        }
         fold(slot(pool));
         have 0 <= pool->checked_out by {
             solve() using { at(function.entry, 1) <= at(function.entry, pool->checked_out); };
@@ -295,9 +301,7 @@ void give_back(struct pool* pool, struct payload* p) {
     normalize();
     known();
     known();
-    transport(old(p->value) == old(p->value), p->value == old(p->value)) using {
-        separate(memory(p->value), memory(pool->checked_out));
-    };
+    have p->value == old(p->value) by known();
 }
 void pipeline(struct pool* pool, struct payload* first, struct payload* second) {
  consumes storage(pool);
