@@ -8266,6 +8266,8 @@ pub enum RuntimeError {
     FunctionContract(String),
     /// A resource clause violates a contract rule.
     InvalidContractResource(String),
+    /// An argument or state produced for opening a contract had the wrong representation.
+    ContractEntryInvariant(String),
     OverlappingContractInputView {
         owned: Box<ResourceFact>,
         viewed: Box<ResourceFact>,

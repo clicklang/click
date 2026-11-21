@@ -4396,7 +4396,11 @@ pub(crate) fn program_function_contract_entry_state_with_refusal(
             _ => None,
         })
         .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| "contract entry arguments must be concrete symbolic values".to_string())?;
+        .ok_or_else(|| {
+            ContractEntryRefusal::Internal(
+                "contract entry arguments must be concrete symbolic values".into(),
+            )
+        })?;
     let mut budget = ExecutionBudget::beside_live_state();
     match prepare_function_contract_entry_state_with_values(
         caller_state,

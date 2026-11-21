@@ -2609,6 +2609,28 @@ void hold(int32 *x, int32 *y) {{ {clauses} }}
             assert!(error.starts_with("contract error:\n"), "{name}: {error}");
             assert!(error.contains(detail), "{name}: {error}");
         }
+
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(
+            directory.path().join("startup.c"),
+            "int x; int main(void) { return 0; }\n",
+        )
+        .unwrap();
+        let sidecar = directory.path().join("startup.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "startup.c";
+resource cell(p: int32*) { field tag: int32; owns p[0]; }
+int main() { owns data: cell(&x); }
+"#,
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("contract error:\n"), "{error}");
+        assert!(
+            error.contains("can name only the hosted stdout stream"),
+            "{error}"
+        );
     }
 
     #[test]

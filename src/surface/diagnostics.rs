@@ -1975,6 +1975,7 @@ pub(super) fn describe_runtime_error(
         | crate::kernel::RuntimeError::UnsuppliedResourceValue(message) => {
             format!("function contract could not be applied: {message}")
         }
+        crate::kernel::RuntimeError::ContractEntryInvariant(message) => message.clone(),
         crate::kernel::RuntimeError::UninitializedMutex { mutex } => format!(
             "could not prove that mutex `{}` was initialized on this path",
             describe_pointer(mutex, parameter_binding)
