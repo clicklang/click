@@ -1592,3 +1592,80 @@ fn pointer_index_projection_looks_up_only_its_full_width_bound() {
         "{work:?}"
     );
 }
+
+#[test]
+fn known_constructor_order_looks_up_only_the_selected_payload_bound() {
+    use crate::kernel::{
+        AlgebraicBitvectorMatchArm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType,
+        CompareRelation, ConditionTerm, KernelMatch, MachineIntegerType, ProgramType, ProgramValue,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let payload = MachineTerm::Variable(Variable(986_001));
+    let binding = MachineTerm::Variable(Variable(986_002));
+    let field = |term| AlgebraicValue::Program(ProgramValue::Int32(term));
+    let mut scrutinee =
+        KernelMatch::test_scrutinee(vec![AlgebraicValueType::Program(ProgramType::Int32)]);
+    scrutinee.node = AlgebraicTermNode::Constructor {
+        variant: "Arm".into(),
+        fields: vec![field(payload.clone())],
+    };
+    let matched = MachineTerm::AlgebraicMatch {
+        scrutinee: Box::new(scrutinee),
+        arms: vec![AlgebraicBitvectorMatchArm {
+            variant: "Arm".into(),
+            bindings: vec![field(binding.clone())],
+            body: binding,
+            binding_names: Default::default(),
+        }],
+    };
+    let bound = |term, upper| {
+        Proposition::condition_is(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(term),
+                right: Box::new(MachineTerm::constant(upper)),
+            },
+            true,
+        )
+    };
+    let measurements = [8, 32, 128].map(|size| {
+        let mut premises = vec![bound(payload.clone(), 9)];
+        for index in 0..size {
+            premises.push(bound(payload.clone(), 100 + index));
+            premises.push(bound(
+                MachineTerm::Variable(Variable(987_000 + u64::from(index))),
+                9,
+            ));
+        }
+        let sibling = PureFactStore::from_ordered(&premises[1..]);
+        let written = bound(matched.clone(), 9);
+        let context = sibling.assumptions();
+        let (interval, admission_work) = crate::instrumentation::measure_deterministic_work(|| {
+            context
+                .clone()
+                .assume_proposition(written)
+                .indexed_constant_interval(&payload)
+        });
+        assert_eq!(interval, Some((i64::from(i32::MIN), 8)));
+        assert_eq!(
+            context.indexed_constant_interval(&payload),
+            Some((i64::from(i32::MIN), 99))
+        );
+        let facts = PureFactStore::from_ordered(&premises);
+        let known_work = [9, 8].map(|upper| {
+            let proof = known_computation_proof(bound(matched.clone(), upper), facts.clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), upper == 9);
+            work
+        });
+        [admission_work, known_work[0], known_work[1]]
+    });
+    for work in measurements {
+        for (sample, baseline) in work.into_iter().zip(measurements[0]) {
+            assert!(sample <= baseline + 24, "{measurements:?}");
+        }
+    }
+}

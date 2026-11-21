@@ -527,6 +527,12 @@ pub(crate) fn known_bridge_leaf(
                 available,
             )
         }
+        Proposition::ConditionIs(condition, truth)
+            if let Some(reduced) =
+                super::reduce_known_int32_match_comparison(condition.native_compat()) =>
+        {
+            comparison_holds(reduced, *truth, available)
+        }
         Proposition::ResourceSeparate { left, right }
             if matches!(
                 (left.as_ref(), right.as_ref()),

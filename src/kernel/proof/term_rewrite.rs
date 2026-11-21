@@ -5894,7 +5894,7 @@ impl<'a> TermRewrite<'a> {
             }
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
+                relation,
                 left,
                 right,
             } if self.preserves_algebraic_matches()
@@ -5902,7 +5902,7 @@ impl<'a> TermRewrite<'a> {
             {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
+                    relation: *relation,
                     left: Box::new(
                         self.bits_with_match_reduction(left, !is_simple_int32_match(left)),
                     ),
