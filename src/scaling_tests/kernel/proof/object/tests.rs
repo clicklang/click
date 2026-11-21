@@ -1402,3 +1402,71 @@ fn automatic_object_separation_ignores_ambient_address_facts() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn selected_match_conditionals_known_work_ignores_context_growth() {
+    use crate::kernel::{CompareRelation, ConditionTerm, MachineIntegerType};
+    let _session = crate::kernel::VerificationSession::enter();
+    let payload = MachineTerm::Variable(Variable(986_000));
+    let expected = MachineTerm::Variable(Variable(986_001));
+    let compare = |relation, left, right| {
+        ConditionTerm::machine_compare(MachineIntegerType::Int32, relation, left, right)
+    };
+    let conditional = |left, right, then_term| MachineTerm::If {
+        condition: Box::new(ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(left),
+            right: Box::new(right),
+        }),
+        then_term: Box::new(then_term),
+        else_term: Box::new(MachineTerm::constant(0)),
+    };
+    let measurements = [8, 32, 64].map(|size| {
+        let facts = (0..size)
+            .flat_map(|index| {
+                [
+                    Proposition::condition_is(
+                        compare(
+                            CompareRelation::LessEqual,
+                            payload.clone(),
+                            MachineTerm::Variable(Variable(987_000 + index)),
+                        ),
+                        true,
+                    ),
+                    Proposition::Predicate {
+                        name: format!("unrelated_{index}"),
+                        arguments: vec![],
+                    },
+                ]
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactStore::from_ordered(&facts);
+        [&payload, &expected].map(|guard_value| {
+            let nested = conditional(
+                payload.clone(),
+                payload.clone(),
+                conditional(
+                    payload.clone(),
+                    guard_value.clone(),
+                    MachineTerm::constant(1),
+                ),
+            );
+            let goal = Proposition::condition_is(
+                compare(CompareRelation::Equal, nested, MachineTerm::constant(1)),
+                true,
+            );
+            let proof = known_computation_proof(goal, facts.clone());
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                proof.apply_known(PropositionKnownContext::Exact)
+            });
+            assert_eq!(result.is_ok(), guard_value == &payload);
+            work
+        })
+    });
+    for work in measurements {
+        for (sample, baseline) in work.into_iter().zip(measurements[0]) {
+            assert!(sample <= baseline + 16, "{measurements:?}");
+        }
+    }
+}

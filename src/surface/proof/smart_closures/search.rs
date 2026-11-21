@@ -3516,23 +3516,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .into_iter()
                 .map(|(_, surface)| surface)
                 .collect::<Vec<_>>();
-            // Pure proofs can expand the selected chain through Integer
-            // composition. Statement prerequisites can repeat the chain
-            // check for many operations, so keep their compact checker.
-            let closed = if matches!(search_input.context.as_ref(), ProofContext::Pure(_)) {
-                attempt::candidate_outcome(Self::try_integer_composition_using(
-                    search_input,
-                    &premises,
-                ))?
-                .flatten()
-            } else {
-                attempt::candidate_outcome(
-                    search_input
-                        .driver()
-                        .apply_step(ProofStep::OrderChain(premises)),
-                )?
-            };
-            if let Some(closed) = closed {
+            if !matches!(search_input.context.as_ref(), ProofContext::Pure(_))
+                && let Some(closed) = Self::close_selected_signed_order(search_input, &premises)
+            {
+                return Ok(Some(closed));
+            }
+            if let Some(closed) = attempt::candidate_outcome(Self::try_integer_composition_using(
+                search_input,
+                &premises,
+            ))?
+            .flatten()
+            {
                 return Ok(Some(closed));
             }
         }

@@ -55,7 +55,6 @@ impl SourceContext {
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
                     | ProofTactic::NormalizeUsing(_)
-                    | ProofTactic::OrderChain(_)
                     | ProofTactic::Intro
                     | ProofTactic::IntroAs(_)
                     | ProofTactic::IntroBinder(_)
@@ -102,7 +101,6 @@ impl SourceContext {
                     | ProofTactic::Known
                     | ProofTactic::Normalize
                     | ProofTactic::NormalizeUsing(_)
-                    | ProofTactic::OrderChain(_)
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
                     | ProofTactic::Rewrite(_)

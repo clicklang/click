@@ -161,7 +161,7 @@ impl TermRewrite<'_> {
     pub(super) fn rewrite_retained_match_value_in(
         &mut self,
         matched: &KernelMatch,
-        retain_integer_equality: bool,
+        retain_integer_match: bool,
     ) -> Option<KernelTerm> {
         let matched = match self.retained_match_in(matched) {
             Ok(matched) => matched,
@@ -174,7 +174,7 @@ impl TermRewrite<'_> {
         };
         if (self.preserves_algebraic_matches()
             && matches!(&matched.result_type, KernelType::Algebraic(ty) if !ty.rigid))
-            || (retain_integer_equality && matched.retains_known_integer_equality())
+            || (retain_integer_match && matched.retains_known_integer_comparison())
         {
             return Some(matched.into_term());
         }

@@ -182,7 +182,7 @@ fn ordinary_arithmetic_work_size(steps: &[ProofStep]) -> Option<usize> {
                 pending.extend(then_proof.steps());
                 pending.extend(else_proof.steps());
             }
-            ProofStep::NormalizeUsing(premises) | ProofStep::OrderChain(premises) => {
+            ProofStep::NormalizeUsing(premises) => {
                 count += premises.len();
             }
             ProofStep::ApplyTheoremUsing {

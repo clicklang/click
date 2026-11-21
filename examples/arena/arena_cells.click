@@ -1360,7 +1360,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             have k < end;
             have 0 <= start by { known(); }
             have 0 <= k by {
-                order_chain() using { 0 <= start; start <= k; };
+                apply(click::integer::int32_less_equal_transitive(0, start, k)) using { 0 <= start; start <= k; };
             }
             have k < arena->capacity by {
                 solve() using { k < end; at(function.entry, end) <= at(function.entry, arena->capacity); };
@@ -1430,7 +1430,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
                 have 0 <= start by { known(); }
                 have 0 <= i by {
-                    order_chain() using { 0 <= start; start <= i; };
+                    apply(click::integer::int32_less_equal_transitive(0, start, i)) using { 0 <= start; start <= i; };
                 }
                 have i < arena->capacity by {
                     solve() using { at(region(24).entry, i) < at(region(24).entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };
@@ -1552,7 +1552,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                             known();
                         }
                         have 0 <= k by {
-                            order_chain() using { 0 <= start; start <= k; };
+                            apply(click::integer::int32_less_equal_transitive(0, start, k)) using { 0 <= start; start <= k; };
                         }
                         have at(opened, i) != k by { solve() using { k < at(opened, i); }; }
                         have at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied[k]))) by {
@@ -1865,7 +1865,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             }
             have 0 <= start by { known(); }
             have 0 <= k by {
-                order_chain() using { 0 <= start; start <= k; };
+                apply(click::integer::int32_less_equal_transitive(0, start, k)) using { 0 <= start; start <= k; };
             }
             have k < arena->capacity by {
                 solve() using { at(function.entry, k) < at(function.entry, end); at(function.entry, end) <= at(function.entry, arena->capacity); };

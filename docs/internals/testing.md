@@ -823,7 +823,7 @@ coverage; the remaining modules together took about half a second.
 
 The complete signed/unsigned order-chain scaling audit (8/16/24/32 edges)
 and proof-if context audit (1/2/4/8 earlier facts, with and without a split)
-also run nightly. Compact order-chain positive and negative fixtures and
+also run nightly. Theorem-based order proofs and
 proof-if expansion regressions remain in the gate. The split fixture proves
 its shared nonnegative bound once and uses explicit transitivity for each
 original earlier fact, preserving the symbolic loop variable, C program,
