@@ -2988,10 +2988,15 @@ fn evaluate_entry_resource_context(
         &assumptions,
     )
     .map_err(|error| {
-        ClickError::new(format!(
+        let diagnostic = ClickError::new(format!(
             "`{claim_label}` setup failed: {}",
             crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
-        ))
+        ));
+        if error.is_contract_entry_resource_error() {
+            diagnostic.with_proof_refusal(ProofRefusal::Contract)
+        } else {
+            diagnostic
+        }
     })?;
     let state = state.with_resource_context(evaluated);
     // The entry partition (`kernel::contract_entry_partition_facts`): this
@@ -3120,9 +3125,7 @@ fn canonical_claim_caller_state(
         use crate::kernel::ContractEntryRefusal;
 
         let (refusal, reason) = match error {
-            ContractEntryRefusal::UndefinedResourceExpression(reason) => {
-                (ProofRefusal::Contract, reason)
-            }
+            ContractEntryRefusal::InvalidResource(reason) => (ProofRefusal::Contract, reason),
             ContractEntryRefusal::Setup(reason) => (ProofRefusal::ContractEntry, reason),
         };
         ClickError::new(format!("`{claim_label}` {reason}")).with_proof_refusal(refusal)
@@ -3131,9 +3134,10 @@ fn canonical_claim_caller_state(
 }
 
 fn contract_entry_resource_refusal(error: &crate::kernel::RuntimeError) -> ProofRefusal {
-    match error {
-        crate::kernel::RuntimeError::UndefinedContractResource(_) => ProofRefusal::Contract,
-        _ => ProofRefusal::ContractEntry,
+    if error.is_contract_entry_resource_error() {
+        ProofRefusal::Contract
+    } else {
+        ProofRefusal::ContractEntry
     }
 }
 

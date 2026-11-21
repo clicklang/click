@@ -1076,7 +1076,7 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::PointerConversion(message)
         | RuntimeError::EnumVariant(message)
         | RuntimeError::FunctionContract(message)
-        | RuntimeError::UndefinedContractResource(message)
+        | RuntimeError::InvalidContractResource(message)
         | RuntimeError::UnsuppliedResourceValue(message) => {
             message.clone()
         }
@@ -1418,37 +1418,34 @@ impl ContractEntry {
     }
 }
 
-/// A rule violation identified while evaluating a resource expression, or
+/// A rule violation identified while establishing declared resources, or
 /// another reason the verifier could not construct the entry.
 #[derive(Debug)]
 pub(crate) enum ContractEntryRefusal {
-    UndefinedResourceExpression(String),
+    InvalidResource(String),
     Setup(String),
 }
 
 impl ContractEntryRefusal {
     pub(super) fn into_message(self) -> String {
         match self {
-            Self::UndefinedResourceExpression(message) | Self::Setup(message) => message,
+            Self::InvalidResource(message) | Self::Setup(message) => message,
         }
     }
 
     pub(crate) fn into_runtime_error(self) -> RuntimeError {
         match self {
-            Self::UndefinedResourceExpression(message) => {
-                RuntimeError::UndefinedContractResource(message)
-            }
+            Self::InvalidResource(message) => RuntimeError::InvalidContractResource(message),
             Self::Setup(message) => RuntimeError::FunctionContract(message),
         }
     }
 
     pub(super) fn from_resource_error(prefix: &str, error: &RuntimeError) -> Self {
         let message = format!("{prefix}: {}", describe_certification_runtime_error(error));
-        match error {
-            RuntimeError::UndefinedContractResource(_) => {
-                Self::UndefinedResourceExpression(message)
-            }
-            _ => Self::Setup(message),
+        if error.is_contract_entry_resource_error() {
+            Self::InvalidResource(message)
+        } else {
+            Self::Setup(message)
         }
     }
 }
@@ -1875,9 +1872,9 @@ fn program_function_contract_entry_facts(
         &assumptions,
     )
     .map_err(|error| {
-        format!(
-            "could not construct the contract entry partition: {}",
-            describe_certification_runtime_error(&error),
+        ContractEntryRefusal::from_resource_error(
+            "could not construct the contract entry partition",
+            &error,
         )
     })?;
     // The entry partition: a transferred clause and a borrowed `views`

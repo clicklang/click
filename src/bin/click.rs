@@ -2515,6 +2515,24 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         fs::remove_dir_all(directory).unwrap();
     }
 
+    #[test]
+    fn proven_entry_ownership_overlap_reports_a_contract_error() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for name in [
+            "write_resources_reject_proven_overlap.md",
+            "kept_pointer_aliases_do_not_duplicate_ownership.md",
+            "two_folded_entry_instances_cannot_own_the_same_cell.md",
+        ] {
+            let path = fixtures.join(name);
+            let error = entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
+            assert!(error.starts_with("contract error:\n"), "{name}: {error}");
+            assert!(
+                error.contains("overlapping owned memory resource facts"),
+                "{name}: {error}"
+            );
+        }
+    }
+
     /// A failure at a C operation names that statement. A proof failure with
     /// no site of its own is located at the declaration being verified.
     #[test]

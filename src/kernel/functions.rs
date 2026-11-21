@@ -6337,7 +6337,7 @@ fn prepare_verified_function_call<'a>(
         Ok(state) => state,
         Err(
             RuntimeError::FunctionContract(message)
-            | RuntimeError::UndefinedContractResource(message)
+            | RuntimeError::InvalidContractResource(message)
             | RuntimeError::UnsuppliedResourceValue(message),
         ) => {
             return Ok(Err(resource_call_failure(&message)));
@@ -19412,8 +19412,8 @@ fn annotate_resource_clause_error(error: RuntimeError, note: String) -> RuntimeE
         RuntimeError::FunctionContract(message) => {
             RuntimeError::FunctionContract(format!("{message} ({note})"))
         }
-        RuntimeError::UndefinedContractResource(message) => {
-            RuntimeError::UndefinedContractResource(format!("{message} ({note})"))
+        RuntimeError::InvalidContractResource(message) => {
+            RuntimeError::InvalidContractResource(format!("{message} ({note})"))
         }
         RuntimeError::UnsuppliedResourceValue(message) => {
             RuntimeError::UnsuppliedResourceValue(format!("{message} ({note})"))
@@ -19463,7 +19463,7 @@ fn unevaluated_resource_value(
     message: String,
 ) -> RuntimeError {
     if refusal.is_undefined_behavior() {
-        RuntimeError::UndefinedContractResource(message)
+        RuntimeError::InvalidContractResource(message)
     } else {
         RuntimeError::UnsuppliedResourceValue(message)
     }

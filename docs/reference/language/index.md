@@ -2867,9 +2867,11 @@ covered memory unchanged and allocated while the borrow is active. A callee
 using `views` borrows the caller's viewed or owned element for that call. The
 lent element is out of the caller's reach until the return recovers it, and no
 second persistent view is created. A view that was already present in the
-caller remains persistent. A contract may not own and view the same memory:
-the overlap is refused at entry and at the call. Owned elements are transferred
-by `owns`, `consumes`, and `produces`.
+caller remains persistent. The entry clauses of a contract may claim ownership
+of each byte at most once, including ownership inside folded resources. A
+contract may not own and view the same memory. That overlap is refused at
+entry and at the call. Owned elements are transferred by `owns`, `consumes`,
+and `produces`.
 
 Fixed-size heap objects add the built-in owned resource
 `allocation(base, bytes)`. It is exclusive authority and responsibility for
