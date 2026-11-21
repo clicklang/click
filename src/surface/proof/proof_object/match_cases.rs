@@ -203,6 +203,49 @@ impl<'a> Proof<'a> {
         self.with_kernel_state(self.state.with_locals(locals))
     }
 
+    pub(in crate::surface::proof) fn surface_local_scope(
+        &self,
+    ) -> PersistentBinderMap<ContractExpression> {
+        self.state.locals().values.clone()
+    }
+
+    /// Apply only the changed source bindings to an outcome with checked
+    /// locals. Remove expired obtains from every typed binding map.
+    pub(in crate::surface::proof) fn update_deferred_outcome_locals(
+        &self,
+        previous: Option<&PersistentBinderMap<ContractExpression>>,
+        scope: Option<&PersistentBinderMap<ContractExpression>>,
+        obtained: &PersistentBinderMap<ContractExpression>,
+        expired: &[String],
+    ) -> Self {
+        let mut locals = self.state.locals().clone();
+        let mut values = locals.values.clone();
+        if let (Some(previous), Some(scope)) = (previous, scope) {
+            for (name, _, replacement) in previous.diff(scope) {
+                match replacement.or_else(|| obtained.get(name)) {
+                    Some(value) => values.insert(name.clone(), value.clone()),
+                    None => values.remove(name),
+                }
+            }
+        }
+        let source = scope.or(previous);
+        let mut integers = locals.integer_values.clone();
+        let mut algebraics = locals.algebraic_values.clone();
+        for name in expired {
+            if let Some(value) = source.and_then(|source| source.get(name)) {
+                values.insert(name.clone(), value.clone());
+            } else {
+                values.remove(name);
+            }
+            integers.remove(name);
+            algebraics.remove(name);
+        }
+        locals.set_values(values);
+        locals.set_integer_values(integers);
+        locals.set_algebraic_values(algebraics);
+        self.with_kernel_state(self.state.with_locals(locals))
+    }
+
     pub(in crate::surface::proof) fn scope_call_payload(
         &self,
         scope: Option<&PersistentBinderMap<ContractExpression>>,
@@ -809,6 +852,7 @@ impl<'a> Proof<'a> {
                         selector: SurfacePathSelector::Proposition(surface),
                         value: true,
                         tactic_offset,
+                        if_arm_end: None,
                     });
             }
             Ok::<_, ClickError>(())

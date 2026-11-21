@@ -642,16 +642,15 @@ and the other tactics that change the path's facts or resources act on the path
 and leave the goal list alone; the implicit closer at the end of the script
 closes the goals still open.
 
-Some tactics leave a claim on its own proof, which later closers continue
-instead of the claim. `choose`, `witness`, `let` and `intro` open the proof of
-the first open proposition claim, and `rewrite` rewrites each open claim on
-its own proof. Before a tactic continues such a proof, the proof takes up the
-path's current state and resources, so a later `fold` or the contract's
-resource transition reaches it. A `have` written after `intro` extends that
-proof. A closer that does not apply to a proof that `intro` opened is read
-against the goal list instead. A closer that does not apply to a proof only
-`choose`, `witness` or `let` opened is an error, since closing the claim
-another way would drop the witness.
+Goal refinements (`witness`, `intro` and `rewrite`) work on
+the same first open claim. It must be a proposition, and the tactic applies to
+its current goal. Close an earlier resource claim with `known()` to reach the
+next claim. When a tactic leaves a claim on its own proof, later tactics
+continue that proof using the path's current state and resources, so a later
+`fold` or the contract's resource transition reaches it. A `have` written after
+`intro` extends that proof. If a closer cannot handle the goal introduced by
+`intro`, it can still close the original claim directly. A closer in a proof
+opened only by `witness` must close the goal with the chosen witness.
 
 A written closer that closes no goal it acts on is refused, `solve` and
 `solve() using` included; only the implicit closer at the end of the script
@@ -3440,7 +3439,9 @@ and profiling charges one instantiation per value.
 The right side states the exact available proposition, up to its bound names.
 The left side names the outputs in quantifier order. Their types come from
 the existential. Each output and the instantiated body are available in
-subsequent tactics in the same proof block.
+subsequent tactics in the same proof block. After function exit, `obtain` can
+open an available fact while a resource claim is still focused. Its bindings
+remain in scope for later claims in the block.
 
 - The existential may be a requirement, a `have` conclusion, or a leaf
   conjunct of an available fact. It must be available before the tactic runs.
@@ -4104,7 +4105,7 @@ unchanged, and profiling charges one application.
 
 ### Observing resources
 
-**Form:** `observe(resource)`, `observe(p[lo..hi])`, or `observe(at(point, p)[lo..hi])`
+**Form:** `observe(resource)`. A memory operand can be a range or a resource descriptor.
 
 For an explicitly selected memory range, `observe(p[lo..hi])` adds
 `viewable(p[lo..hi])` at the current program state. The exact range must be
@@ -4124,6 +4125,9 @@ evaluated in the surrounding state. `observe(at(point, p)[lo..hi])` establishes
 current `viewable(memory(at(point, p)[lo..hi]))`. `observe(old(p)[lo..hi])` uses
 the entry pointer. Both use the same exact permission lookup as a current range;
 they do not search intervening writes or change the selected resource.
+To take both the pointer and the bounds from one point, write
+`observe(at(point, memory(p[lo..hi])))`. This selects the descriptor at
+`point` and checks its permission in the current state.
 See [`observe_saved_pointer_memory_range.md`](https://github.com/clicklang/click/blob/master/mdtests/observe_saved_pointer_memory_range.md)
 and its [missing-permission refusal](https://github.com/clicklang/click/blob/master/mdtests/observe_saved_pointer_memory_requires_ownership.md).
 
@@ -4151,6 +4155,12 @@ decided:
   and a viewed child resource, which a further `observe` reads one layer
   down.
 - The resource stays held and folded; repeating `observe` is harmless.
+
+Write `observe(c)` for a named folded instance you own. Its own fields supply the
+body arguments and its immediate memory permissions become read-only views
+supported by the instance. `observe(at(point, c))` selects the saved instance
+and requires it to still be held and folded. Use `unfold` to bind named children
+or prove facts that need their fields.
 
 **Outside it**, with what to write instead:
 

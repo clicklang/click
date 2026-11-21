@@ -123,6 +123,9 @@ fn expansion_closes_each_rewritten_postcondition() {
             ensures result == 7;
         } by {
             step_until(function.exit);
+            known();
+            rewrite(result, old(p[0]));
+            known();
             rewrite(result, old(p[0]));
             solve();
         }

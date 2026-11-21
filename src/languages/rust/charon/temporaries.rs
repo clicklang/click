@@ -389,6 +389,7 @@ pub(super) fn substitute_pure_values(
     }
     fold_scalar_successors(locals, blocks, &predecessors, &substitutable, &mut removed);
     for block in blocks.iter_mut() {
+        fold_scalar_condition(block, &substitutable, &mut removed);
         block.statements.retain(|statement| match statement {
             S::BeginStorage { local } | S::EndStorage { local } => !removed.contains(local),
             S::Assign {
@@ -643,6 +644,53 @@ fn fold_scalar_successors(
             }
         }
     }
+}
+
+/// The last scalar assignment can be the condition itself when its only
+/// reader is the branch and no intervening marker changes its storage.
+fn fold_scalar_condition(
+    block: &mut MirBlock,
+    substitutable: &impl Fn(&str) -> bool,
+    removed: &mut BTreeSet<String>,
+) {
+    let T::If { condition, .. } = &mut block.terminator else {
+        return;
+    };
+    // Charon emits a negated test when the switch lists the false case.
+    let operand = match condition {
+        E::Not { value } => value.as_mut(),
+        condition => condition,
+    };
+    let E::Local { name: read } = operand else {
+        return;
+    };
+    let Some(position) = block.statements.iter().rposition(|statement| {
+        !matches!(
+            statement,
+            S::Site { .. } | S::BeginStorage { .. } | S::EndStorage { .. }
+        )
+    }) else {
+        return;
+    };
+    let S::Assign {
+        target: E::Local { name },
+        value,
+    } = &block.statements[position]
+    else {
+        return;
+    };
+    if read != name || !substitutable(name) || !straight_line_scalar(value) || checked(value) {
+        return;
+    }
+    let mentioned = mentioned_locals(&block.statements[position]);
+    if block.statements[position + 1..].iter().any(|statement| {
+        matches!(statement, S::BeginStorage { local } | S::EndStorage { local }
+            if mentioned.contains(local))
+    }) {
+        return;
+    }
+    *operand = value.clone();
+    removed.insert(name.clone());
 }
 
 /// These expressions read an existing local and have no effect of their own.

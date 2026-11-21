@@ -498,6 +498,16 @@ pub(super) struct SurfacePathChoice {
     pub(super) selector: SurfacePathSelector,
     pub(super) value: bool,
     pub(super) tactic_offset: usize,
+    pub(super) if_arm_end: Option<SurfaceIfArmEnd>,
+}
+
+/// The checked arm ends before the source continuation. Both offsets refer
+/// to the same path as the choice, including cases nested inside this arm.
+#[derive(Clone, Copy)]
+pub(super) struct SurfaceIfArmEnd {
+    pub(super) step_offset: usize,
+    pub(super) nested_choices: usize,
+    pub(super) binds_obtain: bool,
 }
 
 #[derive(Clone, PartialEq)]
@@ -1069,6 +1079,7 @@ pub(super) fn append_surface_steps_at_step_branch_path(
     steps: &mut Vec<ProofStep>,
     branch_path: &[bool],
     suffix: Vec<ProofStep>,
+    keep_scopes: bool,
 ) -> Result<(), String> {
     let mut current = through_single_arm_matches_mut(steps);
     for selected_then in branch_path {
@@ -1091,10 +1102,23 @@ pub(super) fn append_surface_steps_at_step_branch_path(
     if matches!(current.last(), Some(ProofStep::If { .. })) {
         return Err("execution path stops before its surface branch leaf".to_string());
     }
-    for step in suffix {
-        append_surface_step_to_leaves(current, step);
+    if keep_scopes {
+        append_surface_steps_in_order(current, suffix);
+    } else {
+        for step in suffix {
+            append_surface_step_to_leaves(current, step);
+        }
     }
     Ok(())
+}
+
+/// Append a checked suffix whose steps already carry their lexical scopes.
+pub(super) fn append_surface_steps_in_order(steps: &mut Vec<ProofStep>, suffix: Vec<ProofStep>) {
+    for step in suffix {
+        if !attach_deferred_open_tail(steps, &step) {
+            steps.push(step);
+        }
+    }
 }
 
 /// Appends one context's post-execution surface tactics as a flat top-level
@@ -1373,14 +1397,16 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
     }
     // Retain the splits that bind names used by the arm's tactics.
     if paths.len() == 1
-        && !paths[0]
-            .choices()
-            .iter()
-            .any(|choice| match &choice.selector {
-                SurfacePathSelector::MatchArm(..) => true,
-                SurfacePathSelector::CallOutcome(bindings) => bindings.iter().any(Option::is_some),
-                _ => false,
-            })
+        && !paths[0].choices().iter().any(|choice| {
+            choice.if_arm_end.is_some_and(|end| end.binds_obtain)
+                || match &choice.selector {
+                    SurfacePathSelector::MatchArm(..) => true,
+                    SurfacePathSelector::CallOutcome(bindings) => {
+                        bindings.iter().any(Option::is_some)
+                    }
+                    _ => false,
+                }
+        })
     {
         return Ok(paths[0].steps().to_vec());
     }
@@ -1464,6 +1490,27 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         return Ok(steps);
     }
 
+    if let SurfacePathSelector::Proposition(condition) = &first_choice.selector
+        && (then_paths.is_empty() || else_paths.is_empty())
+    {
+        let (selected, taken) = if then_paths.is_empty() {
+            (else_paths, false)
+        } else {
+            (then_paths, true)
+        };
+        return if selected.iter().any(|path| {
+            path.choices[path.choice - 1]
+                .if_arm_end
+                .is_some_and(|end| end.binds_obtain)
+        }) {
+            synthesize_scoped_decided_if(prefix, condition, selected, taken)
+        } else {
+            let mut steps = prefix;
+            steps.extend(synthesize_surface_cursors(selected)?);
+            Ok(steps)
+        };
+    }
+
     let binds_payload = matches!(
         &first_choice.selector,
         SurfacePathSelector::CallOutcome(bindings) if bindings.iter().any(Option::is_some)
@@ -1512,6 +1559,51 @@ fn synthesize_surface_cursors(paths: Vec<SurfacePathCursor<'_>>) -> Result<Vec<P
         SurfacePathSelector::MatchArm(..) => unreachable!("a match synthesizes above"),
     });
     Ok(steps)
+}
+
+/// Keep bindings local to the selected arm and serialize its checked
+/// continuation after the original source scope.
+fn synthesize_scoped_decided_if(
+    mut prefix: Vec<ProofStep>,
+    condition: &ClickProposition,
+    selected: Vec<SurfacePathCursor<'_>>,
+    taken: bool,
+) -> Result<Vec<ProofStep>, String> {
+    let mut arms = Vec::with_capacity(selected.len());
+    let mut continuations = Vec::with_capacity(selected.len());
+    for path in selected {
+        let end = path.choices[path.choice - 1]
+            .if_arm_end
+            .ok_or_else(|| "a retained if arm has no checked end".to_string())?;
+        let choice_end = path.choice + end.nested_choices;
+        arms.push(SurfacePathCursor {
+            steps: &path.steps[..end.step_offset],
+            choices: &path.choices[..choice_end],
+            ..path
+        });
+        continuations.push(SurfacePathCursor {
+            step: end.step_offset,
+            choice: choice_end,
+            ..path
+        });
+    }
+    let arm = Box::new(
+        ProofCertificate::from_steps_checking_arithmetic_later(synthesize_surface_cursors(arms)?)
+            .map_err(|error| error.raw_summary().to_string())?,
+    );
+    let empty = Box::new(
+        ProofCertificate::from_steps_checking_arithmetic_later(Vec::new())
+            .map_err(|error| error.raw_summary().to_string())?,
+    );
+    let (then_proof, else_proof) = if taken { (arm, empty) } else { (empty, arm) };
+    prefix.push(ProofStep::If {
+        ensuring: None,
+        condition: condition.clone(),
+        then_proof,
+        else_proof,
+    });
+    prefix.extend(synthesize_surface_cursors(continuations)?);
+    Ok(prefix)
 }
 
 /// Distinguish certificates checked at the same surface leaf by the

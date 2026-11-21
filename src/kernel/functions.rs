@@ -15398,7 +15398,11 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
         definition,
         definitions,
         assumptions,
-        unfold,
+        if unfold {
+            InstanceBodyOperation::Unfold
+        } else {
+            InstanceBodyOperation::Fold
+        },
         selected_children,
     )
     .map_err(|refusal| match refusal {
@@ -15421,15 +15425,42 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     })
 }
 
+enum InstanceBodyOperation {
+    Fold,
+    Unfold,
+    Observe,
+}
+
+/// Project the readable part of the checked body of one live instance.
+pub(in crate::kernel) fn observe_resource_instance(
+    state: &ExecutionState,
+    instance: &ResourceInstance,
+    definition: &CompositeResourceDefinition,
+    definitions: &[CompositeResourceDefinition],
+    assumptions: &PureFactContext,
+) -> Result<ResourceInstanceRewriteResult, ResourceRewriteRefusal> {
+    rewrite_resource_instance_selecting_children_unspelled(
+        state,
+        instance,
+        definition,
+        definitions,
+        assumptions,
+        InstanceBodyOperation::Observe,
+        None,
+    )
+}
+
 fn rewrite_resource_instance_selecting_children_unspelled(
     state: &ExecutionState,
     instance: &ResourceInstance,
     definition: &CompositeResourceDefinition,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-    unfold: bool,
+    operation: InstanceBodyOperation,
     selected_children: Option<&[(String, InstanceId)]>,
 ) -> Result<ResourceInstanceRewriteResult, ResourceRewriteRefusal> {
+    let unfold = !matches!(operation, InstanceBodyOperation::Fold);
+    let observe = matches!(operation, InstanceBodyOperation::Observe);
     if definition.name() != instance.name()
         || definition.instance_schema.as_ref() != Some(instance.schema())
         || definition.recursive
@@ -15574,7 +15605,9 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     // The selected arm's children, or the unmatched body's.
-    let body_children = if definition.matched.is_some() {
+    let body_children = if observe {
+        &[][..]
+    } else if definition.matched.is_some() {
         selected.map_or(&[][..], |arm| arm.children.as_slice())
     } else {
         check_unmatched_instance_children(instance, definition, definitions)?;
@@ -16038,7 +16071,30 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             )
             .map_err(|_| "child ownership is duplicated")?;
     }
-    if unfold {
+    if observe {
+        let (owner, _) = state
+            .resources()
+            .unique_owned_occurrence_for_fact(&folded)
+            .ok_or("instance observation requires its exact folded owner")?;
+        let views = body
+            .facts()
+            .iter()
+            .filter_map(|fact| fact.core_with_assumptions(assumptions))
+            .collect::<Vec<_>>();
+        let new_views = views
+            .iter()
+            .filter(|view| !state.resources().contains_exact_representation(view))
+            .cloned();
+        next.resources = next
+            .resources
+            .unchecked_with_supported_facts_from_occurrence_with_memory(
+                owner,
+                &folded,
+                new_views,
+                state.memory(),
+            );
+        body = ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(views);
+    } else if unfold {
         next.resources = next
             .resources
             .unfold_instance_body(instance, body.facts().iter().cloned(), assumptions)
@@ -16084,6 +16140,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     evaluation.resource_bindings = Some(std::sync::Arc::new(resource_bindings));
     let mut facts = body.observable_facts_assuming_valid(assumptions);
     facts.extend(opening_facts.iter().cloned());
+    let mut local_loadability = Vec::new();
     for fact in body.facts() {
         if let Some(coverage) = fact.allocation_bounds_fact(assumptions) {
             facts.push(coverage);
@@ -16092,7 +16149,13 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             continue;
         };
         facts.extend(crate::kernel::admitted_memory_range_span_facts(range));
-        facts.push(range.loadable_fact(&state.memory));
+        if observe {
+            // The attached view supplies permission after the tactic. A
+            // state-bearing loadability fact is needed only for body checking.
+            local_loadability.push(range.loadable_fact(&state.memory));
+        } else {
+            facts.push(range.loadable_fact(&state.memory));
+        }
     }
     // What a fold consumes is what holding the folded instance lets C read.
     let folded_cells = if unfold {
@@ -16109,8 +16172,8 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads();
-    for fact in &facts {
-        body_assumptions = body_assumptions.assume_proposition(fact.clone());
+    for fact in facts.iter().cloned().chain(local_loadability) {
+        body_assumptions = body_assumptions.assume_proposition(fact);
     }
     let facts_to_rewrite = selected.map_or(&definition.facts, |arm| &arm.facts);
     let (body_clauses, retained_conditions) = if active {
@@ -16150,7 +16213,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             ));
         }
     }
-    if unfold {
+    if unfold && !observe {
         // The opened owner and the caller's borrow-bound views coexist in the
         // constructed successor. Retain that persistent composition so the
         // existing borrow-partition rule can relate them. The body's isolated
@@ -16182,6 +16245,15 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             .filter(|fact| seen.insert(fact.clone()))
             .collect()
     };
+    if observe {
+        return Ok(ResourceInstanceRewriteResult {
+            body_active: active,
+            state: next,
+            semantic_facts,
+            body_clauses,
+            naming_facts: opening_facts,
+        });
+    }
     next.record_instance_population_exchange(state, instance, !unfold, assumptions)
         .map_err(ResourceRewriteRefusal::OwnedMessage)?;
     // Publish instance consumption records only after the complete rewrite is checked. It names
