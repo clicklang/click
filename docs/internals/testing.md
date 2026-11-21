@@ -440,7 +440,10 @@ outcome counts. A fact-stability `differs` or `paths` lowering fails the
 night, as does an audit run that does not complete. `unexpected` counts the
 proof containers that did not verify as their expectation says; the gate and
 the `slow-tests` job own those verdicts, and `<audit>.unexpected.tsv` lists
-them. The raise/lower round trip is not enforced: the
+them. For each lowering audit, the report lists up to 20 failures that are
+new since the previous night, each with the `click audit` command that
+reproduces it; the audit job's artifact holds `<audit>.failures.tsv`, every
+failure with its command. The raise/lower round trip is not enforced: the
 report lists its counts beside the previous night's and flags a rise in any
 count but `same` and `checked`.
 
