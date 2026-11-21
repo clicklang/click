@@ -1076,6 +1076,7 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &RuntimeErr
         RuntimeError::PointerConversion(message)
         | RuntimeError::EnumVariant(message)
         | RuntimeError::FunctionContract(message)
+        | RuntimeError::UndefinedContractResource(message)
         | RuntimeError::UnsuppliedResourceValue(message) => {
             message.clone()
         }
@@ -1417,6 +1418,53 @@ impl ContractEntry {
     }
 }
 
+/// A rule violation identified while evaluating a resource expression, or
+/// another reason the verifier could not construct the entry.
+#[derive(Debug)]
+pub(crate) enum ContractEntryRefusal {
+    UndefinedResourceExpression(String),
+    Setup(String),
+}
+
+impl ContractEntryRefusal {
+    pub(super) fn into_message(self) -> String {
+        match self {
+            Self::UndefinedResourceExpression(message) | Self::Setup(message) => message,
+        }
+    }
+
+    pub(crate) fn into_runtime_error(self) -> RuntimeError {
+        match self {
+            Self::UndefinedResourceExpression(message) => {
+                RuntimeError::UndefinedContractResource(message)
+            }
+            Self::Setup(message) => RuntimeError::FunctionContract(message),
+        }
+    }
+
+    pub(super) fn from_resource_error(prefix: &str, error: &RuntimeError) -> Self {
+        let message = format!("{prefix}: {}", describe_certification_runtime_error(error));
+        match error {
+            RuntimeError::UndefinedContractResource(_) => {
+                Self::UndefinedResourceExpression(message)
+            }
+            _ => Self::Setup(message),
+        }
+    }
+}
+
+impl From<String> for ContractEntryRefusal {
+    fn from(message: String) -> Self {
+        Self::Setup(message)
+    }
+}
+
+impl From<&str> for ContractEntryRefusal {
+    fn from(message: &str) -> Self {
+        Self::Setup(message.to_owned())
+    }
+}
+
 /// Builds the contract entry of `function` called with `arguments` at
 /// `caller_state`, or says why the contract has none.
 pub fn program_function_contract_entry(
@@ -1424,6 +1472,15 @@ pub fn program_function_contract_entry(
     function: &ProgramFunction,
     arguments: &[ProgramExpression],
 ) -> Result<ContractEntry, String> {
+    program_function_contract_entry_with_refusal(caller_state, function, arguments)
+        .map_err(ContractEntryRefusal::into_message)
+}
+
+pub(crate) fn program_function_contract_entry_with_refusal(
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
+) -> Result<ContractEntry, ContractEntryRefusal> {
     let (assumptions, facts, resources) =
         program_function_contract_entry_facts(caller_state, function, arguments)?;
     let predicate_bodies = function
@@ -1512,7 +1569,7 @@ fn program_function_contract_entry_facts(
         Vec<ContractEntryFact>,
         ContractEntryResources,
     ),
-    String,
+    ContractEntryRefusal,
 > {
     let mut assumptions = PureFactContext::new();
     let mut entry_facts = ContractEntryFactLog(Vec::new());
@@ -1524,7 +1581,7 @@ fn program_function_contract_entry_facts(
     let mut budget = ExecutionBudget::beside_live_state();
     let Some(mut entry_state) = program_function_entry_state(caller_state, function, arguments)
     else {
-        return Err("could not build the contract entry state from the call arguments".to_string());
+        return Err("could not build the contract entry state from the call arguments".into());
     };
     if function
         .parameters()
@@ -1555,13 +1612,15 @@ fn program_function_contract_entry_facts(
                 return Err(format!(
                     "could not build the aggregate contract entry state: {}",
                     describe_certification_runtime_error(&error)
-                ));
+                )
+                .into());
             }
             Err(limit) => {
                 return Err(format!(
                     "building the aggregate contract entry state stopped at {}",
                     limit.describe()
-                ));
+                )
+                .into());
             }
         };
     }
@@ -1675,7 +1734,8 @@ fn program_function_contract_entry_facts(
                     "lowering `requires` clause {} stopped at {}",
                     requirement_index + 1,
                     limit.describe()
-                ));
+                )
+                .into());
             }
         };
         let path = if let [path] = paths.as_slice() {
@@ -1721,7 +1781,8 @@ fn program_function_contract_entry_facts(
                         paths.len(),
                         proposition_matches.len(),
                         consistent.len(),
-                    ));
+                    )
+                    .into());
                 };
                 *path
             }
@@ -1753,10 +1814,9 @@ fn program_function_contract_entry_facts(
     ) {
         Ok(Ok(assumptions)) => assumptions,
         Ok(Err(error)) => {
-            return Err(format!(
-                "could not evaluate a declared resource quantity in the contract entry \
-                 resources: {}",
-                describe_certification_runtime_error(&error)
+            return Err(ContractEntryRefusal::from_resource_error(
+                "could not evaluate a declared resource quantity in the contract entry resources",
+                &error,
             ));
         }
         Err(limit) => {
@@ -1764,7 +1824,8 @@ fn program_function_contract_entry_facts(
                 "evaluating the declared resource quantities of the contract entry resources \
                  stopped at {}",
                 limit.describe()
-            ));
+            )
+            .into());
         }
     };
     for proposition in quantity_assumptions {
@@ -1793,16 +1854,17 @@ fn program_function_contract_entry_facts(
         ) {
             Ok(Ok(evaluated)) => evaluated,
             Ok(Err(error)) => {
-                return Err(format!(
-                    "could not evaluate the contract entry resources: {}",
-                    describe_certification_runtime_error(&error)
+                return Err(ContractEntryRefusal::from_resource_error(
+                    "could not evaluate the contract entry resources",
+                    &error,
                 ));
             }
             Err(limit) => {
                 return Err(format!(
                     "evaluating the contract entry resources stopped at {}",
                     limit.describe()
-                ));
+                )
+                .into());
             }
         };
     let required_resources = crate::kernel::admit_declared_entry_resources(
@@ -2094,7 +2156,7 @@ fn program_function_contract_entry_facts(
                 detail.clone(),
             ));
         }
-        return Err(detail);
+        return Err(detail.into());
     }
     // An owned declared resource or authority witnesses its population's
     // count. Expose the count facts the checked ledger derives for it to
@@ -2224,7 +2286,7 @@ fn program_function_contract_entry_facts(
         return Err(
             "the contract entry resources do not show that every `requires` clause is safe to \
              evaluate"
-                .to_string(),
+                .into(),
         );
     }
     for obligation in requirement_obligations {

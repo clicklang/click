@@ -8257,6 +8257,8 @@ pub enum RuntimeError {
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
     FunctionContract(String),
+    /// A contract resource expression may be undefined under the entry facts.
+    UndefinedContractResource(String),
     /// A verified call may write memory for which it has no checked byte bound.
     UnboundedWriteWithLiveView {
         callee: String,
@@ -8519,9 +8521,9 @@ impl RuntimeError {
     /// resource value another clause may still supply.
     pub fn function_contract_message(&self) -> Option<&str> {
         match self {
-            Self::FunctionContract(message) | Self::UnsuppliedResourceValue(message) => {
-                Some(message)
-            }
+            Self::FunctionContract(message)
+            | Self::UndefinedContractResource(message)
+            | Self::UnsuppliedResourceValue(message) => Some(message),
             _ => None,
         }
     }

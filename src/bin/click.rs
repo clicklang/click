@@ -57,6 +57,7 @@ fn report_error(message: String) -> ! {
         "tactic error",
         "unsuccessful search",
         "unproved goal",
+        "contract error",
         "contract entry refused",
         "execution prerequisite unmet",
         "execution refused",
@@ -2486,14 +2487,11 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         )
         .unwrap();
         let sidecar = directory.join("f.click");
-        fs::write(
-            &sidecar,
-            "verifying \"f.c\";\n\nvoid release(int32 *x, int32 i, int32 j) {\n    requires 0 <= i;\n    requires i <= j;\n    consumes x[0..(i + 1)];\n    consumes x[j..(j + 1)];\n}\n",
-        )
-        .unwrap();
+        let contract = "verifying \"f.c\";\n\nvoid release(int32 *x, int32 i, int32 j) {\n    requires 0 <= i;\n    requires i <= j;\n    consumes x[0..(i + 1)];\n    consumes x[j..(j + 1)];\n}\n";
+        fs::write(&sidecar, contract).unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        fs::remove_dir_all(&directory).unwrap();
-        assert!(error.starts_with("contract entry refused:\n"), "{error}");
+        assert!(error.starts_with("contract error:\n"), "{error}");
+        assert!(error.contains("signed overflow"), "{error}");
         assert!(
             error.contains("could not open contract entry for `release.body_safety`"),
             "{error}"
@@ -2505,6 +2503,16 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
             )),
             "{error}"
         );
+        fs::write(
+            &sidecar,
+            contract.replace(
+                "requires i <= j;",
+                "requires i <= j;\n    requires j < 100;",
+            ),
+        )
+        .unwrap();
+        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
+        fs::remove_dir_all(directory).unwrap();
     }
 
     /// A failure at a C operation names that statement. A proof failure with

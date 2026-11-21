@@ -652,6 +652,7 @@ fn prove_claims_by_checked_tactics(
                         ParameterBinding::new(parsed_function.parameters(), &arguments),
                     ),
                 ))
+                .with_proof_refusal(contract_entry_resource_refusal(&error))
             })
         })
         .map_err(|error| error.with_proof_refusal(crate::surface::ProofRefusal::ContractEntry))?;

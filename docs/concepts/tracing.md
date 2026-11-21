@@ -19,6 +19,7 @@ Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-beh
 | `type error` | The sidecar parses but does not elaborate. | Fix the named declaration. |
 | `internal error` | Click detected its own failure. | Stop at [`internal-error`](#outcomes) and capture the command, version, output, and inputs. |
 | `limit error` | A configured work limit stopped verification. | Record the limit and the operation that reached it. |
+| `contract error` | Click identified a rule it believes a written contract clause violates. | Check the rule under the contract’s requirements. Correct the clause or report a supported `contract-bug`. |
 | `tactic error` | A specific tactic invocation was refused. | Check `click docs TACTIC` for where it applies and what it requires. |
 | `unsuccessful search` | An explicit or implicit proof search found no proof. | Record the goal and write smaller proof links or supply explicit premises. |
 | `unproved goal` | The proof left a required goal open. | Prove the remaining goal with the premises at the reported point. |
@@ -274,6 +275,7 @@ The procedure ends at exactly one of these:
 | `unclear-goal` | You can read `G` and its premises, but have neither a justification nor a counterexample. Say why you expected the proof to work and identify the local gap in the argument. |
 | `missing-rule` | The premises and conclusion are expressible and the inference is justified, but no supported primitive connects them. Record the rule schema, the references checked, and the reduced example for design discussion. This is not established by a search miss alone. |
 | `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory syntax, or resource form. Report a bug. |
+| `contract-bug` | Click refuses a contract that satisfies the documented rule. Quote the clause and exact refusal and show how the contract satisfies the rule. Click maintainers follow up. |
 | `tactic-bug` | Click refuses a minimized simple tactic whose written premises justify its goal and whose documented **Accepts** list covers the link. Report a Click bug. |
 | `unclear-trace` | You could not determine what the output says was refused. Quote the output and identify what you could not determine. |
 | `internal-error` | Click printed `internal error`. Tell the user immediately that Click detected a verifier failure. A proof goal or a minimized tactic link is optional evidence. |
@@ -291,7 +293,7 @@ a specific defect in the output.
 Report a Click defect with the user's approval as an issue at
 <https://github.com/clicklang/click/issues> that contains enough to reproduce
 it. Label the issue with its outcome (`tracing: inexpressible-fact`,
-`tracing: obligation-bug`, `tracing: tactic-bug`, `tracing: unclear-trace`,
+`tracing: contract-bug`, `tracing: obligation-bug`, `tracing: tactic-bug`, `tracing: unclear-trace`,
 `tracing: internal-error`, `crash`, or `hang`), and
 start its title with it in brackets (`[tactic-bug] ...`, `[hang] ...`) so
 it shows even without permission to set labels.
@@ -299,6 +301,11 @@ it shows even without permission to set labels.
 For `internal-error`, include the exact command, the `click --version` output,
 the full diagnostic, and the inputs needed to reproduce it. For a crash or
 hang, follow [Crashes and hangs](#crashes-and-hangs).
+
+For `contract-bug`, include the reduced inputs, the exact command,
+`click --version`, and the complete diagnostic. Identify the clause, cite
+the contract rule, and show how the original contract satisfies it under
+its stated requirements.
 
 For `obligation-bug`, include a reduced reproduction, the original claim,
 the generated goal at its program point, and the exact command and output.

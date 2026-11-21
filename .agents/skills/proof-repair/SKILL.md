@@ -37,6 +37,11 @@ it; shrink them if you can, but a report need not wait for that.
   at the reported point. Correct an invalid invocation. If the invocation and
   its premises satisfy the documented rule and Click still refuses, report
   `tactic-bug`. If the tactic owes a goal, continue with that goal below.
+- `contract error`: identify the written clause and read the documented
+  contract rule that Click says it violates. Check the rule under the
+  contract's stated requirements. If the clause violates it, explain why to
+  the proof author and check the intended correction. If the original contract
+  satisfies the rule and Click still rejects it, stop at `contract-bug`.
 - `unsuccessful search`: explicit or implicit proof search ran and found no
   proof. Record the goal. If it holds, write an explicit chain of smaller
   links, or supply the missing argument or premises.
@@ -46,7 +51,9 @@ it; shrink them if you can, but a report need not wait for that.
   operation's pre-state and continue with that goal.
 - `contract entry refused`, `contract exit refused`, or `contract refinement
   refused`: inspect the named resource clauses, effect, or refinement.
-  Continue with the reported obligation when the diagnostic gives one.
+  Continue with the reported obligation when the diagnostic gives one. For
+  an entry refusal, use `contract-bug` if you can show that the original
+  contract satisfies the documented rule Click applied.
 - `execution refused`, `termination not established`, `invalid divergence
   declaration`, or `unsupported proof`: investigate the reported operation,
   termination check, declaration, or proof shape.
@@ -211,6 +218,10 @@ Stop at exactly one outcome:
   discussion. A search miss alone does not establish this outcome.
 - `inexpressible-fact`: the argument needs an intermediate fact that Click
   cannot write. Follow the user-facing reporting instructions below.
+- `contract-bug`: Click refuses a contract that satisfies the applicable
+  documented contract rule. Quote the exact clause and refusal, cite the rule,
+  and show how the written requirements and resources satisfy it. Click
+  maintainers follow up on contract checking.
 - `tactic-bug`: a bug in Click. The minimized link is one simple tactic,
   its written premises justify the goal, and the tactic's documented
   **Accepts** list in `click docs NAME` covers the link. Click still refuses
@@ -230,7 +241,7 @@ premises, report that diagnosis is in progress. Use `unclear-goal` if you
 cannot justify the goal after investigation.
 
 In the outcome report, say explicitly what the result establishes about
-Click. `obligation-bug`, `tactic-bug`, `inexpressible-fact`,
+Click. `contract-bug`, `obligation-bug`, `tactic-bug`, `inexpressible-fact`,
 `internal-error`, `crash`, and `hang` identify Click defects. `unclear-trace`
 leaves the reason for the refusal undetermined. File a diagnostic bug only
 when you can demonstrate a specific defect in the output. `false-claim`
@@ -261,8 +272,8 @@ Report a Click defect as follows:
 2. Open an issue at https://github.com/clicklang/click/issues.
 3. Give the report below, enough for someone else to reproduce it.
 4. Label the issue with its outcome: `tracing: inexpressible-fact`,
-   `tracing: obligation-bug`, `tracing: tactic-bug`, `tracing: unclear-trace`,
-   `tracing: internal-error`, `crash`, or `hang`.
+   `tracing: contract-bug`, `tracing: obligation-bug`, `tracing: tactic-bug`,
+   `tracing: unclear-trace`, `tracing: internal-error`, `crash`, or `hang`.
    Start the title with it in brackets too (`[tactic-bug] ...`,
    `[hang] ...`), so it shows even where you cannot set labels.
 
@@ -272,6 +283,13 @@ For `internal-error`, give the exact command, `click --version`, the complete
 error output, and the inputs needed to reproduce it. Quote the message that
 identifies the verifier failure. For crashes and hangs, follow the requirements
 above.
+
+For `contract-bug`, give a reduced contract and enough of the target program
+to reproduce the refusal, the exact command, `click --version`, and the
+complete output. Cite the documented contract rule and show how the
+original clause satisfies it under its stated requirements. An entry
+diagnostic may have no `goal:` line or written tactic. Report the exact
+clause and refusal in that case.
 
 For `obligation-bug`, give a reduced reproduction, the original claim, the
 generated goal at its program point, and the exact command and output.

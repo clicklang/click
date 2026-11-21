@@ -8162,6 +8162,10 @@ int32 reader(int32 p[], int32 q[]) {
             "{}",
             error.message()
         );
+        assert!(
+            error.concise_report().starts_with("contract error"),
+            "{error}"
+        );
         // The refusal names the invariant and both clauses, so the contract
         // can be repaired without reading the ledger.
         assert!(
