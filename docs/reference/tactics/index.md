@@ -1398,16 +1398,25 @@ A recursive specification function applied to a known constructor is
 evaluated: `solve` unfolds it, then keeps unfolding the recursive calls the
 definition exposes while their arguments select one arm, rewriting an argument
 by a constructor equation (a supplied premise or a connected fact such as
-`u == Tree::Node(..)`) when that exposes one. A recursion over an integer
-measure is evaluated the same way when its arguments are constants: the
-unfolded `if` arm that a constant guard such as `2 <= 0` selects is searched
-for the next call. It takes eight checked steps, plus as many as the largest
-constant argument of a call it unfolds, at most 1024 in all; each step lowers
-the whole goal again, so a long evaluation can exhaust the tactic budget
-first (about 25 calls), where a bottom-up proof, one `have` per call by
-`unfold` and `solve()`, stays linear
+`u == Tree::Node(..)`) when that exposes one, for at most eight checked steps.
+
+A recursive call whose arguments are constants, such as
+`output_from(lit, 0u64, 13)` that a postcondition names, is evaluated one
+level at a time instead. Each level is the arm of the definition that its
+constant `if` guards select, with the next call's constant arguments
+evaluated; a guard may compare a string literal's byte at a constant index,
+which is a constant since the literal is read-only. `solve` proves one
+`have` for the call's value, and inside it one `have` per level, `call ==
+arm`, by `unfold` and `known()` (or `solve()` for a `Bool` level). Only the
+value joins the proof, so the work grows linearly with the depth, at most
+1024 levels. A call a fact names inside `at(point, ...)`, as a postcondition
+names it at the call's entry, is evaluated at that point, with
+`unfold(at(point, call))`. Expansion writes the `have`s
 (`mdtests/a_recursive_byte_function_evaluates_automatically.md`,
-`mdtests/a_recursive_byte_function_evaluates_a_string_literal.md`).
+`mdtests/a_long_recursion_over_constants_is_evaluated_one_level_at_a_time.md`).
+A bottom-up proof, one `have` per call by `unfold` and `solve()`, states the
+same levels by hand
+(`mdtests/a_recursive_byte_function_evaluates_a_string_literal.md`).
 An argument nothing fixes stays folded
 ([`solve_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_evaluates_a_recursive_function_over_known_constructors.md),
 [`solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).
@@ -2851,7 +2860,7 @@ profiling charges its explicit input and guarantees.
 
 ### Unfolding pure functions
 
-**Form:** `unfold(function(args))`
+**Form:** `unfold(function(args))`, or `unfold(at(point, function(args)))`
 
 **Core.** Expose one defining equation for the exact pure-function call at the
 current proof state and refresh the current goal through that one layer.
@@ -2883,6 +2892,12 @@ names are in scope, and:
   equation just added. After that only `known`, `solve`, or `normalize`
   may follow.
 - At a C execution frontier, adds the equation and leaves the frontier.
+- With `at(point, ...)`, adds `at(point, function(args)) == at(point, body)`:
+  the defining equation with the arguments' array contents read at `point`,
+  and rewrites occurrences of `at(point, function(args))`
+  (`mdtests/unfold_at_a_point_opens_a_pure_function_there.md`). `solve`
+  evaluates a call that a fact names at a point, such as a postcondition at
+  the call's entry, with this form.
 - For an `Integer` range-fold body, a decided empty range exposes its initial
   value; a decided nonempty range exposes its append-last-cell equation over
   the same function at the predecessor endpoint. The whole-call and predecessor

@@ -1225,6 +1225,17 @@ impl<'a> Proof<'a> {
         &self,
         application: &ClickFunctionApplication,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        self.apply_function_unfold_at(application, None)
+    }
+
+    /// `unfold(f(args))`, or with `selector` `unfold(at(selector, f(args)))`:
+    /// the defining equation of the application at that program point,
+    /// `at(selector, f(args)) == at(selector, body)`.
+    pub(super) fn apply_function_unfold_at(
+        &self,
+        application: &ClickFunctionApplication,
+        selector: Option<&ProgramPointSelector>,
+    ) -> Result<CheckedFocusedTransition, ClickError> {
         let definitions = match self.context.as_ref() {
             ProofContext::Pure(context) => context.spec_definitions,
             ProofContext::FixedState(context) => context.spec_definitions,
@@ -1284,6 +1295,7 @@ impl<'a> Proof<'a> {
                     FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
                     context.spec_definitions,
                     BTreeMap::new(),
+                    selector,
                 )
             }
             ProofContext::FixedState(context) => {
@@ -1306,6 +1318,7 @@ impl<'a> Proof<'a> {
                     crate::surface::lowering::parameter_pointer_element_widths(
                         context.parameter_binding.parameters,
                     ),
+                    selector,
                 )
             }
             ProofContext::Execution(_) if self.focused_outcome_data().is_some() => {
@@ -1331,6 +1344,7 @@ impl<'a> Proof<'a> {
                     crate::surface::lowering::parameter_pointer_element_widths(
                         view.parameter_binding.parameters,
                     ),
+                    selector,
                 )
             }
             ProofContext::Execution(context) => {
@@ -1363,6 +1377,7 @@ impl<'a> Proof<'a> {
                     crate::surface::lowering::parameter_pointer_element_widths(
                         context.parsed_function.parameters(),
                     ),
+                    selector,
                 )
             }
         }
@@ -1379,7 +1394,16 @@ impl<'a> Proof<'a> {
         fixed_state: FixedStateFrame<'_>,
         spec_definitions: SpecDefinitions<'_>,
         parameter_pointer_element_widths: BTreeMap<String, u32>,
+        selector: Option<&ProgramPointSelector>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        // Both sides of an equation at a program point are read there.
+        let at_point = |expression: ContractExpression| match selector {
+            Some(selector) => ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(expression),
+            },
+            None => expression,
+        };
         let definition = spec_definitions
             .functions
             .get(&application.name)
@@ -1450,12 +1474,12 @@ impl<'a> Proof<'a> {
         let checked_body =
             crate::surface::lowering::pure_function_result_value(&definition, checked_body);
         let checked_equality = ClickProposition::Comparison {
-            left: ContractExpression::Call {
+            left: at_point(ContractExpression::Call {
                 name: application.name.clone(),
                 arguments: checked_arguments.clone(),
-            },
+            }),
             operator: ComparisonOperator::Equal,
-            right: checked_body,
+            right: at_point(checked_body),
         };
         let equality = lower_fixed_state_proposition_through_kernel_with(
             &checked_equality,
@@ -1672,9 +1696,9 @@ impl<'a> Proof<'a> {
                     arguments: application.arguments.clone(),
                 };
                 let surface_equality = ClickProposition::Comparison {
-                    left: surface_application,
+                    left: at_point(surface_application),
                     operator: ComparisonOperator::Equal,
-                    right: surface_body,
+                    right: at_point(surface_body),
                 };
                 let surface = original_surface.as_ref().and_then(|surface| {
                     rewrite_click_proposition_by_surface_equality(surface, &surface_equality)

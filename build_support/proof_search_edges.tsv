@@ -384,11 +384,17 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_flat_solve_co
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_function_unfold_solve_closure	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_function_unfold_solve_closure	try_constructor_evaluation_closure	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_function_unfold_solve_closure	try_direct_logical_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_function_unfold_solve_closure	try_ground_recursion_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_function_unfold_solve_closure	try_solve_closure_after_direct_with_surfaces_and_function_unfold	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	apply_normalization_closure	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	available_surface_fact	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_operand_constant_equality	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_operand_constant_equality	try_direct_logical_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ground_recursion_closure	driver	7
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ground_recursion_closure	resolve_solve_premises	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ground_recursion_closure	try_direct_logical_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ground_recursion_closure	try_solve_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ground_recursion_closure	try_solve_closure_after_direct_with_surfaces_and_function_unfold	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_implication_solve_closure	driver	5
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_implication_solve_closure	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_implication_solve_closure	try_fixed_state_fact_transport	1
@@ -512,6 +518,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_flat_solve_conjunction	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_function_unfold_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_goal_conditional_normalization	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_ground_recursion_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_guarded_consequent_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_indexed_direct_equality_rewrite	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_indexed_forall_instantiation_with_surfaces	1

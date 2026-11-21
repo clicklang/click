@@ -8,14 +8,12 @@ use std::fmt::Write as _;
 /// The prefix of a formatted-output function's name.
 const SNPRINTF_PREFIX: &str = "__click_snprintf_";
 const PRINTF_PREFIX: &str = "__click_printf_";
-const FPRINTF_PREFIX: &str = "__click_fprintf_";
 
 /// The standard function behind a checked, fixed-arity call.
 #[derive(Clone, Copy)]
 pub(crate) enum FormattedOutput {
     Snprintf,
     Printf,
-    Fprintf,
 }
 
 impl FormattedOutput {
@@ -23,7 +21,6 @@ impl FormattedOutput {
         match self {
             Self::Snprintf => "snprintf",
             Self::Printf => "printf",
-            Self::Fprintf => "fprintf",
         }
     }
 
@@ -31,7 +28,6 @@ impl FormattedOutput {
         match self {
             Self::Snprintf => SNPRINTF_PREFIX,
             Self::Printf => PRINTF_PREFIX,
-            Self::Fprintf => FPRINTF_PREFIX,
         }
     }
 
@@ -174,13 +170,9 @@ pub(crate) fn parse_format(format: &[u8]) -> Result<Vec<FormatPiece>, String> {
 
 /// The format of the formatted-output function `name`, when it is one.
 pub(crate) fn function_format(name: &str) -> Option<(FormattedOutput, Vec<u8>)> {
-    let (function, hex) = [
-        FormattedOutput::Snprintf,
-        FormattedOutput::Printf,
-        FormattedOutput::Fprintf,
-    ]
-    .into_iter()
-    .find_map(|function| Some((function, name.strip_prefix(function.prefix())?)))?;
+    let (function, hex) = [FormattedOutput::Snprintf, FormattedOutput::Printf]
+        .into_iter()
+        .find_map(|function| Some((function, name.strip_prefix(function.prefix())?)))?;
     let format = (0..hex.len())
         .step_by(2)
         .map(|index| u8::from_str_radix(hex.get(index..index + 2)?, 16).ok())
@@ -193,7 +185,7 @@ pub(crate) fn contract_for_function(name: &str) -> Option<String> {
     let (function, format) = function_format(name)?;
     match function {
         FormattedOutput::Snprintf => Some(contract_source(name, &parse_format(&format).ok()?)),
-        FormattedOutput::Printf | FormattedOutput::Fprintf => {
+        FormattedOutput::Printf => {
             let bytes = stream_output_bytes(function, &format).ok()?;
             Some(stream_contract(name, &bytes))
         }
