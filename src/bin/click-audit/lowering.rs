@@ -15,9 +15,10 @@ use super::{AuditSource, audit_targets, load_audit_source};
 /// The outcome of one lowering audit run.
 pub(super) struct LoweringReport {
     pub(super) headline: String,
-    /// Containers whose verification outcome under the audit disagreed with
-    /// their expectation: an audit must not change a proof.
-    pub(super) changed_outcomes: Vec<String>,
+    /// Containers that did not verify as their expectation says. The gate
+    /// and the slow-tests job own those verdicts; the audit lists them so a
+    /// count it reports can be read beside them.
+    pub(super) unexpected_outcomes: Vec<String>,
 }
 
 pub(super) fn name(audit: LoweringAudit) -> &'static str {
@@ -52,7 +53,7 @@ pub(super) fn run(
         targets.len()
     );
     let workers = std::thread::available_parallelism().map_or(1, usize::from);
-    let changed = cli::run_parallel(&targets, workers, |target| verify_target(target));
+    let unexpected = cli::run_parallel(&targets, workers, |target| verify_target(target));
     let checked = audit.checked();
     audit
         .record_to(None)
@@ -62,14 +63,23 @@ pub(super) fn run(
         LoweringAudit::RaiseLower => raise_lower_counts(&lines),
         LoweringAudit::FactStability => fact_stability_counts(&lines, checked),
     };
-    let changed_outcomes = changed
+    let unexpected_outcomes = unexpected
         .into_iter()
         .map(|(index, message)| format!("{}: {message}", targets[index].display()))
         .collect::<Vec<_>>();
-    write_counts(audit, &counts, changed_outcomes.len(), records)?;
+    write_counts(audit, &counts, unexpected_outcomes.len(), records)?;
+    let changed_path = records.with_extension("unexpected.tsv");
+    fs::write(
+        &changed_path,
+        unexpected_outcomes
+            .iter()
+            .map(|line| format!("{line}\n"))
+            .collect::<String>(),
+    )
+    .map_err(|error| format!("failed to write `{}`: {error}", changed_path.display()))?;
     Ok(LoweringReport {
         headline: headline(audit, &counts, records),
-        changed_outcomes,
+        unexpected_outcomes,
     })
 }
 
@@ -85,18 +95,18 @@ struct Counts {
 }
 
 /// `<records>.counts.tsv`, `outcome<TAB>count`: the headline's numbers,
-/// `failing`, `checked`, `tracked` and `changed` (containers that verified
-/// differently from their expectation), then each outcome's count, for the
+/// `failing`, `checked`, `tracked` and `unexpected` (containers that did not
+/// verify as their expectation says), then each outcome's count, for the
 /// nightly report.
 fn write_counts(
     audit: LoweringAudit,
     counts: &Counts,
-    changed: usize,
+    unexpected: usize,
     records: &Path,
 ) -> Result<(), String> {
     let path = records.with_extension("counts.tsv");
     let mut text = format!(
-        "failing\t{}\nchecked\t{}\ntracked\t{}\nchanged\t{changed}\n",
+        "failing\t{}\nchecked\t{}\ntracked\t{}\nunexpected\t{unexpected}\n",
         counts.failing, counts.checked, counts.tracked
     );
     for (outcome, count) in &counts.outcomes {

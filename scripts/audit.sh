@@ -11,10 +11,9 @@
 # With `CLICK_NIGHTLY_REPORT_DIR`, each lowering audit also appends, for
 # `scripts/nightly-report.py`:
 #
-#   phases.tsv  `<audit><TAB>seconds<TAB>status`, status 1 when a proof
-#               container verified differently from its expectation under it
+#   phases.tsv  `<audit><TAB>seconds<TAB>status`, `click audit`'s status
 #   counts.tsv  `<audit><TAB>outcome<TAB>count`: `failing`, `checked`,
-#               `tracked`, `changed` and each outcome's count
+#               `tracked`, `unexpected` and each outcome's count
 #
 # The exit status is `click audit`'s: only expansion failures fail it.
 set -euo pipefail
@@ -52,9 +51,7 @@ if [[ -n "$report" ]]; then
     for audit in raise-lower fact-stability; do
         counts="$records/$audit.counts.tsv"
         [[ -f "$counts" ]] || continue
-        changed="$(awk -F'\t' '$1 == "changed" { print $2 }' "$counts")"
-        printf '%s\t%s\t%s\n' "$audit" $((SECONDS - started)) \
-            "$([[ "${changed:-0}" -eq 0 ]] && echo 0 || echo 1)" >> "$report/phases.tsv"
+        printf '%s\t%s\t%s\n' "$audit" $((SECONDS - started)) "$status" >> "$report/phases.tsv"
         awk -F'\t' -v audit="$audit" '{ printf "%s\t%s\t%s\n", audit, $1, $2 }' "$counts" \
             >> "$report/counts.tsv"
     done

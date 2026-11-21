@@ -435,10 +435,12 @@ reported as that job's failure, with the run log as its reference.
 
 The `raise-lower-audit` and `fact-stability-audit` jobs record each lowering
 audit of [the raise-lower principle](raise-lower-principle.md#the-raise-lower-principle)
-as its headline numbers (`failing`, `checked`, `tracked`, `changed`) and
+as its headline numbers (`failing`, `checked`, `tracked`, `unexpected`) and
 outcome counts. A fact-stability `differs` or `paths` lowering fails the
-night, as does a proof container that verified differently from its
-expectation under an audit. The raise/lower round trip is not enforced: the
+night, as does an audit run that does not complete. `unexpected` counts the
+proof containers that did not verify as their expectation says; the gate and
+the `slow-tests` job own those verdicts, and `<audit>.unexpected.tsv` lists
+them. The raise/lower round trip is not enforced: the
 report lists its counts beside the previous night's and flags a rise in any
 count but `same` and `checked`.
 

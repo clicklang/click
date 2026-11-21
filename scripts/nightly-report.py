@@ -12,7 +12,7 @@ Reads the result directories the nightly jobs fill when
   jobs.tsv     `job<TAB>result` written by the workflow
   counts.tsv   `audit<TAB>outcome<TAB>count` from `scripts/audit.sh`: each
                lowering audit's headline numbers (`failing`, `checked`,
-               `tracked`, `changed`) and outcome counts, with `<audit>.tsv`
+               `tracked`, `unexpected`) and outcome counts, with `<audit>.tsv`
                holding that audit's own records
 
 and writes `report.md` and `report.json` to `--out`. With `--previous` (the
@@ -254,8 +254,7 @@ def collect(directories):
             if phase["status"] != 0:
                 failures[key] = {
                     "kind": "lowering", "name": f"{phase['name']} run",
-                    "summary": "a proof container verified differently from its expectation "
-                               "under the audit; an audit must not change a proof's outcome",
+                    "summary": f"`click audit {phase['name']}` exited {phase['status']}",
                     "seconds": phase["seconds"], "reproduce": reproduce("lowering", phase["name"]),
                 }
         if phase["name"] == "clippy" and phase["status"] != 0:

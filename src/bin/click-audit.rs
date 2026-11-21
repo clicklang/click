@@ -612,14 +612,12 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
                 let file = records.join(format!("{}.tsv", lowering::name(audit)));
                 let report = lowering::run(audit, &path, &file)?;
                 println!("{}", report.headline);
-                if !report.changed_outcomes.is_empty() {
+                if !report.unexpected_outcomes.is_empty() {
                     println!(
-                        "  {} proof containers verified differently from their expectation under the audit (tracked):",
-                        report.changed_outcomes.len()
+                        "  {} proof containers did not verify as their expectation says; the gate and the nightly tests own those verdicts (listed in {})",
+                        report.unexpected_outcomes.len(),
+                        file.with_extension("unexpected.tsv").display()
                     );
-                    for changed in report.changed_outcomes.iter().take(10) {
-                        println!("    {changed}");
-                    }
                 }
                 headlines.push(report.headline);
             }
