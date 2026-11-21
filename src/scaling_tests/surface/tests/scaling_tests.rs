@@ -1101,7 +1101,7 @@ fn assert_near_linear_scaling_with_increment_bound(axis: &str, samples: &[Scalin
 fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
     let (replace_source, caller_source, base_click) =
         super::contract_tests::result_case_split_sources();
-    let insertion = "                open(allocated_cell(owner)) {\n                }\n";
+    let insertion = "                with(allocated_cell(owner)) {\n                }\n";
     let mut samples = Vec::new();
     let mut exclusion_work = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -9085,7 +9085,7 @@ resource callbacks0(cb: const struct callbacks*) {
         for layer in (1..=depth).rev() {
             source.push_str(&format!("unfold(node{layer}(p)); observe(callbacks{layer}(cb));\n"));
         }
-        source.push_str("unfold(node0(p)); open(callbacks0(cb)) { step_until(function.exit); } fold(node0(p));\n");
+        source.push_str("unfold(node0(p)); with(callbacks0(cb)) { step_until(function.exit); } fold(node0(p));\n");
         for layer in 1..=depth {
             source.push_str(&format!("fold(node{layer}(p));\n"));
         }
