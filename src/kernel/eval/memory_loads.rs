@@ -336,21 +336,20 @@ pub(in crate::kernel) fn evaluate_indexed_read(
         };
     }
     if value_type.is_pointer() {
-        let ProgramValue::Pointer(stored) = version
-            .indexed_stored_value()
-            .expect("indexed pointer store")
-            .native()
-            .numeric_value()
-        else {
-            unreachable!("indexed pointer store");
-        };
-        let stored = stored.clone();
+        let stored = version.indexed_stored_value().map(|store| {
+            let ProgramValue::Pointer(stored) = store.native().numeric_value() else {
+                unreachable!("indexed pointer store");
+            };
+            stored.clone()
+        });
         record_load_access_width(version.memory(), &pointer, value_type.byte_width());
         let read = Pointer::from_point_read(version, value_type, &pointer);
-        facts.push(ExecutionPureFact::logical_pointer_value_equation(
-            stored,
-            read.clone(),
-        ));
+        if let Some(stored) = stored {
+            facts.push(ExecutionPureFact::logical_pointer_value_equation(
+                stored,
+                read.clone(),
+            ));
+        }
         let value = ProgramValue::Pointer(read);
         return ExpressionPath {
             outcome: ExpressionOutcome::Value(value),
@@ -4238,14 +4237,14 @@ pub(crate) fn canonical_cell_value(
     if let ProgramType::Parameter(parameter) = value_type {
         return AlgebraicTermNode::parameter_cell_load(source, pointer.clone(), parameter);
     }
-    if let Some(read) = indexed_pointer_cell_read(source, pointer, value_type) {
+    if let Some(read) = point_named_pointer_cell_read(source, pointer, value_type) {
         return ProgramValue::Pointer(read);
     }
     crate::kernel::cell_run_value(value_type, canonical_cell_load(source, pointer, value_type))
 }
 
-/// Name a complete object pointer cell from its recorded typed store.
-pub(crate) fn indexed_pointer_cell_read(
+/// Name a complete object pointer cell from its typed store or entry point.
+pub(crate) fn point_named_pointer_cell_read(
     source: &ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
@@ -4253,7 +4252,7 @@ pub(crate) fn indexed_pointer_cell_read(
     if !value_type.is_object_pointer() {
         return None;
     }
-    let version = source.indexed_typed_version(pointer, value_type)?;
+    let version = source.ordinary_typed_version(pointer, value_type)?;
     Some(Pointer::from_point_read(version, value_type, pointer))
 }
 
@@ -6039,6 +6038,41 @@ mod tests {
             legacy,
             "warm compatibility path"
         );
+    }
+
+    #[test]
+    fn an_unwritten_entry_pointer_has_one_identity_for_address_and_domain() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = ExecutionState::new().begin_function_entry_memory();
+        let entry = state.program_point();
+        let cell = Address {
+            base: AddressBase::ExternalArgument,
+            offset: AddressOffset::Constant(0),
+        };
+        let ty = ProgramType::Int32Pointer;
+        let version = entry
+            .ordinary_typed_version(&cell, ty)
+            .expect("entry version");
+        let path = evaluate_indexed_read(
+            version,
+            &entry,
+            cell.clone(),
+            ty,
+            ExecutionFacts::new(),
+            Vec::new(),
+        );
+        assert!(path.facts.is_empty());
+
+        let ExpressionOutcome::Value(ProgramValue::Pointer(read)) = path.outcome else {
+            panic!("expected a complete pointer read");
+        };
+        let descriptor = read.address().as_loaded_value().expect("entry read");
+        assert_eq!(descriptor.point.read_version_id(), state.program_point_id());
+        assert_eq!(descriptor.defining_address, cell);
+        assert_eq!(descriptor.value_type, Some(ty));
+        assert_eq!(read.provenance(), read.address());
+        assert_eq!(read.bounds_owner(), Some(read.address()));
+        assert_eq!(point_named_pointer_cell_read(&entry, &cell, ty), Some(read));
     }
 
     #[test]

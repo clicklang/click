@@ -120,7 +120,14 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                     have *((&g->__rb_parent_color) as (int32 **)) == at(before_store, *((&g->__rb_parent_color) as (int32 **))) by {
                         preserve(memory(g->__rb_parent_color), statement(0));
                     }
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { known(); }
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by {
+                        have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == at(before_store, ((g->__rb_parent_color & ~3) as (struct rb_node *))) by {
+                            rewrite(g->__rb_parent_color, at(before_store, g->__rb_parent_color));
+                            known();
+                        }
+                        rewrite(((g->__rb_parent_color & ~3) as (struct rb_node *)), at(before_store, ((g->__rb_parent_color & ~3) as (struct rb_node *))));
+                        known();
+                    }
                     mark before_local;
                     step();
                     have separate(statement(1).region(0).footprint, memory(g->__rb_parent_color)) by {
@@ -129,7 +136,14 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                     have *((&g->__rb_parent_color) as (int32 **)) == at(before_local, *((&g->__rb_parent_color) as (int32 **))) by {
                         preserve(memory(g->__rb_parent_color), statement(1).region(0));
                     }
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { known(); }
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by {
+                        have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == at(before_local, ((g->__rb_parent_color & ~3) as (struct rb_node *))) by {
+                            rewrite(g->__rb_parent_color, at(before_local, g->__rb_parent_color));
+                            known();
+                        }
+                        rewrite(((g->__rb_parent_color & ~3) as (struct rb_node *)), at(before_local, ((g->__rb_parent_color & ~3) as (struct rb_node *))));
+                        known();
+                    }
                     step();
                     step();
                     have p == xid by { known(); }

@@ -104,7 +104,11 @@ void overwrite(struct node* p, struct node* q) {
         known();
     }
     have ((p->word & ~1) as (struct node *)) == saved_next by {
-        rewrite(p->word, at(before_word_0, p->word));
+        have ((p->word & ~1) as (struct node *)) == at(before_word_0, ((p->word & ~1) as (struct node *))) by {
+            rewrite(p->word, at(before_word_0, p->word));
+            known();
+        }
+        rewrite(((p->word & ~1) as (struct node *)), at(before_word_0, ((p->word & ~1) as (struct node *))));
         known();
     }
     fold(hop(p));
@@ -160,7 +164,11 @@ int32 caller(struct node* p, struct node* q) {
         known();
     }
     have ((p->word & ~1) as (struct node *)) == saved_next by {
-        rewrite(p->word, at(before_word_0, p->word));
+        have ((p->word & ~1) as (struct node *)) == at(before_word_0, ((p->word & ~1) as (struct node *))) by {
+            rewrite(p->word, at(before_word_0, p->word));
+            known();
+        }
+        rewrite(((p->word & ~1) as (struct node *)), at(before_word_0, ((p->word & ~1) as (struct node *))));
         known();
     }
     fold(hop(p));
@@ -181,7 +189,11 @@ int32 caller(struct node* p, struct node* q) {
         known();
     }
     have ((p->word & ~1) as (struct node *)) == saved_next by {
-        rewrite(p->word, at(before_word_0, p->word));
+        have ((p->word & ~1) as (struct node *)) == at(before_word_0, ((p->word & ~1) as (struct node *))) by {
+            rewrite(p->word, at(before_word_0, p->word));
+            known();
+        }
+        rewrite(((p->word & ~1) as (struct node *)), at(before_word_0, ((p->word & ~1) as (struct node *))));
         known();
     }
     fold(hop(p));
