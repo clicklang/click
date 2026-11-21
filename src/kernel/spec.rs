@@ -1129,30 +1129,18 @@ fn lower_spec_conjunction_left_spine_in(
         return Ok(None);
     }
 
-    // Each path carries the context that assumes every conjunct before the
-    // next right operand, extended by one conjunct at a time, so a long chain
-    // never assumes its whole prefix again.
     let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
         scope,
         leftmost,
         assumptions,
         budget,
-    )?
-    .into_iter()
-    .map(|path| {
-        let guard = assumptions
-            .clone()
-            .assume_proposition(path.proposition.clone());
-        (path, guard)
-    })
-    .collect::<Vec<_>>();
+    )?;
     for right in right_operands.into_iter().rev() {
         let mut combined = Vec::new();
-        for (left_path, guard) in paths {
+        for left_path in paths {
             lower_guarded_conjunct_in(
                 scope,
                 &left_path,
-                &guard,
                 right,
                 assumptions,
                 budget,
@@ -1161,29 +1149,25 @@ fn lower_spec_conjunction_left_spine_in(
         }
         paths = combined;
     }
-    let paths = paths.into_iter().map(|(path, _)| path).collect();
     Ok(Some(paths))
 }
 
 /// Lowers the right operand of `and` where its left operand holds, as C's
-/// `&&` evaluates it: the right side is read under the left proposition, and
-/// each of its obligations is owed only there (`left implies obligation`),
-/// exactly as `implies` guards its consequent. The left proposition only
-/// discharges or refuses a right obligation; it never changes the right term.
-///
-/// `guard` is `assumptions` with the left proposition assumed; each result
-/// path is returned with its guard extended by its own right proposition.
+/// `&&` evaluates it: each of the right side's obligations is owed only there,
+/// as `left implies obligation`. The right side is lowered without assuming
+/// the left proposition, so the left side never changes the right term;
+/// establishing a guarded obligation assumes its guard
+/// (`ProofObligation::evaluation_requirement_is_established`).
 fn lower_guarded_conjunct_in(
     scope: SpecScope<'_>,
     left_path: &SpecPropositionPath,
-    guard: &PureFactContext,
     right: &SpecProposition,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
-    paths: &mut Vec<(SpecPropositionPath, PureFactContext)>,
+    paths: &mut Vec<SpecPropositionPath>,
 ) -> ExecutionResult<()> {
     let right_assumptions =
-        assumptions_with_path_context(guard, &left_path.facts, &left_path.obligations);
+        assumptions_with_path_context(assumptions, &left_path.facts, &left_path.obligations);
     for right_path in lower_spec_proposition_at_state_with_algebraic_bindings_in(
         scope,
         right,
@@ -1200,21 +1184,15 @@ fn lower_guarded_conjunct_in(
             assumptions,
             &right_assumptions,
         ) {
-            let extended = guard
-                .clone()
-                .assume_proposition(right_path.proposition.clone());
-            paths.push((
-                SpecPropositionPath {
-                    introductions: Vec::new(),
-                    proposition: Proposition::And(
-                        Box::new(left_path.proposition.clone()),
-                        Box::new(right_path.proposition),
-                    ),
-                    facts,
-                    obligations,
-                },
-                extended,
-            ));
+            paths.push(SpecPropositionPath {
+                introductions: Vec::new(),
+                proposition: Proposition::And(
+                    Box::new(left_path.proposition.clone()),
+                    Box::new(right_path.proposition),
+                ),
+                facts,
+                obligations,
+            });
         }
     }
     Ok(())
@@ -1645,20 +1623,16 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 assumptions,
                 budget,
             )? {
-                let guard = assumptions
-                    .clone()
-                    .assume_proposition(left_path.proposition.clone());
                 lower_guarded_conjunct_in(
                     scope,
                     &left_path,
-                    &guard,
                     right,
                     assumptions,
                     budget,
                     &mut paths,
                 )?;
             }
-            Ok(paths.into_iter().map(|(path, _)| path).collect())
+            Ok(paths)
         }
         SpecProposition::Or(left, right) => {
             lower_spec_disjunction_at_state_in(scope, left, right, assumptions, budget)

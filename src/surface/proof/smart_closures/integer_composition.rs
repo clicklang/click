@@ -2004,6 +2004,28 @@ mod scaling_tests {
 /// Its claim is then that operation's domain alone, over operand values
 /// whose own domains the theorem's arguments carry.
 pub(super) fn domain_has_compound_operand(domain: &ClickProposition) -> bool {
+    // A C fragment's operand owes a domain unless it is a value or a local:
+    // a static or global object is a memory read.
+    fn compound_fragment(operand: &ProgramExpression) -> bool {
+        match operand {
+            ProgramExpression::Value(_) => false,
+            ProgramExpression::Variable(name) => !matches!(
+                name,
+                crate::kernel::BindingName::Named(_) | crate::kernel::BindingName::Local(_)
+            ),
+            ProgramExpression::Cast { expression, .. } => compound_fragment(expression),
+            _ => true,
+        }
+    }
+    fn compound(operand: &ContractExpression) -> bool {
+        match operand {
+            ContractExpression::Binding(_)
+            | ContractExpression::ProgramBinding(_)
+            | ContractExpression::IntegerLiteral(_) => false,
+            ContractExpression::ProgramExpression(fragment) => compound_fragment(fragment),
+            _ => true,
+        }
+    }
     let ClickProposition::Defined { expression } = domain else {
         return false;
     };
@@ -2019,21 +2041,15 @@ pub(super) fn domain_has_compound_operand(domain: &ClickProposition) -> bool {
             _ => break,
         }
     }
-    let compound = |operand: &ContractExpression| {
-        !matches!(
-            operand,
-            ContractExpression::Binding(_)
-                | ContractExpression::ProgramBinding(_)
-                | ContractExpression::IntegerLiteral(_)
-                | ContractExpression::ProgramExpression(
-                    ProgramExpression::Value(_) | ProgramExpression::Variable(_)
-                )
-        )
-    };
     match root {
         ContractExpression::Add(left, right)
         | ContractExpression::Subtract(left, right)
         | ContractExpression::Multiply(left, right) => compound(left) || compound(right),
+        ContractExpression::ProgramExpression(
+            ProgramExpression::Add(left, right)
+            | ProgramExpression::Subtract(left, right)
+            | ProgramExpression::Multiply(left, right),
+        ) => compound_fragment(left) || compound_fragment(right),
         _ => false,
     }
 }

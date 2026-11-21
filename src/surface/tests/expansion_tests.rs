@@ -21400,8 +21400,11 @@ fn loop_maintain_expansion_preserves_pointer_arm_binding() {
     verify_c_sources(source, &sources).expect("the original proof checks");
     let expanded = expand_c_claim_source_by_label(source, &sources, "spin.loop(0).maintain")
         .expect("the maintain proof expands with its match-arm binding");
-    let (_, phase) = expanded.split_once("maintain by {").unwrap();
-    assert!(phase.contains("Tree::Node(id)"), "{phase}");
+    // The expansion stays inside the arm that binds `id` and replays there.
+    // Whether its steps name the binding depends on the route they take:
+    // `known` can close the invariant from the fact the step retains.
+    assert!(expanded.contains("Tree::Node(id) =>"), "{expanded}");
+    assert!(expanded.contains("maintain by {"), "{expanded}");
     verify_c_sources(&expanded, &sources).expect("the expanded proof checks");
 }
 

@@ -296,6 +296,21 @@ fn operation(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<DefinedPath>> {
     let operand_expressions = operands(expression);
+    // Operands that are already values owe nothing and need no binding: the
+    // root evaluated as written is the same evaluation.
+    if operand_expressions
+        .iter()
+        .all(|operand| matches!(operand, SpecExpression::Value(_)))
+    {
+        return Ok(vec![root(
+            scope,
+            expression,
+            ExecutionFacts::new(),
+            Vec::new(),
+            assumptions,
+            budget,
+        )?]);
+    }
     let mut prefixes = vec![Operands {
         state: scope.state.clone(),
         values: scope.values.cloned().unwrap_or_default(),
