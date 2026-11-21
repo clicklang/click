@@ -4580,6 +4580,95 @@ fn ordinary_indexed_integer_read_work_is_bounded_as_path_grows() {
 }
 
 #[test]
+fn whole_static_read_selects_and_replays_its_recorded_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let scalar = SymbolicMemory::global_pointer("counter");
+    let other = SymbolicMemory::global_pointer("other_counter");
+    let ty = ProgramType::Int32;
+    let entry = ExecutionState::new()
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block(scalar.base.clone(), 4)
+                .with_block(other.base.clone(), 4),
+        )
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(scalar.clone(), ProgramType::Int32Pointer),
+        )
+        .begin_function_entry_memory();
+    let written = local_read_test_store(&entry, &scalar, ty, 7);
+    let claim = local_read_test_claim(ty);
+    let expected = relower_written_proposition(&claim, &written).unwrap();
+    let read = local_test_read_operand(&expected, ty);
+    let MachineTerm::MemoryLoad(point, _, crate::kernel::LoadKind::Int32) = read else {
+        panic!("whole static read: {read:?}");
+    };
+    assert_eq!(point.read_version_id(), written.program_point_id());
+
+    let work = [1, 8, 64, 256].map(|count| {
+        let mut reader = written.clone();
+        for value in 0..count {
+            reader = local_read_test_store(&reader, &other, ty, value);
+        }
+        let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
+            relower_written_proposition(&claim, &reader).unwrap()
+        });
+        assert_eq!(lowered, expected);
+        work
+    });
+    assert!(work.iter().all(|units| *units <= work[0] + 8), "{work:?}");
+
+    let replaced = local_read_test_store(&written, &scalar, ty, 7);
+    assert_eq!(written.memory(), replaced.memory());
+    assert_ne!(
+        relower_written_proposition(&claim, &replaced).unwrap(),
+        expected
+    );
+    let selector = ProgramPointSelector::Mark("written".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), written.clone());
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let root = crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, read);
+    let raised = raise_kernel_term(
+        &root,
+        ParameterBinding::default(),
+        &replaced,
+        &BTreeMap::new(),
+    )
+    .expect("the earlier static read has a recorded spelling");
+    assert!(matches!(&raised, ContractExpression::At { selector: at, .. } if at == &selector));
+    let mut replay = claim;
+    let ClickProposition::Comparison { left, .. } = &mut replay else {
+        unreachable!("test comparison");
+    };
+    *left = raised;
+    assert_eq!(
+        relower_written_proposition_with_states(&replay, &replaced, &replaced, &points),
+        Ok(expected)
+    );
+
+    let partial = local_read_test_store(&written, &scalar, ProgramType::UInt8, 7);
+    assert!(
+        partial
+            .program_point()
+            .ordinary_typed_version(&scalar, ty)
+            .is_none()
+    );
+
+    let alias = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let may_alias = local_read_test_store(&written, &alias, ty, 9);
+    assert!(
+        may_alias
+            .program_point()
+            .ordinary_typed_version(&scalar, ty)
+            .is_none()
+    );
+}
+
+#[test]
 fn ordinary_fixed_offset_read_keeps_its_version_across_sibling_stores() {
     let _session = crate::kernel::VerificationSession::enter();
     let left = local_read_test_address("pair");

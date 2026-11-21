@@ -1633,6 +1633,8 @@ impl ProgramPoint {
 
     pub(crate) fn supports_indexed_version(pointer: &Address) -> bool {
         read_bucket(&pointer.base).is_some()
+            || (pointer.base.is_static_storage_block()
+                && pointer.offset == AddressOffset::Constant(0))
     }
 
     /// A direct integer cell's version, if this path has a recorded direct write
@@ -1685,6 +1687,9 @@ impl ProgramPoint {
         bytes: u32,
         matches_source: impl FnOnce(&MemoryDerivation) -> bool,
     ) -> Option<Self> {
+        if pointer.base.is_static_storage_block() {
+            return self.indexed_whole_static_store(pointer, bytes, matches_source);
+        }
         let bucket = read_bucket(&pointer.base)?;
         let node = self.path.0.as_ref()?;
         if !self.path.matches_indexed_view(&self.memory) {
@@ -1716,6 +1721,36 @@ impl ProgramPoint {
                 ReadSelection::IndexedWrite(write.source.clone())
             },
         })
+    }
+
+    /// A whole-object scalar can use the block's recorded version directly.
+    /// Select one store from the sealed point, without searching older effects.
+    fn indexed_whole_static_store(
+        &self,
+        pointer: &Address,
+        bytes: u32,
+        matches_source: impl FnOnce(&MemoryDerivation) -> bool,
+    ) -> Option<Self> {
+        if pointer.offset != AddressOffset::Constant(0)
+            || self.memory().block_size(&pointer.base)?.as_const()? != bytes
+        {
+            return None;
+        }
+        let mut version = self.indexed_block_array_version(&pointer.base)?;
+        let source = &version.path.0.as_ref()?.steps.as_ref()?.step;
+        let MemoryDerivation::Store {
+            pointer: written,
+            value,
+            ..
+        } = source.as_ref()
+        else {
+            return None;
+        };
+        if written != pointer || value.byte_width() != bytes || !matches_source(source) {
+            return None;
+        }
+        version.read = ReadSelection::IndexedWrite(source.clone());
+        Some(version)
     }
 
     /// The recorded value of this indexed read's defining store.
