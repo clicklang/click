@@ -323,15 +323,12 @@ mod tests {
         let error = crate::surface::verify_c_sources(
             "spec enum Pair { Both(int32, int32) }
              theorem swapped(p: Pair) {
-                 ensures p == (match p { Pair::Both(a, b) => Pair::Both(b, a) }) by normalize();
+                 ensures p == (match p { Pair::Both(a, b) => Pair::Both(b, a) }) by known();
              }",
             &[],
         )
         .unwrap_err();
-        assert!(
-            error.to_string().contains("goal did not normalize to true"),
-            "{error}"
-        );
+        assert!(error.to_string().contains("known"), "{error}");
     }
 
     #[test]

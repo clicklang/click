@@ -5300,30 +5300,32 @@ impl AlgebraicTerm {
                     && else_term.is_well_formed()
             }
             AlgebraicTermNode::Match { scrutinee, arms } => {
-                !scrutinee.algebraic_type.rigid
-                    && scrutinee.is_well_formed()
-                    && arms.len() == scrutinee.algebraic_type.variants.len()
+                if scrutinee.algebraic_type.rigid
+                    || arms.len() != scrutinee.algebraic_type.variants.len()
+                    || !scrutinee.is_well_formed()
+                {
+                    return false;
+                }
+                crate::instrumentation::record_deterministic_work(arms.len());
+                let arms_by_variant: std::collections::HashMap<_, _> =
+                    arms.iter().map(|arm| (arm.variant.as_str(), arm)).collect();
+                arms_by_variant.len() == arms.len()
                     && scrutinee.algebraic_type.variants.iter().all(|variant| {
-                        arms.iter()
-                            .filter(|arm| arm.variant == variant.name)
-                            .count()
-                            == 1
-                            && arms
-                                .iter()
-                                .find(|arm| arm.variant == variant.name)
-                                .is_some_and(|arm| {
-                                    arm.bindings.len() == variant.fields.len()
-                                        && arm.bindings.iter().zip(&variant.fields).all(
-                                            |(binding, expected)| {
-                                                binding.is_well_formed_for(
-                                                    expected,
-                                                    &scrutinee.algebraic_type.schemas,
-                                                )
-                                            },
-                                        )
-                                        && arm.body.algebraic_type == self.algebraic_type
-                                        && arm.body.is_well_formed()
-                                })
+                        arms_by_variant
+                            .get(variant.name.as_str())
+                            .is_some_and(|arm| {
+                                arm.bindings.len() == variant.fields.len()
+                                    && arm.bindings.iter().zip(&variant.fields).all(
+                                        |(binding, expected)| {
+                                            binding.is_well_formed_for(
+                                                expected,
+                                                &scrutinee.algebraic_type.schemas,
+                                            )
+                                        },
+                                    )
+                                    && arm.body.algebraic_type == self.algebraic_type
+                                    && arm.body.is_well_formed()
+                            })
                     })
             }
         }

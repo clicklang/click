@@ -392,8 +392,12 @@ fn algebraic_terms_equal(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
         }
 }
 
-/// The equality checker has already checked both operands' types and schemas.
-fn algebraic_match_rebuilds_scrutinee(matched: &AlgebraicTerm, other: &AlgebraicTerm) -> bool {
+/// Check the arm bodies and binders of a reconstruction. Callers validate
+/// the operand types and schemas before using this as equality evidence.
+pub(in crate::kernel) fn algebraic_match_rebuilds_scrutinee(
+    matched: &AlgebraicTerm,
+    other: &AlgebraicTerm,
+) -> bool {
     let AlgebraicTermNode::Match { scrutinee, arms } = &matched.node else {
         return false;
     };

@@ -7154,6 +7154,14 @@ impl SymbolicMemory {
         self.cells.explicitly_stored_value(pointer)
     }
 
+    /// Borrow an exact cell value, including the payload of a constant run.
+    pub(in crate::kernel) fn indexed_stored_value(
+        &self,
+        pointer: &Address,
+    ) -> Option<&ProgramValue> {
+        self.cells.exact_stored_value(pointer)
+    }
+
     /// Check the exact typed cell or a fully initialized declared word
     /// without evaluating a load, resolving aliases, or walking history.
     pub(in crate::kernel) fn indexed_read_is_defined(
