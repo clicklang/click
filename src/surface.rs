@@ -6966,15 +6966,25 @@ pub struct ProofOpen {
     tactics: Vec<ProofTactic>,
     // The captured tail of a deferred close, merged into the matching scope
     // when the outcome proof is assembled.
-    deferred_tail: bool,
+    deferred_tail: Option<DeferredOpenTail>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DeferredOpenTail {
+    Restore,
+    AlreadyRestored,
 }
 
 impl ProofOpen {
-    pub(crate) fn deferred_block_tail(resource: ResourceClause, haves: Vec<ProofTactic>) -> Self {
+    pub(crate) fn deferred_block_tail(
+        resource: ResourceClause,
+        tactics: Vec<ProofTactic>,
+        tail: DeferredOpenTail,
+    ) -> Self {
         Self {
             resource,
-            tactics: haves,
-            deferred_tail: true,
+            tactics,
+            deferred_tail: Some(tail),
         }
     }
 }
