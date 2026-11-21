@@ -4292,9 +4292,6 @@ pub(in crate::kernel) fn expected_point_named_cell_read(
         .or_else(|| indexed_resource_scalar_read(source, pointer, ty))
         .or_else(|| {
             let kind = LoadKind::of_type(ty)?;
-            if !kind.is_word32() {
-                return None;
-            }
             let point = source.entry_cell_version(pointer, ty)?;
             Some(MachineTerm::MemoryLoad(
                 point,
