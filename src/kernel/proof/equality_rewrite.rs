@@ -3995,12 +3995,11 @@ mod tests {
             };
             let cited = eq(mask(load(&before, pointer.clone(), kind)), one.clone());
             let facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
-            let goal = eq(mask(load(&after, pointer.clone(), kind)), one.clone());
-            // The two reads can agree, but the earlier read is the only one
-            // named by this citation. State an equality for the later read.
-            assert!(facts.check_equality_rewrite(&goal, &cited).is_err());
-            let later = PureFactStore::from_ordered(std::slice::from_ref(&goal));
-            assert!(later.check_equality_rewrite(&goal, &goal).is_ok());
+            assert!(facts.check_equality_rewrite(&cited, &cited).is_ok());
+            let later = eq(mask(load(&changed, pointer.clone(), kind)), one.clone());
+            assert!(facts.check_equality_rewrite(&later, &cited).is_err());
+            let later_facts = PureFactStore::from_ordered(std::slice::from_ref(&later));
+            assert!(later_facts.check_equality_rewrite(&later, &later).is_ok());
             for wrong in [
                 mask(load(&changed, pointer.clone(), kind)),
                 mask(load(
@@ -4054,7 +4053,10 @@ mod tests {
         };
         crate::kernel::eval::declare_load_access_width(&pointer, 8);
         let before = SymbolicMemory::new().with_block("compound-rewrite-work", 8);
-        let after = before.clone().with_block("local:compound-rewrite-work", 4);
+        let after = before.clone().store(
+            pointer.clone(),
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(933_000))),
+        );
         let expression = |memory: &SymbolicMemory, size| {
             let mut term = MachineTerm::MemoryLoad(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
@@ -4092,8 +4094,7 @@ mod tests {
                 let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&cited));
                 for i in 0..ambient {
                     let other = MachineTerm::Variable(Variable(930_000 + i));
-                    facts =
-                        facts.with_fact(equality(other.clone(), MachineTerm::constant(i as u32)));
+                    facts = facts.with_fact(equality(other, MachineTerm::constant(i as u32)));
                     facts = facts.with_fact(eq(
                         expression(&before, 0),
                         MachineTerm::Variable(Variable(932_000 + i)),
