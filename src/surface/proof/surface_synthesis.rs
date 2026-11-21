@@ -5378,7 +5378,11 @@ fn synthesize_point_read(
     // is that cell's entry value, spelled at the entry state.
     if !version.is_exact_read()
         && let Some(kind) = crate::kernel::LoadKind::of_type(value_type)
-        && state.program_point().entry_integer_version(pointer, kind).as_ref() == Some(version)
+        && state
+            .program_point()
+            .entry_integer_version(pointer, kind)
+            .as_ref()
+            == Some(version)
         && let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
     {
         return Some(ContractExpression::Old(Box::new(place(&entry)?)));

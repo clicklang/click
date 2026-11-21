@@ -256,6 +256,23 @@ mod tests {
         }
     }
 
+    /// A checked read of a caller's struct field the path leaves unchanged
+    /// reads the cell at its function-entry version; it raises as the field
+    /// read at entry.
+    #[test]
+    fn an_entry_version_field_read_round_trips() {
+        let lines = round_trips(
+            "arena_prefix_free_reads_region_arena.md",
+            include_str!("../../../mdtests/arena_prefix_free_reads_region_arena.md"),
+        );
+        for original in ["old(region->start) == s", "old(region->end) == e"] {
+            assert!(
+                lines.contains(&("same".to_string(), original.to_string())),
+                "{original}: {lines:#?}"
+            );
+        }
+    }
+
     /// The round trips `fixture` records, as `(outcome, original)` pairs.
     fn round_trips(name: &str, text: &str) -> Vec<(String, String)> {
         let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), text).unwrap();
