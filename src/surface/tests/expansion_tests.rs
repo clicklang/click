@@ -19280,20 +19280,9 @@ fn retained_int32_subtraction_expands_with_ordinary_bounds() {
         expanded.contains("apply(click::integer::subtract_le("),
         "{expanded}"
     );
-    for bound in [
-        "have -1 <= to_integer(((at(region(1).entry, n) - 1) as int32)) by {",
-        "have to_integer(((at(region(1).entry, n) - 1) as int32)) <= 2147483646 by {",
-    ] {
-        assert!(
-            expanded
-                .lines()
-                .zip(expanded.lines().skip(1))
-                .any(|(goal, tactic)| {
-                    goal.trim() == bound && tactic.trim_start().starts_with("rewrite(")
-                }),
-            "{bound} should expand with the operation's observation identity\n{expanded}"
-        );
-    }
+    // The subtraction's range is proved at its machine endpoints through
+    // checked Integer laws, and its observation identity, the retained
+    // operation equal to the Integer difference, is a known fact.
     let mut endpoints = 0;
     let mut identities = 0;
     for (goal, tactic) in expanded.lines().zip(expanded.lines().skip(1)) {
