@@ -27,7 +27,7 @@ theorem ensured(n: uint64) {
         intro();
         intro();
         unfold(g(k));
-        normalize();
+        known();
     }
 }
 ```

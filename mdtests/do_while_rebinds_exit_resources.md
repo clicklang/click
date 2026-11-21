@@ -61,7 +61,7 @@ void walk(struct Node* p) {
             }
         }
     }
-    have c.model != Path::Top by normalize();
+    have c.model != Path::Top by known();
     match c.model {
         Path::Top => { contradiction(c.model == Path::Top); },
         Path::Step(identity, before) => { step_until(function.exit); solve(); },

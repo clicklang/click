@@ -56,7 +56,7 @@ void traverse(int32 *next, int32 *visited) diverges {
             mark after_visit;
             have next[0] == at(before_visit, next[0]) by {
                 have separate(loop(0).statement(0).footprint, memory(next[0])) by {
-                    normalize() using {
+                    solve() using {
                         at(before_visit, separate(memory(visited[cur]), memory(next[0])));
                     };
                 }

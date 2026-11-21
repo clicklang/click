@@ -29,8 +29,8 @@ void mark_at(int32 *v, int32 *m, int32 n) {
         known();
     }
     let end = obtain(exists (end: int32) { end == at(entry, m[0]) });
-    have zeros(at(entry, v), 0, end) == zeros(at(entry, v), 0, end) by normalize();
-    have 0 <= 0 by { normalize(); }
+    have zeros(at(entry, v), 0, end) == zeros(at(entry, v), 0, end) by known();
+    have 0 <= 0 by { known(); }
     have 0 <= end by { known(); }
     have end <= n by { solve(); }
     have viewable(v[0..n]) by { observe(v[0..n]); known(); }
@@ -66,7 +66,7 @@ void mark_at(int32 *v, int32 *m, int32 n) {
             intro(); intro();
             instantiate(at(entry, forall (j: int32) { 0 <= j and j < end implies separate(memory(v[m[0]]), memory(v[j])) }), k);
             have separate(statement(0).footprint, memory(v[k])) by {
-                normalize() using { at(entry, separate(memory(v[m[0]]), memory(v[k]))); };
+                solve() using { at(entry, separate(memory(v[m[0]]), memory(v[k]))); };
             }
             preserve(memory(v[k]), statement(0));
         }

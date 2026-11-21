@@ -46,21 +46,21 @@ int32 forward_skip() {
     step();
     step();
     step();
-    normalize();
+    known();
 }
 
 int32 forward_skip_execute() {
     ensures result == 1;
 } by {
     step_until(function.exit);
-    normalize();
+    known();
 }
 
 int32 forward_goto_chain() {
     ensures result == 2;
 } by {
     step_until(function.exit);
-    normalize();
+    known();
 }
 ```
 

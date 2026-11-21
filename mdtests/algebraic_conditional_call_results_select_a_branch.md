@@ -20,7 +20,7 @@ theorem select_left(left: Tree, right: Tree) {
     ensures select(Tree::Node(left, right), 0) == left by {
         unfold(select(Tree::Node(left, right), 0));
         unfold(identity(left));
-        normalize();
+        known();
     }
 }
 
@@ -29,7 +29,7 @@ theorem select_right(left: Tree, right: Tree, flag: int32) {
     ensures select(Tree::Node(left, right), flag) == right by {
         unfold(select(Tree::Node(left, right), flag));
         unfold(identity(right));
-        normalize() using { flag != 0; };
+        solve() using { flag != 0; };
     }
 }
 ```

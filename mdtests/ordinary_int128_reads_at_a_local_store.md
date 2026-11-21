@@ -33,9 +33,9 @@ int128 read_signed(int128 value) {
     mark written;
     step();
     have *(&slot) == value by solve();
-    have separate(memory(*(&other)), memory(*(&slot))) by normalize();
+    have separate(memory(*(&other)), memory(*(&slot))) by known();
     have separate(region(3).footprint, memory(*(&slot))) by {
-        normalize() using { separate(memory(*(&other)), memory(*(&slot))); };
+        solve() using { separate(memory(*(&other)), memory(*(&slot))); };
     }
     have *(&slot) == at(written, *(&slot)) by {
         preserve(memory(*(&slot)), region(3));
@@ -53,9 +53,9 @@ uint128 read_unsigned(uint128 value) {
     mark written;
     step();
     have *(&slot) == value by solve();
-    have separate(memory(*(&other)), memory(*(&slot))) by normalize();
+    have separate(memory(*(&other)), memory(*(&slot))) by known();
     have separate(region(3).footprint, memory(*(&slot))) by {
-        normalize() using { separate(memory(*(&other)), memory(*(&slot))); };
+        solve() using { separate(memory(*(&other)), memory(*(&slot))); };
     }
     have *(&slot) == at(written, *(&slot)) by {
         preserve(memory(*(&slot)), region(3));

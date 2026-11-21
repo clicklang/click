@@ -31,7 +31,7 @@ theorem shifted_is_next<T>(b: Box<T>, k: Integer) {
     requires 0 <= k;
     ensures shifted(b, k) == k + 1 by {
         unfold(shifted(b, k));
-        normalize();
+        known();
     }
 }
 
