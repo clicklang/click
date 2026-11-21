@@ -74,8 +74,8 @@ minus retains its existing arithmetic and definedness conditions
 <!-- verified-example: mdtests/float_bit_literals_preserve_ieee_values.md -->
 ```click
 theorem float_bits() {
-    ensures iszero(float32_from_bits(0x80000000u32)) by { normalize(); }
-    ensures isnan(float64_from_bits(0x7ff8000000000123u64)) by { normalize(); }
+    ensures iszero(float32_from_bits(0x80000000u32)) by { known(); }
+    ensures isnan(float64_from_bits(0x7ff8000000000123u64)) by { known(); }
 }
 ```
 
