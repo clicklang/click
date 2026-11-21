@@ -145,7 +145,7 @@ mod tests {
             "{error}"
         );
         assert!(!error.contains("outside the owned footprint"), "{error}");
-        assert!(error.starts_with("verification error:"), "{error}");
+        assert!(error.starts_with("unsuccessful search:"), "{error}");
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -340,7 +340,7 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "unsuccessful search:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
+                "verification error:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
             )),
             "{error}"
         );
@@ -349,7 +349,7 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "unsuccessful search:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
+                "verification error:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
             )),
             "{error}"
         );
