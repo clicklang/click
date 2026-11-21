@@ -3624,18 +3624,15 @@ fn machine_spelling_lowers_to_integer(
     relation: CompareRelation,
     operands: [crate::kernel::KernelTerm; 2],
 ) -> bool {
-    let [left, right] = &operands;
-    !matches!(
-        crate::kernel::machine_integer::comparison::logical_condition_for_operand_views(
-            format,
-            relation,
-            [
-                crate::kernel::MachineOperandView::Shared(left),
-                crate::kernel::MachineOperandView::Shared(right),
-            ],
-        ),
-        ConditionTerm::Compare { .. } | ConditionTerm::Constant(_)
-    )
+    use crate::kernel::machine_integer::comparison;
+    let operands = operands
+        .each_ref()
+        .map(crate::kernel::MachineOperandView::Shared);
+    !comparison::retains_int32_match(format, operands)
+        && !matches!(
+            comparison::logical_condition_for_operand_views(format, relation, operands),
+            ConditionTerm::Compare { .. } | ConditionTerm::Constant(_)
+        )
 }
 
 /// `to_integer(left) OP to_integer(right)` with an explicit Integer context:

@@ -422,6 +422,49 @@ mod tests {
     }
 
     #[test]
+    fn known_int32_matches_keep_order_after_lowering_and_rewrite() {
+        let fixture = include_str!("../../../mdtests/int32_match_order_on_known_constructor.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        let raised = |claim, tactic, operator| {
+            let prefix = format!(
+                "raised\tgoal\tcondition:Compare(int32 {operator})\t{claim}.ensures_0\t{tactic}\twritten\t"
+            );
+            lines
+                .iter()
+                .find_map(|line| line.strip_prefix(&prefix))
+                .unwrap_or_else(|| panic!("missing {prefix:?}: {lines:#?}"))
+        };
+        let written = raised("written", "intro()", "<");
+        assert!(written.contains("match Packet::Full(-7)"), "{written}");
+        assert_eq!(written, raised("rewritten", "rewrite", "<"));
+        let right = raised("right_operand", "intro()", "<=");
+        assert!(right.starts_with("0 <= match Packet::Empty"), "{right}");
+        let both = raised("both_operands", "intro()", ">");
+        assert_eq!(both.matches("match Packet::").count(), 2, "{both}");
+        let non_strict = raised("non_strict", "intro()", ">=");
+        assert!(
+            non_strict.contains("match Packet::Full(-7)"),
+            "{non_strict}"
+        );
+
+        let wrong = source.replacen("}) < 0", "}) > 0", 1);
+        let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
+        assert!(
+            error.to_string().contains("goal did not normalize to true"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn known_integer_matches_keep_the_comparison_after_rewrite() {
         let fixture = include_str!("../../../mdtests/integer_match_on_known_constructor.md");
         let source = fixture

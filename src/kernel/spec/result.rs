@@ -229,25 +229,19 @@ impl SpecValue {
                 ComparisonOperator::GreaterThan => CompareRelation::GreaterThan,
                 ComparisonOperator::GreaterEqual => CompareRelation::GreaterEqual,
             };
-            if !conditional_guard
-                && format == MachineIntegerType::Int32
-                && relation == CompareRelation::Equal
-                && [left, right].iter().any(|operand| {
-                    matches!(operand, MachineOperandView::Shared(root)
-                        if matches!(root.node(), KernelTermNode::Match(matched) if matched.has_simple_int32_arms()))
-                })
-            {
+            use crate::kernel::machine_integer::comparison;
+            if !conditional_guard && comparison::retains_int32_match(format, [left, right]) {
                 let root = KernelTerm::boolean_comparison_raw(
                     format,
                     relation,
-                    [left, right].map(|operand| KernelTerm::retained_machine_operand(format, operand)),
+                    [left, right]
+                        .map(|operand| KernelTerm::retained_machine_operand(format, operand)),
                 );
                 return Ok(Some(Proposition::condition_is(
                     StoredConditionTerm::from_root(root).expect("machine comparison"),
                     op != ComparisonOperator::NotEqual,
                 )));
             }
-            use crate::kernel::machine_integer::comparison;
             let condition = if conditional_guard {
                 comparison::logical_conditional_guard_for_operand_views(
                     format,

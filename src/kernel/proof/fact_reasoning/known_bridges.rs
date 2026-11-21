@@ -492,6 +492,23 @@ pub(crate) fn known_bridge_leaf(
                 available,
             )
         }
+        Proposition::ConditionIs(condition, truth)
+            if let Some((relation, [left, right])) =
+                super::computation::reduce_known_int32_match_operands(
+                    condition.native_compat(),
+                ) =>
+        {
+            comparison_holds(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation,
+                    left: Box::new(left.into_owned()),
+                    right: Box::new(right.into_owned()),
+                },
+                *truth,
+                available,
+            )
+        }
         Proposition::ResourceSeparate { left, right }
             if matches!(
                 (left.as_ref(), right.as_ref()),
