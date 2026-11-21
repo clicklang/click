@@ -3346,7 +3346,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::SmartExecute
             | ProofTactic::ExecuteUntil(_)
             | ProofTactic::ObserveResource(_)
-            | ProofTactic::ObserveSavedMemory { .. }
+            | ProofTactic::ObserveSubject(_)
             | ProofTactic::Iterated(_)
             | ProofTactic::Transport { .. }
             | ProofTactic::UnfoldResource(_)
@@ -3396,7 +3396,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Branch(_) => "branch",
         ProofTactic::CallOutcomes(_) => "outcomes",
         ProofTactic::Loop(_) => "loop",
-        ProofTactic::ObserveResource(_) | ProofTactic::ObserveSavedMemory { .. } => "observe",
+        ProofTactic::ObserveResource(_) | ProofTactic::ObserveSubject(_) => "observe",
         ProofTactic::Iterated(tactic) => tactic.name(),
         ProofTactic::Witness(_) => "witness",
         ProofTactic::LetSatisfy(_) => "obtain",

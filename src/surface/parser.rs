@@ -7953,18 +7953,9 @@ impl Parser {
             if matches!(self.peek_ident(), Some("at" | "old"))
                 && self.peek_next() == Some(&Token::LParen)
             {
-                let base = self.parse_contract_primary()?;
-                self.expect(Token::LBracket)?;
-                let start = self.parse_contract_expression()?;
-                let end = if self.peek() == Some(&Token::DotDot) {
-                    self.position += 1;
-                    Some(self.parse_contract_expression()?)
-                } else {
-                    None
-                };
-                self.expect(Token::RBracket)?;
+                let subject = self.parse_saved_memory_subject()?;
                 self.expect(Token::RParen)?;
-                return Ok(ResourceSubject::SavedMemory { base, start, end });
+                return Ok(subject);
             }
             let segment = self.parse_current_contract_segment()?;
             self.expect(Token::RParen)?;
@@ -7987,6 +7978,20 @@ impl Parser {
             arguments,
             parameter_types: Vec::new(),
         })
+    }
+
+    fn parse_saved_memory_subject(&mut self) -> Result<ResourceSubject, ClickError> {
+        let base = self.parse_contract_primary()?;
+        self.expect(Token::LBracket)?;
+        let start = self.parse_contract_expression()?;
+        let end = if self.peek() == Some(&Token::DotDot) {
+            self.position += 1;
+            Some(self.parse_contract_expression()?)
+        } else {
+            None
+        };
+        self.expect(Token::RBracket)?;
+        Ok(ResourceSubject::SavedMemory { base, start, end })
     }
 
     fn parse_resource_target(
@@ -11745,17 +11750,37 @@ impl Parser {
             }
             "observe" => {
                 self.expect(Token::LParen)?;
+                let start = self.position;
                 if matches!(self.peek_ident(), Some("at" | "old"))
                     && self.peek_next() == Some(&Token::LParen)
+                    && let Ok(resource) = self.parse_saved_memory_subject()
                 {
-                    let base = self.parse_contract_primary()?;
-                    self.expect(Token::LBracket)?;
-                    let start = self.parse_contract_expression()?;
-                    self.expect(Token::DotDot)?;
-                    let end = self.parse_contract_expression()?;
-                    self.expect(Token::RBracket)?;
                     self.expect(Token::RParen)?;
-                    ProofTactic::ObserveSavedMemory { base, start, end }
+                    self.expect(Token::Semicolon)?;
+                    return Ok(ProofTactic::ObserveSubject(resource));
+                }
+                self.position = start;
+                if matches!(self.peek_ident(), Some("at" | "memory"))
+                    && self.peek_next() == Some(&Token::LParen)
+                {
+                    let resource = self.parse_resource_subject()?;
+                    self.expect(Token::RParen)?;
+                    self.expect(Token::Semicolon)?;
+                    return Ok(ProofTactic::ObserveSubject(resource));
+                }
+                if self.peek() == Some(&Token::LParen)
+                    && let Ok(resource) = self.parse_resource_subject()
+                    && self.peek() == Some(&Token::RParen)
+                {
+                    self.position += 1;
+                    self.expect(Token::Semicolon)?;
+                    return Ok(ProofTactic::ObserveSubject(resource));
+                }
+                self.position = start;
+                if self.starts_named_resource_target() {
+                    let resource = self.parse_owned_resource_target()?;
+                    self.expect(Token::RParen)?;
+                    ProofTactic::ObserveResource(resource)
                 } else {
                     let start = self.position;
                     let resource = if let Ok(quantity) = self.parse_contract_expression()

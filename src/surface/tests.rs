@@ -1825,6 +1825,7 @@ fn opaque_resource_call_checks_actual_c_arguments_and_call_entry_states() {
             ensures second.revision == old(second.revision);
             ensures result == 1;
         } by { step(Touch, { cell: first }); step(Touch, { cell: first }); step_until(function.exit);
+            known(); known(); known(); known();
             rewrite(result, at(region(0).exit, first.revision));
             rewrite(at(region(0).exit, first.revision), 1); solve(); }
     "#;
@@ -1834,14 +1835,9 @@ fn opaque_resource_call_checks_actual_c_arguments_and_call_entry_states() {
     )];
     let verified = verify_c_sources(source, &c).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
-    verify_c_sources(
-        &source.replace(
-            "by { step(Touch, { cell: first }); step(Touch, { cell: first }); step_until(function.exit);\n            rewrite(result, at(region(0).exit, first.revision));\n            rewrite(at(region(0).exit, first.revision), 1); solve(); }",
-            &expanded,
-        ),
-        &c,
-    )
-    .unwrap();
+    let (contract, _) = source.split_once("} by {").unwrap();
+    let expanded_source = format!("{contract}}} {expanded}");
+    verify_c_sources(&expanded_source, &c).unwrap();
     let error =
         verify_c_sources(&source.replace("{ cell: first }", "{ cell: second }"), &c).unwrap_err();
     assert!(

@@ -1,6 +1,72 @@
 use super::*;
 
 #[test]
+fn decided_outcome_if_keeps_its_obtain_scope_in_expansion() {
+    let (source, program) = mdtest_sources("mdtests/obtain_outcome_binding_is_local_to_its_arm.md");
+    let branched_source = source.replace(
+        "step_until(function.exit);",
+        "branch { true => { step_until(function.exit); } false => { step_until(function.exit); } }",
+    );
+    let branched_program = vec![(
+        program[0].0.clone(),
+        "int reuse_name(int n) { if (n < 0) { return n; } else { return n; } }".to_string(),
+    )];
+    let claim = "reuse_name.contract";
+    for (source, program) in [(source, program), (branched_source, branched_program)] {
+        let program = crate::cli::source_refs(&program);
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains("\n    if result == n {"), "{expanded}");
+        assert!(expanded.contains("\n        let k = obtain("), "{expanded}");
+        assert!(expanded.contains("\n    let k = obtain("), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
+fn explicit_observation_resource_operands_replay() {
+    for (fixture, claim, operand) in [
+        (
+            "mdtests/observe_named_resource.md",
+            "read_cell.contract",
+            "observe(c);",
+        ),
+        (
+            "mdtests/observe_saved_pointer_memory_range.md",
+            "update_bounds.contract",
+            "observe(at(saved, memory(",
+        ),
+    ] {
+        let (source, program) = mdtest_sources(fixture);
+        let program = crate::cli::source_refs(&program);
+        let expanded = expand_c_claim_source_by_label(&source, &program, claim)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        assert!(expanded.contains(operand), "{expanded}");
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+}
+
+#[test]
+fn focused_contract_claim_refinements_expand_in_order() {
+    let (source, program) = mdtest_sources("mdtests/focused_post_execution_claim_tactics.md");
+    let program = crate::cli::source_refs(&program);
+    for label in ["refine.contract", "choose_value.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &program, label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &program).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
 fn algebraic_constructor_matches_expand_without_normalize() {
     for (fixture, claims) in [
         (

@@ -548,8 +548,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             ProofStep::ObserveResource(resource) => {
                 driver_proof.apply_execution_resource_observation(resource)
             }
-            ProofStep::ObserveSavedMemory { base, start, end } => {
-                driver_proof.apply_saved_memory_observation(base, start, end)
+            ProofStep::ObserveSubject(resource) => {
+                driver_proof.apply_resource_subject_observation(resource)
             }
             ProofStep::Iterated(tactic) => driver_proof.apply_execution_iterated_step(tactic),
             ProofStep::Choose(choice) => driver_proof.apply_fixed_state_choose(choice),

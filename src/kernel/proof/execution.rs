@@ -10627,6 +10627,37 @@ impl ExecutionProofCore {
         Ok(after_state)
     }
 
+    pub(crate) fn record_named_resource_observation(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        facts: &PureFactStore,
+        instance: &crate::kernel::ResourceInstance,
+    ) -> Result<crate::kernel::functions::ResourceInstanceRewriteResult, String> {
+        if self.evidence_completed {
+            return Err("a resource observation was recorded after the trace completed".into());
+        }
+        let definition = function
+            .proof_composite_resource_definition(instance.name())
+            .ok_or("resource instance has no visible body")?;
+        let before = self.reached_state();
+        let result = crate::kernel::functions::observe_resource_instance(
+            before,
+            instance,
+            definition,
+            function.composite_resource_definitions(),
+            facts.assumptions(),
+        )
+        .map_err(|refusal| refusal.describe())?;
+        let observation = CheckedResourceObservation {
+            before_state: before.clone(),
+            after_state: result.state.clone(),
+            definition: Some(definition.clone()),
+        };
+        self.record_checked_resource_observation(function, arguments, observation)?;
+        Ok(result)
+    }
+
     pub(crate) fn record_resource_observation(
         &mut self,
         function: &ProgramFunction,
@@ -10639,7 +10670,7 @@ impl ExecutionProofCore {
         if self.evidence_completed {
             return Err("a resource observation was recorded after the trace completed");
         }
-        let mut observation = CheckedResourceObservation::certify(
+        let observation = CheckedResourceObservation::certify(
             function,
             self.reached_state(),
             before_facts,
@@ -10649,6 +10680,15 @@ impl ExecutionProofCore {
             &self.function_entry_derivations,
             &self.checked_call_events,
         )?;
+        self.record_checked_resource_observation(function, arguments, observation)
+    }
+
+    fn record_checked_resource_observation(
+        &mut self,
+        function: &ProgramFunction,
+        arguments: &[ProgramExpression],
+        mut observation: CheckedResourceObservation,
+    ) -> Result<ExecutionState, &'static str> {
         let successor = observation.after_state.clone();
         if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
             observation.before_state = crate::kernel::program_function_entry_state(
