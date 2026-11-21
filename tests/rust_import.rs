@@ -7420,22 +7420,28 @@ fn rust_slice_parameter_length_and_source_parameter_are_distinct() {
     .unwrap();
 }
 
+fn rust_slice_values_import() -> click::languages::rust::PreparedRustImport {
+    let source = "pub fn first(bytes: &[u8]) -> u8 { bytes[0] }\n";
+    gate_fixtures::project("slice-values", source)
+        .prepared()
+        .unwrap()
+}
+
+fn rust_slice_values_sidecar(claims: &str) -> String {
+    format!(
+        "import click::rust::slice;\nverifying \"borrow.rs\";\n\
+         function half(bytes: &[u8]) -> &[u8] {{ slice::from_raw_parts(bytes, bytes.len() / 2u64) }}\n\
+         function some_half(bytes: &[u8]) -> Option<&[u8]> {{ Option::Some(half(bytes)) }}\n\
+         function size(bytes: &[u8]) -> usize {{ bytes.len() }}\n\
+         spec enum Window {{ Window(&[u8], usize), }}\n\
+         fn first(bytes: &[u8]) -> u8 {{\n    requires bytes.len() == 4u64;\n    views bytes[0..4];\n    ensures result == bytes[0];\n}} by {{\n{claims}\n    step_until(function.exit);\n    solve();\n}}\n"
+    )
+}
+
 #[test]
 fn rust_slice_values_read_with_rust_methods() {
-    let p = Project::new("pub fn first(bytes: &[u8]) -> u8 { bytes[0] }\n");
-    p.refresh().unwrap();
-    let prepared = p.prepared().unwrap();
-    let sidecar = |claims: &str| {
-        format!(
-            "import click::rust::slice;\nverifying \"borrow.rs\";\n\
-             function half(bytes: &[u8]) -> &[u8] {{ slice::from_raw_parts(bytes, bytes.len() / 2u64) }}\n\
-             function some_half(bytes: &[u8]) -> Option<&[u8]> {{ Option::Some(half(bytes)) }}\n\
-             function size(bytes: &[u8]) -> usize {{ bytes.len() }}\n\
-             spec enum Window {{ Window(&[u8], usize), }}\n\
-             fn first(bytes: &[u8]) -> u8 {{\n    requires bytes.len() == 4u64;\n    views bytes[0..4];\n    ensures result == bytes[0];\n}} by {{\n{claims}\n    step_until(function.exit);\n    solve();\n}}\n"
-        )
-    };
-    let accepted = sidecar(
+    let prepared = rust_slice_values_import();
+    let accepted = rust_slice_values_sidecar(
         "    have half(bytes).len() == bytes.len() / 2u64;\n    \
          have half(bytes)[0] == bytes[0];\n    \
          have half(bytes).as_ptr() == bytes;\n    \
@@ -7457,7 +7463,7 @@ fn rust_slice_values_read_with_rust_methods() {
     // The subslice bound follows from the function definition and the entry
     // length, without a preceding `have half(bytes).len() == 2u64`.
     ProgramVerificationSession::new_program_prepared(
-        &sidecar("have half(bytes)[1..].len() == 1u64;"),
+        &rust_slice_values_sidecar("have half(bytes)[1..].len() == 1u64;"),
         &prepared,
     )
     .unwrap();
@@ -7465,67 +7471,89 @@ fn rust_slice_values_read_with_rust_methods() {
     // read back as the same terms: a slice built as a subslice is that
     // subslice, and one built any other way is its constructor at its
     // element type.
-    for (claim, printed) in [
-        (
-            "have half(bytes).len() == 3u64;",
-            &["`half(bytes).len() == 3u64`"][..],
-        ),
-        (
-            "have half(bytes)[1] == 7u8;",
-            &["`half(bytes)[1] == 7u8`", "goal: old(half(bytes)[1]) == 7"],
-        ),
-        (
-            "have half(bytes).as_ptr() == bytes + 1;",
-            &["goal: half(bytes).as_ptr() == &bytes[1]"],
-        ),
-        (
-            "have bytes[1..3][1] == 7u8;",
-            &["`bytes[1..3][1] == 7u8`", "goal: old(bytes[1..3][1]) == 7"],
-        ),
-        (
-            "have bytes[1..][0] == 7u8;",
-            &["`bytes[1..][0] == 7u8`", "goal: old(bytes[1..][0]) == 7"],
-        ),
-        (
-            "have bytes[..2][0] == 7u8;",
-            &["`bytes[..2][0] == 7u8`", "goal: old(bytes[..2][0]) == 7"],
-        ),
-        (
-            "have bytes[1..3].len() == 3u64;",
-            &["`bytes[1..3].len() == 3u64`"],
-        ),
-        (
-            "have Slice<u8>::Slice(&bytes[1], 2u64) == bytes[1..2];",
-            &["goal: Slice<u8>::Slice(&bytes[1], 2u64) == bytes[1..2]"],
-        ),
-        (
-            "have bytes[1..3] == bytes[1..2];",
-            &["goal: bytes[1..3] == bytes[1..2]"],
-        ),
-        // A subslice owes Rust's bounds, `start <= end <= len`, where it is
-        // evaluated: past the length, before the start, and unguarded.
-        (
-            "have bytes[0..5].len() == 5u64;",
-            &["not established", "`5u64 <= bytes.len()`"],
-        ),
-        (
-            "have bytes[3..1].len() == 0u64;",
-            &["the subslice `[3..1]` starts past its end"],
-        ),
-        (
-            "have half(bytes)[3..].len() == 0u64;",
-            &["not established", "`3u64 <= (half(bytes).len() as u64)`"],
-        ),
-        (
-            "have forall (k: uint64) { bytes[k..2] == bytes[k..2] };",
-            &["not established", "<= 2u64"],
-        ),
-    ] {
-        let error = ProgramVerificationSession::new_program_prepared(&sidecar(claim), &prepared)
-            .err()
-            .unwrap_or_else(|| panic!("`{claim}` must fail"))
-            .to_string();
-        for printed in printed {
+    rust_slice_value_refusals(
+        &prepared,
+        &[
+            (
+                "have half(bytes)[1] == 7u8;",
+                &["`half(bytes)[1] == 7u8`", "goal: old(half(bytes)[1]) == 7"],
+            ),
+            (
+                "have bytes[0..5].len() == 5u64;",
+                &["not established", "`5u64 <= bytes.len()`"],
+            ),
+            (
+                "have bytes[3..1].len() == 0u64;",
+                &["the subslice `[3..1]` starts past its end"],
+            ),
+            (
+                "have forall (k: uint64) { bytes[k..2] == bytes[k..2] };",
+                &["not established", "<= 2u64"],
+            ),
+        ],
+    );
+}
+
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+#[ignore = "nightly: additional slice value diagnostic and bounds permutations"]
+fn rust_slice_values_refuse_additional_claims() {
+    rust_slice_value_refusals(
+        &rust_slice_values_import(),
+        &[
+            (
+                "have half(bytes).len() == 3u64;",
+                &["`half(bytes).len() == 3u64`"][..],
+            ),
+            (
+                "have half(bytes).as_ptr() == bytes + 1;",
+                &["goal: half(bytes).as_ptr() == &bytes[1]"],
+            ),
+            (
+                "have bytes[1..3][1] == 7u8;",
+                &["`bytes[1..3][1] == 7u8`", "goal: old(bytes[1..3][1]) == 7"],
+            ),
+            (
+                "have bytes[1..][0] == 7u8;",
+                &["`bytes[1..][0] == 7u8`", "goal: old(bytes[1..][0]) == 7"],
+            ),
+            (
+                "have bytes[..2][0] == 7u8;",
+                &["`bytes[..2][0] == 7u8`", "goal: old(bytes[..2][0]) == 7"],
+            ),
+            (
+                "have bytes[1..3].len() == 3u64;",
+                &["`bytes[1..3].len() == 3u64`"],
+            ),
+            (
+                "have Slice<u8>::Slice(&bytes[1], 2u64) == bytes[1..2];",
+                &["goal: Slice<u8>::Slice(&bytes[1], 2u64) == bytes[1..2]"],
+            ),
+            (
+                "have bytes[1..3] == bytes[1..2];",
+                &["goal: bytes[1..3] == bytes[1..2]"],
+            ),
+            (
+                "have half(bytes)[3..].len() == 0u64;",
+                &["not established", "`3u64 <= (half(bytes).len() as u64)`"],
+            ),
+        ],
+    );
+}
+
+fn rust_slice_value_refusals(
+    prepared: &click::languages::rust::PreparedRustImport,
+    cases: &[(&str, &[&str])],
+) {
+    for &(claim, printed) in cases {
+        let error = ProgramVerificationSession::new_program_prepared(
+            &rust_slice_values_sidecar(claim),
+            prepared,
+        )
+        .err()
+        .unwrap_or_else(|| panic!("`{claim}` must fail"))
+        .to_string();
+        for &printed in printed {
             assert!(
                 error.contains(printed),
                 "`{claim}` prints `{printed}`: {error}"
