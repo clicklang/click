@@ -7846,25 +7846,23 @@ fn synthesize_pointer_equality_operand(
             ProgramExpression::Variable(name.into()),
         ));
     }
-    if let Some(read) = value.address().as_loaded_value()
-        && let Some(value_type) = read.value_type
-        && read.displacement == AddressOffset::Constant(0)
-    {
-        return synthesize_point_read(
-            &read.point,
-            &read.defining_address,
-            value_type,
-            parameter_binding,
-            state,
-            bound_variables,
-        );
-    }
+    let address_read = value
+        .address()
+        .as_loaded_value()
+        .filter(|read| read.displacement == AddressOffset::Constant(0));
     // An address can survive a later store while the complete pointer's
     // provenance still names the earlier read. Spell that value at the
-    // state that introduced its domain, rather than naming only its address
-    // through the current field. The source memory selects one recorded
-    // point; this does not search pointer aliases or state history.
-    if let Some((source, address)) = value.complete_read_source() {
+    // state that introduced its domain. A memory-named load whose address
+    // and provenance agree needs an explicit state only for a historical read.
+    let read_source = value.complete_read_source().or_else(|| {
+        let read = address_read.as_ref()?;
+        (read.value_type.is_none()
+            && value.provenance() == value.address()
+            && read.defining_memory
+                != crate::kernel::intern_memory_ref(state.memory()).unchanged_bytes_source())
+        .then(|| (read.defining_memory.clone(), read.defining_address.clone()))
+    });
+    if let Some((source, address)) = read_source {
         let at_state = |state: &ExecutionState| {
             if let Some(field) = synthesize_struct_field_load(
                 &address,
@@ -7911,6 +7909,18 @@ fn synthesize_pointer_equality_operand(
                 expression: Box::new(at_state(recorded)?),
             })
         });
+    }
+    if let Some(read) = address_read
+        && let Some(value_type) = read.value_type
+    {
+        return synthesize_point_read(
+            &read.point,
+            &read.defining_address,
+            value_type,
+            parameter_binding,
+            state,
+            bound_variables,
+        );
     }
     synthesize_pointer_equality_address(
         value.address(),

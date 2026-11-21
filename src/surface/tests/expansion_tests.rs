@@ -6217,6 +6217,18 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
 }
 
 #[test]
+fn callback_refinement_expansion_preserves_pointer_read_origins() {
+    let (source, sources) = mdtest_sources("mdtests/rb_augment_callbacks_const_suite.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "dummy_propagate_contract.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_23")]
 fn unsigned_narrowing_state_expansion_reverifies() {
     let c_source = "struct state { unsigned long value; }; unsigned int take(struct state *p) { unsigned int result = p->value; p->value += 1; return result; }";
