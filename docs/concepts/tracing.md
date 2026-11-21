@@ -11,7 +11,7 @@ is understood. This page is how you come to understand it.
 
 ## Classify the verification outcome
 
-Start with the terminal heading.
+Start with the [terminal heading](../reference/cli/verify.md#output-and-exit-behavior).
 
 | Error kind | What it means | What to do |
 | --- | --- | --- |
@@ -22,7 +22,9 @@ Start with the terminal heading.
 | `tactic error` | A specific tactic invocation was refused. | Check `click docs TACTIC` for where it applies and what it requires. |
 | `unsuccessful search` | An explicit or implicit proof search found no proof. | Record the goal and write smaller proof links or supply explicit premises. |
 | `unproved goal` | The proof left a required goal open. | Prove the remaining goal with the premises at the reported point. |
-| `verification error` | Verification was refused at setup, certification, or another check outside those cases. | Inspect the reported reason and follow the procedure below if a goal is given. |
+| `execution prerequisite unmet` | A checked operation needs evidence at its program point. | Record the requirement and follow the procedure below. |
+| `contract entry refused`, `contract exit refused`, or `contract refinement refused` | A contract boundary or refinement check was refused. | Inspect the named clauses and work from the available goal. |
+| `execution refused`, `termination not established`, `invalid divergence declaration`, or `unsupported proof` | Click identified a specific execution, termination, or proof-driver refusal. | Investigate the reported cause. |
 
 When a proposition had to be true at a point and Click did not prove it,
 the report prints it on a `goal:` line. That goal can come from an `ensures`

@@ -57,7 +57,15 @@ fn report_error(message: String) -> ! {
         "tactic error",
         "unsuccessful search",
         "unproved goal",
-        "verification error",
+        "contract entry refused",
+        "execution prerequisite unmet",
+        "execution refused",
+        "contract exit refused",
+        "contract refinement refused",
+        "termination not established",
+        "invalid divergence declaration",
+        "unsupported proof",
+        "unclassified verification refusal",
         "syntax error",
         "type error",
         "internal error",
@@ -340,7 +348,7 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "verification error:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
+                "execution prerequisite unmet:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
             )),
             "{error}"
         );
@@ -349,7 +357,7 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "verification error:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
+                "execution prerequisite unmet:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
             )),
             "{error}"
         );
@@ -511,13 +519,35 @@ uint64 spell(const uint8* b, uint64 n) {
     }
 
     #[test]
+    fn verify_distinguishes_termination_from_an_invalid_divergence_declaration() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+        for (fixture, heading) in [
+            (
+                "termination_callback_self_application_rejected.md",
+                "termination not established:",
+            ),
+            (
+                "diverges_rejects_unjustified_marker.md",
+                "invalid divergence declaration:",
+            ),
+        ] {
+            let report = entry([
+                "verify".to_string(),
+                root.join(fixture).display().to_string(),
+            ])
+            .unwrap_err();
+            assert!(report.starts_with(heading), "{report}");
+        }
+    }
+
+    #[test]
     fn source_proof_tails_close_in_their_scope_and_expand_for_explicit_replay() {
         let source = r#"
             function successor(n: int32) -> int32 { n + 1 }
-            theorem tail(x: int32, b: bool) {
+            theorem tail(x: int32, b: int32) {
                 requires x == 3;
                 ensures successor(x) == 4 by {
-                    if b == true {
+                    if b == 0 {
                         have successor(x) == 4 by { unfold(successor(x)); }
                     } else {
                         unfold(successor(x));
@@ -1312,7 +1342,7 @@ int32 check(struct link* node) {
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(error.starts_with("verification error:"), "{error}");
+        assert!(error.starts_with("execution refused:"), "{error}");
         assert!(
             error.contains("\n\nTo get a trace:\n  click verify --trace-proof f "),
             "{error}"
@@ -2463,7 +2493,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         fs::remove_dir_all(&directory).unwrap();
-        assert!(error.starts_with("verification error:\n"), "{error}");
+        assert!(error.starts_with("contract entry refused:\n"), "{error}");
         assert!(
             error.contains("could not open contract entry for `release.body_safety`"),
             "{error}"

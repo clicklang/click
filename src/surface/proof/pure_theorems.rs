@@ -1922,6 +1922,7 @@ fn verify_contract_refinement_theorem(
         ClickError::new(format!(
             "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
         ))
+        .with_proof_refusal(crate::surface::ProofRefusal::ContractRefinement)
     };
     let obligations = program_function_contract_refinement_obligations(&refinement)
         .ok_or_else(refinement_failure)?;
@@ -2007,20 +2008,17 @@ fn verify_contract_refinement_theorem(
         None => return Err(refinement_failure().with_search_failures(search.finish())),
     };
     let checked = proof.completed_proposition()?;
-    let kernel_authority = prove_program_function_contract_refinement(
-        &obligations,
-        goal.clone(),
-        &checked,
-    )
-    .ok_or_else(|| {
-        let subject = concrete_target
-            .map(|target| format!("&{target}"))
-            .or_else(|| symbolic_binding.map(str::to_string))
-            .expect("refinement theorem has a subject");
-        ClickError::new(format!(
+    let kernel_authority =
+        prove_program_function_contract_refinement(&obligations, goal.clone(), &checked)
+            .ok_or_else(|| {
+                let subject = concrete_target
+                    .map(|target| format!("&{target}"))
+                    .or_else(|| symbolic_binding.map(str::to_string))
+                    .expect("refinement theorem has a subject");
+                ClickError::new(format!(
             "`{claim_label}`: contract-refinement proof does not establish `{name}({subject})`"
-        ))
-    })?;
+        )).with_proof_refusal(crate::surface::ProofRefusal::ContractRefinement)
+            })?;
     let mut certificate_steps =
         ProofCertificate::from_proof_tactics(&tactics[..tactics.len() - proof_tactics.len()])
             .map_err(|error| ClickError::new(format!("{error}")))?

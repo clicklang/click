@@ -1,6 +1,6 @@
 ---
 name: proof-repair
-description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` reports a tactic error, unsuccessful search, unproved goal, or verification error, or an omitted proof, `solve()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
+description: Repair a failed Click proof from its goal and trace. Use whenever `click verify` refuses a proof, or an omitted proof, `solve()`, `step()`, or `step_until(...)` does not prove what you expected, before changing the proof, the contract, the C, or the verifier.
 ---
 
 # Repairing a failed proof
@@ -42,9 +42,16 @@ it; shrink them if you can, but a report need not wait for that.
   links, or supply the missing argument or premises.
 - `unproved goal`: the proof left an obligation open. Continue with the
   remaining goal and the premises available where the script ended.
-- `verification error`: read the reported reason. This includes setup and
-  contract certification. If the report gives a proof obligation, continue
-  with that goal. Otherwise investigate the reported cause directly.
+- `execution prerequisite unmet`: record the exact prerequisite at the
+  operation's pre-state and continue with that goal.
+- `contract entry refused`, `contract exit refused`, or `contract refinement
+  refused`: inspect the named resource clauses, effect, or refinement.
+  Continue with the reported obligation when the diagnostic gives one.
+- `execution refused`, `termination not established`, `invalid divergence
+  declaration`, or `unsupported proof`: investigate the reported operation,
+  termination check, declaration, or proof shape.
+- `unclassified verification refusal`: investigate the stated cause. If
+  the trace leaves the refusal unclear, use `unclear-trace`.
 
 ## 2. Record the goal
 

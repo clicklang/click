@@ -8955,7 +8955,7 @@ impl ClickErrorKind {
             Self::Syntax => "syntax error",
             Self::Limit => "limit error",
             Self::Type => "type error",
-            Self::Proof => "verification error",
+            Self::Proof => "unclassified verification refusal",
             Self::Internal => "internal error",
         }
     }
@@ -8968,7 +8968,14 @@ pub enum ProofRefusal {
     UnsuccessfulSearch,
     ImplicitStatementSearch,
     UnprovedGoal,
-    Verification,
+    ContractEntry,
+    ExecutionPrerequisite,
+    Execution,
+    ContractExit,
+    ContractRefinement,
+    Termination,
+    DivergenceDeclaration,
+    UnsupportedProof,
 }
 
 impl ProofRefusal {
@@ -8977,7 +8984,14 @@ impl ProofRefusal {
             Self::Tactic => "tactic error",
             Self::UnsuccessfulSearch | Self::ImplicitStatementSearch => "unsuccessful search",
             Self::UnprovedGoal => "unproved goal",
-            Self::Verification => "verification error",
+            Self::ContractEntry => "contract entry refused",
+            Self::ExecutionPrerequisite => "execution prerequisite unmet",
+            Self::Execution => "execution refused",
+            Self::ContractExit => "contract exit refused",
+            Self::ContractRefinement => "contract refinement refused",
+            Self::Termination => "termination not established",
+            Self::DivergenceDeclaration => "invalid divergence declaration",
+            Self::UnsupportedProof => "unsupported proof",
         }
     }
 }
@@ -11273,11 +11287,13 @@ impl ClickError {
     pub(crate) fn with_proof_refusal(mut self, refusal: ProofRefusal) -> Self {
         // Preserve the innermost operation's classification through wrappers.
         if self.proof_refusal.is_none()
-            || self.proof_refusal == Some(ProofRefusal::Verification)
-                && matches!(
-                    refusal,
-                    ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch
-                )
+            || matches!(
+                self.proof_refusal,
+                Some(ProofRefusal::Execution | ProofRefusal::ExecutionPrerequisite)
+            ) && matches!(
+                refusal,
+                ProofRefusal::UnsuccessfulSearch | ProofRefusal::ImplicitStatementSearch
+            )
         {
             self.proof_refusal = Some(refusal);
         }

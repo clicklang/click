@@ -444,7 +444,11 @@ fn ordinary_requirement_errors_have_no_call_site_metadata() {
         arguments: Vec::new(),
     });
     let error = ClickError::new("ordinary requirement").with_unresolved_requirement(&obligation);
-    assert!(error.report().contains("error kind: verification error"));
+    assert!(
+        error
+            .report()
+            .contains("error kind: unclassified verification refusal")
+    );
     assert!(
         error.report().contains("goal: ordinary_requirement()"),
         "{}",

@@ -578,14 +578,18 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                     // obligation, where they may share a value spelling.
                     let written =
                         crate::surface::printing::source_click_proposition(item.proposition());
-                    error.with_context(format!("written invariant `{written}`"))
+                    error.with_rewritten_place(|reason| {
+                        Some(format!("written invariant `{written}`: {reason}"))
+                    })
                 } else {
                     error
                 };
-                error.with_context(format!(
-                    "loop {loop_index} {} entry, owing `{owed}`",
-                    item.title(invariant_index)
-                ))
+                error.with_rewritten_place(|reason| {
+                    Some(format!(
+                        "loop {loop_index} {} entry, owing `{owed}`: {reason}",
+                        item.title(invariant_index)
+                    ))
+                })
             })?;
             completions.push(checked.completed_loop_entry_goal()?);
             phase = checked.join()?;
@@ -633,6 +637,7 @@ fn check_loop_phase_goal<'a>(
     sites: Option<&[ProofStepSite]>,
     phase_name: &str,
 ) -> Result<proof_object::ProofScope<'a>, ClickError> {
+    let did_search = !matches!(source, SourceProof::Script(_));
     let checked = match source {
         SourceProof::Tactic(SmartTactic::ImplicitTail) => scope.driver().try_solve_closure()?,
         SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
@@ -647,7 +652,14 @@ fn check_loop_phase_goal<'a>(
                 .try_authoritative_linear_script_reporting(tactics, &mut None, &mut None, true)?,
         },
     }
-    .ok_or_else(|| ClickError::new(format!("loop {phase_name} body did not close its goal")))?;
+    .ok_or_else(|| {
+        let reason = format!("loop {phase_name} body did not close its goal");
+        if did_search {
+            scope.body().solve_failure().with_context(reason)
+        } else {
+            ClickError::new(reason)
+        }
+    })?;
     if !checked.is_complete() {
         return Err(ClickError::new(format!(
             "loop {phase_name} body retained an open goal"

@@ -4,8 +4,8 @@ Start with the [CLI outcome](../reference/cli/verify.md#output-and-exit-behavior
 For a `tactic error`, check the invocation against its documentation. For an
 `unsuccessful search`, identify the goal and supply the intermediate facts
 or arguments that the search did not find. For an `unproved goal`, check
-what remains open after the written steps. A `verification error` gives the
-reason Click refused a check such as setup or certification.
+what remains open after the written steps. For a contract-entry, execution,
+contract-exit, or termination refusal, inspect the specific reported check.
 
 Use the [proof repair procedure](tracing.md) when the diagnostic gives a
 goal. A statement requirement is a goal at the statement’s pre-state.
