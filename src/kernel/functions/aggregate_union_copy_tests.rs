@@ -132,6 +132,52 @@ fn copying_a_never_written_union_member_stays_an_uninitialized_read() {
     );
 }
 
+#[test]
+fn aggregate_copy_array_keeps_its_caller_source_point_after_an_earlier_field() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let target = SymbolicMemory::frame_local_pointer(1, "record_copy");
+    let layout = AggregateLayout::new(
+        20,
+        4,
+        vec![
+            AggregateField::new("tag", 0, ProgramType::UInt32),
+            AggregateField::new("data", 4, ProgramType::UInt32Array(4)),
+        ],
+    );
+    let entry = ExecutionState::new().begin_function_entry_memory();
+    let state = entry.clone().with_memory(
+        entry
+            .memory()
+            .clone()
+            .with_block(target.base.clone(), layout.size_bytes()),
+    );
+    let point = state.program_point();
+    let copied = copy_aggregate_fields_checked_at(&state, &source, &target, &layout).unwrap();
+    assert!(
+        copied.known_value(&target).is_some(),
+        "the earlier scalar field was copied"
+    );
+    let mut runs = copied.cells.runs_in_block(&target.base);
+    let run = runs
+        .next()
+        .expect("compact capture of the unknown array field");
+    assert!(runs.next().is_none());
+    assert_eq!(run.count(), 4);
+    assert_eq!(run.source_point().id(), point.id());
+    let Some(ProgramValue::UInt32(MachineTerm::MemoryLoad(version, address, kind))) =
+        copied.known_value(&target.offset_by_bytes(8))
+    else {
+        panic!("a typed read from the caller's field");
+    };
+    assert_eq!(kind, LoadKind::UInt32);
+    assert_eq!(*address, source.offset_by_bytes(8));
+    assert_eq!(version.read_version_id(), entry.program_point_id());
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/aggregate_union_copy_tests.rs");

@@ -6271,6 +6271,7 @@ impl SymbolicMemory {
         )
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn write_scalar_array_region(
         self,
         base: &Address,
@@ -6539,6 +6540,7 @@ impl SymbolicMemory {
     // Authority is checked by the statement executor. External argument
     // storage follows ordinary typed-load semantics: unknown initialized
     // bytes remain symbolic. Known automatic storage must be initialized.
+    #[cfg(test)]
     pub(in crate::kernel) fn write_scalar_array_state(
         self,
         base: &Address,
@@ -6562,7 +6564,7 @@ impl SymbolicMemory {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn write_scalar_array_state_at(
+    pub(in crate::kernel) fn write_scalar_array_state_at(
         mut self,
         base: &Address,
         element: ProgramType,
