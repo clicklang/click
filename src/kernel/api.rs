@@ -4354,6 +4354,21 @@ pub fn program_function_contract_entry_state(
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
 ) -> Result<ExecutionState, String> {
+    program_function_contract_entry_state_with_refusal(
+        caller_state,
+        function,
+        arguments,
+        assumptions,
+    )
+    .map_err(ContractEntryRefusal::into_message)
+}
+
+pub(crate) fn program_function_contract_entry_state_with_refusal(
+    caller_state: &ExecutionState,
+    function: &ProgramFunction,
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+) -> Result<ExecutionState, ContractEntryRefusal> {
     let values = arguments
         .iter()
         .map(|argument| match argument {
@@ -4371,14 +4386,15 @@ pub fn program_function_contract_entry_state(
         &mut budget,
     ) {
         Ok(Ok(state)) => Ok(state),
-        Ok(Err(error)) => Err(format!(
-            "could not prepare contract resources: {}",
-            contract_certification::describe_certification_runtime_error(&error)
+        Ok(Err(error)) => Err(ContractEntryRefusal::from_resource_error(
+            "could not prepare contract resources",
+            &error,
         )),
         Err(limit) => Err(format!(
             "contract resource preparation stopped at {}",
             limit.describe()
-        )),
+        )
+        .into()),
     }
 }
 

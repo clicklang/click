@@ -9680,6 +9680,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .try_authoritative_linear_script_leaving_open(
                         std::slice::from_ref(tactic),
                         &mut unfinished,
+                        false,
                     )
                     .ok()?
                     .or(unfinished)?;
@@ -9998,7 +9999,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let mut unfinished = None;
                     let Ok(completed) = search_input
                         .driver()
-                        .try_authoritative_linear_script_leaving_open(&tactics, &mut unfinished)
+                        .try_authoritative_linear_script_leaving_open(
+                            &tactics,
+                            &mut unfinished,
+                            false,
+                        )
                     else {
                         continue;
                     };

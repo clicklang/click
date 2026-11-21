@@ -281,9 +281,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             });
         }
         if let ProofStep::CloseInvariantsBy(body) = &step {
-            return driver_proof
-                .driver()
-                .apply_close_invariants_body(&body.to_proof_tactics(), None);
+            return driver_proof.driver().apply_close_invariants_body(
+                &body.to_proof_tactics(),
+                None,
+                false,
+            );
         }
         if !super::execution_statements::implicit_solve_disabled()
             && matches!(
@@ -312,7 +314,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         if matches!(step, ProofStep::Both { .. } | ProofStep::All(_)) {
             return driver_proof
                 .driver()
-                .apply_all_source(&step.to_proof_tactic());
+                .apply_all_source(&step.to_proof_tactic(), false);
         }
         // A bare `fold` is checked as a bare step is: its fast path, then the
         // implicit `solve` for each body fact it leaves open.

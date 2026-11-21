@@ -8264,6 +8264,8 @@ pub enum RuntimeError {
     UnsupportedOpaqueFunctionContract(String),
     AbstractFunctionPointerCall(String),
     FunctionContract(String),
+    /// A resource clause violates a contract rule.
+    InvalidContractResource(String),
     /// A verified call may write memory for which it has no checked byte bound.
     UnboundedWriteWithLiveView {
         callee: String,
@@ -8513,6 +8515,15 @@ impl std::fmt::Display for RuntimeError {
 }
 
 impl RuntimeError {
+    /// Whether evaluating or admitting the declared entry resources identified a
+    /// violation of a contract rule.
+    pub(crate) fn is_contract_entry_resource_error(&self) -> bool {
+        matches!(
+            self,
+            Self::InvalidContractResource(_) | Self::OverlappingOwnedMemoryResources { .. }
+        )
+    }
+
     /// The sentence for [`RuntimeError::UnbackedReturnedView`], which the
     /// surface completes with the view in source terms.
     pub const UNBACKED_RETURNED_VIEW: &'static str =
@@ -8526,9 +8537,9 @@ impl RuntimeError {
     /// resource value another clause may still supply.
     pub fn function_contract_message(&self) -> Option<&str> {
         match self {
-            Self::FunctionContract(message) | Self::UnsuppliedResourceValue(message) => {
-                Some(message)
-            }
+            Self::FunctionContract(message)
+            | Self::InvalidContractResource(message)
+            | Self::UnsuppliedResourceValue(message) => Some(message),
             _ => None,
         }
     }

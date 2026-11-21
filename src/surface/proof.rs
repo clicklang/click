@@ -2930,7 +2930,8 @@ fn evaluate_entry_resource_context(
             return Err(ClickError::new(format!(
                 "`{claim_label}` setup failed: could not evaluate the contract entry resources: {}",
                 crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
-            )));
+            ))
+            .with_proof_refusal(contract_entry_resource_refusal(&error)));
         }
         Err(limit) => {
             return Err(ClickError::new(format!(
@@ -2970,7 +2971,7 @@ fn evaluate_entry_resource_context(
                 return Err(ClickError::new(format!(
                     "`{claim_label}` setup failed: could not evaluate the contract entry resources: {}",
                     crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
-                )));
+                )).with_proof_refusal(contract_entry_resource_refusal(&error)));
             }
             Err(limit) => {
                 return Err(ClickError::new(format!(
@@ -2987,10 +2988,15 @@ fn evaluate_entry_resource_context(
         &assumptions,
     )
     .map_err(|error| {
-        ClickError::new(format!(
+        let diagnostic = ClickError::new(format!(
             "`{claim_label}` setup failed: {}",
             crate::surface::diagnostics::describe_runtime_error(&error, parameter_binding)
-        ))
+        ));
+        if error.is_contract_entry_resource_error() {
+            diagnostic.with_proof_refusal(ProofRefusal::Contract)
+        } else {
+            diagnostic
+        }
     })?;
     let state = state.with_resource_context(evaluated);
     // The entry partition (`kernel::contract_entry_partition_facts`): this
@@ -3109,14 +3115,30 @@ fn canonical_claim_caller_state(
     if !has_verified_loops {
         return Ok(state);
     }
-    let entry = program_function_contract_entry_state(
+    let entry = crate::kernel::program_function_contract_entry_state_with_refusal(
         &state,
         function,
         arguments,
         &assumptions_from_propositions(pure_facts),
     )
-    .map_err(|message| ClickError::new(format!("`{claim_label}` {message}")))?;
+    .map_err(|error| {
+        use crate::kernel::ContractEntryRefusal;
+
+        let (refusal, reason) = match error {
+            ContractEntryRefusal::InvalidResource(reason) => (ProofRefusal::Contract, reason),
+            ContractEntryRefusal::Setup(reason) => (ProofRefusal::ContractEntry, reason),
+        };
+        ClickError::new(format!("`{claim_label}` {reason}")).with_proof_refusal(refusal)
+    })?;
     Ok(state.with_resource_context(entry.resources().clone()))
+}
+
+fn contract_entry_resource_refusal(error: &crate::kernel::RuntimeError) -> ProofRefusal {
+    if error.is_contract_entry_resource_error() {
+        ProofRefusal::Contract
+    } else {
+        ProofRefusal::ContractEntry
+    }
 }
 
 fn install_borrowed_contract_inputs(
@@ -3136,10 +3158,20 @@ fn install_borrowed_contract_inputs(
         &assumptions_from_propositions(pure_facts),
     )
     .map_err(|diagnostic| {
+        let subject = diagnostic.subject();
+        let refusal = if diagnostic.overlap() == crate::kernel::BorrowOverlapStatus::ProvenOverlap
+            && subject.resource_fact().is_some()
+            && subject.conflicting_resource_fact().is_some()
+        {
+            ProofRefusal::Contract
+        } else {
+            ProofRefusal::ContractEntry
+        };
         ClickError::new(format!(
             "`{proof_label}` could not establish stable authority for a contract input view: {}",
             crate::surface::diagnostics::describe_borrow_refusal(&diagnostic, parameter_binding,)
         ))
+        .with_proof_refusal(refusal)
     })
 }
 

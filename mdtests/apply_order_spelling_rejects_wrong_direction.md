@@ -12,5 +12,5 @@ theorem wrong(x: uint32) {
 ```
 
 ```expect
-fail: ended with its goal still open
+fail: `solve` failed for `wrong.ensures_0`
 ```

@@ -3364,9 +3364,12 @@ impl OpenedContractEntry {
         source_facts: &(impl super::PropositionSource + ?Sized),
         environment: &crate::kernel::ExecutionEnvironment,
     ) -> Result<Self, RuntimeError> {
-        let contract =
-            crate::kernel::program_function_contract_entry(caller_state, function, arguments)
-                .map_err(RuntimeError::FunctionContract)?;
+        let contract = crate::kernel::program_function_contract_entry_with_refusal(
+            caller_state,
+            function,
+            arguments,
+        )
+        .map_err(crate::kernel::ContractEntryRefusal::into_runtime_error)?;
         let mut propositions = Vec::new();
         let mut source_origins = Vec::new();
         let mut kept = std::collections::BTreeSet::new();
