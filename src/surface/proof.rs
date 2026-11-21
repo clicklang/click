@@ -1838,6 +1838,7 @@ pub(in crate::surface) struct ProofEntryContext {
     pub(in crate::surface) state: ExecutionState,
     pub(in crate::surface) arguments: Vec<ProgramExpression>,
     pub(in crate::surface) pure_facts: PureFactList,
+    pub(in crate::surface) contract_value_parameters: Option<Arc<ContractValueParameters>>,
 }
 
 impl PartialEq for ProofEntryContext {

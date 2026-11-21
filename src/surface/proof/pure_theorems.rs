@@ -1519,6 +1519,7 @@ fn verify_theorem_ensure(
             ensure_clause: ensure_clause.clone(),
             proof_kind: ProofKind::Axiom,
             proof: None,
+            contract_value_parameters: None,
             requires: context.requires.clone(),
             conclusion: goal,
             kernel_authority: None,
@@ -1667,6 +1668,10 @@ fn verify_theorem_ensure(
         ensure_clause: ensure_clause.clone(),
         proof_kind,
         proof: Some(certificate),
+        contract_value_parameters: spec_definitions
+            .predicates
+            .contract_value_parameters
+            .clone(),
         requires: context
             .requires
             .iter()
@@ -2024,6 +2029,10 @@ fn verify_contract_refinement_theorem(
         ensure_clause: ensure_clause.clone(),
         proof_kind: ProofKind::TacticScript,
         proof: Some(certificate),
+        contract_value_parameters: spec_definitions
+            .predicates
+            .contract_value_parameters
+            .clone(),
         requires: context.requires.clone(),
         conclusion: goal,
         kernel_authority: Some(kernel_authority),
@@ -2617,6 +2626,7 @@ fn verify_kernel_standard_theorem_axiom(
         ensure_clause: ensure_clause.clone(),
         proof_kind: ProofKind::Axiom,
         proof: None,
+        contract_value_parameters: None,
         requires: context.requires.clone(),
         conclusion: goal,
         kernel_authority: None,

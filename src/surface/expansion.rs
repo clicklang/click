@@ -921,7 +921,7 @@ fn expand_loop_phase_claim(
         function_block: None,
         source_spans: file.source_spans().clone(),
     };
-    let (span, replacement) = located.replacement(click_source, &tactics)?;
+    let (span, replacement) = located.replacement(click_source, file, &tactics)?;
     let replacement = if phase == "otherwise" {
         replacement
             .strip_prefix("by ")
@@ -1581,13 +1581,13 @@ fn expand_c_tactic_source_at_context(
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
-    let selected = if let Some(project) = project {
+    let file = if let Some(project) = project {
         let sources = ProgramSourceContext::bundle(c_sources).with_click_project(project);
-        let file = resolve_click_project_context(project, &sources)?;
-        locate_source_tactic_file(click_source, &file, line, column)?
+        resolve_click_project_context(project, &sources)?
     } else {
-        locate_source_tactic(click_source, c_sources, line, column)?
+        parse_source_with_c_layouts(click_source, c_sources)?
     };
+    let selected = locate_source_tactic_file(click_source, &file, line, column)?;
     if let ProofSite::TheoremEnsure {
         theorem_name,
         ensure_index,
@@ -1665,7 +1665,7 @@ fn expand_c_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = selected.replacement(click_source, &replacement_tactics)?;
+    let (span, replacement) = selected.replacement(click_source, &file, &replacement_tactics)?;
     // A tactic that contributed no step is removed, but a `by { ... }` block
     // must hold at least one tactic. When it is the only tactic of its
     // block, the block keeps `known();`, the step a phase with nothing
@@ -1849,7 +1849,7 @@ fn expand_program_prepared_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = selected.replacement(click_source, &replacement_tactics)?;
+    let (span, replacement) = selected.replacement(click_source, &file, &replacement_tactics)?;
     let expanded = splice_source(
         click_source,
         &proof_source_tokens(click_source, &selected.source_spans.implicit_proofs)?,
@@ -1867,13 +1867,13 @@ fn expand_c_prepared_tactic_source_at_context(
     column: usize,
 ) -> Result<String, ClickError> {
     let sources = ProgramSourceContext::prepared(imports);
-    let selected = if let Some(project) = project {
+    let file = if let Some(project) = project {
         let project_sources = ProgramSourceContext::prepared(imports).with_click_project(project);
-        let file = resolve_click_project_context(project, &project_sources)?;
-        locate_source_tactic_file(click_source, &file, line, column)?
+        resolve_click_project_context(project, &project_sources)?
     } else {
-        locate_source_tactic_context(click_source, &sources, line, column)?
+        parse_source_with_program_layouts_context(click_source, &sources)?
     };
+    let selected = locate_source_tactic_file(click_source, &file, line, column)?;
     if let ProofSite::TheoremEnsure {
         theorem_name,
         ensure_index,
@@ -1951,7 +1951,7 @@ fn expand_c_prepared_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = selected.replacement(click_source, &replacement_tactics)?;
+    let (span, replacement) = selected.replacement(click_source, &file, &replacement_tactics)?;
     let expanded = splice_source(
         click_source,
         &proof_source_tokens(click_source, &selected.source_spans.implicit_proofs)?,
@@ -2060,6 +2060,7 @@ fn rewrite_verified_pure_theorem(
 /// Written nesting is not a driver bound: terminal cases can be processed
 /// iteratively. As with tactic expansion, the caller verifies the rewrite.
 fn claim_expansion_source(theorem: &VerifiedProgramTheorem) -> Result<String, ClickError> {
+    let _contract_value_parameters = theorem.contract_value_parameter_scope();
     let _reference_result_source = super::diagnostics::ReferenceResultSourceScope::enter(
         theorem.function_block.signature().returns_reference(),
     );
@@ -3624,6 +3625,7 @@ fn expand_selected_tactics_context(
         return rewrite_verified_pure_theorem(source, &verified, theorem_name, *ensure_index)
             .map(|rewritten| SelectedTacticExpansion::whole_rewrite(source, rewritten));
     }
+    let contract_value_parameters = contract_value_parameter_names(file.contract_definitions());
     let site_signature = match &site {
         ProofSite::FunctionClaim { function_name, .. } => proof_function_blocks(&file)
             .find(|block| block.signature().name() == function_name)
@@ -3725,6 +3727,9 @@ fn expand_selected_tactics_context(
     // The certificate is printed as the claim's own function spells its
     // places, whichever function the verification checked last.
     super::diagnostics::enter_rust_spelling(site_signature.as_ref());
+    let _contract_value_parameters = contract_value_parameters
+        .as_ref()
+        .map(printing::ContractValueParameterScope::enter);
     let mut edits: Vec<(Range<usize>, String)> = Vec::new();
     for target in selected {
         let owned_span = edit_span(&target);
@@ -3893,8 +3898,10 @@ impl LocatedSourceTactic {
     fn replacement(
         &self,
         click_source: &str,
+        file: &ClickFile,
         replacement_tactics: &[ProofTactic],
     ) -> Result<(Range<usize>, String), ClickError> {
+        let _contract_value_parameters = printing::ContractValueParameterScope::for_file(file);
         let certificate = || {
             ProofCertificate::from_proof_tactics(replacement_tactics)
                 .map(|certificate| super::printing::format_proof_certificate(&certificate))
@@ -4539,26 +4546,6 @@ fn select_source_tactic_entry<'e>(
             candidates: Vec::new(),
         }),
     }
-}
-
-fn locate_source_tactic(
-    click_source: &str,
-    c_sources: &[(&str, &str)],
-    line: usize,
-    column: usize,
-) -> Result<LocatedSourceTactic, ClickError> {
-    let sources = ProgramSourceContext::bundle(c_sources);
-    locate_source_tactic_context(click_source, &sources, line, column)
-}
-
-fn locate_source_tactic_context(
-    click_source: &str,
-    c_sources: &ProgramSourceContext<'_>,
-    line: usize,
-    column: usize,
-) -> Result<LocatedSourceTactic, ClickError> {
-    let file = parse_source_with_program_layouts_context(click_source, c_sources)?;
-    locate_source_tactic_file(click_source, &file, line, column)
 }
 
 /// Whether two entries select the same expansion.

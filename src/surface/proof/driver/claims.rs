@@ -718,6 +718,10 @@ fn prove_claims_by_checked_tactics(
         state: state.clone(),
         arguments: arguments.clone(),
         pure_facts: pure_facts.clone(),
+        contract_value_parameters: spec_definitions
+            .predicates
+            .contract_value_parameters
+            .clone(),
     });
     // The proof of a function that declares an expression `decreases` measure
     // steps under that function's recursion anchor, which is what makes a
@@ -2901,11 +2905,8 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 let mut tactics = direct_proof
                     .certificate_since(&direct_base)?
                     .to_proof_tactics();
-                tactics.push(match closer {
-                    ProofStep::Known => ProofTactic::Known,
-                    ProofStep::Normalize => ProofTactic::Normalize,
-                    _ => unreachable!("selected a residual closer above"),
-                });
+                // Each written closer discharges only the next claim.
+                tactics.extend(std::iter::repeat_n(closer.to_proof_tactic(), direct_claims.len()));
                 let certificate = ProofCertificate::from_proof_tactics(&tactics)
                     .map_err(|error| ClickError::new(format!(
                         "checked residual closure is not simple: {error}"

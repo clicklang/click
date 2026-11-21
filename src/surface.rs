@@ -7963,6 +7963,26 @@ struct PredicateEnvironment {
     resource_state_dependent: BTreeSet<String>,
     contract_signatures: BTreeMap<String, InterfaceType>,
     contract_definitions: BTreeMap<String, ContractDefinition>,
+    contract_value_parameters: Option<std::sync::Arc<ContractValueParameters>>,
+}
+
+// Named argument maps print in the same declaration order used by lowering.
+type ContractValueParameters = BTreeMap<String, Vec<String>>;
+
+fn contract_value_parameter_names(
+    definitions: &[ContractDefinition],
+) -> Option<std::sync::Arc<ContractValueParameters>> {
+    let names = definitions
+        .iter()
+        .filter(|definition| !definition.value_parameters().is_empty())
+        .map(|definition| {
+            (
+                definition.name().to_string(),
+                definition.value_parameters().to_vec(),
+            )
+        })
+        .collect::<ContractValueParameters>();
+    (!names.is_empty()).then(|| std::sync::Arc::new(names))
 }
 
 impl PredicateEnvironment {
@@ -8003,6 +8023,7 @@ impl PredicateEnvironment {
             program_function_names: Default::default(),
             contract_signatures: BTreeMap::new(),
             contract_definitions: BTreeMap::new(),
+            contract_value_parameters: None,
         }
     }
 
@@ -8025,6 +8046,7 @@ impl PredicateEnvironment {
             .iter()
             .map(|definition| (definition.name().to_string(), definition.clone()))
             .collect();
+        self.contract_value_parameters = contract_value_parameter_names(definitions);
         self
     }
 
@@ -8656,6 +8678,7 @@ pub struct VerifiedPureTheorem {
     pub ensure_clause: EnsureClause,
     pub proof_kind: ProofKind,
     pub proof: Option<ProofCertificate>,
+    contract_value_parameters: Option<std::sync::Arc<ContractValueParameters>>,
     pub requires: Vec<Proposition>,
     pub conclusion: Proposition,
     pub(crate) kernel_authority: Option<KernelVerifiedPureTheorem>,
@@ -10452,6 +10475,7 @@ impl VerifiedProgramTheorem {
     }
 
     pub fn expanded_proof_source(&self) -> Result<String, ClickError> {
+        let _contract_value_parameters = self.contract_value_parameter_scope();
         let _spelling = self.step_result_spelling_scope();
         let _reference_result_source = diagnostics::ReferenceResultSourceScope::enter(
             self.function_block.signature().returns_reference(),
@@ -10460,6 +10484,14 @@ impl VerifiedProgramTheorem {
         Ok(format_proof_certificate(
             &self.expanded_proof_certificate()?,
         ))
+    }
+
+    fn contract_value_parameter_scope(&self) -> Option<printing::ContractValueParameterScope> {
+        self.entry_context
+            .as_ref()?
+            .contract_value_parameters
+            .as_ref()
+            .map(printing::ContractValueParameterScope::enter)
     }
 
     pub fn ensure_clause(&self) -> Option<&EnsureClause> {
@@ -10495,6 +10527,10 @@ impl VerifiedPureTheorem {
     }
 
     pub fn expanded_proof_source(&self) -> Result<String, ClickError> {
+        let _contract_value_parameters = self
+            .contract_value_parameters
+            .as_ref()
+            .map(printing::ContractValueParameterScope::enter);
         Ok(format_proof_certificate(&self.proof_certificate()?))
     }
 }
