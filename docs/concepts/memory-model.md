@@ -74,6 +74,8 @@ version, or float read point is available. A copied object pointer field can
 retain its complete typed store, including the stored provenance and bounds.
 The same source selectors apply to uncached integer and object pointer union
 members when the copy has a recorded caller source.
+A verified call also retains that source point when it copies caller storage
+into a fresh by-value parameter for the callee's contract.
 
 `exact(place)` keys the read by the selected program point when one is
 available. Raising uses `exact` at that point, even if another point has

@@ -416,6 +416,49 @@ fn aggregate_copy_union_reads_keep_the_caller_versions() {
     );
 }
 
+#[test]
+fn verified_aggregate_argument_keeps_caller_entry_read() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let caller = ExecutionState::new().begin_function_entry_memory();
+    let source = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let layout = AggregateLayout::new(
+        4,
+        4,
+        vec![AggregateField::new("word", 0, ProgramType::Int32)],
+    );
+    let function = program_function(
+        ProgramType::Void,
+        "by_value",
+        vec![
+            ProgramParameter::new("input", ProgramType::VoidPointer).with_aggregate_layout(layout),
+        ],
+        program_return(program_void_value()),
+    );
+    let argument = ProgramValue::typed_pointer(source.clone(), ProgramType::VoidPointer);
+    let bound = bind_contract_arguments(
+        &caller,
+        function.contract_interface(),
+        &VerifiedCallArguments::Native(vec![argument.clone()]),
+        None,
+        &[argument.into()],
+        &mut Vec::new(),
+    )
+    .expect("bind a checked aggregate argument");
+
+    let slot = bound.locals.slot("input").expect("private argument slot");
+    let Some(ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, kind))) =
+        bound.memory().known_value(slot)
+    else {
+        panic!("expected a typed caller word");
+    };
+    assert_eq!(kind, LoadKind::Int32);
+    assert_eq!(point.read_version_id(), caller.program_point_id());
+    assert_eq!(*address, source);
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/aggregate_union_copy_tests.rs");
