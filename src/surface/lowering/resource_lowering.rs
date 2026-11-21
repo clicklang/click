@@ -1359,7 +1359,8 @@ fn materialize_access_segment_cells(
         ) else {
             return Ok(memory);
         };
-        let base_memory = crate::kernel::intern_memory(memory.clone());
+        let entry = entry_frame.program_point();
+        let fallback = crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory));
         for field in 0..layout.field_count() {
             let Some(field_type) = layout
                 .field_type(field)
@@ -1369,8 +1370,8 @@ fn materialize_access_segment_cells(
             };
             let pointer = base.offset_by_layout(layout.field_offset(field));
             if !matches!(memory.load(&pointer), ExpressionOutcome::Value(_)) {
-                memory =
-                    memory.materialize_cell_from_source(pointer, field_type, base_memory.clone());
+                let source = entry_cell_source(&entry, &fallback, &pointer, field_type);
+                memory = memory.materialize_cell_at(pointer, field_type, source);
             }
         }
         return Ok(memory);

@@ -3871,7 +3871,7 @@ impl<'a> TermRewrite<'a> {
                             &crate::kernel::memory_history::canonical_value_load_memory(
                                 point.shared_memory(),
                                 &pointer,
-                                crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                crate::kernel::AccessExtent::of_algebraic(&term.algebraic_type),
                             ),
                         ),
                         pointer: Box::new(pointer),
