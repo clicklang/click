@@ -7312,7 +7312,7 @@ impl PureFactContext {
             record_implicit_consulted_premises(self, proposition);
             return true;
         }
-        if let Some(holds) = crate::kernel::spec::checks_int32_sequence_comparison(
+        if let Some(holds) = crate::kernel::spec::checks_retained_sequence_comparison(
             proposition,
             true,
             |condition, truth| {
@@ -7398,7 +7398,7 @@ impl PureFactContext {
         {
             return true;
         }
-        if let Some(holds) = crate::kernel::spec::checks_int32_sequence_comparison(
+        if let Some(holds) = crate::kernel::spec::checks_retained_sequence_comparison(
             proposition,
             true,
             |condition, value| {

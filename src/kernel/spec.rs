@@ -4566,7 +4566,7 @@ fn lower_spec_sequence_membership_at_state_in(
             sequence,
             &sequence_assumptions,
             budget,
-            retain && element_path.value.program_type() == ProgramType::Int32,
+            retain && retained_sequence_element_type(element_path.value.program_type()),
         )? {
             if sequence_path
                 .value
@@ -4585,7 +4585,9 @@ fn lower_spec_sequence_membership_at_state_in(
             ) else {
                 continue;
             };
-            let proposition = if retain && element_path.value.program_type() == ProgramType::Int32 {
+            let proposition = if retain
+                && retained_sequence_element_type(element_path.value.program_type())
+            {
                 Proposition::SequenceMembership {
                     element: element_path.value.clone().into(),
                     sequence: sequence_path.value,
@@ -4638,7 +4640,7 @@ pub(crate) fn sequence_nonmembership_components(
     Some(
         sequence_member_comparisons(element.native_compat(), sequence).map(|claim| {
             let Proposition::ConditionIs(condition, truth) = claim else {
-                unreachable!("int32 membership")
+                unreachable!("machine integer membership")
             };
             Proposition::condition_is(condition, !truth)
         }),
@@ -4715,7 +4717,8 @@ fn lower_spec_sequence_comparison_at_state_in(
             ) else {
                 continue;
             };
-            let equality = if retain && int32_sequence_types(&left_path.value, &right_path.value) {
+            let equality = if retain && retained_sequence_types(&left_path.value, &right_path.value)
+            {
                 Proposition::Equal(
                     Term::Sequence(left_path.value.clone()),
                     Term::Sequence(right_path.value),
@@ -4742,31 +4745,35 @@ fn lower_spec_sequence_comparison_at_state_in(
     Ok(paths)
 }
 
-fn int32_sequence_types(left: &SequenceTerm, right: &SequenceTerm) -> bool {
+pub(crate) fn retained_sequence_element_type(ty: ProgramType) -> bool {
+    matches!(ty, ProgramType::Int32 | ProgramType::UInt64)
+}
+
+fn retained_sequence_types(left: &SequenceTerm, right: &SequenceTerm) -> bool {
     [left, right]
         .iter()
-        .all(|term| matches!(term.element_type, None | Some(ProgramType::Int32)))
+        .all(|term| term.element_type.is_none_or(retained_sequence_element_type))
 }
 
 /// Scalar consequences of one explicitly selected finite sequence equation.
 /// An unequal length entails falsehood. An empty equation needs no premises.
-pub(crate) fn int32_sequence_equalities(proposition: &Proposition) -> Option<Vec<Proposition>> {
+pub(crate) fn retained_sequence_equalities(proposition: &Proposition) -> Option<Vec<Proposition>> {
     let Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) = proposition else {
         return None;
     };
-    if !int32_sequence_types(left, right) {
+    if !retained_sequence_types(left, right) {
         return None;
     }
     finite_sequence_equalities(left, right)
 }
 
-pub(crate) fn int32_sequence_equality_view(proposition: &Proposition) -> Option<Proposition> {
-    int32_sequence_equalities(proposition).map(balance_sequence_equalities)
+pub(crate) fn retained_sequence_equality_view(proposition: &Proposition) -> Option<Proposition> {
+    retained_sequence_equalities(proposition).map(balance_sequence_equalities)
 }
 
 /// For a positive sequence comparison every component must hold. For its
 /// negation one component must be refuted. Undecided components prove neither.
-pub(crate) fn checks_int32_sequence_comparison(
+pub(crate) fn checks_retained_sequence_comparison(
     proposition: &Proposition,
     expected: bool,
     mut proves: impl FnMut(&ConditionTerm, bool) -> bool,
@@ -4777,7 +4784,7 @@ pub(crate) fn checks_int32_sequence_comparison(
     };
     let check = |component: Proposition| {
         let Proposition::ConditionIs(condition, truth) = component else {
-            unreachable!("int32 component equality")
+            unreachable!("machine integer component equality")
         };
         proves(condition.native_compat(), truth == expected)
     };
@@ -4789,7 +4796,7 @@ pub(crate) fn checks_int32_sequence_comparison(
             components.all(check)
         });
     }
-    let mut components = int32_sequence_equalities(equation)?.into_iter();
+    let mut components = retained_sequence_equalities(equation)?.into_iter();
     Some(if expected {
         components.all(check)
     } else {
@@ -4966,7 +4973,7 @@ fn evaluate_spec_sequence_at_state_in(
                     };
                     paths.push(SpecSequencePath {
                         value: if retain_concat
-                            && int32_sequence_types(&left_path.value, &right_path.value)
+                            && retained_sequence_types(&left_path.value, &right_path.value)
                         {
                             sequence_concat_node(left_path.value.clone(), right_path.value)
                         } else {

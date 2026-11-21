@@ -66,11 +66,11 @@ fn computes_connective(root: &Proposition, expected: bool) -> bool {
 
 fn computes_atom(goal: &Proposition, expected: bool) -> bool {
     crate::instrumentation::record_deterministic_work(1);
-    if let Some(holds) =
-        crate::kernel::spec::checks_int32_sequence_comparison(goal, expected, |condition, value| {
-            condition_value(condition) == Some(value)
-        })
-    {
+    if let Some(holds) = crate::kernel::spec::checks_retained_sequence_comparison(
+        goal,
+        expected,
+        |condition, value| condition_value(condition) == Some(value),
+    ) {
         return holds;
     }
     let value = match goal {

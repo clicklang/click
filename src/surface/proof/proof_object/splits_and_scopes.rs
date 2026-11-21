@@ -149,7 +149,7 @@ impl<'a> Proof<'a> {
             return Ok(self.bundle_member_surface_children());
         };
         let goal = self.goal();
-        let sequence = goal.and_then(crate::kernel::int32_sequence_equality_view);
+        let sequence = goal.and_then(crate::kernel::retained_sequence_equality_view);
         let Some(Proposition::And(left, right)) = sequence.as_ref().or(goal) else {
             return Err(
                 self.step_error("`all` presentation correspondence requires a kernel conjunction")
@@ -431,7 +431,7 @@ impl<'a> Proof<'a> {
         self.goal().is_some_and(|goal| {
             matches!(goal, Proposition::And(..))
                 || matches!(
-                    crate::kernel::int32_sequence_equality_view(goal),
+                    crate::kernel::retained_sequence_equality_view(goal),
                     Some(Proposition::And(..))
                 )
         })

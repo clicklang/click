@@ -31,7 +31,7 @@ pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
 
 fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     if let Some(holds) =
-        crate::kernel::spec::checks_int32_sequence_comparison(goal, true, |condition, truth| {
+        crate::kernel::spec::checks_retained_sequence_comparison(goal, true, |condition, truth| {
             normalizes_context_free_reduced(&Proposition::condition_is(condition.clone(), truth))
         })
     {
@@ -303,7 +303,7 @@ fn normalize_condition_selection(
     for (index, premise) in premises.iter().enumerate() {
         // A complete arithmetic domain supplies its two ordinary bounds.
         // Keep shared operands intact; no private overflow spelling is needed.
-        let sequence = crate::kernel::spec::int32_sequence_equalities(premise);
+        let sequence = crate::kernel::spec::retained_sequence_equalities(premise);
         let leaves = if let Some(sequence) = &sequence {
             sequence.iter().collect()
         } else if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(
@@ -515,7 +515,7 @@ fn normalize_condition_selection(
         crate::instrumentation::record_deterministic_work(1);
         selected = selected.assume_condition(condition, value);
     }
-    if crate::kernel::spec::checks_int32_sequence_comparison(goal, true, |condition, truth| {
+    if crate::kernel::spec::checks_retained_sequence_comparison(goal, true, |condition, truth| {
         selected.decide(condition) == Some(truth)
     }) == Some(true)
     {
