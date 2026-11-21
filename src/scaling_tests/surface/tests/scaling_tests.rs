@@ -87,54 +87,72 @@ fn static_cell_read_steps_skip_same_array_store_history() {
 
     // Each read is the first access to its offset. The fixed store target is
     // in the same array, so the whole-block selector cannot skip the prefix.
-    for (stores, reads) in [(4, 1), (16, 1), (64, 1), (128, 1), (32, 32)] {
-        let mut c = String::from("int32 g[256];\nint32 probe() {\n    int32 x;\n");
-        for value in 1..=stores {
-            c.push_str(&format!("    g[255] = {value};\n"));
-        }
-        for index in 0..reads - 1 {
-            c.push_str(&format!("    x = g[{index}];\n"));
-        }
-        c.push_str(&format!("    return g[{}];\n}}\n", reads - 1));
-        let steps = "    step();\n".repeat(stores + reads + 1);
-        let source = format!(
-            r#"verifying "probe.c";
+    for (local_store, setup, setup_steps, max_read_version_work) in [
+        (None, "", 1, 4),
+        (Some("x"), "", 1, 4),
+        (Some("*p"), "    int32* p;\n    p = &x;\n", 3, 6),
+    ] {
+        for (stores, reads) in [(4, 1), (16, 1), (64, 1), (128, 1), (32, 32)] {
+            let mut c = format!("int32 g[256];\nint32 probe() {{\n    int32 x;\n{setup}");
+            let mut prefix_steps = setup_steps;
+            for value in 1..=stores {
+                c.push_str(&format!("    g[255] = {value};\n"));
+                prefix_steps += 1;
+                if let Some(lhs) = local_store
+                    && value < stores
+                {
+                    c.push_str(&format!("    {lhs} = {value};\n"));
+                    prefix_steps += 1;
+                }
+            }
+            for index in 0..reads - 1 {
+                c.push_str(&format!("    x = g[{index}];\n"));
+            }
+            c.push_str(&format!("    return g[{}];\n}}\n", reads - 1));
+            let steps = "    step();\n".repeat(prefix_steps + reads);
+            let source = format!(
+                r#"verifying "probe.c";
 int32 probe() {{
     owns g[0..256];
 }} by {{
 {steps}}}
 "#
-        );
-        let (verified, events) = collect(|| verify_c_sources(&source, &[("probe.c", &c)]));
-        verified
-            .unwrap_or_else(|error| panic!("stores={stores}, reads={reads}: {}", error.message()));
-        let mut checking_read = false;
-        let mut completed = 0;
-        let mut version_work = 0;
-        for event in events {
-            match event {
-                VerificationEvent::TacticStarted(tactic) if tactic.tactic_name == "step" => {
-                    checking_read = tactic.tactic_index > stores;
+            );
+            let (verified, events) = collect(|| verify_c_sources(&source, &[("probe.c", &c)]));
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "local={local_store:?}, stores={stores}, reads={reads}: {}",
+                    error.message()
+                )
+            });
+            let mut checking_read = false;
+            let mut completed = 0;
+            let mut version_work = 0;
+            for event in events {
+                match event {
+                    VerificationEvent::TacticStarted(tactic) if tactic.tactic_name == "step" => {
+                        checking_read = tactic.tactic_index >= prefix_steps;
+                    }
+                    VerificationEvent::TacticFinished { tactic, .. }
+                        if tactic.tactic_name == "step" =>
+                    {
+                        completed += usize::from(checking_read);
+                        checking_read = false;
+                    }
+                    VerificationEvent::OperationFinished { name, work, .. }
+                        if checking_read && name == "cell version walk" =>
+                    {
+                        version_work += work;
+                    }
+                    _ => {}
                 }
-                VerificationEvent::TacticFinished { tactic, .. }
-                    if tactic.tactic_name == "step" =>
-                {
-                    completed += usize::from(checking_read);
-                    checking_read = false;
-                }
-                VerificationEvent::OperationFinished { name, work, .. }
-                    if checking_read && name == "cell version walk" =>
-                {
-                    version_work += work;
-                }
-                _ => {}
             }
+            assert_eq!(completed, reads);
+            assert!(
+                (reads..=max_read_version_work * reads).contains(&version_work),
+                "local={local_store:?}, {stores} stores and {reads} reads used {version_work} version work"
+            );
         }
-        assert_eq!(completed, reads);
-        assert!(
-            (reads..=4 * reads).contains(&version_work),
-            "{stores} stores and {reads} reads used {version_work} version work"
-        );
     }
 }
 
