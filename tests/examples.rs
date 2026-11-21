@@ -1107,10 +1107,13 @@ fn erase_source_refuses_replacement(
                 && (error.contains("could not establish")
                     || error.contains(
                         "`normalize using` goal did not normalize to true using the listed conditions",
-                    )
-                    || error.contains(
-                        "`known` requires the current goal as an available semantic fact",
                     )))
+            // A closing fact the mutated store no longer supports, checked in
+            // a `have` body or by the step that folds the parent's word.
+            || ((error.contains("have body tactic") || error.contains("proof step tactic"))
+                && error.contains(
+                    "`known` requires the current goal as an available semantic fact",
+                ))
             || error
                 .contains("unclosed goal: new->__rb_parent_color == old(old->__rb_parent_color)",)
             || error.contains("unclosed goal: result == 0")
