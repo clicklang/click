@@ -4251,6 +4251,11 @@ pub(crate) fn canonical_cell_value(
     if let ProgramType::Parameter(parameter) = value_type {
         return AlgebraicTermNode::parameter_cell_load(source, pointer.clone(), parameter);
     }
+    if value_type == ProgramType::Bool
+        && let Some(value) = point_named_symbolic_read(Some(source), pointer, value_type)
+    {
+        return value;
+    }
     if let Some(read) = point_named_pointer_cell_read(source, pointer, value_type) {
         return ProgramValue::Pointer(read);
     }
