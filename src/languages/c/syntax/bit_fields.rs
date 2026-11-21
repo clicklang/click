@@ -40,7 +40,7 @@ pub(super) struct BitFieldRecord {
 
 impl BitFieldRecord {
     pub(super) fn size_bytes(&self) -> u32 {
-        self.storage.size_bytes
+        self.storage.size_bytes()
     }
 }
 
@@ -87,7 +87,7 @@ impl LocalBitFields {
     }
 
     pub(super) fn size_bytes(&self) -> u32 {
-        self.record.storage.size_bytes
+        self.record.storage.size_bytes()
     }
 
     fn byte_address(&self, offset: u32) -> CExpression {
@@ -383,7 +383,7 @@ impl Parser {
             ordered.push((
                 name.clone(),
                 Member::Scalar {
-                    offset: field.offset_bytes,
+                    offset: field.offset_bytes(),
                     width: field.byte_width,
                     ty: field.interface_type,
                 },

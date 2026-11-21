@@ -1055,6 +1055,10 @@ struct Parser {
     rust_slice_params: BTreeSet<String>,
     /// Slice local length bindings by place in the selected Rust function.
     rust_slice_locals: std::sync::Arc<BTreeMap<String, crate::kernel::BindingName>>,
+    /// The parameters of the declaration being parsed that point at a value
+    /// of an abstract type, `value: &T` or `p: *mut T`: `*value` is that
+    /// value's whole object, `sizeof(T)` bytes.
+    abstract_pointer_params: BTreeMap<String, crate::kernel::TypeParameterName>,
     /// The element type of each slice parameter read so far, by name: the
     /// latest parameter of that name, which is the current declaration's.
     rust_slice_elements: BinderMap<InterfaceType>,
@@ -1432,6 +1436,11 @@ impl ProgramLayouts {
         // Declarations normally share one owner. Retain the typed owner so a
         // long function/source spelling is copied once, not per temporary.
         let mut last_owner = None;
+        let slice_parameters = function
+            .parameters()
+            .iter()
+            .filter_map(|parameter| parameter.binding_name().slice_length_of())
+            .collect::<BTreeSet<_>>();
         let mut slice_locals = BTreeMap::new();
         let mut record = |binding: &crate::kernel::BindingName,
                           site: Option<&syntax::CSite>,
@@ -1448,6 +1457,17 @@ impl ProgramLayouts {
             let Some(id) = binding.local_id() else {
                 return;
             };
+            // A same-named local hides a slice parameter even if that
+            // local has no length. Resolve through the live binding in proofs.
+            if !id.is_parameter()
+                && let Some(name) = id.spelling()
+                && slice_parameters.contains(name)
+            {
+                slice_locals.insert(
+                    name.to_owned(),
+                    crate::kernel::BindingName::scoped_slice_length(name, false),
+                );
+            }
             if last_owner.as_ref() != Some(id.owner()) {
                 index
                     .owners
@@ -1693,9 +1713,19 @@ struct ResolvedField {
     function_pointer_signature: Option<crate::languages::interface::CallbackInterface>,
     array_element_width: Option<u32>,
     array_shape: Option<Vec<u32>>,
-    offset_bytes: u32,
+    /// A number, or in a symbolic layout the field's `offsetof` term.
+    offset: crate::kernel::LayoutOffset,
     byte_width: u32,
+    /// The end of the field's resource slot; unused for a symbolic layout's
+    /// field, whose slot is exactly its extent.
     slot_end_bytes: u32,
+}
+
+impl ResolvedField {
+    /// The field's byte offset in a concrete layout.
+    fn offset_bytes(&self) -> Option<u32> {
+        self.offset.bytes()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2139,6 +2169,7 @@ impl Parser {
             exact_long_rank: false,
             rust_slice_params: BTreeSet::new(),
             rust_slice_locals: Default::default(),
+            abstract_pointer_params: BTreeMap::new(),
             rust_slice_elements: BinderMap::new(),
             rust_vec_params: BTreeMap::new(),
             rust_loop_iterators: Vec::new(),
@@ -2893,7 +2924,7 @@ impl Parser {
             struct_sizes: std::sync::Arc::new(
                 self.struct_layouts
                     .iter()
-                    .map(|(name, layout)| (name.clone(), layout.size_bytes()))
+                    .filter_map(|(name, layout)| Some((name.clone(), layout.size().bytes()?)))
                     .collect(),
             ),
             program_function_names: std::sync::Arc::new(program_function_names),
@@ -4463,6 +4494,42 @@ impl Parser {
         Ok(ResourceClause::Iterated(Box::new(clause)))
     }
 
+    /// Records which of a declaration's parameters point at a value of an
+    /// abstract type, for its clauses' `*p` (`abstract_pointer_params`).
+    fn record_abstract_pointer_params(&mut self, parameters: &[FunctionParameter]) {
+        self.abstract_pointer_params = parameters
+            .iter()
+            .filter_map(|parameter| match parameter.click_type {
+                ClickType::Program(InterfaceType::ParameterPointer(parameter_type))
+                    if parameter_type.has_abstract_size() =>
+                {
+                    Some((parameter.name.clone(), parameter_type))
+                }
+                // A reference to a value of an abstract type refers to its
+                // whole object, as a pointer to one does.
+                ClickType::Program(InterfaceType::Parameter(parameter_type))
+                    if parameter.is_reference() && parameter_type.has_abstract_size() =>
+                {
+                    Some((parameter.name.clone(), parameter_type))
+                }
+                _ => None,
+            })
+            .collect();
+    }
+
+    /// The abstract type a pointer or reference parameter's binding refers
+    /// to a value of (`abstract_pointer_params`).
+    fn abstract_referent(
+        &self,
+        binding: &crate::kernel::BindingName,
+    ) -> Option<crate::kernel::TypeParameterName> {
+        let name = match binding {
+            crate::kernel::BindingName::Named(name) => name.as_str(),
+            other => other.reference_referent()?.source_name(),
+        };
+        self.abstract_pointer_params.get(name).copied()
+    }
+
     fn parse_click_parameters(&mut self) -> Result<ParsedParameters, ClickError> {
         self.parse_parameters_with_resources(false)
             .map(|(parameters, _)| parameters)
@@ -4620,6 +4687,7 @@ impl Parser {
                     self.position += 1;
                 }
                 Some(Token::RParen) => {
+                    self.record_abstract_pointer_params(&parameters);
                     return Ok((
                         ParsedParameters {
                             parameters,
@@ -5038,64 +5106,6 @@ impl Parser {
         })
     }
 
-    /// Whether the `sizeof` at `index` is the whole size of an allocation,
-    /// `allocation(p, sizeof(Node<T>))`: the size an instance's `new`
-    /// allocates, at each instance its own, which a proof cannot otherwise
-    /// read.
-    fn whole_allocation_size_at(&self, index: usize) -> bool {
-        let Some(close) = self.matching_parentheses.get(index + 1).cloned().flatten() else {
-            return false;
-        };
-        if index < 3
-            || self.tokens.get(index - 1) != Some(&Token::Comma)
-            || self.tokens.get(close + 1) != Some(&Token::RParen)
-        {
-            return false;
-        }
-        // The `(` the size's argument list opens with, found by walking back
-        // over the allocation's first argument only.
-        let mut depth = 0usize;
-        let mut at = index - 1;
-        while at > 0 {
-            at -= 1;
-            match self.tokens[at] {
-                Token::RParen | Token::RBracket | Token::RBrace => depth += 1,
-                Token::LBracket | Token::LBrace => depth = depth.saturating_sub(1),
-                Token::LParen if depth > 0 => depth -= 1,
-                Token::LParen => {
-                    return at > 0
-                        && self.matching_parentheses.get(at).cloned().flatten() == Some(close + 1)
-                        && matches!(&self.tokens[at - 1], Token::Ident(name) if name == "allocation");
-                }
-                _ => {}
-            }
-        }
-        false
-    }
-
-    /// Whether the record `name` holds a value of an abstract type, directly
-    /// or in an embedded record.
-    fn layout_holds_abstract_value(&self, name: &str) -> bool {
-        let mut pending = vec![name.to_string()];
-        let mut seen = BTreeSet::new();
-        while let Some(name) = pending.pop() {
-            if !seen.insert(name.clone()) {
-                continue;
-            }
-            let Some(layout) = self.struct_layouts.get(&name) else {
-                continue;
-            };
-            for field in layout.fields().values() {
-                match (field.interface_type(), field.struct_name()) {
-                    (InterfaceType::Parameter(_), _) => return true,
-                    (InterfaceType::Int32, Some(embedded)) => pending.push(embedded.to_string()),
-                    _ => {}
-                }
-            }
-        }
-        false
-    }
-
     /// A method of a class template verified once for every type argument,
     /// `template<class T> void Cell<T>::set(T v) { ... } by { ... }`: its
     /// type parameters are abstract types in its head, contract and proof.
@@ -5335,6 +5345,28 @@ impl Parser {
         let previous_hosted_stdout = std::mem::replace(
             &mut self.hosted_stdout,
             self.hosted_stdout_by_function.get(&table_name).cloned(),
+        );
+        // A pointer or reference to a value of an abstract type refers to
+        // its whole object (`abstract_pointer_params`).
+        let previous_abstract_pointer_params = std::mem::replace(
+            &mut self.abstract_pointer_params,
+            signature
+                .parameters()
+                .iter()
+                .filter_map(|parameter| match parameter.interface_type() {
+                    InterfaceType::ParameterPointer(parameter_type)
+                        if parameter_type.has_abstract_size() =>
+                    {
+                        Some((parameter.name().to_string(), parameter_type))
+                    }
+                    InterfaceType::Parameter(parameter_type)
+                        if parameter.is_reference() && parameter_type.has_abstract_size() =>
+                    {
+                        Some((parameter.name().to_string(), parameter_type))
+                    }
+                    _ => None,
+                })
+                .collect(),
         );
         let previous_c_parameter_types = std::mem::replace(
             &mut self.names.program_parameter_types,
@@ -5987,6 +6019,7 @@ impl Parser {
         self.names
             .replace(NameKind::VoidPointerParameter, previous_void_pointer_params);
         self.names.program_parameter_types = previous_c_parameter_types;
+        self.abstract_pointer_params = previous_abstract_pointer_params;
         self.names.program_object_names = previous_c_object_names;
         self.hosted_stdout = previous_hosted_stdout;
         self.rust_loop_iterators = previous_loop_iterators;
@@ -7371,7 +7404,7 @@ impl Parser {
                 )));
             }
         }
-        Ok(InterfaceType::UInt8Array(layout.size_bytes()))
+        Ok(crate::languages::interface::record_value_type(layout))
     }
 
     fn parse_function_pointer_declarator(
@@ -12908,14 +12941,14 @@ impl Parser {
                 .filter(|info| info.array_shape.is_some())
                 .and_then(|info| info.struct_name.as_ref())
                 .and_then(|name| self.struct_layouts.get(name))
-                .map(|layout| layout.size_bytes()),
+                .and_then(|layout| layout.size().bytes()),
             ContractExpression::Binding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self.names.contains(NameKind::StructArrayParameter, name) => struct_name
                 .as_ref()
                 .and_then(|name| self.struct_layouts.get(name))
-                .map(|layout| layout.size_bytes()),
+                .and_then(|layout| layout.size().bytes()),
             ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self
@@ -12923,7 +12956,7 @@ impl Parser {
                 .filter(|object| object.struct_name.is_some() && object.array_shape.is_some())
                 .and_then(|object| object.struct_name.as_ref())
                 .and_then(|name| self.struct_layouts.get(name))
-                .map(|layout| layout.size_bytes()),
+                .and_then(|layout| layout.size().bytes()),
             _ => None,
         };
         let mut struct_array_shape = match &surface_base {
@@ -12991,7 +13024,7 @@ impl Parser {
                         struct_name
                             .as_ref()
                             .and_then(|name| self.struct_layouts.get(name))
-                            .map(|layout| layout.size_bytes())
+                            .and_then(|layout| layout.size().bytes())
                     })
                 {
                     // A single complete element retains typed indexing. Byte
@@ -13227,7 +13260,7 @@ impl Parser {
             {
                 let field = self.resolve_union_field_metadata(base_union_name, &field_name)?;
                 dereferences_pointer = field.interface_type.is_pointer();
-                let pointer = self.offset_field_pointer(base, field.offset_bytes);
+                let pointer = self.offset_field_pointer(base, field.offset);
                 let field_memory_pointer = field_has_direct_memory_place(&field);
                 scalar_field = field_memory_pointer
                     && matches!(
@@ -13249,7 +13282,7 @@ impl Parser {
                     None,
                     None,
                     field_memory_pointer,
-                    field.offset_bytes,
+                    field.offset,
                 )
             } else if let Some(base_struct_name) = &struct_name
                 && self.struct_layouts.contains_key(base_struct_name)
@@ -13279,7 +13312,7 @@ impl Parser {
                     field.array_element_width,
                     field.array_shape,
                     field_memory_pointer,
-                    field.offset_bytes,
+                    field.offset,
                 )
             } else {
                 indexed_scalar_field = None;
@@ -13290,7 +13323,7 @@ impl Parser {
                     None,
                     None,
                     false,
-                    0,
+                    crate::kernel::LayoutOffset::Bytes(0),
                 )
             };
             if scalar_field
@@ -13398,6 +13431,28 @@ impl Parser {
             && self.peek() != Some(&Token::LBracket)
             && let ProgramExpression::Index(carrier, _) = &base
         {
+            // A referent of an abstract type is its whole object: the
+            // `sizeof(T)` bytes from the carrier, as `*p` is.
+            if let ProgramExpression::Variable(binding) = carrier.as_ref()
+                && let Some(parameter) = self.abstract_referent(binding)
+            {
+                let start = ProgramExpression::Value(ProgramValue::UInt64(
+                    crate::kernel::MachineTerm::uint64_constant(0),
+                ));
+                let end = ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term()));
+                return Ok(vec![ContractSegment {
+                    uninitialized: false,
+                    state: ContractSegmentState::Current,
+                    base: (**carrier).clone(),
+                    start: start.clone(),
+                    end: end.clone(),
+                    surface: ContractSegmentSurface::Range {
+                        base: ContractExpression::ProgramExpression((**carrier).clone()),
+                        start: ContractExpression::ProgramExpression(start),
+                        end: ContractExpression::ProgramExpression(end),
+                    },
+                }]);
+            }
             let (start, end) = (
                 ProgramExpression::Value(int32(0)),
                 ProgramExpression::Value(int32(1)),
@@ -13451,6 +13506,29 @@ impl Parser {
                         base: surface_base,
                         start: ContractExpression::ProgramExpression(start),
                         end: end_expression,
+                    },
+                }]);
+            }
+            // `*p` of a value of an abstract type is its whole object: the
+            // `sizeof(T)` bytes from `p`, a size the type fixes and Click
+            // does not know.
+            if let ProgramExpression::Variable(binding) = &base
+                && let Some(parameter) = self.abstract_referent(binding)
+            {
+                let start = ProgramExpression::Value(ProgramValue::UInt64(
+                    crate::kernel::MachineTerm::uint64_constant(0),
+                ));
+                let end = ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term()));
+                return Ok(vec![ContractSegment {
+                    uninitialized: false,
+                    state: ContractSegmentState::Current,
+                    base,
+                    start: start.clone(),
+                    end: end.clone(),
+                    surface: ContractSegmentSurface::Range {
+                        base: surface_base,
+                        start: ContractExpression::ProgramExpression(start),
+                        end: ContractExpression::ProgramExpression(end),
                     },
                 }]);
             }
@@ -13634,6 +13712,28 @@ impl Parser {
                 "a whole object needs an imported layout for `struct {struct_name}`"
             ))
         })?;
+        // A symbolic struct's object is its `sizeof` bytes from `p`.
+        if let crate::kernel::LayoutSize::Of(_) = layout.size() {
+            let start = ProgramExpression::Value(ProgramValue::UInt64(
+                crate::kernel::MachineTerm::uint64_constant(0),
+            ));
+            let end = ProgramExpression::Value(ProgramValue::UInt64(layout.size().term()));
+            let surface_base = ContractExpression::ProgramExpression(base.clone());
+            // The range is in bytes, as its `sizeof` end says; the base keeps
+            // the pointer's own bounds.
+            return Ok(ContractSegment {
+                uninitialized: false,
+                state: ContractSegmentState::Current,
+                base,
+                start: start.clone(),
+                end: end.clone(),
+                surface: ContractSegmentSurface::Range {
+                    base: surface_base,
+                    start: ContractExpression::ProgramExpression(start),
+                    end: ContractExpression::ProgramExpression(end),
+                },
+            });
+        }
         if layout.size_bytes() % 4 != 0 {
             return Err(self.error(format!(
                 "a whole object cannot represent the {}-byte `struct {struct_name}` as an int32-aligned memory segment",
@@ -13745,7 +13845,9 @@ impl Parser {
                     )?;
                 } else {
                     let nested_offset = base_offset
-                        .checked_add(resolved.offset_bytes)
+                        .checked_add(resolved.offset_bytes().ok_or_else(|| {
+                            self.error("a symbolic struct's fields have no byte offsets")
+                        })?)
                         .ok_or_else(|| self.error("aggregate field offset overflows"))?;
                     self.append_aggregate_leaf_segments(
                         segments,
@@ -13762,14 +13864,17 @@ impl Parser {
                     "aggregate field `{full_name}` contains an unsupported union"
                 )));
             }
-            let absolute_offset = base_offset
-                .checked_add(resolved.offset_bytes)
-                .ok_or_else(|| self.error("aggregate field offset overflows"))?;
+            let absolute_offset =
+                base_offset
+                    .checked_add(resolved.offset_bytes().ok_or_else(|| {
+                        self.error("a symbolic struct's fields have no byte offsets")
+                    })?)
+                    .ok_or_else(|| self.error("aggregate field offset overflows"))?;
             let absolute_end = base_offset
                 .checked_add(resolved.slot_end_bytes)
                 .ok_or_else(|| self.error("aggregate field size overflows"))?;
             let mut absolute = resolved.clone();
-            absolute.offset_bytes = absolute_offset;
+            absolute.offset = absolute_offset.into();
             absolute.slot_end_bytes = absolute_end;
             self.validate_field_place(&absolute)?;
             segments.push(Self::field_segment_from_metadata(
@@ -13809,13 +13914,16 @@ impl Parser {
                 .ok_or_else(|| self.error(format!("aggregate field `{name_prefix}` is too large")))
         })?;
         for flat_index in 0..element_count {
-            let offset = base_offset
-                .checked_add(field.offset_bytes)
-                .ok_or_else(|| self.error("aggregate field offset overflows"))?
-                .checked_add(flat_index.checked_mul(element_width).ok_or_else(|| {
-                    self.error(format!("aggregate field `{name_prefix}` offset overflows"))
-                })?)
-                .ok_or_else(|| self.error("aggregate field offset overflows"))?;
+            let offset =
+                base_offset
+                    .checked_add(field.offset_bytes().ok_or_else(|| {
+                        self.error("a symbolic struct's fields have no byte offsets")
+                    })?)
+                    .ok_or_else(|| self.error("aggregate field offset overflows"))?
+                    .checked_add(flat_index.checked_mul(element_width).ok_or_else(|| {
+                        self.error(format!("aggregate field `{name_prefix}` offset overflows"))
+                    })?)
+                    .ok_or_else(|| self.error("aggregate field offset overflows"))?;
             let path = row_major_index_path(flat_index, shape);
             self.append_aggregate_leaf_segments(
                 segments,
@@ -13881,7 +13989,7 @@ impl Parser {
         };
         if let Some((length, element_width, element_type)) = array {
             let field_base =
-                crate::kernel::program_expression::pointer_offset_bytes(base, field.offset_bytes);
+                crate::kernel::program_expression::pointer_offset_bytes(base, field.offset);
             return ContractSegment {
                 uninitialized: false,
                 state: ContractSegmentState::Current,
@@ -13914,7 +14022,53 @@ impl Parser {
             InterfaceType::Float64 => 8,
             _ => 4,
         };
-        let start = field.offset_bytes / element_width;
+        let Some(offset_bytes) = field.offset_bytes() else {
+            // A symbolic layout's field, at its `offsetof`. A value of an
+            // abstract type is the bytes of its extent, as a dereference of
+            // a pointer to one reaches; any other field is its own width in
+            // the units a concrete layout's field has.
+            let field_pointer =
+                crate::kernel::program_expression::pointer_offset_bytes(base, field.offset);
+            if let InterfaceType::Parameter(parameter) = field.interface_type
+                && parameter.has_abstract_size()
+            {
+                let start = ProgramExpression::Value(ProgramValue::UInt64(
+                    crate::kernel::MachineTerm::uint64_constant(0),
+                ));
+                let end = ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term()));
+                return ContractSegment {
+                    uninitialized: false,
+                    state: ContractSegmentState::Current,
+                    base: field_pointer,
+                    start,
+                    end,
+                    surface: ContractSegmentSurface::Field {
+                        base: surface_base.map(Box::new),
+                        name: field_name.to_string(),
+                        element_width: Some(1),
+                        element_type: Some(ProgramType::UInt8),
+                        value_bytes: None,
+                    },
+                };
+            }
+            return ContractSegment {
+                uninitialized: false,
+                state: ContractSegmentState::Current,
+                base: field_pointer,
+                start: ProgramExpression::Value(int32(0)),
+                end: ProgramExpression::Value(int32(
+                    field.byte_width.div_ceil(element_width).max(1),
+                )),
+                surface: ContractSegmentSurface::Field {
+                    base: surface_base.map(Box::new),
+                    name: field_name.to_string(),
+                    element_width: Some(element_width),
+                    element_type: Some(field.interface_type.to_kernel_type()),
+                    value_bytes: Some(element_width),
+                },
+            };
+        };
+        let start = offset_bytes / element_width;
         let end = field.slot_end_bytes / element_width;
         ContractSegment {
             uninitialized: false,
@@ -13986,7 +14140,7 @@ impl Parser {
         };
         if let Some(struct_name) = struct_name {
             let field = self.resolve_struct_field_metadata(struct_name, field_name)?;
-            let pointer = self.offset_c_field_pointer(base.clone(), field.offset_bytes);
+            let pointer = self.offset_c_field_pointer(base.clone(), field.offset.concrete());
             return Ok(Some(if let Some(union_name) = field.union_name {
                 CExpression::UnionAddress {
                     pointer: Box::new(pointer),
@@ -14025,7 +14179,7 @@ impl Parser {
         }
         if let CExpression::UnionAddress { union_name, .. } = &base {
             let field = self.resolve_union_field_metadata(union_name, field_name)?;
-            let pointer = self.offset_c_field_pointer(base.clone(), field.offset_bytes);
+            let pointer = self.offset_c_field_pointer(base.clone(), field.offset.concrete());
             return Ok(Some(CExpression::UnionField {
                 pointer: Box::new(pointer),
                 field_type: field.interface_type,
@@ -14210,13 +14364,17 @@ impl Parser {
         // A field's resource slot runs to the next field's offset (or the
         // struct's end), so ownership covers trailing alignment padding:
         // padding belongs to the object and no one else can own it.
-        let slot_end_bytes = layout
-            .fields()
-            .values()
-            .map(crate::languages::interface::RecordField::offset_bytes)
-            .filter(|offset| *offset > field.offset_bytes())
-            .min()
-            .unwrap_or_else(|| layout.size_bytes());
+        let slot_end_bytes = match field.offset().bytes() {
+            Some(offset) => layout
+                .fields()
+                .values()
+                .map(crate::languages::interface::RecordField::offset_bytes)
+                .filter(|other| *other > offset)
+                .min()
+                .unwrap_or_else(|| layout.size_bytes()),
+            // A symbolic layout's field slot is exactly its extent.
+            None => 0,
+        };
         Ok(ResolvedField {
             interface_type: field.interface_type(),
             pointee_constant: field.pointee_is_constant(),
@@ -14225,7 +14383,7 @@ impl Parser {
             function_pointer_signature: field.function_pointer_signature().cloned(),
             array_element_width: field.array_element_width(),
             array_shape: field.array_shape().map(|shape| shape.to_vec()),
-            offset_bytes: field.offset_bytes(),
+            offset: field.offset(),
             byte_width: field.byte_width(),
             slot_end_bytes,
         })
@@ -14255,13 +14413,18 @@ impl Parser {
             function_pointer_signature: None,
             array_element_width: None,
             array_shape: None,
-            offset_bytes: field.offset_bytes(),
+            offset: field.offset_bytes().into(),
             byte_width: field.byte_width(),
             slot_end_bytes: layout.size_bytes(),
         })
     }
 
     fn validate_field_place(&self, field: &ResolvedField) -> Result<(), ClickError> {
+        // A symbolic layout's field is its extent at its `offsetof`, with no
+        // byte slot to align.
+        let Some(offset_bytes) = field.offset_bytes() else {
+            return Ok(());
+        };
         if field.array_element_width.is_some() {
             return Err(
                 self.error("arrays of embedded structs require an index before a resource segment")
@@ -14290,9 +14453,9 @@ impl Parser {
                 InterfaceType::Int32Array(_) => 4,
                 _ => 1,
             };
-            if !field.offset_bytes.is_multiple_of(width)
-                || field.slot_end_bytes < field.offset_bytes
-                || !(field.slot_end_bytes - field.offset_bytes).is_multiple_of(width)
+            if !offset_bytes.is_multiple_of(width)
+                || field.slot_end_bytes < offset_bytes
+                || !(field.slot_end_bytes - offset_bytes).is_multiple_of(width)
             {
                 return Err(self.error("inline array field has an invalid resource size"));
             }
@@ -14302,10 +14465,10 @@ impl Parser {
             field.interface_type,
             InterfaceType::Int16 | InterfaceType::UInt16
         ) {
-            if !field.offset_bytes.is_multiple_of(2)
+            if !offset_bytes.is_multiple_of(2)
                 || field.byte_width != 2
-                || field.slot_end_bytes < field.offset_bytes
-                || !(field.slot_end_bytes - field.offset_bytes).is_multiple_of(2)
+                || field.slot_end_bytes < offset_bytes
+                || !(field.slot_end_bytes - offset_bytes).is_multiple_of(2)
             {
                 return Err(self.error("16-bit field places require two-byte alignment and width"));
             }
@@ -14315,10 +14478,10 @@ impl Parser {
             field.interface_type,
             InterfaceType::Int64(_) | InterfaceType::UInt64(_)
         ) {
-            if !field.offset_bytes.is_multiple_of(8)
+            if !offset_bytes.is_multiple_of(8)
                 || field.byte_width != 8
-                || field.slot_end_bytes < field.offset_bytes
-                || !(field.slot_end_bytes - field.offset_bytes).is_multiple_of(8)
+                || field.slot_end_bytes < offset_bytes
+                || !(field.slot_end_bytes - offset_bytes).is_multiple_of(8)
             {
                 return Err(
                     self.error("64-bit field places require eight-byte alignment and width")
@@ -14330,12 +14493,12 @@ impl Parser {
             field.interface_type,
             InterfaceType::Int8 | InterfaceType::Char(_) | InterfaceType::UInt8
         ) {
-            if field.byte_width != 1 || field.slot_end_bytes < field.offset_bytes {
+            if field.byte_width != 1 || field.slot_end_bytes < offset_bytes {
                 return Err(self.error("byte field places require one-byte width"));
             }
             return Ok(());
         }
-        if !field.offset_bytes.is_multiple_of(4)
+        if !offset_bytes.is_multiple_of(4)
             || !field.byte_width.is_multiple_of(4)
             || !field.slot_end_bytes.is_multiple_of(4)
         {
@@ -14351,7 +14514,7 @@ impl Parser {
         base: ProgramExpression,
         field: &ResolvedField,
     ) -> ProgramExpression {
-        let pointer = self.offset_field_pointer(base, field.offset_bytes);
+        let pointer = self.offset_field_pointer(base, field.offset);
         if field.byte_width == 0 {
             return pointer;
         }
@@ -14364,9 +14527,9 @@ impl Parser {
     fn offset_field_pointer(
         &self,
         base: ProgramExpression,
-        offset_bytes: u32,
+        offset: crate::kernel::LayoutOffset,
     ) -> ProgramExpression {
-        crate::kernel::program_expression::pointer_offset_bytes(base, offset_bytes)
+        crate::kernel::program_expression::pointer_offset_bytes(base, offset)
     }
 
     fn offset_c_field_pointer(&self, base: CExpression, offset_bytes: u32) -> CExpression {
@@ -14841,7 +15004,7 @@ impl Parser {
                     source_base,
                     ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(base),
-                        bytes: *offset_bytes,
+                        bytes: (*offset_bytes).into(),
                     },
                 ));
             }
@@ -15025,7 +15188,7 @@ impl Parser {
                 .filter(|info| info.array_shape.is_some())
                 .and_then(|info| info.struct_name.as_ref())
                 .and_then(|name| self.struct_layouts.get(name))
-                .map(|layout| layout.size_bytes()),
+                .and_then(|layout| layout.size().bytes()),
             ContractExpression::Binding(name)
             | ContractExpression::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
@@ -15036,7 +15199,7 @@ impl Parser {
                     struct_name
                         .as_ref()
                         .and_then(|name| self.struct_layouts.get(name))
-                        .map(|layout| layout.size_bytes())
+                        .and_then(|layout| layout.size().bytes())
                 })
                 .flatten(),
             ContractExpression::QualifiedC { name, .. } => self
@@ -15044,7 +15207,7 @@ impl Parser {
                 .filter(|object| object.struct_name.is_some() && object.array_shape.is_some())
                 .and_then(|object| object.struct_name.as_ref())
                 .and_then(|name| self.struct_layouts.get(name))
-                .map(|layout| layout.size_bytes()),
+                .and_then(|layout| layout.size().bytes()),
             _ => None,
         };
         let mut struct_array_shape = match &expression {
@@ -15141,7 +15304,7 @@ impl Parser {
                         struct_name
                             .as_ref()
                             .and_then(|name| self.struct_layouts.get(name))
-                            .map(|layout| layout.size_bytes())
+                            .and_then(|layout| layout.size().bytes())
                     }) && let Some(base_struct_name) = &struct_name
                         && self.struct_layouts.contains_key(base_struct_name)
                     {
@@ -15453,7 +15616,7 @@ impl Parser {
                     {
                         let field =
                             self.resolve_union_field_metadata(base_union_name, &field_name)?;
-                        let pointer = self.offset_field_pointer(base, field.offset_bytes);
+                        let pointer = self.offset_field_pointer(base, field.offset);
                         struct_name = field.struct_name.clone();
                         union_name = None;
                         struct_array_element_width = None;
@@ -15466,7 +15629,7 @@ impl Parser {
                             base: Box::new(surface_base),
                             field: field_name,
                             lowered: lowered_field_expression(pointer, &field),
-                            offset_bytes: field.offset_bytes,
+                            offset_bytes: field.offset,
                         };
                     } else if let Some(base_struct_name) = &struct_name
                         && self.struct_layouts.contains_key(base_struct_name)
@@ -15487,7 +15650,7 @@ impl Parser {
                             base: Box::new(surface_base),
                             field: field_name,
                             lowered: lowered_field_expression(pointer, &field),
-                            offset_bytes: field.offset_bytes,
+                            offset_bytes: field.offset,
                         };
                     } else {
                         expression = ContractExpression::Field {
@@ -15495,7 +15658,7 @@ impl Parser {
                             base: Box::new(surface_base),
                             field: field_name.clone(),
                             lowered: self.resolve_field_load(base, &field_name)?,
-                            offset_bytes: 0,
+                            offset_bytes: crate::kernel::LayoutOffset::Bytes(0),
                         };
                         struct_array_element_width = None;
                         struct_array_shape = None;
@@ -15536,7 +15699,7 @@ impl Parser {
                         base: Box::new(expression),
                         field,
                         lowered,
-                        offset_bytes: 0,
+                        offset_bytes: crate::kernel::LayoutOffset::Bytes(0),
                     };
                 }
                 Some(Token::LBracket) => {
@@ -16287,16 +16450,22 @@ impl Parser {
         }
 
         if self.peek_ident() == Some("sizeof") && self.peek_next() == Some(&Token::LParen) {
-            let allocation_size = self.whole_allocation_size_at(self.position);
             self.position += 2;
             let bytes = if self.peek_ident() == Some("struct") {
                 self.position += 1;
                 let name = self.expect_ident("struct name")?;
                 self.expect(Token::RParen)?;
-                self.struct_layouts
+                let size = self
+                    .struct_layouts
                     .get(&name)
                     .ok_or_else(|| self.error(format!("unknown struct declaration `{name}`")))?
-                    .size_bytes()
+                    .size();
+                if let crate::kernel::LayoutSize::Of(_) = size {
+                    return Ok(ContractExpression::ProgramExpression(
+                        ProgramExpression::Value(ProgramValue::UInt64(size.term())),
+                    ));
+                }
+                size.concrete()
             } else {
                 // A Rust sidecar names the type as Rust does, `crate::Node`.
                 let parsed_type = if self.verifies_rust() {
@@ -16308,22 +16477,25 @@ impl Parser {
                 if parsed_type.interface_type == InterfaceType::Void {
                     return Err(self.error("`sizeof(void)` is not supported"));
                 }
-                if let InterfaceType::Parameter(_) = parsed_type.interface_type {
-                    return Err(self.error(
-                        "the size of an abstract type is not the same at every type argument",
+                // The size of an abstract type is the type's own, a number
+                // Click does not know: `sizeof(T)`, which each instance reads
+                // as its type argument's size.
+                if let InterfaceType::Parameter(parameter) = parsed_type.interface_type {
+                    return Ok(ContractExpression::ProgramExpression(
+                        ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term())),
                     ));
                 }
                 match &parsed_type.struct_name {
                     // A C++ record named as the source names it, `Node`.
                     Some(name) if !parsed_type.struct_pointer => {
-                        // A generic template's record at abstract arguments
-                        // is laid out at a word for each value, which its
-                        // instances are not: its size is not one number.
-                        if !allocation_size && self.layout_holds_abstract_value(name) {
-                            return Err(self.error(format!(
-                                "the size of `{}` depends on its abstract type arguments",
-                                crate::languages::display_source_names(name)
-                            )));
+                        // A symbolic struct's size is its `sizeof` term, a
+                        // number the instance fixes, as `sizeof(T)` is.
+                        if let Some(size @ crate::kernel::LayoutSize::Of(_)) =
+                            self.struct_layouts.get(name).map(|layout| layout.size())
+                        {
+                            return Ok(ContractExpression::ProgramExpression(
+                                ProgramExpression::Value(ProgramValue::UInt64(size.term())),
+                            ));
                         }
                         self.struct_layouts
                             .get(name)
@@ -16478,7 +16650,7 @@ impl Parser {
             self.expect(Token::RParen)?;
             let lowered = |pointer| ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(pointer),
-                bytes,
+                bytes: bytes.into(),
             };
             return Ok(
                 match contract_expression_as_program_expression(&source_pointer) {

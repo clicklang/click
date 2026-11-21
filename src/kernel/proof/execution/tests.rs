@@ -2159,12 +2159,12 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
     let left_effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: left.memory().clone(),
-        writes: vec![(left_pointer.clone(), 8)],
+        writes: vec![(left_pointer.clone(), crate::kernel::AccessExtent::from(8))],
     });
     let right_effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: right.memory().clone(),
-        writes: vec![(right_pointer.clone(), 4)],
+        writes: vec![(right_pointer.clone(), crate::kernel::AccessExtent::from(4))],
     });
     let parent = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
     let mut left_core = parent.clone();
@@ -2212,7 +2212,11 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
             Proposition::MemoryMutatesOnly { before: effect_before, after, writes }
                 if effect_before == before.memory()
                     && after == joined.memory()
-                    && writes == &vec![(left_pointer, 8), (right_pointer, 4)]
+                    && writes
+                    == &vec![
+                        (left_pointer, crate::kernel::AccessExtent::from(8)),
+                        (right_pointer, crate::kernel::AccessExtent::from(4)),
+                    ]
         )
     ));
 }
@@ -2230,7 +2234,7 @@ fn checked_interface_effects_reject_uncertified_memory_effects() {
     let effect = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: after.memory().clone(),
-        writes: vec![(pointer, 4)],
+        writes: vec![(pointer, crate::kernel::AccessExtent::from(4))],
     });
     let parent = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
     let mut changed_core = parent.clone();
@@ -2271,7 +2275,10 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     let mutation = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
         before: before.memory().clone(),
         after: after.memory().clone(),
-        writes: vec![(declared_pointer.clone(), 4)],
+        writes: vec![(
+            declared_pointer.clone(),
+            crate::kernel::AccessExtent::from(4),
+        )],
     });
     let mut mutation_core = parent.clone();
     mutation_core.state = after.clone().into();
@@ -3515,6 +3522,99 @@ fn resource_cell_naming_checks_the_recorded_integer_version_after_forgetting_a_n
     let other = without_name();
     assert_eq!(before.memory(), other.memory());
     assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+}
+
+#[test]
+fn resource_pointer_cell_keeps_the_complete_read_from_its_recorded_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let ty = ProgramType::Int32Pointer;
+    let bytes = ty.byte_width();
+    let initial = ExecutionState::new().with_memory(SymbolicMemory::new().with_block("other", 4));
+    let without_name = || {
+        let stored = initial.clone().with_memory(initial.memory().clone().store(
+            slot.clone(),
+            ProgramValue::typed_pointer(Address::symbolic(Variable(986_220)), ty),
+        ));
+        let forgotten =
+            stored
+                .memory()
+                .without_possible_aliasing_cells(&slot, bytes, &PureFactContext::new());
+        stored.with_memory(forgotten)
+    };
+    let before = without_name();
+    assert!(before.memory().known_value(&slot).is_none());
+    let source = before.program_point();
+    let version = source.indexed_typed_version(&slot, ty).unwrap();
+    let pointer = crate::kernel::Pointer::from_point_read(version, ty, &slot);
+    let expected = ProgramValue::Pointer(pointer.clone());
+    let named = before
+        .memory()
+        .clone()
+        .materialize_cell_at(slot.clone(), ty, &source);
+    assert_eq!(named.known_value(&slot), Some(expected.clone()));
+    assert!(super::memory_only_adds_named_cells(&before, &named).is_ok());
+
+    let work = [1, 8, 64, 256].map(|count| {
+        let run = before
+            .memory()
+            .clone()
+            .with_named_cell_run(slot.clone(), bytes, ty, 0, count, source.clone())
+            .unwrap();
+        let ((value, checked), work) = crate::instrumentation::measure_deterministic_work(|| {
+            (
+                run.known_value(&slot),
+                super::memory_only_adds_named_cells(&before, &run),
+            )
+        });
+        assert_eq!(value, Some(expected.clone()));
+        assert!(checked.is_ok());
+        work
+    });
+    assert!(work.iter().all(|units| *units <= work[0] + 8), "{work:?}");
+
+    let forged = before.memory().clone().materialize_named_cell(
+        slot.clone(),
+        ProgramValue::Pointer(pointer.with_provenance(std::sync::Arc::new(Address::null()))),
+    );
+    assert!(super::memory_only_adds_named_cells(&before, &forged).is_err());
+    let other = without_name();
+    assert_eq!(before.memory(), other.memory());
+    assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+}
+
+#[test]
+fn resource_float_cell_naming_distinguishes_equal_memory_source_points() {
+    use crate::kernel::KernelFloatType;
+    let _session = crate::kernel::VerificationSession::enter();
+    let slot = Address {
+        base: crate::kernel::AddressBase::ExternalArgument,
+        offset: crate::kernel::AddressOffset::Constant(0),
+    };
+    let before = ExecutionState::new().begin_function_entry_memory();
+    let other = before.clone().begin_function_entry_memory();
+    assert_eq!(before.memory(), other.memory());
+    for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
+        let point = before.program_point();
+        let named = before.memory().clone().materialize_cell_at(
+            slot.clone(),
+            format.program_type(),
+            &point,
+        );
+        assert_eq!(
+            named.known_value(&slot),
+            Some(format.value(MachineTerm::MemoryLoad(
+                point.for_exact_read(),
+                Box::new(slot.clone()),
+                format.load_kind(),
+            ))),
+        );
+        assert!(super::memory_only_adds_named_cells(&before, &named).is_ok());
+        assert!(super::memory_only_adds_named_cells(&other, &named).is_err());
+    }
 }
 
 #[test]

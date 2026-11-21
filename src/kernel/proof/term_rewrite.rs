@@ -801,7 +801,11 @@ fn collect_algebraic_carriers_seen(
             pointer,
         } => {
             collect_algebraic_value_carriers(
-                &AlgebraicTermNode::memory_load_carrier_value(memory, pointer),
+                &AlgebraicTermNode::memory_load_carrier_value(
+                    memory,
+                    pointer,
+                    &term.algebraic_type,
+                ),
                 variables,
                 seen,
             );
@@ -2086,6 +2090,20 @@ impl<'a> TermRewrite<'a> {
 
     fn preserves_algebraic_matches(&self) -> bool {
         self.algebraic.is_some() || self.integer_exact.is_some() || self.integer_variables.is_some()
+    }
+
+    fn preserves_machine_conditional(&self, guard: &ConditionTerm) -> bool {
+        self.integer_exact.is_some()
+            || (self.integer_variables.is_some()
+                && matches!(
+                    guard,
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                        relation: CompareRelation::Equal,
+                        left,
+                        right,
+                    } if left.as_const().is_some() && right.as_const().is_some()
+                ))
     }
 
     /// Exact Integer congruence over the selected logical DAG. Internal
@@ -3594,6 +3612,16 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             Proposition::ConditionIs(condition, value) => {
+                // A closed float predicate has no occurrence of the Integer
+                // binder. Keep its arithmetic under structural substitution.
+                if self.integer_variables.is_some()
+                    && condition
+                        .operand_view()
+                        .closed_float_predicate_value()
+                        .is_some()
+                {
+                    return proposition.clone();
+                }
                 self.reserve_condition_variables_once(condition.native_compat());
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
@@ -3867,7 +3895,7 @@ impl<'a> TermRewrite<'a> {
                             &crate::kernel::memory_history::canonical_value_load_memory(
                                 point.shared_memory(),
                                 &pointer,
-                                crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                crate::kernel::AccessExtent::of_algebraic(&term.algebraic_type),
                             ),
                         ),
                         pointer: Box::new(pointer),
@@ -3878,7 +3906,11 @@ impl<'a> TermRewrite<'a> {
                 point: memory,
                 pointer,
             } => {
-                let carrier = AlgebraicTermNode::memory_load_carrier_value(memory, pointer);
+                let carrier = AlgebraicTermNode::memory_load_carrier_value(
+                    memory,
+                    pointer,
+                    &term.algebraic_type,
+                );
                 match self.field(&carrier) {
                     AlgebraicValue::Program(value) => {
                         let rewritten = AlgebraicTermNode::memory_load_from_carrier(&value)
@@ -3891,10 +3923,12 @@ impl<'a> TermRewrite<'a> {
                                 // A projection names the original selected cell.
                                 // Moving the read names the substituted cell at
                                 // its recorded observation, as lowering does.
+                                let extent =
+                                    crate::kernel::AccessExtent::of_algebraic(&term.algebraic_type);
                                 let origin = crate::kernel::prelude::value_load_origin(
                                     memory.shared_memory(),
                                     pointer,
-                                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                    extent,
                                 )
                                 .unwrap_or_else(|| memory.shared_memory().clone());
                                 AlgebraicTermNode::MemoryLoad {
@@ -3902,7 +3936,7 @@ impl<'a> TermRewrite<'a> {
                                         &crate::kernel::memory_history::canonical_value_load_memory(
                                             &origin,
                                             &moved_pointer,
-                                            crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                            extent,
                                         ),
                                     ),
                                     pointer: moved_pointer,
@@ -6677,28 +6711,21 @@ impl<'a> TermRewrite<'a> {
                 if let Some(conditions) = &mut self.collected_conditions {
                     conditions.push(condition.as_ref().clone());
                 }
-                // Re-run the condition through its own smart constructor. A
-                // rewrite that replaced the compared terms by literals has
-                // decided this conditional, and a decided conditional is one
-                // of its arms: `MachineTerm::if_then_else` would never
-                // have built it, so leaving it standing is a term that no
-                // lowering of the same source produces.
+                // Binder substitution preserves a retained closed guard. Ordinary
+                // computation can still decide it before walking an unselected arm.
+                let preserve = self.preserves_machine_conditional(condition);
                 let condition = self.condition(condition);
-                let condition = if self.integer_exact.is_some() {
+                let condition = if preserve {
                     condition
                 } else {
                     folded_machine_condition(condition)
                 };
-                if self.integer_exact.is_none()
-                    && let ConditionTerm::Constant(value) = condition
-                {
+                if !preserve && let ConditionTerm::Constant(value) = condition {
                     return self.bits(if value { then_term } else { else_term });
                 }
                 let then_term = self.bits(then_term);
                 let else_term = self.bits(else_term);
-                // Arms the rewrite made equal decide nothing either, as
-                // `MachineTerm::if_then_else` would have built them.
-                if self.integer_exact.is_none() {
+                if !preserve {
                     return MachineTerm::if_then_else(condition, then_term, else_term);
                 }
                 MachineTerm::If {

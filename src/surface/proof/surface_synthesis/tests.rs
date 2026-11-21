@@ -4063,7 +4063,7 @@ fn pointee_layout_spells_a_field_load_at_its_byte_offset() {
         expression: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
             pointer: Box::new(ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(ProgramExpression::Variable("p".into())),
-                bytes: 8,
+                bytes: 8.into(),
             }),
             value_type: ProgramType::Int32,
             volatile: false,
@@ -4577,6 +4577,95 @@ fn ordinary_indexed_integer_read_work_is_bounded_as_path_grows() {
     check_local_read_work(ProgramType::UInt64, ProgramType::UInt32);
     check_local_read_work(ProgramType::Int128, ProgramType::UInt128);
     check_local_read_work(ProgramType::UInt128, ProgramType::Int128);
+}
+
+#[test]
+fn whole_static_read_selects_and_replays_its_recorded_store() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let scalar = SymbolicMemory::global_pointer("counter");
+    let other = SymbolicMemory::global_pointer("other_counter");
+    let ty = ProgramType::Int32;
+    let entry = ExecutionState::new()
+        .with_memory(
+            SymbolicMemory::new()
+                .with_block(scalar.base.clone(), 4)
+                .with_block(other.base.clone(), 4),
+        )
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(scalar.clone(), ProgramType::Int32Pointer),
+        )
+        .begin_function_entry_memory();
+    let written = local_read_test_store(&entry, &scalar, ty, 7);
+    let claim = local_read_test_claim(ty);
+    let expected = relower_written_proposition(&claim, &written).unwrap();
+    let read = local_test_read_operand(&expected, ty);
+    let MachineTerm::MemoryLoad(point, _, crate::kernel::LoadKind::Int32) = read else {
+        panic!("whole static read: {read:?}");
+    };
+    assert_eq!(point.read_version_id(), written.program_point_id());
+
+    let work = [1, 8, 64, 256].map(|count| {
+        let mut reader = written.clone();
+        for value in 0..count {
+            reader = local_read_test_store(&reader, &other, ty, value);
+        }
+        let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
+            relower_written_proposition(&claim, &reader).unwrap()
+        });
+        assert_eq!(lowered, expected);
+        work
+    });
+    assert!(work.iter().all(|units| *units <= work[0] + 8), "{work:?}");
+
+    let replaced = local_read_test_store(&written, &scalar, ty, 7);
+    assert_eq!(written.memory(), replaced.memory());
+    assert_ne!(
+        relower_written_proposition(&claim, &replaced).unwrap(),
+        expected
+    );
+    let selector = ProgramPointSelector::Mark("written".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), written.clone());
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let root = crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, read);
+    let raised = raise_kernel_term(
+        &root,
+        ParameterBinding::default(),
+        &replaced,
+        &BTreeMap::new(),
+    )
+    .expect("the earlier static read has a recorded spelling");
+    assert!(matches!(&raised, ContractExpression::At { selector: at, .. } if at == &selector));
+    let mut replay = claim;
+    let ClickProposition::Comparison { left, .. } = &mut replay else {
+        unreachable!("test comparison");
+    };
+    *left = raised;
+    assert_eq!(
+        relower_written_proposition_with_states(&replay, &replaced, &replaced, &points),
+        Ok(expected)
+    );
+
+    let partial = local_read_test_store(&written, &scalar, ProgramType::UInt8, 7);
+    assert!(
+        partial
+            .program_point()
+            .ordinary_typed_version(&scalar, ty)
+            .is_none()
+    );
+
+    let alias = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let may_alias = local_read_test_store(&written, &alias, ty, 9);
+    assert!(
+        may_alias
+            .program_point()
+            .ordinary_typed_version(&scalar, ty)
+            .is_none()
+    );
 }
 
 #[test]
@@ -5714,19 +5803,20 @@ fn float_pointer_casts_round_trip_native_load_spelling() {
                     &PureFactContext::new(),
                 )
                 .unwrap();
-            let read = MachineTerm::MemoryLoad(
-                crate::kernel::ProgramPoint::at(
-                    &(crate::kernel::intern_memory_ref(state.memory())),
-                ),
-                Box::new(pointer.clone()),
-                kind,
-            );
-            let expected = match value_type {
-                ProgramType::Float32 => ProgramValue::Float32(read),
-                ProgramType::Float64 => ProgramValue::Float64(read),
-                _ => unreachable!(),
+            assert_eq!(value.program_type(), value_type, "{text}");
+            let (ProgramValue::Float32(read) | ProgramValue::Float64(read)) = value else {
+                panic!("{text}: expected a float value");
             };
-            assert_eq!(value, expected, "{text}");
+            let MachineTerm::MemoryLoad(point, address, actual_kind) = read else {
+                panic!("{text}: expected a float load");
+            };
+            assert_eq!(actual_kind, kind, "{text}");
+            assert_eq!(*address, pointer, "{text}");
+            assert_eq!(
+                point.read_version_id(),
+                state.observation_point_id(),
+                "{text}"
+            );
         }
     }
     for text in ["p as (float)", "p as (double)"] {
@@ -5839,6 +5929,44 @@ fn a_boolean_cell_read_round_trips_as_a_typed_load() {
     );
 }
 
+fn evaluate_float_cell_read(
+    state: &ExecutionState,
+    pointer: &Address,
+    format: crate::kernel::KernelFloatType,
+    exact: bool,
+) -> MachineTerm {
+    use crate::kernel::{SpecExpression, SpecPoint};
+    let ty = format.program_type();
+    let expression = SpecExpression::MemoryLoad {
+        point: SpecPoint::Current,
+        pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
+            pointer.clone(),
+            ty.pointer_to().unwrap(),
+        ))),
+        value_type: ty,
+        exact,
+    };
+    let (value, _) =
+        crate::kernel::program_evaluate_speresource_expression_with_checked_obligations(
+            state,
+            &expression,
+            None,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert_eq!(value.program_type(), ty);
+    let (ProgramValue::Float32(read) | ProgramValue::Float64(read)) = value else {
+        panic!("expected a float value");
+    };
+    let MachineTerm::MemoryLoad(point, address, kind) = &read else {
+        panic!("expected a float load");
+    };
+    assert_eq!(point.read_version_id(), state.observation_point_id());
+    assert_eq!(address.as_ref(), pointer);
+    assert_eq!(*kind, format.load_kind());
+    read
+}
+
 #[test]
 fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
     for (format, spelling) in [
@@ -5856,11 +5984,7 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
                 "p",
                 ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
             );
-        let read = MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(state.memory()))),
-            Box::new(pointer),
-            format.load_kind(),
-        );
+        let read = evaluate_float_cell_read(&state, &pointer, format, false);
         let root = crate::kernel::KernelTermImport::default().float(format, &read);
         assert!(matches!(
             root.node(),
@@ -5906,6 +6030,15 @@ fn common_float_reads_round_trip_existing_cast_dereference_syntax() {
 
 #[test]
 fn common_float_reads_retain_old_and_recorded_states() {
+    check_float_reads_at_old_and_recorded_states(false);
+}
+
+#[test]
+fn exact_float_reads_name_distinct_points_with_equal_memory() {
+    check_float_reads_at_old_and_recorded_states(true);
+}
+
+fn check_float_reads_at_old_and_recorded_states(exact: bool) {
     for format in [
         crate::kernel::KernelFloatType::Float32,
         crate::kernel::KernelFloatType::Float64,
@@ -5921,14 +6054,24 @@ fn common_float_reads_retain_old_and_recorded_states() {
                 "p",
                 ProgramValue::typed_pointer(pointer.clone(), ProgramType::UInt8Pointer),
             );
-        let now = selected
-            .clone()
-            .with_memory(selected.memory().clone().with_block("later-block", 8));
-        let read = MachineTerm::MemoryLoad(
-            crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(selected.memory()))),
-            Box::new(pointer),
-            format.load_kind(),
-        );
+        let (now, read) = if exact {
+            let now = selected.clone().begin_function_entry_memory();
+            assert_eq!(selected.memory(), now.memory());
+            assert_ne!(selected.program_point_id(), now.program_point_id());
+            let read = evaluate_float_cell_read(&selected, &pointer, format, true);
+            assert_ne!(read, evaluate_float_cell_read(&now, &pointer, format, true));
+            (now, read)
+        } else {
+            let now = selected
+                .clone()
+                .with_memory(selected.memory().clone().with_block("later-block", 8));
+            let read = MachineTerm::MemoryLoad(
+                crate::kernel::ProgramPoint::of_memory(selected.memory()),
+                Box::new(pointer),
+                format.load_kind(),
+            );
+            (now, read)
+        };
         let root = crate::kernel::KernelTermImport::default().float(format, &read);
         let current = raise_kernel_term(
             &root,
@@ -5971,6 +6114,7 @@ fn common_float_reads_retain_old_and_recorded_states() {
                 );
             }
             let text = diagnostics::describe_contract_expression(&surface);
+            assert_eq!(text.contains("exact("), exact, "{text}");
             let zero = if format == crate::kernel::KernelFloatType::Float32 {
                 "float32_from_bits(0)"
             } else {
@@ -9450,11 +9594,24 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
             ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer),
         )
         .begin_function_entry_memory();
-    let post = entry.clone().with_memory(
-        entry
-            .memory()
-            .clone()
-            .store(address, ProgramValue::Int32(MachineTerm::constant(9))),
+    let post = entry.clone().with_memory(entry.memory().clone().store(
+        address.clone(),
+        ProgramValue::Int32(MachineTerm::constant(9)),
+    ));
+    let entry_view = entry.clone().with_materialized_memory_at_current_point(
+        entry.memory().clone().materialize_cell_at(
+            address,
+            ProgramType::Int32,
+            &entry.program_point(),
+        ),
+    );
+    assert_eq!(
+        entry_view.observation_point_id(),
+        entry.observation_point_id()
+    );
+    assert_ne!(
+        entry_view.program_point().shared_memory().arena_id(),
+        entry.program_point().shared_memory().arena_id()
     );
     let file = crate::surface::parse(
         "predicate first_is(p: int32[], value: int32) { p[0] == value }
@@ -9467,18 +9624,18 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
     let points = RecordedStates::new();
     let predicates = PredicateEnvironment::new(file.predicate_definitions());
     let functions = ClickFunctionEnvironment::new(&[]);
-    let lower = |surface: &ClickProposition| {
+    let lower = |surface: &ClickProposition, entry: &ExecutionState| {
         crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
             surface,
             &PureFactContext::new(),
             ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
-            FixedStateFrame::new(&entry, &post, None, &points),
+            FixedStateFrame::new(entry, &post, None, &points),
             SpecDefinitions::new(&predicates, &functions),
             FixedStateLoweringOptions::default(),
         )
         .map(|(proposition, _, _, _)| proposition)
     };
-    let original = lower(written).unwrap();
+    let original = lower(written, &entry).unwrap();
     let Proposition::Predicate { arguments, .. } = &original else {
         panic!("declared predicate");
     };
@@ -9490,7 +9647,7 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
     let raised = synthesize_surface_proposition_at_entry_and_post(
         &original,
         ParameterBinding::default(),
-        &entry,
+        &entry_view,
         &post,
     )
     .expect("the indexed array argument has a spelling");
@@ -9498,7 +9655,190 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
         matches!(&raised, ClickProposition::PredicateCall { arguments, .. }
         if matches!(arguments.first(), Some(ContractExpression::Old(_))))
     );
-    assert_eq!(lower(&raised), Ok(original));
+    assert_eq!(lower(&raised, &entry_view), Ok(original));
+}
+
+#[test]
+fn declared_predicate_array_raises_at_its_write_point() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Address {
+        base: AddressBase::ExternalArgument,
+        offset: AddressOffset::Constant(0),
+    };
+    let entry = ExecutionState::new()
+        .with_local(
+            "p",
+            ProgramValue::typed_pointer(address.clone(), ProgramType::Int32Pointer),
+        )
+        .begin_function_entry_memory();
+    let write = |state: &ExecutionState| {
+        state.clone().with_memory(state.memory().clone().store(
+            address.clone(),
+            ProgramValue::Int32(MachineTerm::constant(7)),
+        ))
+    };
+    let first = write(&entry);
+    let second = write(&first);
+    assert_eq!(first.memory(), second.memory());
+
+    let file = crate::surface::parse(
+        "predicate first_is(p: int32[], value: int32) { p[0] == value }
+         theorem probe(p: int32*) { requires first_is(p, 7); ensures true; }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+        panic!("predicate premise");
+    };
+    let selector = ProgramPointSelector::Mark("first".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), first.clone());
+    let predicates = PredicateEnvironment::new(file.predicate_definitions());
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let lower = |surface: &ClickProposition, current: &ExecutionState| {
+        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+            surface,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
+            FixedStateFrame::new(&entry, current, None, &points),
+            SpecDefinitions::new(&predicates, &functions),
+            FixedStateLoweringOptions::default(),
+        )
+        .map(|(proposition, _, _, _)| proposition)
+    };
+    let original = lower(written, &first).unwrap();
+    let Proposition::Predicate { arguments, .. } = &original else {
+        panic!("declared predicate");
+    };
+    assert!(matches!(
+        arguments.get(1),
+        Some(Term::ArrayReadPoint(point))
+            if point.read_version_id() == first.observation_point_id()
+    ));
+    assert_ne!(lower(written, &second).unwrap(), original);
+
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let raised = synthesize_surface_proposition(&original, ParameterBinding::default(), &second)
+        .expect("the array reference retains its write point");
+    assert!(
+        matches!(&raised, ClickProposition::PredicateCall { arguments, .. }
+        if matches!(arguments.first(), Some(ContractExpression::At { selector: at, .. }) if at == &selector))
+    );
+    assert_eq!(lower(&raised, &second), Ok(original));
+}
+
+#[test]
+fn fixed_width_opaque_field_observation_round_trips_its_store_point() {
+    use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, ExpressionOutcome, TypeParameterName};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let parameter = TypeParameterName::of(&crate::surface::generics::primitive_instance_type(
+        "Vec",
+        &[crate::kernel::AlgebraicValueType::Program(
+            ProgramType::UInt32,
+        )],
+    ));
+    let ty = ProgramType::Parameter(parameter);
+    let block = local_read_test_address("record");
+    let field = block.offset_by_bytes(8);
+    let pointer =
+        ProgramValue::typed_pointer(field.clone(), ProgramType::ParameterPointer(parameter));
+    let parameters = [crate::languages::interface::ImportedParameter::new(
+        InterfaceType::ParameterPointer(parameter),
+        "p".into(),
+        None,
+    )];
+    let arguments = [ProgramExpression::Value(pointer.clone())];
+    let state = ExecutionState::new()
+        .with_memory(SymbolicMemory::new().with_block(block.base.clone(), 16))
+        .with_local("p", pointer);
+    let opaque = |parameter: TypeParameterName, id| {
+        ProgramValue::Parameter(Box::new(AlgebraicTerm {
+            algebraic_type: parameter.algebraic_type(),
+            node: AlgebraicTermNode::Variable(Variable(id)),
+        }))
+    };
+    let store = |state: &ExecutionState, address: &Address, value| {
+        state
+            .clone()
+            .with_memory(state.memory().clone().store(address.clone(), value))
+    };
+    let first = store(&state, &field, opaque(parameter, 1008403));
+    let observe = |state: &ExecutionState| {
+        let memory =
+            SymbolicMemory::new().materialize_cell_at(field.clone(), ty, &state.program_point());
+        let ExpressionOutcome::Value(ProgramValue::Parameter(term)) = memory.load(&field) else {
+            panic!("expected a named opaque resource cell");
+        };
+        term
+    };
+    let first_read = observe(&first);
+    assert!(
+        matches!(&first_read.node, AlgebraicTermNode::MemoryLoad { point, .. }
+        if point.read_version_id() == first.program_point_id())
+    );
+
+    let mut current = first.clone();
+    let mut samples = Vec::new();
+    for count in [4, 16, 64, 256] {
+        for value in 0..count {
+            current = local_read_test_store(&current, &block, ProgramType::Int32, value);
+        }
+        let ((version, read), work) = crate::instrumentation::measure_deterministic_work(|| {
+            (
+                current.program_point().ordinary_typed_version(&field, ty),
+                observe(&current),
+            )
+        });
+        assert_eq!(
+            version.and_then(|point| point.read_version_id()),
+            first.program_point_id()
+        );
+        assert_eq!(read, first_read);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|&work| work <= samples[0] + 8),
+        "{samples:?}"
+    );
+
+    let second = store(&current, &field, opaque(parameter, 1008404));
+    let second_read = observe(&second);
+    assert!(
+        matches!(&second_read.node, AlgebraicTermNode::MemoryLoad { point, .. }
+        if point.read_version_id() == second.program_point_id())
+    );
+    assert_ne!(first_read, second_read);
+
+    let goal = Proposition::Equal(
+        Term::Algebraic((*first_read).into()),
+        Term::Algebraic((*second_read).into()),
+    );
+    let selector = ProgramPointSelector::Mark("before".into());
+    let mut points = RecordedStates::new();
+    points.insert(selector.clone(), first);
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    let raised = synthesize_surface_proposition(
+        &goal,
+        ParameterBinding::new(&parameters, &arguments),
+        &second,
+    )
+    .expect("the indexed field reads have a Click spelling");
+    assert!(matches!(&raised, ClickProposition::Comparison { left, .. }
+        if matches!(left, ContractExpression::At { selector: point, .. } if *point == selector)));
+    assert_eq!(
+        relower_written_proposition_with_states(&raised, &state, &second, &points),
+        Ok(goal),
+    );
+
+    let generic = TypeParameterName::intern("UnknownOpaqueField");
+    assert!(generic.has_abstract_size());
+    let unknown_overlap = store(&second, &block, opaque(generic, 1008405));
+    assert!(
+        unknown_overlap
+            .program_point()
+            .ordinary_typed_version(&field, ty)
+            .is_none()
+    );
 }
 
 #[test]

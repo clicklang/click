@@ -139,7 +139,7 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
                 value.common_operand(),
                 KernelTerm::retained_native_machine_operand(
                     MachineIntegerType::UInt64,
-                    &MachineTerm::uint64_constant(u64::from(*bytes)),
+                    &bytes.term(),
                 ),
             ];
             paths.extend(
@@ -790,7 +790,7 @@ mod tests {
             ProgramExpression::Add(Box::new(pointer.clone()), Box::new(wide)),
             ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(pointer),
-                bytes: 8,
+                bytes: 8.into(),
             },
             ProgramExpression::Add(
                 Box::new(ProgramExpression::Value(ProgramValue::typed_pointer(
@@ -884,7 +884,7 @@ mod tests {
             },
             ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(source.clone()),
-                bytes: 0,
+                bytes: 0.into(),
             },
         ];
         for explicit_qualification in [false, true] {

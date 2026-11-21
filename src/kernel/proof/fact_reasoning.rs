@@ -33,6 +33,11 @@ pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
 }
 
 fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
+    if let Proposition::ConditionIs(condition, expected) = goal
+        && let Some(actual) = condition.operand_view().closed_float_predicate_value()
+    {
+        return actual == *expected;
+    }
     if let Some(holds) =
         crate::kernel::spec::checks_retained_sequence_comparison(goal, true, |condition, truth| {
             normalizes_context_free_reduced(&Proposition::condition_is(condition.clone(), truth))
@@ -2250,7 +2255,7 @@ mod tests {
         let effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
             before: before.memory().clone(),
             after: after.memory().clone(),
-            writes: vec![(actual.clone(), 1)],
+            writes: vec![(actual.clone(), crate::kernel::AccessExtent::from(1))],
         });
         let footprint = Resource::Footprint(crate::kernel::RegionFootprint::transition(
             "byte store".into(),
@@ -2579,7 +2584,7 @@ mod tests {
             PureFactContext::new().assume_proposition(Proposition::MemoryMutatesOnly {
                 before: before.clone(),
                 after: after.clone(),
-                writes: vec![(written, 4)],
+                writes: vec![(written, crate::kernel::AccessExtent::from(4))],
             });
         // The canonical memories are the cells' versions. SymbolicMemory states that
         // differ only by a declared block or a write to another cell share

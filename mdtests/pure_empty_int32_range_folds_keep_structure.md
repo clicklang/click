@@ -1,4 +1,4 @@
-# Empty int32 range folds retain their binders and endpoints
+# Simple int32 range folds retain their binders and endpoints
 
 ```click
 theorem literal_empty() {
@@ -35,10 +35,33 @@ theorem observed_empty(n: int32, seed: int32) {
         == to_integer(seed) + 1 by { normalize(); }
 }
 
-theorem literal_nonempty() {
+theorem longer_literal_nonempty() {
     ensures forall (unused: Integer) {
-        (1..3).fold(5, |acc: int32, k: int32| -> int32 { k }) == 2
+        (1..4).fold(5, |acc: int32, k: int32| -> int32 { k }) == 3
     } by { intro(); normalize(); }
+}
+
+theorem literal_body() {
+    ensures forall (unused: Integer) {
+        (1..3).fold(5, |acc: int32, k: int32| -> int32 { 7 }) == 7
+    } by { intro(); known(); }
+}
+
+theorem accumulator_projection(seed: int32) {
+    ensures forall (unused: Integer) {
+        (1..3).fold(seed, |acc: int32, k: int32| -> int32 { acc }) == seed
+    } by { intro(); normalize(); }
+}
+
+theorem accumulator_bound(seed: int32) {
+    requires seed < 9;
+    ensures (1..3).fold(seed, |acc: int32, k: int32| -> int32 { acc }) < 9
+        by { known(); }
+}
+
+theorem negative_item() {
+    ensures ((-3)..(-1)).fold(5, |acc: int32, k: int32| -> int32 { k }) < -1
+        by { normalize(); }
 }
 
 theorem symbolic_control(lo: int32, hi: int32) {

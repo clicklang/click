@@ -350,3 +350,30 @@ fn float_call_import_and_export_scale_with_explicit_native_output() {
         );
     }
 }
+
+#[test]
+fn closed_float_predicate_checks_each_shared_arithmetic_node_once() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = KernelFloatType::Float64;
+        let zero = KernelTermImport::default().float(format, &MachineTerm::uint64_constant(0));
+        let mut operand = zero.clone();
+        for _ in 0..size {
+            operand = KernelTerm::float_binary(
+                format,
+                FloatBinaryOperator::Add,
+                [operand.clone(), operand],
+            )
+            .unwrap();
+        }
+        let predicate =
+            KernelTerm::float_compare(format, ComparisonOperator::Equal, [operand, zero]).unwrap();
+        let exports = KernelTermExport::float_export_count();
+        let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+            BooleanOperandView::Shared(&predicate).closed_float_predicate_value()
+        });
+        assert_eq!(value, Some(true));
+        assert!(work <= 4 * size + 16, "size={size}, work={work}");
+        assert_eq!(KernelTermExport::float_export_count(), exports);
+    }
+}

@@ -2742,18 +2742,29 @@ impl LocalEnvironment {
 }
 
 impl MemoryBlock {
-    pub fn new(size: u32) -> Self {
+    /// A block of `size` bytes: a 32-bit count, or a symbolic layout's
+    /// 64-bit `sizeof`.
+    pub fn new(size: impl Into<crate::kernel::LayoutSize>) -> Self {
         Self {
-            size: AllocationSize::int32(size),
+            size: Self::allocation_size_of(size.into()),
             read_only: false,
             declared_scalar_type: None,
             declared_class: None,
         }
     }
 
-    pub fn read_only(size: u32) -> Self {
+    fn allocation_size_of(size: crate::kernel::LayoutSize) -> AllocationSize {
+        match size {
+            crate::kernel::LayoutSize::Bytes(bytes) => AllocationSize::int32(bytes),
+            crate::kernel::LayoutSize::Of(_) => {
+                AllocationSize::new(size.term(), crate::kernel::AllocationSizeKind::UInt64)
+            }
+        }
+    }
+
+    pub fn read_only(size: impl Into<crate::kernel::LayoutSize>) -> Self {
         Self {
-            size: AllocationSize::int32(size),
+            size: Self::allocation_size_of(size.into()),
             read_only: true,
             declared_scalar_type: None,
             declared_class: None,
@@ -3695,7 +3706,12 @@ impl SymbolicMemory {
             && self.heap == other.heap
     }
 
-    pub fn with_block(mut self, block: impl Into<AddressBase>, size: u32) -> Self {
+    pub fn with_block(
+        mut self,
+        block: impl Into<AddressBase>,
+        size: impl Into<crate::kernel::LayoutSize>,
+    ) -> Self {
+        let size: crate::kernel::LayoutSize = size.into();
         let block = block.into();
         // Havoc marker blocks mean "the state may have changed", never "a
         // fresh block appeared"; recording a benign block-declaration edge
@@ -3793,7 +3809,7 @@ impl SymbolicMemory {
         self,
         block: AddressBase,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
     ) -> Self {
         self.with_classed_block_or_read_only(block, declared_class, size, false)
     }
@@ -3802,7 +3818,7 @@ impl SymbolicMemory {
         self,
         block: AddressBase,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
         read_only: bool,
     ) -> Self {
         let Some(declared_class) = declared_class else {
@@ -3837,7 +3853,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn with_classed_scalar_block(
         mut self,
         block: AddressBase,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
         program_type: ProgramType,
         declared_class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
@@ -3926,6 +3942,33 @@ impl SymbolicMemory {
         )
     }
 
+    /// [`Self::with_uninitialized_block`] for a block of `size`, a number or
+    /// a symbolic layout's `sizeof`, whose every byte is unwritten.
+    pub fn with_uninitialized_block_of(
+        mut self,
+        block: impl Into<AddressBase>,
+        size: crate::kernel::LayoutSize,
+    ) -> Self {
+        let crate::kernel::LayoutSize::Of(_) = size else {
+            return self.with_uninitialized_block(block, size.concrete());
+        };
+        let block = block.into();
+        std::sync::Arc::make_mut(&mut self.blocks).insert(
+            block.clone(),
+            MemoryBlock::with_symbolic_size(AllocationSize::new(
+                size.term(),
+                crate::kernel::AllocationSizeKind::UInt64,
+            )),
+        );
+        self.with_uninitialized_object(
+            Address {
+                base: block,
+                offset: AddressOffset::Constant(0),
+            },
+            Self::UNBOUNDED_UNWRITTEN_SPAN,
+        )
+    }
+
     /// The span of an unwritten footprint whose length is not a constant,
     /// such as `owns uninitialized(p[0..n])`: every byte from its start to the
     /// end of the block is treated as possibly unwritten. That is
@@ -3997,7 +4040,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn with_block_or_read_only(
         self,
         block: impl Into<AddressBase>,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
         read_only: bool,
     ) -> Self {
         if read_only {
@@ -4010,7 +4053,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn with_read_only_block(
         mut self,
         block: impl Into<AddressBase>,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
     ) -> Self {
         let block = block.into();
         let base = intern_derivation_base(&mut self);
@@ -4027,10 +4070,11 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn with_block_without_derivation(
         mut self,
         block: impl Into<AddressBase>,
-        size: u32,
+        size: impl Into<crate::kernel::LayoutSize>,
     ) -> Self {
         let diagnostic_base = self.clone();
         let block = block.into();
+        let size: crate::kernel::LayoutSize = size.into();
         std::sync::Arc::make_mut(&mut self.blocks).insert(block.clone(), MemoryBlock::new(size));
         self.record_diagnostic_transform(
             "declare synthetic block",
@@ -4040,7 +4084,10 @@ impl SymbolicMemory {
                     base: block.clone(),
                     offset: AddressOffset::Constant(0),
                 }),
-                ProgramValue::Int32(size.into()),
+                match size {
+                    crate::kernel::LayoutSize::Bytes(bytes) => ProgramValue::Int32(bytes.into()),
+                    crate::kernel::LayoutSize::Of(_) => ProgramValue::UInt64(size.term()),
+                },
             ],
         );
         self
@@ -4212,7 +4259,18 @@ impl SymbolicMemory {
                 } else if pointer.blocks_proven_distinct(cell) {
                     CachedValueFate::Kept
                 } else if kept_owners
-                    .owned_memory_member_covering_access(cell, value.byte_width(), assumptions)
+                    .owned_memory_member_covering_extent(
+                        cell,
+                        match value {
+                            CachedValue::Cell(value) => {
+                                crate::kernel::assumptions::access_extent_of_value(value)
+                            }
+                            CachedValue::UnionView(..) => {
+                                crate::kernel::AccessExtent::Bytes(value.byte_width())
+                            }
+                        },
+                        assumptions,
+                    )
                     .is_some()
                 {
                     let value_type = match value {
@@ -5781,8 +5839,8 @@ impl SymbolicMemory {
         }
         for field in fields {
             let width = field.program_type().byte_width();
-            let from = source.offset_by_bytes(field.offset_bytes());
-            let to = destination.offset_by_bytes(field.offset_bytes());
+            let from = source.offset_by_layout(field.offset());
+            let to = destination.offset_by_layout(field.offset());
             initialized
                 .copy_exact_range_from(&snapshot.heap.initialized, &from, &to, width)
                 .expect("checked local member range");
@@ -6193,6 +6251,7 @@ impl SymbolicMemory {
 
     /// Checked compact initialization of one fresh automatic scalar array.
     /// The caller has separately checked read/write authority and coercion.
+    #[cfg(test)]
     pub(in crate::kernel) fn initialize_scalar_array(
         self,
         base: &Address,
@@ -6212,7 +6271,31 @@ impl SymbolicMemory {
         )
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn write_scalar_array_region(
+        self,
+        base: &Address,
+        element_type: ProgramType,
+        count: u32,
+        value: ProgramValue,
+        copy: bool,
+        fresh: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, RuntimeError> {
+        self.write_scalar_array_region_at(
+            base,
+            element_type,
+            count,
+            value,
+            copy,
+            fresh,
+            assumptions,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::kernel) fn write_scalar_array_region_at(
         mut self,
         base: &Address,
         element_type: ProgramType,
@@ -6221,6 +6304,7 @@ impl SymbolicMemory {
         copy: bool,
         fresh: bool,
         assumptions: &PureFactContext,
+        copy_source: Option<&ProgramPoint>,
     ) -> Result<Self, RuntimeError> {
         let bytes = count
             .checked_mul(element_type.byte_width())
@@ -6232,7 +6316,7 @@ impl SymbolicMemory {
             || self.cells.runs_in_block(&source.address().base)
                 .any(|run| !matches!(run.value_mode(), RunValueMode::Constant(_))));
         if !base.base.is_local_block() || state_copy {
-            return self.write_scalar_array_state(
+            return self.write_scalar_array_state_at(
                 base,
                 element_type,
                 count,
@@ -6240,6 +6324,7 @@ impl SymbolicMemory {
                 copy,
                 fresh,
                 assumptions,
+                copy_source,
             );
         }
         let valid_region = |pointer: &Address| {
@@ -6395,7 +6480,7 @@ impl SymbolicMemory {
                 // automatic storage. Copy the current state's unknown
                 // lanes just as for external initialized storage, retaining
                 // the represented lanes and the checks above.
-                return self.write_scalar_array_state(
+                return self.write_scalar_array_state_at(
                     base,
                     element_type,
                     count,
@@ -6403,6 +6488,7 @@ impl SymbolicMemory {
                     copy,
                     fresh,
                     assumptions,
+                    copy_source,
                 );
             }
         } else {
@@ -6454,7 +6540,31 @@ impl SymbolicMemory {
     // Authority is checked by the statement executor. External argument
     // storage follows ordinary typed-load semantics: unknown initialized
     // bytes remain symbolic. Known automatic storage must be initialized.
+    #[cfg(test)]
     pub(in crate::kernel) fn write_scalar_array_state(
+        self,
+        base: &Address,
+        element: ProgramType,
+        count: u32,
+        value: ProgramValue,
+        copy: bool,
+        fresh: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, RuntimeError> {
+        self.write_scalar_array_state_at(
+            base,
+            element,
+            count,
+            value,
+            copy,
+            fresh,
+            assumptions,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::kernel) fn write_scalar_array_state_at(
         mut self,
         base: &Address,
         element: ProgramType,
@@ -6463,6 +6573,7 @@ impl SymbolicMemory {
         copy: bool,
         fresh: bool,
         assumptions: &PureFactContext,
+        copy_source: Option<&ProgramPoint>,
     ) -> Result<Self, RuntimeError> {
         let bytes = count
             .checked_mul(element.byte_width())
@@ -6514,7 +6625,6 @@ impl SymbolicMemory {
         {
             return Err(RuntimeError::FunctionContract("scalar-array retained_state requires valid aligned storage; fresh storage must be complete and empty".into()));
         }
-        let retained_state = crate::kernel::intern_memory(self.clone());
         let mut captured_runs = Vec::new();
         let mut captured_cells = Vec::new();
         if copy {
@@ -6613,12 +6723,16 @@ impl SymbolicMemory {
                 ));
             }
             if represented != IndexIntervals::full(count) {
-                captured_runs.push(CellRun::new_with_mode(
+                let source = copy_source
+                    .filter(|point| point.has_certified_read_view())
+                    .cloned()
+                    .unwrap_or_else(|| ProgramPoint::of_memory(&self));
+                captured_runs.push(CellRun::new_at(
                     base.clone(),
                     element.byte_width(),
                     element,
                     count,
-                    retained_state,
+                    source,
                     RunValueMode::Copy {
                         source_base: pointer.clone(),
                     },
@@ -6776,12 +6890,7 @@ impl SymbolicMemory {
         program_type: ProgramType,
         source: &ProgramPoint,
     ) -> Self {
-        let value = if let ProgramType::Parameter(parameter) = program_type {
-            AlgebraicTermNode::parameter_cell_load(source, pointer.clone(), parameter)
-        } else {
-            let load = crate::kernel::eval::canonical_cell_load(source, &pointer, program_type);
-            crate::kernel::cell_run_value(program_type, load)
-        };
+        let value = crate::kernel::eval::canonical_cell_value(source, &pointer, program_type);
         self.materialize_named_cell(pointer, value)
     }
 
@@ -6935,8 +7044,13 @@ impl SymbolicMemory {
         if (invalidate_aliases
             || !self.union_cells.is_empty()
             || !self.heap.initialized.partial_map().is_empty())
-            && let Some((mut prepared, lost_knowledge)) =
-                self.prepare_store_cache(&pointer, value.byte_width(), context, authorized_range)
+            && let Some((mut prepared, lost_knowledge)) = self.prepare_store_cache_of(
+                &pointer,
+                value.byte_width(),
+                crate::kernel::assumptions::access_extent_of_value(value.native()),
+                context,
+                authorized_range,
+            )
         {
             if lost_knowledge {
                 prepared.mark_forgotten_from(&base);
@@ -7083,6 +7197,22 @@ impl SymbolicMemory {
         self.cells.get(pointer)
     }
 
+    /// Borrow an explicit cell without deriving a value for an array run slot.
+    pub(in crate::kernel) fn indexed_scalar_value(
+        &self,
+        pointer: &Address,
+    ) -> Option<&ProgramValue> {
+        self.cells.explicitly_stored_value(pointer)
+    }
+
+    /// Borrow an exact cell value, including the payload of a constant run.
+    pub(in crate::kernel) fn indexed_stored_value(
+        &self,
+        pointer: &Address,
+    ) -> Option<&ProgramValue> {
+        self.cells.exact_stored_value(pointer)
+    }
+
     /// Check the exact typed cell or a fully initialized declared word
     /// without evaluating a load, resolving aliases, or walking history.
     pub(in crate::kernel) fn indexed_read_is_defined(
@@ -7098,7 +7228,7 @@ impl SymbolicMemory {
         {
             return false;
         }
-        if let Some(value) = self.cells.explicitly_stored_value(pointer) {
+        if let Some(value) = self.indexed_scalar_value(pointer) {
             return value_type.accepts(value) || value_type.read_cell(value).is_some();
         }
         match self.cells.exact_run_slot_type(pointer) {
@@ -7912,6 +8042,20 @@ impl SymbolicMemory {
         assumptions: &PureFactContext,
         authorized_range: Option<&MemoryRange>,
     ) -> Option<(Self, bool)> {
+        self.prepare_store_cache_of(pointer, bytes, bytes.into(), assumptions, authorized_range)
+    }
+
+    /// [`Self::prepare_store_cache`] for a store reaching `extent`: a whole
+    /// object of abstract type is placed by the owner that holds it, as each
+    /// such cell is, never by its bytes.
+    fn prepare_store_cache_of(
+        &self,
+        pointer: &Address,
+        bytes: u32,
+        extent: crate::kernel::assumptions::AccessExtent,
+        assumptions: &PureFactContext,
+        authorized_range: Option<&MemoryRange>,
+    ) -> Option<(Self, bool)> {
         let normalized_pointer = Address {
             base: pointer.base.clone(),
             offset: normalize_exact_memory_loads_in_pointer_offset(&pointer.offset, assumptions),
@@ -7939,7 +8083,7 @@ impl SymbolicMemory {
         // pure-fact distinctness ladder, whose failing searches cost work in
         // every separation fact of the block. Cells ownership does not place
         // go down the ladder unchanged.
-        let owned_footprint = assumptions.owned_store_footprint(&normalized_pointer, bytes);
+        let owned_footprint = assumptions.owned_store_footprint(&normalized_pointer, extent);
         let mut run_forgot = false;
         let run_rule = |run: &CellRun| {
             let (kept, forgot) =
@@ -8007,15 +8151,42 @@ impl SymbolicMemory {
                 &owned_footprint,
                 &normalized_pointer,
                 &normalized_cell_pointer,
-                crate::kernel::reasoning::cell_access_byte_width(cell_value),
+                crate::kernel::assumptions::access_extent_of_value(cell_value),
             ) {
+                return CachedValueFate::Kept;
+            }
+            // Distinct fields of one symbolic object, by the layout's rule.
+            if crate::kernel::reasoning::memory_resolution::symbolic_fields_apart(
+                &normalized_cell_pointer,
+                crate::kernel::assumptions::access_extent_of_value(cell_value),
+                &normalized_pointer,
+                extent,
+            ) {
+                return CachedValueFate::Kept;
+            }
+            // A field of a symbolic object has no constant offset for the
+            // address ladders below; a stated separation of its object from
+            // the written bytes keeps it.
+            if crate::kernel::SymbolicLayoutName::field_displacement(
+                &normalized_cell_pointer.offset,
+            )
+            .is_some()
+                && assumptions
+                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                        &MemoryRange::of_access(
+                            &normalized_cell_pointer,
+                            crate::kernel::assumptions::access_extent_of_value(cell_value),
+                        ),
+                        &MemoryRange::of_access(&normalized_pointer, extent),
+                    )
+            {
                 return CachedValueFate::Kept;
             }
             let address_inequality_separates_bytes = crate::kernel::reasoning::access_byte_overlap(
                 &normalized_cell_pointer,
-                crate::kernel::reasoning::cell_access_byte_width(cell_value),
+                crate::kernel::assumptions::access_extent_of_value(cell_value),
                 &normalized_pointer,
-                bytes,
+                extent,
                 assumptions,
             )
                 == crate::kernel::reasoning::AccessByteOverlap::Separate;
@@ -8501,7 +8672,42 @@ impl SymbolicMemory {
     ) -> bool {
         !self.is_read_only_block(&pointer.base)
             && (self.cells.contains_key(pointer)
-                || self.access_in_bounds(pointer, value.byte_width()))
+                || self.access_extent_in_bounds(
+                    pointer,
+                    crate::kernel::assumptions::access_extent_of_value(value),
+                ))
+    }
+
+    /// [`Self::access_in_bounds`] for an access reaching `extent`. In a block
+    /// of a symbolic size, a field's access is inside its object by the
+    /// layout's rule, found by lookup: at `offsetof(L, f)` in a block of
+    /// `sizeof(L)`, reaching no further than `f`, or a whole value of `T`
+    /// at the start of a block of `sizeof(T)`.
+    pub(in crate::kernel) fn access_extent_in_bounds(
+        &self,
+        pointer: &Address,
+        extent: crate::kernel::AccessExtent,
+    ) -> bool {
+        if let crate::kernel::AccessExtent::Bytes(bytes) = extent
+            && self.access_in_bounds(pointer, bytes)
+        {
+            return true;
+        }
+        let Some(block) = self.blocks.get(&pointer.base) else {
+            return false;
+        };
+        let size = block.size();
+        match crate::kernel::SymbolicLayoutName::field_displacement(&pointer.offset) {
+            Some((None, layout, field)) => {
+                *size == layout.size_term() && layout.within_field(field, extent)
+            }
+            Some(_) => false,
+            None => {
+                pointer.offset.as_const() == Some(0)
+                    && matches!(extent, crate::kernel::AccessExtent::Object(parameter)
+                        if *size == parameter.size_term())
+            }
+        }
     }
 
     pub(in crate::kernel) fn access_in_bounds(&self, pointer: &Address, byte_width: u32) -> bool {

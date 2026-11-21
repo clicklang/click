@@ -47,7 +47,7 @@ fn unsigned_index_membership_ignores_unrelated_facts_and_stores() {
             context = context.assume_proposition(Proposition::MemoryMutatesOnly {
                 before,
                 after: memory.clone(),
-                writes: vec![(target, 1)],
+                writes: vec![(target, crate::kernel::AccessExtent::from(1))],
             });
         }
         let (membership, find_work) = crate::instrumentation::measure_deterministic_work(|| {

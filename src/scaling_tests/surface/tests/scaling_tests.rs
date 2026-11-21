@@ -3638,20 +3638,20 @@ fn array_version_work_curve(
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn an_array_fact_carried_across_declarations_and_calls_scales_linearly() {
     assert_near_linear_scaling(
-        "array-ref entry version across declarations",
+        "array-ref indexed version across declarations",
         &array_version_work_curve(
             "array-fact-across-declarations",
             "bump.c",
-            "operation `array-ref entry version`",
+            "operation `array-ref indexed version`",
             array_fact_across_declarations,
         ),
     );
     assert_near_linear_scaling(
-        "array-ref static block version across calls",
+        "array-ref indexed static version across calls",
         &array_version_work_curve(
             "array-fact-across-calls",
             "keep_h.c",
-            "operation `array-ref static block version`",
+            "operation `array-ref indexed version`",
             array_fact_across_calls,
         ),
     );
@@ -3680,19 +3680,18 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
 
     assert_near_linear_scaling("array fact across unrelated local stores", &samples);
 
-    const ENTRY: &str = "operation `array-ref entry version`";
+    const INDEXED_VERSION: &str = "operation `array-ref indexed version`";
     let naming = samples
         .iter()
         .map(|sample| ScalingSample {
             size: sample.size,
-            work: *sample
-                .named_work
-                .get(ENTRY)
-                .unwrap_or_else(|| panic!("fixture did not use the entry index: {sample:?}")),
+            work: *sample.named_work.get(INDEXED_VERSION).unwrap_or_else(|| {
+                panic!("fixture did not use the array version index: {sample:?}")
+            }),
             named_work: BTreeMap::new(),
         })
         .collect::<Vec<_>>();
-    assert_near_linear_scaling("array-ref entry version", &naming);
+    assert_near_linear_scaling("array-ref indexed version", &naming);
 }
 
 /// The first array read after a long run of disjoint statements must not

@@ -240,14 +240,64 @@ pub(super) fn prepare_layouts(
                 ),
             );
         }
-        let mut layout =
+        // A class template instance that holds a value of an abstract type
+        // argument has that value's size, `sizeof(T)`: its size and field
+        // offsets are terms, as a Rust generic struct's are
+        // (`docs/internals/kernel.md#symbolic-layouts`). The exporter's
+        // word-sized placeholder layout is not used.
+        // Fields keep declaration order, so the ones before the first field
+        // an abstract type sizes or aligns keep their byte offsets (a base
+        // subobject and the vtable pointer among them); only that field and
+        // the ones after it are at terms.
+        let first_dependent = fields.iter().position(|(_, value_type, struct_name, ..)| {
+            matches!(value_type, InterfaceType::Parameter(parameter) if parameter.has_abstract_size())
+                || struct_name.as_ref().is_some_and(|name| {
+                    *value_type != InterfaceType::Int32Pointer
+                        && layouts
+                            .get(name)
+                            .is_some_and(|layout: &crate::languages::interface::RecordLayout| {
+                                layout.symbolic_layout().is_some()
+                            })
+                })
+        });
+        let mut layout = if let Some(first_dependent) = first_dependent {
+            let mut prefix = fields;
+            let suffix = prefix.split_off(first_dependent);
+            if let Some((name, ..)) = suffix.iter().find(|(_, value_type, struct_name, ..)| {
+                struct_name.is_some() && *value_type != InterfaceType::Int32Pointer
+            }) {
+                return Err(format!(
+                    "C++ record `{}` embeds `{name}` after a value of an abstract type, which is outside the supported slice",
+                    record.name
+                ));
+            }
+            crate::languages::interface::RecordLayout::symbolic_with_prefix(
+                &record.name,
+                prefix,
+                suffix
+                    .into_iter()
+                    .map(|(name, value_type, struct_name, _, _)| (name, value_type, struct_name))
+                    .collect(),
+                // A polymorphic class with no base starts with its own
+                // vtable pointer, which no field names.
+                if record.polymorphic && record.base.is_none() {
+                    8
+                } else {
+                    0
+                },
+                record.size_bytes,
+                record.alignment_bytes,
+                &layouts,
+            )
+        } else {
             crate::languages::interface::RecordLayout::from_explicit_fields_with_structs(
                 fields,
                 record.size_bytes,
                 record.alignment_bytes,
                 &layouts,
             )
-            .map_err(|error| format!("invalid C++ record layout for `{}`: {error}", record.name))?;
+        }
+        .map_err(|error| format!("invalid C++ record layout for `{}`: {error}", record.name))?;
         for name in &constant_pointees {
             layout.mark_pointee_constant(name)?;
         }
@@ -522,7 +572,10 @@ fn function_interface(
                 // The record's layout is what lets a diagnostic name a field
                 // of the referent, `c.first`, where it would print a cell.
                 let carrier = match layouts.get(name) {
-                    Some(layout) => carrier.with_pointee_struct_layout(name.clone(), layout.clone()),
+                    Some(layout) => symbolic_reference_bounds(
+                        carrier.with_pointee_struct_layout(name.clone(), layout.clone()),
+                        layout,
+                    ),
                     None => carrier,
                 };
                 Ok(carrier
@@ -537,7 +590,10 @@ fn function_interface(
                     Some(name.to_owned()),
                 );
                 Ok(match layouts.get(name) {
-                    Some(layout) => carrier.with_pointee_struct_layout(name.to_owned(), layout.clone()),
+                    Some(layout) => symbolic_reference_bounds(
+                        carrier.with_pointee_struct_layout(name.to_owned(), layout.clone()),
+                        layout,
+                    ),
                     None => carrier,
                 })
             }
@@ -651,4 +707,16 @@ pub(super) fn function_pointer_signature(
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/languages/cpp/interface/tests.rs");
+}
+
+/// A reference or pointer to a symbolic record designates its whole object,
+/// `sizeof` bytes, as a Rust reference to one does.
+fn symbolic_reference_bounds(
+    parameter: crate::languages::interface::ImportedParameter,
+    layout: &crate::languages::interface::RecordLayout,
+) -> crate::languages::interface::ImportedParameter {
+    match layout.size() {
+        size @ crate::kernel::LayoutSize::Of(_) => parameter.with_fixed_reference_bounds(size),
+        crate::kernel::LayoutSize::Bytes(_) => parameter,
+    }
 }

@@ -2,6 +2,11 @@
 use super::*;
 
 fn valid_layout(layout: &AggregateLayout) -> bool {
+    // A symbolic layout's offsets are terms the language places, valid by
+    // construction.
+    if let crate::kernel::LayoutSize::Of(_) = layout.size() {
+        return layout.unions().is_empty();
+    }
     if layout.size_bytes() == 0
         || !layout.size_bytes().is_multiple_of(layout.alignment_bytes())
         || !layout.unions().is_empty()
@@ -209,7 +214,7 @@ pub(super) fn bind(
         selected.layout.fields().iter().all(|field| {
             crate::instrumentation::record_deterministic_work(1);
             writable(
-                &selected.pointer.offset_by_bytes(field.offset_bytes()),
+                &selected.pointer.offset_by_layout(field.offset()),
                 field.program_type().byte_width(),
             )
         })
@@ -294,7 +299,7 @@ pub(super) fn initialize_summary(state: &mut ExecutionState, entry: &ExecutionSt
         .expect("checked destination")
         .clone();
     for field in selected.layout.fields() {
-        let pointer = selected.pointer.offset_by_bytes(field.offset_bytes());
+        let pointer = selected.pointer.offset_by_layout(field.offset());
         state.set_memory(
             state
                 .memory

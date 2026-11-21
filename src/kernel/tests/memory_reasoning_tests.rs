@@ -769,7 +769,7 @@ fn byte_store_does_not_change_a_proven_distinct_byte_load() {
     let effect = Proposition::MemoryMutatesOnly {
         before: before.clone(),
         after: after.clone(),
-        writes: vec![(written, 1)],
+        writes: vec![(written, crate::kernel::AccessExtent::from(1))],
     };
     let (_, _, equality) = explicit_frame(
         &before,
@@ -905,7 +905,7 @@ fn mutable_frame_proves_unwritten_load_equal_across_stack_locals() {
         .assume_proposition(Proposition::MemoryMutatesOnly {
             before: loop_entry_memory,
             after: loop_exit_memory.clone(),
-            writes: vec![(written_cell, 4)],
+            writes: vec![(written_cell, crate::kernel::AccessExtent::from(4))],
         });
 
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -953,12 +953,12 @@ fn mutable_frame_transports_load_across_certified_effect_chain() {
         .assume_proposition(Proposition::MemoryMutatesOnly {
             before: before.clone(),
             after: middle.clone(),
-            writes: vec![(first_write, 4)],
+            writes: vec![(first_write, crate::kernel::AccessExtent::from(4))],
         })
         .assume_proposition(Proposition::MemoryMutatesOnly {
             before: middle,
             after: after.clone(),
-            writes: vec![(second_write, 4)],
+            writes: vec![(second_write, crate::kernel::AccessExtent::from(4))],
         });
 
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -1004,7 +1004,7 @@ fn loadability_transports_across_long_certified_effect_chain() {
         assumptions = assumptions.assume_proposition(Proposition::MemoryMutatesOnly {
             before: after,
             after: next.clone(),
-            writes: vec![(written.clone(), 4)],
+            writes: vec![(written.clone(), crate::kernel::AccessExtent::from(4))],
         });
         after = next;
     }
@@ -1674,7 +1674,7 @@ fn disjoint_range_proves_mutable_frame_cell_distinct() {
         .assume_proposition(Proposition::MemoryMutatesOnly {
             before: before_memory.clone(),
             after: after_memory.clone(),
-            writes: vec![(written_cell, 4)],
+            writes: vec![(written_cell, crate::kernel::AccessExtent::from(4))],
         });
 
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -1737,7 +1737,7 @@ fn disjoint_ranges_frame_metadata_across_symbolic_index_store() {
         .assume_proposition(Proposition::MemoryMutatesOnly {
             before: before_memory.clone(),
             after: after_memory.clone(),
-            writes: vec![(written_cell, 4)],
+            writes: vec![(written_cell, crate::kernel::AccessExtent::from(4))],
         });
 
     assert!(crate::kernel::search::ProofSearch::proves(
@@ -1825,7 +1825,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         .assume_proposition(Proposition::MemoryMutatesOnly {
             before: execution_memory.clone(),
             after: after_memory.clone(),
-            writes: vec![(written_cell.clone(), 4)],
+            writes: vec![(written_cell.clone(), crate::kernel::AccessExtent::from(4))],
         });
 
     let (_, _, base_equality) = super::explicit_frame(
@@ -1836,7 +1836,10 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         &[Proposition::MemoryMutatesOnly {
             before: base_memory.clone(),
             after: execution_memory.clone(),
-            writes: vec![(SymbolicMemory::local_pointer("data"), 4)],
+            writes: vec![(
+                SymbolicMemory::local_pointer("data"),
+                crate::kernel::AccessExtent::from(4),
+            )],
         }],
         &assumptions,
     )
@@ -1975,7 +1978,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         &[Proposition::MemoryMutatesOnly {
             before: execution_memory.clone(),
             after: after_memory.clone(),
-            writes: vec![(written_cell, 4)],
+            writes: vec![(written_cell, crate::kernel::AccessExtent::from(4))],
         }],
         &assumptions,
     )
@@ -2043,7 +2046,7 @@ fn direct_transport_composes_framed_loads_inside_an_indexed_address() {
         .assume_proposition(Proposition::MemoryMutatesOnly {
             before,
             after: after.clone(),
-            writes: vec![(written_cell, 4)],
+            writes: vec![(written_cell, crate::kernel::AccessExtent::from(4))],
         });
 
     let theorem = prove_program_condition_fact_direct_transport(&fact, &after, &assumptions)
@@ -3997,7 +4000,7 @@ fn a_store_to_a_local_is_not_framed_away_for_an_unresolved_pointer() {
     let stop = crate::kernel::resource_tracker::last_same(
         crate::kernel::resource_tracker::TrackedResource::Cell {
             pointer: &symbolic,
-            bytes: 4,
+            bytes: crate::kernel::AccessExtent::from(4),
         },
         &point,
     )
@@ -6948,7 +6951,7 @@ fn wide_effect_does_not_frame_an_overlapping_narrow_load() {
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryMutatesOnly {
         before: before.clone(),
         after: after.clone(),
-        writes: vec![(write, 8)],
+        writes: vec![(write, crate::kernel::AccessExtent::from(8))],
     });
     assert!(!crate::kernel::search::ProofSearch::proves(
         &(assumptions),

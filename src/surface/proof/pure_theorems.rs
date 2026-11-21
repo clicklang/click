@@ -2003,7 +2003,7 @@ fn verify_contract_refinement_theorem(
     };
     let checked = proof.completed_proposition()?;
     let kernel_authority = prove_program_function_contract_refinement(
-        &refinement,
+        &obligations,
         goal.clone(),
         &checked,
     )

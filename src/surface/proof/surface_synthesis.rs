@@ -368,7 +368,7 @@ fn owner_field_pointer(base: &ProgramExpression, offset_bytes: u32) -> ProgramEx
     } else {
         ProgramExpression::PointerOffsetBytes {
             pointer: Box::new(base.clone()),
-            bytes: offset_bytes,
+            bytes: offset_bytes.into(),
         }
     }
 }
@@ -560,7 +560,7 @@ fn field_pointer_bases(
                     base: Box::new(ContractExpression::ProgramExpression(owner.base.clone())),
                     field: field_name.clone(),
                     lowered: lowered.clone(),
-                    offset_bytes: field.offset_bytes(),
+                    offset_bytes: field.offset_bytes().into(),
                 },
                 lowered,
                 pointer: loaded,
@@ -698,9 +698,7 @@ fn recorded_point_of_load(
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, state) = slot
-            .as_ref()?
-            .point_reading_load(memory.shared_memory(), pointer)?;
+        let (selector, state) = slot.as_ref()?.point_reading_load(memory, pointer)?;
         let load = scalar_read_in_state(read, state)?;
         Some((selector.clone(), state.clone(), load))
     })
@@ -787,9 +785,7 @@ fn synthesize_recorded_held_value_local(
     };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
-        let (selector, recorded) = slot
-            .as_ref()?
-            .point_reading_load(memory.shared_memory(), address)?;
+        let (selector, recorded) = slot.as_ref()?.point_reading_load(memory, address)?;
         Some(ContractExpression::At {
             selector: selector.clone(),
             expression: Box::new(synthesize_held_value_local(term, pointer, recorded)?),
@@ -2623,18 +2619,14 @@ fn synthesize_surface_atomic_proposition(
                     else {
                         return None;
                     };
-                    call_arguments.push(synthesize_at_array_read_point(
-                        point,
-                        state,
-                        |selected| {
-                            synthesize_surface_pointer_expression(
-                                pointer,
-                                parameter_binding,
-                                selected,
-                                bound_variables,
-                            )
-                        },
-                    )?);
+                    call_arguments.push(synthesize_at_read_origin(point, state, |selected| {
+                        synthesize_surface_pointer_expression(
+                            pointer,
+                            parameter_binding,
+                            selected,
+                            bound_variables,
+                        )
+                    })?);
                     index += 2;
                 }
                 term_source_0 @ Term::ProgramValue(_)
@@ -2874,6 +2866,48 @@ fn synthesize_surface_atomic_proposition(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
+    let raise_float = |operand: crate::kernel::FloatOperandView<'_>| {
+        let imported;
+        let root = match operand {
+            crate::kernel::FloatOperandView::Shared(root) => root,
+            crate::kernel::FloatOperandView::Native(format, term) => {
+                imported = crate::kernel::KernelTermImport::default().float(format, term);
+                &imported
+            }
+        };
+        let raised = raise_kernel_term(root, parameter_binding, state, bound_variables)?;
+        // A comparison otherwise reads a written sum as Integer arithmetic.
+        if operand.binary().is_some() || operand.negate().is_some() {
+            synthesize_observation_operand(raised, operand.format().program_type())
+        } else {
+            Some(raised)
+        }
+    };
+    let float_predicate =
+        if let Some((_, operator, [left, right])) = condition.operand_view().float_comparison() {
+            Some(ClickProposition::Comparison {
+                left: raise_float(left)?,
+                operator: surface_float_comparison_operator(operator),
+                right: raise_float(right)?,
+            })
+        } else if let Some((_, classification, operand)) =
+            condition.operand_view().float_classification()
+        {
+            Some(ClickProposition::FloatClassification {
+                expression: raise_float(operand)?,
+                classification: surface_float_classification(classification),
+            })
+        } else {
+            None
+        };
+    if let Some(predicate) = float_predicate {
+        // Opposite order operators are not equivalent under IEEE NaN semantics.
+        return Some(if *value {
+            predicate
+        } else {
+            ClickProposition::Not(Box::new(predicate))
+        });
+    }
     if let ConditionTerm::AlgebraicEqual(left, right) = condition.native_compat() {
         return Some(ClickProposition::Comparison {
             left: synthesize_surface_algebraic(left, parameter_binding, state, bound_variables)?,
@@ -2883,27 +2917,6 @@ fn synthesize_surface_atomic_proposition(
                 ComparisonOperator::NotEqual
             },
             right: synthesize_surface_algebraic(right, parameter_binding, state, bound_variables)?,
-        });
-    }
-    if let Some((format, operator, [left, right])) = condition.operand_view().float_comparison()
-        && left.literal_bits().is_some()
-        && right.literal_bits().is_some()
-    {
-        let literal = |operand: crate::kernel::FloatOperandView<'_>| {
-            Some(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
-                format.value(operand.native_compat()?.clone()),
-            )))
-        };
-        let comparison = ClickProposition::Comparison {
-            left: literal(left)?,
-            operator: surface_float_comparison_operator(operator),
-            right: literal(right)?,
-        };
-        // Negation cannot be spelled as the opposite order for a NaN.
-        return Some(if *value {
-            comparison
-        } else {
-            ClickProposition::Not(Box::new(comparison))
         });
     }
     // A closed `bool` comparison is spelled as written: `true == false`
@@ -3745,6 +3758,19 @@ fn raise_call(
     })
 }
 
+fn surface_float_classification(
+    classification: crate::kernel::FloatClassification,
+) -> syntax::CFloatClassification {
+    use crate::kernel::FloatClassification as C;
+    match classification {
+        C::Finite => syntax::CFloatClassification::Finite,
+        C::Infinite => syntax::CFloatClassification::Infinite,
+        C::Zero => syntax::CFloatClassification::Zero,
+        C::Subnormal => syntax::CFloatClassification::Subnormal,
+        C::Nan => syntax::CFloatClassification::Nan,
+    }
+}
+
 fn surface_float_comparison_operator(
     operator: crate::kernel::ComparisonOperator,
 ) -> ComparisonOperator {
@@ -3809,20 +3835,11 @@ fn raise_float_expression(
             classification,
             operand,
             ..
-        } => {
-            use crate::kernel::FloatClassification as C;
-            proposition_bool_value(ClickProposition::FloatClassification {
-                expression: recurse(operand)?,
-                classification: match classification {
-                    C::Finite => syntax::CFloatClassification::Finite,
-                    C::Infinite => syntax::CFloatClassification::Infinite,
-                    C::Zero => syntax::CFloatClassification::Zero,
-                    C::Subnormal => syntax::CFloatClassification::Subnormal,
-                    C::Nan => syntax::CFloatClassification::Nan,
-                },
-            })
-            .ok()?
-        }
+        } => proposition_bool_value(ClickProposition::FloatClassification {
+            expression: recurse(operand)?,
+            classification: surface_float_classification(*classification),
+        })
+        .ok()?,
         _ => unreachable!("float expression dispatch"),
     })
 }
@@ -4050,9 +4067,13 @@ fn raise_algebraic_read(
         SYNTHESIS_RECORDED_POINTS.with(|slot| {
             let slot = slot.borrow();
             let points = slot.as_ref()?;
-            let (selector, recorded) = points
-                .point_reading_memory(memory)
-                .or_else(|| points.point_reading_load(memory, &address.export().ok()?))?;
+            let (selector, recorded) = if point.id().is_some() {
+                points.point_naming_read(point)
+            } else {
+                points
+                    .point_reading_memory(memory)
+                    .or_else(|| points.point_reading_load(point, &address.export().ok()?))
+            }?;
             Some(SurfaceTerm::At {
                 selector: selector.clone(),
                 expression: Box::new(held_at(recorded)?),
@@ -4529,7 +4550,7 @@ fn raise_kernel_term_dispatch(
             let raise = |selected: &ExecutionState| {
                 raise_kernel_term(pointer, parameter_binding, selected, bound_variables)
             };
-            synthesize_at_array_read_point(point, state, raise)?
+            synthesize_at_read_origin(point, state, raise)?
         }
 
         Node::PointerRead { value, .. }
@@ -5020,15 +5041,24 @@ pub(super) fn synthesize_surface_resource_subject(
             // A range counts its retained element width, which need not be the
             // pointee width of the name (for example, a struct field's backing).
             // Spell scalar coordinates explicitly; pointer casts retain provenance.
-            // A character-to-character cast preserves a narrow byte view. For a
-            // range that already names root byte coordinates, the void cast makes
-            // that root explicit regardless of the source pointer's type.
-            let surface_base = if range.element_width() == 1 && range.carrier_has_known_bounds() {
+            // An element cast can inherit opaque bounds from its source. Restore
+            // root bounds when the range retained them.
+            // The whole object of an abstract type, `[p, p + sizeof(T))`, is
+            // spelled over its own pointer, which lowers back to that object.
+            let abstract_object = range.wide_bounds().is_some_and(|(start, end)| {
+                start.uint64_as_const() == Some(0)
+                    && crate::kernel::TypeParameterName::of_size_term(end).is_some()
+            });
+            let surface_base = if matches!(range.element_width(), 1 | 2 | 4 | 8)
+                && range.carrier_has_known_bounds()
+                && !abstract_object
+            {
                 synthesize_observation_operand(surface_base, ProgramType::VoidPointer)?
             } else {
                 surface_base
             };
             match range.element_width() {
+                _ if abstract_object => surface_base,
                 1 => synthesize_observation_operand(surface_base, ProgramType::UInt8Pointer)?,
                 2 => synthesize_observation_operand(surface_base, ProgramType::UInt16Pointer)?,
                 4 => synthesize_observation_operand(surface_base, ProgramType::Int32Pointer)?,
@@ -5234,7 +5264,7 @@ fn synthesize_parameter_field_pointer_value(
             } else {
                 ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(base_expression.clone()),
-                    bytes: field.offset_bytes(),
+                    bytes: field.offset_bytes().into(),
                 }
             };
             return Some(ContractExpression::Field {
@@ -5249,7 +5279,7 @@ fn synthesize_parameter_field_pointer_value(
                     access_class: None,
                     source: Default::default(),
                 },
-                offset_bytes: field.offset_bytes(),
+                offset_bytes: field.offset_bytes().into(),
             });
         }
     }
@@ -5286,7 +5316,7 @@ fn synthesize_parameter_field_pointer_value(
                     access_class: None,
                     source: Default::default(),
                 },
-                offset_bytes: field.offset_bytes(),
+                offset_bytes: field.offset_bytes().into(),
             });
         }
     }
@@ -5364,6 +5394,20 @@ fn synthesize_point_read(
         && selects_version(&entry)
     {
         return Some(ContractExpression::Old(Box::new(expression(&entry)?)));
+    }
+    // A checked read of a caller's cell the path leaves unchanged reads it at
+    // the function-entry version (`ProgramPoint::entry_integer_version`): it
+    // is that cell's entry value, spelled at the entry state.
+    if !version.is_exact_read()
+        && let Some(kind) = crate::kernel::LoadKind::of_type(value_type)
+        && state
+            .program_point()
+            .entry_integer_version(pointer, kind)
+            .as_ref()
+            == Some(version)
+        && let Some(entry) = SYNTHESIS_ENTRY_STATE.with(|slot| slot.borrow().clone())
+    {
+        return Some(ContractExpression::Old(Box::new(place(&entry)?)));
     }
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let points = slot.borrow();
@@ -6190,7 +6234,7 @@ fn synthesize_surface_bitvector(
                     // The read's memory selects `old(..)`, `at(point, ..)` or
                     // the current state; the call's result names the pointer
                     // in that state.
-                    return synthesize_at_memory(memory.shared_memory(), state, |selected| {
+                    return synthesize_at_read_origin(memory, state, |selected| {
                         Some(synthesize_memory_load(
                             call_result_pointer_expression(kernel_pointer, selected)?,
                             value_type,
@@ -6427,6 +6471,15 @@ fn synthesize_surface_bitvector(
         MachineTerm::RangeFold { .. } => {
             folds::raise_machine_fold(term, parameter_binding, state, bound_variables)
         }
+        // A size or offset term is the value `sizeof(T)` or `offsetof(L, f)`
+        // lowers to, kept whole.
+        MachineTerm::PureFunctionApplication { name, arguments }
+            if crate::kernel::layout_term_spelling(name, arguments.len()).is_some() =>
+        {
+            Some(ContractExpression::ProgramExpression(
+                ProgramExpression::Value(ProgramValue::UInt64(term.clone())),
+            ))
+        }
         MachineTerm::PureFunctionApplication {
             name,
             arguments: values,
@@ -6494,12 +6547,7 @@ fn synthesize_at_program_point(
     state: &ExecutionState,
     raise: impl Fn(&ExecutionState) -> Option<SurfaceTerm>,
 ) -> Option<SurfaceTerm> {
-    let id = point.id()?;
-    let matches = |state: &ExecutionState| {
-        let actual = state.program_point();
-        actual.id() == Some(id)
-            && actual.shared_memory().arena_id() == point.shared_memory().arena_id()
-    };
+    let matches = |state: &ExecutionState| state.program_point().names_read_view(point);
     if matches(state) {
         return raise(state);
     }
@@ -6511,26 +6559,24 @@ fn synthesize_at_program_point(
     let (selector, recorded) = SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
         let points = slot.as_ref()?;
-        let selector = points.point_name(id)?;
-        Some((selector.clone(), points.get_exact(selector)?.clone()))
+        let (selector, state) = points.point_naming_read(point)?;
+        Some((selector.clone(), state.clone()))
     })?;
-    matches(&recorded).then_some(())?;
     Some(SurfaceTerm::At {
         selector,
         expression: Box::new(raise(&recorded)?),
     })
 }
 
-fn synthesize_at_array_read_point(
+fn synthesize_at_read_origin(
     point: &crate::kernel::ProgramPoint,
     state: &ExecutionState,
     raise: impl Fn(&ExecutionState) -> Option<SurfaceTerm>,
 ) -> Option<SurfaceTerm> {
-    if point.read_version_id().is_some() {
+    if point.id().is_some() {
         synthesize_at_program_point(point, state, raise)
     } else {
-        synthesize_at_program_point(point, state, &raise)
-            .or_else(|| synthesize_at_memory(point.shared_memory(), state, raise))
+        synthesize_at_memory(point.shared_memory(), state, raise)
     }
 }
 
@@ -6810,7 +6856,7 @@ fn synthesize_local_struct_pointer_field(
                     access_class: None,
                     source: Default::default(),
                 },
-                offset_bytes: field.offset_bytes(),
+                offset_bytes: field.offset_bytes().into(),
             });
         }
     }
@@ -6879,7 +6925,7 @@ fn synthesize_local_aggregate_field(
                     } else {
                         ProgramExpression::PointerOffsetBytes {
                             pointer: Box::new(base.clone()),
-                            bytes: field.offset_bytes(),
+                            bytes: field.offset_bytes().into(),
                         }
                     };
                     let field_expression = ContractExpression::Field {
@@ -6894,7 +6940,7 @@ fn synthesize_local_aggregate_field(
                             access_class: None,
                             source: Default::default(),
                         },
-                        offset_bytes: field.offset_bytes(),
+                        offset_bytes: field.offset_bytes().into(),
                     };
                     if element_count == 1 {
                         Some(field_expression)
@@ -7116,7 +7162,7 @@ fn synthesize_parameter_field_load_matching(
         } else {
             ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(base.clone()),
-                bytes: offset_bytes,
+                bytes: offset_bytes.into(),
             }
         };
         return Some(ContractExpression::Field {
@@ -7131,7 +7177,7 @@ fn synthesize_parameter_field_load_matching(
                 access_class: None,
                 source: Default::default(),
             },
-            offset_bytes,
+            offset_bytes: offset_bytes.into(),
         });
     }
     None
@@ -7186,7 +7232,7 @@ fn synthesize_local_field_load_matching(
                 access_class: None,
                 source: Default::default(),
             },
-            offset_bytes: field.offset_bytes(),
+            offset_bytes: field.offset_bytes().into(),
         });
     }
     None
@@ -7315,7 +7361,7 @@ fn synthesize_owned_field_at_address(
             access_class: None,
             source: Default::default(),
         },
-        offset_bytes: field.offset_bytes(),
+        offset_bytes: field.offset_bytes().into(),
     })
 }
 
@@ -7379,7 +7425,7 @@ fn synthesize_owned_pointer_field(
             access_class: None,
             source: Default::default(),
         },
-        offset_bytes: field.offset_bytes(),
+        offset_bytes: field.offset_bytes().into(),
     })
 }
 
@@ -7508,23 +7554,33 @@ fn synthesize_surface_pointer(
                 .pointee_type()?
                 .to_kernel_type()
                 .byte_width();
-            let element_width = parameter
-                .pointee_struct_layout()
-                .or_else(|| parameter.struct_layout())
-                .map_or(
-                    element_width,
-                    crate::languages::interface::RecordLayout::size_bytes,
-                );
             let name = ProgramExpression::Variable(crate::surface::surface_parameter_binding(
                 parameter.binding_name(),
             ));
+            let element_width = match parameter
+                .pointee_struct_layout()
+                .or_else(|| parameter.struct_layout())
+                .map(crate::languages::interface::RecordLayout::size)
+            {
+                None => element_width,
+                Some(crate::kernel::LayoutSize::Bytes(size)) => size,
+                // A symbolic struct has no element stride; its pointer is
+                // spelled only at its own address.
+                Some(crate::kernel::LayoutSize::Of(_)) => {
+                    return (pointer
+                        .element_index_from_base_with_width(base, 1)?
+                        .as_const()
+                        == Some(0))
+                    .then_some(name);
+                }
+            };
             let Some(index) = synthesis_element_index(pointer, base, element_width) else {
                 let bytes = pointer
                     .element_index_from_base_with_width(base, 1)?
                     .as_const()?;
                 return (bytes <= i32::MAX as u32).then(|| ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(name),
-                    bytes,
+                    bytes: bytes.into(),
                 });
             };
             let base = name;
@@ -7551,22 +7607,33 @@ fn synthesize_surface_pointer(
                 return None;
             }
             let element_width = base.program_type().pointee_type()?.byte_width();
-            let element_width = SYNTHESIS_STRUCT_OWNERS
-                .with(|slot| {
-                    slot.borrow()
-                        .as_ref()
-                        .and_then(|owners| owners.locals.get(name))
-                        .map(crate::languages::interface::RecordLayout::size_bytes)
-                })
-                .unwrap_or(element_width);
+            let size = SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .and_then(|owners| owners.locals.get(name))
+                    .map(crate::languages::interface::RecordLayout::size)
+            });
             let name = ProgramExpression::Variable(surface_local_name(name));
+            let element_width = match size {
+                None => element_width,
+                Some(crate::kernel::LayoutSize::Bytes(size)) => size,
+                // A symbolic struct has no element stride; its pointer is
+                // spelled only at its own address.
+                Some(crate::kernel::LayoutSize::Of(_)) => {
+                    return (pointer
+                        .element_index_from_base_with_width(base, 1)?
+                        .as_const()
+                        == Some(0))
+                    .then_some(name);
+                }
+            };
             let Some(index) = synthesis_element_index(pointer, base, element_width) else {
                 let bytes = pointer
                     .element_index_from_base_with_width(base, 1)?
                     .as_const()?;
                 return (bytes <= i32::MAX as u32).then(|| ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(name),
-                    bytes,
+                    bytes: bytes.into(),
                 });
             };
             let base = name;
@@ -7605,7 +7672,7 @@ fn synthesize_surface_pointer(
         } else {
             ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(base),
-                bytes,
+                bytes: bytes.into(),
             }
         });
     }
@@ -7630,7 +7697,7 @@ fn synthesize_surface_pointer(
                 } else {
                     ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(base),
-                        bytes,
+                        bytes: bytes.into(),
                     }
                 })
             })
@@ -7662,7 +7729,7 @@ fn synthesize_surface_pointer(
                     state,
                     bound_variables,
                 )?),
-                bytes: u32::try_from(bytes).ok()?,
+                bytes: u32::try_from(bytes).ok()?.into(),
             });
         }
         if read.displacement != AddressOffset::Constant(0) {
@@ -8208,6 +8275,18 @@ fn raise_float_read(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     let (point, address) = read.parts();
+    if point.read_version_id().is_some() {
+        return synthesize_at_program_point(point, state, |state| {
+            let place = raise_float_read_place(
+                address,
+                value_type,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?;
+            Some(SurfaceTerm::Exact(Box::new(place)))
+        });
+    }
     let memory = point.shared_memory();
     // Float producers retain the raw state, rather than the integer load's
     // canonical selection. Spelling must reproduce that same producer input.
@@ -8243,6 +8322,22 @@ fn raise_float_read(
             )?),
         });
     }
+    raise_float_read_place(
+        address,
+        value_type,
+        parameter_binding,
+        state,
+        bound_variables,
+    )
+}
+
+fn raise_float_read_place(
+    address: &crate::kernel::SharedAddress,
+    value_type: ProgramType,
+    parameter_binding: ParameterBinding<'_>,
+    state: &ExecutionState,
+    bound_variables: &BTreeMap<Variable, SurfaceBinder>,
+) -> Option<SurfaceTerm> {
     let pointer = synthesize_surface_pointer(
         address.exact_cell_key(),
         parameter_binding,

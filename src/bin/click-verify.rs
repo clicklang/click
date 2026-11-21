@@ -1858,7 +1858,7 @@ mod tests {
     #[test]
     fn loop_entry_refusal_bounds_unexecuted_preservation_source() {
         let source = format!(
-            "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nstep_until(loop(0));\nloop {{ invariant i == 1; maintain by {{\n{}step();\n}} }}\nstep_until(function.exit);\n}}",
+            "verifying \"program.c\";\nvoid loop_wall() {{ ensures 0 == 0; }} by {{\nstep_until(loop(0).entry);\nloop {{ invariant i == 1; maintain by {{\n{}step();\n}} }}\nstep_until(function.exit);\n}}",
             "have 0 == 0 by { normalize(); }\n".repeat(300)
         );
         let (root, path) = temporary_project(

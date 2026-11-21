@@ -89,14 +89,24 @@ Named scalar observations and read congruence use indexed versions where the
 producer has a recorded typed write or one of the supported entry versions.
 Concrete resource cells and compact runs can retain their source point.
 Indexed abstract reads of a directly written local use its typed store in
-equality and raising. Native and shared array arguments carry the same source
-point. External arrays can use function entry after disjoint local
-declarations, stores and checked calls whose write ranges all name automatic
-objects, including when several effects are recorded together. Declared
-predicates also retain that entry version for external `int32` array
-arguments, including when unfolding their bodies or raising
-a predicate fact. Scalar fold instantiation keeps a selected entry point
-when the substituted index still uses the indexed entry selector. Checked
+equality and raising. Materialized fixed-width opaque resource fields at
+constant offsets in local objects use the same indexed store as logical
+reads. Symbolic-sized fields still use the memory view. Native and shared
+array arguments carry the same source point. External arrays can use function
+entry after disjoint local declarations, stores and checked calls whose write
+ranges all name automatic objects, including when several effects are recorded
+together. The shared caller storage can also name an array by a recorded
+write point and retain that version across local stores and local-only calls.
+Named static arrays retain entry or write points across recorded writes and
+calls confined to named static and automatic objects. Automatic arrays retain
+points from their declarations and writes across those effects. A join keeps
+a common static or automatic array version and names a changed object at the
+join when the incoming indexes share a lineage. Declared predicates share
+the block version selector for array arguments of all admitted element types,
+including when unfolding their bodies or raising a predicate fact. A static
+scalar spanning its block can use the same version when that point ends
+with a complete typed store. Scalar fold instantiation keeps a selected entry point when the substituted index
+still uses the indexed entry selector. Checked
 resource quantities and materialized resource cells share that entry point for
 an `int32` field at a fixed displacement from its external parameter. Computed
 scalar fold endpoints, ordinary checked reads, loop boundaries and iterated
@@ -111,6 +121,12 @@ comparison.
 
 Exact pointer reads can recover the complete stored pointer from a typed
 index entry at their selected point, with the value's provenance and bounds.
+Address-only recovery for symbolic layout checks uses that same typed store,
+including after the cache drops the cell. Resource pointer cells, including
+named run slots, can use the same typed store when the source point is
+retained. Raising uses retained point IDs to name array arguments and
+historical reads.
+An indexed read can raise through a certified materialized view of its point.
 
 The remaining memory-state paths have production callers:
 
@@ -118,8 +134,8 @@ The remaining memory-state paths have production callers:
 | --- | --- |
 | Equality | `AlgebraicTermNode::parameter_load` still produces projected-memory reads for abstract cells supplied by bare memory producers or taken outside the verified entry path. |
 | Observation | `canonical_cell_load` and `symbolic_load_value_unrecorded` still construct memory-state observations for bare memory producers and unsupported indexed types or addresses. |
-| Preservation | `array_ref_argument_point` uses the block version walk outside the indexed suffix, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
-| Raising | `synthesize_at_memory` still raises function and predicate array arguments that carry a bare memory view. Legacy scalar and abstract reads use `RecordedStates::point_reading_load`. |
+| Preservation | `array_ref_argument_point` uses the block version walk outside the indexed entry and write paths, and the scalar naming walk also calls it. `last_same_named_cell` still follows recorded memory derivations for unsupported cells. |
+| Raising | Detached array arguments still use `synthesize_at_memory`. Detached scalar and abstract reads still use the memory and projection indexes in `RecordedStates::point_reading_load`. |
 
 Give symbolic addresses a separate slice. A loaded or opaque symbolic pointer
 can refer to the same storage as a write. Producers need checked evidence

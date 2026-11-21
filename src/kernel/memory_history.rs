@@ -280,8 +280,9 @@ pub(crate) fn canonical_program_memory_for_pointer_load(
 pub(crate) fn canonical_value_load_memory(
     memory: &SharedMemory,
     pointer: &Address,
-    bytes: u32,
+    bytes: impl Into<crate::kernel::AccessExtent>,
 ) -> SharedMemory {
+    let bytes = bytes.into();
     let version = cell_version_point(memory, pointer, bytes);
     let named = canonical_projected_load_memory(version.as_ref().unwrap_or(memory), pointer);
     record_value_load_origin(memory, &named, pointer, bytes);
@@ -372,38 +373,46 @@ pub(crate) fn resources_directly_match(
                             right,
                             left,
                         )))
-                    && left.int32_bounds().is_some()
-                    && right.int32_bounds().is_some()
                     && crate::instrumentation::measure_operation(
                         "kernel",
                         "resource context equality",
                         "resource memory match: width",
                         || left.element_width() == right.element_width(),
                     )
-                    && crate::instrumentation::measure_operation(
-                        "kernel",
-                        "resource context equality",
-                        "resource memory match: start",
-                        || {
-                            bitvectors_match_for_resource_check(
-                                left.start(),
-                                right.start(),
-                                assumptions,
-                            )
-                        },
-                    )
-                    && crate::instrumentation::measure_operation(
-                        "kernel",
-                        "resource context equality",
-                        "resource memory match: end",
-                        || {
-                            bitvectors_match_for_resource_check(
-                                left.end(),
-                                right.end(),
-                                assumptions,
-                            )
-                        },
-                    )
+                    && match (left.wide_bounds(), right.wide_bounds()) {
+                        // 64-bit bounds, such as a whole object of abstract
+                        // size, `[0, sizeof(T))`, match as written.
+                        (Some(left_bounds), Some(right_bounds)) => left_bounds == right_bounds,
+                        (None, None) => {
+                            left.int32_bounds().is_some()
+                                && right.int32_bounds().is_some()
+                                && crate::instrumentation::measure_operation(
+                                    "kernel",
+                                    "resource context equality",
+                                    "resource memory match: start",
+                                    || {
+                                        bitvectors_match_for_resource_check(
+                                            left.start(),
+                                            right.start(),
+                                            assumptions,
+                                        )
+                                    },
+                                )
+                                && crate::instrumentation::measure_operation(
+                                    "kernel",
+                                    "resource context equality",
+                                    "resource memory match: end",
+                                    || {
+                                        bitvectors_match_for_resource_check(
+                                            left.end(),
+                                            right.end(),
+                                            assumptions,
+                                        )
+                                    },
+                                )
+                        }
+                        _ => false,
+                    }
                     && crate::instrumentation::measure_operation(
                         "kernel",
                         "resource context equality",
@@ -756,8 +765,9 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
 fn cell_version_point(
     memory: &SharedMemory,
     pointer: &Address,
-    bytes: u32,
+    bytes: impl Into<crate::kernel::AccessExtent>,
 ) -> Option<SharedMemory> {
+    let bytes = bytes.into();
     crate::kernel::resource_tracker::last_same_version_point(
         crate::kernel::resource_tracker::TrackedResource::Cell { pointer, bytes },
         &crate::kernel::resource_tracker::ProgramPoint::at(memory),
@@ -2639,7 +2649,7 @@ pub(in crate::kernel) fn indexed_store_byte_separation_evidence(
                 write,
                 write_bytes,
                 pointer,
-                load_bytes,
+                load_bytes.into(),
                 assumptions,
                 true,
             )
@@ -2648,11 +2658,12 @@ pub(in crate::kernel) fn indexed_store_byte_separation_evidence(
 
 pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     write: &Address,
-    write_bytes: u32,
+    write_bytes: impl Into<crate::kernel::AccessExtent>,
     pointer: &Address,
-    load_bytes: u32,
+    load_bytes: impl Into<crate::kernel::AccessExtent>,
     assumptions: &PureFactContext,
 ) -> Option<MemoryDagHopJustification> {
+    let (write_bytes, load_bytes) = (write_bytes.into(), load_bytes.into());
     if crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
         write,
         pointer,
@@ -2822,14 +2833,14 @@ pub(in crate::kernel) fn owned_composition_store_separated_evidence(
     write: &Address,
     write_bytes: u32,
     pointer: &Address,
-    load_bytes: u32,
+    load_bytes: impl Into<crate::kernel::AccessExtent>,
     assumptions: &PureFactContext,
 ) -> Option<MemoryDagHopJustification> {
     owned_composition_store_separated_evidence_impl(
         write,
         write_bytes,
         pointer,
-        load_bytes,
+        load_bytes.into(),
         assumptions,
         false,
     )
@@ -2854,7 +2865,7 @@ fn owned_composition_store_separated_evidence_impl(
     write: &Address,
     write_bytes: u32,
     pointer: &Address,
-    load_bytes: u32,
+    load_bytes: crate::kernel::AccessExtent,
     assumptions: &PureFactContext,
     indexed_only: bool,
 ) -> Option<MemoryDagHopJustification> {
@@ -3915,7 +3926,10 @@ fn typed_reads_share_memory_source(
                 crate::kernel::resource_tracker::step_effect::affects(
                     &step,
                     node,
-                    crate::kernel::resource_tracker::TrackedResource::Cell { pointer, bytes },
+                    crate::kernel::resource_tracker::TrackedResource::Cell {
+                        pointer,
+                        bytes: bytes.into()
+                    },
                     &evidence,
                 ),
                 crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
@@ -3974,7 +3988,10 @@ pub(super) fn typed_read_has_same_memory_source(
             crate::kernel::resource_tracker::step_effect::affects(
                 &step,
                 &current,
-                crate::kernel::resource_tracker::TrackedResource::Cell { pointer, bytes },
+                crate::kernel::resource_tracker::TrackedResource::Cell {
+                    pointer,
+                    bytes: bytes.into()
+                },
                 &evidence,
             ),
             crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
@@ -4392,22 +4409,34 @@ pub(crate) fn memories_connected_by_effects(
 /// when an address-only comparison cannot establish that gap.
 pub(crate) fn write_access_is_disjoint_from_load(
     write: &Address,
-    write_bytes: u32,
+    write_bytes: impl Into<crate::kernel::AccessExtent>,
     read: &Address,
-    read_bytes: u32,
+    read_bytes: impl Into<crate::kernel::AccessExtent>,
     assumptions: &PureFactContext,
 ) -> bool {
-    if write_bytes == 0 || read_bytes == 0 {
+    let (write_extent, read_extent) = (write_bytes.into(), read_bytes.into());
+    let empty = crate::kernel::AccessExtent::Bytes(0);
+    if write_extent == empty || read_extent == empty {
         return false;
     }
     if write.blocks_proven_distinct(read) {
         return true;
     }
     use crate::kernel::reasoning::{AccessByteOverlap, access_byte_overlap};
-    let overlap = access_byte_overlap(write, write_bytes, read, read_bytes, assumptions);
+    let overlap = access_byte_overlap(write, write_extent, read, read_extent, assumptions);
     if overlap == AccessByteOverlap::Overlaps {
         return false;
     }
+    // An object of abstract size is placed by the layout rule or a stated
+    // separation of its range, which the overlap answer above already read.
+    let (Some(write_bytes), Some(read_bytes)) = (write_extent.bytes(), read_extent.bytes()) else {
+        return overlap == AccessByteOverlap::Separate
+            || assumptions
+                .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                    &MemoryRange::of_access(write, write_extent),
+                    &MemoryRange::of_access(read, read_extent),
+                );
+    };
     (overlap == AccessByteOverlap::Separate
         && pointers_proven_distinct_for_memory_resolution(write, read, assumptions))
         || assumptions.ranges_directly_disjoint_from_access(
@@ -4478,10 +4507,7 @@ fn memory_load_is_directly_unchanged(
                                 write,
                                 *bytes,
                                 pointer,
-                                crate::kernel::eval::load_access_width_at_address_or_widest(
-                                    pointer,
-                                )
-                                .max(kind.byte_width()),
+                                crate::kernel::eval::load_access_extent(pointer, kind),
                                 assumptions,
                             )
                         })

@@ -24,7 +24,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names
             ProgramExpression::Subobject {
                 pointer: Box::new(ProgramExpression::PointerOffsetBytes {
                     pointer: Box::new(ProgramExpression::Variable(name.into())),
-                    bytes: 8,
+                    bytes: 8.into(),
                 }),
                 width: 4,
             },
@@ -59,7 +59,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names
                 base: Box::new(base),
                 field: "value".into(),
                 lowered: place.clone(),
-                offset_bytes: 8,
+                offset_bytes: 8.into(),
             }),
             lowered: ProgramExpression::AddressOf(Box::new(member("result"))),
         };
@@ -74,7 +74,7 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_program_names
                 )),
                 steps: vec![
                     crate::kernel::SpecAddressStep::Subobject { width: 4 },
-                    crate::kernel::SpecAddressStep::OffsetBytes { bytes: 8 }
+                    crate::kernel::SpecAddressStep::OffsetBytes { bytes: 8.into() }
                 ],
                 value_type: ProgramType::Int32,
                 volatile: false,

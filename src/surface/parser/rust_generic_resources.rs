@@ -42,9 +42,10 @@ fn instance_name(resource: &str, arguments: &[String]) -> String {
     name
 }
 
-/// Whether a Rust type argument is a concrete scalar, not an abstract type.
+/// Whether a Rust type argument is concrete, not an abstract type: a scalar,
+/// or a crate type named by its path, `boxed::Cell`.
 pub(super) fn rust_concrete(argument: &str) -> bool {
-    INSTANCE_SCALARS.contains(&argument)
+    INSTANCE_SCALARS.contains(&argument) || argument.contains("::")
 }
 
 /// Whether a C++ type argument is a builtin scalar, `int` or `unsigned
@@ -118,8 +119,13 @@ pub(super) fn expand_generic_resources(
     };
     let mut uses = BTreeMap::<usize, (String, Vec<String>, usize)>::new();
     for index in 0..source.len() {
-        let Some((name, arguments, after)) = use_at(&source, index, &blocks, object_instances)
-        else {
+        let Some((name, arguments, after)) = use_at(
+            &source,
+            index,
+            &blocks,
+            object_instances,
+            concrete("crate::Type"),
+        ) else {
             continue;
         };
         let arity = blocks
@@ -283,12 +289,15 @@ fn abstract_parameters(
 }
 
 /// A use of a generic resource at `index`, `cell<i32>(`, with the resource,
-/// its type arguments and the index after its `>`.
+/// its type arguments and the index after its `>`. An argument may be a path,
+/// `boxed::Cell`, when `paths`: a language whose concrete arguments include
+/// its types' paths.
 fn use_at(
     source: &[Spanned],
     index: usize,
     blocks: &BTreeMap<String, Block>,
     object_instances: &BTreeMap<String, BTreeSet<Vec<String>>>,
+    paths: bool,
 ) -> Option<(String, Vec<String>, usize)> {
     let (Token::Ident(name), _) = source.get(index)? else {
         return None;
@@ -307,22 +316,34 @@ fn use_at(
     if source.get(close + 1)?.0 != Token::LParen {
         return None;
     }
-    // Each argument is its words, `unsigned int` in C++.
+    // Each argument is its words, `unsigned int` in C++, or a path,
+    // `boxed::Cell`, whose segments `::` joins.
     let mut arguments = Vec::new();
-    let mut words = Vec::<&str>::new();
+    let mut argument = String::new();
+    let mut joined = false;
     for (token, _) in &source[index + 2..close] {
         match token {
-            Token::Ident(word) => words.push(word),
-            Token::Comma if !words.is_empty() => {
-                arguments.push(std::mem::take(&mut words).join(" "))
+            Token::Ident(word) => {
+                if !argument.is_empty() && !joined {
+                    argument.push(' ');
+                }
+                argument.push_str(word);
+                joined = false;
+            }
+            Token::ColonColon if paths && !argument.is_empty() && !joined => {
+                argument.push_str("::");
+                joined = true;
+            }
+            Token::Comma if !argument.is_empty() && !joined => {
+                arguments.push(std::mem::take(&mut argument))
             }
             _ => return None,
         }
     }
-    if words.is_empty() {
+    if argument.is_empty() || joined {
         return None;
     }
-    arguments.push(words.join(" "));
+    arguments.push(argument);
     Some((name.clone(), arguments, close + 1))
 }
 
@@ -384,7 +405,12 @@ fn instance(
         match &source[index] {
             (Token::Ident(word), position) => {
                 for part in substituted(word).split_whitespace() {
-                    tokens.push((Token::Ident(part.to_string()), position.clone()));
+                    for (segment, name) in part.split("::").enumerate() {
+                        if segment > 0 {
+                            tokens.push((Token::ColonColon, position.clone()));
+                        }
+                        tokens.push((Token::Ident(name.to_string()), position.clone()));
+                    }
                 }
             }
             spanned => tokens.push(spanned.clone()),

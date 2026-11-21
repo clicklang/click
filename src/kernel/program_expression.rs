@@ -170,8 +170,12 @@ pub fn checked_object_address(lvalue: ProgramExpression) -> ProgramExpression {
     ProgramExpression::CheckedObjectAddress(Box::new(lvalue))
 }
 
-pub fn pointer_offset_bytes(pointer: ProgramExpression, bytes: u32) -> ProgramExpression {
-    if bytes == 0 {
+pub fn pointer_offset_bytes(
+    pointer: ProgramExpression,
+    bytes: impl Into<crate::kernel::LayoutOffset>,
+) -> ProgramExpression {
+    let bytes = bytes.into();
+    if bytes == crate::kernel::LayoutOffset::Bytes(0) {
         pointer
     } else {
         ProgramExpression::PointerOffsetBytes {

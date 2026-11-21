@@ -105,6 +105,7 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         .collect::<Result<Vec<_>, String>>()?;
     let names = ResolvedNames::new(paths.iter().map(|(id, name)| (*id, name.as_str())))?;
     // Build immutable inventories once; every function borrows the same indexes.
+    let layouts = super::interface::prepare_layouts(import)?;
     let records = super::schema::RecordIndex::new(
         import
             .export()
@@ -115,7 +116,8 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
                 (record.declaration_id.clone(), record)
             })
             .collect::<BTreeMap<_, _>>(),
-    );
+    )
+    .with_symbolic_layouts(&layouts);
     let constants = import
         .export()
         .constants
@@ -125,7 +127,6 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
             (constant.declaration_id.as_str(), constant)
         })
         .collect::<BTreeMap<_, _>>();
-    let layouts = super::interface::prepare_layouts(import)?;
     let polymorphism = Polymorphism::new(import, &records);
     let functions = import
         .export()
@@ -344,6 +345,35 @@ pub(super) fn is_reference_parameter(index: usize, parameter: &CppPlace) -> bool
 }
 
 fn lower_parameter(
+    parameter: &CppPlace,
+    layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
+    binding: BindingName,
+) -> Result<crate::kernel::ProgramParameter, String> {
+    let lowered = lower_parameter_value(parameter, layouts, binding)?;
+    // A reference or pointer to a symbolic record designates its whole
+    // object, `sizeof` bytes, as a Rust reference to one does.
+    let pointee = match &parameter.value_type {
+        CppType::LvalueReference { pointee } => match pointee.as_ref() {
+            CppType::Record { name, .. } => Some(name.as_str()),
+            _ => None,
+        },
+        pointer @ CppType::Pointer { .. } => scalar::record_pointee(pointer).map(|(_, name)| name),
+        _ => None,
+    };
+    Ok(
+        match pointee
+            .and_then(|name| layouts.get(name))
+            .map(|layout| layout.size())
+        {
+            Some(size @ crate::kernel::LayoutSize::Of(_)) => {
+                lowered.with_fixed_reference_bounds(size)
+            }
+            _ => lowered,
+        },
+    )
+}
+
+fn lower_parameter_value(
     parameter: &CppPlace,
     layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
     binding: BindingName,
@@ -999,7 +1029,7 @@ impl LoweringContext<'_> {
                         .map(|field| {
                             Ok((
                                 field.declaration_id.clone(),
-                                field.offset_bytes,
+                                self.records.field_offset(record, field)?,
                                 cpp_scalar_kernel_type(&field.value_type)?,
                             ))
                         })
@@ -1142,6 +1172,14 @@ impl LoweringContext<'_> {
                             source.alignment_bytes,
                         )
                     });
+                // A symbolic record's allocation is its `sizeof` bytes, a
+                // 64-bit size.
+                let bytes = match self.layouts.get(name.as_str()).map(|layout| layout.size()) {
+                    Some(size @ crate::kernel::LayoutSize::Of(_)) => {
+                        ProgramExpression::Value(crate::kernel::ProgramValue::UInt64(size.term()))
+                    }
+                    _ => crate::kernel::program_expression::int32_literal(source.size_bytes),
+                };
                 // The allocation comes first and each field's value after it,
                 // as C++17 sequences a new-expression.
                 let object = self.fresh_temporary(ProgramType::Int32Pointer)?;
@@ -1149,7 +1187,7 @@ impl LoweringContext<'_> {
                     program_declare(object.clone(), ProgramType::Int32Pointer),
                     ProgramStatement::HeapAllocate {
                         target: (object.clone()),
-                        bytes: crate::kernel::program_expression::int32_literal(source.size_bytes),
+                        bytes,
                         zeroed: false,
                         object_type: class,
                         ends_program_on_failure: true,
@@ -1163,7 +1201,7 @@ impl LoweringContext<'_> {
                     }
                     let pointer = crate::kernel::program_expression::pointer_offset_bytes(
                         crate::kernel::program_expression::variable(object.clone()),
-                        field.offset_bytes,
+                        self.records.field_offset(source, field)?,
                     );
                     let value = self.lower_expression(&initializer.value)?;
                     result = program_seq(
@@ -2584,7 +2622,9 @@ impl LoweringContext<'_> {
                 } else {
                     ProgramExpression::Subobject {
                         pointer: Box::new(pointer),
-                        width: self.record_layout(name)?.size_bytes(),
+                        width: self.record_layout(name)?.size().bytes().ok_or(
+                            "C++ subobject of a symbolic record is outside the supported slice",
+                        )?,
                     }
                 };
                 Ok(
@@ -2730,7 +2770,11 @@ impl LoweringContext<'_> {
         let (pointer, element) = if let Some((_, name, _)) = scalar::record_referent(value_type) {
             // The byte-array lvalue denotes the complete record footprint.
             // Checked address formation validates it without reading fields.
-            let bytes = self.record_layout(name)?.size_bytes();
+            let bytes = self
+                .record_layout(name)?
+                .size()
+                .bytes()
+                .ok_or("C++ byte view of a symbolic record is outside the supported slice")?;
             // The array lvalue checks the whole footprint without selecting
             // a new subobject. Keep the source pointer's designation/bounds.
             (pointer, ProgramType::UInt8Array(bytes))

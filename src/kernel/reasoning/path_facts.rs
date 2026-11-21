@@ -241,6 +241,11 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             ) == Some(true)
         }
         Proposition::Equal(left, right) => left == right,
+        Proposition::ConditionIs(condition, expected)
+            if let Some(actual) = condition.operand_view().closed_float_predicate_value() =>
+        {
+            actual == *expected
+        }
         condition_source_0 @ Proposition::ConditionIs(_, expected)
             if let Some((ConditionTerm::Constant(actual), _)) =
                 condition_source_0.condition_native() =>
@@ -307,6 +312,11 @@ pub(in crate::kernel) fn conjunction_order_facts_are_inconsistent(
 
 pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
+        Proposition::ConditionIs(condition, expected)
+            if let Some(actual) = condition.operand_view().closed_float_predicate_value() =>
+        {
+            actual != *expected
+        }
         condition_source_0 @ Proposition::ConditionIs(_, expected)
             if let Some((ConditionTerm::Constant(actual), _)) =
                 condition_source_0.condition_native() =>
@@ -382,8 +392,12 @@ fn algebraic_terms_equal(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
         }
 }
 
-/// The equality checker has already checked both operands' types and schemas.
-fn algebraic_match_rebuilds_scrutinee(matched: &AlgebraicTerm, other: &AlgebraicTerm) -> bool {
+/// Check the arm bodies and binders of a reconstruction. Callers validate
+/// the operand types and schemas before using this as equality evidence.
+pub(in crate::kernel) fn algebraic_match_rebuilds_scrutinee(
+    matched: &AlgebraicTerm,
+    other: &AlgebraicTerm,
+) -> bool {
     let AlgebraicTermNode::Match { scrutinee, arms } = &matched.node else {
         return false;
     };

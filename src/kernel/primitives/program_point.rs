@@ -263,17 +263,170 @@ struct PointNode {
     point_read_index: PointReadIndex,
     /// Earliest recorded view in a suffix of effects disjoint from parameter
     /// storage. Read selection can start here.
-    external_read_start: Option<ExternalReadStart>,
-    /// Entry carried across this point's checked call. The ordinary local
-    /// suffix can reach this point without admitting the call for scalar reads.
-    array_entry_after_call: Option<ExternalReadStart>,
+    external_read_start: Option<ReadVersionPoint>,
+    /// Array version carried across this point's checked call. The ordinary
+    /// local suffix can reach this point without crossing the call for scalars.
+    array_version_after_call: Option<ReadVersionPoint>,
+    array_block_versions: Option<ArrayBlockVersions>,
 }
 
 #[derive(Clone, Debug)]
-struct ExternalReadStart {
+struct ReadVersionPoint {
     point: Weak<PointNode>,
     view: IndexedView,
     memory: SharedMemory,
+}
+
+#[derive(Clone, Debug)]
+struct ArrayBlockVersions {
+    /// A fresh lineage after an unclassified effect prevents a join from
+    /// diffing maps with no shared base.
+    generation: ProgramPointId,
+    static_entry: Option<ReadVersionPoint>,
+    writes: PersistentMap<AddressBase, ArrayBlockWrite>,
+}
+
+#[derive(Clone, Debug)]
+struct ArrayBlockWrite(Weak<PointNode>);
+
+impl PartialEq for ArrayBlockWrite {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl ArrayBlockVersions {
+    fn at_verified_view(path: &PathLink, memory: &SharedMemory) -> Option<Self> {
+        let node = path.0.as_ref()?;
+        if !node.function_entry {
+            return node.array_block_versions.clone();
+        }
+        Some(Self {
+            generation: node.id,
+            static_entry: Some(ReadVersionPoint {
+                point: Arc::downgrade(node),
+                view: path.1.clone(),
+                memory: memory.clone(),
+            }),
+            writes: PersistentMap::default(),
+        })
+    }
+
+    /// Walk only changed keys between maps with the same lineage. An array
+    /// with different versions on different arms receives the join's version.
+    fn joining(points: &[ProgramPoint], joined: &Weak<PointNode>) -> Option<Self> {
+        let versions_at = |point: &ProgramPoint| {
+            if !point.path.matches_indexed_view(&point.memory) {
+                return None;
+            }
+            Self::at_verified_view(&point.path, &point.memory)
+        };
+        let (first, rest) = points.split_first()?;
+        let base = versions_at(first)?;
+        let mut result = base.clone();
+        for point in rest {
+            crate::instrumentation::record_deterministic_work(1);
+            let other = versions_at(point)?;
+            if other.generation != base.generation {
+                return None;
+            }
+            for (block, left, right) in base.writes.diff(&other.writes) {
+                if block.is_static_storage_block()
+                    || (left.is_some() && right.is_some() && result.writes.get(block).is_some())
+                {
+                    result
+                        .writes
+                        .insert(block.clone(), ArrayBlockWrite(joined.clone()));
+                } else {
+                    // An automatic or heap object must exist on every
+                    // arm. Its entry cannot stand for another lifetime.
+                    result.writes.remove(block);
+                }
+            }
+        }
+        Some(result)
+    }
+
+    fn after(
+        predecessors: &[PathLink],
+        steps: Option<&StepLog>,
+        memory: &SharedMemory,
+        point: &Weak<PointNode>,
+        id: ProgramPointId,
+        transition: PointTransition,
+    ) -> Option<Self> {
+        let [from] = predecessors else {
+            return None;
+        };
+        let source = match steps {
+            Some(log)
+                if log.contiguous
+                    && log.produced.arena_id() == memory.arena_id()
+                    && (transition != PointTransition::Provisional || log.previous.is_none()) =>
+            {
+                &log.first_base
+            }
+            Some(_) => return None,
+            None => memory,
+        };
+        if !from.matches_indexed_view(source) {
+            return None;
+        }
+        let mut versions = Self::at_verified_view(from, source).unwrap_or_else(|| Self {
+            generation: id,
+            static_entry: None,
+            writes: PersistentMap::default(),
+        });
+        if let Some(log) = steps {
+            if log.previous.is_none() {
+                versions.record(&log.step, point)?;
+            } else {
+                let effects =
+                    std::iter::successors(steps, |log| log.previous.as_deref()).collect::<Vec<_>>();
+                for effect in effects.into_iter().rev() {
+                    versions.record(&effect.step, point)?;
+                }
+            }
+        }
+        (versions.static_entry.is_some() || !versions.writes.is_empty()).then_some(versions)
+    }
+
+    fn record(&mut self, step: &MemoryDerivation, point: &Weak<PointNode>) -> Option<()> {
+        use crate::kernel::resource_tracker::step_effect::{
+            BlockSeparation, BlockVersionEffect, block_version_effect,
+        };
+
+        crate::instrumentation::record_deterministic_work(1);
+        let effect = block_version_effect(step);
+        if let BlockVersionEffect::Object(block, BlockSeparation::ReleaseOfDistinctBlock) = effect
+            && (indexed_local(block) || matches!(block, AddressBase::Heap(_)))
+        {
+            self.writes.remove(block);
+            return Some(());
+        }
+        let mut record_object = |block: &AddressBase| {
+            if indexed_array_object(block) {
+                self.writes
+                    .insert(block.clone(), ArrayBlockWrite(point.clone()));
+                true
+            } else {
+                matches!(block, AddressBase::Temporary(_))
+            }
+        };
+        match effect {
+            BlockVersionEffect::Object(block, _) if record_object(block) => Some(()),
+            BlockVersionEffect::WriteSet(ranges)
+                if ranges.iter().all(|range| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    record_object(&range.base().base)
+                }) =>
+            {
+                Some(())
+            }
+            BlockVersionEffect::Unchanged => Some(()),
+            _ => None,
+        }
+    }
 }
 
 impl Drop for PointNode {
@@ -436,7 +589,7 @@ impl PathLink {
             join_point_read_indexes(points).unwrap_or_else(|| PointReadIndex::empty(id));
         let external_read_start = joined_external_entry(points);
         Self(
-            Some(Arc::new(PointNode {
+            Some(Arc::new_cyclic(|joined| PointNode {
                 id,
                 function_entry: false,
                 memory,
@@ -445,7 +598,8 @@ impl PathLink {
                 split: split.filter(|point| point.0.is_some()).cloned(),
                 point_read_index,
                 external_read_start,
-                array_entry_after_call: None,
+                array_version_after_call: None,
+                array_block_versions: ArrayBlockVersions::joining(points, joined),
             })),
             IndexedView::Recorded,
         )
@@ -464,12 +618,20 @@ impl PathLink {
             .filter(|point| point.0.is_some())
             .collect::<Box<[_]>>();
         let external_read_start = external_read_start(&predecessors, steps.as_deref(), &memory);
-        let array_entry_after_call =
-            array_entry_across_call(&predecessors, steps.as_deref(), &memory);
+        let array_version_after_call =
+            array_version_across_call(&predecessors, steps.as_deref(), &memory);
         Self(
             Some(Arc::new_cyclic(|version| {
                 let id = ProgramPointId::fresh();
                 let point_read_index = point_read_index(
+                    &predecessors,
+                    steps.as_deref(),
+                    &memory,
+                    version,
+                    id,
+                    transition,
+                );
+                let array_block_versions = ArrayBlockVersions::after(
                     &predecessors,
                     steps.as_deref(),
                     &memory,
@@ -486,7 +648,8 @@ impl PathLink {
                     split: split.filter(|point| point.0.is_some()),
                     point_read_index,
                     external_read_start,
-                    array_entry_after_call,
+                    array_version_after_call,
+                    array_block_versions,
                 }
             })),
             IndexedView::Recorded,
@@ -537,6 +700,10 @@ impl PathLink {
 fn indexed_local(block: &AddressBase) -> bool {
     matches!(block, AddressBase::AutomaticLocal { .. })
         || matches!(block, AddressBase::Concrete(_) if block.is_local_block())
+}
+
+fn indexed_array_object(block: &AddressBase) -> bool {
+    block.is_static_storage_block() || indexed_local(block) || matches!(block, AddressBase::Heap(_))
 }
 
 /// Parameter addresses can alias across differently written bases. Keep one
@@ -642,7 +809,7 @@ fn external_read_start(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
     memory: &SharedMemory,
-) -> Option<ExternalReadStart> {
+) -> Option<ReadVersionPoint> {
     let [from @ PathLink(Some(point), view)] = predecessors else {
         return None;
     };
@@ -661,7 +828,7 @@ fn external_read_start(
         return None;
     }
     point.external_read_start.clone().or_else(|| {
-        Some(ExternalReadStart {
+        Some(ReadVersionPoint {
             point: Arc::downgrade(point),
             view: view.clone(),
             memory: source.clone(),
@@ -672,11 +839,11 @@ fn external_read_start(
 /// Every write in a checked call confined to automatic objects is disjoint
 /// from arrays supplied by parameters. The log summarizes those calls and
 /// local effects when it records them, including within a transition batch.
-fn array_entry_across_call(
+fn array_version_across_call(
     predecessors: &[PathLink],
     steps: Option<&StepLog>,
     memory: &SharedMemory,
-) -> Option<ExternalReadStart> {
+) -> Option<ReadVersionPoint> {
     let [from] = predecessors else { return None };
     let log = steps?;
     if !log.contiguous
@@ -686,18 +853,32 @@ fn array_entry_across_call(
     {
         return None;
     }
-    external_array_entry(from, &log.first_base)
+    external_array_anchor(from, &log.first_base)
 }
 
-/// The ordinary local suffix may end at entry or at a call with a certified
-/// entry. Either case is one suffix lookup and at most one further lookup.
-fn external_array_entry(path: &PathLink, memory: &SharedMemory) -> Option<ExternalReadStart> {
+/// An external array can start at function entry or at a write into the
+/// shared caller storage. A named external object can only use entry here.
+fn is_external_array_origin(node: &PointNode) -> bool {
+    node.function_entry
+        || node.steps.as_ref().is_some_and(|log| {
+            log.contiguous
+                && log.produced.arena_id() == node.memory.arena_id()
+                && matches!(
+                    log.step.as_ref(),
+                    MemoryDerivation::Store { pointer, .. }
+                        if pointer.base == AddressBase::ExternalArgument
+                )
+        })
+}
+
+/// The local suffix can end at an origin or at a call that carries one.
+fn external_array_anchor(path: &PathLink, memory: &SharedMemory) -> Option<ReadVersionPoint> {
     if !path.matches_indexed_view(memory) {
         return None;
     }
     let node = path.0.as_ref()?;
-    if node.function_entry {
-        return Some(ExternalReadStart {
+    if is_external_array_origin(node) {
+        return Some(ReadVersionPoint {
             point: Arc::downgrade(node),
             view: path.1.clone(),
             memory: memory.clone(),
@@ -705,23 +886,26 @@ fn external_array_entry(path: &PathLink, memory: &SharedMemory) -> Option<Extern
     }
     if let Some(anchor) = &node.external_read_start {
         let origin = anchor.point.upgrade()?;
-        return if origin.function_entry {
+        return if is_external_array_origin(&origin) {
             Some(anchor.clone())
         } else {
-            origin.array_entry_after_call.clone()
+            origin.array_version_after_call.clone()
         };
     }
-    node.array_entry_after_call.clone()
+    node.array_version_after_call.clone()
 }
 
 /// Retain the common entry only when every incoming path proves that it
 /// preserved external storage. The incoming points already own the anchors.
-fn joined_external_entry(points: &[ProgramPoint]) -> Option<ExternalReadStart> {
+fn joined_external_entry(points: &[ProgramPoint]) -> Option<ReadVersionPoint> {
     let (first, rest) = points.split_first()?;
-    let entry = external_array_entry(&first.path, &first.memory)?;
+    let entry = external_array_anchor(&first.path, &first.memory)?;
+    if !entry.point.upgrade()?.function_entry {
+        return None;
+    }
     for point in rest {
         crate::instrumentation::record_deterministic_work(1);
-        let other = external_array_entry(&point.path, &point.memory)?;
+        let other = external_array_anchor(&point.path, &point.memory)?;
         if !Weak::ptr_eq(&entry.point, &other.point)
             || entry.memory.arena_id() != other.memory.arena_id()
         {
@@ -789,6 +973,15 @@ fn record_point_read_effect(
             ..
         } if read_bucket(&pointer.base).is_some() => {
             let bucket = read_bucket(&pointer.base).expect("indexed write bucket");
+            // A symbolic-size write can overlap other fields of the object
+            // even when its modeled carrier width does not.
+            if indexed_local(&pointer.base)
+                && step
+                    .single_write_extent()
+                    .is_some_and(|(_, extent)| extent.bytes().is_none())
+            {
+                index.blocks.remove(bucket);
+            }
             let call_word = matches!(
                 step.as_ref(),
                 MemoryDerivation::ObjectInitializationRecorded {
@@ -1209,6 +1402,12 @@ impl ProgramPoint {
         }
     }
 
+    /// The read can be identified by the point alone, including through a
+    /// view that only materialized names for bytes the point already held.
+    pub(crate) fn has_certified_read_view(&self) -> bool {
+        matches!(self.observation_key(), ReadKey::Point(_))
+    }
+
     fn read_key_at(&self, id: ProgramPointId) -> ReadKey {
         if self.path.matches_indexed_view(&self.memory) {
             ReadKey::Point(id)
@@ -1220,6 +1419,19 @@ impl ProgramPoint {
     pub(crate) fn names_exact_read(&self, read: &Self) -> bool {
         self.id()
             .is_some_and(|id| self.read_key_at(id) == read.read_key())
+    }
+
+    /// Whether this recorded view can name the supplied read. A selected
+    /// version admits another certified view of the same point. An
+    /// unselected read still has a memory identity in its kernel term.
+    pub(crate) fn names_read_view(&self, read: &Self) -> bool {
+        if read.read_version_id().is_some() {
+            self.names_exact_read(read)
+        } else {
+            read.id().is_some_and(|id| {
+                self.id() == Some(id) && self.memory.arena_id() == read.memory.arena_id()
+            })
+        }
     }
 
     /// An exact read keeps the selected point even if another point has equal
@@ -1264,16 +1476,50 @@ impl ProgramPoint {
         self.clone()
     }
 
-    /// A function-entry array version reached through a recorded suffix of
-    /// local operations and checked calls that preserve parameter storage.
-    pub(in crate::kernel) fn entry_array_version(&self, block: &AddressBase) -> Option<Self> {
+    /// A recorded version for an array in automatic, static, heap, or caller storage.
+    pub(in crate::kernel) fn indexed_array_version(&self, block: &AddressBase) -> Option<Self> {
+        if indexed_array_object(block) {
+            return self.indexed_block_array_version(block);
+        }
         if !external_storage(block) {
             return None;
         }
-        let entry = external_array_entry(&self.path, &self.memory)?;
+        let anchor = external_array_anchor(&self.path, &self.memory)?;
+        let origin = anchor.point.upgrade()?;
+        if !origin.function_entry && *block != AddressBase::ExternalArgument {
+            return None;
+        }
         Some(Self {
-            memory: entry.memory,
-            path: PathLink(Some(entry.point.upgrade()?), entry.view),
+            memory: anchor.memory,
+            path: PathLink(Some(origin), anchor.view),
+            read: ReadSelection::Exact,
+        })
+    }
+
+    fn indexed_block_array_version(&self, block: &AddressBase) -> Option<Self> {
+        if !self.path.matches_indexed_view(&self.memory) {
+            return None;
+        }
+        let current = self.path.0.as_ref()?;
+        if current.function_entry && block.is_static_storage_block() {
+            return Some(self.clone().for_exact_read());
+        }
+        let versions = current.array_block_versions.as_ref()?;
+        if let Some(ArrayBlockWrite(version)) = versions.writes.get(block) {
+            let version = version.upgrade()?;
+            return Some(Self {
+                memory: version.memory.clone(),
+                path: PathLink(Some(version), IndexedView::Recorded),
+                read: ReadSelection::Exact,
+            });
+        }
+        if !block.is_static_storage_block() {
+            return None;
+        }
+        let entry = versions.static_entry.as_ref()?;
+        Some(Self {
+            memory: entry.memory.clone(),
+            path: PathLink(Some(entry.point.upgrade()?), entry.view.clone()),
             read: ReadSelection::Exact,
         })
     }
@@ -1398,6 +1644,8 @@ impl ProgramPoint {
 
     pub(crate) fn supports_indexed_version(pointer: &Address) -> bool {
         read_bucket(&pointer.base).is_some()
+            || (pointer.base.is_static_storage_block()
+                && pointer.offset == AddressOffset::Constant(0))
     }
 
     /// A direct integer cell's version, if this path has a recorded direct write
@@ -1417,7 +1665,12 @@ impl ProgramPoint {
         pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
-        if value_type == ProgramType::Bool || value_type.is_pointer() {
+        let indexed_algebraic = matches!(value_type, ProgramType::Parameter(ty)
+            if indexed_local(&pointer.base)
+                && matches!(pointer.offset, AddressOffset::Constant(_))
+                && !ty.is_enum()
+                && !ty.has_abstract_size());
+        if value_type == ProgramType::Bool || value_type.is_pointer() || indexed_algebraic {
             return self.indexed_version(pointer, value_type.byte_width(), |store| {
                 matches!(store, MemoryDerivation::Store { value, .. } if value.program_type() == value_type)
             });
@@ -1445,6 +1698,9 @@ impl ProgramPoint {
         bytes: u32,
         matches_source: impl FnOnce(&MemoryDerivation) -> bool,
     ) -> Option<Self> {
+        if pointer.base.is_static_storage_block() {
+            return self.indexed_whole_static_store(pointer, bytes, matches_source);
+        }
         let bucket = read_bucket(&pointer.base)?;
         let node = self.path.0.as_ref()?;
         if !self.path.matches_indexed_view(&self.memory) {
@@ -1476,6 +1732,36 @@ impl ProgramPoint {
                 ReadSelection::IndexedWrite(write.source.clone())
             },
         })
+    }
+
+    /// A whole-object scalar can use the block's recorded version directly.
+    /// Select one store from the sealed point, without searching older effects.
+    fn indexed_whole_static_store(
+        &self,
+        pointer: &Address,
+        bytes: u32,
+        matches_source: impl FnOnce(&MemoryDerivation) -> bool,
+    ) -> Option<Self> {
+        if pointer.offset != AddressOffset::Constant(0)
+            || self.memory().block_size(&pointer.base)?.as_const()? != bytes
+        {
+            return None;
+        }
+        let mut version = self.indexed_block_array_version(&pointer.base)?;
+        let source = &version.path.0.as_ref()?.steps.as_ref()?.step;
+        let MemoryDerivation::Store {
+            pointer: written,
+            value,
+            ..
+        } = source.as_ref()
+        else {
+            return None;
+        };
+        if written != pointer || value.byte_width() != bytes || !matches_source(source) {
+            return None;
+        }
+        version.read = ReadSelection::IndexedWrite(source.clone());
+        Some(version)
     }
 
     /// The recorded value of this indexed read's defining store.
@@ -1705,6 +1991,68 @@ mod tests {
     }
 
     #[test]
+    fn a_join_keeps_shared_array_versions_and_renames_changed_blocks() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let static_cell = SymbolicMemory::global_pointer("static_array");
+        let local_array = SymbolicMemory::local_pointer("local_array");
+        let other = slot();
+        let entry = ExecutionState::new().begin_function_entry_memory();
+        let entry_id = entry.observation_point_id();
+        let write = |state: &ExecutionState, address: &Address, bits| {
+            state.clone().with_memory(state.memory().clone().store(
+                address.clone(),
+                ProgramValue::Int32(MachineTerm::constant(bits)),
+            ))
+        };
+        let version = |point: &ProgramPoint, address: &Address| {
+            point
+                .indexed_array_version(&address.base)
+                .and_then(|point| point.read_version_id())
+        };
+        let mut work = Vec::new();
+        for count in [4, 16, 64, 256] {
+            let mut before = entry.clone().with_memory(
+                entry
+                    .memory()
+                    .clone()
+                    .with_block(other.base.clone(), 4)
+                    .with_block(local_array.base.clone(), 4),
+            );
+            for index in 0..count {
+                let local = SymbolicMemory::local_pointer(format!("unrelated_{index}"));
+                before = before
+                    .clone()
+                    .with_memory(before.memory().clone().with_block(local.base, 4));
+            }
+            let before = write(&before, &local_array, 7);
+            let left = write(&before, &other, 1);
+            let right = write(&before, &other, 2);
+            let join = |left: &ExecutionState, right: &ExecutionState| {
+                let mut result = left.clone();
+                result.join_program_points(left, right, before.path_link());
+                result.program_point()
+            };
+            let (joined, cost) =
+                crate::instrumentation::measure_deterministic_work(|| join(&left, &right));
+            assert_eq!(version(&joined, &static_cell), entry_id);
+            assert_eq!(
+                version(&joined, &local_array),
+                before.observation_point_id(),
+            );
+            assert_eq!(version(&joined, &other), joined.id());
+            work.push(cost);
+
+            let changed = write(&right, &static_cell, 7);
+            let joined = join(&left, &changed);
+            assert_eq!(version(&joined, &static_cell), joined.id());
+
+            let unclassified = write(&right, &Address::symbolic(Variable(1_037_601)), 7);
+            assert!(version(&join(&left, &unclassified), &static_cell).is_none());
+        }
+        assert!(work.iter().all(|&cost| cost <= work[0] + 64), "{work:?}");
+    }
+
+    #[test]
     fn fixed_offset_versions_match_the_path_and_stop_at_overlaps_or_log_gaps() {
         let _session = crate::kernel::VerificationSession::enter();
         let left = slot();
@@ -1727,8 +2075,11 @@ mod tests {
                 .indexed_integer_version(&right, LoadKind::Int32)
                 .and_then(|point| point.read_version_id())
         };
-        let walked =
-            crate::kernel::resource_tracker::cell_version_on_path(sibling.path_link(), &right, 4);
+        let walked = crate::kernel::resource_tracker::cell_version_on_path(
+            sibling.path_link(),
+            &right,
+            4.into(),
+        );
         assert_eq!(
             walked.and_then(|point| point.id()),
             written.program_point_id()
@@ -1784,8 +2135,11 @@ mod tests {
                 .and_then(|point| point.read_version_id())
         };
         assert_eq!(version(&joined, &slot), split.program_point_id());
-        let walked =
-            crate::kernel::resource_tracker::cell_version_on_path(joined.path_link(), &slot, 4);
+        let walked = crate::kernel::resource_tracker::cell_version_on_path(
+            joined.path_link(),
+            &slot,
+            4.into(),
+        );
         assert_eq!(
             walked.and_then(|point| point.id()),
             split.program_point_id()

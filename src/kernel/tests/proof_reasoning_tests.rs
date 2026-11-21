@@ -5764,7 +5764,7 @@ fn derived_order_contradiction_bridges_state_loads() {
         .assume_proposition(Proposition::MemoryMutatesOnly {
             before,
             after,
-            writes: vec![(written, 4)],
+            writes: vec![(written, crate::kernel::AccessExtent::from(4))],
         })
         .assume_condition(
             ConditionTerm::signed_less_than(after_load, before_load),

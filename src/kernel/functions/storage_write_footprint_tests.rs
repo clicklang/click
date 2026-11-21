@@ -104,11 +104,17 @@ fn memory_effect_write_collection_preserves_each_access_width() {
     let fact = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
         before: SymbolicMemory::new(),
         after: SymbolicMemory::new(),
-        writes: vec![(pointer.clone(), 1), (pointer.clone(), 2)],
+        writes: vec![
+            (pointer.clone(), crate::kernel::AccessExtent::from(1)),
+            (pointer.clone(), crate::kernel::AccessExtent::from(2)),
+        ],
     });
 
     assert_eq!(
         crate::kernel::reasoning::memory_effect_write_accesses(&[fact]),
-        BTreeSet::from([(pointer.clone(), 1), (pointer, 2)]),
+        BTreeSet::from([
+            (pointer.clone(), crate::kernel::AccessExtent::from(1)),
+            (pointer, crate::kernel::AccessExtent::from(2)),
+        ]),
     );
 }

@@ -1603,9 +1603,9 @@ available when one of these holds:
 
 - It is a fact, or a leaf conjunct of a fact. An implication or quantified
   goal must be such a fact up to renaming of its bound variables.
-- It is a viewability goal for a concrete byte span within the exact block
-  recorded in the goal's memory state. The check uses the written base
-  identity, offset, and span size.
+- It is a viewability goal for an empty byte span or for a concrete span
+  within the exact block recorded in the goal's memory state. A nonempty
+  span uses the written base identity, offset, and span size.
 - The completed execution path diverges and the goal is a return
   postcondition.
 - It is a typed read-definedness goal whose memory state holds a compatible
@@ -1620,10 +1620,11 @@ available when one of these holds:
   at a byte boundary are separate when the signed endpoints of the leading
   range are ordered. A sequence with multiple effects needs individually
   checked steps.
-- It is a separation of memory ranges on two distinct automatic objects,
-  or between an automatic object and storage incoming to the function.
-  The check uses the exact block identities in the goal. Forming the
-  ranges still carries the ordinary range obligations.
+- It is a separation of memory ranges on distinct static objects or
+  distinct automatic objects, or between an automatic object and storage
+  incoming to the function. Two ranges on the same symbolic base can also
+  be separate by their exact constant byte intervals. Forming the ranges
+  still carries the ordinary range obligations.
 - It follows by exact Boolean unit propagation. Admitting `A or B` and
   `not A` makes `B` available; admitting `A implies B` and `A` makes `B`
   available. Either admission order works, and consequences propagate through
@@ -1664,7 +1665,9 @@ order comparisons close when their symbolic terms cancel. Identical calls,
 reads, folds, and symbolic matches may cancel as opaque operands. An equality
 with an `int32` union member can also use the typed value stored at its exact
 address and memory state. A by-value copy can store the source read itself
-as that value. The check uses one typed cell lookup per operand.
+as that value. The check uses one typed cell lookup per operand. A native
+signed `int32` comparison against a literal can also use the literal
+stored at the read's exact typed cell.
 
 A machine-valued range fold whose step returns its accumulator equals its
 initial value. This check reads only the accumulator binding and the initial

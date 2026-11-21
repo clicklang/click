@@ -323,7 +323,7 @@ fn strip_byte_offsets(mut pointer: &ProgramExpression) -> Option<(&ProgramExpres
                 pointer: base,
                 bytes,
             } => {
-                offset_bytes = offset_bytes.checked_add(*bytes)?;
+                offset_bytes = offset_bytes.checked_add(bytes.bytes()?)?;
                 pointer = base;
             }
             ProgramExpression::Subobject { pointer: base, .. } => pointer = base,
@@ -2308,7 +2308,7 @@ fn describe_layout_place_range(
     low: u64,
     high: u64,
 ) -> Option<String> {
-    let size = u64::from(layout.size_bytes());
+    let size = u64::from(layout.size().bytes()?);
     if size == 0 || low >= high {
         return None;
     }
@@ -2333,6 +2333,8 @@ fn describe_layout_place_range(
             format!("{name}[{index}].{field}")
         }
     };
+    // A symbolic layout's fields have no byte places.
+    layout.size().bytes()?;
     let mut fields = layout.fields().iter().collect::<Vec<_>>();
     fields.sort_by_key(|(_, field)| field.offset_bytes());
     for (position, (field_name, field)) in fields.iter().enumerate() {
@@ -2578,6 +2580,7 @@ fn scalar_array_field_indices<'a>(
     end: &MachineTerm,
 ) -> Option<(&'a str, MachineTerm, MachineTerm)> {
     let anchor = constant_addend(start)?;
+    layout.size().bytes()?;
     let (name, field) = layout.fields().iter().find(|(_, field)| {
         let low = i64::from(field.offset_bytes());
         !field.interface_type().is_pointer()
@@ -3451,6 +3454,7 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
         LoadKind::UInt16 => "an unsigned two-byte integer",
         LoadKind::Int32 | LoadKind::UInt32 => "a four-byte word",
         LoadKind::Bits64 => "an eight-byte word",
+        LoadKind::Abstract(_) => "a value of an abstract type",
         LoadKind::Int128 => "a signed sixteen-byte integer",
         LoadKind::UInt128 => "an unsigned sixteen-byte integer",
         LoadKind::Float32 => "a `float32`",
@@ -3549,7 +3553,9 @@ pub(super) fn describe_unseparated_write(
     let explanation = resource_tracker::explain_last_same(
         resource_tracker::TrackedResource::Cell {
             pointer: &load,
-            bytes: crate::kernel::load_access_width_or_widest(&memory, &load),
+            bytes: crate::kernel::AccessExtent::from(crate::kernel::load_access_width_or_widest(
+                &memory, &load,
+            )),
         },
         &resource_tracker::ProgramPoint::at(&memory),
     );
@@ -3809,7 +3815,10 @@ pub(super) fn describe_two_sided_version_mismatch(
     let explanation = resource_tracker::explain(
         resource_tracker::TrackedResource::Cell {
             pointer: &left_load,
-            bytes: crate::kernel::load_access_width_or_widest(&left_memory, &left_load),
+            bytes: crate::kernel::AccessExtent::from(crate::kernel::load_access_width_or_widest(
+                &left_memory,
+                &left_load,
+            )),
         },
         &resource_tracker::ProgramPoint::at(&left_memory),
         &resource_tracker::ProgramPoint::at(&right_memory),
@@ -4119,7 +4128,8 @@ fn describe_block_fact_stop(
 /// present: it is read off the recorded edge, which carries the value.
 #[derive(Clone, Copy)]
 struct AccessWidths {
-    read: u32,
+    /// The read's bytes: a count, or `sizeof(T)` for a value of abstract type.
+    read: crate::kernel::AccessExtent,
     store: Option<u32>,
 }
 
@@ -4147,7 +4157,7 @@ fn describe_cell_version_stop(
     stated: &[&Proposition],
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
-    let cell = describe_source_cell_of_width(pointer, Some(widths.read), parameter_binding);
+    let cell = describe_source_cell_of_width(pointer, widths.read.bytes(), parameter_binding);
     // Without the C names — a pure theorem has none — the address has no
     // source spelling, so the sentence says "this read" rather than repeating
     // a verifier-owned one.
@@ -4534,7 +4544,7 @@ pub(in crate::surface) fn diagnostic_source_pointer_cell(
             continue;
         };
         let mut fields = layout.fields().iter().filter(|(_, field)| {
-            let expected = base.address().offset_by_bytes(field.offset_bytes());
+            let expected = base.address().offset_by_layout(field.offset());
             expected.base == pointer.base
                 && crate::kernel::offsets_have_same_canonical_form(
                     &expected.offset,
@@ -4610,7 +4620,7 @@ pub(in crate::surface) fn store_cause_between_indexes_with_facts_for_tests(
         &spelled(read_index),
         &spelled(written_index),
         AccessWidths {
-            read: read_bytes,
+            read: read_bytes.into(),
             store: store_bytes,
         },
         stated,
@@ -4661,7 +4671,7 @@ fn describe_wide_store_byte_reach(
         store.object,
         store.text()
     );
-    Some(if widths.read <= element {
+    Some(if widths.read.bytes().is_some_and(|read| read <= element) {
         format!(
             "{cause} State `{read_index} < {written_index}`, which puts `{}` below every byte the \
              store writes.",
@@ -5146,7 +5156,7 @@ pub(in crate::surface) fn describe_mutex_pointer(
         if let Some((name, _)) = layout
             .fields()
             .iter()
-            .find(|(_, field)| field.offset_bytes() == offset)
+            .find(|(_, field)| field.offset().bytes() == Some(offset))
         {
             let selector = if parameter.is_struct_value() {
                 "."
@@ -5425,7 +5435,7 @@ fn describe_parameter_struct_field_pointer(
             return None;
         }
         let field_offset = diagnostic_pointer_element_index_from_base(&loaded_at, base, 1)?;
-        (field_offset == MachineTerm::constant(field.offset_bytes())).then(|| {
+        (field.offset().bytes().map(MachineTerm::constant) == Some(field_offset)).then(|| {
             describe_field_place(
                 &crate::surface::surface_parameter_binding(parameter.binding_name()).to_string(),
                 name,
@@ -5473,6 +5483,17 @@ fn describe_struct_member_from(
     let layout = parameter
         .pointee_struct_layout()
         .or_else(|| parameter.struct_layout())?;
+    // A symbolic layout's field is named by its `offsetof` term.
+    if let Some(symbolic) = layout.symbolic_layout() {
+        let rest = pointer.offset_from_base(base)?;
+        let (None, field_layout, field) =
+            crate::kernel::SymbolicLayoutName::field_displacement(&rest)?
+        else {
+            return None;
+        };
+        return (field_layout == symbolic)
+            .then(|| format!("{name}{select}{}", symbolic.field_name(field)));
+    }
     let size = i64::from(layout.size_bytes());
     if size == 0 {
         return None;
@@ -5551,17 +5572,22 @@ pub(super) fn diagnostic_parameter_element_width(
     {
         return i64::from(pointee.to_kernel_type().byte_width());
     }
-    if let Some(layout) = parameter.pointee_struct_layout() {
-        return i64::from(layout.size_bytes());
+    if let Some(size) = parameter
+        .pointee_struct_layout()
+        .and_then(|layout| layout.size().bytes())
+    {
+        return i64::from(size);
     }
     if !parameter.is_struct_value()
         && parameter
             .interface_type()
             .pointee_type()
             .is_some_and(|pointee| !pointee.is_pointer())
-        && let Some(layout) = parameter.struct_layout()
+        && let Some(size) = parameter
+            .struct_layout()
+            .and_then(|layout| layout.size().bytes())
     {
-        return i64::from(layout.size_bytes());
+        return i64::from(size);
     }
     // A pointer to (or array of) one scalar type is indexed by that scalar's
     // width, whatever the pointer itself occupies.
@@ -6458,15 +6484,7 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
                 describe_program_expression(base),
                 describe_program_expression(index),
             );
-            match object_at_address(&base) {
-                Some(object) if index == "0" => object.to_string(),
-                // An element of a slice value reads through its data
-                // pointer; Rust writes it `x[i]`.
-                _ => match base.strip_suffix(".as_ptr()") {
-                    Some(slice) => format!("{slice}[{index}]"),
-                    None => format!("{base}[{index}]"),
-                },
-            }
+            describe_indexed_place(&base, &index)
         }
     }
 }
@@ -6490,7 +6508,7 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
     let layout =
         object_fields::ambient_struct_layout(&pointee_struct_at(&address, parameter_binding)?)?;
     let mut fields = layout.fields().iter().filter(|(_, field)| {
-        u64::from(field.offset_bytes()) == offset
+        field.offset().bytes().map(u64::from) == Some(offset)
             && crate::kernel::LoadKind::of_type(field.interface_type().to_kernel_type())
                 .is_some_and(|read| read.reads_word_of(kind))
     });
@@ -6699,7 +6717,8 @@ fn pointee_struct_at_depth(
     }
     let field_at = |layout: &crate::languages::interface::RecordLayout, offset: u64| {
         let mut pointers = layout.fields().iter().filter(|(_, field)| {
-            u64::from(field.offset_bytes()) == offset && field.interface_type().is_pointer()
+            field.offset().bytes().map(u64::from) == Some(offset)
+                && field.interface_type().is_pointer()
         });
         match (pointers.next(), pointers.next()) {
             (Some((_, field)), None) => field.struct_name().map(str::to_string),
@@ -6796,6 +6815,21 @@ pub(super) fn object_at_address(rendered: &str) -> Option<&str> {
     rendered
         .strip_prefix('&')
         .filter(|name| !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_'))
+}
+
+fn describe_indexed_place(base: &str, index: &str) -> String {
+    if index == "0"
+        && let Some(object) = object_at_address(base)
+    {
+        return object.to_string();
+    }
+    // An element of a Rust slice reads through the slice's data pointer.
+    let base = base.strip_suffix(".as_ptr()").unwrap_or(base);
+    if base.starts_with(['&', '*', '-', '!', '~']) {
+        format!("({base})[{index}]")
+    } else {
+        format!("{base}[{index}]")
+    }
 }
 
 /// A field of the struct `base` points at: `c.field` through an object's
@@ -7666,15 +7700,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 return describe_program_expression(object);
             }
             let base = describe_contract_expression(base);
-            match object_at_address(&base) {
-                Some(object) if index == "0" => object.to_string(),
-                // An element of a slice value reads through its data
-                // pointer; Rust writes it `x[i]`.
-                _ => match base.strip_suffix(".as_ptr()") {
-                    Some(slice) => format!("{slice}[{index}]"),
-                    None => format!("{base}[{index}]"),
-                },
-            }
+            describe_indexed_place(&base, &index)
         }
         ContractExpression::ArrayIndex { base, indexes, .. } => format!(
             "{}{}",
@@ -8272,6 +8298,11 @@ pub(super) fn describe_bitvector_with_context(
                 describe_bitvector_with_context(initial, parameter_binding),
                 describe_bitvector_with_context(body, parameter_binding)
             )
+        }
+        MachineTerm::PureFunctionApplication { name, arguments }
+            if let Some(spelled) = crate::kernel::layout_term_spelling(name, arguments.len()) =>
+        {
+            crate::languages::display_source_names(&spelled).into_owned()
         }
         MachineTerm::PureFunctionApplication {
             name,

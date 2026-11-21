@@ -330,7 +330,8 @@ impl SpecValue {
             let folded = if left.literal_bits().is_some() && right_view.literal_bits().is_some() {
                 None
             } else {
-                float_condition_constant_bits(left).zip(float_condition_constant_bits(right_view))
+                left.closed_arithmetic_bits()
+                    .zip(right_view.closed_arithmetic_bits())
             };
             let condition = match folded {
                 Some((left, right)) => {
@@ -438,86 +439,6 @@ fn retained_word_comparison(
     );
     (!matches!(condition, ConditionTerm::Constant(_)))
         .then(|| Proposition::condition_is(condition, op != ComparisonOperator::NotEqual))
-}
-
-/// The existing float predicate producer folds literal arithmetic before
-/// constructing its condition. Read a retained DAG once per selected operand;
-/// repeated children share their result, including nonconstant refusals.
-pub(super) fn float_condition_constant_bits(view: FloatOperandView<'_>) -> Option<u64> {
-    let FloatOperandView::Shared(root) = view else {
-        return view.constant_bits();
-    };
-    enum Task<'a> {
-        Enter(&'a KernelTerm),
-        Negate(&'a KernelTerm, &'a KernelTerm),
-        BinaryLeft(&'a KernelTerm, FloatBinaryOperator, [&'a KernelTerm; 2]),
-        BinaryRight(&'a KernelTerm, FloatBinaryOperator, [&'a KernelTerm; 2]),
-    }
-    let mut values = std::collections::HashMap::new();
-    let mut pending = vec![Task::Enter(root)];
-    while let Some(task) = pending.pop() {
-        match task {
-            Task::Enter(root) => {
-                if values.contains_key(&root.id()) {
-                    continue;
-                }
-                crate::instrumentation::record_deterministic_work(1);
-                match root.node() {
-                    KernelTermNode::FloatNegate { operand } => {
-                        pending.push(Task::Negate(root, operand));
-                        pending.push(Task::Enter(operand));
-                    }
-                    KernelTermNode::FloatBinary {
-                        operator,
-                        arguments,
-                    } => {
-                        pending.push(Task::BinaryLeft(root, *operator, arguments.each_ref()));
-                        pending.push(Task::Enter(&arguments[0]));
-                    }
-                    _ => {
-                        values.insert(root.id(), FloatOperandView::Shared(root).constant_bits());
-                    }
-                }
-            }
-            Task::Negate(root, operand) => {
-                let sign = match FloatOperandView::Shared(root).format() {
-                    KernelFloatType::Float32 => 0x8000_0000,
-                    KernelFloatType::Float64 => 0x8000_0000_0000_0000,
-                };
-                values.insert(root.id(), values[&operand.id()].map(|bits| bits ^ sign));
-            }
-            Task::BinaryLeft(root, operator, arguments) => {
-                if values[&arguments[0].id()].is_none() {
-                    values.insert(root.id(), None);
-                } else {
-                    pending.push(Task::BinaryRight(root, operator, arguments));
-                    pending.push(Task::Enter(arguments[1]));
-                }
-            }
-            Task::BinaryRight(root, operator, arguments) => {
-                let value = values[&arguments[0].id()]
-                    .zip(values[&arguments[1].id()])
-                    .and_then(|(left, right)| {
-                        let format = FloatOperandView::Shared(root).format();
-                        let native = match format {
-                            KernelFloatType::Float32 => MachineTerm::float32_binary(
-                                MachineTerm::constant(left as u32),
-                                MachineTerm::constant(right as u32),
-                                operator,
-                            ),
-                            KernelFloatType::Float64 => MachineTerm::float64_binary(
-                                MachineTerm::uint64_constant(left),
-                                MachineTerm::uint64_constant(right),
-                                operator,
-                            ),
-                        };
-                        FloatOperandView::Native(format, &native).constant_bits()
-                    });
-                values.insert(root.id(), value);
-            }
-        }
-    }
-    values[&root.id()]
 }
 
 /// Call assembly retains machine results while subsequent arguments branch.

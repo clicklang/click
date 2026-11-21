@@ -183,7 +183,7 @@ impl Parser {
             .structs
             .get(struct_name)
             .expect("validated local struct array has a layout")
-            .size_bytes;
+            .size_bytes();
         let zero_fill = compact
             .then(|| {
                 let count = array_shape
@@ -541,7 +541,7 @@ impl Parser {
             .iter()
             .map(|(name, field)| (name.clone(), field.clone()))
             .collect::<Vec<_>>();
-        fields.sort_by_key(|(_, field)| field.offset_bytes);
+        fields.sort_by_key(|(_, field)| field.offset_bytes());
 
         self.expect(Token::LBrace)?;
         let mut initializers = Vec::new();
@@ -616,7 +616,7 @@ impl Parser {
         field: &RecordField,
     ) -> Result<Vec<CAggregateInitializer>, CSyntaxError> {
         let field_offset = base_offset
-            .checked_add(field.offset_bytes)
+            .checked_add(field.offset_bytes())
             .expect("validated aggregate initializer field offset");
         if let Some(element_width) = field.array_element_width {
             let nested_name = field
@@ -846,7 +846,7 @@ impl Parser {
         // `fields` is a BTreeMap for name lookup, but C initializer order is
         // declaration order. ABI offsets are already assigned in declaration
         // order, so they provide the stable source-order key here.
-        fields.sort_by_key(|field| field.offset_bytes);
+        fields.sort_by_key(|field| field.offset_bytes());
 
         self.expect(Token::LBrace)?;
         let mut stores = Vec::new();
@@ -955,7 +955,7 @@ impl Parser {
             if root_index.is_none() {
                 root_index = root_fields
                     .iter()
-                    .position(|candidate| candidate.offset_bytes == field.offset_bytes);
+                    .position(|candidate| candidate.offset_bytes() == field.offset_bytes());
             }
 
             if self.peek() == Some(&Token::LBracket) {
@@ -971,7 +971,7 @@ impl Parser {
                     return Err(self
                         .error_here("nested field designators require an embedded struct field"));
                 }
-                parent_pointer = offset_field_pointer(parent_pointer, field.offset_bytes);
+                parent_pointer = offset_field_pointer(parent_pointer, field.offset_bytes());
                 current_struct_name = field
                     .struct_name
                     .expect("embedded struct designator has a struct name");
@@ -989,7 +989,7 @@ impl Parser {
         target_pointer: CExpression,
         field: &RecordField,
     ) -> Result<Vec<CStatement>, CSyntaxError> {
-        let field_pointer = offset_field_pointer(target_pointer, field.offset_bytes);
+        let field_pointer = offset_field_pointer(target_pointer, field.offset_bytes());
         if let Some(element_width) = field.array_element_width {
             let struct_name = field
                 .struct_name
@@ -1265,7 +1265,7 @@ impl Parser {
             .values()
             .cloned()
             .collect::<Vec<_>>();
-        fields.sort_by_key(|field| field.offset_bytes);
+        fields.sort_by_key(|field| field.offset_bytes());
         fields
             .iter()
             .flat_map(|field| self.zero_struct_initializer_field(target_pointer.clone(), field))
@@ -1277,7 +1277,7 @@ impl Parser {
         target_pointer: CExpression,
         field: &RecordField,
     ) -> Vec<CStatement> {
-        let field_pointer = offset_field_pointer(target_pointer, field.offset_bytes);
+        let field_pointer = offset_field_pointer(target_pointer, field.offset_bytes());
         if let Some(element_width) = field.array_element_width {
             let struct_name = field
                 .struct_name

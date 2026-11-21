@@ -856,8 +856,8 @@ impl BindingName {
             qualified,
         )
     }
-    pub(crate) fn program_slice_length(slice: &str) -> Self {
-        Self::slice_length_binding(SliceLengthOwner::Source(Arc::from(slice)), slice, true)
+    pub(crate) fn scoped_slice_length(slice: &str, qualified: bool) -> Self {
+        Self::slice_length_binding(SliceLengthOwner::Source(Arc::from(slice)), slice, qualified)
     }
     fn slice_length_binding(owner: SliceLengthOwner, slice: &str, qualified: bool) -> Self {
         let prefix = if qualified { "program::" } else { "" };
@@ -876,11 +876,7 @@ impl BindingName {
             return None;
         };
         let place = declaration.spelling()?;
-        Some(Self::slice_length_binding(
-            SliceLengthOwner::Source(Arc::from(place)),
-            place,
-            false,
-        ))
+        Some(Self::scoped_slice_length(place, false))
     }
 
     pub(crate) fn unresolved_slice_length(&self) -> Option<&str> {

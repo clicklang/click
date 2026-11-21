@@ -1,9 +1,8 @@
 //! Goal-local computation for a simple proof leaf.
 //!
 //! The `computes_leaf` entry point uses only the goal, including exact
-//! stored views of typed union cells. Legacy normalization shares arithmetic
+//! stored scalar and union cell values. Legacy normalization shares arithmetic
 //! below but supplies its own atom key.
-
 use crate::kernel::machine_integer::bounds::positive_literal_remainder_divisor;
 use crate::kernel::*;
 use crate::kernel::{
@@ -74,12 +73,15 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
         return holds;
     }
     let value = match goal {
-        Proposition::ConditionIs(condition, truth) => {
-            let condition = condition.native_compat();
-            condition_value(condition)
-                .or_else(|| super::machine_ranges::comparison_value(condition))
-                .map(|value| value == *truth)
-        }
+        Proposition::ConditionIs(condition, truth) => condition
+            .operand_view()
+            .closed_float_predicate_value()
+            .or_else(|| {
+                let condition = condition.native_compat();
+                condition_value(condition)
+                    .or_else(|| super::machine_ranges::comparison_value(condition))
+            })
+            .map(|value| value == *truth),
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
             if let (Some(left), Some(right)) = (left.root(), right.root())
                 && left == right
@@ -101,17 +103,25 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
                 ))
             }
         }
-        // A concrete span is a single bounds lookup in the goal's memory.
-        // A loaded or symbolic base needs its own proof of the address.
+        // Empty spans have no accesses to check. Other concrete spans
+        // use one bounds lookup in the exact memory of the goal.
         Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
-            wide: false,
-        } => bytes
-            .as_const()
-            .is_some_and(|size| memory.access_in_bounds(base, size))
-            .then_some(true),
+            wide,
+        } => {
+            let size = if *wide {
+                bytes
+                    .native_compat()
+                    .uint64_as_const()
+                    .and_then(|size| u32::try_from(size).ok())
+            } else {
+                bytes.as_const()
+            };
+            size.is_some_and(|size| size == 0 || memory.access_in_bounds(base, size))
+                .then_some(true)
+        }
         Proposition::MemoryReadDefined {
             memory,
             pointer,
@@ -124,7 +134,9 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
             if let (Resource::Memory(left), Resource::Memory(right)) =
                 (left.as_ref(), right.as_ref()) =>
         {
-            automatic_object_ranges_separate(left, right).then_some(true)
+            (declared_object_ranges_separate(left, right)
+                || crate::kernel::primitives::constant_memory_overlap(left, right) == Some(false))
+            .then_some(true)
         }
         Proposition::Equal(left, right)
             if matches!(
@@ -184,17 +196,18 @@ fn unchanged_machine_folds_equal(left: &MachineTerm, right: &MachineTerm) -> boo
 /// These exact block kinds use the structural separation rule without
 /// asking about pointer loads or resolving aliases. Range formation has
 /// its own checked obligations before the separation goal is opened.
-fn automatic_object_ranges_separate(left: &MemoryRange, right: &MemoryRange) -> bool {
+fn declared_object_ranges_separate(left: &MemoryRange, right: &MemoryRange) -> bool {
     use AddressBase::{AutomaticLocal, ExternalArgument, ExternalObject};
     let left = left.base();
     let right = right.base();
-    matches!(
+    (matches!(
         (&left.base, &right.base),
         (
             AutomaticLocal { .. },
             AutomaticLocal { .. } | ExternalArgument | ExternalObject(_),
         ) | (ExternalArgument | ExternalObject(_), AutomaticLocal { .. })
-    ) && left.blocks_proven_distinct(right)
+    ) || left.base.is_static_storage_block() && right.base.is_static_storage_block())
+        && left.blocks_proven_distinct(right)
 }
 
 /// Constant operands and reflexivity only: a bounded structural check, with
@@ -286,6 +299,60 @@ fn stored_int32_union_member(read: &MachineTerm) -> Option<&MachineTerm> {
     Some(value)
 }
 
+/// A native comparison can read a literal already stored at its exact
+/// typed cell. Run slots, aliases, and earlier memory states stay opaque.
+fn stored_int32_literal(term: &MachineTerm) -> Option<MachineIntegerConstant> {
+    let MachineTerm::MemoryLoad(point, pointer, LoadKind::Int32) = term else {
+        return None;
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    let ProgramValue::Int32(stored) = point.memory().indexed_scalar_value(pointer)? else {
+        return None;
+    };
+    MachineIntegerType::Int32.constant_from_term(stored)
+}
+
+/// An unsigned byte promotion preserves the value of the exact selected
+/// cell. The value can be compared as a byte or promoted to C's int.
+fn stored_uint8_literal(
+    format: MachineIntegerType,
+    operand: MachineOperandView<'_>,
+) -> Option<MachineIntegerConstant> {
+    let byte = match format {
+        MachineIntegerType::UInt8 => operand,
+        MachineIntegerType::Int32 => {
+            let (
+                MachineCastSpelling::Generic,
+                MachineIntegerType::UInt8,
+                MachineIntegerType::Int32,
+                byte,
+            ) = operand.cast()?
+            else {
+                return None;
+            };
+            byte
+        }
+        _ => return None,
+    };
+    let (point, pointer, LoadKind::UInt8) = byte.read_point()? else {
+        return None;
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    let ProgramValue::UInt8(stored) = point.memory().indexed_stored_value(pointer)? else {
+        return None;
+    };
+    let value = MachineIntegerType::UInt8.constant_from_term(stored)?;
+    MachineIntegerConstant::from_unsigned(format.format(), value.bits())
+}
+
+/// Retained native comparisons may read the operands as exact Integers.
+fn stored_uint8_observation(term: &IntegerTerm) -> Option<num_bigint::BigInt> {
+    let IntegerTerm::Machine(value) = term else {
+        return None;
+    };
+    stored_uint8_literal(value.ty(), value.operand_view()).map(|byte| byte.to_integer())
+}
+
 fn condition_value(condition: &ConditionTerm) -> Option<bool> {
     match condition {
         ConditionTerm::Constant(value) => Some(*value),
@@ -325,6 +392,24 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             ) && let Some(equal) = conditional_int32_equality(left, right)
             {
                 return Some(equal == matches!(condition, ConditionTerm::IntegerEqual(..)));
+            }
+            let left_byte = stored_uint8_observation(left);
+            let right_byte = stored_uint8_observation(right);
+            if (left_byte.is_some() || right_byte.is_some())
+                && let (Some(a), Some(b)) = (
+                    left_byte.as_ref().or_else(|| left.as_const()),
+                    right_byte.as_ref().or_else(|| right.as_const()),
+                )
+            {
+                return Some(match condition {
+                    ConditionTerm::IntegerEqual(..) => a == b,
+                    ConditionTerm::IntegerNotEqual(..) => a != b,
+                    ConditionTerm::IntegerLessThan(..) => a < b,
+                    ConditionTerm::IntegerLessEqual(..) => a <= b,
+                    ConditionTerm::IntegerGreaterThan(..) => a > b,
+                    ConditionTerm::IntegerGreaterEqual(..) => a >= b,
+                    _ => unreachable!(),
+                });
             }
             super::super::integer_arithmetic::literal_integer_comparison_value(condition)
                 .or_else(|| integer_affine_comparison(condition))
@@ -374,9 +459,23 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             {
                 return Some(value);
             }
-            if let (Some(left), Some(right)) = (
+            let literals = (
                 format.constant_from_term(left),
                 format.constant_from_term(right),
+            );
+            let literals = if *format == MachineIntegerType::Int32 {
+                match literals {
+                    (Some(value), None) => (Some(value), stored_int32_literal(right)),
+                    (None, Some(value)) => (stored_int32_literal(left), Some(value)),
+                    both => both,
+                }
+            } else {
+                literals
+            };
+            let (left_literal, right_literal) = literals;
+            if let (Some(left), Some(right)) = (
+                left_literal.or_else(|| stored_uint8_literal(*format, a)),
+                right_literal.or_else(|| stored_uint8_literal(*format, b)),
             ) {
                 let (left, right) = (left.to_integer(), right.to_integer());
                 return Some(match relation {
@@ -558,6 +657,21 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
     if left == right {
         return Some(true);
     }
+    use crate::kernel::reasoning::path_facts::algebraic_match_rebuilds_scrutinee;
+    if (algebraic_match_rebuilds_scrutinee(left, right)
+        || algebraic_match_rebuilds_scrutinee(right, left))
+        && left.is_well_formed()
+        && right.is_well_formed()
+    {
+        return Some(true);
+    }
+    let projected_left = constructor_match_projection(left);
+    let projected_right = constructor_match_projection(right);
+    let left = projected_left.unwrap_or(left);
+    let right = projected_right.unwrap_or(right);
+    if (projected_left.is_some() || projected_right.is_some()) && left == right {
+        return Some(true);
+    }
     match (&left.node, &right.node) {
         (
             AlgebraicTermNode::Constructor { variant: left, .. },
@@ -583,6 +697,39 @@ fn algebraic_equality(left: &AlgebraicTerm, right: &AlgebraicTerm) -> Option<boo
             .then_some(false),
         _ => None,
     }
+}
+
+/// Select an algebraic field when the match names its constructor and
+/// the selected arm returns that field's binder directly.
+fn constructor_match_projection(term: &AlgebraicTerm) -> Option<&AlgebraicTerm> {
+    let AlgebraicTermNode::Match { scrutinee, arms } = &term.node else {
+        return None;
+    };
+    let AlgebraicTermNode::Constructor { variant, fields } = &scrutinee.node else {
+        return None;
+    };
+    crate::instrumentation::record_deterministic_work(arms.len());
+    let arm = arms.iter().find(|arm| arm.variant == *variant)?;
+    let AlgebraicTermNode::Variable(variable) = arm.body.node else {
+        return None;
+    };
+    crate::instrumentation::record_deterministic_work(arm.bindings.len());
+    let mut selected = None;
+    use crate::kernel::proof::term_rewrite::{BindingCarrier, typed_declaration_variable};
+    let mut binders = std::collections::HashSet::with_capacity(arm.bindings.len());
+    for (binding, field) in arm.bindings.iter().zip(fields) {
+        let (carrier, binder) = typed_declaration_variable(binding)?;
+        if !binders.insert(binder) {
+            return None;
+        }
+        if matches!(carrier, BindingCarrier::Algebraic) && binder == variable {
+            let AlgebraicValue::Algebraic(field) = field else {
+                return None;
+            };
+            selected = Some(field);
+        }
+    }
+    selected.filter(|_| term.is_well_formed())
 }
 
 /// Decide a C machine equality whose sides are sums and differences, at
@@ -1005,16 +1152,29 @@ pub(super) fn integer_operation_bound_comparison(condition: &ConditionTerm) -> O
         ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
         _ => return None,
     };
-    // Exact type ranges inspect just the observation and its stated endpoint.
-    // Unrelated constant comparisons should not construct affine range claims.
-    if let (IntegerTerm::Constant(endpoint), IntegerTerm::Machine(value)) =
-        (left.as_ref(), right.as_ref())
+    // A rewrite may leave the old count's zero addend in a retained sum.
+    // Its observation has the same type range as the written machine value.
+    fn unshifted_observation(term: &SharedIntegerTerm) -> Option<&SharedMachineIntegerTerm> {
+        let term = match term.as_ref() {
+            IntegerTerm::Add(a, b) if a.as_const().is_some_and(num_traits::Zero::is_zero) => b,
+            IntegerTerm::Add(a, b) | IntegerTerm::Subtract(a, b)
+                if b.as_const().is_some_and(num_traits::Zero::is_zero) =>
+            {
+                a
+            }
+            _ => term,
+        };
+        let IntegerTerm::Machine(value) = term.as_ref() else {
+            return None;
+        };
+        Some(value)
+    }
+    if let (Some(endpoint), Some(value)) = (left.as_const(), unshifted_observation(right))
         && endpoint == &crate::kernel::machine_integer::range::observation_range(value).0
     {
         return Some(true);
     }
-    if let (IntegerTerm::Machine(value), IntegerTerm::Constant(endpoint)) =
-        (left.as_ref(), right.as_ref())
+    if let (Some(value), Some(endpoint)) = (unshifted_observation(left), right.as_const())
         && endpoint == &crate::kernel::machine_integer::range::observation_range(value).1
     {
         return Some(true);
@@ -1060,22 +1220,24 @@ enum AffineLeaf {
     Fold(u64),
 }
 
-/// Read the seed through consecutive empty machine folds. Their callbacks
-/// are outside the affine walk and are never read.
-fn observe_empty_int32_fold(value: &SharedMachineIntegerTerm) -> Option<SharedIntegerTerm> {
+/// Read the value of a trivial machine fold without enumerating its range.
+pub(super) fn observe_trivial_int32_fold(
+    value: &SharedMachineIntegerTerm,
+) -> Option<SharedIntegerTerm> {
     if value.ty() != MachineIntegerType::Int32 {
         return None;
     }
-    let root = value.shared_operand()?;
-    let KernelTermNode::Fold(fold) = root.node() else {
+    let KernelTermNode::Fold(fold) = value.shared_operand()?.node() else {
         return None;
     };
-    let initial = fold.empty_int32_initial()?;
-    Some(
-        MachineOperandView::Shared(initial)
-            .observe(value.ty())?
-            .into(),
-    )
+    observe_machine_fold_result(value.ty(), &fold.trivial_int32_result()?)
+}
+
+fn observe_machine_fold_result(
+    format: MachineIntegerType,
+    result: &KernelTerm,
+) -> Option<SharedIntegerTerm> {
+    Some(MachineOperandView::Shared(result).observe(format)?.into())
 }
 
 fn integer_affine_difference(
@@ -1092,6 +1254,7 @@ fn integer_affine_difference(
     let mut seen = std::collections::HashSet::new();
     let mut stack = vec![(left.clone(), false), (right.clone(), false)];
     let mut reduced_operands = std::collections::HashMap::new();
+    let mut fold_reads = std::collections::HashMap::new();
     while let Some((term, expanded)) = stack.pop() {
         crate::instrumentation::record_deterministic_work(1);
         if expanded {
@@ -1109,7 +1272,9 @@ fn integer_affine_difference(
             }
             IntegerTerm::Negate(value) => stack.push((value.clone(), false)),
             IntegerTerm::Machine(value) => {
-                if let Some(value) = observe_empty_int32_fold(value) {
+                if let Some(result) = KernelFold::reduce_bounded_int32_in(value, &mut fold_reads)
+                    && let Some(value) = observe_machine_fold_result(value.ty(), &result)
+                {
                     stack.push((value.clone(), false));
                     reduced_operands.insert(term.id(), value);
                 }
@@ -1284,6 +1449,138 @@ mod tests {
                 assert!(work <= baseline + 16, "{measurements:?}");
             }
         }
+    }
+
+    #[test]
+    fn empty_viewability_needs_no_live_base() {
+        let _session = VerificationSession::enter();
+        for wide in [false, true] {
+            let observations = [0, 32, 128].map(|unrelated| {
+                let mut memory = SymbolicMemory::new();
+                for i in 0..unrelated {
+                    memory = memory.with_block(format!("empty-unrelated-{i}"), 4);
+                }
+                [0, 1].map(|size| {
+                    let bytes = if wide {
+                        StoredMachineTerm::new(
+                            MachineIntegerType::UInt64,
+                            MachineTerm::uint64_constant(size),
+                        )
+                    } else {
+                        MachineTerm::constant(size as u32).into()
+                    };
+                    let goal = Proposition::MemoryLoadable {
+                        memory: memory.clone(),
+                        base: Address::symbolic(Variable(402901)),
+                        bytes,
+                        wide,
+                    };
+                    crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal))
+                })
+            });
+            for checks in observations {
+                assert_eq!(checks.map(|(holds, _)| holds), [true, false]);
+                for ((_, work), (_, baseline)) in checks.into_iter().zip(observations[0]) {
+                    assert_eq!(work, baseline);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn constant_span_separation_checks_the_entire_byte_interval() {
+        let _session = VerificationSession::enter();
+        let base = Address::symbolic(Variable(402902));
+        let span = |base, width| {
+            Box::new(Resource::Memory(MemoryRange::new_with_element_width(
+                base,
+                0u32.into(),
+                1u32.into(),
+                width,
+            )))
+        };
+        for (right, separate) in [
+            (base.offset_by_bytes(7), false),
+            (base.offset_by_bytes(8), true),
+            (Address::symbolic(Variable(402903)), false),
+        ] {
+            let goal = Proposition::ResourceSeparate {
+                left: span(base.clone(), 8),
+                right: span(right, 4),
+            };
+            assert_eq!(computes_leaf(&goal), separate, "{goal:?}");
+        }
+    }
+
+    #[test]
+    fn stored_literal_order_uses_the_named_int32_cell_and_state() {
+        let _session = VerificationSession::enter();
+        let base = SymbolicMemory::global_pointer("resource-body-literal");
+        let sample = |unrelated| {
+            let mut memory = SymbolicMemory::new();
+            for i in 0..unrelated {
+                memory = memory.store(
+                    SymbolicMemory::global_pointer(format!("resource-body-neighbor-{i}")),
+                    int32(0),
+                );
+            }
+            let before = memory.clone().store(base.clone(), int32(1));
+            let after = before.clone().store(base.clone(), int32(u32::MAX));
+            let check = |memory| {
+                let read = MachineTerm::MemoryLoad(
+                    ProgramPoint::at(&crate::kernel::intern_memory(memory)),
+                    Box::new(base.clone()),
+                    LoadKind::Int32,
+                );
+                let goal = Proposition::condition_is(
+                    ConditionTerm::signed_greater_equal(read, 0u32.into()),
+                    true,
+                );
+                crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal))
+            };
+            [check(before), check(after), check(memory)]
+        };
+        let observations = [0, 32, 128].map(sample);
+        for checks in observations {
+            assert_eq!(checks.map(|(holds, _)| holds), [true, false, false]);
+            for ((_, work), (_, baseline)) in checks.into_iter().zip(observations[0]) {
+                assert!(work <= baseline + 16, "{observations:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn rewritten_zero_count_preserves_the_observations_type_range() {
+        let _session = VerificationSession::enter();
+        let n = IntegerTerm::from_machine(
+            MachineIntegerType::Int32,
+            MachineTerm::Variable(Variable(402904)),
+        )
+        .unwrap();
+        let observed =
+            |count| IntegerTerm::Add(IntegerTerm::constant_i64(count).into(), n.clone().into());
+        let upper = |value: IntegerTerm| {
+            Proposition::condition_is(
+                ConditionTerm::IntegerLessEqual(
+                    value.into(),
+                    IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
+                ),
+                true,
+            )
+        };
+        let lower = |value: IntegerTerm| {
+            Proposition::condition_is(
+                ConditionTerm::IntegerLessEqual(
+                    IntegerTerm::constant_i64(i64::from(i32::MIN)).into(),
+                    value.into(),
+                ),
+                true,
+            )
+        };
+        assert!(computes_leaf(&upper(observed(0))));
+        assert!(computes_leaf(&lower(observed(0))));
+        assert!(!computes_leaf(&upper(observed(1))));
+        assert!(!computes_leaf(&lower(observed(-1))));
     }
 
     #[test]

@@ -330,3 +330,4 @@ mod scalar_array_tests;
 
 mod borrow_model_tests;
 mod heap_tests;
+mod object_cell_tests;

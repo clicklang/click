@@ -80,6 +80,24 @@ pub(crate) fn shadow<T>(lower: impl FnOnce() -> T) -> T {
 pub(crate) fn same_up_to_binders(left: &Proposition, right: &Proposition) -> bool {
     left == right
         || crate::kernel::api::contract_certification::propositions_alpha_equivalent(left, right)
+        || (has_retained_machine_fold_comparison(left)
+            && has_retained_machine_fold_comparison(right)
+            && crate::kernel::proof::propositions_are_alpha_equal(left, right))
+}
+
+// The structural fold spelling introduces fresh binder IDs. Use the
+// state-aware alpha key for the comparison, preserving free variables and
+// the identity of any loads.
+fn has_retained_machine_fold_comparison(proposition: &Proposition) -> bool {
+    use crate::kernel::{IntegerTerm, integer_comparison_condition};
+    let Some((integer_comparison_condition!(left, right), _)) = proposition.condition_native()
+    else {
+        return false;
+    };
+    [left, right].into_iter().any(|operand| {
+        matches!(operand.as_ref(), IntegerTerm::Machine(machine)
+            if machine.shared_operand().is_some_and(|root| root.has_machine_folds()))
+    })
 }
 
 /// Records `site` when its lowering under facts differs from its fact-free

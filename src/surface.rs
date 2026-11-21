@@ -1943,8 +1943,13 @@ pub(in crate::surface) fn scalar_field_places(
             if field.union_name().is_some() || field.is_long_double() {
                 continue;
             }
+            // A symbolic layout's fields are at `offsetof` terms, which
+            // these byte places do not hold.
+            let Some(field_offset) = field.offset().bytes() else {
+                continue;
+            };
             let name = format!("{prefix}{name}");
-            let offset_bytes = base + field.offset_bytes();
+            let offset_bytes = base + field_offset;
             if field.array_element_width().is_some() {
                 let element = match field.interface_type() {
                     InterfaceType::Int32Array(length) => Some((ProgramType::Int32, 4, length)),
@@ -3389,7 +3394,8 @@ pub enum SurfaceTerm {
         /// Byte offset of `field` from the address denoted by `base`.
         /// Keeping this separately lets lowering rebuild the field load when
         /// `base` is evaluated in a different state from the field value.
-        offset_bytes: u32,
+        /// A number, or in a symbolic layout the field's `offsetof` term.
+        offset_bytes: crate::kernel::LayoutOffset,
     },
     /// `program::name`: a binding from the verified program function's
     /// lexical environment, in any source language.
@@ -4878,16 +4884,31 @@ impl RecordedStates {
         Some((selector, self.get_exact(selector)?))
     }
 
-    /// The recorded point a read of `pointer` in `memory` is made at, with its
-    /// state. A read names the canonical projection of the memory it reads
-    /// (`reasoning::memory_resolution`), which no point records; the kernel
-    /// records the memory each projection was built from when it builds it,
-    /// so the read is made at the point recording that source. Two lookups.
+    /// Select a recorded read by its own point and verify the retained view.
+    fn point_naming_read(
+        &self,
+        point: &crate::kernel::ProgramPoint,
+    ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
+        crate::instrumentation::record_deterministic_work(1);
+        let selector = self.point_name(point.id()?)?;
+        let state = self.get_exact(selector)?;
+        state
+            .program_point()
+            .names_read_view(point)
+            .then_some((selector, state))
+    }
+
+    /// Name the retained read point. Detached legacy reads may carry a
+    /// canonical projection, so they consult the index of its source memory.
     fn point_reading_load(
         &self,
-        memory: &crate::kernel::SharedMemory,
+        point: &crate::kernel::ProgramPoint,
         pointer: &crate::kernel::Address,
     ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
+        if point.id().is_some() {
+            return self.point_naming_read(point);
+        }
+        let memory = point.shared_memory();
         self.point_reading_memory(memory).or_else(|| {
             let source = crate::kernel::load_projection_source(memory, pointer)?;
             self.point_reading_memory(&source)
@@ -5104,7 +5125,7 @@ impl RecordedStates {
             operand: Box::new(name_base(&base)?),
             lowered: ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(ProgramExpression::Value(crate::kernel::int32(0))),
-                bytes,
+                bytes: bytes.into(),
             },
         })
     }
@@ -5963,7 +5984,18 @@ impl ContractSegment {
         }
     }
 
+    /// Whether the segment is a whole object of a symbolic layout, its end
+    /// that layout's `sizeof`: a range of bytes, whatever its base's type.
+    pub(crate) fn spans_symbolic_object(&self) -> bool {
+        matches!(&self.end, ProgramExpression::Value(ProgramValue::UInt64(end))
+            if matches!(crate::kernel::SymbolicLayoutName::of_term(end), Some((_, None)))
+                || crate::kernel::TypeParameterName::of_size_term(end).is_some())
+    }
+
     pub(crate) fn field_element_width(&self) -> Option<u32> {
+        if self.spans_symbolic_object() {
+            return Some(1);
+        }
         match &self.surface {
             ContractSegmentSurface::Field { element_width, .. } => *element_width,
             ContractSegmentSurface::StructRange { layout, .. } => Some(layout.layout.size_bytes()),

@@ -4718,7 +4718,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         &[Proposition::MemoryMutatesOnly {
             before: before_b.clone(),
             after: memory.clone(),
-            writes: vec![(b.clone(), 8)],
+            writes: vec![(b.clone(), crate::kernel::AccessExtent::from(8))],
         }],
         &context,
     )
@@ -4762,7 +4762,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         &[Proposition::MemoryMutatesOnly {
             before: before.clone(),
             after: changed.clone(),
-            writes: vec![(b.clone(), 4)],
+            writes: vec![(b.clone(), crate::kernel::AccessExtent::from(4))],
         }],
         &framed,
     )

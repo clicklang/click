@@ -79,6 +79,97 @@ impl<'a> FloatOperandView<'a> {
         }
     }
 
+    /// Compute a closed arithmetic operand without unfolding a shared DAG.
+    /// Cache each node's result, including refusals, for this check.
+    pub(crate) fn closed_arithmetic_bits(self) -> Option<u64> {
+        if let Some(bits) = self.literal_bits() {
+            return Some(bits);
+        }
+        if self.negate().is_none() && self.binary().is_none() {
+            return None;
+        }
+        let imported;
+        let root = match self {
+            Self::Shared(root) => root,
+            Self::Native(format, term) => {
+                imported = KernelTermImport::default().float(format, term);
+                &imported
+            }
+        };
+        enum Task<'a> {
+            Enter(&'a KernelTerm),
+            Negate(&'a KernelTerm, &'a KernelTerm),
+            BinaryLeft(&'a KernelTerm, FloatBinaryOperator, [&'a KernelTerm; 2]),
+            BinaryRight(&'a KernelTerm, FloatBinaryOperator, [&'a KernelTerm; 2]),
+        }
+        let mut values = std::collections::HashMap::new();
+        let mut pending = vec![Task::Enter(root)];
+        while let Some(task) = pending.pop() {
+            match task {
+                Task::Enter(root) => {
+                    if values.contains_key(&root.id()) {
+                        continue;
+                    }
+                    crate::instrumentation::record_deterministic_work(1);
+                    match root.node() {
+                        KernelTermNode::FloatNegate { operand } => {
+                            pending.push(Task::Negate(root, operand));
+                            pending.push(Task::Enter(operand));
+                        }
+                        KernelTermNode::FloatBinary {
+                            operator,
+                            arguments,
+                        } => {
+                            pending.push(Task::BinaryLeft(root, *operator, arguments.each_ref()));
+                            pending.push(Task::Enter(&arguments[0]));
+                        }
+                        _ => {
+                            values
+                                .insert(root.id(), FloatOperandView::Shared(root).constant_bits());
+                        }
+                    }
+                }
+                Task::Negate(root, operand) => {
+                    let sign = match FloatOperandView::Shared(root).format() {
+                        KernelFloatType::Float32 => 0x8000_0000,
+                        KernelFloatType::Float64 => 0x8000_0000_0000_0000,
+                    };
+                    values.insert(root.id(), values[&operand.id()].map(|bits| bits ^ sign));
+                }
+                Task::BinaryLeft(root, operator, arguments) => {
+                    if values[&arguments[0].id()].is_none() {
+                        values.insert(root.id(), None);
+                    } else {
+                        pending.push(Task::BinaryRight(root, operator, arguments));
+                        pending.push(Task::Enter(arguments[1]));
+                    }
+                }
+                Task::BinaryRight(root, operator, arguments) => {
+                    let value = values[&arguments[0].id()]
+                        .zip(values[&arguments[1].id()])
+                        .and_then(|(left, right)| {
+                            let format = FloatOperandView::Shared(root).format();
+                            let native = match format {
+                                KernelFloatType::Float32 => MachineTerm::float32_binary(
+                                    MachineTerm::constant(left as u32),
+                                    MachineTerm::constant(right as u32),
+                                    operator,
+                                ),
+                                KernelFloatType::Float64 => MachineTerm::float64_binary(
+                                    MachineTerm::uint64_constant(left),
+                                    MachineTerm::uint64_constant(right),
+                                    operator,
+                                ),
+                            };
+                            FloatOperandView::Native(format, &native).constant_bits()
+                        });
+                    values.insert(root.id(), value);
+                }
+            }
+        }
+        values[&root.id()]
+    }
+
     pub(crate) fn negate(self) -> Option<Self> {
         match self {
             Self::Native(KernelFloatType::Float32, MachineTerm::Float32Negate(value)) => {

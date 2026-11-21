@@ -1190,7 +1190,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
                 &[Proposition::MemoryMutatesOnly {
                     before: before.clone(),
                     after: memory.clone(),
-                    writes: vec![(write, 4)],
+                    writes: vec![(write, crate::kernel::AccessExtent::from(4))],
                 }],
                 &context,
             )
@@ -1724,7 +1724,7 @@ fn a_call_frame_step_queries_its_kept_range_once() {
                 &source,
                 crate::kernel::resource_tracker::TrackedResource::Cell {
                     pointer: &word,
-                    bytes: 8,
+                    bytes: crate::kernel::AccessExtent::from(8),
                 },
                 &crate::kernel::resource_tracker::step_effect::Evidence {
                     assumptions: &context,

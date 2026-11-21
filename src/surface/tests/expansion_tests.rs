@@ -1,6 +1,67 @@
 use super::*;
 
 #[test]
+fn algebraic_constructor_matches_expand_without_normalize() {
+    for (fixture, claims) in [
+        (
+            "algebraic_nested_fields",
+            &[
+                "nested_constructors_reduce.ensures_0",
+                "nested_symbolic_reconstruction.ensures_0",
+                "algebraic_type_argument_round_trip.ensures_0",
+            ][..],
+        ),
+        (
+            "algebraic_recursive_list",
+            &[
+                "recursive_symbolic_reconstruction.ensures_0",
+                "two_recursive_fields_reconstruct.ensures_0",
+                "mutually_recursive_fields_reconstruct.ensures_0",
+            ][..],
+        ),
+        (
+            "algebraic_symbolic_values",
+            &[
+                "maybe_match_rebuilds.ensures_0",
+                "algebraic_function_parameter.ensures_1",
+            ][..],
+        ),
+    ] {
+        let (source, _) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        for label in claims {
+            let expanded = expand_c_claim_source_by_label(&source, &[], label)
+                .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+            assert!(expanded.contains("known();"), "{label}\n{expanded}");
+            assert!(!expanded.contains("normalize()"), "{label}\n{expanded}");
+            without_implicit_solve_for_claim(label, || {
+                verify_click_theorems(&expanded).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+        }
+    }
+}
+
+#[test]
+fn memcmp_stored_byte_order_expands_without_normalize() {
+    for fixture in [
+        "memcmp_orders_after_equal_prefix",
+        "memcmp_orders_high_unsigned_bytes",
+        "memcmp_orders_the_first_differing_byte",
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let label = "ordered.contract";
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{fixture}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies five decimal and padding calculations"]
 fn closed_decimal_calculations_expand_without_normalize() {
@@ -260,6 +321,67 @@ fn copied_scalar_and_aggregate_values_expand_without_normalize() {
             verify_c_sources(&expanded, &sources).map_err(|error| error.report())
         })
         .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 22s for five span expansions and cold replays"]
+fn resource_prerequisites_span_proofs_expand_without_normalize() {
+    for (fixture, label) in [
+        ("separation_span_call", "caller.ensures_0"),
+        (
+            "padded_field_scalar_call_restores_ownership",
+            "caller.contract",
+        ),
+        (
+            "packed_parent_transport_across_aliased_metadata",
+            "caller.contract",
+        ),
+        (
+            "loop_invariant_states_a_growing_viewable_prefix",
+            "any_zero.contract",
+        ),
+        (
+            "loop_invariant_growing_viewable_prefix_bounded_by_its_views_clause",
+            "any_zero.contract",
+        ),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{fixture}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 13s for five resource and count expansions and cold replays"]
+fn resource_body_and_population_proofs_expand_without_normalize() {
+    for (fixture, label) in [
+        (
+            "resource_verbs_composite_proofs",
+            "initialize_cell.produces_0",
+        ),
+        ("resource_verbs_composite_proofs", "set_cell_one.owns_0"),
+        ("authority_symbolic_birth_composition", "mint_pair.contract"),
+        ("authority_symbolic_batch_retirement", "mint_pair.contract"),
+        ("loop_binder_counter_model_concise_proof", "bump_n.contract"),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{fixture}\n{expanded}");
+        without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
     }
 }
 
@@ -21229,6 +21351,63 @@ fn loop_otherwise_expands_without_by() {
     assert!(phase.starts_with("otherwise {"), "{phase}");
     assert!(!phase.contains("solve"), "{phase}");
     verify_c_sources(&expanded, &sources).unwrap();
+}
+
+#[test]
+fn loop_maintain_expansion_preserves_pointer_arm_binding() {
+    let sources = [(
+        "spin.c",
+        r#"
+            struct node { unsigned long word; };
+            unsigned long spin(struct node *p, int n) {
+                while (n > 0) { n = n - 1; }
+                return p->word;
+            }
+        "#,
+    )];
+    let source = r#"
+        verifying "spin.c";
+        spec enum Tree { Empty, Node(struct node*) }
+        resource tree_at(p: struct node*) {
+            field model: Tree;
+            match model {
+                Tree::Empty => { fact p == 0; },
+                Tree::Node(id) => {
+                    owns p->word;
+                    fact p != 0;
+                    fact p == id;
+                },
+            }
+        }
+        unsigned long spin(struct node* p, int n) {
+            owns t: tree_at(p);
+            requires n >= 0;
+            requires t.model != Tree::Empty;
+            ensures t.model == old(t.model);
+        } by {
+            match t.model {
+                Tree::Empty => { contradiction(t.model == Tree::Empty); },
+                Tree::Node(id) => {
+                    loop {
+                        decreases n;
+                        owns t: tree_at(p);
+                        invariant n >= 0;
+                        invariant t.model == Tree::Node(id);
+                        initialize by solve();
+                        maintain by { step(); }
+                    }
+                    step();
+                    solve();
+                },
+            }
+        }
+    "#;
+    verify_c_sources(source, &sources).expect("the original proof checks");
+    let expanded = expand_c_claim_source_by_label(source, &sources, "spin.loop(0).maintain")
+        .expect("the maintain proof expands with its match-arm binding");
+    let (_, phase) = expanded.split_once("maintain by {").unwrap();
+    assert!(phase.contains("Tree::Node(id)"), "{phase}");
+    verify_c_sources(&expanded, &sources).expect("the expanded proof checks");
 }
 
 /// A loop phase written in a grouped proof's `loop` tactic is a claim of its

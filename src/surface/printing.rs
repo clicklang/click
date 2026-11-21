@@ -1853,7 +1853,7 @@ mod tests {
                 lowered: ProgramExpression::TypedLoad {
                     pointer: Box::new(ProgramExpression::PointerOffsetBytes {
                         pointer: Box::new(ProgramExpression::Variable("p".into())),
-                        bytes: 4,
+                        bytes: 4.into(),
                     }),
                     value_type: ProgramType::UInt32Array(3),
                     volatile: false,
@@ -1861,7 +1861,7 @@ mod tests {
                     access_class: None,
                     source: Default::default(),
                 },
-                offset_bytes: 4,
+                offset_bytes: 4.into(),
             }),
             Box::new(ContractExpression::ProgramExpression(
                 ProgramExpression::Variable("index".into()),

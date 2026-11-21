@@ -3294,7 +3294,7 @@ fn read_retained_lvalue_paths_without_ranges(
                     && let Some(refusal) = subobject_access_refusal(
                         pointer,
                         &lvalue,
-                        lvalue.value_type.byte_width(),
+                        crate::kernel::AccessExtent::of_type(lvalue.value_type),
                         &facts,
                         &obligations,
                         &local_assumptions,
@@ -3344,23 +3344,14 @@ fn read_retained_lvalue_paths_without_ranges(
                 ) && let Some(pointer) = state.locals.slot(name)
                     && state.memory.requires_explicit_scalar_ownership(pointer)
                     && !assumptions.should_allow_symbolic_contract_loads()
-                    && !resource_context_has_read(
-                        state.resources(),
-                        pointer,
-                        lvalue.value_type.byte_width(),
-                        assumptions,
-                    )
+                    && !local_read_permitted(state, pointer, lvalue.value_type, assumptions)
                 {
                     return Ok(vec![ExecutionValuePath {
                         outcome: ExpressionOutcome::RuntimeError(RuntimeError::MissingResource {
-                            resource: Box::new(ResourceFact::view_memory(
-                                MemoryRange::new_with_element_width(
-                                    pointer.clone(),
-                                    0.into(),
-                                    1.into(),
-                                    lvalue.value_type.byte_width(),
-                                ),
-                            )),
+                            resource: Box::new(ResourceFact::view_memory(MemoryRange::access(
+                                pointer.clone(),
+                                lvalue.value_type,
+                            ))),
                         }),
                         facts,
                         obligations,
@@ -3462,7 +3453,7 @@ fn read_retained_lvalue_paths_without_ranges(
                 if let Some(refusal) = subobject_access_refusal(
                     pointer,
                     &lvalue,
-                    lvalue.value_type.byte_width(),
+                    crate::kernel::AccessExtent::of_type(lvalue.value_type),
                     &facts,
                     &obligations,
                     &effective_assumptions,
@@ -3491,17 +3482,40 @@ fn read_retained_lvalue_paths_without_ranges(
                 // `nodes(result.head)` does, before the caller copies it out.
                 let returned_aggregate = SpecificationAccessScope::is_active()
                     && matches!(pointer.base, AddressBase::Temporary(_));
+                // A value of an abstract type is read whole: its object.
+                let abstract_object = matches!(lvalue.value_type,
+                    ProgramType::Parameter(parameter) if parameter.has_abstract_size());
                 let has_read_resource = (is_external || require_owned)
                     && (returned_aggregate
                         || (!require_owned && assumptions.should_allow_symbolic_contract_loads())
                         || crate::kernel::api::with_extended_dag_bridging(|| {
-                            state.resources().permits_designated_memory_read(
-                                pointer,
-                                lvalue.access_provenance(),
-                                lvalue.value_type.byte_width(),
-                                &effective_assumptions,
-                            )
+                            if abstract_object {
+                                state.resources().permits_object_access(
+                                    &MemoryRange::access(pointer.clone(), lvalue.value_type),
+                                    false,
+                                    &effective_assumptions,
+                                )
+                            } else {
+                                state.resources().permits_designated_memory_read(
+                                    pointer,
+                                    lvalue.access_provenance(),
+                                    lvalue.value_type.byte_width(),
+                                    &effective_assumptions,
+                                )
+                            }
                         }));
+                if (is_external || require_owned) && !has_read_resource && abstract_object {
+                    return Ok(vec![ExecutionValuePath {
+                        outcome: ExpressionOutcome::RuntimeError(RuntimeError::MissingResource {
+                            resource: Box::new(ResourceFact::view_memory(MemoryRange::access(
+                                pointer.clone(),
+                                lvalue.value_type,
+                            ))),
+                        }),
+                        facts,
+                        obligations,
+                    }]);
+                }
                 if (is_external || require_owned) && !has_read_resource {
                     return Ok(vec![ExecutionValuePath {
                         outcome: ExpressionOutcome::RuntimeError(RuntimeError::MissingResource {
@@ -3567,15 +3581,20 @@ fn read_retained_lvalue_paths_without_ranges(
                         }]);
                     }
                 }
-                let entry_source = (has_read_resource
+                let can_name_read = !lvalue.is_volatile() || SpecificationAccessScope::is_active();
+                let uses_entry_version = has_read_resource
                     && matches!(
                         lvalue.value_type,
                         ProgramType::Int32 | ProgramType::UInt32 | ProgramType::Parameter(_)
                     )
                     && pointer.base == AddressBase::ExternalArgument
-                    && (!lvalue.is_volatile() || SpecificationAccessScope::is_active()))
+                    && can_name_read;
+                let origin = (uses_entry_version
+                    || (can_name_read
+                        && crate::kernel::KernelFloatType::from_program_type(lvalue.value_type)
+                            .is_some()))
                 .then(|| state.program_point());
-                let entry_read = entry_source.as_ref().and_then(|point| {
+                let entry_read = origin.as_ref().and_then(|point| {
                     let entry = match lvalue.value_type {
                         ProgramType::Int32 => point.entry_integer_version(pointer, LoadKind::Int32),
                         ProgramType::Parameter(parameter) => {
@@ -3609,7 +3628,7 @@ fn read_retained_lvalue_paths_without_ranges(
                         lvalue.is_volatile() && !SpecificationAccessScope::is_active(),
                         source,
                         budget.program_byte_order(),
-                        entry_source.as_ref(),
+                        origin.as_ref(),
                     )
                 };
                 for path in &mut paths {
@@ -4732,5 +4751,31 @@ mod packed_word_contract_tests {
         let restored = cast(cleared, &context);
         assert!(context.pointer_provenance_match(&restored, &original));
         assert!(!restored.bounds_are_known());
+    }
+}
+
+/// Whether the held resources permit reading the local at `pointer` whole:
+/// one element of its type's width, or, for a type of unknown size, its
+/// whole object.
+fn local_read_permitted(
+    state: &ExecutionState,
+    pointer: &Address,
+    value_type: ProgramType,
+    assumptions: &PureFactContext,
+) -> bool {
+    match value_type {
+        ProgramType::Parameter(parameter) if parameter.has_abstract_size() => {
+            state.resources().permits_object_access(
+                &MemoryRange::access(pointer.clone(), value_type),
+                false,
+                assumptions,
+            )
+        }
+        _ => resource_context_has_read(
+            state.resources(),
+            pointer,
+            value_type.byte_width(),
+            assumptions,
+        ),
     }
 }

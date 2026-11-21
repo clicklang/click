@@ -1387,7 +1387,16 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             ranking_measures: ranking_measures.to_vec(),
             ranking_surfaces: loop_ranking_surfaces(environment, loop_index),
             structural_measure: structural_measure.map(str::to_string),
-            declared_invariant_surfaces: invariant_surfaces.clone(),
+            // Generated back-edge proofs use the invariant's written
+            // bindings from the loop's lexical scope.
+            declared_invariant_surfaces: environment
+                .function_block
+                .structural_clauses()
+                .for_loop(loop_index)
+                .into_iter()
+                .flat_map(StructuralClause::items)
+                .map(|item| item.proposition().clone())
+                .collect(),
             loop_head_premises: Vec::new(),
             binders: preservation.binders().to_vec(),
             binder_names: Arc::new({

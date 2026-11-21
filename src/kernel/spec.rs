@@ -5037,6 +5037,84 @@ mod algebraic_term_tests;
 #[cfg(test)]
 mod exact_read_tests;
 
+/// Prepare one explicitly written float operation over literal operands.
+fn literal_float_predicate_operand(
+    expression: &SpecExpression,
+) -> Option<(KernelFloatType, KernelTerm, usize)> {
+    use SpecExpression as E;
+    fn literal(expression: &E) -> Option<(KernelFloatType, KernelTerm)> {
+        let (E::Value(value) | E::ProgramExpression(ProgramExpression::Value(value))) = expression
+        else {
+            return None;
+        };
+        let operand = FloatOperandView::from_value(value)?;
+        operand.literal_bits()?;
+        Some((
+            operand.format(),
+            KernelTermImport::default().argument(&PureFunctionArgument::Value(value.clone())),
+        ))
+    }
+
+    let (expression, cast) = match expression {
+        E::Cast(inner, ty) => (inner.as_ref(), Some(*ty)),
+        expression => (expression, None),
+    };
+    let prepared = match expression {
+        E::Negate(operand) => {
+            let (format, operand) = literal(operand)?;
+            (format, KernelTerm::float_negate(format, operand).ok()?, 2)
+        }
+        E::Add(left, right)
+        | E::Subtract(left, right)
+        | E::Multiply(left, right)
+        | E::Divide(left, right) => {
+            let (format, left) = literal(left)?;
+            let (right_format, right) = literal(right)?;
+            if format != right_format {
+                return None;
+            }
+            let operator = match expression {
+                E::Add(..) => FloatBinaryOperator::Add,
+                E::Subtract(..) => FloatBinaryOperator::Subtract,
+                E::Multiply(..) => FloatBinaryOperator::Multiply,
+                E::Divide(..) => FloatBinaryOperator::Divide,
+                _ => unreachable!("float binary operator"),
+            };
+            (
+                format,
+                KernelTerm::float_binary(format, operator, [left, right]).ok()?,
+                3,
+            )
+        }
+        expression => {
+            let (format, root) = literal(expression)?;
+            (format, root, 1)
+        }
+    };
+    let (format, root, steps) = prepared;
+    cast.is_none_or(|ty| ty == format.program_type())
+        .then_some((format, root, steps + usize::from(cast.is_some())))
+}
+
+fn literal_float_predicate_path(
+    root: KernelTerm,
+    steps: usize,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    for _ in 0..steps {
+        budget.consume_expression_step()?;
+    }
+    Ok(vec![SpecPropositionPath {
+        introductions: Vec::new(),
+        proposition: Proposition::condition_is(
+            StoredConditionTerm::from_root(root).expect("float predicate"),
+            true,
+        ),
+        facts: ExecutionFacts::new(),
+        obligations: Vec::new(),
+    }])
+}
+
 fn lower_spec_float_classification_proposition_at_state_in(
     scope: SpecScope<'_>,
     expression: &SpecExpression,
@@ -5044,6 +5122,14 @@ fn lower_spec_float_classification_proposition_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    if !budget.checked_reads
+        && !budget.machine_result_production_disabled
+        && let Some((format, operand, steps)) = literal_float_predicate_operand(expression)
+    {
+        let root = KernelTerm::float_classify(format, classification, operand)
+            .expect("float classification operand");
+        return literal_float_predicate_path(root, steps, budget);
+    }
     Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
         expression,
@@ -5065,7 +5151,7 @@ fn lower_spec_float_classification_proposition_at_state_in(
                 _ => unreachable!("float value"),
             };
             StoredConditionTerm::from(native)
-        } else if let Some(bits) = result::float_condition_constant_bits(operand) {
+        } else if let Some(bits) = operand.closed_arithmetic_bits() {
             let native = match format {
                 KernelFloatType::Float32 => ConditionTerm::float32_classification(
                     MachineTerm::uint32_constant(bits as u32),
@@ -5927,6 +6013,16 @@ fn lower_spec_comparison_proposition_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    if !budget.checked_reads
+        && !budget.machine_result_production_disabled
+        && let Some((format, left, left_steps)) = literal_float_predicate_operand(left)
+        && let Some((right_format, right, right_steps)) = literal_float_predicate_operand(right)
+        && format == right_format
+    {
+        let root =
+            KernelTerm::float_compare(format, operator, [left, right]).expect("same float format");
+        return literal_float_predicate_path(root, left_steps + right_steps, budget);
+    }
     let share_operand = if let SpecExpression::AlgebraicMatch { scrutinee, arms } = left
         && left == right
         && matches!(
@@ -6175,19 +6271,21 @@ fn lower_spec_predicate_proposition_at_state_in(
                         SpecPoint::At(point) => point.clone(),
                     };
                     let point = match argument_path.value.native().as_ref() {
-                        ProgramValue::Pointer(pointer)
-                            if pointer.program_type() == ProgramType::Int32Pointer =>
-                        {
-                            indexed_array_entry_version(&source, &pointer.address().base)
+                        ProgramValue::Pointer(pointer) => {
+                            indexed_array_version(&source, &pointer.address().base)
                         }
                         _ => None,
                     };
-                    // Without an entry version the argument names the source
-                    // memory, so keep its recorded path: the body then reads the
-                    // same cell versions as a proposition lowered at the source.
-                    arguments.push(Term::ArrayReadPoint(
-                        point.unwrap_or_else(|| source.for_legacy_read()),
-                    ));
+                    // A certified source can name the entire array when
+                    // the history has no earlier indexed version.
+                    let point = point.unwrap_or_else(|| {
+                        if source.has_certified_read_view() {
+                            source.for_exact_read()
+                        } else {
+                            source.for_legacy_read()
+                        }
+                    });
+                    arguments.push(Term::ArrayReadPoint(point));
                 }
                 arguments.push(Term::ProgramValue(argument_path.value.clone().into()));
                 next_paths.push(SpecPropositionPath {
@@ -8158,13 +8256,16 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         obligations,
                     )
                 } else {
-                    crate::kernel::eval::evaluate_logical_memory_load_paths(
+                    crate::kernel::eval::evaluate_logical_memory_load_paths_at(
                         memory_view,
                         pointer,
                         *value_type,
                         pointer_path.facts,
                         obligations,
                         assumptions,
+                        KernelFloatType::from_program_type(*value_type)
+                            .map(|_| read_point())
+                            .as_ref(),
                     )
                 };
                 if let Some((point, address)) = observation
@@ -8752,16 +8853,15 @@ fn evaluate_spec_pure_function_argument_paths_in(
     }
 }
 
-/// Name an external array by its verified entry point when the recorded
-/// suffix preserves external storage, including a call confined to one
-/// automatic object. Other arrays use the block version selector.
+/// Use an indexed external array version when the recorded suffix preserves
+/// it, including across calls confined to automatic objects.
 fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> ProgramPoint {
     let ProgramValue::Pointer(pointer) = pointer else {
         return source.clone();
     };
     let block = &pointer.address().base;
-    if let Some(entry) = indexed_array_entry_version(source, block) {
-        return entry;
+    if let Some(version) = indexed_array_version(source, block) {
+        return version;
     }
     let start = source.parameter_read_start(block);
     let version = crate::kernel::resource_tracker::last_same_version_point(
@@ -8778,15 +8878,15 @@ fn array_ref_argument_point(source: &ProgramPoint, pointer: &ProgramValue) -> Pr
     }
 }
 
-fn indexed_array_entry_version(source: &ProgramPoint, block: &AddressBase) -> Option<ProgramPoint> {
+fn indexed_array_version(source: &ProgramPoint, block: &AddressBase) -> Option<ProgramPoint> {
     crate::instrumentation::measure_operation(
         "kernel",
         "canonical form",
-        "array-ref entry version",
+        "array-ref indexed version",
         || {
-            let entry = source.entry_array_version(block)?;
+            let version = source.indexed_array_version(block)?;
             crate::instrumentation::record_deterministic_work(1);
-            Some(entry)
+            Some(version)
         },
     )
 }
@@ -9417,6 +9517,7 @@ fn evaluate_spec_if_paths_in(
         // A retained comparison guard is part of the conditional's syntax even
         // when its operands determine its truth intrinsically. Checking may
         // select an arm; logical lowering retains both guarded values.
+        let mut closed_word_equality = false;
         let retained_comparison = !budget.machine_result_production_disabled
             && match &condition_path.proposition {
                 Proposition::ConditionIs(condition, _)
@@ -9467,17 +9568,14 @@ fn evaluate_spec_if_paths_in(
                     _,
                     _,
                 ) if let Some((ConditionTerm::Compare {
-                        format,
+                        format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     }, _)) = condition_source_0.condition_native() => {
                     // Wide equality reads words, including unsigned literal
                     // payloads filed under the native Int64 equality format.
-                    matches!(
-                        format,
-                        MachineIntegerType::Int64 | MachineIntegerType::UInt64
-                    ) && left.bitvector64_as_const().is_some()
+                    left.bitvector64_as_const().is_some()
                         && right.bitvector64_as_const().is_some()
                 }
                 condition_source_0 @ Proposition::ConditionIs(
@@ -9485,18 +9583,21 @@ fn evaluate_spec_if_paths_in(
                     _,
                 ) if let Some((ConditionTerm::Compare {
                         format,
+                        relation,
                         left,
                         right,
-                        ..
                     }, _)) = condition_source_0.condition_native() => {
-                    matches!(
+                    let closed = matches!(
                         format,
                         MachineIntegerType::Int32
                             | MachineIntegerType::UInt32
                             | MachineIntegerType::Int64
                             | MachineIntegerType::UInt64
                     ) && format.constant_from_term(left).is_some()
-                        && format.constant_from_term(right).is_some()
+                        && format.constant_from_term(right).is_some();
+                    closed_word_equality =
+                        closed && format.format().bits() == 32 && *relation == CompareRelation::Equal;
+                    closed && (!closed_word_equality || !budget.checked_reads)
                 }
                 _ => false,
             };
@@ -9536,7 +9637,7 @@ fn evaluate_spec_if_paths_in(
                                 | MachineIntegerType::Int64
                                 | MachineIntegerType::UInt64
                         )
-                    }) || path.value.boolean().is_some()
+                    }) || (!closed_word_equality && path.value.boolean().is_some())
                 };
                 let mut evaluate = |expression| {
                     evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -9565,10 +9666,18 @@ fn evaluate_spec_if_paths_in(
                 } else {
                     (evaluate(then_branch)?, evaluate(else_branch)?)
                 };
-                let scalar_arms = then_paths
-                    .first()
-                    .zip(else_paths.first())
-                    .is_some_and(|(left, right)| scalar(left) && scalar(right));
+                let scalar_arms =
+                    then_paths
+                        .first()
+                        .zip(else_paths.first())
+                        .is_some_and(|(left, right)| {
+                            scalar(left)
+                            && scalar(right)
+                            // A closed 32-bit equality previously used its selected
+                            // arm's type. Joining mixed machine types would promote it.
+                            && (!closed_word_equality
+                                || left.value.program_type() == right.value.program_type())
+                        });
                 if retained_comparison
                     && !scalar_arms
                     && let Some(truth) = constant_spec_condition_value(condition)
@@ -10014,6 +10123,23 @@ fn evaluate_spec_range_fold_paths_in(
     Ok(paths)
 }
 
+// Typed lambda application introduces lexical lets and identity casts.
+// Look through those aliases before testing the scoped callback's root.
+fn spec_fold_projection_candidate(body: &SpecExpression) -> bool {
+    match body {
+        SpecExpression::ProgramExpression(ProgramExpression::Variable(_)) => true,
+        SpecExpression::Value(ProgramValue::Int32(value))
+        | SpecExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(value))) => {
+            value.as_const().is_some()
+        }
+        SpecExpression::Cast(value, ProgramType::Int32) => spec_fold_projection_candidate(value),
+        SpecExpression::Let { value, body, .. } => {
+            spec_fold_projection_candidate(value) && spec_fold_projection_candidate(body)
+        }
+        _ => false,
+    }
+}
+
 fn evaluate_spec_range_fold_body_path_in(
     scope: SpecScope<'_>,
     start: SpecValue,
@@ -10039,33 +10165,59 @@ fn evaluate_spec_range_fold_body_path_in(
         (Some(start), Some(end)) => (end as i32) <= (start as i32),
         _ => same_bound(),
     };
-    if empty && state_independent() {
-        // Lower the callback in its binder scope for proof display and rewriting.
-        // With no iterations, only evaluation of the bounds and seed owes facts
-        // or obligations. A body with no single retained value uses the usual
-        // fold evaluator below.
+    let short = endpoints.0.zip(endpoints.1).is_some_and(|(start, end)| {
+        KernelFold::is_short_nonempty_int32_range(start as i32, end as i32)
+    });
+    let projection_candidate = !empty
+        && endpoints.0.is_some()
+        && endpoints.1.is_some()
+        && spec_fold_projection_candidate(body);
+    let mut retained = None;
+    if (empty || short || projection_candidate) && state_independent() {
+        // The scoped callback supplies the written term. Empty and total
+        // callbacks owe no iteration obligations. Other short folds still
+        // evaluate the concrete iterations below to check definedness.
         let body_scope = symbolic_int32_fold_scope(scope, accumulator, item);
-        let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        let body_paths = match evaluate_spec_expression_paths_with_algebraic_bindings_in(
             body_scope.as_scope(),
             body,
             &PureFactContext::new(),
             budget,
-        )?;
-        if body_paths.len() == 1
+        ) {
+            Ok(paths) => paths,
+            Err(ExecutionLimit::Paths | ExecutionLimit::DisjunctionRightUndefined) if short => {
+                Vec::new()
+            }
+            Err(limit) => return Err(limit),
+        };
+        if let [body_path] = body_paths.as_slice()
             && let Some(value) = symbolic_spec_range_fold_value(
                 start.clone(),
                 end.clone(),
                 initial.clone(),
                 accumulator,
                 item,
-                body_paths.pop().unwrap().value,
+                body_path.value.clone(),
             )
         {
-            return Ok(Some(SpecExpressionPath {
-                value,
-                facts,
-                obligations,
-            }));
+            if empty
+                || (projection_candidate
+                    && body_path.facts.is_empty()
+                    && body_path.obligations.is_empty()
+                    && value.shared().is_some_and(|root| {
+                        matches!(root.node(), KernelTermNode::Fold(fold)
+                            if fold.has_projection_or_literal_body())
+                    }))
+            {
+                return Ok(Some(SpecExpressionPath {
+                    value,
+                    facts,
+                    obligations,
+                }));
+            }
+            if short {
+                retained = Some(value);
+            }
         }
     }
     match endpoints {
@@ -10108,7 +10260,7 @@ fn evaluate_spec_range_fold_body_path_in(
                 obligations = next_obligations;
             }
             Ok(Some(SpecExpressionPath {
-                value,
+                value: retained.unwrap_or(value),
                 facts,
                 obligations,
             }))
