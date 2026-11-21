@@ -4176,6 +4176,14 @@ path (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
 locals resolve to their values at that point. Outside `at(...)`,
 function parameter names retain their ordinary contract meaning.
 
+A mark before the first execution step can name an incoming by-value
+aggregate used in a resource clause. For example, after `mark inputs;`,
+`at(inputs, dst.data)` and `at(inputs, dst.size)` name the pointer and
+length in the entry separation fact. The first step binds the private
+parameter object used by the body.
+
+<!-- verified-example: mdtests/by_value_parameter_entry_range_separation.md -->
+
 `at(loop_label.entry, expression)` is supported inside invariants for that
 same labeled loop code region. It evaluates `expression` at the loop's entry
 point, just before the loop region starts, and uses that value for invariant
