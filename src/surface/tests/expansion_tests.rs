@@ -265,6 +265,32 @@ fn copied_scalar_and_aggregate_values_expand_without_normalize() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: two loop expansions and cold replays"]
+fn adjacent_loop_reads_expand_with_explicit_preservation() {
+    for fixture in [
+        "loop_owns_preserves_symbolic_index",
+        "shifted_loop_effect_preserves_prefix",
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = crate::cli::source_refs(&c_sources);
+        let label = format!("{fixture}.contract");
+        let expanded = expand_c_claim_source_by_label(&source, &sources, &label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.report()));
+        assert!(!expanded.contains("normalize()"), "{label}\n{expanded}");
+        assert!(
+            expanded.contains("separate(") && expanded.contains(".footprint"),
+            "{label}\n{expanded}"
+        );
+        assert!(expanded.contains("preserve("), "{label}\n{expanded}");
+        without_implicit_solve_for_claim(&label, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
+    }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies four computed offset and projection proofs"]
 fn computed_pointer_offsets_expand_without_normalize() {
     for (fixture, label) in [

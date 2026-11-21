@@ -680,6 +680,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(proof) = Self::try_linked_pointer_viewability(input)? {
             return Ok(Some(proof));
         }
+        if let Some(proof) =
+            Self::try_indexed_read_preservation(input, MAX_TRANSPORT_SOURCE_POINTS)?
+        {
+            return Ok(Some(proof));
+        }
         attempt::try_steps(input, budget, candidates)
     }
 

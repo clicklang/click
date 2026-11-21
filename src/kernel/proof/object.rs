@@ -1105,14 +1105,27 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         {
             return Ok(self.closed_focused());
         }
+        let bridge_available = |goal: &Proposition| {
+            super::fact_reasoning::known_bridge_leaf(goal, &|premise| {
+                // Adjacent footprint bounds use the exact endpoint order
+                // in this context.
+                if matches!(goal, Proposition::ResourceSeparate { .. })
+                    && matches!(premise, Proposition::ConditionIs(..))
+                {
+                    facts.pure_known_available(premise)
+                } else {
+                    available(premise)
+                }
+            })
+        };
         if super::fact_reasoning::computes_leaf(proposition)
             || super::arithmetic_special::known_pointer_alignment(proposition, facts.assumptions())
-            || super::fact_reasoning::known_bridge_leaf(proposition, &available)
+            || bridge_available(proposition)
             || crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                 proposition,
             )
             .iter()
-            .any(|reading| super::fact_reasoning::known_bridge_leaf(reading, &available))
+            .any(bridge_available)
         {
             return Ok(self.closed_focused());
         }
@@ -1132,7 +1145,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     .any(|form| facts.contains(form))
                 || super::fact_reasoning::computes_leaf(side)
                 || super::arithmetic_special::known_pointer_alignment(side, facts.assumptions())
-                || super::fact_reasoning::known_bridge_leaf(side, &available)
+                || bridge_available(side)
         };
         match first_unavailable_connective_side(proposition, &side_available) {
             None => Ok(self.closed_focused()),
