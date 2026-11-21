@@ -42,7 +42,6 @@ fn describe_live_view_write_context(obligation: &ProofObligation) -> Option<Stri
     })
 }
 use crate::kernel::ExecutionFactSource;
-use crate::kernel::SharedMemory;
 use crate::kernel::resource_tracker;
 use crate::kernel::{
     ComparisonOperator as KernelComparisonOperator, FloatCondition, UpdateOperator,
@@ -3372,8 +3371,8 @@ pub(in crate::surface) fn describe_load_kind_mismatch(
     parameter_binding: ParameterBinding<'_>,
     assumptions: Option<&crate::kernel::PureFactContext>,
 ) -> Option<String> {
-    let (_, left_load) = unresolved_load(left)?;
-    let (_, right_load) = unresolved_load(right)?;
+    let left_load = unresolved_load(left)?.pointer;
+    let right_load = unresolved_load(right)?.pointer;
     let left_kind = unresolved_load_kind(left)?;
     let right_kind = unresolved_load_kind(right)?;
     let same_address = left_load == right_load
@@ -3480,7 +3479,7 @@ fn widened_word(term: &MachineTerm) -> &MachineTerm {
     }
 }
 
-pub(super) fn unresolved_load(value: &ProgramValue) -> Option<(SharedMemory, Address)> {
+fn unresolved_load(value: &ProgramValue) -> Option<crate::kernel::ScalarReadObservation> {
     let term = match value.numeric_value() {
         // A signed byte read is the conversion of the byte's unsigned read,
         // so it reads that read's address.
@@ -3495,13 +3494,9 @@ pub(super) fn unresolved_load(value: &ProgramValue) -> Option<(SharedMemory, Add
         | ProgramValue::UInt64(term) => term,
         _ => return None,
     };
-    let read = crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
-        widened_word(term),
-    ))?;
-    Some((
-        read.origin.unwrap_or(read.point).into_shared_memory(),
-        read.pointer,
-    ))
+    crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(widened_word(
+        term,
+    )))
 }
 
 /// The model field a comparison side stands for, if that side is exactly one
@@ -3556,15 +3551,17 @@ pub(super) fn describe_unseparated_write(
     value: &ProgramValue,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
-    let (memory, load) = unresolved_load(value)?;
+    let read = unresolved_load(value)?;
+    let origin = read.origin.as_ref().unwrap_or(&read.point);
     let explanation = resource_tracker::explain_last_same(
         resource_tracker::TrackedResource::Cell {
-            pointer: &load,
+            pointer: &read.pointer,
             bytes: crate::kernel::AccessExtent::from(crate::kernel::load_access_width_or_widest(
-                &memory, &load,
+                origin.shared_memory(),
+                &read.pointer,
             )),
         },
-        &resource_tracker::ProgramPoint::at(&memory),
+        origin,
     );
     describe_resource_version_mismatch(
         &explanation,
@@ -3787,13 +3784,29 @@ pub(super) fn describe_read_address_mismatch(
     right: &ProgramValue,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
-    let (left_memory, left_load) = unresolved_load(left)?;
-    let (right_memory, right_load) = unresolved_load(right)?;
-    if left_load == right_load || left_memory.read_identity() != right_memory.read_identity() {
+    let left = unresolved_load(left)?;
+    let right = unresolved_load(right)?;
+    let same_version =
+        if left.point.read_version_id().is_some() && right.point.read_version_id().is_some() {
+            left.point == right.point
+        } else {
+            left.origin
+                .as_ref()
+                .unwrap_or(&left.point)
+                .shared_memory()
+                .read_identity()
+                == right
+                    .origin
+                    .as_ref()
+                    .unwrap_or(&right.point)
+                    .shared_memory()
+                    .read_identity()
+        };
+    if left.pointer == right.pointer || !same_version {
         return None;
     }
-    let left = describe_source_cell(&left_load, parameter_binding)?;
-    let right = describe_source_cell(&right_load, parameter_binding)?;
+    let left = describe_source_cell(&left.pointer, parameter_binding)?;
+    let right = describe_source_cell(&right.pointer, parameter_binding)?;
     Some(format!(
         "`{}` and `{}` read the same recorded memory using different address expressions. \
          Establish the index/address relation or the equality of those values.",
@@ -3811,24 +3824,26 @@ pub(super) fn describe_two_sided_version_mismatch(
     right_point: &str,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
-    let (left_memory, left_load) = unresolved_load(left)?;
-    let (right_memory, right_load) = unresolved_load(right)?;
-    if left_load != right_load {
+    let left_read = unresolved_load(left)?;
+    let right_read = unresolved_load(right)?;
+    if left_read.pointer != right_read.pointer {
         return None;
     }
     if let Some(mismatch) = describe_load_kind_mismatch(left, right, parameter_binding, None) {
         return Some(mismatch);
     }
+    let left_origin = left_read.origin.as_ref().unwrap_or(&left_read.point);
+    let right_origin = right_read.origin.as_ref().unwrap_or(&right_read.point);
     let explanation = resource_tracker::explain(
         resource_tracker::TrackedResource::Cell {
-            pointer: &left_load,
+            pointer: &left_read.pointer,
             bytes: crate::kernel::AccessExtent::from(crate::kernel::load_access_width_or_widest(
-                &left_memory,
-                &left_load,
+                left_origin.shared_memory(),
+                &left_read.pointer,
             )),
         },
-        &resource_tracker::ProgramPoint::at(&left_memory),
-        &resource_tracker::ProgramPoint::at(&right_memory),
+        left_origin,
+        right_origin,
     );
     // Both labels name real program points, so the sentence is written
     // against the earlier of the two: that is the one the value may have
