@@ -1399,7 +1399,16 @@ A recursive specification function applied to a known constructor is
 evaluated: `solve` unfolds it, then keeps unfolding the recursive calls the
 definition exposes while their arguments select one arm, rewriting an argument
 by a constructor equation (a supplied premise or a connected fact such as
-`u == Tree::Node(..)`) when that exposes one, for at most eight checked steps.
+`u == Tree::Node(..)`) when that exposes one. A recursion over an integer
+measure is evaluated the same way when its arguments are constants: the
+unfolded `if` arm that a constant guard such as `2 <= 0` selects is searched
+for the next call. It takes eight checked steps, plus as many as the largest
+constant argument of a call it unfolds, at most 1024 in all; each step lowers
+the whole goal again, so a long evaluation can exhaust the tactic budget
+first (about 25 calls), where a bottom-up proof, one `have` per call by
+`unfold` and `solve()`, stays linear
+(`mdtests/a_recursive_byte_function_evaluates_automatically.md`,
+`mdtests/a_recursive_byte_function_evaluates_a_string_literal.md`).
 An argument nothing fixes stays folded
 ([`solve_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_evaluates_a_recursive_function_over_known_constructors.md),
 [`solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).

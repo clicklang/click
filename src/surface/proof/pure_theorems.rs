@@ -2736,20 +2736,63 @@ pub(super) fn click_function_applications(
     proposition: &ClickProposition,
     known_facts: &[ClickProposition],
 ) -> Vec<ClickFunctionApplication> {
+    click_function_applications_with(
+        proposition,
+        &KnownGuards {
+            facts: known_facts,
+            constants: false,
+        },
+    )
+}
+
+/// The applications of [`click_function_applications`], also entering the arm
+/// an `if` over constants selects, such as `if 2 <= 0` in an unfolded
+/// recursive body. The arms are only candidates: an `unfold` of an
+/// application in either arm is valid, so a guard read here only directs the
+/// search.
+pub(super) fn click_function_applications_deciding_constant_guards(
+    proposition: &ClickProposition,
+) -> Vec<ClickFunctionApplication> {
+    click_function_applications_with(
+        proposition,
+        &KnownGuards {
+            facts: &[],
+            constants: true,
+        },
+    )
+}
+
+/// What decides an `if` guard while collecting applications.
+struct KnownGuards<'a> {
+    facts: &'a [ClickProposition],
+    /// Also decide a guard that compares constants.
+    constants: bool,
+}
+
+fn click_function_applications_with(
+    proposition: &ClickProposition,
+    known_facts: &KnownGuards<'_>,
+) -> Vec<ClickFunctionApplication> {
     fn fact_polarity(
         proposition: &ClickProposition,
-        known_facts: &[ClickProposition],
+        known_facts: &KnownGuards<'_>,
     ) -> Option<bool> {
-        if known_facts.contains(proposition) {
+        if known_facts.facts.contains(proposition) {
             return Some(true);
         }
         let negated = ClickProposition::Not(Box::new(proposition.clone()));
-        known_facts.contains(&negated).then_some(false)
+        if known_facts.facts.contains(&negated) {
+            return Some(false);
+        }
+        known_facts
+            .constants
+            .then(|| constant_guard_value(proposition))
+            .flatten()
     }
 
     fn expression(
         term: &ContractExpression,
-        known_facts: &[ClickProposition],
+        known_facts: &KnownGuards<'_>,
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match term {
@@ -2883,7 +2926,7 @@ pub(super) fn click_function_applications(
 
     fn proposition_inner(
         proposition: &ClickProposition,
-        known_facts: &[ClickProposition],
+        known_facts: &KnownGuards<'_>,
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match proposition {
@@ -4423,4 +4466,138 @@ mod function_candidate_tests {
         assert_eq!(applications.len(), 1);
         assert_eq!(applications[0].name, "count");
     }
+}
+
+/// The value of a guard that compares constants, or `None`. A constant is an
+/// integer literal or a machine integer constant, through casts, `+`, `-` and
+/// negation; any step that leaves its type's range, or a comparison of a
+/// signed with an unsigned value, is left undecided.
+fn constant_guard_value(proposition: &ClickProposition) -> Option<bool> {
+    match proposition {
+        ClickProposition::Not(body) => constant_guard_value(body).map(|value| !value),
+        ClickProposition::Comparison {
+            left,
+            operator,
+            right,
+        } => {
+            let (left, left_type) = constant_integer(left)?;
+            let (right, right_type) = constant_integer(right)?;
+            match (left_type, right_type) {
+                (Some(left), Some(right)) if left.is_signed() != right.is_signed() => return None,
+                (Some(ty), None) | (None, Some(ty))
+                    if !ty.contains(left) || !ty.contains(right) =>
+                {
+                    return None;
+                }
+                _ => {}
+            }
+            Some(match operator {
+                ComparisonOperator::Equal => left == right,
+                ComparisonOperator::NotEqual => left != right,
+                ComparisonOperator::LessThan => left < right,
+                ComparisonOperator::LessEqual => left <= right,
+                ComparisonOperator::GreaterThan => left > right,
+                ComparisonOperator::GreaterEqual => left >= right,
+                ComparisonOperator::In => return None,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The machine integer types a constant guard reads.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ConstantType {
+    Int32,
+    UInt32,
+    Int64,
+    UInt64,
+}
+
+impl ConstantType {
+    fn of(program_type: ProgramType) -> Option<Self> {
+        Some(match program_type {
+            ProgramType::Int32 => Self::Int32,
+            ProgramType::UInt32 => Self::UInt32,
+            ProgramType::Int64 => Self::Int64,
+            ProgramType::UInt64 => Self::UInt64,
+            _ => return None,
+        })
+    }
+
+    fn is_signed(self) -> bool {
+        matches!(self, Self::Int32 | Self::Int64)
+    }
+
+    fn contains(self, value: i128) -> bool {
+        match self {
+            Self::Int32 => i128::from(i32::MIN) <= value && value <= i128::from(i32::MAX),
+            Self::UInt32 => 0 <= value && value <= i128::from(u32::MAX),
+            Self::Int64 => i128::from(i64::MIN) <= value && value <= i128::from(i64::MAX),
+            Self::UInt64 => 0 <= value && value <= i128::from(u64::MAX),
+        }
+    }
+}
+
+/// A constant integer expression's value and machine type, `None` for an
+/// `Integer` literal.
+fn constant_integer(expression: &ContractExpression) -> Option<(i128, Option<ConstantType>)> {
+    let in_range = |value: i128, ty: Option<ConstantType>| {
+        ty.is_none_or(|ty| ty.contains(value))
+            .then_some((value, ty))
+    };
+    match expression {
+        ContractExpression::IntegerLiteral(text) => Some((text.parse().ok()?, None)),
+        ContractExpression::IntegerContext(inner) => constant_integer(inner),
+        ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+            let ty = ConstantType::of(value.program_type())?;
+            let value = match value {
+                ProgramValue::Int32(bits) => i128::from(bits.as_const()? as i32),
+                ProgramValue::UInt32(bits) => i128::from(bits.as_const()?),
+                ProgramValue::Int64(bits) => i128::from(bits.int64_as_const()?),
+                ProgramValue::UInt64(bits) => i128::from(bits.uint64_as_const()?),
+                _ => return None,
+            };
+            Some((value, Some(ty)))
+        }
+        ContractExpression::CUnary {
+            operand,
+            lowered: ProgramExpression::Cast { target_type, .. },
+        } => {
+            let (value, _) = constant_integer(operand)?;
+            in_range(value, Some(ConstantType::of(*target_type)?))
+        }
+        ContractExpression::Negate(inner) => {
+            let (value, ty) = constant_integer(inner)?;
+            in_range(-value, ty)
+        }
+        ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
+            let (left_value, left_type) = constant_integer(left)?;
+            let (right_value, right_type) = constant_integer(right)?;
+            let ty = match (left_type, right_type) {
+                (Some(left), Some(right)) if left != right => return None,
+                (left, right) => left.or(right),
+            };
+            let value = if matches!(expression, ContractExpression::Add(..)) {
+                left_value + right_value
+            } else {
+                left_value - right_value
+            };
+            in_range(value, ty)
+        }
+        _ => None,
+    }
+}
+
+/// The largest nonnegative constant among `application`'s arguments, such as
+/// the measure `13` of `output_from(s, 0u64, 13)`: about the number of
+/// further unfolds a recursion over that measure takes.
+pub(super) fn largest_constant_argument(application: &ClickFunctionApplication) -> usize {
+    application
+        .arguments
+        .iter()
+        .filter_map(constant_integer)
+        .filter_map(|(value, _)| usize::try_from(value).ok())
+        .max()
+        .unwrap_or(0)
 }

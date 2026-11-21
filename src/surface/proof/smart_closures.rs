@@ -3702,8 +3702,13 @@ impl Drop for SolveFallbackScope {
     }
 }
 
-/// The checked unfold and rewrite steps one constructor evaluation may take.
+/// The checked unfold and rewrite steps one constructor evaluation takes
+/// beyond those a constant measure adds.
 const CONSTRUCTOR_EVALUATION_FUEL: usize = 8;
+
+/// The most checked steps one constructor evaluation takes, however large
+/// the constant measures it unfolds.
+const MAX_CONSTRUCTOR_EVALUATION_FUEL: usize = 1024;
 
 /// The connected facts one constructor evaluation reads for constructor
 /// equations once it is stuck.
