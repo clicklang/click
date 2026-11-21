@@ -7146,6 +7146,14 @@ impl SymbolicMemory {
         self.cells.get(pointer)
     }
 
+    /// Borrow an explicit cell without deriving a value for an array run slot.
+    pub(in crate::kernel) fn indexed_scalar_value(
+        &self,
+        pointer: &Address,
+    ) -> Option<&ProgramValue> {
+        self.cells.explicitly_stored_value(pointer)
+    }
+
     /// Check the exact typed cell or a fully initialized declared word
     /// without evaluating a load, resolving aliases, or walking history.
     pub(in crate::kernel) fn indexed_read_is_defined(
@@ -7161,7 +7169,7 @@ impl SymbolicMemory {
         {
             return false;
         }
-        if let Some(value) = self.cells.explicitly_stored_value(pointer) {
+        if let Some(value) = self.indexed_scalar_value(pointer) {
             return value_type.accepts(value) || value_type.read_cell(value).is_some();
         }
         match self.cells.exact_run_slot_type(pointer) {
