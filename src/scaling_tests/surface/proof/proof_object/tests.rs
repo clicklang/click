@@ -2492,7 +2492,17 @@ fn fixed_state_goal_opening_ignores_load_equality_buckets() {
             crate::kernel::LoadKind::Int32,
         )
     };
-    let equal = |left, right| Proposition::condition_is(ConditionTerm::equal(left, right), true);
+    let equal = |left, right| {
+        Proposition::condition_is(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
+            true,
+        )
+    };
     let selected = read(8_185_000);
     let goal = equal(selected.clone(), MachineTerm::constant(7));
 
