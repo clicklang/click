@@ -27,13 +27,13 @@ theorem preserves(b: Box, n: Integer) {
     ensures identity(b) == Box::Box(n) by {
         unfold(identity(b));
         rewrite(b, Box::Box(n));
-        normalize();
+        known();
     }
 }
 theorem concrete(n: Integer) {
     ensures identity(Box::Box(n)) == Box::Box(n) by {
         unfold(identity(Box::Box(n)));
-        normalize();
+        known();
     }
 }
 theorem nested_fields(b: Box, other: Box, n: Integer, m: Integer) {

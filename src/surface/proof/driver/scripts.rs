@@ -552,7 +552,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         }) {
                             return Err(proof.step_error(
                                 "checked `solve` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
-                            ).with_search_failures(search.finish()));
+                            ).with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch).with_search_failures(search.finish()));
                         }
                         return Err(proof
                             .solve_failure()
@@ -578,7 +578,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         }) {
                             return Err(proof.step_error(
                                 "checked `solve` after witness/choose could not close the remaining witness obligations; split conjunctions and discharge each definedness condition explicitly",
-                            ).with_search_failures(search.finish()));
+                            ).with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch).with_search_failures(search.finish()));
                         }
                         // Preserve arithmetic's own refusal alongside theorem
                         // discovery: it says why the listed
@@ -607,7 +607,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             Ok(_) => String::new(),
                         };
                         check_verification_deadline()?;
-                        return Err(proof.step_error(format!("`solve() using` could not prove the current goal from only its listed premises{arithmetic}")).with_check_observations(checks).with_search_failures(search.finish()));
+                        return Err(proof.step_error(format!("`solve() using` could not prove the current goal from only its listed premises{arithmetic}")).with_check_observations(checks).with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch).with_search_failures(search.finish()));
                     };
                     search.succeed();
                     proof = closed;
@@ -623,15 +623,24 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                                 // goal, not declined to the enclosing claim.
                                 let body = scope.body();
                                 let solve = body.at_site(&body.site().at_block_position(0));
-                                return Err(solve.step_error(format!(
-                                    "`solve` could not prove `{}`",
-                                    describe_click_proposition(&have.proposition)
-                                )));
+                                return Err(solve
+                                    .step_error(format!(
+                                        "`solve` could not prove `{}`",
+                                        describe_click_proposition(&have.proposition)
+                                    ))
+                                    .with_proof_refusal(
+                                        crate::surface::ProofRefusal::UnsuccessfulSearch,
+                                    ));
                             };
                             Some(selected)
                         }
                         SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
-                            (scope).driver().try_solve_closure()?
+                            let selected = scope.driver().try_solve_closure()?;
+                            if selected.is_none() {
+                                *declined = Some(LinearScriptDecline::UnsuccessfulSearch(index));
+                                return Ok(None);
+                            }
+                            selected
                         }
                         SourceProof::Script(body) => {
                             scope.driver().try_authoritative_linear_script(body)?

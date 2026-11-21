@@ -4,13 +4,13 @@
 theorem short_fold_seed(seed: int32) {
     ensures forall (unused: Integer) {
         (1..2).fold(seed, |acc: int32, k: int32| -> int32 { acc }) == seed
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem short_fold_sum() {
     ensures forall (unused: Integer) {
         (1..3).fold(5, |acc: int32, k: int32| -> int32 { acc + k }) == 8
-    } by { intro(); normalize(); }
+    } by { intro(); known(); }
 }
 
 theorem short_fold_in_arithmetic() {

@@ -1725,6 +1725,11 @@ constructor rewrite.
 
 A conjunction goal closes when every conjunct does, and a disjunction goal
 when one disjunct does, using available facts or these computations recursively.
+An implication goal `A implies B`, alone or as a conjunct, closes when `B` is
+an available fact, with one lookup of `B` and no introduction
+(`mdtests/known_closes_an_implication_whose_consequent_is_known.md`). This
+closes a guarded requirement such as the domain owed by the right side of
+`and` once that domain is known.
 A negated conjunction closes when direct computation refutes one conjunct.
 A negated disjunction closes when it refutes every disjunct. For example,
 different literal elements can prove finite-sequence disequality or

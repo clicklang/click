@@ -51,7 +51,7 @@ theorem leaf_left_size(value: int, left: Tree, right: Tree) {
         rewrite(left, Tree::Leaf);
         unfold(size(Tree::Node(value, Tree::Leaf, right)));
         unfold(size(Tree::Leaf));
-        normalize();
+        known();
     }
 }
 

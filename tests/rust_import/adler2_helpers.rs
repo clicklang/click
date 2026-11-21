@@ -1126,7 +1126,7 @@ fn reject_empty_compute(before: &str, after: &str) {
     .expect_err("invalid original computation contract was accepted");
     assert!(
         !error.message().contains("budget exhausted"),
-        "rejection must be a proof error: {}",
+        "rejection must be a verification refusal: {}",
         error.message()
     );
 }

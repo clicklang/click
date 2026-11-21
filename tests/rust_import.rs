@@ -1527,7 +1527,7 @@ fn charon_slice_failure_has_a_focused_trace() {
     let output = p.cli(&["verify"]);
     assert!(!output.status.success());
     let error = String::from_utf8(output.stderr).unwrap();
-    assert!(error.contains("proof error:"), "{error}");
+    assert!(error.contains("unsuccessful search:"), "{error}");
     assert!(error.contains("--trace-proof length"), "{error}");
     let output = p.cli(&["verify", "--trace-proof", "length", "--trace-to", &trace_to]);
     assert!(!output.status.success());
@@ -3146,16 +3146,17 @@ fn rust_enum_signed_match_arithmetic_verifies() {
 }
 
 #[test]
-fn rust_enum_signed_match_wrong_arm_is_an_unproved_goal() {
+fn rust_enum_signed_match_wrong_arm_reports_unsuccessful_search() {
     let p = signed_match_project();
     let prepared = p.prepared().unwrap();
     let invalid = SIGNED_MATCH_SIDECAR.replace("0i32 - x", "1i32 - x");
-    let error = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
+    let report = ProgramVerificationSession::new_program_prepared(&invalid, &prepared)
         .err()
         .expect("the wrong arm must fail")
-        .to_string();
-    assert!(!error.contains("could not lower"), "{error}");
-    assert!(error.contains("goal:"), "{error}");
+        .concise_report();
+    assert!(report.starts_with("unsuccessful search:"), "{report}");
+    assert!(!report.contains("could not lower"), "{report}");
+    assert!(report.contains("goal:"), "{report}");
 }
 
 #[test]
@@ -4809,6 +4810,120 @@ fn front(bytes: &[u8]) -> usize {
             local.name
         );
     }
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_borrowed_array_literals_use_written_occurrences_and_lifetimes() {
+    let p = Project::new(
+        "fn read(words: &[u32; 2]) -> u32 { words[0] }
+         pub fn borrowed_array(x: u32) -> u32 {
+             let first = read(&[x, 7]);
+             read(&[first; 2])
+         }",
+    );
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn read(words: &[u32; 2]) -> u32 {
+    views words[0..2];
+    ensures result == words[0];
+}
+fn borrowed_array(x: u32) -> u32 {
+    ensures result == x;
+} by {
+    step_until(statement(0).call(read, 0).entry);
+    have borrowed_array.compound_literal(0)[1] == 7u32 by solve();
+    step_until(statement(1).call(read, 0).entry);
+    have borrowed_array.compound_literal(1)[1] == x by solve();
+    have at(statement(0).call(read, 0).entry, borrowed_array.compound_literal(0)[1]) == 7u32 by solve();
+    step_until(function.exit);
+    solve();
+}
+"#;
+    let file = p.root.join("borrow.click");
+    fs::write(&file, sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "borrowed_array"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(trace.contains("compound_literal(0)"), "{trace}");
+    assert!(trace.contains("compound_literal(1)"), "{trace}");
+    assert!(!trace.contains("__rust_mir_"), "{trace}");
+
+    let expired = sidecar.replace(
+        "at(statement(0).call(read, 0).entry, borrowed_array.compound_literal(0)[1])",
+        "borrowed_array.compound_literal(0)[1]",
+    );
+    fs::write(&file, expired).unwrap();
+    let output = p.cli(&["verify"]);
+    assert!(
+        !output.status.success(),
+        "an expired array literal must be unreadable"
+    );
+
+    fs::write(&file, sidecar).unwrap();
+    assert_cli(
+        &p,
+        &["expand", "--claim", "borrowed_array.contract", "--in-place"],
+    );
+    assert_cli(&p, &["verify"]);
+    let expanded = fs::read_to_string(file).unwrap();
+    assert!(!expanded.contains("__rust_mir_"), "{expanded}");
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: refreshes a Charon capture"]
+fn rust_borrowed_struct_literal_fields_use_written_occurrences() {
+    let p = Project::new(
+        "pub struct Pair { pub value: u32, pub spare: u32 }
+         fn read(pair: &Pair) -> u32 { pair.value }
+         pub fn borrowed_record(x: u32) -> u32 {
+             let named = [x, 7u32];
+             read(&Pair { value: named[0], spare: 9 })
+         }",
+    );
+    p.refresh().unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+fn read(pair: &Pair) -> u32 {
+    views pair.value;
+    ensures result == pair.value;
+}
+fn borrowed_record(x: u32) -> u32 { ensures result == x; } by {
+    step_until(statement(1).call(read, 0).entry);
+    have borrowed_record.compound_literal(1).value == x by solve();
+    step_until(function.exit);
+    have at(statement(1).call(read, 0).entry, borrowed_record.compound_literal(1).spare) == 9u32 by solve();
+    solve();
+}
+"#;
+    let file = p.root.join("borrow.click");
+    fs::write(&file, sidecar).unwrap();
+    let output = p.cli(&["verify", "--trace-proof", "borrowed_record"]);
+    let trace = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        trace.contains("declare aggregate \"borrow.rs\"::borrowed_record.compound_literal(1)"),
+        "{trace}"
+    );
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "borrowed_record.contract",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
 }
 
 #[test]

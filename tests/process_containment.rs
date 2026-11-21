@@ -52,7 +52,7 @@ fn cli_watchdog_stops_a_verifier_that_does_not_poll() {
         stderr.contains("stopped by wall-clock crash-containment bound"),
         "{stderr}"
     );
-    assert!(!stderr.contains("proof error"), "{stderr}");
+    assert!(!stderr.contains("unsuccessful search"), "{stderr}");
 
     // A successful operation cancels a long-lived watchdog rather than
     // waiting for it or allowing it to terminate a completed verification.

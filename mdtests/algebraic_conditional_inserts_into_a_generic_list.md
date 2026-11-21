@@ -43,7 +43,7 @@ theorem insert_contains<T>(xs: List<T>, x: T) {
             }
             rewrite(insert(xs, x), List<T>::Cons(x, xs));
             unfold(list::contains(List<T>::Cons(x, xs), x));
-            normalize();
+            known();
         }
     }
 }

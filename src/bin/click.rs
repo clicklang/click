@@ -53,12 +53,22 @@ fn main() {
 fn report_error(message: String) -> ! {
     // A Rust item prints as the path its sidecar writes.
     let message = click::surface::display_source_names(&message);
-    if message.starts_with("proof error:")
-        || message.starts_with("proof error in `")
-        || message.starts_with("syntax error:")
-        || message.starts_with("type error:")
-        || message.starts_with("internal error:")
-    {
+    if [
+        "tactic error",
+        "unsuccessful search",
+        "unproved goal",
+        "verification error",
+        "syntax error",
+        "type error",
+        "internal error",
+        "limit error",
+    ]
+    .iter()
+    .any(|heading| {
+        message
+            .strip_prefix(heading)
+            .is_some_and(|rest| rest.starts_with(':') || rest.starts_with(" in `"))
+    }) {
         eprintln!("{message}");
     } else {
         eprintln!("click: {message}");
@@ -135,7 +145,7 @@ mod tests {
             "{error}"
         );
         assert!(!error.contains("outside the owned footprint"), "{error}");
-        assert!(error.starts_with("proof error:"), "{error}");
+        assert!(error.starts_with("unsuccessful search:"), "{error}");
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -330,7 +340,7 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "proof error:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
+                "verification error:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
             )),
             "{error}"
         );
@@ -339,7 +349,7 @@ mod tests {
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         assert!(
             error.starts_with(&format!(
-                "proof error:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
+                "verification error:\n  `f.contract` tactic 3 (`loop`), `maintain` tactic 0\n{bound}"
             )),
             "{error}"
         );
@@ -504,7 +514,7 @@ uint64 spell(const uint8* b, uint64 n) {
     /// establish at its pre-state, in source names, with the explicit form
     /// that proves it. A refused call precondition, and an overflow that the
     /// implicit `solve` did not rule out, read alike; a trace repeats the goal
-    /// in its failed check and leaves out verifier bookkeeping no proof can
+    /// in its proof refusal and leaves out verifier bookkeeping no proof can
     /// cite.
     #[test]
     fn verify_names_the_goal_of_a_refused_statement() {
@@ -529,6 +539,32 @@ uint64 spell(const uint8* b, uint64 n) {
         };
         let help = "help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`";
 
+        let before_exit = run(
+            "int32 half(int32 x) { ensures result == x / 2; } by { solve(); }",
+            &[],
+        );
+        assert!(before_exit.starts_with("tactic error:\n"), "{before_exit}");
+        assert!(
+            before_exit.contains("step_until(function.exit)"),
+            "{before_exit}"
+        );
+
+        for (body, arguments) in [
+            ("", &[][..]),
+            (" by { step_until(function.exit); solve(); }", &[][..]),
+            (
+                " by { step_until(function.exit); solve(); }",
+                &["--trace-proof", "half"][..],
+            ),
+        ] {
+            let miss = run(
+                &format!("int32 half(int32 x) {{ ensures result == 17; }}{body}"),
+                arguments,
+            );
+            assert!(miss.starts_with("unsuccessful search:\n"), "{miss}");
+            assert!(miss.contains("\ngoal: "), "{miss}");
+        }
+
         let call = run(
             "int32 callee(int32 n) {\n    requires n >= 0;\n    ensures result == n;\n}\nint32 caller(int32 n) {\n    ensures result == n + 1;\n} by {\n    step(); step(); step(); solve();\n}\n",
             &[],
@@ -537,6 +573,7 @@ uint64 spell(const uint8* b, uint64 n) {
             call.contains(&format!("\ngoal: n >= 0\n{help}\n")),
             "{call}"
         );
+        assert!(call.starts_with("unsuccessful search:\n"), "{call}");
         // A written `step()` is simple, but the implicit `solve` proves its
         // open requirements, so the refusal is that smart tactic's miss.
         assert!(
@@ -570,7 +607,7 @@ uint64 spell(const uint8* b, uint64 n) {
             " ∧ integer-condition((machine-integer<Int32>(inner)+1) >= -2147483648) is true)",
         );
         assert!(
-            traced.contains("\nfailed check:\n")
+            traced.contains("\nproof refusal:\n")
                 && traced.contains(&format!("\ngoal: {typed_goal}\n")),
             "{traced}"
         );
@@ -613,6 +650,7 @@ uint64 spell(const uint8* b, uint64 n) {
             "function successor(n: int32) -> int32 { n + 1 }\ntheorem left_open(x: int32) {\n    requires x == 3;\n    ensures successor(x) == 4 by {\n        unfold(successor(x));\n    }\n}\n",
             &[],
         );
+        assert!(ended_open.starts_with("unproved goal:\n"), "{ended_open}");
         assert!(
             ended_open.contains("\nrefused by: nothing (the proof ended with this goal open; add the steps that prove it)\nsee: click docs tracing\n")
                 && !ended_open.contains("refused by: `unfold`"),
@@ -721,7 +759,7 @@ uint64 spell(const uint8* b, uint64 n) {
         );
 
         let error = verify(failing.display().to_string()).unwrap_err();
-        assert!(error.starts_with("proof error:"), "{error}");
+        assert!(error.starts_with("tactic error:"), "{error}");
         assert!(error.contains("tactic@9:"), "{error}");
         assert!(error.contains("\n  step();"), "{error}");
         assert!(!error.contains("-->"), "{error}");
@@ -832,7 +870,7 @@ int32 check(struct link* node) {
         ])
         .unwrap_err();
         let (_, failed) = trace
-            .split_once("\nfailed check:\n")
+            .split_once("\nproof refusal:\n")
             .unwrap_or_else(|| panic!("{trace}"));
         assert!(
             failed.lines().any(|line| {
@@ -860,7 +898,7 @@ int32 check(struct link* node) {
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(error.starts_with("proof error:"), "{error}");
+        assert!(error.starts_with("tactic error:"), "{error}");
         assert!(error.contains("\n\ntactic@2:"), "{error}");
         assert!(
             error.contains("\n\nTo get a trace:\n  click verify --trace-proof f "),
@@ -874,7 +912,7 @@ int32 check(struct link* node) {
             sidecar.display().to_string(),
         ])
         .unwrap_err();
-        assert!(traced.starts_with("proof error:\n"), "{traced}");
+        assert!(traced.starts_with("tactic error:\n"), "{traced}");
         assert!(traced.contains("\n\ntactic@2:"), "{traced}");
         assert!(!traced.contains("\n  --> "), "{traced}");
         assert!(
@@ -887,7 +925,7 @@ int32 check(struct link* node) {
         );
         assert!(traced.contains("steps through: return 1"), "{traced}");
         assert!(!traced.contains("error kind:"), "{traced}");
-        assert!(traced.contains("failed check:"), "{traced}");
+        assert!(traced.contains("proof refusal:"), "{traced}");
         assert!(traced.contains("stage: proof step"), "{traced}");
         assert!(!traced.contains("To get a trace:"), "{traced}");
 
@@ -1249,7 +1287,7 @@ int32 check(struct link* node) {
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(error.starts_with("proof error:"), "{error}");
+        assert!(error.starts_with("verification error:"), "{error}");
         assert!(
             error.contains("\n\nTo get a trace:\n  click verify --trace-proof f "),
             "{error}"
@@ -1270,7 +1308,7 @@ int32 check(struct link* node) {
     }
 
     /// A refused `transport using` prints its own legend. The trace keeps
-    /// that numbering, so the failed check's goal names the states and
+    /// that numbering, so the proof refusal's goal names the states and
     /// values the refusal defined; its cell walks print one per line; and a
     /// field of a named pointer prints as that name plus its offset.
     #[test]
@@ -1366,7 +1404,7 @@ void parent(int32* p) {
         ])
         .expect_err("the saved argument fact cannot close the current read goal");
         let (trace, failed_check) = report
-            .split_once("\nfailed check:\n")
+            .split_once("\nproof refusal:\n")
             .unwrap_or_else(|| panic!("{report}"));
         let read_state = |section: &str, prefix: &str| {
             section
@@ -2400,7 +2438,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         fs::remove_dir_all(&directory).unwrap();
-        assert!(error.starts_with("proof error:\n"), "{error}");
+        assert!(error.starts_with("verification error:\n"), "{error}");
         assert!(
             error.contains("could not open contract entry for `release.body_safety`"),
             "{error}"

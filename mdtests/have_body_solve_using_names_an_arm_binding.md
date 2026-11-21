@@ -93,7 +93,7 @@ unsigned long peek(struct node* p) {
                 solve() using { (p->word & 1) == color_bit(color); };
             }
             have (p->word & 1) == color_bit(color) by {
-                normalize() using { (p->word & 1) == color_bit(color); };
+                solve() using { (p->word & 1) == color_bit(color); };
             }
             step();
             let t = fold(tree_at(p), {

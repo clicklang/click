@@ -30,7 +30,7 @@ int32 touch(struct packet input) {
     step_until(function.exit);
     have old(input.data) == at(copied_entry, input.data);
     have old(input.data[0]) == at(copied_entry, input.data[0]) by {
-        normalize();
+        known();
     }
     have old(input.data[0]) == 3;
     fold(data_cell(input.data));

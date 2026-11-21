@@ -1667,8 +1667,8 @@ fn validate_resource_fact_memory_read_authority(
         ))
     })?;
     let state = root.with_materialized_memory_at_current_point(memory);
-    let array_refs = pure_theorem_array_refs(definition.parameters(), &values, state.memory());
     let at = state.program_point();
+    let array_refs = pure_theorem_array_refs(definition.parameters(), &values, &at);
     let mut scalar_assumptions = formation
         .recorded
         .into_iter()
@@ -1690,8 +1690,8 @@ fn validate_resource_fact_memory_read_authority(
         )?;
     }
     let empty_memory = SymbolicMemory::new();
-    let empty_array_refs = pure_theorem_array_refs(definition.parameters(), &values, &empty_memory);
     let empty_at = crate::kernel::ProgramPoint::starting_at(&empty_memory);
+    let empty_array_refs = pure_theorem_array_refs(definition.parameters(), &values, &empty_at);
     collect_resource_fact_scalar_assumptions_from_proposition(
         fact,
         predicate_definitions,

@@ -3,6 +3,19 @@ use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, LoopEffectOrigin, SpecInte
 use crate::kernel::{bits32_constant, constant_u32};
 use std::sync::Arc;
 
+fn typed_let_program_value(
+    value: SpecExpression,
+    click_type: Option<&ClickType>,
+) -> SpecExpression {
+    match click_type {
+        Some(ClickType::Program(InterfaceType::VoidPointer)) => {
+            SpecExpression::PointerCoercion(Box::new(value), ProgramType::VoidPointer)
+        }
+        Some(ClickType::Program(ty)) => value.at_machine_type(ty.to_kernel_type()),
+        _ => value,
+    }
+}
+
 // The lowerers share these two finite bands. Refusing at each ceiling keeps
 // quantifiers, algebraic binders, pointer identities, and spec fold binders
 // structurally separate even for unusually large source terms.
@@ -4853,10 +4866,10 @@ impl AnnotationLowerer<'_> {
                         .algebraic_values
                         .insert(name.clone(), value);
                 } else {
-                    let mut value = self.lower_contract_expression_to_spec(value, environment)?;
-                    if let Some(ClickType::Program(ty)) = click_type {
-                        value = value.at_machine_type(ty.to_kernel_type());
-                    }
+                    let value = typed_let_program_value(
+                        self.lower_contract_expression_to_spec(value, environment)?,
+                        click_type.as_ref(),
+                    );
                     body_environment.values.insert(name.clone(), value);
                 }
                 self.lower_proposition_value(body, &body_environment)
@@ -5741,7 +5754,7 @@ impl AnnotationLowerer<'_> {
             ClickProposition::Defined { expression } => {
                 let mut checked_environment = environment.clone();
                 checked_environment.checking_definedness = true;
-                Ok(SpecProposition::Defined(
+                Ok(SpecProposition::OperationDefined(
                     self.lower_contract_expression_to_spec(expression, &checked_environment)?,
                 ))
             }
@@ -6680,11 +6693,10 @@ impl AnnotationLowerer<'_> {
                 value,
                 body,
             } if !self.contract_expression_is_integer(value, environment) => {
-                let mut value = self.lower_contract_expression_to_spec(value, environment)?;
-                // A typed `let`'s value is at its declared type (G2).
-                if let Some(ClickType::Program(interface_type)) = click_type {
-                    value = value.at_machine_type(interface_type.to_kernel_type());
-                }
+                let value = typed_let_program_value(
+                    self.lower_contract_expression_to_spec(value, environment)?,
+                    click_type.as_ref(),
+                );
                 let mut body_environment = environment.clone();
                 body_environment.integer_values.remove(name);
                 body_environment.algebraic_values.remove(name);
@@ -7652,11 +7664,10 @@ impl AnnotationLowerer<'_> {
                             .to_string(),
                     );
                 }
-                let mut value = self.lower_contract_expression_to_spec(value, environment)?;
-                // A typed `let`'s value is at its declared type (G2).
-                if let Some(ClickType::Program(interface_type)) = click_type {
-                    value = value.at_machine_type(interface_type.to_kernel_type());
-                }
+                let value = typed_let_program_value(
+                    self.lower_contract_expression_to_spec(value, environment)?,
+                    click_type.as_ref(),
+                );
                 if let (Some(ClickType::Program(interface_type)), SpecExpression::Value(fixed)) =
                     (click_type, &value)
                     && !program_value_matches_click_type(fixed, *interface_type)
@@ -8155,10 +8166,10 @@ impl AnnotationLowerer<'_> {
                         .algebraic_values
                         .insert(name.clone(), value);
                 } else {
-                    let mut value = self.lower_contract_expression_to_spec(value, environment)?;
-                    if let Some(ClickType::Program(ty)) = click_type {
-                        value = value.at_machine_type(ty.to_kernel_type());
-                    }
+                    let value = typed_let_program_value(
+                        self.lower_contract_expression_to_spec(value, environment)?,
+                        click_type.as_ref(),
+                    );
                     body_environment.values.insert(name.clone(), value);
                 }
                 self.lower_contract_algebraic_to_spec(body, &body_environment)

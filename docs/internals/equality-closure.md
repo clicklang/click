@@ -1810,10 +1810,11 @@ operation can query the graph maintained from the certificate's allowed facts.
 Equality substitution has a kernel-owned checked rule in
 `proof/equality_rewrite.rs`. It admits the cited equality through the persistent
 exact premise index, computes the substitution, and returns a private checked
-result. That result constructs the proposition obligation; surface code supplies
-presentation data, not a replacement semantic goal. A different load form
-must pass the kernel's corresponding-leaf transport check first. The candidate
-helper used by smart planning has no proof authority.
+result. That result constructs the proposition obligation. A Surface
+spelling must lower to the checked result with the same read identities,
+subject to the kernel's exact observation and Integer normal forms. A detached
+scalar read can use the indexed store name for its exact snapshot, address,
+and type. The candidate helper used by smart planning has no proof authority.
 
 The outer quantifier walk refuses binder collisions with the bounded,
 carrier-aware variable collector, which treats states as opaque. Direct

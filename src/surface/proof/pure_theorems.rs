@@ -863,7 +863,7 @@ pub(super) fn pure_theorem_context(
         &theorem.generic_pointer_parameters,
     );
     let integer_values = pure_theorem_parameter_integer_values(theorem.parameters());
-    let array_refs = pure_theorem_array_refs(theorem.parameters(), &values, &memory);
+    let array_refs = pure_theorem_array_refs(theorem.parameters(), &values, &point);
     // A theorem's premises are its `requires` clauses in source order, each
     // normalized to the proposition it states: a `views` range states its
     // readability, the same proposition `loadable` states. Keeping the list
@@ -1396,7 +1396,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
 pub(in crate::surface) fn pure_theorem_array_refs(
     parameters: &[FunctionParameter],
     values: &ProgramValueBindings,
-    memory: &SymbolicMemory,
+    point: &crate::kernel::ProgramPoint,
 ) -> ClickArrayRefs {
     parameters
         .iter()
@@ -1409,7 +1409,7 @@ pub(in crate::surface) fn pure_theorem_array_refs(
             Some((
                 parameter.name().to_string(),
                 ClickArrayRef {
-                    point: crate::kernel::ProgramPoint::of_memory(memory),
+                    point: point.clone(),
                     pointer: pointer.address().clone(),
                     element_type,
                 },
@@ -1941,17 +1941,23 @@ fn verify_contract_refinement_theorem(
         })
         .collect::<Vec<_>>();
     let proof_goal = obligations.proposition().clone();
-    let presentation = super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
-        &proof_goal,
-        ParameterBinding::new(&parameters, &arguments),
-        obligations.entry(),
-        obligations.post(),
-    )
-    .ok_or_else(|| {
-        ClickError::new(format!(
-            "`{claim_label}`: cannot present contract-refinement obligations"
-        ))
-    })?;
+    let mut presentation =
+        super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
+            &proof_goal,
+            ParameterBinding::new(&parameters, &arguments),
+            obligations.entry(),
+            obligations.post(),
+        )
+        .ok_or_else(|| {
+            ClickError::new(format!(
+                "`{claim_label}`: cannot present contract-refinement obligations"
+            ))
+        })?;
+    // Expansion prints this presentation as source. A native comparison over
+    // arithmetic is spelled through its Integer observations, as written
+    // arithmetic in a comparison reads exactly; spelled bare, `result ==
+    // (x + 3)` would parse back as `to_integer(result) == to_integer(x) + 3`.
+    super::surface_synthesis::spell_conjunct_observations(&proof_goal, &mut presentation);
     let retained_states = RecordedStates::new();
     let mut surfaces = SurfacePropositionMap::default();
     let mut pending = vec![(&proof_goal, &presentation)];
@@ -2720,7 +2726,10 @@ fn check_pure_script_with_proof(
             Some(super::smart_closures::LinearScriptDecline::Shape) => {
                 "contains an unsupported operation or control-flow shape".to_string()
             }
-            Some(super::smart_closures::LinearScriptDecline::Step(index)) => format!(
+            Some(
+                super::smart_closures::LinearScriptDecline::Step(index)
+                | super::smart_closures::LinearScriptDecline::UnsuccessfulSearch(index),
+            ) => format!(
                 "could not complete tactic {} (`{}`)",
                 prefix + index + 1,
                 tactic_name(&tactics[index])
@@ -2731,6 +2740,13 @@ fn check_pure_script_with_proof(
             .as_ref()
             .unwrap_or(&root)
             .step_error(format!("checked pure script for `{claim_label}` {detail}"))
+            .with_proof_refusal(match declined {
+                None => crate::surface::ProofRefusal::UnprovedGoal,
+                Some(super::smart_closures::LinearScriptDecline::UnsuccessfulSearch(_)) => {
+                    crate::surface::ProofRefusal::UnsuccessfulSearch
+                }
+                Some(_) => crate::surface::ProofRefusal::Tactic,
+            })
             .with_search_failures(search.finish()));
     };
     search.succeed();
@@ -3303,6 +3319,23 @@ fn oriented_order_comparisons(proposition: &Proposition) -> Proposition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn theorem_array_parameter_retains_the_theorem_point() {
+        let file =
+            crate::surface::parse("theorem array_input(a: int32[]) { ensures true; }").unwrap();
+        let theorem = &file.theorem_definitions()[0];
+        let predicates = PredicateEnvironment::new(&[]);
+        let functions = ClickFunctionEnvironment::new(&[]);
+        let context =
+            pure_theorem_context(theorem, SpecDefinitions::new(&predicates, &functions)).unwrap();
+        let array = context
+            .array_refs
+            .get("a")
+            .expect("the theorem array parameter");
+        assert!(context.point.id().is_some());
+        assert_eq!(array.point.id(), context.point.id());
+    }
 
     #[test]
     fn axiom_comparison_states_each_order_as_less_than_or_less_equal() {

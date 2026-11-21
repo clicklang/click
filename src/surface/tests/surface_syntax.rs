@@ -2401,11 +2401,13 @@ theorem false_guard(x: int32) {
             .expect("expected reflexive implication certificate"),
         &[ProofTactic::Intro, ProofTactic::Known]
     );
+    // `known` closes an implication whose consequent is available, here by
+    // computation, without introducing the antecedent.
     assert_eq!(
         verified[1]
             .proof_tactics()
             .expect("expected true-consequent certificate"),
-        &[ProofTactic::Intro, ProofTactic::Known]
+        &[ProofTactic::Known]
     );
     assert!(matches!(
         verified[2]

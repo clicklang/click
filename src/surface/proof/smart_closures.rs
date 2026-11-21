@@ -1685,6 +1685,8 @@ pub(in crate::surface::proof) enum LinearScriptDecline {
     Shape,
     /// The written tactic at this position declined.
     Step(usize),
+    /// The tactic ran a proof search that could not close the goal.
+    UnsuccessfulSearch(usize),
 }
 
 /// A branch continuation is checked in each selected arm. Borrow terminal
@@ -3187,10 +3189,12 @@ impl<'a> Proof<'a> {
         // spelling they wrote it with. The lowered rendering below would show
         // them a byte span over an internal pointer name instead.
         if let Some(reason) = self.unproved_loadable_range_goal_reason() {
-            return self.step_error(format!(
-                "`solve` failed for `{}`: {reason}",
-                self.claim_label()
-            ));
+            return self
+                .step_error(format!(
+                    "`solve` failed for `{}`: {reason}",
+                    self.claim_label()
+                ))
+                .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch);
         }
         // Name the goal as the user wrote it. Only a goal with no source
         // spelling falls back to the kind of check it makes, and that kind is
@@ -3232,6 +3236,7 @@ impl<'a> Proof<'a> {
                 .map(|mismatch| format!("\n  {mismatch}"))
                 .unwrap_or_default(),
         ))
+        .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
     }
 
     /// A goal whose reads all resolved to values, and that is false with
@@ -4320,10 +4325,13 @@ struct SourceBackedCallSurface {
 /// Validate the carrier against the current concrete call before any source
 /// declaration is consulted.  The returned owned call is deliberately small:
 /// the statement splitter does not expose borrowed argument storage.
-/// The Surface form of a C call's argument: a program's constructor of a
+/// The Surface form of a call's argument: a program's constructor of a
 /// `spec enum`, such as the `List<VarArg>` a variadic call passes, is that
 /// constructor, each field the source argument it holds.
-fn source_call_argument_surface(argument: &ProgramExpression) -> ContractExpression {
+fn source_call_argument_surface(
+    argument: &ProgramExpression,
+    function: &crate::languages::interface::ImportedFunction,
+) -> ContractExpression {
     if let ProgramExpression::EnumConstruct {
         enum_type,
         variant,
@@ -4337,8 +4345,36 @@ fn source_call_argument_surface(argument: &ProgramExpression) -> ContractExpress
         return ContractExpression::AlgebraicConstructor {
             algebraic_type,
             variant: variant.clone(),
-            arguments: fields.iter().map(source_call_argument_surface).collect(),
+            arguments: fields
+                .iter()
+                .map(|field| source_call_argument_surface(field, function))
+                .collect(),
         };
+    }
+    // C++ passes a local record by reference using a scalar pointer cast of
+    // its storage address. Restore the declared record type so a field in the
+    // callee's requirement still names the same subobject after parsing.
+    if let ProgramExpression::Cast {
+        expression,
+        target_type: crate::kernel::ProgramType::Int32Pointer,
+        integer_mode: crate::kernel::IntegerCastMode::Standard,
+        pointee_struct: None,
+        pointee_volatile: false,
+        pointee_constant: false,
+        explicit_qualification: false,
+    } = argument
+        && let ProgramExpression::Variable(binding) = expression.as_ref()
+        && let Some(record) = function.local_struct_values().get(binding)
+    {
+        return ContractExpression::ProgramExpression(
+            crate::kernel::program_expression::cast_with_pointee_qualifiers_and_struct(
+                super::surface_synthesis::source_c_argument(expression),
+                crate::kernel::ProgramType::Int32Pointer,
+                false,
+                false,
+                Some(record.clone()),
+            ),
+        );
     }
     ContractExpression::ProgramExpression(super::surface_synthesis::source_c_argument(argument))
 }
@@ -4590,7 +4626,9 @@ fn source_backed_call_requirement_surface(
                         *parameter_type,
                     ),
                     None => caller_embedded_record_argument(argument, context.parsed_function)
-                        .unwrap_or_else(|| source_call_argument_surface(argument)),
+                        .unwrap_or_else(|| {
+                            source_call_argument_surface(argument, context.parsed_function)
+                        }),
                 }
             };
             (parameter.clone(), argument)

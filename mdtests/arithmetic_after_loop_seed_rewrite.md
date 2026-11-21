@@ -38,10 +38,10 @@ uint64 seed(uint64 word, uint64 len) {
    have len > 0u64 by known();
    have 0u64 < len by {
     if 0u64 < len { known(); } else {
-     have 0u64 <= len by normalize();
+     have 0u64 <= len by known();
      have 0u64 == len;
-     have len == 0u64 by { rewrite(0u64, len); normalize(); }
-     have not (len > 0u64) by { rewrite(len, 0u64); normalize(); }
+     have len == 0u64 by { rewrite(0u64, len); known(); }
+     have not (len > 0u64) by { rewrite(len, 0u64); known(); }
      contradiction(len > 0u64);
     }
    }

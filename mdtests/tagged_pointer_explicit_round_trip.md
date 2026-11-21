@@ -20,8 +20,8 @@ void tag(struct node* n, struct node* p, int32 color) {
     requires color == 1;
     ensures ((n->word & ~3) as (struct node *)) == p;
 } by {
-    have 0 <= color by { rewrite(color, 1); normalize(); }
-    have color <= 1 by { rewrite(color, 1); normalize(); }
+    have 0 <= color by { rewrite(color, 1); known(); }
+    have color <= 1 by { rewrite(color, 1); known(); }
     step();
     have n->word == address(p) + 1 by {
         rewrite(color, 1);

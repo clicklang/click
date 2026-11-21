@@ -150,7 +150,7 @@ int32 caller(struct node* p) {
     step(overwrite, { w: w });
     have p->other == at(before, p->other) by {
         have p->other == at(before, p->other) by {
-            normalize() using {
+            solve() using {
                 at(before, p->other) == at(before, p->other);
             };
         }

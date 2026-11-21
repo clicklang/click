@@ -709,9 +709,8 @@ fn iterated_owner_borrow_still_refuses_without_transport() {
     assert!(!source.contains("transport("));
     let report = verify_c_sources(&source, &sources).unwrap_err().report();
     assert!(report.contains("`root.contract`"), "{report}");
-    assert!(report.contains("stable-view"), "{report}");
     assert!(
-        report.contains("selected resource `views b[0]`"),
+        report.contains("cannot supply `views b[0]` at this call"),
         "{report}"
     );
 
@@ -1335,6 +1334,19 @@ fn fold_initializer_obligation_expands_and_replays_without_implicit_solve() {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
+}
+
+#[test]
+fn fold_pointer_coercions_expand_and_cold_replay() {
+    let (source, sources) = mdtest_sources("mdtests/fold_pointer_argument_body_fact.md");
+    let sources = crate::cli::source_refs(&sources);
+    for claim in ["clear.contract", "peek.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        check_audit_claim(claim, true, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
 }
 
 #[test]
@@ -3373,8 +3385,9 @@ fn call_field_requirements_substitute_actual_arguments_in_expansion() {
     }
 }
 
-/// The int64 postcondition retains a separate, guarded domain proof.
-/// Its expanded claim contains only simple proof steps.
+/// The int64 postcondition's domain is owed only where `result == 1`, and
+/// that guard establishes it from the call's postcondition without a written
+/// step. Its expanded claim contains only simple proof steps.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_10")]
 fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
@@ -3392,15 +3405,9 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
-        claim.contains("implies ((to_integer(old((st.total as "),
-        "{expanded}"
-    );
-    assert!(
-        claim.contains(": Integer) <= 9223372036854775807"),
-        "{expanded}"
-    );
-    assert!(
-        claim.contains(": Integer) >= -9223372036854775808"),
+        claim.contains(
+            "have result == 1 implies to_integer(st.total) == to_integer((old(st.total) + 1))"
+        ),
         "{expanded}"
     );
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
@@ -3411,7 +3418,8 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
     }
 }
 
-/// The int32 postcondition retains its domain proof outside the equality.
+/// The int32 postcondition's domain is owed only where its guard holds, and
+/// the guard establishes it without a written step.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_10")]
 fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
@@ -3428,10 +3436,6 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
     let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
-    assert!(
-        claim.contains("implies ((to_integer(old((st.total as "),
-        "{expanded}"
-    );
     if let Err(error) = verify_c_sources(&expanded, &c_sources) {
         panic!(
             "the expanded `caller` should re-verify: {}\n{expanded}",
@@ -4106,11 +4110,7 @@ fn integer_sum_range_fold_expands_and_reverifies() {
         .map(|(name, source)| (*name, source.as_str()))
         .collect::<Vec<_>>();
     let error = verify_c_sources(click_source, &wrong_sources).unwrap_err();
-    assert!(
-        error.report().contains("error kind: proof error"),
-        "{}",
-        error.report()
-    );
+    assert!(error.kind() == ClickErrorKind::Proof, "{}", error.report());
 }
 
 #[test]
@@ -4205,12 +4205,15 @@ theorem fixed_integer_witness(value: int32) {
     } by {
         witness(0);
         all {
-          to_integer(value) + 1 <= 2147483647 => { known(); }
-          to_integer(value) + 1 >= -2147483648 => { known(); }
-          to_integer(value) + 1 <= 2147483647 => { known(); }
-          to_integer(value) + 1 >= -2147483648 => { known(); }
-          (0 : Integer) == 0 => { normalize(); }
-          to_integer(value + 1) == to_integer(value + 1) => { normalize(); }
+          (0 : Integer) == 0 implies to_integer(value) + 1 <= 2147483647 and to_integer(value) + 1 >= -2147483648 => {
+            intro();
+            known();
+          }
+          (0 : Integer) == 0 implies to_integer(value) + 1 <= 2147483647 and to_integer(value) + 1 >= -2147483648 => {
+            intro();
+            known();
+          }
+          (0 : Integer) == 0 and to_integer(value + 1) == to_integer(value + 1) => { known(); }
         }
     }
 }
@@ -5942,6 +5945,35 @@ fn return_population_proofs_expand_without_effect_clauses() {
                 .unwrap_or_else(|error| panic!("{fixture_name}: {}\n{expanded}", error.message()));
         }
     }
+}
+
+#[test]
+fn cpp_local_record_call_requirement_expands_and_replays() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/cpp_class_const_method_keeps_fields.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let inputs = crate::cli::prepare_mdtest_inputs(&fixture).unwrap();
+    let crate::cli::VerificationInput::PreparedProgram(import) = &inputs else {
+        panic!("expected a prepared C++ fixture");
+    };
+    let source = fixture.click_source.as_deref().unwrap();
+    let claim = "caller.contract";
+    let expanded = expand_claim_by_label(None, source, &inputs.program_inputs(), claim, None)
+        .unwrap_or_else(|error| panic!("{}", error.report()))
+        .source;
+    let project = crate::surface::ClickProject::new(
+        "proof.click",
+        [crate::surface::ClickModuleSource::new(
+            "proof.click",
+            &expanded,
+            [],
+        )],
+    );
+    check_audit_claim(claim, true, || {
+        crate::surface::verify_program_prepared_project(&project, import)
+            .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]
@@ -19325,20 +19357,9 @@ fn retained_int32_subtraction_expands_with_ordinary_bounds() {
         expanded.contains("apply(click::integer::subtract_le("),
         "{expanded}"
     );
-    for bound in [
-        "have -1 <= to_integer(((at(region(1).entry, n) - 1) as int32)) by {",
-        "have to_integer(((at(region(1).entry, n) - 1) as int32)) <= 2147483646 by {",
-    ] {
-        assert!(
-            expanded
-                .lines()
-                .zip(expanded.lines().skip(1))
-                .any(|(goal, tactic)| {
-                    goal.trim() == bound && tactic.trim_start().starts_with("rewrite(")
-                }),
-            "{bound} should expand with the operation's observation identity\n{expanded}"
-        );
-    }
+    // The subtraction's range is proved at its machine endpoints through
+    // checked Integer laws, and its observation identity, the retained
+    // operation equal to the Integer difference, is a known fact.
     let mut endpoints = 0;
     let mut identities = 0;
     for (goal, tactic) in expanded.lines().zip(expanded.lines().skip(1)) {
@@ -21503,8 +21524,11 @@ fn loop_maintain_expansion_preserves_pointer_arm_binding() {
     verify_c_sources(source, &sources).expect("the original proof checks");
     let expanded = expand_c_claim_source_by_label(source, &sources, "spin.loop(0).maintain")
         .expect("the maintain proof expands with its match-arm binding");
-    let (_, phase) = expanded.split_once("maintain by {").unwrap();
-    assert!(phase.contains("Tree::Node(id)"), "{phase}");
+    // The expansion stays inside the arm that binds `id` and replays there.
+    // Whether its steps name the binding depends on the route they take:
+    // `known` can close the invariant from the fact the step retains.
+    assert!(expanded.contains("Tree::Node(id) =>"), "{expanded}");
+    assert!(expanded.contains("maintain by {"), "{expanded}");
     verify_c_sources(&expanded, &sources).expect("the expanded proof checks");
 }
 

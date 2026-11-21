@@ -10,7 +10,7 @@ theorem tally_append(lo: int32, hi: int32) {
     requires lo < hi;
     ensures tally(lo, hi) == tally(lo, hi - 1) + 1 by {
         unfold(tally(lo, hi));
-        normalize();
+        known();
     }
 }
 ```
