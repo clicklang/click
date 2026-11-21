@@ -241,6 +241,11 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             ) == Some(true)
         }
         Proposition::Equal(left, right) => left == right,
+        Proposition::ConditionIs(condition, expected)
+            if let Some(actual) = condition.operand_view().closed_float_predicate_value() =>
+        {
+            actual == *expected
+        }
         condition_source_0 @ Proposition::ConditionIs(_, expected)
             if let Some((ConditionTerm::Constant(actual), _)) =
                 condition_source_0.condition_native() =>
@@ -307,6 +312,11 @@ pub(in crate::kernel) fn conjunction_order_facts_are_inconsistent(
 
 pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
+        Proposition::ConditionIs(condition, expected)
+            if let Some(actual) = condition.operand_view().closed_float_predicate_value() =>
+        {
+            actual != *expected
+        }
         condition_source_0 @ Proposition::ConditionIs(_, expected)
             if let Some((ConditionTerm::Constant(actual), _)) =
                 condition_source_0.condition_native() =>

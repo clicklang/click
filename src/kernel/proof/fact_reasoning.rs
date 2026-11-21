@@ -33,6 +33,11 @@ pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
 }
 
 fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
+    if let Proposition::ConditionIs(condition, expected) = goal
+        && let Some(actual) = condition.operand_view().closed_float_predicate_value()
+    {
+        return actual == *expected;
+    }
     if let Some(holds) =
         crate::kernel::spec::checks_retained_sequence_comparison(goal, true, |condition, truth| {
             normalizes_context_free_reduced(&Proposition::condition_is(condition.clone(), truth))

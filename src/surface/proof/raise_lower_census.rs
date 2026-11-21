@@ -555,6 +555,42 @@ mod tests {
     }
 
     #[test]
+    fn closed_float_predicates_raise_with_their_arithmetic() {
+        let fixture = include_str!("../../../mdtests/closed_float_arithmetic_keeps_operators.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        for (claim, operator) in [
+            ("round_once_per_operation.ensures_0", " + "),
+            ("round_once_per_operation.ensures_1", " - "),
+            ("exceptional_results.ensures_0", " / "),
+            ("exceptional_results.ensures_1", " / "),
+        ] {
+            let marker = format!("\t{claim}\tintro()\twritten\t");
+            assert!(
+                lines.iter().any(|line| line.starts_with("raised\tgoal\t")
+                    && line
+                        .split_once(&marker)
+                        .is_some_and(|(_, written)| written.contains(operator))),
+                "{claim}: {lines:#?}"
+            );
+        }
+        let wrong = source.replacen("0x33800000u32", "0x34000000u32", 1);
+        let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
+        assert!(
+            error.to_string().contains("goal did not normalize to true"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn empty_int32_range_fold_raises_bounds_seed_and_body() {
         let fixture =
             include_str!("../../../mdtests/pure_empty_int32_range_folds_keep_structure.md");

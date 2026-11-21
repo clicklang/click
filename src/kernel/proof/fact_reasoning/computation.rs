@@ -73,12 +73,15 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
         return holds;
     }
     let value = match goal {
-        Proposition::ConditionIs(condition, truth) => {
-            let condition = condition.native_compat();
-            condition_value(condition)
-                .or_else(|| super::machine_ranges::comparison_value(condition))
-                .map(|value| value == *truth)
-        }
+        Proposition::ConditionIs(condition, truth) => condition
+            .operand_view()
+            .closed_float_predicate_value()
+            .or_else(|| {
+                let condition = condition.native_compat();
+                condition_value(condition)
+                    .or_else(|| super::machine_ranges::comparison_value(condition))
+            })
+            .map(|value| value == *truth),
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
             if let (Some(left), Some(right)) = (left.root(), right.root())
                 && left == right

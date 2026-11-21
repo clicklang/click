@@ -5037,6 +5037,84 @@ mod algebraic_term_tests;
 #[cfg(test)]
 mod exact_read_tests;
 
+/// Prepare one explicitly written float operation over literal operands.
+fn literal_float_predicate_operand(
+    expression: &SpecExpression,
+) -> Option<(KernelFloatType, KernelTerm, usize)> {
+    use SpecExpression as E;
+    fn literal(expression: &E) -> Option<(KernelFloatType, KernelTerm)> {
+        let (E::Value(value) | E::ProgramExpression(ProgramExpression::Value(value))) = expression
+        else {
+            return None;
+        };
+        let operand = FloatOperandView::from_value(value)?;
+        operand.literal_bits()?;
+        Some((
+            operand.format(),
+            KernelTermImport::default().argument(&PureFunctionArgument::Value(value.clone())),
+        ))
+    }
+
+    let (expression, cast) = match expression {
+        E::Cast(inner, ty) => (inner.as_ref(), Some(*ty)),
+        expression => (expression, None),
+    };
+    let prepared = match expression {
+        E::Negate(operand) => {
+            let (format, operand) = literal(operand)?;
+            (format, KernelTerm::float_negate(format, operand).ok()?, 2)
+        }
+        E::Add(left, right)
+        | E::Subtract(left, right)
+        | E::Multiply(left, right)
+        | E::Divide(left, right) => {
+            let (format, left) = literal(left)?;
+            let (right_format, right) = literal(right)?;
+            if format != right_format {
+                return None;
+            }
+            let operator = match expression {
+                E::Add(..) => FloatBinaryOperator::Add,
+                E::Subtract(..) => FloatBinaryOperator::Subtract,
+                E::Multiply(..) => FloatBinaryOperator::Multiply,
+                E::Divide(..) => FloatBinaryOperator::Divide,
+                _ => unreachable!("float binary operator"),
+            };
+            (
+                format,
+                KernelTerm::float_binary(format, operator, [left, right]).ok()?,
+                3,
+            )
+        }
+        expression => {
+            let (format, root) = literal(expression)?;
+            (format, root, 1)
+        }
+    };
+    let (format, root, steps) = prepared;
+    cast.is_none_or(|ty| ty == format.program_type())
+        .then_some((format, root, steps + usize::from(cast.is_some())))
+}
+
+fn literal_float_predicate_path(
+    root: KernelTerm,
+    steps: usize,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    for _ in 0..steps {
+        budget.consume_expression_step()?;
+    }
+    Ok(vec![SpecPropositionPath {
+        introductions: Vec::new(),
+        proposition: Proposition::condition_is(
+            StoredConditionTerm::from_root(root).expect("float predicate"),
+            true,
+        ),
+        facts: ExecutionFacts::new(),
+        obligations: Vec::new(),
+    }])
+}
+
 fn lower_spec_float_classification_proposition_at_state_in(
     scope: SpecScope<'_>,
     expression: &SpecExpression,
@@ -5044,6 +5122,14 @@ fn lower_spec_float_classification_proposition_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    if !budget.checked_reads
+        && !budget.machine_result_production_disabled
+        && let Some((format, operand, steps)) = literal_float_predicate_operand(expression)
+    {
+        let root = KernelTerm::float_classify(format, classification, operand)
+            .expect("float classification operand");
+        return literal_float_predicate_path(root, steps, budget);
+    }
     Ok(evaluate_spec_expression_paths_with_algebraic_bindings_in(
         scope,
         expression,
@@ -5065,7 +5151,7 @@ fn lower_spec_float_classification_proposition_at_state_in(
                 _ => unreachable!("float value"),
             };
             StoredConditionTerm::from(native)
-        } else if let Some(bits) = result::float_condition_constant_bits(operand) {
+        } else if let Some(bits) = operand.closed_arithmetic_bits() {
             let native = match format {
                 KernelFloatType::Float32 => ConditionTerm::float32_classification(
                     MachineTerm::uint32_constant(bits as u32),
@@ -5904,6 +5990,16 @@ fn lower_spec_comparison_proposition_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    if !budget.checked_reads
+        && !budget.machine_result_production_disabled
+        && let Some((format, left, left_steps)) = literal_float_predicate_operand(left)
+        && let Some((right_format, right, right_steps)) = literal_float_predicate_operand(right)
+        && format == right_format
+    {
+        let root =
+            KernelTerm::float_compare(format, operator, [left, right]).expect("same float format");
+        return literal_float_predicate_path(root, left_steps + right_steps, budget);
+    }
     let share_operand = if let SpecExpression::AlgebraicMatch { scrutinee, arms } = left
         && left == right
         && matches!(
