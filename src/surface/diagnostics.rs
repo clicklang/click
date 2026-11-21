@@ -7506,6 +7506,14 @@ fn describe_contract_expression_grouping_casts(
             let operand = describe_contract_expression(operand);
             match lowered {
                 ProgramExpression::Cast {
+                    target_type: ProgramType::VoidPointer,
+                    integer_mode: crate::kernel::IntegerCastMode::PointerCoercion,
+                    ..
+                } => {
+                    // The name is only in scope in the body of the binding.
+                    format!("(let pointer: void* = {operand}; pointer)")
+                }
+                ProgramExpression::Cast {
                     target_type: ProgramType::UInt64,
                     integer_mode: crate::kernel::IntegerCastMode::Standard,
                     pointee_struct: None,

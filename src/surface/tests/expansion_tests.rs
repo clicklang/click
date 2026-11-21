@@ -1298,6 +1298,19 @@ fn fold_initializer_obligation_expands_and_replays_without_implicit_solve() {
 }
 
 #[test]
+fn fold_pointer_coercions_expand_and_cold_replay() {
+    let (source, sources) = mdtest_sources("mdtests/fold_pointer_argument_body_fact.md");
+    let sources = crate::cli::source_refs(&sources);
+    for claim in ["clear.contract", "peek.contract"] {
+        let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+        check_audit_claim(claim, true, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn fold_null_pointer_obligation_expands_and_replays_without_implicit_solve() {
     let (source, sources) = mdtest_sources("mdtests/model_payload_null_pointer.md");
     let sources = crate::cli::source_refs(&sources);

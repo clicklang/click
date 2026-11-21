@@ -159,6 +159,53 @@ fn relower_written_proposition(
     relower_written_proposition_with_states(surface, state, state, &RecordedStates::default())
 }
 
+#[test]
+fn a_printed_void_pointer_coercion_round_trips_its_pointer_type() {
+    let parse = |text: &str| {
+        parser::parse(&format!(
+            "void probe(int32* pointer, void* other) {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap()
+    };
+    let file = parse("other == pointer");
+    let function = &file.function_blocks()[0];
+    let Requirement::Proposition(mut proposition) = function.requires()[0].clone() else {
+        panic!("expected a comparison requirement");
+    };
+    let ClickProposition::Comparison { right, .. } = &mut proposition else {
+        panic!("expected a comparison");
+    };
+    *right = crate::surface::lowering::pure_function_parameter_argument(
+        &function.signature().parameters()[1],
+        right,
+    );
+    let state = ExecutionState::new()
+        .with_local(
+            "pointer",
+            ProgramValue::typed_pointer(
+                Address::symbolic(Variable(910_001)),
+                ProgramType::Int32Pointer,
+            ),
+        )
+        .with_local(
+            "other",
+            ProgramValue::typed_pointer(
+                Address::symbolic(Variable(910_002)),
+                ProgramType::VoidPointer,
+            ),
+        );
+    let written = crate::surface::printing::source_click_proposition(&proposition);
+    let parsed = parse(&written);
+    let Requirement::Proposition(reparsed) = &parsed.function_blocks()[0].requires()[0] else {
+        panic!("expected a comparison requirement");
+    };
+    assert_eq!(
+        relower_written_proposition(reparsed, &state).unwrap(),
+        relower_written_proposition(&proposition, &state).unwrap(),
+        "{written}"
+    );
+}
+
 fn relower_written_proposition_with_states(
     surface: &ClickProposition,
     pre_state: &ExecutionState,
