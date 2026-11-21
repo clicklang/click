@@ -683,5 +683,9 @@ and whether the load yields an `int32` or `uint8` value. This lets
 `same_first(p, old(p))`, or the standard `permutation::permutation(p, old(p), lo, hi)`,
 compare post-state `p` to entry-state `p` without copying an array.
 
+A recorded heap array can use its allocation point or a later write as its
+version. Effects on other known objects preserve that version. Releasing the
+allocation retires its indexed version.
+
 See [Surface Click and Kernel Click](surface-and-kernel.md) for the full C-pointer versus Click-array-ref
 model.
