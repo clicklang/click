@@ -698,13 +698,14 @@ pub enum MirTerminator {
         arguments: Vec<Expression>,
         #[serde(default)]
         owned_arguments: Vec<OwnedArgument>,
-        destination: String,
+        /// A local written by the call, absent for a discarded or retained result.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        destination: Option<String>,
         target: usize,
         /// A call through the function pointer the local `function` holds.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         through_pointer: bool,
-        /// The call step whose result its successor reads as
-        /// `Expression::CallResult`; `destination` then names no local.
+        /// The call step whose result an expression reads as `Expression::CallResult`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         result: Option<u32>,
     },
