@@ -5962,6 +5962,22 @@ pub(in crate::surface) fn function_resource_summary(
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
 ) -> Result<(Vec<ResourceSpec>, Vec<ResourceSpec>), ClickError> {
+    function_resource_summary_with_entry_ranges(
+        function_block,
+        parsed_function,
+        spec_definitions,
+        resource_environment,
+        None,
+    )
+}
+
+pub(super) fn function_resource_summary_with_entry_ranges(
+    function_block: &FunctionBlock,
+    parsed_function: &crate::languages::interface::ImportedFunction,
+    spec_definitions: SpecDefinitions<'_>,
+    resource_environment: &ResourceEnvironment,
+    mut entry_ranges: Option<&mut BTreeMap<usize, ContractSegment>>,
+) -> Result<(Vec<ResourceSpec>, Vec<ResourceSpec>), ClickError> {
     let borrowed_resources = function_block
         .ensures()
         .iter()
@@ -6000,6 +6016,23 @@ pub(in crate::surface) fn function_resource_summary(
             resource_environment,
             &mut requires,
         )?;
+        if let Some(ranges) = entry_ranges.as_deref_mut() {
+            match resource {
+                ResourceClause::OwnMemory(segment) | ResourceClause::ViewMemory(segment) => {
+                    ranges.insert(first_spec, segment.clone());
+                }
+                ResourceClause::MemoryAggregate { segments, .. } => {
+                    ranges.extend(
+                        segments
+                            .iter()
+                            .cloned()
+                            .enumerate()
+                            .map(|(offset, segment)| (first_spec + offset, segment)),
+                    );
+                }
+                _ => {}
+            }
+        }
         if has_named_view_sources
             && matches!(
                 resource,
