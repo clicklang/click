@@ -2791,6 +2791,16 @@ impl Printer<'_> {
                 {
                     return Some(atom(subslice));
                 }
+                // A struct's value, `*p` or a literal of its fields.
+                if value.algebraic_type.name == *variant
+                    && value.algebraic_type.arguments.is_empty()
+                    && let Some(spelled) = crate::surface::struct_values::spell(
+                        &value.algebraic_type.name,
+                        &spelled_fields,
+                    )
+                {
+                    return Some(atom(spelled));
+                }
                 let type_name = match value.algebraic_type.arguments.as_slice() {
                     [crate::kernel::AlgebraicValueType::Program(element)]
                         if value.algebraic_type.name == "Slice" =>

@@ -5654,6 +5654,41 @@ impl AnnotationLowerer<'_> {
                         right: self.lower_contract_integer_to_spec(right, environment)?,
                     });
                 }
+                // Two values of one struct are equal when each field is: the
+                // constructor is injective, so the comparison is its fields'.
+                if matches!(
+                    operator,
+                    ComparisonOperator::Equal | ComparisonOperator::NotEqual
+                ) && let (Some((left_type, left_fields)), Some((right_type, right_fields))) = (
+                    struct_constructor_fields(left),
+                    struct_constructor_fields(right),
+                ) && left_type == right_type
+                    && left_fields.len() == right_fields.len()
+                    && !left_fields.is_empty()
+                    && crate::surface::struct_values::field_names(&left_type).is_some()
+                {
+                    let mut fields = None;
+                    for (left, right) in left_fields.into_iter().zip(right_fields) {
+                        let field = self.lower_atomic_proposition_to_spec(
+                            &ClickProposition::Comparison {
+                                left,
+                                operator: ComparisonOperator::Equal,
+                                right,
+                            },
+                            environment,
+                        )?;
+                        fields = Some(match fields {
+                            None => field,
+                            Some(before) => SpecProposition::And(Box::new(before), Box::new(field)),
+                        });
+                    }
+                    let equal = fields.expect("a struct value has a field");
+                    return Ok(if *operator == ComparisonOperator::Equal {
+                        equal
+                    } else {
+                        SpecProposition::Not(Box::new(equal))
+                    });
+                }
                 let has_algebraic = self.enum_program_value_type(left, environment).is_some()
                     || self.enum_program_value_type(right, environment).is_some()
                     || contract_expression_is_algebraic(
@@ -11414,5 +11449,59 @@ fn layout_offset_elements(bytes: crate::kernel::LayoutOffset) -> SpecExpression 
         crate::kernel::LayoutOffset::Field(..) => {
             SpecExpression::Value(ProgramValue::UInt64(bytes.term()))
         }
+    }
+}
+
+/// A struct value's type and its fields' expressions, `pair::pair(a, b)` as
+/// `("pair", [a, b])`, seeing through `old`, `exact` and `at`, which read
+/// each field at their point.
+fn struct_constructor_fields(
+    expression: &ContractExpression,
+) -> Option<(String, Vec<ContractExpression>)> {
+    match expression {
+        ContractExpression::AlgebraicConstructor {
+            algebraic_type,
+            variant,
+            arguments,
+        } if algebraic_type.name() == variant && algebraic_type.arguments().is_empty() => {
+            Some((variant.clone(), arguments.clone()))
+        }
+        ContractExpression::Old(inner) => {
+            let (name, fields) = struct_constructor_fields(inner)?;
+            Some((
+                name,
+                fields
+                    .into_iter()
+                    .map(|field| ContractExpression::Old(Box::new(field)))
+                    .collect(),
+            ))
+        }
+        ContractExpression::Exact(inner) => {
+            let (name, fields) = struct_constructor_fields(inner)?;
+            Some((
+                name,
+                fields
+                    .into_iter()
+                    .map(|field| ContractExpression::Exact(Box::new(field)))
+                    .collect(),
+            ))
+        }
+        ContractExpression::At {
+            selector,
+            expression,
+        } => {
+            let (name, fields) = struct_constructor_fields(expression)?;
+            Some((
+                name,
+                fields
+                    .into_iter()
+                    .map(|field| ContractExpression::At {
+                        selector: selector.clone(),
+                        expression: Box::new(field),
+                    })
+                    .collect(),
+            ))
+        }
+        _ => None,
     }
 }

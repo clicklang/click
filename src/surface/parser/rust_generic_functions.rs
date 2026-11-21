@@ -470,6 +470,21 @@ fn instance(
             source[at - 1].0,
             Token::Dot | Token::Arrow | Token::ColonColon
         );
+        // A crate struct argument, named by the importer's encoded name in
+        // the head, is read in the clauses at its path, `crate_name::Pair`.
+        if let Token::Ident(word) = token
+            && let Some(argument) = substitution.get(word)
+            && let spelled = crate::languages::rust::names::display_rust_names(argument)
+            && spelled.contains("::")
+        {
+            for (segment, name) in spelled.split("::").enumerate() {
+                if segment > 0 {
+                    tokens.push((Token::ColonColon, position.clone()));
+                }
+                tokens.push((Token::Ident(name.to_string()), position.clone()));
+            }
+            continue;
+        }
         tokens.push(match token {
             Token::Ident(word) if substitution.contains_key(word) => {
                 (Token::Ident(substitution[word].clone()), position.clone())

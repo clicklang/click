@@ -82,6 +82,7 @@ pub use crate::languages::{claim_label_matches, display_source_names, source_dis
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
 mod source_registry;
+mod struct_values;
 mod structural_clauses;
 pub use structural_clauses::StructuralClauses;
 mod surface_propositions;

@@ -1,0 +1,23 @@
+{
+  "units": {
+    "generic_struct_values": {
+      "language": "rust",
+      "sources": {
+        "values.rs": {}
+      },
+      "crate": {
+        "name": "generic_struct_values",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "generic_struct_values::swap_pairs",
+          "generic_struct_values::copy_pair",
+          "generic_struct_values::copy_first"
+        ],
+        "files": [
+          "values.rs"
+        ]
+      }
+    }
+  }
+}
