@@ -828,7 +828,7 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
         );
         let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
             root.driver()
-                .apply_close_invariants_body(&[ProofTactic::Normalize], None)
+                .apply_close_invariants_body(&[ProofTactic::Normalize], None, false)
                 .unwrap()
         });
         assert!(root.certificate().steps().is_empty());
@@ -871,12 +871,12 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
         assert!(
             closed
                 .driver()
-                .apply_close_invariants_body(&[ProofTactic::Normalize], None)
+                .apply_close_invariants_body(&[ProofTactic::Normalize], None, false)
                 .is_err()
         );
         assert!(
             root.driver()
-                .apply_close_invariants_body(&[], None)
+                .apply_close_invariants_body(&[], None, false)
                 .is_err()
         );
         work
