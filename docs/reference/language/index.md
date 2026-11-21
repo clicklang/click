@@ -4541,11 +4541,12 @@ the address. Expansion may emit a low-level read only when no source field
 place is available.
 
 Symbolic folds remain `RangeFold` value terms in the kernel and can be
-reasoned about by supported fold laws. In pure specifications, a literal-bounded
-`int32` fold whose callback returns the accumulator, the item, or an `int32`
-literal also retains its fold term. Checking these callbacks uses the seed,
-the final item, or the literal, respectively, for a nonempty range. Other
-concrete callbacks can be evaluated by unrolling.
+reasoned about by supported fold laws. Pure `int32` folds over one or two
+items can also retain their fold terms. With literal bounds, callbacks that
+return the accumulator, the item, or an `int32` literal can retain their
+fold terms at any range length. For a nonempty range, checking uses the
+seed, final item, or literal, respectively. Other concrete callbacks can
+be evaluated by unrolling.
 
 
 ### Methods

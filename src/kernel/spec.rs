@@ -10106,6 +10106,23 @@ fn evaluate_spec_range_fold_paths_in(
     Ok(paths)
 }
 
+// Typed lambda application introduces lexical lets and identity casts.
+// Look through those aliases before testing the scoped callback's root.
+fn spec_fold_projection_candidate(body: &SpecExpression) -> bool {
+    match body {
+        SpecExpression::ProgramExpression(ProgramExpression::Variable(_)) => true,
+        SpecExpression::Value(ProgramValue::Int32(value))
+        | SpecExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(value))) => {
+            value.as_const().is_some()
+        }
+        SpecExpression::Cast(value, ProgramType::Int32) => spec_fold_projection_candidate(value),
+        SpecExpression::Let { value, body, .. } => {
+            spec_fold_projection_candidate(value) && spec_fold_projection_candidate(body)
+        }
+        _ => false,
+    }
+}
+
 fn evaluate_spec_range_fold_body_path_in(
     scope: SpecScope<'_>,
     start: SpecValue,
@@ -10131,32 +10148,32 @@ fn evaluate_spec_range_fold_body_path_in(
         (Some(start), Some(end)) => (end as i32) <= (start as i32),
         _ => same_bound(),
     };
-    let retain_nonempty = !empty
+    let short = endpoints.0.zip(endpoints.1).is_some_and(|(start, end)| {
+        KernelFold::is_short_nonempty_int32_range(start as i32, end as i32)
+    });
+    let projection_candidate = !empty
         && endpoints.0.is_some()
         && endpoints.1.is_some()
-        && match body {
-            SpecExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-                name == accumulator || name == item
-            }
-            SpecExpression::Value(ProgramValue::Int32(value))
-            | SpecExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
-                value,
-            ))) => value.as_const().is_some(),
-            _ => false,
-        };
-    if (empty || retain_nonempty) && state_independent() {
-        // Lower the callback in its binder scope. An empty fold never
-        // executes it, and a retained nonempty callback is a total projection
-        // or literal. Other concrete folds use the existing evaluator below.
+        && spec_fold_projection_candidate(body);
+    let mut retained = None;
+    if (empty || short || projection_candidate) && state_independent() {
+        // The scoped callback supplies the written term. Empty and total
+        // callbacks owe no iteration obligations. Other short folds still
+        // evaluate the concrete iterations below to check definedness.
         let body_scope = symbolic_int32_fold_scope(scope, accumulator, item);
-        let body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+        let body_paths = match evaluate_spec_expression_paths_with_algebraic_bindings_in(
             body_scope.as_scope(),
             body,
             &PureFactContext::new(),
             budget,
-        )?;
+        ) {
+            Ok(paths) => paths,
+            Err(ExecutionLimit::Paths | ExecutionLimit::DisjunctionRightUndefined) if short => {
+                Vec::new()
+            }
+            Err(limit) => return Err(limit),
+        };
         if let [body_path] = body_paths.as_slice()
-            && (empty || (body_path.facts.is_empty() && body_path.obligations.is_empty()))
             && let Some(value) = symbolic_spec_range_fold_value(
                 start.clone(),
                 end.clone(),
@@ -10166,11 +10183,24 @@ fn evaluate_spec_range_fold_body_path_in(
                 body_path.value.clone(),
             )
         {
-            return Ok(Some(SpecExpressionPath {
-                value,
-                facts,
-                obligations,
-            }));
+            if empty
+                || (projection_candidate
+                    && body_path.facts.is_empty()
+                    && body_path.obligations.is_empty()
+                    && value.shared().is_some_and(|root| {
+                        matches!(root.node(), KernelTermNode::Fold(fold)
+                            if fold.has_projection_or_literal_body())
+                    }))
+            {
+                return Ok(Some(SpecExpressionPath {
+                    value,
+                    facts,
+                    obligations,
+                }));
+            }
+            if short {
+                retained = Some(value);
+            }
         }
     }
     match endpoints {
@@ -10213,7 +10243,7 @@ fn evaluate_spec_range_fold_body_path_in(
                 obligations = next_obligations;
             }
             Ok(Some(SpecExpressionPath {
-                value,
+                value: retained.unwrap_or(value),
                 facts,
                 obligations,
             }))

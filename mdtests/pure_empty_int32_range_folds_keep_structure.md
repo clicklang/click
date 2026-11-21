@@ -35,9 +35,9 @@ theorem observed_empty(n: int32, seed: int32) {
         == to_integer(seed) + 1 by { normalize(); }
 }
 
-theorem literal_nonempty() {
+theorem longer_literal_nonempty() {
     ensures forall (unused: Integer) {
-        (1..3).fold(5, |acc: int32, k: int32| -> int32 { k }) == 2
+        (1..4).fold(5, |acc: int32, k: int32| -> int32 { k }) == 3
     } by { intro(); normalize(); }
 }
 
