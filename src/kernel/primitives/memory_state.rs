@@ -8883,7 +8883,8 @@ impl SymbolicMemory {
 impl ExecutionState {
     /// The read named by a local that holds an abstract or enum value in
     /// memory. The indexed write supplies its version when available. A
-    /// certified observation can otherwise use the current program point.
+    /// certified observation of a non-enum abstract local can otherwise use
+    /// the current program point.
     pub fn held_local_value(&self, name: impl Into<BindingName>) -> Option<ProgramValue> {
         let name = name.into();
         let (ProgramType::Parameter(value_type), slot) = self.locals().held_value_local(&name)?
@@ -8892,8 +8893,7 @@ impl ExecutionState {
         };
         let point = self.program_point();
         let version = point.abstract_local_version(slot, value_type).or_else(|| {
-            point
-                .has_certified_read_view()
+            (!value_type.is_enum() && point.has_certified_read_view())
                 .then(|| point.for_exact_read())
         });
         if let Some(version) = version {
