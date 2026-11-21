@@ -382,6 +382,8 @@ pub(in crate::kernel) fn evaluate_indexed_read(
         };
     }
     let stored = version.indexed_integer_store_bits().cloned();
+    let entry_word =
+        stored.is_none() && matches!(value_type, ProgramType::Int64 | ProgramType::UInt64);
     let kind = LoadKind::of_type(value_type).expect("indexed integer read");
     let format = MachineIntegerType::from_program_type(value_type).expect("indexed integer read");
     read_observations::record_at(&version, &pointer, kind, origin, value_type.byte_width());
@@ -421,6 +423,13 @@ pub(in crate::kernel) fn evaluate_indexed_read(
             ..ExecutionPureFact::certified(Proposition::condition_is(equation, true))
         });
     }
+    // The selected entry supplies the numeric bits. A complete load still
+    // carries the pointer representation of the observed cell.
+    let value = if entry_word {
+        complete_loaded_word(value, origin.memory(), &pointer)
+    } else {
+        value
+    };
     ExpressionPath {
         outcome: ExpressionOutcome::Value(value),
         facts,
