@@ -514,6 +514,13 @@ fn a_store_inside_the_range_is_refused() {
     let after = before.clone().store(element(&v, bv(LO)), one());
     let new = application(&after, &v, bv(LO), bv(HI));
     assert!(is_store_refusal(&frame(&old, &new, &[lt(bv(LO), bv(HI))])));
+
+    // The same symbolic store crosses the fold only with an outside bound.
+    let after = before.clone().store(element(&v, bv(J)), one());
+    let new = application(&after, &v, bv(LO), bv(HI));
+    let inside = [le(bv(LO), bv(J)), lt(bv(J), bv(HI))];
+    assert!(is_store_refusal(&frame(&old, &new, &inside)));
+    assert_eq!(frame(&old, &new, &[le(bv(HI), bv(J))]), Ok(1));
 }
 
 #[test]

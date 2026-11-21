@@ -7,7 +7,7 @@
 //! (`Proof::structural_proposition_candidate`: the step's fixed state, its
 //! entry state and the path's recorded points). It lowers
 //! that Surface form again in the same proof and appends one line saying how the
-//! round trip ended. `scripts/raise-lower.sh` runs the corpus under it.
+//! round trip ended. `scripts/audit.sh raise-lower` runs the corpus under it.
 //!
 //! This checks the canonical Surface form. The raise-lower census separately
 //! measures facts that cannot be raised; a mismatch here is a raised form
@@ -157,6 +157,40 @@ mod tests {
             },
             value,
         )
+    }
+
+    #[test]
+    fn closed_integer_and_algebraic_conditionals_round_trip() {
+        let c = r#"int32 int_if(int32 x) { return x; }
+int32 alg_if(int32 x) { return x; }
+"#;
+        let source = r#"verifying "anchor.c";
+spec enum Choice { Left, Right }
+
+int32 int_if(int32 x) {
+    ensures forall (n: Integer) {
+        ((if 1 < 2 { n } else { 7 }) : Integer) <= n
+    };
+} by { step_until(function.exit); intro(); normalize(); }
+
+int32 alg_if(int32 x) {
+    ensures forall (n: Integer) {
+        (if 1 == 2 { Choice::Left } else { Choice::Right }) == Choice::Right
+    };
+} by { step_until(function.exit); intro(); normalize(); }
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[("anchor.c", c)]).unwrap();
+        });
+        for claim in ["int_if", "alg_if"] {
+            let marker = format!("\t{claim}.contract\tintro()\twritten\t");
+            assert!(
+                lines.iter().any(|line| line.starts_with("same\tgoal\t")
+                    && line.contains(&marker)
+                    && line.contains("if ")),
+                "{lines:#?}"
+            );
+        }
     }
 
     #[test]

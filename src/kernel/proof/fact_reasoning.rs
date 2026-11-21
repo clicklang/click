@@ -2,7 +2,10 @@ mod computation;
 mod intervals;
 mod known_bridges;
 mod machine_ranges;
-pub(in crate::kernel) use computation::reduce_known_int32_match_comparison;
+pub(in crate::kernel) use computation::{
+    closed_algebraic_if_comparison, closed_integer_if_comparison, is_literal_value_if_guard_root,
+    literal_value_if_guard, reduce_known_int32_match_comparison,
+};
 pub(crate) use computation::{computes_leaf, trivial_condition_value};
 pub(crate) use known_bridges::{
     is_quotient_remainder_order, known_bridge_leaf, pointer_projection_source,
@@ -14,6 +17,11 @@ use crate::kernel::binary_term;
 use crate::kernel::*;
 
 pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
+    if let Some(reduced) = closed_algebraic_if_comparison(goal)
+        && normalizes_context_free(&reduced)
+    {
+        return true;
+    }
     if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = goal {
         let reduced_left =
             super::term_rewrite::TermRewrite::normalize_algebraic(left.native_compat());
@@ -3254,7 +3262,7 @@ impl<'a> OriginsUnchanged<'a> {
                 crate::kernel::MachineOperandView::Legacy(term),
             )?;
             Some(MachineTerm::MemoryLoad(
-                ProgramPoint::at(&(read.origin?)),
+                read.origin?.for_legacy_read(),
                 Box::new(read.pointer),
                 read.kind,
             ))

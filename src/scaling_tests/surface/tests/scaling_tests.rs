@@ -157,6 +157,64 @@ int32 probe() {{
 }
 
 #[test]
+fn static_cell_read_steps_skip_same_array_call_history() {
+    use crate::instrumentation::{VerificationEvent, collect};
+
+    for (calls, reads) in [(4, 1), (16, 1), (64, 1), (128, 1), (32, 32)] {
+        let mut c = "int32 g[256];\nvoid touch() { g[255] = 1; }\nint32 probe() {\n    int32 x;\n"
+            .to_string();
+        c.push_str(&"    touch();\n".repeat(calls));
+        for offset in 0..reads {
+            c.push_str(&format!("    x = g[{offset}];\n"));
+        }
+        c.push_str("    return 0;\n}\n");
+        let steps = "    step();\n".repeat(calls + reads + 2);
+        let source = format!(
+            r#"verifying "probe.c";
+void touch() {{ owns g[255..256]; }}
+int32 probe() {{ owns g[0..256]; ensures result == 0; }} by {{
+{steps}}}
+"#
+        );
+        let (verified, events) = collect(|| verify_c_sources(&source, &[("probe.c", &c)]));
+        verified
+            .unwrap_or_else(|error| panic!("{calls} calls, {reads} reads: {}", error.message()));
+
+        let mut steps = 0;
+        let mut walk_work = 0;
+        let mut load_work = Vec::new();
+        for event in events {
+            match event {
+                VerificationEvent::TacticStarted(tactic)
+                    if tactic.claim == "probe.contract" && tactic.tactic_name == "step" =>
+                {
+                    steps = tactic.tactic_index;
+                }
+                VerificationEvent::TacticFinished { tactic, work, .. }
+                    if tactic.claim == "probe.contract"
+                        && tactic.tactic_name == "step"
+                        && (calls + 1..=calls + reads).contains(&steps) =>
+                {
+                    load_work.push(work);
+                }
+                VerificationEvent::OperationFinished { name, work, .. }
+                    if name == "cell version walk"
+                        && (calls + 1..=calls + reads).contains(&steps) =>
+                {
+                    walk_work += work;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(load_work.len(), reads);
+        assert!(
+            walk_work <= 40 * reads && load_work.iter().all(|&work| work <= 240),
+            "{calls} calls, {reads} reads: version work {walk_work}, step work {load_work:?}"
+        );
+    }
+}
+
+#[test]
 fn writing_the_entry_cell_changes_its_ordinary_read_version() {
     let (c, source) = entry_cell_after_local_stores(4, true, "a[0] == 7");
     verify_c_sources(&source, &[("probe.c", &c)]).expect("the read names the written value");
@@ -1101,7 +1159,7 @@ fn assert_near_linear_scaling_with_increment_bound(axis: &str, samples: &[Scalin
 fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
     let (replace_source, caller_source, base_click) =
         super::contract_tests::result_case_split_sources();
-    let insertion = "                open(allocated_cell(owner)) {\n                }\n";
+    let insertion = "                with(allocated_cell(owner)) {\n                }\n";
     let mut samples = Vec::new();
     let mut exclusion_work = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -9085,7 +9143,7 @@ resource callbacks0(cb: const struct callbacks*) {
         for layer in (1..=depth).rev() {
             source.push_str(&format!("unfold(node{layer}(p)); observe(callbacks{layer}(cb));\n"));
         }
-        source.push_str("unfold(node0(p)); open(callbacks0(cb)) { step_until(function.exit); } fold(node0(p));\n");
+        source.push_str("unfold(node0(p)); with(callbacks0(cb)) { step_until(function.exit); } fold(node0(p));\n");
         for layer in 1..=depth {
             source.push_str(&format!("fold(node{layer}(p));\n"));
         }

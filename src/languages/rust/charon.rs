@@ -4567,12 +4567,16 @@ mod tests {
                 .count(),
             2
         );
-        assert!(
-            mir.blocks
-                .iter()
-                .flat_map(|b| &b.statements)
-                .any(|s| matches!(s, S::SharedArrayMove { .. }))
+        // MIR builds the iterator in a temporary and moves it into the
+        // loop's; the move collapses, so the loop's local is built directly.
+        let statements = || mir.blocks.iter().flat_map(|b| &b.statements);
+        assert_eq!(
+            statements()
+                .filter(|s| matches!(s, S::SharedArrayInitialize { .. }))
+                .count(),
+            1
         );
+        assert!(!statements().any(|s| matches!(s, S::SharedArrayMove { .. })));
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         ProgramVerificationSession::new_program_prepared(ITERATION_CLAIM, &prepared).unwrap();
     }
@@ -5502,22 +5506,33 @@ mod tests {
             .mir
             .as_mut()
             .unwrap();
-        // Normalization substitutes the temporary into the array read.
-        // Mutate that index, rather than looking for its removed assignment.
-        let index = mir
-            .blocks
-            .iter_mut()
-            .flat_map(|b| &mut b.statements)
-            .find_map(|s| match s {
-                S::Assign {
-                    value: E::Index { index, .. },
-                    ..
-                } => match index.as_mut() {
-                    E::UsizeInteger { value } if *value == 999_999 => Some(value),
+        // Normalization substitutes the temporary into the array read, which
+        // the returned value now reads directly. Mutate that index, rather
+        // than looking for its removed assignment.
+        fn last_index(blocks: &mut [crate::languages::rust::schema::MirBlock]) -> Option<&mut u64> {
+            for block in blocks {
+                let assigned = block.statements.iter_mut().filter_map(|s| match s {
+                    S::Assign { value, .. } => Some(value),
                     _ => None,
-                },
-                _ => None,
-            })
+                });
+                let returned = match &mut block.terminator {
+                    crate::languages::rust::schema::MirTerminator::ReturnValue { value } => {
+                        Some(value)
+                    }
+                    _ => None,
+                };
+                for value in assigned.chain(returned) {
+                    if let E::Index { index, .. } = value
+                        && let E::UsizeInteger { value } = index.as_mut()
+                        && *value == 999_999
+                    {
+                        return Some(value);
+                    }
+                }
+            }
+            None
+        }
+        let index = last_index(&mut mir.blocks)
             .expect("the normalized read should retain the last in-bounds index");
         *index = 1_000_000;
         let prepared = super::super::import::prepared_for_test(export).unwrap();

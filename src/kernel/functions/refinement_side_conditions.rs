@@ -177,7 +177,9 @@ pub(super) fn contract_refinement_proves(
     refinement_route_proves(assumptions, proposition)
 }
 
-pub(super) fn spec_proposition_is_state_independent(proposition: &SpecProposition) -> bool {
+pub(in crate::kernel) fn spec_proposition_is_state_independent(
+    proposition: &SpecProposition,
+) -> bool {
     spec_tree_all(SpecNode::Proposition(proposition), state_independent_node)
 }
 

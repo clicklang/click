@@ -896,10 +896,7 @@ pub(in crate::kernel) fn load_state_and_pointer(
     // Checking follows the recorded observation, even when structural version
     // selection retained an earlier representative state in the term.
     Some((
-        (*read
-            .origin
-            .unwrap_or_else(|| read.point.into_shared_memory()))
-        .clone(),
+        read.origin.unwrap_or(read.point).memory().clone(),
         read.pointer,
         read.kind,
     ))
@@ -2869,7 +2866,7 @@ fn collect_memory_read_descriptor(
         .then(|| crate::kernel::eval::scalar_read_observation(operand).expect("selected read"));
     let memory = observation
         .as_ref()
-        .map(|read| read.origin.as_ref().unwrap_or(read.point.shared_memory()))
+        .map(|read| read.origin.as_ref().unwrap_or(&read.point).shared_memory())
         .unwrap_or(point.shared_memory());
     if MemoryStateIdentity::of(memory.memory()) == MemoryStateIdentity::of(current_memory) {
         // A point-named read can have a typed access width even when it did
@@ -6827,7 +6824,12 @@ impl PureFactContext {
             self.adjust_memory_effect_fact(proposition);
             self.adjust_pointer_class_fact(proposition);
             self.content_fingerprint ^= Self::fingerprint(2, &proposition);
+            let closed_if =
+                crate::kernel::proof::fact_reasoning::closed_algebraic_if_comparison(proposition);
             self.admit_shared_exact_propagation(shared);
+            if let Some(reading) = closed_if {
+                self.insert_proposition_fact(reading);
+            }
         }
     }
 
@@ -7666,7 +7668,12 @@ impl PureFactContext {
         } else {
             None
         };
+        let closed_if =
+            crate::kernel::proof::fact_reasoning::closed_integer_if_comparison(&condition);
         let mut next = self.assume_condition_once_shared(condition, value, source);
+        if let Some(reading) = closed_if {
+            next = next.assume_condition_once(reading, value);
+        }
         if let Some(reading) = match_order {
             next = next.assume_condition_once(reading, value);
         }

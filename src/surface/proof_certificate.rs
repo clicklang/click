@@ -141,7 +141,7 @@ pub enum ProofStep {
         resource: ResourceClause,
         proof: Box<ProofCertificate>,
         /// The closing fold's proof of its one open body fact.
-        deferred_tail: bool,
+        deferred_tail: Option<DeferredOpenTail>,
     },
     If {
         condition: ClickProposition,

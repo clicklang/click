@@ -24,7 +24,7 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
     ensures zeros(v, lo, hi) == old(zeros(v, lo, hi));
 } by {
     mark entry;
-    have zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi) by normalize();
+    have zeros(at(entry, v), lo, hi) == zeros(at(entry, v), lo, hi) by known();
     have 0 <= lo by { solve(); }
     have 0 <= hi by { solve(); }
     have viewable(v[0..n]) by { observe(v[0..n]); known(); }
@@ -38,7 +38,7 @@ void mark_below(int32 *v, int32 lo, int32 hi, int32 j, int32 n) {
                 apply(click::separation::separate_elements(v, j, k)) using { j != k; };
             }
             have separate(statement(0).footprint, memory(v[k])) by {
-                normalize() using { separate(memory(v[j]), memory(v[k])); };
+                solve() using { separate(memory(v[j]), memory(v[k])); };
             }
             preserve(memory(v[k]), statement(0));
         }

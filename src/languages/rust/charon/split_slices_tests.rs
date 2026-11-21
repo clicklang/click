@@ -48,9 +48,10 @@ fn charon_split_at_preserves_both_shared_slices_and_original_proofs() {
     }
     let prepared = super::super::import::prepared_for_test(export).unwrap();
     ProgramVerificationSession::new_program_prepared(CLAIM, &prepared).unwrap();
+    // A shared slice parameter views its elements from its type, so the
+    // written `views` clause is not what makes the claim hold.
     for bad in [
         CLAIM.replace("requires mid <= bytes.len();", ""),
-        CLAIM.replace("views bytes[0..bytes.len()];", ""),
         CLAIM.replace("ensures result == mid;", "ensures result != mid;"),
         CLAIM.replace(
             "ensures result == bytes[mid];",

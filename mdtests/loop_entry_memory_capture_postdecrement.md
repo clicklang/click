@@ -27,13 +27,13 @@ uint64 post(const uint8* p, uint64 n) {
    if n == 0u64 {
     step(); step();
     have at(statement(0).region(1).entry, n) == 0u64 by known();
-    have n == 18446744073709551615u64 by { rewrite(at(statement(0).region(1).entry, n), 0u64); normalize(); }
+    have n == 18446744073709551615u64 by { rewrite(at(statement(0).region(1).entry, n), 0u64); known(); }
    } else {
-    have 0u64 <= n by normalize();
+    have 0u64 <= n by known();
     have 0u64 < n by {
      if 0u64 < n { known(); } else {
       have 0u64 == n;
-      have n == 0u64 by { rewrite(0u64, n); normalize(); }
+      have n == 0u64 by { rewrite(0u64, n); known(); }
       contradiction(n == 0u64);
      }
     }

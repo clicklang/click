@@ -2351,10 +2351,12 @@ fn synthesize_boolean_cell_read(
     if !point.memory().has_boolean_cell_type(address) {
         return None;
     }
-    // A Boolean cell's byte test names the memory selected by Boolean
-    // evaluation. The integer read selector may choose a different version.
+    // A snapshot read can use a typed Boolean spelling only where lowering
+    // still uses a detached view. A certified point gives the spelling its
+    // own point-keyed read.
     let selects_read = |state: &ExecutionState| {
         &crate::kernel::intern_memory_ref(state.memory()) == point.shared_memory()
+            && !state.program_point().has_certified_read_view()
     };
     let expression = |state: &ExecutionState| {
         Some(synthesize_typed_load(
@@ -3690,13 +3692,39 @@ fn synthesize_surface_integer(
     raise_kernel_term(&term, parameter_binding, state, bound_variables)
 }
 
+// The comparison renderer spells a proposition used as a Bool via
+// `if guard { true } else { false }`. An Integer or algebraic `if` expects a
+// proposition directly, so recover the comparison instead of wrapping it.
+fn raise_value_if_guard(
+    guard: &crate::kernel::KernelTerm,
+    expression: SurfaceTerm,
+) -> ClickProposition {
+    use crate::kernel::KernelTermNode as Node;
+    match (guard.node(), expression) {
+        (Node::BoolLiteral(_), literal) => ClickProposition::Value(literal),
+        (
+            Node::BoolCompare { .. } | Node::IntegerCompare { .. },
+            SurfaceTerm::If {
+                condition,
+                then_branch,
+                else_branch,
+            },
+        ) if bool_literal_value(&then_branch) == Some(true)
+            && bool_literal_value(&else_branch) == Some(false) =>
+        {
+            *condition
+        }
+        (_, expression) => bool_truth(expression),
+    }
+}
+
 // Keep this construction outside the recursive general dispatch frame.
 fn raise_algebraic_if<'a>(
     arguments: &'a [crate::kernel::KernelTerm; 3],
     mut raise: impl FnMut(&'a crate::kernel::KernelTerm) -> Option<SurfaceTerm>,
 ) -> Option<SurfaceTerm> {
     Some(SurfaceTerm::If {
-        condition: Box::new(bool_truth(raise(&arguments[0])?)),
+        condition: Box::new(raise_value_if_guard(&arguments[0], raise(&arguments[0])?)),
         then_branch: Box::new(raise(&arguments[1])?),
         else_branch: Box::new(raise(&arguments[2])?),
     })
@@ -4341,7 +4369,7 @@ fn raise_kernel_term_dispatch(
         }
         Node::AlgebraicIf { arguments } => raise_algebraic_if(arguments, recurse)?,
         Node::IntegerIf { arguments } => SurfaceTerm::If {
-            condition: Box::new(bool_truth(recurse(&arguments[0])?)),
+            condition: Box::new(raise_value_if_guard(&arguments[0], recurse(&arguments[0])?)),
             then_branch: Box::new(integer_typed_expression(recurse(&arguments[1])?)),
             else_branch: Box::new(integer_typed_expression(recurse(&arguments[2])?)),
         },
@@ -7820,25 +7848,23 @@ fn synthesize_pointer_equality_operand(
             ProgramExpression::Variable(name.into()),
         ));
     }
-    if let Some(read) = value.address().as_loaded_value()
-        && let Some(value_type) = read.value_type
-        && read.displacement == AddressOffset::Constant(0)
-    {
-        return synthesize_point_read(
-            &read.point,
-            &read.defining_address,
-            value_type,
-            parameter_binding,
-            state,
-            bound_variables,
-        );
-    }
+    let address_read = value
+        .address()
+        .as_loaded_value()
+        .filter(|read| read.displacement == AddressOffset::Constant(0));
     // An address can survive a later store while the complete pointer's
     // provenance still names the earlier read. Spell that value at the
-    // state that introduced its domain, rather than naming only its address
-    // through the current field. The source memory selects one recorded
-    // point; this does not search pointer aliases or state history.
-    if let Some((source, address)) = value.complete_read_source() {
+    // state that introduced its domain. A memory-named load whose address
+    // and provenance agree needs an explicit state only for a historical read.
+    let read_source = value.complete_read_source().or_else(|| {
+        let read = address_read.as_ref()?;
+        (read.value_type.is_none()
+            && value.provenance() == value.address()
+            && read.defining_memory
+                != crate::kernel::intern_memory_ref(state.memory()).unchanged_bytes_source())
+        .then(|| (read.defining_memory.clone(), read.defining_address.clone()))
+    });
+    if let Some((source, address)) = read_source {
         let at_state = |state: &ExecutionState| {
             if let Some(field) = synthesize_struct_field_load(
                 &address,
@@ -7885,6 +7911,18 @@ fn synthesize_pointer_equality_operand(
                 expression: Box::new(at_state(recorded)?),
             })
         });
+    }
+    if let Some(read) = address_read
+        && let Some(value_type) = read.value_type
+    {
+        return synthesize_point_read(
+            &read.point,
+            &read.defining_address,
+            value_type,
+            parameter_binding,
+            state,
+            bound_variables,
+        );
     }
     synthesize_pointer_equality_address(
         value.address(),
@@ -8390,6 +8428,10 @@ fn synthesize_surface_algebraic(
         return Some(name.reference());
     }
     match &term.node {
+        crate::kernel::AlgebraicTermNode::If { .. } => {
+            let root = crate::kernel::KernelTermImport::default().algebraic(term);
+            raise_kernel_term(&root, parameter_binding, state, bound_variables)
+        }
         crate::kernel::AlgebraicTermNode::Match { .. } => {
             let matched = crate::kernel::KernelMatch::import_algebraic(
                 &mut crate::kernel::KernelTermImport::default(),
@@ -8624,7 +8666,6 @@ fn synthesize_surface_algebraic(
                 arguments,
             })
         }
-        _ => None,
     }
 }
 

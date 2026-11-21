@@ -969,7 +969,7 @@ impl OriginLoadEndpoint {
             crate::kernel::MachineOperandView::Legacy(term),
         )?;
         Some(Self {
-            memory: read.origin?,
+            memory: read.origin?.into_shared_memory(),
             pointer: read.pointer,
             kind: read.kind,
         })
@@ -5287,11 +5287,7 @@ pub(crate) fn wide_read_has_recorded_value(
         )
         .map(|read| {
             MachineTerm::MemoryLoad(
-                ProgramPoint::at(
-                    &(read
-                        .origin
-                        .unwrap_or_else(|| read.point.into_shared_memory())),
-                ),
+                read.origin.unwrap_or(read.point).for_legacy_read(),
                 Box::new(read.pointer),
                 read.kind,
             )

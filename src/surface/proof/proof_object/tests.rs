@@ -10424,7 +10424,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             closed.certificate().steps(),
             &[ProofStep::Open {
                 resource: resource.clone(),
-                deferred_tail: false,
+                deferred_tail: None,
                 proof: Box::new(
                     ProofCertificate::from_steps(vec![
                         ProofStep::Have {
@@ -10493,7 +10493,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             terminal.certificate().steps(),
             &[ProofStep::Open {
                 resource: resource.clone(),
-                deferred_tail: false,
+                deferred_tail: None,
                 proof: Box::new(
                     ProofCertificate::from_steps(vec![ProofStep::Step, ProofStep::Step]).unwrap(),
                 ),

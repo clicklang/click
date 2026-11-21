@@ -103,7 +103,7 @@ int32 caller(struct node* p) {
     step(overwrite, { s: s });
     have p->spare == at(before, p->spare) by {
         have p->spare == at(before, p->spare) by {
-            normalize() using {
+            solve() using {
                 at(before, p->spare) == at(before, p->spare);
             };
         }

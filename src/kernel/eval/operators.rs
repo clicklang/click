@@ -1943,7 +1943,7 @@ fn uint32_order_condition(
     }
 }
 
-fn apply_same_object_pointer_operation(
+fn apply_same_allocation_pointer_operation(
     state: &ExecutionState,
     left: Address,
     right: Address,
@@ -2181,7 +2181,7 @@ pub(in crate::kernel) fn pointer_object_is_null_condition(pointer: &Address) -> 
     pointer_is_null_condition(pointer.object_base())
 }
 
-pub(in crate::kernel) fn pointer_same_object_proposition(
+pub(in crate::kernel) fn pointer_same_allocation_proposition(
     left: &Address,
     right: &Address,
 ) -> Proposition {
@@ -2309,7 +2309,7 @@ pub(super) fn apply_program_comparison(
             else {
                 return vec![program_type_mismatch_expression_path(facts, obligations)];
             };
-            apply_same_object_pointer_operation(
+            apply_same_allocation_pointer_operation(
                 state,
                 left.into_pointer(),
                 right.into_pointer(),
@@ -2578,7 +2578,7 @@ pub(in crate::kernel) fn apply_program_subtract(
                 }
                 SameArray::When(conditions) => Some(conditions),
             };
-            apply_same_object_pointer_operation(
+            apply_same_allocation_pointer_operation(
                 state,
                 left.into_pointer(),
                 right.into_pointer(),

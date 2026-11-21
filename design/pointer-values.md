@@ -155,7 +155,7 @@ one is a visible case to fix at its construction site or to accept.
 ## Steps
 
 Each step is one PR, measured with the raise-lower audit and
-`scripts/fact-stability.sh`.
+`scripts/audit.sh fact-stability`.
 
 1. **The Surface form.** Parse, validate, lower and print `pointer<T>(..)`.
    Add mdtests:

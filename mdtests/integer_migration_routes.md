@@ -38,8 +38,8 @@ theorem upper_endpoint(x: uint64) {
 }
 
 theorem quotient_slack(x: int64) {
-    ensures 4 * to_integer(x / 4i64) - 3 <= to_integer(x) by { normalize(); }
-    ensures to_integer(x) <= 4 * to_integer(x / 4i64) + 3 by { normalize(); }
+    ensures 4 * to_integer(x / 4i64) - 3 <= to_integer(x) by { known(); }
+    ensures to_integer(x) <= 4 * to_integer(x / 4i64) + 3 by { known(); }
 }
 ```
 

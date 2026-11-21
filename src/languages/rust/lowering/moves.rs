@@ -432,6 +432,10 @@ pub(super) fn lower(
             }
             // The value MIR wrote to its return place, returned as written.
             T::ReturnValue { value } => {
+                cx.mir_point = Some(super::super::borrow_frontiers::MirPoint {
+                    block,
+                    statement: mir.blocks[block].statements.len(),
+                });
                 let (checks, value) = cx.prepared_expr(value)?;
                 let return_type = scalar_type(&f.return_type)?.to_kernel_type();
                 program_seq(
@@ -656,6 +660,7 @@ pub(super) fn lower(
                 program_seq(prefix, call)
             }
         };
+        cx.mir_point = None;
         // The source statement the block's statements come from, as its
         // `Site` statements name it.
         let mut site = None;

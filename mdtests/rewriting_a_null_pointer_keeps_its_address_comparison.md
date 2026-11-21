@@ -19,7 +19,7 @@ theorem zero_address_after_null_rewrite(p: void*, q: void*) {
     requires q == 0;
     ensures address(q) == address(p) by {
         rewrite(p, 0);
-        normalize() using { q == 0; };
+        solve() using { q == 0; };
     }
 }
 ```

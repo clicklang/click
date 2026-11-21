@@ -66,8 +66,8 @@ void set_end(int32 *v, int32 i, int32 n) {
     ensures weighted(v, 0, i) == old(weighted(v, 0, i));
 } by {
     mark entry;
-    have weighted(at(entry, v), 0, i) == weighted(at(entry, v), 0, i) by normalize();
-    have 0 <= 0 by { normalize(); }
+    have weighted(at(entry, v), 0, i) == weighted(at(entry, v), 0, i) by known();
+    have 0 <= 0 by { known(); }
     have 0 <= i by { known(); }
     have i <= n by { solve(); }
     have viewable(v[0..n]) by { observe(v[0..n]); known(); }
@@ -88,7 +88,7 @@ void set_end(int32 *v, int32 i, int32 n) {
                 apply(click::separation::separate_elements(v, i, k)) using { i != k; };
             }
             have separate(statement(0).footprint, memory(v[k])) by {
-                normalize() using { separate(memory(v[i]), memory(v[k])); };
+                solve() using { separate(memory(v[i]), memory(v[k])); };
             }
             preserve(memory(v[k]), statement(0));
         }

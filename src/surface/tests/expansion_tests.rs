@@ -1297,6 +1297,19 @@ fn tactic_argument_obligation_expands_and_replays_without_implicit_solve() {
 }
 
 #[test]
+fn recursive_byte_unfolds_expand_within_the_parser_nesting_limit() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_recursive_byte_function_evaluates_automatically.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "greet.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 fn fold_initializer_obligation_expands_and_replays_without_implicit_solve() {
     let (source, sources) = mdtest_sources("mdtests/fold_initializer_obligation.md");
     let sources = sources
@@ -1305,6 +1318,22 @@ fn fold_initializer_obligation_expands_and_replays_without_implicit_solve() {
         .collect::<Vec<_>>();
     let expanded = expand_function_proof_source(&source, &sources, "make").unwrap();
     without_implicit_solve_for_claim("make.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+fn fold_null_pointer_obligation_expands_and_replays_without_implicit_solve() {
+    let (source, sources) = mdtest_sources("mdtests/model_payload_null_pointer.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "detach.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(
+        expanded.contains("requires n->parent == 0 by {"),
+        "{expanded}"
+    );
+    check_audit_claim(claim, true, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
@@ -5902,6 +5931,23 @@ fn return_population_proofs_expand_without_effect_clauses() {
 }
 
 #[test]
+fn expansion_keeps_explicit_return_fold_inside_with() {
+    let (source, sources) = mdtest_sources("mdtests/with_accepts_an_already_restored_instance.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "read_at_return.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    let (_, expanded_body) = expanded.split_once("int32 read_at_return(").unwrap();
+    assert!(
+        expanded_body.contains("        fold(c);\n    }"),
+        "{expanded}"
+    );
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_20")]
 fn return_population_count_is_not_an_assumed_invariant() {
     let c_source =
@@ -6207,6 +6253,18 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
     );
     assert_eq!(expanded.matches("solve();").count(), 1, "{expanded}");
     verify_c_sources(&expanded, &[]).expect("expanded refinement proof should verify");
+}
+
+#[test]
+fn callback_refinement_expansion_preserves_pointer_read_origins() {
+    let (source, sources) = mdtest_sources("mdtests/rb_augment_callbacks_const_suite.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "dummy_propagate_contract.ensures_0";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    check_audit_claim(claim, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -25658,7 +25716,7 @@ fn local_byte_predicate_unfolds_expand_and_replay() {
     let expanded = expand_function_proof_source(&source, &sources, "copy_u")
         .expect("the copy should have an explicit local predicate proof");
     assert!(expanded.contains("old(src)"), "{expanded}");
-    without_implicit_solve_for_claim("copy_u.contract", || {
+    without_implicit_solve_for_claim("copy_u.ensures_0", || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .expect("the expanded byte proof should replay independently");

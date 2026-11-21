@@ -14,7 +14,7 @@ int32 distance(int32 *left, int32 *right) {
 verifying "c_pointer_distance_requires_defined.c";
 
 int32 distance(int32* left, int32* right) {
-    requires same_object(left, right);
+    requires same_allocation(left, right);
     ensures result == result;
 }
 ```

@@ -39,7 +39,7 @@ int32 probe(int32 a[], int32 n, int32 k) {
     have viewable(a[0..n]);
     have 0 <= n - 0;
     have n - 0 <= 1073741823;
-    have 0 <= 0 by { normalize(); }
+    have 0 <= 0 by { known(); }
     have viewable(a[0..k]) by {
         have contains(memory(a[0..n]), memory(a[0..k])) by {
             apply(click::separation::contains_subrange(a, 0, n, 0, k)) using { 0 <= 0; 0 <= k; k <= n; };

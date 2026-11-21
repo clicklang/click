@@ -21,7 +21,7 @@ verifying "prefix.c";
 int prefix_available(const uint8* input_pointer, const uint8* input_end) {
     views input_pointer[0..12];
     requires input_end == input_pointer + 12;
-    requires same_object(input_end, input_pointer);
+    requires same_allocation(input_end, input_pointer);
     requires defined(input_end - input_pointer);
     ensures result == 0 or result == 1;
 }

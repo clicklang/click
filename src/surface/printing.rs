@@ -163,6 +163,17 @@ fn comparison_operand(
     other: &ContractExpression,
     mode: PropositionSpelling,
 ) -> String {
+    // A pointer comparison supplies the type of the null pointer constant.
+    // The diagnostic spelling `NULL` requires a C macro that Click source
+    // cannot assume.
+    if mode == PropositionSpelling::Source
+        && let ContractExpression::ProgramExpression(ProgramExpression::Value(
+            ProgramValue::Pointer(pointer),
+        )) = expression
+        && pointer.is_null()
+    {
+        return "0".into();
+    }
     fn typed_count_reference(expression: &ContractExpression) -> Option<String> {
         match expression {
             ContractExpression::ResourceCount(_) => Some(format!(
