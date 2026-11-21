@@ -61,8 +61,10 @@ A function-pointer read has its declared callback signature and the store
 can supply the call target. Floating-point lowering still uses its existing
 rule that preserves stored bits, including signed zeros and NaNs. The
 typed evaluator can name a new symbolic float read by the point where
-the read is taken when that point has a certified view. An explicit
-`exact(place)` of a float cell names its bits at the selected program point.
+the read is taken when that point has a certified view. Float resource cells
+and their named runs can use the certified point where they were observed.
+An explicit `exact(place)` of a float cell names its bits at the selected
+program point.
 
 `exact(place)` keys the read by the selected program point when one is
 available. Raising uses `exact` at that point, even if another point has

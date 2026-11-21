@@ -1397,6 +1397,12 @@ impl ProgramPoint {
         }
     }
 
+    /// The read can be identified by the point alone, including through a
+    /// view that only materialized names for bytes the point already held.
+    pub(crate) fn has_certified_read_view(&self) -> bool {
+        matches!(self.observation_key(), ReadKey::Point(_))
+    }
+
     fn read_key_at(&self, id: ProgramPointId) -> ReadKey {
         if self.path.matches_indexed_view(&self.memory) {
             ReadKey::Point(id)
