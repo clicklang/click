@@ -5170,6 +5170,27 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
+#[test]
+fn user_tactic_call_obligations_expand_and_recheck() {
+    let (source, sources) = mdtest_sources("mdtests/user_tactic_requires_obligations.md");
+    let sources = crate::cli::source_refs(&sources);
+    let claim = "implicit_proof.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    let body = &expanded[expanded.find("void implicit_proof(").unwrap()..];
+    let definedness = body
+        .find("<= 2147483647 and")
+        .unwrap_or_else(|| panic!("{body}"));
+    let requirement = body
+        .find("requires 1 <=")
+        .unwrap_or_else(|| panic!("{body}"));
+    assert!(definedness < requirement, "{body}");
+    without_implicit_solve_for_claim(claim, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 /// The outer call of `y = f(f(y));` owes `f`'s requirement of the inner
 /// call's result. Whole-claim expansion renders its certificate after
 /// checking ends, and must still spell that result by its call, never as

@@ -2570,19 +2570,9 @@ pub(super) fn execute_program_function_call_paths(
 pub(crate) struct TacticRuleTransition {
     pub(crate) state: ExecutionState,
     pub(crate) facts: ExecutionFacts,
-    /// The execution's kernel-variable mark after the application, which
-    /// the caller installs so later steps cannot reuse an identity it minted.
+    pub(crate) obligations: Vec<ProofObligation>,
+    /// The execution's kernel-variable mark after the application.
     pub(crate) next_kernel_variable: u64,
-}
-
-/// Why a tactic application was refused. A missing precondition is kept as
-/// the proposition, so the surface can name it in the reader's spelling.
-#[derive(Clone, Debug)]
-pub(crate) enum TacticApplicationRefusal {
-    /// A precondition, with the kernel's own description of why it is owed
-    /// (a recursion measure's descent, for one).
-    MissingRequirement(Proposition, Option<String>),
-    Refused(String),
 }
 
 /// Whether a certified body runs no code: it is one `return;` of no value.
@@ -2606,25 +2596,23 @@ fn body_runs_no_code(body: &ProgramStatement) -> bool {
 /// instances, consume and produce them, and add the `ensures` facts. This is
 /// how a user-defined tactic is applied.
 ///
-/// Every precondition the application emits must already be an available
-/// fact in `facts`. A tactic application is a simple step: nothing is
-/// searched for.
-pub(crate) fn apply_verified_tactic_rule(
+/// Prepare the transition once. Its requirements must be proved at the
+/// original frontier before it becomes execution evidence.
+pub(crate) fn prepare_verified_tactic_rule(
     state: &ExecutionState,
     name: &str,
     arguments: &[ProgramValue],
-    facts: &crate::kernel::proof::PureFactStore,
+    assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     next_kernel_variable: u64,
-) -> Result<TacticRuleTransition, TacticApplicationRefusal> {
-    use TacticApplicationRefusal::Refused;
+) -> Result<TacticRuleTransition, String> {
     let function = environment
         .get_function(name)
-        .ok_or_else(|| Refused(format!("unknown tactic `{name}`")))?;
+        .ok_or_else(|| format!("unknown tactic `{name}`"))?;
     if !body_runs_no_code(function.body()) {
-        return Err(Refused(format!(
+        return Err(format!(
             "`{name}` is a C function, not a tactic; its rule applies only at a call"
-        )));
+        ));
     }
     // A selected tactic is certified in this run (or held as its recursion
     // hypothesis while it is); an unselected one is the run's scoped
@@ -2635,9 +2623,9 @@ pub(crate) fn apply_verified_tactic_rule(
             .get_external_function_rule(name)
             .is_some_and(ExternalFunctionRule::is_scoped_unselected)
     {
-        return Err(Refused(format!(
+        return Err(format!(
             "tactic `{name}` has no verified rule in this proof"
-        )));
+        ));
     }
     let expressions = arguments
         .iter()
@@ -2649,45 +2637,36 @@ pub(crate) fn apply_verified_tactic_rule(
         state,
         function,
         &expressions,
-        facts.assumptions(),
+        &assumptions.clone().retaining_required_obligations(),
         ExecutionContext::apply_verified_rules(environment),
         &mut budget,
     )
-    .map_err(|limit| Refused(format!("applying tactic `{name}` stopped at {limit}")))?;
+    .map_err(|limit| format!("applying tactic `{name}` stopped at {limit}"))?;
     let [path] = paths.as_slice() else {
-        return Err(Refused(format!(
+        return Err(format!(
             "applying tactic `{name}` produced {} outcomes; an application has exactly one",
             paths.len()
-        )));
+        ));
     };
     let after = match &path.outcome {
         FunctionOutcome::Return { state, .. } => state.clone(),
         FunctionOutcome::RuntimeError(error) => {
-            return Err(Refused(format!(
-                "tactic `{name}` could not be applied: {error}"
-            )));
+            return Err(format!("tactic `{name}` could not be applied: {error}"));
         }
         FunctionOutcome::UndefinedBehavior(behavior) => {
-            return Err(Refused(format!(
+            return Err(format!(
                 "tactic `{name}` could not be applied: undefined behavior: {}",
                 behavior.description()
-            )));
-        }
-        FunctionOutcome::Throw { .. } | FunctionOutcome::VerificationDiverges => {
-            return Err(Refused(format!("tactic `{name}` has no ordinary outcome")));
-        }
-    };
-    for obligation in &path.obligations {
-        if !facts.contains(&obligation.proposition) {
-            return Err(TacticApplicationRefusal::MissingRequirement(
-                obligation.proposition.clone(),
-                obligation.context.clone(),
             ));
         }
-    }
+        FunctionOutcome::Throw { .. } | FunctionOutcome::VerificationDiverges => {
+            return Err(format!("tactic `{name}` has no ordinary outcome"));
+        }
+    };
     Ok(TacticRuleTransition {
         state: *after,
         facts: path.facts.clone(),
+        obligations: path.obligations.clone(),
         next_kernel_variable: budget.next_kernel_variable(),
     })
 }

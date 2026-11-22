@@ -3571,12 +3571,13 @@ uses:
 let { y: y, z: z } = divide(p, { x: x });
 ```
 
-An application is one simple step. It checks each `requires` as an available
-fact, consumes the mapped instances, produces the declared ones under the
-names the `let` pattern gives, and adds the `ensures`. It changes only the
-resources and facts the proof holds: no C runs, memory is unchanged, and every
-fact about a cell survives. `click expand` never expands an application, and
-`click audit` audits the smart tactics inside the tactic's own `by` block.
+An application first proves its argument evaluation obligations and the
+instantiated `requires` clauses at the caller's frontier. It uses the same
+`by` and `requires` proof suffixes as `step`, with implicit `solve()` for
+omitted proofs. Once the obligations are proved, the application consumes the
+mapped inputs, binds produced instances to the names in the `let` pattern, and
+adds the `ensures` facts. No C statement executes and memory stays the same.
+`click expand` writes the call-site proofs alongside the application.
 
 A tactic may apply itself. That is what makes it more than an abbreviation: a
 recursive tactic covers a structure of symbolic size, such as converting a
