@@ -600,11 +600,8 @@ pub(super) fn lower(
                 ..
             } => {
                 // The pointer's own type gives the arguments and result.
-                let Some(Type::FnPointer { parameters, result }) = mir
-                    .locals
-                    .iter()
-                    .find(|local| &local.name == function)
-                    .map(|local| &local.value_type)
+                let Some(Type::FnPointer { parameters, result }) =
+                    local_types.get(function.as_str()).copied()
                 else {
                     return Err("Rust pointer call target is not a function-pointer local".into());
                 };
