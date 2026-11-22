@@ -923,7 +923,11 @@ pub(super) fn pure_theorem_context(
                 ClickType::Algebraic(_) => {
                     crate::surface::lowering::algebraic_binder_variable(index).ok()?
                 }
-                ClickType::Integer | ClickType::Resource => Variable(index as u64),
+                ClickType::Integer
+                | ClickType::Resource
+                | ClickType::Program(InterfaceType::Float32 | InterfaceType::Float64) => {
+                    Variable(index as u64)
+                }
                 _ => return None,
             };
             Some((variable, parameter.name().to_owned()))

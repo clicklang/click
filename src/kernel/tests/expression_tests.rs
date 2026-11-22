@@ -482,7 +482,9 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
             &Proposition::ProgramExpressionEvaluates {
                 state: Box::new(state.clone()),
                 expression,
-                outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::FloatToIntegerOutOfRange),
+                outcome: ExpressionOutcome::UndefinedBehavior(
+                    UndefinedBehavior::FloatToIntegerOutOfRange
+                ),
             }
         );
     }

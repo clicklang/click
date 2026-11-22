@@ -2885,6 +2885,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             scope.succeed();
             return Ok(Some(proof));
         }
+        if let Some(proof) = Self::try_bounded_arithmetic_closure(search_input, &[])? {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
         if let Some(proof) =
             crate::kernel::search::ProofSearch::try_flat_solve_conjunction(search_input, &[])?
         {
@@ -3415,6 +3419,89 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter(|proof| proof.is_complete() || proof.goal() != search_input.goal()))
     }
 
+    /// Close the small domain conjunction as ordinary checked `have` steps.
+    /// In particular, `defined(cast)` is written as one term even though
+    /// its lowered goal has two ordered bounds.
+    fn try_bounded_arithmetic_closure(
+        search_input: &Proof<'a>,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
+        use crate::kernel::proof::arithmetic_special::{
+            is_float_bound, signed_product_guard_requirements, signed_quotient_bridge_requirement,
+        };
+        let Some(goal) = search_input.goal() else {
+            return Ok(None);
+        };
+        if let Proposition::And(left, right) = goal
+            && [left.as_ref(), right.as_ref()].iter().all(|leaf| {
+                is_float_bound(leaf) || signed_product_guard_requirements(leaf, false).is_some()
+            })
+        {
+            let mut proof = search_input.clone();
+            for leaf in [left, right] {
+                let Some(surface) = proof.structural_proposition_candidate(leaf) else {
+                    return Ok(None);
+                };
+                let Some(scope) = attempt::candidate_outcome(proof.driver().open_have(surface))?
+                else {
+                    return Ok(None);
+                };
+                let Some(closed) = scope
+                    .driver()
+                    .try_solve_closure_with_surfaces(introduced_surfaces)?
+                else {
+                    return Ok(None);
+                };
+                proof = closed.join()?;
+            }
+            return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known));
+        }
+
+        let mut candidates = [false, true]
+            .into_iter()
+            .filter_map(|swap| signed_product_guard_requirements(goal, swap))
+            .collect::<Vec<_>>();
+        if let Some(guard) = signed_quotient_bridge_requirement(goal) {
+            candidates.push(vec![guard]);
+        }
+        if is_float_bound(goal)
+            && let Some(bound) = crate::kernel::search::ProofSearch::select_float_bound(
+                search_input.facts().assumptions(),
+                goal,
+            )
+        {
+            candidates.push(vec![bound]);
+        }
+        for premises in candidates {
+            check_verification_deadline()?;
+            let surfaces = premises
+                .iter()
+                .map(|premise| {
+                    Self::resolve_solve_premises_unmeasured(
+                        search_input,
+                        std::slice::from_ref(premise),
+                        introduced_surfaces,
+                    )
+                    .and_then(|mut pairs| pairs.pop().map(|(_, surface)| surface))
+                    .or_else(|| search_input.structural_proposition_candidate(premise))
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(surfaces) = surfaces else {
+                continue;
+            };
+            if let Some(closed) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_step(ProofStep::NormalizeUsing(surfaces)),
+            )? {
+                return Ok(Some(closed));
+            }
+        }
+        Ok(None)
+    }
+
     /// Continues smart closure after direct logical candidates have either
     /// missed or been deliberately rejected as non-checkable. When
     /// `exclude_exact_goal` is true, the atomic derivation query may not cite
@@ -3504,6 +3591,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery(
             "try_solve_closure_after_direct_with_surfaces_and_function_unfold",
         );
+        if let Some(proof) =
+            Self::try_bounded_arithmetic_closure(search_input, introduced_surfaces)?
+        {
+            return Ok(Some(proof));
+        }
         if let (Some(surface_goal), Some(goal)) = (search_input.surface_goal(), search_input.goal())
         {
             // Check the two written order spellings of positivity at this
