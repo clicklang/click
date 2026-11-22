@@ -1,9 +1,9 @@
 # narrowing a viewable range refuses a range the order facts do not place inside it
 
 The positive half is
-`mdtests/have_viewable_prefix_of_a_range_in_a_c_proof.md`. Drop `k <= n` from it
-and `a[0..k]` may run past the end of the stated range, so the narrowing is
-refused. The diagnostic names the written goal and reports the failed
+`mdtests/have_viewable_prefix_of_a_range_in_a_c_proof.md`. Without `k <= n`,
+the requested `a[0..k]` may run past the end of the stated range, so the
+narrowing is refused. The diagnostic names the written goal and reports the failed
 source-proof construction, without attributing the miss to a guessed source
 range or byte-span premise.
 
