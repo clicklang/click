@@ -177,7 +177,6 @@ Verification reports use these headings:
 | `incomplete proof` | The proof ended with a requirement outstanding, such as a resource the contract promises to return. |
 | `contract error` | Click identified a rule it believes the written contract violates, such as a potentially overflowing resource endpoint or a proven overlap between owned entry resources or between an owned resource and an input view. |
 | `contract entry refused` | Click could not establish the contract's initial state or resources. The diagnostic describes the setup check that stopped verification. |
-| `execution refused` | The modeled operation could not proceed on this path, for example an uninitialized read. |
 | `unsupported` | Click detected a documented limitation with a path to supporting it. The diagnostic identifies the unsupported case. |
 | `unclassified verification refusal` | The reported cause comes from a remaining check without a specific classification. |
 | `syntax error` | Input did not parse. |
@@ -187,7 +186,9 @@ Verification reports use these headings:
 | `internal error` | Click detected a verifier failure, including ordinary checking that exhausts an internal work allowance. |
 
 A tactic error at an implicit step names that operation in the report, even
-without a proof trace.
+without a proof trace. A direct refusal can name required evidence, such as
+an initialized value for a read. An unsuccessful search reports the proof
+obligation it tried to close.
 
 When a verification refusal identifies a C function, theorem, or user-defined tactic that the sidecar
 selects, the CLI suggests a rerun with `--trace-proof` and fills in the proof

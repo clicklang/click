@@ -454,9 +454,10 @@ impl<'a> Proof<'a> {
         let label = context.claim_label;
         let index = goal.path_index;
         let refusal_kind = match &refusal {
-            Refusal::Runtime(error) => {
-                Some(crate::surface::diagnostics::runtime_refusal_kind(error))
-            }
+            Refusal::Runtime(error) => Some((
+                crate::surface::diagnostics::runtime_refusal_kind(error),
+                crate::surface::diagnostics::runtime_proof_refusal(error),
+            )),
             _ => None,
         };
 
@@ -516,12 +517,17 @@ impl<'a> Proof<'a> {
                     .step_error(format!("contract for `{label}`: {reason}"))
                     .with_proof_refusal(crate::surface::ProofRefusal::Contract);
             }
-            Refusal::Execution(reason) => {
+            Refusal::UndefinedBehavior(kind) => {
                 return self
                     .step_error(format!(
-                        "contract closing for `{label}` path {index}: {reason}"
+                        "contract closing for `{label}` path {index}: {}",
+                        describe_function_outcome(
+                            &FunctionOutcome::UndefinedBehavior(kind.clone()),
+                            binding
+                        )
                     ))
-                    .with_proof_refusal(crate::surface::ProofRefusal::Execution);
+                    .with_kind(crate::surface::diagnostics::undefined_behavior_refusal_kind(&kind))
+                    .with_proof_refusal(crate::surface::ProofRefusal::Tactic);
             }
             Refusal::Runtime(error) => format!(
                 "`{label}` path {index}: C operation could not be verified: {}{}",
@@ -547,9 +553,7 @@ impl<'a> Proof<'a> {
         };
         let error = self.step_error(message);
         match refusal_kind {
-            Some(kind) => error
-                .with_kind(kind)
-                .with_proof_refusal(crate::surface::ProofRefusal::Execution),
+            Some((kind, refusal)) => error.with_kind(kind).with_proof_refusal(refusal),
             None => error.with_proof_refusal(crate::surface::ProofRefusal::Tactic),
         }
     }

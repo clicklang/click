@@ -1782,9 +1782,7 @@ pub(super) fn describe_function_outcome(
             )
         }
         FunctionOutcome::VerificationDiverges => "has no verified return frontier".to_string(),
-        FunctionOutcome::UndefinedBehavior(kind) => {
-            format!("undefined behavior: {}", kind.description())
-        }
+        FunctionOutcome::UndefinedBehavior(kind) => describe_execution_safety_refusal(kind),
         FunctionOutcome::RuntimeError(error) => format!(
             "C operation could not be verified: {}",
             describe_runtime_error(error, parameter_binding)
@@ -2077,9 +2075,28 @@ pub(super) fn describe_runtime_error(
     }
 }
 
-/// Kernel `RuntimeError` includes ordinary proof refusals, so its name is not
-/// a surface error category. Only explicitly marked verifier limitations are
-/// reported as internal errors.
+/// The kernel uses the safety-refusal type for one documented modeling limit.
+pub(super) fn undefined_behavior_refusal_kind(
+    kind: &crate::kernel::UndefinedBehavior,
+) -> ClickErrorKind {
+    match kind {
+        crate::kernel::UndefinedBehavior::OnePastEndComparison => ClickErrorKind::Unsupported,
+        _ => ClickErrorKind::Proof,
+    }
+}
+
+/// Describes a refused safety check using the language's actual semantics.
+pub(super) fn describe_execution_safety_refusal(kind: &crate::kernel::UndefinedBehavior) -> String {
+    match kind {
+        crate::kernel::UndefinedBehavior::OnePastEndComparison => {
+            format!("unsupported C operation: {}", kind.description())
+        }
+        _ => format!("undefined behavior: {}", kind.description()),
+    }
+}
+
+/// Distinguish a modeled operation's refusal from known Click limitations
+/// and inconsistent checking state.
 pub(super) fn runtime_refusal_kind(error: &crate::kernel::RuntimeError) -> ClickErrorKind {
     match error {
         crate::kernel::RuntimeError::UnsupportedConcurrentMutex
@@ -2087,7 +2104,21 @@ pub(super) fn runtime_refusal_kind(error: &crate::kernel::RuntimeError) -> Click
         | crate::kernel::RuntimeError::MutexStorageScopeEnd {
             may_alias: true, ..
         } => ClickErrorKind::Internal,
+        crate::kernel::RuntimeError::ContractEntryInvariant(_) => ClickErrorKind::Internal,
+        crate::kernel::RuntimeError::UnsupportedOpaqueFunctionContract(_) => {
+            ClickErrorKind::Unsupported
+        }
         _ => ClickErrorKind::Proof,
+    }
+}
+
+pub(super) fn runtime_proof_refusal(error: &crate::kernel::RuntimeError) -> super::ProofRefusal {
+    match error {
+        crate::kernel::RuntimeError::InvalidContractResource(_)
+        | crate::kernel::RuntimeError::OverlappingContractInputView { .. } => {
+            super::ProofRefusal::Contract
+        }
+        _ => super::ProofRefusal::Tactic,
     }
 }
 

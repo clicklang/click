@@ -40,8 +40,10 @@ it; shrink them if you can, but a report need not wait for that.
 - `tactic error`: read `click docs TACTIC` and check whether the tactic is valid
   at the reported point. Correct an invalid invocation. If the invocation and
   its premises satisfy the documented rule and Click still refuses, report
-  `tactic-bug`. For a written or implicit step that needs evidence, record
-  the requirement at the operation's pre-state and continue with it below.
+  `tactic-bug`. For a written or implicit step that names required evidence,
+  check whether the operation is viable at that program point. An operation
+  that reads an uninitialized value may require a change to the program or
+  contract. A `goal:` line identifies an issued proof obligation.
 - `contract error`: identify the written clause and read the documented
   contract rule that Click says it violates. Check the rule under the
   contract's stated requirements. If the clause violates it, explain why to
@@ -65,7 +67,6 @@ it; shrink them if you can, but a report need not wait for that.
   Continue with the reported obligation when the diagnostic gives one. For
   an entry refusal, use `contract-bug` if you can show that the original
   contract satisfies the documented rule Click applied.
-- `execution refused`: investigate the reported operation.
 - `unclassified verification refusal`: investigate the stated cause.
 
 Use `unclear-output` when the available diagnostics lack the detail

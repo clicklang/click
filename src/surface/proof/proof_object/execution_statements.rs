@@ -2107,6 +2107,7 @@ fn requirement_deduplication_uses_replay_truth_and_polarity() {
         introductions: Default::default(),
         call_site: None,
         assertion_condition: None,
+        statement_safety: false,
         surface: None,
     };
     let first = requirement(0, 0);

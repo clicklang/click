@@ -59,7 +59,6 @@ fn report_error(message: String) -> ! {
         "incomplete proof",
         "contract error",
         "contract entry refused",
-        "execution refused",
         "unsupported",
         "unclassified verification refusal",
         "syntax error",
@@ -509,7 +508,7 @@ uint64 spell(const uint8* b, uint64 n) {
             trace.contains("`known` requires the current goal as an available semantic fact"),
             "{trace}"
         );
-        assert!(trace.contains("\ngoal: false\n"), "{trace}");
+        assert!(trace.contains("\nrequired evidence: false\n"), "{trace}");
         assert!(trace.contains(" = b + uint64("), "{trace}");
         assert!(
             trace.contains(" = at(statement(2).statement(0).entry, v)"),
@@ -881,7 +880,10 @@ int32 f(int32 n) {
             "void set(int32 *p) {\n    owns p[0..1];\n}\nvoid lend_twice(int32 *p) {\n    owns p[0..1];\n}\n",
             &[],
         );
-        assert!(resource.contains("\ngoal: owns p[1]\n"), "{resource}");
+        assert!(
+            resource.contains("\nrequired evidence: owns p[1]\n"),
+            "{resource}"
+        );
 
         // A sidecar that does not load reports that failure, not the
         // `--trace-proof` naming hint.
@@ -1067,7 +1069,10 @@ int32 check(struct link* node) {
             ordinary.contains("could not lower resource `tag` argument 0"),
             "{ordinary}"
         );
-        assert!(ordinary.contains("goal: defined(node[0])"), "{ordinary}");
+        assert!(
+            ordinary.contains("required evidence: defined(node->next)"),
+            "{ordinary}"
+        );
 
         let trace = entry([
             "verify".to_owned(),
@@ -1081,7 +1086,8 @@ int32 check(struct link* node) {
             .unwrap_or_else(|| panic!("{trace}"));
         assert!(
             failed.lines().any(|line| {
-                line.starts_with("goal: defined-read(current, state#") && line.ends_with(", node)")
+                line.starts_with("required evidence: defined-read(current, state#")
+                    && line.ends_with(", node)")
             }),
             "{trace}"
         );
@@ -1158,7 +1164,7 @@ int32 check(struct link* node) {
             nested.contains("location: tactic 1 > have body tactic 1"),
             "{nested}"
         );
-        assert!(nested.contains("goal: 0 == 1"), "{nested}");
+        assert!(nested.contains("required evidence: 0 == 1"), "{nested}");
         assert!(nested.contains("steps through: declare x"), "{nested}");
 
         let wrong = entry([
@@ -1338,7 +1344,11 @@ int32 check(struct link* node) {
             traced.contains("requires: exists (k: int32) { k == 0 }"),
             "{traced}"
         );
-        assert_eq!(traced.matches("\ngoal:").count(), 1, "{traced}");
+        assert_eq!(
+            traced.matches("\nrequired evidence:").count(),
+            1,
+            "{traced}"
+        );
         assert!(
             traced
                 .contains("tactic@5:\n  let x = obtain(\n      exists (k: int32) { k == 0 }\n  );"),
@@ -1468,6 +1478,41 @@ int32 check(struct link* node) {
     }
 
     #[test]
+    fn verification_separates_unprepared_safety_goals_from_unsupported_operations() {
+        let fixture = |name: &str| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("mdtests")
+                .join(name)
+                .display()
+                .to_string()
+        };
+        let error = entry([
+            "verify".to_string(),
+            fixture("a_symbolic_read_of_an_unwritten_local_element_is_uninitialized.md"),
+        ])
+        .unwrap_err();
+        assert!(error.starts_with("internal error:"), "{error}");
+        assert!(
+            error.contains("generated statement safety obligation")
+                && error.contains("read of uninitialized storage")
+                && error.contains("x == 0"),
+            "{error}"
+        );
+
+        let error = entry([
+            "verify".to_string(),
+            fixture("a_one_past_the_end_pointer_is_not_compared_with_another_object.md"),
+        ])
+        .unwrap_err();
+        assert!(error.starts_with("unsupported:"), "{error}");
+        assert!(
+            error.contains("whether the two objects are adjacent is unspecified"),
+            "{error}"
+        );
+        assert!(!error.contains("undefined behavior"), "{error}");
+    }
+
+    #[test]
     fn trace_includes_checked_prefix_before_a_statement_runtime_error() {
         let directory = std::env::temp_dir().join(format!(
             "click-trace-statement-runtime-error-{}",
@@ -1485,7 +1530,8 @@ int32 check(struct link* node) {
         )
         .unwrap();
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-        assert!(error.starts_with("execution refused:"), "{error}");
+        assert!(error.starts_with("tactic error:"), "{error}");
+        assert!(!error.contains("goal:"), "{error}");
         assert!(
             error.contains("\n\nTo get a trace:\n  click verify --trace-proof f "),
             "{error}"
@@ -1556,7 +1602,10 @@ void recolor(struct rb_node* gparent) {
             .split_once("\n  checked target (wanted)\n  ")
             .and_then(|(_, rest)| rest.lines().next())
             .unwrap_or_else(|| panic!("{report}"));
-        assert!(report.contains(&format!("\ngoal: {target}\n")), "{report}");
+        assert!(
+            report.contains(&format!("\nrequired evidence: {target}\n")),
+            "{report}"
+        );
         assert!(report.contains("\n    address: value#"), "{report}");
         assert!(report.contains("= gparent + 16 bytes"), "{report}");
         assert!(!report.contains("\n  width\n"), "{report}");
@@ -1620,7 +1669,7 @@ void parent(int32* p) {
         );
         let current = read_state(
             failed_check,
-            "goal: ∃z:ProgramInt32. int32 =(z, read<Bits32>(state#",
+            "required evidence: ∃z:ProgramInt32. int32 =(z, read<Bits32>(state#",
         );
         assert_ne!(saved, current, "{report}");
     }
@@ -1650,7 +1699,7 @@ theorem bad(p: int32*, q: int32*) {
         let ordinary = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         let ordinary_goal = ordinary
             .lines()
-            .find_map(|line| line.trim().strip_prefix("goal: "))
+            .find_map(|line| line.trim().strip_prefix("required evidence: "))
             .unwrap();
         let report = entry([
             "verify".to_string(),
@@ -1663,8 +1712,11 @@ theorem bad(p: int32*, q: int32*) {
         // trace keeps the typed checked goal.
         assert!(ordinary_goal.contains("tag("), "{ordinary}");
         assert!(!ordinary_goal.contains("state#"), "{ordinary}");
-        assert_eq!(report.matches("goal:").count(), 1, "{report}");
-        let checked = report.lines().find(|line| line.contains("goal:")).unwrap();
+        assert_eq!(report.matches("required evidence:").count(), 1, "{report}");
+        let checked = report
+            .lines()
+            .find(|line| line.contains("required evidence:"))
+            .unwrap();
         assert!(checked.contains("tag("), "{report}");
         assert!(checked.contains("array-ref<int32>(state#1,"), "{report}");
         assert!(checked.contains("ptr<int32*>("), "{report}");
