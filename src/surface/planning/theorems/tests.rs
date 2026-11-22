@@ -12,7 +12,7 @@ fn single_theorem_discovery_expands_and_rechecks() {
     let verified = verify_click_theorems(&source).unwrap_or_else(|e| panic!("{}", e.report()));
     let expanded = verified.last().unwrap().expanded_proof_source().unwrap();
     assert!(
-        expanded.contains("apply(shifted_bound(value)) using"),
+        expanded.contains("apply(shifted_bound(value));"),
         "{expanded}"
     );
     assert!(!expanded.contains("solve("), "{expanded}");
@@ -183,7 +183,7 @@ fn equivalent_comparison_spellings_discover_and_expand() {
         let verified =
             verify_click_theorems(&source).unwrap_or_else(|e| panic!("{source}: {}", e.report()));
         let expanded = verified.last().unwrap().expanded_proof_source().unwrap();
-        assert!(expanded.contains("apply(law(value)) using"), "{expanded}");
+        assert!(expanded.contains("apply(law(value));"), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         verify_click_theorems(&source.replace(proof, &expanded))
             .unwrap_or_else(|e| panic!("{expanded}: {}", e.report()));
@@ -202,7 +202,7 @@ fn equality_orientation_is_disambiguated_by_listed_prerequisites() {
         let verified =
             verify_click_theorems(&source).unwrap_or_else(|e| panic!("{source}: {}", e.report()));
         let expanded = verified.last().unwrap().expanded_proof_source().unwrap();
-        assert!(expanded.contains("apply(law(a, b)) using"), "{expanded}");
+        assert!(expanded.contains("apply(law(a, b));"), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         verify_click_theorems(&source.replace(proof, &expanded))
             .unwrap_or_else(|e| panic!("{expanded}: {}", e.report()));
@@ -248,7 +248,7 @@ fn mirrored_float_orders_do_not_complement_nan_comparisons() {
         );
         let verified = verify_click_theorems(&source).unwrap_or_else(|e| panic!("{}", e.report()));
         let expanded = verified.last().unwrap().expanded_proof_source().unwrap();
-        assert!(expanded.contains("apply(law(value)) using"), "{expanded}");
+        assert!(expanded.contains("apply(law(value));"), "{expanded}");
         verify_click_theorems(&source.replace(proof, &expanded))
             .unwrap_or_else(|e| panic!("{expanded}: {}", e.report()));
     }

@@ -5108,17 +5108,19 @@ theorem nested_sites(x: int32) {
             .map(|site| (site.claim_label.as_str(), site.tactic_name.as_str()))
             .collect::<Vec<_>>(),
         vec![
-            ("nested_sites.ensures_0", "apply"),
-            ("nested_sites.ensures_1", "apply"),
-            ("nested_sites.ensures_1", "apply"),
             ("nested_sites.ensures_2", "have"),
             ("nested_sites.ensures_2", "solve"),
         ]
     );
-    // Both nested applications belong to the same claim-level `have`, but
-    // each must have its own selectable source position.
-    assert_eq!(sites[1].source_index, sites[2].source_index);
-    assert_ne!(sites[1].position, sites[2].position);
+    // A bare application is simple and can still be selected explicitly
+    // inside a nested proof by its own source location.
+    for (offset, _) in source.match_indices("apply(helper(x))") {
+        let position = expansion::position_at_offset(source, offset);
+        let selected =
+            c_select_smart_tactic(source, &[], position.line, Some(position.column)).unwrap();
+        assert_eq!(selected.tactic_name, "apply");
+        assert_eq!(selected.position, position);
+    }
     for site in sites {
         let expanded =
             expand_c_tactic_source_at(source, &[], site.position.line, site.position.column)

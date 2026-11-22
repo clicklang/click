@@ -19501,6 +19501,28 @@ mod tactic_classification_tests {
                     continue;
                 }
             };
+            // An induction binding is resolved after parsing the enclosing
+            // proof, so standalone call syntax initially parses as a theorem.
+            let tactic = match (form.id, tactic) {
+                ("apply-induction", ProofTactic::ApplyTheorem(application)) => {
+                    ProofTactic::ApplyInduction {
+                        hypothesis: application.name,
+                        arguments: application.arguments,
+                    }
+                }
+                (
+                    "apply-induction-using",
+                    ProofTactic::ApplyTheoremUsing {
+                        application,
+                        premises,
+                    },
+                ) => ProofTactic::ApplyInductionUsing {
+                    hypothesis: application.name,
+                    arguments: application.arguments,
+                    premises,
+                },
+                (_, tactic) => tactic,
+            };
             let class = tactic.class();
             classes.insert(form.id, class);
             if label(class) != form.class {

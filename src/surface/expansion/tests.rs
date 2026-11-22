@@ -3121,14 +3121,9 @@ fn pure_mixed_linear_smart_script_expands_the_retained_proof_object_path() {
     let selected = &expanded[expanded
         .find("theorem applied_then_solve")
         .expect("expanded source should retain the selected theorem")..];
-    assert!(
-        selected.contains("apply(required(x)) using {"),
-        "{selected}"
-    );
-    assert!(selected.contains("x >= 0;"), "{selected}");
+    assert!(selected.contains("apply(required(x));"), "{selected}");
     assert!(selected.contains("have x >= 0 by {"), "{selected}");
     assert!(selected.contains("known();"), "{selected}");
-    assert!(!selected.contains("apply(required(x));"), "{selected}");
     assert!(!selected.contains("solve();"), "{selected}");
     verify_click_theorems(&expanded)
         .expect("the serialized pure theorem certificate should independently reverify");

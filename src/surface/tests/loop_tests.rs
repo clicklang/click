@@ -1822,11 +1822,7 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
         "{expanded}"
     );
     assert!(
-        expanded.contains("not at(loop(0).exit, i) < at(loop(0).exit, n)"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("click::integer::int32_less_equal_and_not_less_than_implies_equal"),
+        expanded.contains("apply(click::integer::int32_less_equal_and_not_less_than_implies_equal(at(loop(0).exit, i), at(loop(0).exit, n)));"),
         "{expanded}"
     );
     assert!(!expanded.contains("normalize()"), "{expanded}");
@@ -2759,7 +2755,7 @@ fn theorem_application_expands_with_a_recorded_historical_byte_premise() {
         "{expanded}"
     );
     assert!(
-        expanded.contains("(p[0] as int32) == (old(p)[index] as int32);"),
+        expanded.contains("apply(same_byte(p[0], old(p)[index]));"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).unwrap();

@@ -777,7 +777,7 @@ mod certificate_tests {
         );
         assert!(matches!(
             verified[2].proof_tactics().as_deref(),
-            Some([ProofTactic::ApplyTheorem(_)])
+            Some([ProofTactic::ApplyTheoremUsing { .. }])
         ));
         assert!(matches!(
             verified[3].proof_tactics().as_deref(),

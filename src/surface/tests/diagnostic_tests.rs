@@ -3850,13 +3850,11 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
     "#;
     with_proof_trace("use_it", || {
         verify_c_sources(source, &[("f.c", "void f(void) { return; }")])
-            .expect("the elided apply finds both premises");
+            .expect("the written application checks both premises");
         let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
             .expect("the apply retains its trace");
-        assert!(
-            trace.contains("chosen: apply(le_trans(x, y, z)) using { x <= y; y <= z; };"),
-            "{trace}"
-        );
+        assert!(trace.contains("tactic 0: apply\n"), "{trace}");
+        assert!(!trace.contains("chosen:"), "{trace}");
     });
 }
 
