@@ -396,6 +396,58 @@ int32 short_sum(int32 seed) {
         .collect()
     }
 
+    #[test]
+    fn reads_at_symbolic_indices_through_a_call_result_round_trip() {
+        let c = r#"
+uint8* make(uint64 n);
+struct holder { uint8* p; };
+int32 f(struct holder* h, uint64 n, uint64 k) {
+    h->p = make(n);
+    free(h->p);
+    return 0;
+}
+"#;
+        let source = r#"
+extern uint8* make(uint64 n) {
+    produces allocation(result, n);
+    produces result[0..n];
+    ensures forall (i: uint64) { 0u64 <= i and i < n implies defined(load<uint8>(result + i)) };
+}
+verifying "indexed.c";
+int32 f(struct holder* h, uint64 n, uint64 k) {
+    owns h->p;
+    requires n <= 100u64;
+    requires k < n;
+    ensures result >= 0;
+} by {
+    step();
+    have defined(load<uint8>(statement(0).call(make, 0).result + k)) by {
+        instantiate(forall (i: uint64) { 0u64 <= i and i < n implies defined(load<uint8>(statement(0).call(make, 0).result + i)) }, k);
+        known();
+    }
+    step_until(function.exit);
+}
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[("indexed.c", c)]).unwrap();
+        });
+        for kind in [
+            "forall/implies/MemoryReadDefined",
+            "implies/MemoryReadDefined",
+            "MemoryReadDefined",
+        ] {
+            let prefix = format!("same\tfact\t{kind}\tf.contract\t");
+            assert!(
+                lines.iter().any(|line| line.starts_with(&prefix)
+                    && line
+                        .split('\t')
+                        .nth(7)
+                        .is_some_and(|raised| raised.contains(".result + "))),
+                "missing {kind} round trip in {lines:#?}"
+            );
+        }
+    }
+
     /// A pointer a call returned raises as that call's result, and a read
     /// at an earlier point as `at(point, ..)`: the audit raises with the
     /// path's recorded points, as goal presentation does.
