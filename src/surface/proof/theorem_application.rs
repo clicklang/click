@@ -1637,7 +1637,7 @@ mod observed_integer_argument_tests {
     }
 
     #[test]
-    fn pure_argument_obligations_solve_and_expand_without_evidence_selection() {
+    fn pure_argument_obligations_reuse_ambient_evaluation_evidence() {
         let source = r#"
             theorem identity(value: int32) { ensures value == value by known(); }
             theorem use_argument(x: int32) {
@@ -1649,7 +1649,8 @@ mod observed_integer_argument_tests {
         verify_c_sources(source, &[]).unwrap();
         let expanded =
             expand_c_claim_source_by_label(source, &[], "use_argument.ensures_0").unwrap();
-        assert!(expanded.contains("have "), "{expanded}");
+        assert!(expanded.contains("apply(identity((x + 1)));"), "{expanded}");
+        assert!(!expanded.contains("have "), "{expanded}");
         crate::surface::without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
         assert!(verify_c_sources(&source.replace("requires x < 10;", ""), &[]).is_err());
         let explicit_without_guard = source.replace(

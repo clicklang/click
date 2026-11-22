@@ -25412,11 +25412,12 @@ fn solve_discovered_theorem_expands_to_a_bare_application() {
 }
 
 #[test]
-fn argument_obligation_arithmetic_expands_to_bare_applications() {
+fn known_argument_evaluation_expands_without_an_extra_proof() {
     let (source, _) = mdtest_sources("mdtests/pure_apply_argument_obligations.md");
     let claim = "use_argument.ensures_0";
     let expanded = expand_c_claim_source_by_label(&source, &[], claim).unwrap();
-    assert!(expanded.contains("apply(click::integer::"), "{expanded}");
+    assert!(expanded.contains("apply(identity((x + 1)));"), "{expanded}");
+    assert!(!expanded.contains("have "), "{expanded}");
     assert!(!expanded.contains(" using {"), "{expanded}");
     without_implicit_solve_for_claim(claim, || {
         verify_click_theorems(&expanded).map_err(|error| error.report())
